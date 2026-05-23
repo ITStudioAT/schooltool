@@ -111,7 +111,7 @@
                                             :key="course.key"
                                             class="robot-student-completed-course">
                                             <span class="robot-student-completed-course__subject">
-                                                {{ course.code }}
+                                                <span>{{ course.code }}</span>
                                             </span>
                                             <v-chip size="x-small" color="primary" variant="tonal">
                                                 {{ formatHours(course.hours) }}
@@ -143,7 +143,7 @@
                                             :key="course.key"
                                             class="robot-student-completed-course">
                                             <span class="robot-student-completed-course__subject">
-                                                {{ course.code }}
+                                                <span>{{ course.code }}</span>
                                             </span>
                                             <v-chip size="x-small" color="primary" variant="tonal">
                                                 {{ formatHours(course.hours) }}
@@ -255,7 +255,9 @@
                                                         @click.stop
                                                         @update:model-value="setCourseSelected(course, $event)" />
                                                 </div>
-                                                <div class="robot-course-item-row__code">{{ course.code }}</div>
+                                                <div class="robot-course-item-row__code">
+                                                    <span>{{ course.code }}</span>
+                                                </div>
                                                 <div>{{ course.name }}</div>
                                                 <div>{{ course.branch }}</div>
                                                 <div class="text-right">{{ formatHours(course.hours) }}</div>
@@ -283,7 +285,9 @@
                                                                     class="robot-course-item-detail__check"
                                                                     @click.stop
                                                                     @update:model-value="setCourseGroupSelected(course, group, $event)" />
-                                                                <span>{{ group.title }}:</span>
+                                                                <span>
+                                                                    {{ group.title }}<sup v-if="courseGroupDistanceLearning(course, group)" class="robot-course-fu">FU</sup>:
+                                                                </span>
                                                             </div>
                                                             <div class="robot-course-item-detail__meta">
                                                                 {{ group.meta }}
@@ -341,7 +345,8 @@
                                             <div class="robot-course-item-row">
                                                 <div class="robot-course-item-row__select">
                                                     <v-checkbox
-                                                        :model-value="additionalCourseSelected(course)"
+                                                        :model-value="additionalCourseFullySelected(course)"
+                                                        :indeterminate="additionalCoursePartiallySelected(course)"
                                                         :aria-label="`${course.code} auswählen`"
                                                         density="compact"
                                                         color="primary"
@@ -350,7 +355,9 @@
                                                         @click.stop
                                                         @update:model-value="setAdditionalCourseSelected(course, $event)" />
                                                 </div>
-                                                <div class="robot-course-item-row__code">{{ course.code }}</div>
+                                                <div class="robot-course-item-row__code">
+                                                    <span>{{ course.code }}</span>
+                                                </div>
                                                 <div>{{ course.name }}</div>
                                                 <div>{{ course.branch }}</div>
                                                 <div class="text-right">{{ formatHours(course.hours) }}</div>
@@ -366,18 +373,22 @@
                                                         <div
                                                             v-for="group in courseGroupItems(course)"
                                                             :key="group.key"
-                                                            class="robot-course-item-detail">
+                                                            class="robot-course-item-detail"
+                                                            :class="{ 'robot-course-item-detail--disabled': !additionalCourseGroupSelected(course, group) }">
                                                             <div class="robot-course-item-detail__main">
                                                                 <v-checkbox
-                                                                    :model-value="additionalCourseSelected(course)"
+                                                                    :model-value="additionalCourseGroupSelected(course, group)"
                                                                     :aria-label="`${group.title} auswählen`"
                                                                     density="compact"
                                                                     color="primary"
-                                                                    readonly
+                                                                    :disabled="!additionalCourseSelectable(course)"
                                                                     hide-details
                                                                     class="robot-course-item-detail__check"
-                                                                    @click.stop />
-                                                                <span>{{ group.title }}:</span>
+                                                                    @click.stop
+                                                                    @update:model-value="setAdditionalCourseGroupSelected(course, group, $event)" />
+                                                                <span>
+                                                                    {{ group.title }}<sup v-if="courseGroupDistanceLearning(course, group)" class="robot-course-fu">FU</sup>:
+                                                                </span>
                                                             </div>
                                                             <div class="robot-course-item-detail__meta">
                                                                 {{ group.meta }}
@@ -512,6 +523,38 @@
                                     <v-icon icon="mdi-alert-circle-outline" color="warning" />
                                 </div>
                             </div>
+
+                            <div
+                                v-if="selectedAdditionalCourses.length"
+                                class="robot-count-card robot-count-card--additional"
+                                :class="{ 'robot-count-card--selected': additionalCourseTimetableRequired }">
+                                <div class="robot-count-card__content">
+                                    <div class="robot-count-card__label">Stundenpläne mit Zusatzkursen</div>
+                                    <div class="robot-count-card__value">
+                                        <v-progress-circular
+                                            v-if="fullGreenTimetableCountLoading"
+                                            indeterminate
+                                            size="22"
+                                            width="2"
+                                            color="primary" />
+                                        <template v-else>
+                                            {{ additionalCourseTimetableCountLabel }}
+                                        </template>
+                                    </div>
+                                </div>
+                                <div class="robot-count-card__actions">
+                                    <v-switch
+                                        :model-value="additionalCourseTimetableRequired"
+                                        color="deep-orange"
+                                        inset
+                                        hide-details
+                                        density="compact"
+                                        :disabled="!isAdditionalCourseTimetableFilterSelectable()"
+                                        aria-label="Stundenpläne mit Zusatzkursen auswählen"
+                                        @update:modelValue="setAdditionalCourseTimetableRequired($event)" />
+                                    <v-icon icon="mdi-plus-circle-outline" color="deep-orange" />
+                                </div>
+                            </div>
                         </div>
 
                         <div class="robot-quality-card">
@@ -600,7 +643,9 @@
                             </div>
                         </div>
 
-                        <div v-if="activeQualityCriterionRows.length" class="robot-quality-summary">
+                        <div
+                            v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length"
+                            class="robot-quality-summary">
                             <span
                                 v-for="counter in activeQualityCriterionRows"
                                 :key="`quality-summary-${counter.key}`"
@@ -609,6 +654,15 @@
                                 <v-icon
                                     :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
                                     :color="qualityCounterReached(counter) ? 'success' : 'error'"
+                                    size="16" />
+                            </span>
+                            <span
+                                v-if="selectedAdditionalCourses.length"
+                                class="robot-quality-summary__item">
+                                <span class="robot-quality-summary__label">Zusatzkurse:</span>
+                                <v-icon
+                                    :icon="additionalCoursesAcceptedBySelectedTimetable() ? 'mdi-check-circle' : 'mdi-close-circle'"
+                                    :color="additionalCoursesAcceptedBySelectedTimetable() ? 'success' : 'error'"
                                     size="16" />
                             </span>
                         </div>
@@ -652,7 +706,17 @@
                                         v-if="robotTimetableSlot(weekday.value, time.value)"
                                         class="robot-generated-cell__content">
                                         <div class="robot-generated-cell__code">
-                                            {{ robotTimetableSlot(weekday.value, time.value).code }}
+                                            <span>{{ robotTimetableSlot(weekday.value, time.value).code }}</span>
+                                            <sup
+                                                v-if="robotTimetableSlot(weekday.value, time.value).isDistanceLearningCourse"
+                                                class="robot-course-fu">
+                                                FU
+                                            </sup>
+                                            <sup
+                                                v-if="generatedSlotWeekMarker(robotTimetableSlot(weekday.value, time.value), selectedRobotTimetable)"
+                                                class="robot-course-fu robot-course-week-marker">
+                                                {{ generatedSlotWeekMarker(robotTimetableSlot(weekday.value, time.value), selectedRobotTimetable) }}
+                                            </sup>
                                         </div>
                                         <div
                                             v-if="generatedSlotDateLabel(robotTimetableSlot(weekday.value, time.value))"
@@ -669,7 +733,13 @@
                                                 v-for="conflictBlock in generatedSlotConflictBlocks(robotTimetableSlot(weekday.value, time.value))"
                                                 :key="conflictBlock.key"
                                                 class="robot-generated-cell__conflict-block">
-                                                <div class="robot-generated-cell__code">{{ conflictBlock.code }}</div>
+                                                <div class="robot-generated-cell__code">
+                                                    <span>{{ conflictBlock.code }}</span>
+                                                    <sup v-if="conflictBlock.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                                                    <sup v-if="generatedSlotWeekMarker(conflictBlock, selectedRobotTimetable)" class="robot-course-fu robot-course-week-marker">
+                                                        {{ generatedSlotWeekMarker(conflictBlock, selectedRobotTimetable) }}
+                                                    </sup>
+                                                </div>
                                                 <div class="robot-generated-cell__details">
                                                     {{ generatedSlotDetails(conflictBlock) }}
                                                 </div>
@@ -682,8 +752,13 @@
                                         <span
                                             v-for="marker in robotTimetableOccasionalMarkers(weekday.value, time.value)"
                                             :key="marker.key"
-                                            class="robot-generated-cell__occasional-marker">
-                                            {{ marker.code }}
+                                            class="robot-generated-cell__occasional-marker"
+                                            :class="{ 'robot-generated-cell__occasional-marker--additional': marker.isAdditionalCourse }">
+                                            <span>{{ marker.code }}</span>
+                                            <sup v-if="marker.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                                            <sup v-if="marker.weekMarker" class="robot-course-fu robot-course-week-marker">
+                                                {{ marker.weekMarker }}
+                                            </sup>
                                         </span>
                                     </div>
                                 </div>
@@ -700,7 +775,11 @@
                                     :key="group.key"
                                     class="robot-generated-appointment-group">
                                     <div class="robot-generated-appointment-group__title">
-                                        {{ group.title }}
+                                        <span>{{ group.title }}</span>
+                                        <sup v-if="group.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                                        <sup v-if="group.weekMarker" class="robot-course-fu robot-course-week-marker">
+                                            {{ group.weekMarker }}
+                                        </sup>
                                     </div>
                                     <ul class="robot-generated-appointments__list">
                                         <li
@@ -996,6 +1075,7 @@ export default {
             fullGreenTimetableCount: null,
             greenTimetableCount: null,
             conflictTimetableCount: null,
+            additionalCourseTimetableCount: null,
             qualityCounters: [],
             allQualityCriteriaCount: null,
             evaluationCriteria: [],
@@ -1006,6 +1086,7 @@ export default {
             fullGreenTimetableCountLoading: false,
             fullGreenTimetableCountRequestId: 0,
             selectedTimetableResultType: 'full_green',
+            additionalCourseTimetableRequired: false,
             courseItemPanels: [],
             schoolHours: [],
             courseGroups: [],
@@ -1027,6 +1108,7 @@ export default {
             studentCompletedCoursesError: '',
             studentCompletedCoursesRequestId: 0,
             studentCompletedCoursesExpanded: false,
+            studentSelectionDefaultsPendingCode: null,
             selection: {
                 semester: 1,
                 religion: 'ETH',
@@ -1234,6 +1316,9 @@ export default {
                 this.studentAdditionalCourses.slice(splitIndex),
             ].filter(courseColumn => courseColumn.length)
         },
+        selectedAdditionalCourses() {
+            return this.studentAdditionalCourses.filter(course => this.additionalCourseSelected(course))
+        },
         selectedCourses() {
             return this.availableCourses.filter(course => this.courseSelected(course))
         },
@@ -1352,6 +1437,14 @@ export default {
 
             return new Intl.NumberFormat('de-AT').format(this.conflictTimetableCount)
         },
+        additionalCourseTimetableCountLabel() {
+            if (!this.selectedAdditionalCourses.length) return '-'
+            if (this.additionalCourseTimetableCount === null) return '-'
+
+            return `${this.formatNumber(this.additionalCourseTimetableCount)} / ${
+                this.formatNumber(this.timetableResultCount(this.selectedTimetableResultType))
+            }`
+        },
         hasGreenTimetableResults() {
             return this.timetableResultCount('full_green') > 0
                 || this.timetableResultCount('green') > 0
@@ -1361,7 +1454,7 @@ export default {
                 && this.timetableResultCount('conflict') > 0
         },
         selectedTimetableResultCount() {
-            return this.timetableResultCount(this.selectedTimetableResultType)
+            return this.timetableResultCounterLimit(this.selectedTimetableResultType)
         },
         selectedTimetableResultTitle() {
             return {
@@ -1503,6 +1596,58 @@ export default {
 
             return this.studentSemesterBySchoolLevel()[schoolLevel] || null
         },
+        applySelectedStudentDefaultSelection(options = {}) {
+            const nextSelection = this.selectedStudentDefaultSelection(this.selectedStudent, options)
+
+            this.selection = nextSelection
+            this.selectionDraft = { ...nextSelection }
+        },
+        selectedStudentDefaultSelection(student, options = {}) {
+            const defaultSelection = { ...this.defaultRobotState().selection }
+            const semester = this.studentSemester(student)
+
+            return {
+                ...defaultSelection,
+                ...(semester ? { semester } : {}),
+                ...(options?.includeCourseHistory ? this.selectedStudentCourseHistoryDefaults() : {}),
+            }
+        },
+        selectedStudentCourseHistoryDefaults() {
+            const visitedCourseCodes = this.studentVisitedCourseCodes()
+
+            return Object.fromEntries([
+                ['religion', this.inferredSelectionOptionFromCourseCodes(this.religionOptions, visitedCourseCodes)],
+                ['language', this.inferredSelectionOptionFromCourseCodes(this.languageOptions, visitedCourseCodes, {
+                    S: ['S', 'SPA'],
+                })],
+                ['artsSubject', this.inferredSelectionOptionFromCourseCodes(this.artsSubjectOptions, visitedCourseCodes)],
+            ].filter(([, value]) => Boolean(value)))
+        },
+        inferredSelectionOptionFromCourseCodes(options, courseCodes, aliases = {}) {
+            if (!(courseCodes instanceof Set) || !courseCodes.size) return ''
+
+            return (Array.isArray(options) ? options : [])
+                .find(option => this.selectionOptionCodeAliases(option?.value, aliases)
+                    .some(alias => this.courseCodesContainBase(courseCodes, alias)))?.value || ''
+        },
+        selectionOptionCodeAliases(value, aliases = {}) {
+            const normalizedValue = this.normalizedCourseCode(value)
+
+            return [
+                normalizedValue,
+                ...(aliases[normalizedValue] || []),
+            ]
+                .map(alias => this.normalizedCourseCode(alias))
+                .filter(Boolean)
+                .filter((alias, index, allAliases) => allAliases.indexOf(alias) === index)
+        },
+        courseCodesContainBase(courseCodes, base) {
+            const normalizedBase = this.normalizedCourseCode(base)
+            if (!normalizedBase) return false
+
+            return [...courseCodes]
+                .some(courseCode => this.courseCodeWithoutModule(courseCode) === normalizedBase)
+        },
         studentSchoolLevelKey(student) {
             const importedSchoolLevel = this.normalizedStudentSchoolLevel(
                 student?.school_level,
@@ -1557,6 +1702,7 @@ export default {
             this.selectionDialogOpen = false
         },
         updateSelection() {
+            this.studentSelectionDefaultsPendingCode = null
             this.selection = { ...this.selectionDraft }
             this.applyStudentPlannedCourseSelection()
             this.clearGeneratedTimetables()
@@ -1576,8 +1722,15 @@ export default {
             this.studentSelectionDraft.studentCode = this.normalizedStudentCode(studentCode)
         },
         updateStudentSelection() {
+            const previousStudentCode = this.normalizedStudentCode(this.studentSelection.studentCode)
+            const nextStudentCode = this.normalizedStudentCode(this.studentSelectionDraft.studentCode)
+
             this.studentSelection = {
-                studentCode: this.normalizedStudentCode(this.studentSelectionDraft.studentCode),
+                studentCode: nextStudentCode,
+            }
+            if (previousStudentCode !== nextStudentCode) {
+                this.studentSelectionDefaultsPendingCode = nextStudentCode
+                this.applySelectedStudentDefaultSelection()
             }
             this.additionalCourseSelectedKeys = []
             this.studentCompletedCoursesExpanded = false
@@ -1620,10 +1773,17 @@ export default {
                 if (requestId !== this.studentCompletedCoursesRequestId) return
 
                 this.studentCompletedCourses = response.data?.data || []
+                if (this.studentSelectionDefaultsPendingCode === studentCode) {
+                    this.applySelectedStudentDefaultSelection({ includeCourseHistory: true })
+                    this.studentSelectionDefaultsPendingCode = null
+                }
             } catch {
                 if (requestId !== this.studentCompletedCoursesRequestId) return
 
                 this.studentCompletedCourses = []
+                if (this.studentSelectionDefaultsPendingCode === studentCode) {
+                    this.studentSelectionDefaultsPendingCode = null
+                }
                 this.studentCompletedCoursesError = 'Die abgeschlossenen Kurse konnten nicht geladen werden.'
             } finally {
                 if (requestId === this.studentCompletedCoursesRequestId) {
@@ -1668,9 +1828,11 @@ export default {
                 this.fullGreenTimetableCount = 0
                 this.greenTimetableCount = 0
                 this.conflictTimetableCount = 0
+                this.additionalCourseTimetableCount = 0
                 this.qualityCounters = []
                 this.allQualityCriteriaCount = 0
                 this.generatedTimetables = []
+                this.additionalCourseTimetableRequired = false
                 this.normalizeTimetableResultCounters()
                 this.fullGreenTimetableCountLoading = false
 
@@ -1689,6 +1851,8 @@ export default {
                     student: this.studentSelection,
                     deselected_course_keys: this.deselectedCourseKeys,
                     deselected_course_group_keys: this.deselectedCourseGroupKeys,
+                    selected_additional_course_keys: this.selectedAdditionalCourses.map(course => course.key),
+                    selected_additional_courses_required: this.additionalCourseTimetableRequired === true,
                     selected_timetable_type: this.selectedTimetableResultType,
                     selected_timetable_number: this.timetableResultCounter(this.selectedTimetableResultType),
                     evaluation_criteria: this.storageEvaluationCriteria(this.evaluationCriteria),
@@ -1699,6 +1863,7 @@ export default {
                 this.fullGreenTimetableCount = Number(response.data?.data?.full_green_timetable_count || 0)
                 this.greenTimetableCount = Number(response.data?.data?.green_timetable_count || 0)
                 this.conflictTimetableCount = Number(response.data?.data?.conflict_timetable_count || 0)
+                this.additionalCourseTimetableCount = Number(response.data?.data?.additional_course_timetable_count || 0)
                 this.qualityCounters = response.data?.data?.quality_counters || []
                 this.allQualityCriteriaCount = Number(response.data?.data?.all_quality_criteria_count || 0)
                 const selectedResultTypeChanged = this.autoSelectTimetableResultType()
@@ -1722,6 +1887,7 @@ export default {
                 this.fullGreenTimetableCount = null
                 this.greenTimetableCount = null
                 this.conflictTimetableCount = null
+                this.additionalCourseTimetableCount = null
                 this.qualityCounters = []
                 this.allQualityCriteriaCount = null
                 this.generatedTimetables = []
@@ -1763,7 +1929,12 @@ export default {
             if (selected === false) return
             if (!this.isTimetableResultTypeSelectable(type)) return
 
+            const resultTypeChanged = this.selectedTimetableResultType !== type
             this.selectedTimetableResultType = type
+            if (resultTypeChanged) {
+                this.setTimetableResultCounter(type, 1)
+            }
+
             if (this.timetableResultCount(type) > 0) {
                 this.loadFullGreenTimetableCount()
 
@@ -1772,6 +1943,21 @@ export default {
 
             this.generatedTimetables = []
         },
+        setAdditionalCourseTimetableRequired(selected) {
+            if (selected === true && !this.isAdditionalCourseTimetableFilterSelectable()) return
+
+            const requiredStateChanged = this.additionalCourseTimetableRequired !== (selected === true)
+            this.additionalCourseTimetableRequired = selected === true
+            if (requiredStateChanged) {
+                this.setTimetableResultCounter(this.selectedTimetableResultType, 1)
+            }
+            this.normalizeTimetableResultCounters()
+            this.saveLastRobotState()
+
+            if (this.timetableCalculationReady()) {
+                this.loadFullGreenTimetableCount()
+            }
+        },
         isTimetableResultTypeSelectable(type) {
             if (type === 'conflict') {
                 return this.showConflictTimetableResults
@@ -1779,6 +1965,17 @@ export default {
             }
 
             return this.timetableResultCount(type) > 0
+        },
+        isAdditionalCourseTimetableFilterSelectable() {
+            if (this.additionalCourseTimetableRequired === true) {
+                return this.selectedAdditionalCourses.length > 0
+                    && !this.fullGreenTimetableCountLoading
+            }
+
+            return this.selectedAdditionalCourses.length > 0
+                && !this.fullGreenTimetableCountLoading
+                && this.additionalCourseTimetableCount !== null
+                && Number(this.additionalCourseTimetableCount || 0) > 0
         },
         moveTimetableResultCounter(type, direction) {
             const previousCounter = this.timetableResultCounter(type)
@@ -1789,7 +1986,7 @@ export default {
             }
         },
         setTimetableResultCounter(type, value) {
-            const counter = this.normalizedTimetableResultCounter(value, this.timetableResultCount(type))
+            const counter = this.normalizedTimetableResultCounter(value, this.timetableResultCounterLimit(type))
 
             if (type === 'conflict') {
                 this.conflictTimetableNumber = counter
@@ -1824,6 +2021,18 @@ export default {
 
             return Math.max(0, Number(count || 0))
         },
+        timetableResultCounterLimit(type) {
+            if (
+                this.additionalCourseTimetableRequired === true
+                && type === this.selectedTimetableResultType
+                && this.selectedAdditionalCourses.length > 0
+                && this.additionalCourseTimetableCount !== null
+            ) {
+                return Math.max(0, Number(this.additionalCourseTimetableCount || 0))
+            }
+
+            return this.timetableResultCount(type)
+        },
         normalizedTimetableResultCounter(value, count) {
             if (count <= 0) return 1
 
@@ -1838,6 +2047,7 @@ export default {
                 number: Number(timetable?.number || this.timetableResultCounter(this.selectedTimetableResultType)),
                 type: timetable?.type || this.selectedTimetableResultType,
                 metrics: timetable?.metrics || {},
+                additionalCoursesAccepted: timetable?.additionalCoursesAccepted === true,
                 qualityCriteria: Array.isArray(timetable?.qualityCriteria) ? timetable.qualityCriteria : [],
                 slots: timetable?.slots || {},
                 occasionalAppointments: Array.isArray(timetable?.occasionalAppointments)
@@ -1884,6 +2094,8 @@ export default {
                 },
                 deselectedCourseKeys: [],
                 deselectedCourseGroupKeys: [],
+                selectedAdditionalCourseKeys: [],
+                additionalCourseTimetableRequired: false,
                 selectedCourseKeys: null,
             }
         },
@@ -1894,6 +2106,8 @@ export default {
                 student: { ...this.studentSelection },
                 deselectedCourseKeys: this.uniqueValues(this.deselectedCourseKeys),
                 deselectedCourseGroupKeys: this.uniqueValues(this.deselectedCourseGroupKeys),
+                selectedAdditionalCourseKeys: this.uniqueValues(this.additionalCourseSelectedKeys),
+                additionalCourseTimetableRequired: this.additionalCourseTimetableRequired === true,
                 selectedCourseKeys: this.selectedCourseKeysForState(),
                 selectedCourseCodes: this.selectedCourseCodesForState(),
             }
@@ -1924,6 +2138,8 @@ export default {
                 }
                 this.deselectedCourseKeys = this.restoredDeselectedCourseKeys(state)
                 this.deselectedCourseGroupKeys = this.uniqueValues(state?.deselectedCourseGroupKeys)
+                this.additionalCourseSelectedKeys = this.uniqueValues(state?.selectedAdditionalCourseKeys)
+                this.additionalCourseTimetableRequired = state?.additionalCourseTimetableRequired === true
             } finally {
                 this.robotStateRestoring = false
             }
@@ -2153,6 +2369,7 @@ export default {
 
             return {
                 'robot-generated-cell--filled': Boolean(slot),
+                'robot-generated-cell--additional': slot?.isAdditionalCourse === true,
                 'robot-generated-cell--conflict': hasConflicts,
                 'robot-generated-cell--has-occasional': occasionalMarkers.length > 0,
                 'robot-generated-cell--unavailable': !this.weekdayTimeAvailable(weekday, time),
@@ -2275,9 +2492,16 @@ export default {
             this.generationError = ''
             this.generationProblems = []
             this.generatedTimetables = []
+            this.clearTimetableCountResults()
+        },
+        clearTimetableCountResults() {
             this.fullGreenTimetableCount = null
             this.greenTimetableCount = null
             this.conflictTimetableCount = null
+            this.additionalCourseTimetableCount = null
+            if (!(this.selectedAdditionalCourses || []).length) {
+                this.additionalCourseTimetableRequired = false
+            }
             this.qualityCounters = []
             this.allQualityCriteriaCount = null
             this.normalizeTimetableResultCounters()
@@ -2305,6 +2529,9 @@ export default {
                 : 'nicht erfüllt'
 
             return `Ausgewählt: ${selectedLabel}`
+        },
+        additionalCoursesAcceptedBySelectedTimetable() {
+            return this.selectedRobotTimetable?.additionalCoursesAccepted === true
         },
         qualityCounterCountLabel(counter) {
             if (counter?.enabled !== true) return '-'
@@ -2359,7 +2586,7 @@ export default {
             this.evaluationCriteria = this.normalizedEvaluationCriteria(this.evaluationCriteria)
                 .map(item => item.key === criterion.key ? { ...item, enabled: enabled === true } : item)
 
-            this.clearGeneratedTimetables()
+            this.clearTimetableCountResults()
 
             if (this.timetableCalculationReady()) {
                 this.loadFullGreenTimetableCount()
@@ -2454,6 +2681,7 @@ export default {
                 alternativeLabels: source?.alternativeLabels || [],
                 courseGroup: source?.courseGroup || {},
                 isOccasional: Boolean(source?.isOccasional),
+                isDistanceLearningCourse: source?.isDistanceLearningCourse === true,
             }
         },
         courseGroupItems(course) {
@@ -2489,10 +2717,12 @@ export default {
                     key: title,
                     title,
                     scheduleEntries: [],
+                    courseGroups: [],
                     sortValue: this.courseGroupDetailSortValue(courseGroup),
                 }
 
                 items[title].scheduleEntries.push(this.courseGroupDetailScheduleEntry(courseGroup))
+                items[title].courseGroups.push(courseGroup)
 
                 if (this.courseGroupDetailSortValue(courseGroup).localeCompare(items[title].sortValue) < 0) {
                     items[title].sortValue = this.courseGroupDetailSortValue(courseGroup)
@@ -2503,6 +2733,7 @@ export default {
                 .map(item => ({
                     ...item,
                     hasOccasional: item.scheduleEntries.some(entry => entry.occasional),
+                    weekMarker: this.courseGroupCollectionWeekMarker(item.courseGroups),
                     meta: this.courseGroupDetailCombinedMeta(item.scheduleEntries),
                 }))
                 .sort((firstItem, secondItem) => firstItem.sortValue.localeCompare(secondItem.sortValue))
@@ -2520,6 +2751,160 @@ export default {
                 : []
 
             return !deselectedCourseGroupKeys.includes(this.courseGroupSelectionKey(course, { title: label }))
+        },
+        courseDistanceLearning(course) {
+            const groups = this.courseGroupItems(course)
+
+            return groups.length > 0 && groups.every(group => this.courseGroupDistanceLearning(course, group))
+        },
+        courseGroupDistanceLearning(course, group) {
+            const configuredCourseGroups = Array.isArray(this.configuredCourseGroups)
+                ? this.configuredCourseGroups
+                : []
+            const matchingCourseGroups = configuredCourseGroups
+                .filter(courseGroup => this.courseGroupMatchesCourse(courseGroup, course))
+                .filter(courseGroup => this.courseGroupOptionLabel(courseGroup) === group?.title)
+
+            return this.courseGroupsAreDistanceLearningCourse(course, matchingCourseGroups)
+        },
+        courseGroupsAreDistanceLearningCourse(course, courseGroups) {
+            const requiredSlotCount = this.requiredSlotCountForCourse(course)
+            const scheduledWeeklyLoad = this.courseGroupsScheduledWeeklyLoad(
+                (Array.isArray(courseGroups) ? courseGroups : [])
+                    .filter(courseGroup => !this.isOccasionalCourseGroup(courseGroup)),
+            )
+
+            return requiredSlotCount >= 2
+                && scheduledWeeklyLoad > 0
+                && Math.abs((scheduledWeeklyLoad * 2) - requiredSlotCount) < 0.001
+        },
+        courseGroupsScheduledWeeklyLoad(courseGroups) {
+            return this.uniqueCourseGroupsBySlot(courseGroups)
+                .reduce((total, courseGroup) => total + this.courseGroupWeeklySlotLoad(courseGroup), 0)
+        },
+        courseGroupWeeklySlotLoad(courseGroup) {
+            const interval = this.courseGroupWeekInterval(courseGroup)
+
+            return interval && interval > 0 ? 1 / interval : 1
+        },
+        courseWeekMarker(course) {
+            const configuredCourseGroups = Array.isArray(this.configuredCourseGroups)
+                ? this.configuredCourseGroups
+                : []
+            const matchingCourseGroups = configuredCourseGroups
+                .filter(courseGroup => this.courseGroupMatchesCourse(courseGroup, course))
+
+            return this.courseGroupCollectionWeekMarker(matchingCourseGroups)
+        },
+        courseGroupWeekMarker(group) {
+            return String(group?.weekMarker || '').trim()
+        },
+        slotWeekMarker(slot) {
+            return this.courseGroupWeekMarkerValue(slot?.courseGroup)
+        },
+        appointmentWeekMarker(appointment) {
+            return this.courseGroupWeekMarkerValue(appointment?.courseGroup || appointment)
+        },
+        generatedSlotWeekMarker(slot, timetable = null) {
+            return this.visibleTimetableEntryWeekMarker(timetable, slot, this.slotWeekMarker(slot))
+        },
+        generatedAppointmentWeekMarker(timetable, appointment) {
+            return this.visibleTimetableEntryWeekMarker(timetable, appointment, this.appointmentWeekMarker(appointment))
+        },
+        visibleTimetableEntryWeekMarker(timetable, entry, weekMarker) {
+            const marker = String(weekMarker || '').trim()
+
+            if (!marker) return ''
+            if (marker !== '1-w') return marker
+
+            return this.timetableEntryWeekMarkers(timetable, entry)
+                .some(entryMarker => entryMarker && entryMarker !== '1-w')
+                ? marker
+                : ''
+        },
+        timetableEntryWeekMarkers(timetable, entry) {
+            return this.timetableWeekMarkerEntries(timetable)
+                .filter(timetableEntry => this.timetableEntriesShareWeekMarkerContext(timetableEntry, entry))
+                .map(timetableEntry => this.courseGroupWeekMarkerValue(timetableEntry?.courseGroup || timetableEntry))
+                .filter(Boolean)
+                .filter((marker, index, markers) => markers.indexOf(marker) === index)
+        },
+        timetableWeekMarkerEntries(timetable) {
+            const slots = Object.values(timetable?.slots || {})
+
+            return [
+                ...slots,
+                ...slots.flatMap(slot => Array.isArray(slot?.conflicts) ? slot.conflicts : []),
+                ...(Array.isArray(timetable?.occasionalAppointments) ? timetable.occasionalAppointments : []),
+            ]
+        },
+        timetableEntriesShareWeekMarkerContext(firstEntry, secondEntry) {
+            const firstCourseKey = this.timetableEntryCourseContextKey(firstEntry)
+            const secondCourseKey = this.timetableEntryCourseContextKey(secondEntry)
+
+            if (!firstCourseKey || !secondCourseKey || firstCourseKey !== secondCourseKey) return false
+
+            const firstSourceLabel = String(firstEntry?.sourceLabel || '').trim()
+            const secondSourceLabel = String(secondEntry?.sourceLabel || '').trim()
+
+            return firstSourceLabel && secondSourceLabel
+                ? firstSourceLabel === secondSourceLabel
+                : true
+        },
+        timetableEntryCourseContextKey(entry) {
+            return String(entry?.courseKey || entry?.code || entry?.key || '').trim()
+        },
+        courseGroupCollectionWeekMarker(courseGroups) {
+            const weekMarkers = (Array.isArray(courseGroups) ? courseGroups : [])
+                .map(courseGroup => this.courseGroupWeekMarkerValue(courseGroup))
+                .filter(Boolean)
+                .filter((marker, index, markers) => markers.indexOf(marker) === index)
+
+            return weekMarkers.length === 1 ? weekMarkers[0] : ''
+        },
+        courseGroupWeekMarkerValue(courseGroup) {
+            const interval = this.courseGroupWeekInterval(courseGroup)
+
+            return interval ? `${interval}-w` : ''
+        },
+        courseGroupWeekInterval(courseGroup) {
+            const explicitInterval = Number(courseGroup?.recurrence_interval)
+            if (Number.isInteger(explicitInterval) && explicitInterval > 0) return explicitInterval
+
+            const labelMatch = String(courseGroup?.recurrence_label || '').match(/(\d+)\s*-\s*w/iu)
+            if (labelMatch) return Number(labelMatch[1])
+
+            return this.weekIntervalFromDates(this.courseGroupDates(courseGroup))
+        },
+        weekIntervalFromDates(dates) {
+            if (!Array.isArray(dates) || dates.length < 2) return null
+
+            const parsedDates = dates
+                .map(date => this.dateFromIsoValue(date))
+                .filter(Boolean)
+                .sort((firstDate, secondDate) => firstDate.getTime() - secondDate.getTime())
+
+            if (parsedDates.length < 2) return null
+
+            const weekGaps = parsedDates
+                .slice(1)
+                .map((date, index) => Math.round((date.getTime() - parsedDates[index].getTime()) / (7 * 24 * 60 * 60 * 1000)))
+                .filter(gap => gap > 0)
+
+            const uniqueGaps = weekGaps.filter((gap, index, gaps) => gaps.indexOf(gap) === index)
+
+            return uniqueGaps.length === 1 ? uniqueGaps[0] : null
+        },
+        dateFromIsoValue(value) {
+            const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/u)
+            if (!match) return null
+
+            const [, year, month, day] = match
+
+            return new Date(Number(year), Number(month) - 1, Number(day))
+        },
+        optionIsDistanceLearningCourse(option) {
+            return this.courseGroupsAreDistanceLearningCourse(option?.course, option?.courseGroups)
         },
         courseFullySelected(course) {
             const groups = this.courseGroupItems(course)
@@ -2586,13 +2971,16 @@ export default {
                 label: occasional
                     ? this.courseGroupDetailOccasionalLabel(courseGroup)
                     : this.courseGroupWeekdayTimeLabel(courseGroup),
-                sortValue: this.courseGroupDetailSortValue(courseGroup),
+                sortValue: occasional
+                    ? this.courseGroupDetailSortValue(courseGroup)
+                    : this.courseGroupRegularScheduleSortValue(courseGroup),
                 weekday: Number(courseGroup?.weekday),
                 hour: Number(courseGroup?.hour),
                 date: this.courseGroupDates(courseGroup)[0] || '',
                 dateLabel: this.courseGroupDetailDateLabel(courseGroup),
                 timeFrom: this.courseGroupStartTime(courseGroup),
                 timeUntil: this.courseGroupEndTime(courseGroup),
+                weekMarker: this.courseGroupWeekMarkerValue(courseGroup),
                 occasional,
             }
         },
@@ -2618,11 +3006,14 @@ export default {
             const uniqueEntries = entries
                 .filter(entry => entry.label)
                 .filter((entry, index, values) =>
-                    values.findIndex(value => value.label === entry.label) === index,
+                    values.findIndex(value =>
+                        value.label === entry.label
+                            && value.weekMarker === entry.weekMarker,
+                    ) === index,
                 )
                 .sort((firstEntry, secondEntry) => firstEntry.sortValue.localeCompare(secondEntry.sortValue))
 
-            return uniqueEntries
+            return this.courseGroupScheduleEntriesWithoutRedundantWeekMarkers(uniqueEntries)
                 .reduce((ranges, entry) => {
                     const currentRange = ranges.at(-1)
                     const previousEntry = currentRange?.at(-1)
@@ -2639,6 +3030,26 @@ export default {
                 }, [])
                 .map(range => this.courseGroupScheduleRangeLabel(range))
         },
+        courseGroupScheduleEntriesWithoutRedundantWeekMarkers(entries) {
+            const weekMarkers = entries
+                .map(entry => String(entry.weekMarker || '').trim())
+                .filter(Boolean)
+            const uniqueWeekMarkers = weekMarkers.filter((marker, index, markers) => markers.indexOf(marker) === index)
+
+            if (
+                entries.length
+                && weekMarkers.length === entries.length
+                && uniqueWeekMarkers.length === 1
+                && uniqueWeekMarkers[0] === '1-w'
+            ) {
+                return entries.map(entry => ({
+                    ...entry,
+                    weekMarker: '',
+                }))
+            }
+
+            return entries
+        },
         courseGroupScheduleEntriesAreConsecutive(previousEntry, entry) {
             return previousEntry
                 && Number(previousEntry.weekday) === Number(entry.weekday)
@@ -2646,7 +3057,7 @@ export default {
                 && (!previousEntry.occasional || previousEntry.date === entry.date)
         },
         courseGroupScheduleRangeLabel(range) {
-            if (range.length === 1) return range[0].label
+            if (range.length === 1) return this.scheduleEntryLabelWithWeekMarker(range[0])
 
             const firstEntry = range[0]
             const lastEntry = range.at(-1)
@@ -2660,9 +3071,65 @@ export default {
                 ? `${firstEntry.hour}.-${lastEntry.hour}. Stunde`
                 : `${firstEntry.hour}.-${lastEntry.hour}.`
 
-            if (timeLabel) return `${weekdayLabel} ${hoursLabel}, ${timeLabel}`
+            const weekMarkers = range
+                .map(entry => entry.weekMarker || '')
+                .filter((marker, index, markers) => markers.indexOf(marker) === index)
 
-            return `${weekdayLabel} ${hoursLabel}`
+            if (weekMarkers.length > 1) {
+                return [
+                    `${weekdayLabel} ${hoursLabel}`,
+                    ...this.courseGroupScheduleRangeSegments(range),
+                ].filter(Boolean).join(', ')
+            }
+
+            const weekMarker = weekMarkers[0] || ''
+
+            if (timeLabel) return this.labelWithWeekMarker(`${weekdayLabel} ${hoursLabel}, ${timeLabel}`, weekMarker)
+
+            return this.labelWithWeekMarker(`${weekdayLabel} ${hoursLabel}`, weekMarker)
+        },
+        courseGroupScheduleRangeSegments(range) {
+            return range
+                .reduce((segments, entry) => {
+                    const currentSegment = segments.at(-1)
+                    const previousEntry = currentSegment?.at(-1)
+
+                    if (
+                        previousEntry
+                        && previousEntry.weekMarker === entry.weekMarker
+                        && this.courseGroupScheduleEntriesAreConsecutive(previousEntry, entry)
+                    ) {
+                        currentSegment.push(entry)
+
+                        return segments
+                    }
+
+                    segments.push([entry])
+
+                    return segments
+                }, [])
+                .map(segment => this.courseGroupScheduleRangeSegmentLabel(segment))
+        },
+        courseGroupScheduleRangeSegmentLabel(segment) {
+            const firstEntry = segment[0]
+            const lastEntry = segment.at(-1)
+            const timeLabel = firstEntry.timeFrom && lastEntry.timeUntil
+                ? `${firstEntry.timeFrom}-${lastEntry.timeUntil}`
+                : ''
+            const hoursLabel = segment.length > 1
+                ? `${firstEntry.hour}.-${lastEntry.hour}.`
+                : firstEntry.label
+            const label = timeLabel || hoursLabel
+
+            return this.labelWithWeekMarker(label, firstEntry.weekMarker)
+        },
+        scheduleEntryLabelWithWeekMarker(entry) {
+            return this.labelWithWeekMarker(entry.label, entry.weekMarker)
+        },
+        labelWithWeekMarker(label, weekMarker) {
+            if (!weekMarker) return label
+
+            return `${label} (${weekMarker})`
         },
         courseGroupDetailMetaEntries(courseGroup) {
             return [
@@ -2675,6 +3142,14 @@ export default {
                 this.courseGroupDates(courseGroup)[0] || '',
                 String(courseGroup?.weekday || '').padStart(2, '0'),
                 String(courseGroup?.hour || '').padStart(2, '0'),
+                this.courseGroupOptionLabel(courseGroup),
+            ].join('|')
+        },
+        courseGroupRegularScheduleSortValue(courseGroup) {
+            return [
+                String(courseGroup?.weekday || '').padStart(2, '0'),
+                String(courseGroup?.hour || '').padStart(2, '0'),
+                this.courseGroupDates(courseGroup)[0] || '',
                 this.courseGroupOptionLabel(courseGroup),
             ].join('|')
         },
@@ -2828,6 +3303,29 @@ export default {
 
             return selectedKeys.includes(course?.key)
         },
+        additionalCourseGroupSelected(course, group) {
+            if (!this.additionalCourseSelected(course)) return false
+
+            return this.courseGroupSelected(course, group)
+        },
+        additionalCourseFullySelected(course) {
+            if (!this.additionalCourseSelected(course)) return false
+
+            const groups = this.courseGroupItems(course)
+            if (!groups.length) return true
+
+            return groups.every(group => this.additionalCourseGroupSelected(course, group))
+        },
+        additionalCoursePartiallySelected(course) {
+            if (!this.additionalCourseSelected(course)) return false
+
+            const groups = this.courseGroupItems(course)
+            if (!groups.length) return false
+
+            const selectedGroupsCount = groups.filter(group => this.additionalCourseGroupSelected(course, group)).length
+
+            return selectedGroupsCount > 0 && selectedGroupsCount < groups.length
+        },
         additionalCourseSelectable(course, selectedCourseKeys = null) {
             const prerequisiteCourse = this.additionalCoursePrerequisiteCourse(course)
             if (!prerequisiteCourse) return true
@@ -2844,6 +3342,7 @@ export default {
             const courseKey = course?.key
             if (!courseKey) return
 
+            const previousSnapshot = this.additionalCourseSelectionSnapshot()
             const selectedKeys = new Set(Array.isArray(this.additionalCourseSelectedKeys)
                 ? this.additionalCourseSelectedKeys
                 : [])
@@ -2855,7 +3354,66 @@ export default {
             }
 
             this.additionalCourseSelectedKeys = [...selectedKeys]
+            this.clearCourseGroupDeselections(course)
             this.pruneAdditionalCourseSelections()
+
+            if (previousSnapshot !== this.additionalCourseSelectionSnapshot()) {
+                this.clearGeneratedTimetables()
+                this.saveLastRobotState()
+            }
+        },
+        setAdditionalCourseGroupSelected(course, group, selected) {
+            if (selected && !this.additionalCourseSelectable(course)) return
+
+            const courseKey = course?.key
+            if (!courseKey) return
+
+            this.deselectedCourseGroupKeys = Array.isArray(this.deselectedCourseGroupKeys)
+                ? this.deselectedCourseGroupKeys
+                : []
+
+            const previousSnapshot = this.additionalCourseSelectionSnapshot()
+            const selectedKeys = new Set(Array.isArray(this.additionalCourseSelectedKeys)
+                ? this.additionalCourseSelectedKeys
+                : [])
+            const groupKeys = this.courseGroupSelectionKeys(course)
+            const selectionKey = this.courseGroupSelectionKey(course, group)
+            const wasCourseSelected = selectedKeys.has(courseKey)
+
+            if (selected) {
+                selectedKeys.add(courseKey)
+
+                if (!wasCourseSelected) {
+                    this.deselectedCourseGroupKeys = this.uniqueValues([
+                        ...this.deselectedCourseGroupKeys,
+                        ...groupKeys.filter(groupKey => groupKey !== selectionKey),
+                    ])
+                }
+
+                this.deselectedCourseGroupKeys = this.deselectedCourseGroupKeys
+                    .filter(groupKey => groupKey !== selectionKey)
+            } else if (wasCourseSelected) {
+                this.deselectedCourseGroupKeys = this.uniqueValues([
+                    ...this.deselectedCourseGroupKeys,
+                    selectionKey,
+                ])
+
+                const hasSelectedGroup = groupKeys
+                    .some(groupKey => !this.deselectedCourseGroupKeys.includes(groupKey))
+
+                if (!hasSelectedGroup) {
+                    selectedKeys.delete(courseKey)
+                    this.clearCourseGroupDeselections(course)
+                }
+            }
+
+            this.additionalCourseSelectedKeys = [...selectedKeys]
+            this.pruneAdditionalCourseSelections()
+
+            if (previousSnapshot !== this.additionalCourseSelectionSnapshot()) {
+                this.clearGeneratedTimetables()
+                this.saveLastRobotState()
+            }
         },
         pruneAdditionalCourseSelections() {
             const additionalCourses = Array.isArray(this.studentAdditionalCourses) ? this.studentAdditionalCourses : []
@@ -2876,6 +3434,32 @@ export default {
             }
 
             this.additionalCourseSelectedKeys = selectedKeys
+
+            if (!selectedKeys.length) {
+                this.additionalCourseTimetableRequired = false
+            }
+
+            additionalCourses
+                .filter(course => !selectedKeys.includes(course.key))
+                .forEach(course => this.clearCourseGroupDeselections(course))
+        },
+        additionalCourseSelectionSnapshot() {
+            const selectedKeys = this.uniqueValues(this.additionalCourseSelectedKeys)
+                .toSorted()
+                .join('|')
+            const deselectedGroupKeys = this.uniqueValues(this.deselectedCourseGroupKeys)
+                .toSorted()
+                .join('|')
+
+            return `${selectedKeys}::${deselectedGroupKeys}`
+        },
+        clearCourseGroupDeselections(course) {
+            const groupKeys = this.courseGroupSelectionKeys(course)
+            if (!groupKeys.length) return
+
+            this.deselectedCourseGroupKeys = Array.isArray(this.deselectedCourseGroupKeys)
+                ? this.deselectedCourseGroupKeys.filter(groupKey => !groupKeys.includes(groupKey))
+                : []
         },
         additionalCoursePrerequisiteCourse(course) {
             const additionalCourses = Array.isArray(this.studentAdditionalCourses) ? this.studentAdditionalCourses : []
@@ -2982,8 +3566,12 @@ export default {
                 groups[key] ??= {
                     key,
                     title,
+                    code: appointment.code || '',
+                    name: appointment.name || '',
                     courseKey: appointment.courseKey || appointment.code || '',
                     sourceLabel: appointment.sourceLabel || '',
+                    isDistanceLearningCourse: appointment.isDistanceLearningCourse === true,
+                    weekMarker: this.generatedAppointmentWeekMarker(timetable, appointment),
                     appointments: [],
                     sortValue: [
                         appointment.code || '',
@@ -3121,6 +3709,11 @@ export default {
                 .map(appointment => ({
                     key: appointment.key,
                     code: appointment.code,
+                    ...(appointment.isAdditionalCourse === true ? { isAdditionalCourse: true } : {}),
+                    ...(appointment.isDistanceLearningCourse === true ? { isDistanceLearningCourse: true } : {}),
+                    ...(this.generatedAppointmentWeekMarker(timetable, appointment)
+                        ? { weekMarker: this.generatedAppointmentWeekMarker(timetable, appointment) }
+                        : {}),
                 }))
         },
         occasionalAppointmentVisibleInTimetableCell(timetable, appointment) {
@@ -3774,6 +4367,7 @@ export default {
                         sourceLabel: option.label,
                         alternativeLabels: this.optionAlternativeLabelsForSlot(option, key),
                         courseGroup,
+                        isDistanceLearningCourse: this.optionIsDistanceLearningCourse(option),
                     }
                     nextUsedSlotKeys.add(key)
                 })
@@ -4102,7 +4696,7 @@ export default {
                     }
                 })
         },
-        trackGeneratedSlotConflict(slot, course, courseGroup, date) {
+        trackGeneratedSlotConflict(slot, course, courseGroup, date, option = null) {
             slot.conflicts ??= []
 
             const courseLabel = this.courseProblemLabel(course)
@@ -4120,6 +4714,7 @@ export default {
                 name: course?.name || '',
                 sourceLabel: this.courseGroupSourceLabel(courseGroup),
                 courseGroup,
+                isDistanceLearningCourse: option ? this.optionIsDistanceLearningCourse(option) : false,
             })
         },
         assignedSlotsWithCourseConflicts(candidateSet, assignedSlots, usedSlotKeys) {
@@ -4146,7 +4741,7 @@ export default {
                             ...existingSlot,
                             conflicts: [...(existingSlot.conflicts || [])],
                         }
-                        this.trackGeneratedSlotConflict(nextAssignedSlots[key], candidateSet.course, courseGroup)
+                        this.trackGeneratedSlotConflict(nextAssignedSlots[key], candidateSet.course, courseGroup, null, option)
 
                         return
                     }
@@ -4162,6 +4757,7 @@ export default {
                         alternativeLabels: this.optionAlternativeLabelsForSlot(option, key),
                         courseGroup,
                         isConflictPreview: true,
+                        isDistanceLearningCourse: this.optionIsDistanceLearningCourse(option),
                         conflicts: [],
                     }
                 })
@@ -4191,6 +4787,7 @@ export default {
                         sourceLabel: assignedSlot?.sourceLabel || this.courseGroupSourceLabel(assignedSlot?.courseGroup),
                         alternativeLabels: assignedSlot?.alternativeLabels || [],
                         courseGroup: assignedSlot?.courseGroup,
+                        isDistanceLearningCourse: assignedSlot?.isDistanceLearningCourse === true,
                     }
                 })
                 .filter(conflict => conflict.label)
@@ -4271,6 +4868,8 @@ export default {
                 code: course?.code || '',
                 name: course?.name || '',
                 sourceLabel: String(option?.label || this.courseGroupSourceLabel(courseGroup) || '').trim(),
+                isDistanceLearningCourse: this.optionIsDistanceLearningCourse(option),
+                courseGroup,
                 dateTimeLabel: this.courseGroupDetailOccasionalLabel(courseGroup),
                 date: this.courseGroupDates(courseGroup)[0] || '',
                 dateLabel: this.courseGroupDetailDateLabel(courseGroup),
@@ -5058,6 +5657,9 @@ export default {
 }
 
 .robot-student-completed-course__subject {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 2px;
     color: #0f172a;
     font-size: 0.78rem;
     font-weight: 800;
@@ -5168,6 +5770,11 @@ export default {
     background: rgba(var(--v-theme-warning), 0.1);
 }
 
+.robot-count-card--additional {
+    border-color: rgba(234, 88, 12, 0.28);
+    background: #fff7ed;
+}
+
 .robot-count-card--selected {
     box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.2);
 }
@@ -5182,6 +5789,14 @@ export default {
     font-weight: 700;
     line-height: 1.2;
     text-transform: uppercase;
+}
+
+.robot-count-card__meta {
+    margin-top: 3px;
+    color: rgba(var(--v-theme-on-surface), 0.62);
+    font-size: 0.74rem;
+    font-weight: 650;
+    line-height: 1.2;
 }
 
 .robot-count-card__value {
@@ -5485,6 +6100,11 @@ export default {
     color: #052e16;
 }
 
+.robot-generated-cell--additional {
+    background: #fed7aa;
+    color: #7c2d12;
+}
+
 .robot-generated-cell--has-occasional {
     padding-top: 18px;
 }
@@ -5507,7 +6127,8 @@ export default {
 
 .robot-generated-cell__occasional-marker {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
+    gap: 2px;
     max-width: 100%;
     min-height: 13px;
     padding: 0 4px;
@@ -5520,12 +6141,21 @@ export default {
     line-height: 1;
 }
 
+.robot-generated-cell__occasional-marker--additional {
+    border-color: rgba(234, 88, 12, 0.3);
+    background: #fed7aa;
+    color: #7c2d12;
+}
+
 .robot-generated-cell--conflict {
     background: #fecaca;
     color: #7f1d1d;
 }
 
 .robot-generated-cell__code {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 2px;
     font-weight: 750;
 }
 
@@ -5734,6 +6364,12 @@ export default {
     font-size: 0.86rem;
 }
 
+.robot-course-item-row > :nth-child(3),
+.robot-course-item-row > :nth-child(4) {
+    font-size: 0.78rem;
+    line-height: 1.25;
+}
+
 .robot-course-item-row__select {
     display: flex;
     align-items: center;
@@ -5741,7 +6377,17 @@ export default {
 }
 
 .robot-course-item-row__code {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 2px;
     font-weight: 750;
+}
+
+.robot-course-fu {
+    font-size: 0.58em;
+    font-weight: 900;
+    line-height: 1;
+    vertical-align: super;
 }
 
 .robot-course-item-details {

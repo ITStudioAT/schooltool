@@ -113,13 +113,17 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('robot-student-course-section--planned')
         expect(componentSource).toContain('robot-student-course-section--additional')
         expect(componentSource).toContain('v-if="studentAdditionalCourses.length"')
-        expect(componentSource).toContain('robot-additional-course-panel')
-        expect(componentSource).toContain('robot-additional-course-panels')
+        expect(componentSource).toContain('additionalCourseColumns')
+        expect(componentSource).toContain('robot-course-item-panels')
         expect(componentSource).not.toContain('robot-additional-course-panel-row')
         expect(componentSource).not.toContain('robot-additional-course-row')
-        expect(componentSource).toContain('width: calc((100% - 10px) / 2)')
-        expect(componentSource).toContain(':model-value="additionalCourseSelected(course)"')
+        expect(componentSource).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+        expect(componentSource).toContain(':model-value="additionalCourseFullySelected(course)"')
+        expect(componentSource).toContain(':indeterminate="additionalCoursePartiallySelected(course)"')
+        expect(componentSource).toContain(':model-value="additionalCourseGroupSelected(course, group)"')
+        expect(componentSource).toContain('setAdditionalCourseGroupSelected(course, group, $event)')
         expect(componentSource).toContain(':disabled="!additionalCourseSelectable(course)"')
+        expect(componentSource).not.toContain('<sup v-if="courseGroupWeekMarker(group)"')
         expect(componentSource).toContain('setAdditionalCourseSelected(course, $event)')
         expect(componentSource).toContain('additionalCoursePrerequisiteCourse(course)')
         expect(componentSource).toContain('grid-template-columns: repeat(auto-fill, minmax(120px, 1fr))')
@@ -203,6 +207,25 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('Grüne Stundenpläne')
         expect(componentSource).toContain('qualityCounters')
         expect(componentSource).toContain('quality_counters')
+        expect(componentSource).toContain('selected_additional_course_keys: this.selectedAdditionalCourses.map(course => course.key)')
+        expect(componentSource).toContain('additional_course_timetable_count')
+        expect(componentSource).toContain('selectedAdditionalCourses')
+        expect(componentSource).toContain('additionalCourseTimetableCountLabel')
+        expect(componentSource).toContain('additionalCourseTimetableRequired')
+        expect(componentSource).toContain('selected_additional_courses_required: this.additionalCourseTimetableRequired === true')
+        expect(componentSource).toContain('setAdditionalCourseTimetableRequired($event)')
+        expect(componentSource).toContain('additionalCoursesAcceptedBySelectedTimetable()')
+        expect(componentSource).not.toContain('additionalCourseTimetableCountDetail()')
+        expect(componentSource).toContain('robot-count-card--additional')
+        expect(componentSource).toContain('robot-generated-cell--additional')
+        expect(componentSource).toContain('robot-course-fu')
+        expect(componentSource).toContain('robot-course-week-marker')
+        expect(componentSource).toContain('courseWeekMarker(course)')
+        expect(componentSource).toContain('generatedSlotWeekMarker(robotTimetableSlot(weekday.value, time.value), selectedRobotTimetable)')
+        expect(componentSource).not.toContain('v-if="courseDistanceLearning(course)"')
+        expect(componentSource).not.toContain('v-if="courseWeekMarker(course)"')
+        expect(componentSource).toContain('isDistanceLearningCourse')
+        expect(componentSource).toContain('isAdditionalCourse')
         expect(componentSource).toContain('allQualityCriteriaCount')
         expect(componentSource).toContain('all_quality_criteria_count')
         expect(componentSource).toContain('evaluationCriteria')
@@ -246,6 +269,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('showConflictTimetableResults()')
         expect(componentSource).toContain('v-if="showConflictTimetableResults"')
         expect(componentSource).toContain('selectedTimetableResultCount()')
+        expect(componentSource).toContain('timetableResultCounterLimit(type)')
         expect(componentSource).toContain('selectedTimetableResultTitle()')
         expect(componentSource).toContain('robot-timetable-selector')
         expect(componentSource).toContain('v-if="selectedTimetableResultCount > 0"')
@@ -460,7 +484,7 @@ describe('Students timetable robot page', () => {
         ])
     })
 
-    it('toggles a robot quality criterion and clears the previous ranking', () => {
+    it('toggles a robot quality criterion without removing the visible timetable', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {
             ...methods,
@@ -487,7 +511,7 @@ describe('Students timetable robot page', () => {
         methods.setEvaluationCriterionEnabled.call(ctx, { key: 'free_days' }, true)
 
         expect(ctx.evaluationCriteria[0].enabled).toBe(true)
-        expect(ctx.generatedTimetables).toEqual([])
+        expect(ctx.generatedTimetables).toEqual([{ key: 'old' }])
         expect(ctx.qualityCounters).toEqual([])
         expect(ctx.loadFullGreenTimetableCountCalled).toBe(false)
     })
@@ -525,6 +549,89 @@ describe('Students timetable robot page', () => {
         }
 
         expect(methods.allQualityCriteriaCountDetail.call(ctx)).toBe('Ausgewählt: nicht erfüllt')
+    })
+
+    it('shows how many selected timetables accept checked additional courses', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedAdditionalCourses: [
+                { key: 'INF2', code: 'INF2' },
+                { key: 'INF3', code: 'INF3' },
+            ],
+            selectedTimetableResultType: 'green',
+            fullGreenTimetableCount: 4,
+            greenTimetableCount: 48,
+            additionalCourseTimetableCount: 12,
+            selectedRobotTimetable: {
+                additionalCoursesAccepted: true,
+            },
+        }
+
+        expect(computed.additionalCourseTimetableCountLabel.call(ctx)).toBe('12 / 48')
+        expect(methods.additionalCoursesAcceptedBySelectedTimetable.call(ctx)).toBe(true)
+    })
+
+    it('uses checked additional courses as a selectable timetable filter', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedAdditionalCourses: [{ key: 'INF2', code: 'INF2' }],
+            additionalCourseTimetableRequired: false,
+            additionalCourseTimetableCount: 12,
+            fullGreenTimetableCountLoading: false,
+            selectedTimetableResultType: 'green',
+            greenTimetableNumber: 32,
+            greenTimetableCount: 48,
+            fullGreenTimetableCount: 4,
+            loadFullGreenTimetableCountCalled: false,
+            saved: false,
+            timetableCalculationReady() {
+                return true
+            },
+            loadFullGreenTimetableCount() {
+                this.loadFullGreenTimetableCountCalled = true
+            },
+            saveLastRobotState() {
+                this.saved = true
+            },
+        }
+
+        expect(methods.isAdditionalCourseTimetableFilterSelectable.call(ctx)).toBe(true)
+
+        methods.setAdditionalCourseTimetableRequired.call(ctx, true)
+
+        expect(ctx.additionalCourseTimetableRequired).toBe(true)
+        expect(ctx.greenTimetableNumber).toBe(1)
+        expect(computed.selectedTimetableResultCount.call(ctx)).toBe(12)
+        expect(ctx.loadFullGreenTimetableCountCalled).toBe(true)
+        expect(ctx.saved).toBe(true)
+    })
+
+    it('resets the timetable selector when selecting another result type', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedTimetableResultType: 'full_green',
+            additionalCourseTimetableRequired: false,
+            fullGreenTimetableCount: 8,
+            greenTimetableCount: 48,
+            fullGreenTimetableNumber: 4,
+            greenTimetableNumber: 32,
+            loadFullGreenTimetableCountCalled: false,
+            loadFullGreenTimetableCount() {
+                this.loadFullGreenTimetableCountCalled = true
+            },
+        }
+
+        methods.setSelectedTimetableResultType.call(ctx, 'green', true)
+
+        expect(ctx.selectedTimetableResultType).toBe('green')
+        expect(ctx.greenTimetableNumber).toBe(1)
+        expect(ctx.fullGreenTimetableNumber).toBe(4)
+        expect(ctx.loadFullGreenTimetableCountCalled).toBe(true)
     })
 
     it('falls back to conflict timetables when no green result exists', () => {
@@ -2479,6 +2586,92 @@ describe('Students timetable robot page', () => {
         expect(computed.selectedCourses.call(ctx).map(course => course.code)).toEqual(['D2', 'GW2'])
     })
 
+    it('resets robot selection defaults from a newly selected student', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            studentSelection: { studentCode: '100' },
+            studentSelectionDraft: { studentCode: '200' },
+            studentSelectionDefaultsPendingCode: null,
+            selection: {
+                semester: 1,
+                religion: 'Rk',
+                branch: 'gymnasial',
+                artsSubject: 'BE',
+                language: 'F',
+            },
+            selectionDraft: {
+                semester: 1,
+                religion: 'Rk',
+                branch: 'gymnasial',
+                artsSubject: 'BE',
+                language: 'F',
+            },
+            robotStudents: [
+                { student_code: '100', school_level: '09', attendance_year: '1' },
+                { student_code: '200', school_level: '10', attendance_year: '2' },
+            ],
+            additionalCourseSelectedKeys: ['F3'],
+            studentCompletedCoursesExpanded: true,
+            clearGeneratedTimetables() {
+                this.cleared = true
+            },
+            saveLastRobotState() {
+                this.saved = true
+            },
+        }
+
+        Object.defineProperty(ctx, 'selectedStudent', {
+            get() {
+                return this.robotStudents.find(student => student.student_code === this.studentSelection.studentCode) || null
+            },
+        })
+
+        methods.updateStudentSelection.call(ctx)
+
+        expect(ctx.selection).toEqual({
+            semester: 4,
+            religion: 'ETH',
+            branch: 'wirtschaftskundlich',
+            artsSubject: 'ME',
+            language: 'L',
+        })
+        expect(ctx.selectionDraft).toEqual(ctx.selection)
+        expect(ctx.studentSelectionDefaultsPendingCode).toBe('200')
+        expect(ctx.additionalCourseSelectedKeys).toEqual([])
+        expect(ctx.studentCompletedCoursesExpanded).toBe(false)
+        expect(ctx.cleared).toBe(true)
+        expect(ctx.saved).toBe(true)
+    })
+
+    it('infers student selection defaults from recognized course history', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            studentCompletedCourses: [
+                { subject: 'RK1', grade: '5' },
+                { subject: 'F1', grade: '5' },
+                { subject: 'BE1', grade: 'B' },
+            ],
+        }
+
+        expect(methods.selectedStudentDefaultSelection.call(
+            ctx,
+            { school_level: '11', attendance_year: '1' },
+            { includeCourseHistory: true },
+        )).toEqual({
+            semester: 5,
+            religion: 'Rk',
+            branch: 'wirtschaftskundlich',
+            artsSubject: 'BE',
+            language: 'F',
+        })
+    })
+
     it('requires the previous additional module before selecting a dependent additional course', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {
@@ -2505,6 +2698,52 @@ describe('Students timetable robot page', () => {
 
         methods.setAdditionalCourseSelected.call(ctx, ctx.studentAdditionalCourses[0], false)
         expect(ctx.additionalCourseSelectedKeys).toEqual([])
+    })
+
+    it('can select single imported course groups for an additional course', () => {
+        const methods = (RobotTimetable as any).methods
+        const course = { key: 'E7', code: 'E7', ttCodes: ['E7'], name: 'Englisch 7', hours: 1 }
+        const courseGroups = [
+            { title: 'E7-4Q-RIE' },
+            { title: 'E7-7C-RAI' },
+        ]
+        const ctx = {
+            ...methods,
+            additionalCourseSelectedKeys: [],
+            deselectedCourseGroupKeys: [],
+            studentAdditionalCourses: [course],
+            courseGroupItems() {
+                return courseGroups
+            },
+            clearGeneratedTimetables() {
+                this.cleared = true
+            },
+            saveLastRobotState() {
+                this.saved = true
+            },
+        }
+
+        methods.setAdditionalCourseGroupSelected.call(ctx, course, courseGroups[1], true)
+
+        expect(ctx.additionalCourseSelectedKeys).toEqual(['E7'])
+        expect(ctx.deselectedCourseGroupKeys).toEqual(['E7|E7-4Q-RIE'])
+        expect(methods.additionalCourseGroupSelected.call(ctx, course, courseGroups[0])).toBe(false)
+        expect(methods.additionalCourseGroupSelected.call(ctx, course, courseGroups[1])).toBe(true)
+        expect(methods.additionalCoursePartiallySelected.call(ctx, course)).toBe(true)
+        expect(methods.additionalCourseFullySelected.call(ctx, course)).toBe(false)
+        expect(ctx.cleared).toBe(true)
+        expect(ctx.saved).toBe(true)
+
+        methods.setAdditionalCourseGroupSelected.call(ctx, course, courseGroups[0], true)
+
+        expect(ctx.deselectedCourseGroupKeys).toEqual([])
+        expect(methods.additionalCourseFullySelected.call(ctx, course)).toBe(true)
+
+        methods.setAdditionalCourseGroupSelected.call(ctx, course, courseGroups[0], false)
+        methods.setAdditionalCourseGroupSelected.call(ctx, course, courseGroups[1], false)
+
+        expect(ctx.additionalCourseSelectedKeys).toEqual([])
+        expect(ctx.deselectedCourseGroupKeys).toEqual([])
     })
 
     it('splits available courses into two display columns', () => {
@@ -3312,6 +3551,414 @@ describe('Students timetable robot page', () => {
             'F3-3RU+4F-NIE',
             'F3-4A-NIE',
         ])
+        expect(Object.values(ctx.generatedTimetables[0].slots)
+            .every(slot => slot.isDistanceLearningCourse === true)).toBe(true)
+        expect(Object.values(ctx.generatedTimetables[1].slots)
+            .some(slot => slot.isDistanceLearningCourse === true)).toBe(false)
+        expect(methods.courseGroupDistanceLearning.call(ctx, ctx.selectedCourses[0], { title: 'F3-3RU+4F-NIE' })).toBe(true)
+        expect(methods.courseGroupDistanceLearning.call(ctx, ctx.selectedCourses[0], { title: 'F3-4A-NIE' })).toBe(false)
+    })
+
+    it('marks weekly recurrence intervals on courses, groups, slots, and appointments', () => {
+        const methods = (RobotTimetable as any).methods
+        const course = { key: 'E7', code: 'E7', name: 'Englisch 7', branch: 'alle', hours: 1 }
+        const courseGroup = {
+            key: 'e7',
+            class_name: 'E7-7C-RAI',
+            course: 'E7',
+            subject: 'E',
+            weekday: 1,
+            hour: 1,
+            recurrence_interval: 2,
+            recurrence_label: '2-wöchig',
+            dates: ['2026-03-02', '2026-03-16', '2026-03-30'],
+        }
+        const ctx = {
+            ...methods,
+            configuredCourseGroups: [courseGroup],
+        }
+
+        const group = methods.courseGroupItems.call(ctx, course)[0]
+
+        expect(methods.courseWeekMarker.call(ctx, course)).toBe('2-w')
+        expect(methods.courseGroupWeekMarker.call(ctx, group)).toBe('2-w')
+        expect(methods.slotWeekMarker.call(ctx, { courseGroup })).toBe('2-w')
+        expect(methods.appointmentWeekMarker.call(ctx, { courseGroup })).toBe('2-w')
+        expect(methods.weekIntervalFromDates.call(ctx, ['2026-03-02', '2026-03-09', '2026-03-16'])).toBe(1)
+    })
+
+    it('hides redundant weekly markers in expanded weekly-only course group schedules', () => {
+        const methods = (RobotTimetable as any).methods
+        const course = { key: 'E1', code: 'E1', name: 'Englisch 1', branch: 'alle', hours: 4 }
+        const ctx = {
+            ...methods,
+            configuredCourseGroups: [
+                {
+                    key: 'e1-rai-mo-14',
+                    class_name: 'E1-1C-RAI',
+                    course: 'E1',
+                    subject: 'E',
+                    weekday: 1,
+                    hour: 14,
+                    recurrence_interval: 1,
+                },
+                {
+                    key: 'e1-rai-mo-15',
+                    class_name: 'E1-1C-RAI',
+                    course: 'E1',
+                    subject: 'E',
+                    weekday: 1,
+                    hour: 15,
+                    recurrence_interval: 1,
+                },
+                {
+                    key: 'e1-rai-di-12',
+                    class_name: 'E1-1C-RAI',
+                    course: 'E1',
+                    subject: 'E',
+                    weekday: 2,
+                    hour: 12,
+                    recurrence_interval: 1,
+                },
+                {
+                    key: 'e1-rai-di-13',
+                    class_name: 'E1-1C-RAI',
+                    course: 'E1',
+                    subject: 'E',
+                    weekday: 2,
+                    hour: 13,
+                    recurrence_interval: 1,
+                },
+                {
+                    key: 'e1-scho-mo-14',
+                    class_name: 'E1-1C-SCHO',
+                    course: 'E1',
+                    subject: 'E',
+                    weekday: 1,
+                    hour: 14,
+                    recurrence_interval: 1,
+                },
+                {
+                    key: 'e1-scho-mo-15',
+                    class_name: 'E1-1C-SCHO',
+                    course: 'E1',
+                    subject: 'E',
+                    weekday: 1,
+                    hour: 15,
+                    recurrence_interval: 1,
+                },
+            ],
+            weekdayOptions: [
+                { title: 'Montag', shortTitle: 'Mo', value: 1 },
+                { title: 'Dienstag', shortTitle: 'Di', value: 2 },
+            ],
+            timeOptions: [
+                { title: '12. Stunde', shortTitle: '12.', value: 12 },
+                { title: '13. Stunde', shortTitle: '13.', value: 13 },
+                { title: '14. Stunde', shortTitle: '14.', value: 14 },
+                { title: '15. Stunde', shortTitle: '15.', value: 15 },
+            ],
+            schoolHours: [
+                { hour: 12, from: '18:45:00', until: '19:30:00' },
+                { hour: 13, from: '19:30:00', until: '20:15:00' },
+                { hour: 14, from: '20:25:00', until: '21:10:00' },
+                { hour: 15, from: '21:10:00', until: '21:55:00' },
+            ],
+        }
+
+        const groups = methods.courseGroupItems.call(ctx, course)
+        const raiGroup = groups.find(group => group.title === 'E1-1C-RAI')
+        const schoGroup = groups.find(group => group.title === 'E1-1C-SCHO')
+
+        expect(methods.courseGroupWeekMarker.call(ctx, raiGroup)).toBe('1-w')
+        expect(raiGroup.meta).toBe('Mo 14.-15., 20:25-21:55, Di 12.-13., 18:45-20:15')
+        expect(schoGroup.meta).toBe('Mo 14.-15., 20:25-21:55')
+    })
+
+    it('hides redundant weekly markers in the generated timetable table', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+        }
+        const weeklySlot = {
+            key: 'E1',
+            code: 'E1',
+            sourceLabel: 'E1-1C-RAI',
+            courseGroup: {
+                class_name: 'E1-1C-RAI',
+                course: 'E1',
+                weekday: 1,
+                hour: 14,
+                recurrence_interval: 1,
+            },
+        }
+        const timetable = {
+            slots: {
+                '1-14': weeklySlot,
+                '1-15': {
+                    key: 'E1',
+                    code: 'E1',
+                    sourceLabel: 'E1-1C-RAI',
+                    courseGroup: {
+                        class_name: 'E1-1C-RAI',
+                        course: 'E1',
+                        weekday: 1,
+                        hour: 15,
+                        recurrence_interval: 1,
+                    },
+                },
+            },
+            occasionalAppointments: [],
+        }
+
+        expect(methods.slotWeekMarker.call(ctx, weeklySlot)).toBe('1-w')
+        expect(methods.generatedSlotWeekMarker.call(ctx, weeklySlot, timetable)).toBe('')
+    })
+
+    it('shows weekly markers in the generated timetable table when a course has mixed intervals', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+        }
+        const weeklySlot = {
+            key: 'D1',
+            code: 'D1',
+            sourceLabel: 'D1-1C-GOS',
+            courseGroup: {
+                class_name: 'D1-1C-GOS',
+                course: 'D1',
+                weekday: 2,
+                hour: 14,
+                recurrence_interval: 1,
+            },
+        }
+        const twoWeeklySlot = {
+            key: 'D1',
+            code: 'D1',
+            sourceLabel: 'D1-1C-GOS',
+            courseGroup: {
+                class_name: 'D1-1C-GOS',
+                course: 'D1',
+                weekday: 2,
+                hour: 15,
+                recurrence_interval: 2,
+            },
+        }
+        const weeklyAppointment = {
+            key: 'd1-app-1',
+            courseKey: 'D1',
+            code: 'D1',
+            sourceLabel: 'D1-1C-GOS',
+            dateTimeLabel: 'Di, 03.03.2026 16. 21:55-22:40',
+            date: '2026-03-03',
+            dateLabel: 'Di, 03.03.2026',
+            weekday: 2,
+            hour: 16,
+            sortValue: '2026-03-03|02|16|D1',
+            recurrence_interval: 1,
+        }
+        const timetable = {
+            slots: {
+                '2-14': weeklySlot,
+                '2-15': twoWeeklySlot,
+            },
+            selectedOccasionalAppointmentGroups: {},
+            occasionalAppointments: [weeklyAppointment],
+        }
+
+        expect(methods.generatedSlotWeekMarker.call(ctx, weeklySlot, timetable)).toBe('1-w')
+        expect(methods.generatedSlotWeekMarker.call(ctx, twoWeeklySlot, timetable)).toBe('2-w')
+
+        const appointmentGroup = methods.groupedOccasionalAppointments.call(ctx, timetable)[0]
+        methods.setOccasionalAppointmentGroupSelected.call(ctx, timetable, appointmentGroup, true)
+
+        expect(appointmentGroup.weekMarker).toBe('1-w')
+        expect(methods.generatedCellOccasionalMarkers.call(ctx, timetable, 2, 16)).toEqual([
+            { key: 'd1-app-1', code: 'D1', weekMarker: '1-w' },
+        ])
+    })
+
+    it('splits mixed weekly recurrence in expanded course group rows and marks half-load groups as FU', () => {
+        const methods = (RobotTimetable as any).methods
+        const course = { key: 'D1', code: 'D1', name: 'Deutsch 1', branch: 'alle', hours: 3 }
+        const ctx = {
+            ...methods,
+            configuredCourseGroups: [
+                {
+                    key: 'd1-1k-mo-12',
+                    class_name: 'D1-1C-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 1,
+                    hour: 12,
+                    recurrence_interval: 1,
+                },
+                {
+                    key: 'd1-1k-14',
+                    class_name: 'D1-1C-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 2,
+                    hour: 14,
+                    recurrence_interval: 1,
+                },
+                {
+                    key: 'd1-1k-15',
+                    class_name: 'D1-1C-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 2,
+                    hour: 15,
+                    recurrence_interval: 2,
+                },
+                {
+                    key: 'd1-1k-mo-11',
+                    class_name: 'D1-1C-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 1,
+                    hour: 11,
+                    recurrence_interval: 2,
+                },
+                {
+                    key: 'd1-1k-gos-14',
+                    class_name: 'D1-1K-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 2,
+                    hour: 14,
+                    recurrence_interval: 1,
+                },
+                {
+                    key: 'd1-1k-gos-15',
+                    class_name: 'D1-1K-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 2,
+                    hour: 15,
+                    recurrence_interval: 2,
+                },
+            ],
+            weekdayOptions: [
+                { title: 'Montag', shortTitle: 'Mo', value: 1 },
+                { title: 'Dienstag', shortTitle: 'Di', value: 2 },
+            ],
+            timeOptions: [
+                { title: '11. Stunde', shortTitle: '11.', value: 11 },
+                { title: '12. Stunde', shortTitle: '12.', value: 12 },
+                { title: '14. Stunde', shortTitle: '14.', value: 14 },
+                { title: '15. Stunde', shortTitle: '15.', value: 15 },
+            ],
+            schoolHours: [
+                { hour: 11, from: '17:50:00', until: '18:35:00' },
+                { hour: 12, from: '18:45:00', until: '19:30:00' },
+                { hour: 14, from: '20:25:00', until: '21:10:00' },
+                { hour: 15, from: '21:10:00', until: '21:55:00' },
+            ],
+        }
+
+        const groups = methods.courseGroupItems.call(ctx, course)
+        const fullGroup = groups.find(group => group.title === 'D1-1C-GOS')
+        const halfLoadGroup = groups.find(group => group.title === 'D1-1K-GOS')
+
+        expect(fullGroup.meta).toBe('Mo 11.-12., 17:50-18:35 (2-w), 18:45-19:30 (1-w), Di 14.-15., 20:25-21:10 (1-w), 21:10-21:55 (2-w)')
+        expect(methods.courseGroupDistanceLearning.call(ctx, course, fullGroup)).toBe(false)
+        expect(halfLoadGroup.meta).toBe('Di 14.-15., 20:25-21:10 (1-w), 21:10-21:55 (2-w)')
+        expect(methods.courseGroupDistanceLearning.call(ctx, course, halfLoadGroup)).toBe(true)
+    })
+
+    it('applies mixed weekly recurrence formatting to expanded additional course group rows', () => {
+        const methods = (RobotTimetable as any).methods
+        const course = { key: 'D1', code: 'D1', name: 'Deutsch 1', branch: 'alle', hours: 3 }
+        const ctx = {
+            ...methods,
+            additionalCourseSelectedKeys: ['D1'],
+            deselectedCourseGroupKeys: ['D1|D1-1C-GOS'],
+            studentAdditionalCourses: [course],
+            configuredCourseGroups: [
+                {
+                    key: 'd1-1k-mo-12',
+                    class_name: 'D1-1C-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 1,
+                    hour: 12,
+                    recurrence_interval: 1,
+                },
+                {
+                    key: 'd1-1k-14',
+                    class_name: 'D1-1C-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 2,
+                    hour: 14,
+                    recurrence_interval: 1,
+                },
+                {
+                    key: 'd1-1k-15',
+                    class_name: 'D1-1C-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 2,
+                    hour: 15,
+                    recurrence_interval: 2,
+                },
+                {
+                    key: 'd1-1k-mo-11',
+                    class_name: 'D1-1C-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 1,
+                    hour: 11,
+                    recurrence_interval: 2,
+                },
+                {
+                    key: 'd1-1k-gos-14',
+                    class_name: 'D1-1K-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 2,
+                    hour: 14,
+                    recurrence_interval: 1,
+                },
+                {
+                    key: 'd1-1k-gos-15',
+                    class_name: 'D1-1K-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 2,
+                    hour: 15,
+                    recurrence_interval: 2,
+                },
+            ],
+            weekdayOptions: [
+                { title: 'Montag', shortTitle: 'Mo', value: 1 },
+                { title: 'Dienstag', shortTitle: 'Di', value: 2 },
+            ],
+            timeOptions: [
+                { title: '11. Stunde', shortTitle: '11.', value: 11 },
+                { title: '12. Stunde', shortTitle: '12.', value: 12 },
+                { title: '14. Stunde', shortTitle: '14.', value: 14 },
+                { title: '15. Stunde', shortTitle: '15.', value: 15 },
+            ],
+            schoolHours: [
+                { hour: 11, from: '17:50:00', until: '18:35:00' },
+                { hour: 12, from: '18:45:00', until: '19:30:00' },
+                { hour: 14, from: '20:25:00', until: '21:10:00' },
+                { hour: 15, from: '21:10:00', until: '21:55:00' },
+            ],
+        }
+
+        const groups = methods.courseGroupItems.call(ctx, course)
+        const fullGroup = groups.find(group => group.title === 'D1-1C-GOS')
+        const halfLoadGroup = groups.find(group => group.title === 'D1-1K-GOS')
+
+        expect(fullGroup.meta).toBe('Mo 11.-12., 17:50-18:35 (2-w), 18:45-19:30 (1-w), Di 14.-15., 20:25-21:10 (1-w), 21:10-21:55 (2-w)')
+        expect(methods.additionalCourseGroupSelected.call(ctx, course, fullGroup)).toBe(false)
+        expect(methods.additionalCourseGroupSelected.call(ctx, course, halfLoadGroup)).toBe(true)
+        expect(methods.additionalCoursePartiallySelected.call(ctx, course)).toBe(true)
+        expect(halfLoadGroup.meta).toBe('Di 14.-15., 20:25-21:10 (1-w), 21:10-21:55 (2-w)')
+        expect(methods.courseGroupDistanceLearning.call(ctx, course, halfLoadGroup)).toBe(true)
     })
 
     it('does not show timetable variants where a course is softly skipped', () => {

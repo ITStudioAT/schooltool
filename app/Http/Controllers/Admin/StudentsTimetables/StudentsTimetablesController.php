@@ -188,6 +188,9 @@ class StudentsTimetablesController extends Controller
             'deselected_course_keys.*' => ['string', 'max:255'],
             'deselected_course_group_keys' => ['array'],
             'deselected_course_group_keys.*' => ['string', 'max:255'],
+            'selected_additional_course_keys' => ['array'],
+            'selected_additional_course_keys.*' => ['string', 'max:255'],
+            'selected_additional_courses_required' => ['sometimes', 'boolean'],
             'selected_timetable_type' => ['nullable', 'string', 'in:full_green,green,conflict'],
             'selected_timetable_number' => ['nullable', 'integer', 'min:1', 'max:1000000'],
             'evaluation_criteria' => ['sometimes', 'array'],
@@ -209,6 +212,7 @@ class StudentsTimetablesController extends Controller
                 $evaluationCriteria,
                 $validated['selected_timetable_type'] ?? null,
                 (int) ($validated['selected_timetable_number'] ?? 1),
+                $request->boolean('selected_additional_courses_required'),
             ),
         ]);
     }

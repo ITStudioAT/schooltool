@@ -24,6 +24,141 @@ it('counts full green timetable combinations without overlapping slots', functio
         ->selected_course_count->toBe(2);
 });
 
+it('counts and displays checked additional courses only when they do not overlap a timetable', function () {
+    $additionalCourse = [
+        ...robotSubjectRow('INF2', 1),
+        'semester' => 2,
+    ];
+    $additionalCourseKey = implode('|', [
+        'INF2',
+        2,
+        'common',
+        'INF2',
+        'INF2',
+        'INF2',
+        'INF2',
+    ]);
+
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            $additionalCourse,
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-a', 'M1', 1, 1),
+            robotCourseGroup('M1-b', 'M1', 2, 1),
+            robotCourseGroup('INF2-a', 'INF2', 1, 1),
+        ],
+        settings: robotSettings([
+            'selected_additional_course_keys' => [$additionalCourseKey],
+        ]),
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 2,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(2)
+        ->selected_course_count->toBe(1)
+        ->selected_additional_course_count->toBe(1)
+        ->additional_course_timetable_count->toBe(1)
+        ->and($result['selected_timetable']['additionalCoursesAccepted'])->toBeTrue()
+        ->and($result['selected_timetable']['slots'])
+        ->toHaveKey('2-1')
+        ->toHaveKey('1-1')
+        ->and($result['selected_timetable']['slots']['1-1']['code'])->toBe('INF2')
+        ->and($result['selected_timetable']['slots']['1-1']['isAdditionalCourse'])->toBeTrue();
+});
+
+it('uses selected imported course groups for checked additional courses', function () {
+    $additionalCourse = [
+        ...robotSubjectRow('E7', 1),
+        'semester' => 2,
+    ];
+    $additionalCourseKey = implode('|', [
+        'E7',
+        2,
+        'common',
+        'E7',
+        'E7',
+        'E7',
+        'E7',
+    ]);
+
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            $additionalCourse,
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-a', 'M1', 3, 1),
+            robotCourseGroup('E7-4Q-RIE', 'E7', 1, 1),
+            robotCourseGroup('E7-7C-RAI', 'E7', 2, 1),
+        ],
+        settings: robotSettings([
+            'selected_additional_course_keys' => [$additionalCourseKey],
+            'deselected_course_group_keys' => ["{$additionalCourseKey}|E7-4Q-RIE"],
+        ]),
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(1)
+        ->selected_additional_course_count->toBe(1)
+        ->additional_course_timetable_count->toBe(1)
+        ->and($result['selected_timetable']['slots'])
+        ->toHaveKey('2-1')
+        ->and(array_key_exists('1-1', $result['selected_timetable']['slots']))->toBeFalse()
+        ->and($result['selected_timetable']['slots']['2-1']['sourceLabel'])->toBe('E7-7C-RAI')
+        ->and($result['selected_timetable']['slots']['2-1']['isAdditionalCourse'])->toBeTrue();
+});
+
+it('selects only timetables that accept checked additional courses when requested', function () {
+    $additionalCourse = [
+        ...robotSubjectRow('INF2', 1),
+        'semester' => 2,
+    ];
+    $additionalCourseKey = implode('|', [
+        'INF2',
+        2,
+        'common',
+        'INF2',
+        'INF2',
+        'INF2',
+        'INF2',
+    ]);
+
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            $additionalCourse,
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-a', 'M1', 1, 1),
+            robotCourseGroup('M1-b', 'M1', 2, 1),
+            robotCourseGroup('INF2-a', 'INF2', 1, 1),
+        ],
+        settings: robotSettings([
+            'selected_additional_course_keys' => [$additionalCourseKey],
+        ]),
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+        selectedAdditionalCoursesRequired: true,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(2)
+        ->additional_course_timetable_count->toBe(1)
+        ->and($result['selected_timetable']['additionalCoursesAccepted'])->toBeTrue()
+        ->and($result['selected_timetable']['number'])->toBe(1)
+        ->and($result['selected_timetable']['slots']['2-1']['code'])->toBe('M1')
+        ->and($result['selected_timetable']['slots']['1-1']['code'])->toBe('INF2')
+        ->and($result['selected_timetable']['slots']['1-1']['isAdditionalCourse'])->toBeTrue();
+});
+
 it('does not count combinations with timetable collisions', function () {
     $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
         subjectRows: [
@@ -145,12 +280,18 @@ it('counts shorter regular timetable variants like the robot page', function () 
             robotCourseGroup('M1-a', 'M1', 3, 1),
         ],
         settings: robotSettings(),
+        selectedTimetableType: 'full_green',
     );
+
+    $slotsByCode = collect($result['selected_timetable']['slots'])
+        ->keyBy('code');
 
     expect($result)
         ->full_green_timetable_count->toBe(2)
         ->green_timetable_count->toBe(0)
-        ->selected_course_count->toBe(2);
+        ->selected_course_count->toBe(2)
+        ->and($slotsByCode->get('INF1')['isDistanceLearningCourse'])->toBeTrue()
+        ->and($slotsByCode->get('M1')['isDistanceLearningCourse'])->toBeFalse();
 });
 
 it('counts green timetables when only an attached one-off appointment overlaps', function () {
@@ -171,6 +312,39 @@ it('counts green timetables when only an attached one-off appointment overlaps',
     expect($result)
         ->full_green_timetable_count->toBe(0)
         ->green_timetable_count->toBe(1);
+});
+
+it('marks recurrence-weighted half-load regular options as distance learning', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('D1', 3),
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                ...robotCourseGroup('D1-1K-GOS', 'D1', 2, 14),
+                'recurrence_interval' => 1,
+            ],
+            [
+                ...robotCourseGroup('D1-1K-GOS', 'D1', 2, 15),
+                'recurrence_interval' => 2,
+            ],
+        ],
+        settings: robotSettings([
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [14, 15],
+                'excludedWeekdayTimes' => [],
+            ],
+        ]),
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(1)
+        ->and(collect($result['selected_timetable']['slots'])->pluck('isDistanceLearningCourse')->all())
+        ->toBe([true, true]);
 });
 
 it('counts full green timetables when attached one-off appointments do not overlap', function () {
@@ -203,7 +377,11 @@ it('does not count a timetable as full green when a one-off appointment overlaps
         courseGroups: [
             robotCourseGroup('E7-a', 'E7', 3, 9),
             robotCourseGroup('M7-a', 'M7', 1, 8),
-            robotCourseGroup('M7-a', 'M7', 3, 9, ['2026-05-13'], 1),
+            [
+                ...robotCourseGroup('M7-a', 'M7', 3, 9, ['2026-05-13'], 1),
+                'recurrence_interval' => 2,
+                'recurrence_label' => '2-wöchig',
+            ],
         ],
         settings: robotSettings(),
         selectedTimetableType: 'green',
@@ -214,6 +392,8 @@ it('does not count a timetable as full green when a one-off appointment overlaps
         ->full_green_timetable_count->toBe(0)
         ->green_timetable_count->toBe(1)
         ->and($result['selected_timetable']['type'])->toBe('green')
+        ->and($result['selected_timetable']['occasionalAppointments'][0]['recurrence_interval'])->toBe(2)
+        ->and($result['selected_timetable']['occasionalAppointments'][0]['recurrence_label'])->toBe('2-wöchig')
         ->and($result['selected_timetable']['occasionalAppointments'][0]['conflictLabel'])
         ->toContain('überschneidet sich mit E7');
 });
