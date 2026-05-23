@@ -28,6 +28,7 @@ use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\AdminService;
 use App\Services\SchoolService;
+use App\Services\SchoolyearService;
 use App\Services\TeacherListService;
 use App\Traits\HasRoleTrait;
 use Illuminate\Http\Request;
@@ -44,6 +45,13 @@ class AdminController extends Controller
     use HasRoleTrait;
 
     private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v2';
+
+    private const array STUDENTS_TIMETABLES_ROLES = [
+        'super_admin',
+        'admin',
+        'studentstimetables_admin',
+        'studentstimetables_moderator',
+    ];
 
     public function config(Request $request)
     {
@@ -63,6 +71,10 @@ class AdminController extends Controller
 
         /** @var User|null $user */
         $user = Auth::check() ? Auth::user() : null;
+        if ($user && ! $user->schoolyear_id && $user->hasAnyRole(self::STUDENTS_TIMETABLES_ROLES)) {
+            app(SchoolyearService::class)->ensureActualSchoolyearForUser($user);
+        }
+
         $user?->loadMissing([
             'roles',
             'selectedSchool.schoolTool',
@@ -226,6 +238,7 @@ class AdminController extends Controller
     private function canLoadSchoolInfos(User $user): bool
     {
         return $user->hasAnyRole([
+            'super_admin',
             'admin',
             'register_admin',
             'tutoring_admin',
@@ -235,6 +248,7 @@ class AdminController extends Controller
             'teacher',
             'lunch_admin',
             'studentstimetables_admin',
+            'studentstimetables_moderator',
         ]);
     }
 

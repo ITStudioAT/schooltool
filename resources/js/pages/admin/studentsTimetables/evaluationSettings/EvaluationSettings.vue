@@ -18,6 +18,14 @@
                     @click="saveSettings">
                     Speichern
                 </v-btn>
+
+                <v-btn
+                    v-if="closable"
+                    icon="mdi-close"
+                    variant="text"
+                    density="comfortable"
+                    class="ml-2"
+                    @click="$emit('close')" />
             </v-card-title>
 
             <v-card-text>
@@ -126,6 +134,10 @@ import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 export default {
     name: 'EvaluationSettings',
+    props: {
+        closable: { type: Boolean, default: false },
+    },
+    emits: ['close', 'saved'],
     data() {
         return {
             loading: false,
@@ -185,6 +197,7 @@ export default {
                     type: 'success',
                     timeout: 3000,
                 })
+                this.$emit('saved')
             } catch (error) {
                 this.error = error?.response?.data?.message || 'Die Bewertungseinstellungen konnten nicht gespeichert werden.'
             } finally {

@@ -15,6 +15,25 @@ describe('Admin app navigation', () => {
         expect(source).not.toContain('<v-list-group')
     })
 
+    it('treats students timetables moderators as admin shell users', () => {
+        const appData = (AdminApp as any).data()
+
+        expect(appData.admins).toContain('studentstimetables_moderator')
+        expect(
+            (AdminApp as any).computed.isAdminShellVisible.call({
+                config: {
+                    is_auth: true,
+                    roles: ['studentstimetables_moderator'],
+                },
+                $route: {
+                    path: '/admin',
+                },
+                admins: appData.admins,
+                isImpersonating: false,
+            }),
+        ).toBe(true)
+    })
+
     it('keeps the restaurant dashboard item active on restaurant subpages', () => {
         const item = {
             title: 'Restaurant',

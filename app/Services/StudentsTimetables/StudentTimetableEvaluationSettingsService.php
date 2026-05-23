@@ -2,6 +2,7 @@
 
 namespace App\Services\StudentsTimetables;
 
+use App\Models\SchoolTool;
 use App\Models\StudentTimetableEvaluationSetting;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -87,11 +88,13 @@ class StudentTimetableEvaluationSettingsService
     public function updateForUser(User $user, array $criteria): array
     {
         $settings = $this->settingsPayloadForStorage($criteria);
+        $schoolyearId = $this->resolveSchoolyearIdForUser($user);
 
         $this->queryForUser($user)->updateOrCreate(
             [
                 'school_id' => $user->school_id,
-                'schoolyear_id' => $user->schoolyear_id,
+                'schoolyear_id' => $schoolyearId,
+                'user_id' => $user->id,
             ],
             [
                 'settings' => $settings,
@@ -132,7 +135,22 @@ class StudentTimetableEvaluationSettingsService
     {
         return StudentTimetableEvaluationSetting::query()
             ->where('school_id', $user->school_id)
-            ->where('schoolyear_id', $user->schoolyear_id);
+            ->where('schoolyear_id', $this->resolveSchoolyearIdForUser($user))
+            ->where('user_id', $user->id);
+    }
+
+    private function resolveSchoolyearIdForUser(User $user): int
+    {
+        $schoolyearId = $user->schoolyear_id
+            ?? SchoolTool::query()
+                ->where('school_id', $user->school_id)
+                ->value('active_schoolyear_id');
+
+        if (! $schoolyearId) {
+            abort(422, 'Kein aktives Schuljahr gefunden.');
+        }
+
+        return (int) $schoolyearId;
     }
 
     /**

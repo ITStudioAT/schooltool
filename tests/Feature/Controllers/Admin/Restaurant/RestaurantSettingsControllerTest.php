@@ -1,9 +1,11 @@
 <?php
 
+use App\Models\Licence;
 use App\Models\RestaurantCategory;
 use App\Models\RestaurantFood;
 use App\Models\RestaurantIngredientIcon;
 use App\Models\School;
+use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf as DomPdf;
@@ -30,6 +32,20 @@ beforeEach(function () {
     Storage::fake('public');
 
     $this->school = School::factory()->create();
+    $licence = Licence::query()->create([
+        'name' => 'Restaurant',
+        'long_name' => 'Restaurant',
+    ]);
+    SchoolLicence::query()->create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+    SchoolTool::query()->create([
+        'school_id' => $this->school->id,
+        'restaurant_visible_admin' => true,
+    ]);
+
     $this->admin = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => null,
@@ -38,8 +54,7 @@ beforeEach(function () {
 });
 
 test('settings creates default categories for empty school', function () {
-    SchoolTool::query()->create([
-        'school_id' => $this->school->id,
+    SchoolTool::query()->updateOrCreate(['school_id' => $this->school->id], [
         'restaurant_sepa_online_enabled' => true,
         'restaurant_sepa_payee' => '<p>Zahlungsempfänger</p>',
         'restaurant_sepa_mandate_text' => '<p>Mandatstext</p>',
@@ -129,8 +144,7 @@ test('restaurant user can update own foods pagination setting', function () {
 });
 
 test('restaurant admin can preview the sepa form pdf', function () {
-    SchoolTool::query()->create([
-        'school_id' => $this->school->id,
+    SchoolTool::query()->updateOrCreate(['school_id' => $this->school->id], [
         'restaurant_sepa_online_enabled' => true,
         'restaurant_sepa_payee' => '<p>Zahlungsempfänger</p>',
         'restaurant_sepa_mandate_text' => '<p>Mandatstext</p>',
@@ -357,8 +371,7 @@ test('restaurant admin can update visibility start to when orderable', function 
 });
 
 test('repair migration restores missing online visibility start columns', function () {
-    SchoolTool::factory()->create([
-        'school_id' => $this->school->id,
+    SchoolTool::query()->updateOrCreate(['school_id' => $this->school->id], [
         'restaurant_menu_order_start_mode' => 'scheduled',
         'restaurant_menu_order_start_week_offset' => 2,
         'restaurant_menu_order_start_day_of_week' => 1,

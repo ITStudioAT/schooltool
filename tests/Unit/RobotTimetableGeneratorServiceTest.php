@@ -159,6 +159,120 @@ it('selects only timetables that accept checked additional courses when requeste
         ->and($result['selected_timetable']['slots']['1-1']['isAdditionalCourse'])->toBeTrue();
 });
 
+it('counts accepted additional courses in selected timetable quality criteria', function () {
+    $additionalCourse = [
+        ...robotSubjectRow('INF2', 1),
+        'semester' => 2,
+    ];
+    $additionalCourseKey = implode('|', [
+        'INF2',
+        2,
+        'common',
+        'INF2',
+        'INF2',
+        'INF2',
+        'INF2',
+    ]);
+
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            $additionalCourse,
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-a', 'M1', 1, 1),
+            robotCourseGroup('INF2-a', 'INF2', 6, 1),
+        ],
+        settings: robotSettings([
+            'selected_additional_course_keys' => [$additionalCourseKey],
+        ]),
+        evaluationCriteria: [
+            [
+                'key' => 'saturday_free',
+                'label' => 'Samstag kein Unterricht',
+                'enabled' => true,
+                'priority' => 1,
+            ],
+        ],
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+        selectedAdditionalCoursesRequired: true,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(1)
+        ->additional_course_timetable_count->toBe(1)
+        ->all_quality_criteria_count->toBe(0)
+        ->and($result['selected_timetable']['slots'])
+        ->toHaveKey('6-1')
+        ->and($result['selected_timetable']['slots']['6-1']['isAdditionalCourse'])->toBeTrue()
+        ->and($result['selected_timetable']['metrics']['saturday_free_all_appointments'])->toBeFalse()
+        ->and($result['quality_counters'][0])
+        ->key->toBe('saturday_free')
+        ->selected_value->toBeFalse()
+        ->selected_label->toBe('nicht erfüllt')
+        ->selected_reached->toBeFalse();
+});
+
+it('counts quality criteria only for timetables that accept checked additional courses when that filter is active', function () {
+    $additionalCourse = [
+        ...robotSubjectRow('INF2', 1),
+        'semester' => 2,
+    ];
+    $additionalCourseKey = implode('|', [
+        'INF2',
+        2,
+        'common',
+        'INF2',
+        'INF2',
+        'INF2',
+        'INF2',
+    ]);
+
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            $additionalCourse,
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-monday', 'M1', 1, 1),
+            robotCourseGroup('M1-tuesday', 'M1', 2, 1),
+            robotCourseGroup('INF2-monday', 'INF2', 1, 1),
+        ],
+        settings: robotSettings([
+            'selected_additional_course_keys' => [$additionalCourseKey],
+        ]),
+        evaluationCriteria: [
+            [
+                'key' => 'free_days',
+                'label' => 'Anzahl freie Tage',
+                'enabled' => true,
+                'priority' => 1,
+            ],
+        ],
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+        selectedAdditionalCoursesRequired: true,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(2)
+        ->additional_course_timetable_count->toBe(1)
+        ->all_quality_criteria_count->toBe(1)
+        ->and($result['quality_counters'][0])
+        ->total->toBe(1)
+        ->count->toBe(1)
+        ->best_value->toBe(4)
+        ->selected_value->toBe(4)
+        ->selected_reached->toBeTrue()
+        ->and($result['selected_timetable']['slots'])
+        ->toHaveKey('2-1')
+        ->toHaveKey('1-1')
+        ->and($result['selected_timetable']['slots']['1-1']['isAdditionalCourse'])->toBeTrue();
+});
+
 it('does not count combinations with timetable collisions', function () {
     $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
         subjectRows: [

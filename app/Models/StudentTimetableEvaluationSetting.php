@@ -10,6 +10,7 @@ class StudentTimetableEvaluationSetting extends Model
     protected $fillable = [
         'school_id',
         'schoolyear_id',
+        'user_id',
         'settings',
     ];
 
@@ -28,5 +29,10 @@ class StudentTimetableEvaluationSetting extends Model
     public function schoolyear(): BelongsTo
     {
         return $this->belongsTo(Schoolyear::class);
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 }

@@ -1107,13 +1107,18 @@ class RobotTimetableGeneratorService
                 $usedTimetableDateSummary ?? $this->emptyDateKeySummary(),
             );
             $additionalCoursesAccepted = $matchingAdditionalOptions !== null;
+            $shouldCountTimetableForQuality = $shouldRecordQualityMetrics
+                && (! $selectedAdditionalCoursesRequired || $additionalCoursesAccepted);
             $shouldRecordSelectedTimetable = $selectedTimetableType === $timetableType
                 && (! $selectedAdditionalCoursesRequired || $additionalCoursesAccepted);
-            $metrics = ($shouldRecordQualityMetrics || $shouldRecordSelectedTimetable)
-                ? $this->qualityMetricsFromState($qualityState ?? $this->emptyQualityState())
+            $metrics = ($shouldCountTimetableForQuality || $shouldRecordSelectedTimetable)
+                ? $this->qualityMetricsFromState($this->qualityStateWithAdditionalOptions(
+                    $qualityState ?? $this->emptyQualityState(),
+                    $matchingAdditionalOptions ?? [],
+                ))
                 : [];
 
-            if ($shouldRecordQualityMetrics) {
+            if ($shouldCountTimetableForQuality) {
                 $this->recordQualityMetrics($qualitySummary, $metrics);
                 $this->recordQualityMetricCombination($qualityMetricCombinationCounts, $evaluationCriteria, $metrics);
             }
@@ -1467,6 +1472,20 @@ class RobotTimetableGeneratorService
         }
 
         return $firstSets;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @param  list<array<string, mixed>>  $additionalOptions
+     * @return array<string, mixed>
+     */
+    private function qualityStateWithAdditionalOptions(array $state, array $additionalOptions): array
+    {
+        foreach ($additionalOptions as $option) {
+            $state = $this->mergeQualityState($state, $option);
+        }
+
+        return $state;
     }
 
     /**

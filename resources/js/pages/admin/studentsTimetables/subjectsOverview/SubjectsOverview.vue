@@ -488,11 +488,17 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 export default {
     name: 'StudentsTimetablesSubjectsOverview',
     components: { FileUpload },
+    props: {
+        embedded: {
+            type: Boolean,
+            default: false,
+        },
+    },
     data() {
         return {
             imports: [],
             loading: false,
-            subject_action: this.normalizedSubjectAction(this.$route.params.subsection),
+            subject_action: this.embedded ? 'subject-plan' : this.normalizedSubjectAction(this.$route.params.subsection),
             uploadError: '',
             uploadedFilename: '',
             refreshFilePond: 0,
@@ -515,11 +521,18 @@ export default {
         }
     },
     mounted() {
+        this.redirectUnauthorizedSubjectRoute()
         this.loadImports()
         this.loadSettings()
     },
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
+        configuredRoleNames() {
+            return Array.isArray(this.config?.roles) ? this.config.roles : []
+        },
+        canManageSubjectSettings() {
+            return ['super_admin', 'admin', 'studentstimetables_admin'].some(roleName => this.configuredRoleNames.includes(roleName))
+        },
         subjectNavigationItems() {
             return [
                 {
@@ -537,7 +550,7 @@ export default {
                     label: 'Zuordnung',
                     icon: 'mdi-transit-connection-variant',
                 },
-            ]
+            ].filter(item => item.key === 'subject-plan' || this.canManageSubjectSettings)
         },
         sortedSubjectRows() {
             const directionMultiplier = this.subjectSort.direction === 'desc' ? -1 : 1
@@ -669,7 +682,12 @@ export default {
     },
     watch: {
         '$route.params.subsection'(subsection) {
+            if (this.embedded) {
+                return
+            }
+
             this.subject_action = this.normalizedSubjectAction(subsection)
+            this.redirectUnauthorizedSubjectRoute()
         },
         'config.selected_schoolyear.id'() {
             this.refreshForSchoolyearChange()
@@ -677,13 +695,26 @@ export default {
     },
     methods: {
         normalizedSubjectAction(subsection) {
-            const allowedActions = ['subject-plan', 'import', 'subjects', 'mapping']
+            const allowedActions = this.canManageSubjectSettings
+                ? ['subject-plan', 'import', 'subjects', 'mapping']
+                : ['subject-plan']
 
             return allowedActions.includes(subsection) ? subsection : 'subject-plan'
         },
         handleSubjectNavigation(key) {
             this.subject_action = this.normalizedSubjectAction(key)
+            if (this.embedded) {
+                return
+            }
+
             this.$router.replace({ path: `/admin/students-timetables/subjects-overview/${this.subject_action}` })
+        },
+        redirectUnauthorizedSubjectRoute() {
+            if (this.embedded || this.canManageSubjectSettings) return
+            if (!['import', 'subjects', 'mapping'].includes(this.$route.params.subsection)) return
+
+            this.subject_action = 'subject-plan'
+            this.$router.replace({ path: '/admin/students-timetables/subjects-overview/subject-plan' })
         },
         refreshForSchoolyearChange() {
             this.uploadError = ''

@@ -162,6 +162,23 @@ describe('Admin settings page', () => {
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Allgemein', 'Kategorien', 'Zutaten-Symbole', 'Freie Tage', 'Speisezeiten', 'Benutzer', 'SEPA', 'Online'])
     })
 
+    it('builds the students timetables settings sub navigation', () => {
+        const items = (Settings as any).computed.subNavigationItems.call({
+            isStudentsTimetablesTab: true,
+            isRestaurantTab: false,
+            isAdminTab: false,
+            isRegisterTab: false,
+            isTeachingTab: false,
+            isMaterialsTab: false,
+            isGroupsTab: false,
+            isTutoringTab: false,
+        })
+
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['admins', 'moderators'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Admins', 'Moderatoren'])
+        expect(items.map((item: { meta: string }) => item.meta)).toEqual(['verwalten', 'verwalten'])
+    })
+
     it('shows the groups settings tab only for super_admin, admin, materials_admin, and materials_moderator', () => {
         const allowedItems = (Settings as any).computed.navigationItems.call({
             canAccessSuperAdminSettingsTab: false,
@@ -252,6 +269,30 @@ describe('Admin settings page', () => {
 
         expect(methods.availableTabKeys(true, true, true, true, true, true, true, true, true)).toContain('restaurant')
         expect(methods.availableTabKeys(true, true, true, true, true, true, true, false, true)).not.toContain('restaurant')
+    })
+
+    it('includes the students timetables settings tab in available tabs only when allowed', () => {
+        const methods = (Settings as any).methods
+
+        expect(methods.availableTabKeys(false, false, false, false, false, false, false, false, true, true)).toContain('students_timetables')
+        expect(methods.availableTabKeys(false, false, false, false, false, false, false, false, true, false)).not.toContain('students_timetables')
+    })
+
+    it('uses the restaurant capability before falling back to restaurant roles', () => {
+        const methods = (Settings as any).methods
+
+        expect(methods.canAccessRestaurantSettings(['lunch_admin'], { restaurant: true })).toBe(true)
+        expect(methods.canAccessRestaurantSettings(['lunch_admin'], { restaurant: false })).toBe(false)
+        expect(methods.canAccessRestaurantSettings(['lunch_admin'], { profile: true })).toBe(false)
+        expect(methods.canAccessRestaurantSettings(['lunch_admin'], {})).toBe(true)
+    })
+
+    it('allows students timetables settings only for super admin and students timetables admin roles', () => {
+        const methods = (Settings as any).methods
+
+        expect(methods.canAccessStudentsTimetablesSettings(['super_admin'])).toBe(true)
+        expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_admin'])).toBe(true)
+        expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_moderator'])).toBe(false)
     })
 
     it('shows the top-level admin and super-admin tabs only for allowed roles', () => {
@@ -601,6 +642,110 @@ describe('Admin settings page', () => {
         })
     })
 
+    it('renders the students timetables settings tab for students timetables admins', async () => {
+        const { container } = render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['studentstimetables_admin'],
+                                    capabilities: {
+                                        students_timetables: true,
+                                    },
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=students_timetables',
+                        query: {
+                            tab: 'students_timetables',
+                        },
+                    },
+                    $router: {
+                        replace: () => {},
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    StudentsTimetablesAdminUsers: {
+                        props: ['roleKey', 'title', 'singularTitle'],
+                        template: '<div>StudentsTimetablesAdminUsers Component {{ roleKey }} {{ title }} {{ singularTitle }}</div>',
+                    },
+                },
+            },
+        })
+
+        expect(screen.getByText('Schülerstundenpläne')).toBeInTheDocument()
+        expect(screen.getByText('Admins')).toBeInTheDocument()
+        expect(screen.getByText('Moderatoren')).toBeInTheDocument()
+        expect(screen.queryByText('Bewertung')).not.toBeInTheDocument()
+        expect(screen.queryByText('Fächer')).not.toBeInTheDocument()
+        expect(screen.getByText('StudentsTimetablesAdminUsers Component admins Admins Admin')).toBeInTheDocument()
+        expect(container.querySelector('.settings-subnav')).not.toBeNull()
+
+        await fireEvent.click(screen.getByText('Moderatoren'))
+
+        await waitFor(() => {
+            expect(screen.getByText('StudentsTimetablesAdminUsers Component moderators Moderatoren Moderator')).toBeInTheDocument()
+        })
+    })
+
+    it('redirects away from students timetables settings for students timetables moderators', () => {
+        const replace = vi.fn()
+
+        render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['studentstimetables_moderator'],
+                                    capabilities: {
+                                        students_timetables: true,
+                                    },
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=students_timetables',
+                        query: {
+                            tab: 'students_timetables',
+                        },
+                    },
+                    $router: {
+                        replace,
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    Schoolyears: { template: '<div>Schoolyears Component</div>' },
+                    Profile: { template: '<div>Profile Component</div>' },
+                },
+            },
+        })
+
+        expect(screen.queryByText('Schülerstundenpläne')).not.toBeInTheDocument()
+        expect(screen.queryByText(/StudentsTimetablesAdminUsers Component/)).not.toBeInTheDocument()
+        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=profile')
+    })
+
     it('renders the restaurant settings tab with overtaken settings sub navigation', async () => {
         const { container } = render(Settings, {
             global: {
@@ -612,6 +757,9 @@ describe('Admin settings page', () => {
                                 config: {
                                     is_auth: true,
                                     roles: ['lunch_admin'],
+                                    capabilities: {
+                                        restaurant: true,
+                                    },
                                     selected_school: { long_name: 'Testschule' },
                                 },
                             },
@@ -664,6 +812,9 @@ describe('Admin settings page', () => {
                                 config: {
                                     is_auth: true,
                                     roles: ['lunch_admin'],
+                                    capabilities: {
+                                        restaurant: true,
+                                    },
                                     selected_school: { long_name: 'Testschule' },
                                 },
                             },
@@ -699,6 +850,109 @@ describe('Admin settings page', () => {
         expect(screen.queryByText('Unterricht')).not.toBeInTheDocument()
         expect(screen.getByText('RestaurantSettings embedded general')).toBeInTheDocument()
         expect(screen.getByText('lunch_admin')).toBeInTheDocument()
+    })
+
+    it('redirects lunch_admin away from restaurant settings when the restaurant capability is disabled', () => {
+        const replace = vi.fn()
+
+        render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['lunch_admin'],
+                                    capabilities: {
+                                        profile: true,
+                                        restaurant: false,
+                                    },
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=restaurant',
+                        query: {
+                            tab: 'restaurant',
+                        },
+                    },
+                    $router: {
+                        replace,
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    RestaurantSettings: {
+                        props: ['embedded', 'panel'],
+                        template: '<div>RestaurantSettings {{ embedded ? "embedded" : "full" }} {{ panel }}</div>',
+                    },
+                    Profile: { template: '<div>Profile Component</div>' },
+                },
+            },
+        })
+
+        expect(screen.queryByText('Restaurant')).not.toBeInTheDocument()
+        expect(screen.queryByText('RestaurantSettings embedded general')).not.toBeInTheDocument()
+        expect(screen.getByText('Profile Component')).toBeInTheDocument()
+        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=profile')
+    })
+
+    it('redirects lunch_admin away from restaurant settings when restaurant capability is missing', () => {
+        const replace = vi.fn()
+
+        render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['lunch_admin'],
+                                    capabilities: {
+                                        profile: true,
+                                    },
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=restaurant',
+                        query: {
+                            tab: 'restaurant',
+                        },
+                    },
+                    $router: {
+                        replace,
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    RestaurantSettings: {
+                        props: ['embedded', 'panel'],
+                        template: '<div>RestaurantSettings {{ embedded ? "embedded" : "full" }} {{ panel }}</div>',
+                    },
+                    Profile: { template: '<div>Profile Component</div>' },
+                },
+            },
+        })
+
+        expect(screen.queryByText('Restaurant')).not.toBeInTheDocument()
+        expect(screen.queryByText('RestaurantSettings embedded general')).not.toBeInTheDocument()
+        expect(screen.getByText('Profile Component')).toBeInTheDocument()
+        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=profile')
     })
 
     it('allows lunch_admin to open the profile settings tab directly', () => {

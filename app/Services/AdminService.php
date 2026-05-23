@@ -13,6 +13,33 @@ use Illuminate\Support\Facades\Notification;
 
 class AdminService
 {
+    private const ADMIN_LOGIN_ROLES = [
+        'super_admin',
+        'admin',
+        'register_admin',
+        'tutoring_admin',
+        'teaching_admin',
+        'materials_admin',
+        'teacher',
+        'lunch_admin',
+        'studentstimetables_admin',
+        'studentstimetables_moderator',
+    ];
+
+    private const USER_LOGIN_ROLES = [
+        'super_admin',
+        'admin',
+        'user',
+        'register_admin',
+        'tutoring_admin',
+        'teaching_admin',
+        'materials_admin',
+        'teacher',
+        'lunch_admin',
+        'studentstimetables_admin',
+        'studentstimetables_moderator',
+    ];
+
     public function checkRegister(array $data): ?User
     {
         $user = User::where('email', $data['email'])->first();
@@ -123,8 +150,7 @@ class AdminService
     {
         $users = User::where('email', $data['email'])
             ->whereHas('roles', function ($query) {
-                $query->where('name', 'like', '%admin%')
-                    ->orWhere('name', 'teacher');
+                $query->whereIn('name', self::ADMIN_LOGIN_ROLES);
             })
             ->get();
 
@@ -289,8 +315,7 @@ class AdminService
 
         $this->validateUserCanLogin($user);
 
-        $allowedRoles = ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher', 'lunch_admin', 'studentstimetables_admin'];
-        if (! $user->hasAnyRole($allowedRoles)) {
+        if (! $user->hasAnyRole(self::ADMIN_LOGIN_ROLES)) {
             abort(423, 'Login aufgrund fehlender Berechtigungen nicht möglich.');
         }
 
@@ -316,8 +341,7 @@ class AdminService
 
         $this->validateUserCanLogin($user);
 
-        $allowedRoles = ['super_admin', 'admin', 'user', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher', 'lunch_admin', 'studentstimetables_admin'];
-        if (! $user->hasAnyRole($allowedRoles)) {
+        if (! $user->hasAnyRole(self::USER_LOGIN_ROLES)) {
             abort(423, 'Login aufgrund der Berechtigungen nicht möglich.');
         }
 

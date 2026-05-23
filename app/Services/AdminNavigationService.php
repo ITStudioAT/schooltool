@@ -21,7 +21,7 @@ class AdminNavigationService
 
     private const RESTAURANT_DASHBOARD_ROLES = ['lunch_admin'];
 
-    private const STUDENTS_TIMETABLES_DASHBOARD_ROLES = ['admin', 'studentstimetables_admin'];
+    private const STUDENTS_TIMETABLES_DASHBOARD_ROLES = ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'];
 
     private const ABA_DASHBOARD_ROLES = ['aba_teacher'];
 
@@ -36,6 +36,7 @@ class AdminNavigationService
         'lunch_admin',
         'aba_teacher',
         'studentstimetables_admin',
+        'studentstimetables_moderator',
     ];
 
     /* MENÜ AUF DER LINKEN SEITE */

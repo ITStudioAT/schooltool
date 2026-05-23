@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
+use App\Models\SchoolTool;
 use App\Models\StudentTimetableEntry;
 use App\Models\TimetableImport;
+use App\Models\User;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\TimetableImportService;
 use Carbon\CarbonImmutable;
@@ -17,11 +19,15 @@ class TimetableImportController extends Controller
 {
     private const SINGLE_DATE_MAXIMUM_DATES = 2;
 
+    private const ADMIN_ROLES = ['super_admin', 'admin', 'studentstimetables_admin'];
+
     public function index(Request $request): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         if ($request->boolean('summary')) {
             $import = TimetableImport::query()
@@ -72,9 +78,11 @@ class TimetableImportController extends Controller
 
     public function show(TimetableImport $timetableImport): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         if ($timetableImport->school_id !== $authUser->school_id || $timetableImport->schoolyear_id !== $authUser->schoolyear_id) {
             abort(403, 'Kein Zugriff auf diesen Import.');
@@ -87,9 +95,11 @@ class TimetableImportController extends Controller
 
     public function destroy(TimetableImport $timetableImport, TimetableImportService $service): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         if ($timetableImport->school_id !== $authUser->school_id || $timetableImport->schoolyear_id !== $authUser->schoolyear_id) {
             abort(403, 'Kein Zugriff auf diesen Import.');
@@ -109,9 +119,11 @@ class TimetableImportController extends Controller
 
     public function updateSingleDateAppointments(Request $request): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         $validated = $request->validate([
             'appointments' => ['array'],
@@ -369,6 +381,21 @@ class TimetableImportController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function scopeToSchoolImportSchoolyear(User $authUser): User
+    {
+        $schoolyearId = SchoolTool::query()
+            ->where('school_id', $authUser->school_id)
+            ->value('active_schoolyear_id') ?: $authUser->schoolyear_id;
+
+        if (! $schoolyearId) {
+            abort(422, 'Kein aktives Schuljahr gefunden.');
+        }
+
+        $authUser->schoolyear_id = (int) $schoolyearId;
+
+        return $authUser;
     }
 
     private function typicalWeeklyHours($entries): ?int

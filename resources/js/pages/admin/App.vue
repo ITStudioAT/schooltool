@@ -142,7 +142,7 @@ export default {
         return {
             adminStore: null,
             schoolStore: null,
-            admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher', 'studentstimetables_admin'],
+            admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher', 'studentstimetables_admin', 'studentstimetables_moderator'],
             is_route_navigation_pending: false,
             routeNavigationLockFallbackTimer: null,
             routeLoadingCount: 0,

@@ -3,15 +3,23 @@
         <v-card rounded="lg" border class="robot-timetable-card">
             <v-card-title class="robot-timetable-card__title d-flex align-center ga-2">
                 <v-icon icon="mdi-robot-outline" />
-                <span>Roboter Stundenplan</span>
+                <span>Wizzard Stundenplan</span>
                 <v-spacer />
+                <v-btn
+                    icon="mdi-cog-outline"
+                    variant="text"
+                    density="comfortable"
+                    color="primary"
+                    title="Einstellungen"
+                    aria-label="Einstellungen"
+                    @click="settingsDialogOpen = true" />
                 <v-btn
                     icon="mdi-information-outline"
                     variant="text"
                     density="comfortable"
                     color="primary"
-                    title="Hinweise zum Roboter Stundenplan"
-                    aria-label="Hinweise zum Roboter Stundenplan"
+                    title="Hinweise zum Wizzard Stundenplan"
+                    aria-label="Hinweise zum Wizzard Stundenplan"
                     @click="infoDialogOpen = true" />
             </v-card-title>
             <v-card-text class="robot-timetable-card__text">
@@ -154,12 +162,41 @@
                             </div>
                         </v-expand-transition>
                     </div>
-                    <v-btn
-                        icon="mdi-pencil"
-                        variant="tonal"
-                        color="primary"
-                        title="Student bearbeiten"
-                        @click="openStudentDialog" />
+                    <div class="robot-student-selection__actions">
+                        <v-btn
+                            icon="mdi-pencil"
+                            variant="tonal"
+                            color="primary"
+                            density="comfortable"
+                            title="Student bearbeiten"
+                            @click="openStudentDialog" />
+                        <v-btn
+                            v-if="selectedStudent"
+                            icon="mdi-close-circle-outline"
+                            variant="text"
+                            color="error"
+                            density="comfortable"
+                            title="Student löschen"
+                            aria-label="Student löschen"
+                            @click="clearStudentSelection" />
+                    </div>
+                </div>
+
+                <div v-if="activeEvaluationCriteria.length" class="robot-eval-criteria-summary">
+                    <div class="robot-eval-criteria-summary__title">
+                        <v-icon icon="mdi-tune-variant" size="14" />
+                        Bewertungskriterien
+                    </div>
+                    <div class="robot-eval-criteria-summary__list">
+                        <span
+                            v-for="(criterion, index) in activeEvaluationCriteria"
+                            :key="criterion.key"
+                            class="robot-eval-criteria-summary__item">
+                            <span class="robot-eval-criteria-summary__rank">{{ index + 1 }}</span>
+                            <span class="robot-eval-criteria-summary__label">{{ criterion.label }}</span>
+                            <span v-if="criterion.optionLabel" class="robot-eval-criteria-summary__option">{{ criterion.optionLabel }}</span>
+                        </span>
+                    </div>
                 </div>
 
                 <div class="robot-selection">
@@ -428,11 +465,11 @@
                         {{ fullGreenTimetableCountError }}
                     </v-alert>
 
-                    <template v-if="selectedRobotTimetable">
+                    <template v-if="timetableCountResultsAvailable">
                         <div class="robot-count-cards">
                             <div
                                 class="robot-count-card"
-                                :class="{ 'robot-count-card--selected': selectedTimetableResultType === 'full_green' }">
+                                :class="{ 'robot-count-card--selected': timetableResultCardSelected('full_green') }">
                                 <div class="robot-count-card__content">
                                     <div class="robot-count-card__label">Volle grüne Stundenpläne</div>
                                     <div class="robot-count-card__value">
@@ -449,7 +486,7 @@
                                 </div>
                                 <div class="robot-count-card__actions">
                                     <v-switch
-                                        :model-value="selectedTimetableResultType === 'full_green'"
+                                        :model-value="timetableResultCardSelected('full_green')"
                                         color="success"
                                         inset
                                         hide-details
@@ -463,7 +500,7 @@
 
                             <div
                                 class="robot-count-card robot-count-card--green"
-                                :class="{ 'robot-count-card--selected': selectedTimetableResultType === 'green' }">
+                                :class="{ 'robot-count-card--selected': timetableResultCardSelected('green') }">
                                 <div class="robot-count-card__content">
                                     <div class="robot-count-card__label">Grüne Stundenpläne</div>
                                     <div class="robot-count-card__value">
@@ -480,7 +517,7 @@
                                 </div>
                                 <div class="robot-count-card__actions">
                                     <v-switch
-                                        :model-value="selectedTimetableResultType === 'green'"
+                                        :model-value="timetableResultCardSelected('green')"
                                         color="primary"
                                         inset
                                         hide-details
@@ -495,7 +532,7 @@
                             <div
                                 v-if="showConflictTimetableResults"
                                 class="robot-count-card robot-count-card--conflict"
-                                :class="{ 'robot-count-card--selected': selectedTimetableResultType === 'conflict' }">
+                                :class="{ 'robot-count-card--selected': timetableResultCardSelected('conflict') }">
                                 <div class="robot-count-card__content">
                                     <div class="robot-count-card__label">Stundenpläne mit Konflikten</div>
                                     <div class="robot-count-card__value">
@@ -512,7 +549,7 @@
                                 </div>
                                 <div class="robot-count-card__actions">
                                     <v-switch
-                                        :model-value="selectedTimetableResultType === 'conflict'"
+                                        :model-value="timetableResultCardSelected('conflict')"
                                         color="warning"
                                         inset
                                         hide-details
@@ -556,6 +593,26 @@
                                 </div>
                             </div>
                         </div>
+
+                        <v-alert
+                            v-if="selectedOptionsNoResultAlertVisible"
+                            type="info"
+                            variant="tonal"
+                            density="compact"
+                            class="robot-no-result-alert">
+                            <div class="robot-no-result-alert__title">
+                                Keine passenden Stundenpläne für die aktuelle Auswahl.
+                            </div>
+                            <ul
+                                v-if="selectedOptionsNoResultReasons.length"
+                                class="robot-no-result-alert__reasons">
+                                <li
+                                    v-for="reason in selectedOptionsNoResultReasons"
+                                    :key="reason">
+                                    {{ reason }}
+                                </li>
+                            </ul>
+                        </v-alert>
 
                         <div class="robot-quality-card">
                             <div class="robot-quality-card__header">
@@ -819,7 +876,7 @@
             <v-card rounded="lg">
                 <v-card-title class="d-flex align-center ga-2">
                     <v-icon icon="mdi-information-outline" />
-                    Hinweise zum Roboter Stundenplan
+                    Hinweise zum Wizzard Stundenplan
                 </v-card-title>
                 <v-card-text>
                     <div class="robot-info-dialog">
@@ -1055,16 +1112,22 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+
+        <v-dialog v-model="settingsDialogOpen" persistent max-width="1120" scrollable>
+            <EvaluationSettings :closable="true" @close="settingsDialogOpen = false" @saved="onSettingsSaved" />
+        </v-dialog>
     </v-col>
 </template>
 
 <script>
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import EvaluationSettings from '../evaluationSettings/EvaluationSettings.vue'
 
 const ROBOT_TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:robot:last-settings'
 
 export default {
+    components: { EvaluationSettings },
     data() {
         return {
             loading: false,
@@ -1096,6 +1159,7 @@ export default {
             subjectMappings: [],
             subjectRows: [],
             infoDialogOpen: false,
+            settingsDialogOpen: false,
             selectionDialogOpen: false,
             studentDialogOpen: false,
             constraintsDialogOpen: false,
@@ -1147,6 +1211,17 @@ export default {
     },
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'selected_schoolyear']),
+        activeEvaluationCriteria() {
+            return this.evaluationCriteria
+                .filter(criterion => criterion.enabled)
+                .map(criterion => ({
+                    key: criterion.key,
+                    label: criterion.label,
+                    optionLabel: criterion.option && criterion.options.length
+                        ? (criterion.options.find(o => o.value === criterion.option)?.label || null)
+                        : null,
+                }))
+        },
         semesterOptions() {
             return Array.from({ length: 8 }, (value, index) => ({
                 title: `Semester ${index + 1}`,
@@ -1453,8 +1528,55 @@ export default {
             return !this.hasGreenTimetableResults
                 && this.timetableResultCount('conflict') > 0
         },
+        timetableCountResultsAvailable() {
+            return this.selectedCourses.length > 0
+                && [
+                    this.fullGreenTimetableCount,
+                    this.greenTimetableCount,
+                    this.conflictTimetableCount,
+                ].some(count => count !== null)
+        },
         selectedTimetableResultCount() {
             return this.timetableResultCounterLimit(this.selectedTimetableResultType)
+        },
+        selectedOptionsNoResultAlertVisible() {
+            return this.timetableCountResultsAvailable
+                && !this.fullGreenTimetableCountLoading
+                && !this.fullGreenTimetableCountError
+                && this.selectedOptionsNoResultReasons.length > 0
+        },
+        selectedOptionsNoResultReasons() {
+            const reasons = []
+
+            if (this.timetableResultCount('full_green') <= 0
+                && this.timetableResultCount('green') <= 0
+                && this.timetableResultCount('conflict') <= 0) {
+                reasons.push(...this.noBaseTimetableResultReasons())
+            }
+
+            if (
+                this.additionalCourseTimetableRequired === true
+                && this.selectedAdditionalCourses.length > 0
+                && this.additionalCourseTimetableCount !== null
+                && Number(this.additionalCourseTimetableCount || 0) <= 0
+            ) {
+                reasons.push(
+                    `Der Zusatzkurs-Filter ist aktiv, aber kein ${this.selectedTimetableResultPluralTitle()} enthält alle gewählten Zusatzkurse: ${this.selectedAdditionalCourseLabels()}.`,
+                )
+            }
+
+            if (
+                this.activeQualityCriterionRows.length > 0
+                && this.allQualityCriteriaCount !== null
+                && Number(this.allQualityCriteriaCount || 0) <= 0
+                && this.selectedTimetableResultCount > 0
+            ) {
+                reasons.push(
+                    `Kein ${this.selectedTimetableResultPluralTitle()} erfüllt alle aktiven Bewertungskriterien: ${this.activeQualityCriterionLabels()}.`,
+                )
+            }
+
+            return this.uniqueValues(reasons).slice(0, 6)
         },
         selectedTimetableResultTitle() {
             return {
@@ -1722,8 +1844,19 @@ export default {
             this.studentSelectionDraft.studentCode = this.normalizedStudentCode(studentCode)
         },
         updateStudentSelection() {
+            this.applyStudentSelection(this.studentSelectionDraft.studentCode)
+        },
+        clearStudentSelection() {
+            if (!this.selectedStudent) return
+
+            this.studentSelectionDraft = {
+                studentCode: null,
+            }
+            this.applyStudentSelection(null)
+        },
+        applyStudentSelection(studentCode) {
             const previousStudentCode = this.normalizedStudentCode(this.studentSelection.studentCode)
-            const nextStudentCode = this.normalizedStudentCode(this.studentSelectionDraft.studentCode)
+            const nextStudentCode = this.normalizedStudentCode(studentCode)
 
             this.studentSelection = {
                 studentCode: nextStudentCode,
@@ -1802,6 +1935,16 @@ export default {
         },
         closeConstraintsDialog() {
             this.constraintsDialogOpen = false
+        },
+        async onSettingsSaved() {
+            this.settingsDialogOpen = false
+
+            try {
+                const response = await axios.get('/api/admin/students-timetables/evaluation-settings')
+                this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(response.data?.data?.criteria || [])
+            } catch {
+                // keep existing criteria on failure
+            }
         },
         updateConstraints() {
             this.constraints = this.copyConstraints(this.constraintsDraft)
@@ -1930,8 +2073,10 @@ export default {
             if (!this.isTimetableResultTypeSelectable(type)) return
 
             const resultTypeChanged = this.selectedTimetableResultType !== type
+            const filterChanged = this.additionalCourseTimetableRequired === true
             this.selectedTimetableResultType = type
-            if (resultTypeChanged) {
+            this.additionalCourseTimetableRequired = false
+            if (resultTypeChanged || filterChanged) {
                 this.setTimetableResultCounter(type, 1)
             }
 
@@ -1957,6 +2102,52 @@ export default {
             if (this.timetableCalculationReady()) {
                 this.loadFullGreenTimetableCount()
             }
+        },
+        timetableResultCardSelected(type) {
+            return this.additionalCourseTimetableRequired !== true
+                && this.selectedTimetableResultType === type
+        },
+        noBaseTimetableResultReasons() {
+            if (!this.configuredCourseGroups.length) {
+                return ['Es sind keine TT-Stunden für diese Schule und dieses Schuljahr importiert.']
+            }
+
+            const courseReasons = this.timetableCandidateSets(this.selectedCourses)
+                .filter(candidateSet => !candidateSet.options?.length)
+                .map(candidateSet => this.candidateSetProblemMessage(candidateSet))
+                .filter(Boolean)
+
+            if (courseReasons.length) {
+                const visibleReasons = courseReasons.slice(0, 4)
+                const hiddenReasonsCount = courseReasons.length - visibleReasons.length
+
+                if (hiddenReasonsCount > 0) {
+                    visibleReasons.push(`Weitere ${this.formatNumber(hiddenReasonsCount)} Kurse haben keine passende TT-Stunde.`)
+                }
+
+                return visibleReasons
+            }
+
+            return ['Die ausgewählten Kurse passen mit den gewählten Tagen, Stunden und gesperrten Zeiten in keiner Kombination zusammen.']
+        },
+        selectedTimetableResultPluralTitle() {
+            return {
+                full_green: 'voller grüner Stundenplan',
+                green: 'grüner Stundenplan',
+                conflict: 'Stundenplan mit Konflikten',
+            }[this.selectedTimetableResultType] || 'Stundenplan'
+        },
+        selectedAdditionalCourseLabels() {
+            return this.selectedAdditionalCourses
+                .map(course => [course.code, course.name].filter(Boolean).join(' '))
+                .filter(Boolean)
+                .join(', ')
+        },
+        activeQualityCriterionLabels() {
+            return this.activeQualityCriterionRows
+                .map(criterion => criterion.label)
+                .filter(Boolean)
+                .join(', ')
         },
         isTimetableResultTypeSelectable(type) {
             if (type === 'conflict') {
@@ -2526,7 +2717,7 @@ export default {
             if (this.allQualityCriteriaCount === null) return '-'
 
             return `${this.formatNumber(this.allQualityCriteriaCount)} / ${
-                this.formatNumber(this.timetableResultCount(this.selectedTimetableResultType))
+                this.formatNumber(this.selectedTimetableResultCount)
             }`
         },
         allQualityCriteriaCountDetail() {
@@ -5543,6 +5734,12 @@ export default {
     min-width: 0;
 }
 
+.robot-student-selection__actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
 .robot-selected-card {
     min-height: 58px;
     padding: 8px 10px;
@@ -5848,6 +6045,19 @@ export default {
     border-radius: 8px;
     padding: 12px;
     background: rgba(255, 255, 255, 0.82);
+}
+
+.robot-no-result-alert {
+    margin-top: 12px;
+}
+
+.robot-no-result-alert__title {
+    font-weight: 700;
+}
+
+.robot-no-result-alert__reasons {
+    margin: 6px 0 0;
+    padding-left: 18px;
 }
 
 .robot-quality-card__header {
@@ -6509,5 +6719,62 @@ export default {
         grid-template-columns: 44px minmax(46px, 0.8fr) minmax(92px, 1.5fr) minmax(52px, 0.7fr) minmax(34px, 0.4fr);
         gap: 6px;
     }
+}
+
+.robot-eval-criteria-summary {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px solid rgba(37, 99, 235, 0.10);
+    border-radius: 8px;
+    background: rgba(248, 251, 255, 0.7);
+}
+
+.robot-eval-criteria-summary__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+    color: rgba(15, 23, 42, 0.5);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.robot-eval-criteria-summary__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.robot-eval-criteria-summary__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(37, 99, 235, 0.08);
+    font-size: 0.72rem;
+    line-height: 1.5;
+}
+
+.robot-eval-criteria-summary__rank {
+    color: #1d4ed8;
+    font-weight: 700;
+    font-size: 0.68rem;
+}
+
+.robot-eval-criteria-summary__label {
+    color: rgba(15, 23, 42, 0.78);
+}
+
+.robot-eval-criteria-summary__option {
+    color: rgba(15, 23, 42, 0.5);
+    font-size: 0.68rem;
+}
+
+.robot-eval-criteria-summary__option::before {
+    content: '·';
+    margin-right: 2px;
 }
 </style>

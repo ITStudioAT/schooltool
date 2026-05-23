@@ -9,11 +9,11 @@ describe('Students timetable robot page', () => {
             'utf8',
         )
 
-        expect(componentSource).toContain('Roboter Stundenplan')
+        expect(componentSource).toContain('Wizzard Stundenplan')
         expect(componentSource).toContain('icon="mdi-information-outline"')
         expect(componentSource).toContain('infoDialogOpen')
         expect(componentSource).toContain('<v-dialog v-model="infoDialogOpen" persistent max-width="680">')
-        expect(componentSource).toContain('Hinweise zum Roboter Stundenplan')
+        expect(componentSource).toContain('Hinweise zum Wizzard Stundenplan')
         expect(componentSource).toContain('Die Note B bedeutet befreit')
         expect(componentSource).toContain('Grundregel für Folgemodule')
         expect(componentSource).toContain('M5 darf erst gebucht werden, wenn M3 positiv')
@@ -103,7 +103,11 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain("'09_1': 1")
         expect(componentSource).toContain("'12_2': 8")
         expect(componentSource).toContain('studentSemesterLabel(student)')
+        expect(componentSource).toContain('class="robot-student-selection__actions"')
         expect(componentSource).toContain('title="Student bearbeiten"')
+        expect(componentSource).toContain('title="Student löschen"')
+        expect(componentSource).toContain('icon="mdi-close-circle-outline"')
+        expect(componentSource).toContain('@click="clearStudentSelection"')
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/robot/students')")
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/robot/student-completed-courses'")
         expect(componentSource).toContain('Abgeschlossene Kurse')
@@ -249,13 +253,14 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('<v-checkbox-btn')
         expect(componentSource).toContain('qualityCounterReached(counter)')
         expect(componentSource).toContain("selectedTimetableResultType: 'full_green'")
-        expect(componentSource).toContain("selectedTimetableResultType === 'full_green'")
-        expect(componentSource).toContain("selectedTimetableResultType === 'green'")
-        expect(componentSource).toContain("selectedTimetableResultType === 'conflict'")
+        expect(componentSource).toContain("timetableResultCardSelected('full_green')")
+        expect(componentSource).toContain("timetableResultCardSelected('green')")
+        expect(componentSource).toContain("timetableResultCardSelected('conflict')")
         expect(componentSource).toContain("setSelectedTimetableResultType('full_green', $event)")
         expect(componentSource).toContain("setSelectedTimetableResultType('green', $event)")
         expect(componentSource).toContain("setSelectedTimetableResultType('conflict', $event)")
         expect(componentSource).toContain('setSelectedTimetableResultType(type, selected)')
+        expect(componentSource).toContain('timetableResultCardSelected(type)')
         expect(componentSource).toContain('isTimetableResultTypeSelectable(type)')
         expect(componentSource).toContain(`:disabled="!isTimetableResultTypeSelectable('full_green')"`)
         expect(componentSource).toContain(`:disabled="!isTimetableResultTypeSelectable('green')"`)
@@ -269,6 +274,13 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('showConflictTimetableResults()')
         expect(componentSource).toContain('v-if="showConflictTimetableResults"')
         expect(componentSource).toContain('selectedTimetableResultCount()')
+        expect(componentSource).toContain('timetableCountResultsAvailable()')
+        expect(componentSource).toContain('selectedOptionsNoResultAlertVisible()')
+        expect(componentSource).toContain('selectedOptionsNoResultReasons()')
+        expect(componentSource).toContain('noBaseTimetableResultReasons()')
+        expect(componentSource).toContain('Keine passenden Stundenpläne für die aktuelle Auswahl.')
+        expect(componentSource).toContain('Der Zusatzkurs-Filter ist aktiv')
+        expect(componentSource).toContain('Kein ${this.selectedTimetableResultPluralTitle()} erfüllt alle aktiven Bewertungskriterien')
         expect(componentSource).toContain('timetableResultCounterLimit(type)')
         expect(componentSource).toContain('selectedTimetableResultTitle()')
         expect(componentSource).toContain('robot-timetable-selector')
@@ -313,7 +325,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('generatedWeekdays()')
         expect(componentSource).toContain('generatedTimes()')
         expect(componentSource).toContain('clearGeneratedTimetables()')
-        expect(componentSource).toContain('<template v-if="selectedRobotTimetable">')
+        expect(componentSource).toContain('<template v-if="timetableCountResultsAvailable">')
         expect(componentSource).toContain('<div v-if="selectedRobotTimetable" class="robot-generated">')
         expect(componentSource).toContain('<div class="robot-course-list__header robot-generated-header">')
         expect(componentSource).toContain('<div class="robot-course-list__title">Stundenplan</div>')
@@ -528,10 +540,26 @@ describe('Students timetable robot page', () => {
             selectedTimetableResultType: 'green',
             fullGreenTimetableCount: 4,
             greenTimetableCount: 48,
+            selectedTimetableResultCount: 48,
         }
 
         expect(methods.allQualityCriteriaCountLabel.call(ctx)).toBe('12 / 48')
         expect(methods.allQualityCriteriaCountDetail.call(ctx)).toBe('Ausgewählt: erfüllt')
+    })
+
+    it('shows the all quality criteria count against the active filtered timetable result count', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            activeQualityCriterionRows: [
+                { key: 'free_days', enabled: true, selected_reached: true },
+                { key: 'saturday_free', enabled: true, selected_reached: true },
+            ],
+            allQualityCriteriaCount: 7,
+            selectedTimetableResultCount: 124,
+        }
+
+        expect(methods.allQualityCriteriaCountLabel.call(ctx)).toBe('7 / 124')
     })
 
     it('shows when the selected robot timetable does not match all active quality criteria', () => {
@@ -632,6 +660,94 @@ describe('Students timetable robot page', () => {
         expect(ctx.greenTimetableNumber).toBe(1)
         expect(ctx.fullGreenTimetableNumber).toBe(4)
         expect(ctx.loadFullGreenTimetableCountCalled).toBe(true)
+    })
+
+    it('keeps result type switches visually exclusive from the additional course filter', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedTimetableResultType: 'full_green',
+            additionalCourseTimetableRequired: true,
+            fullGreenTimetableCount: 8,
+            greenTimetableCount: 48,
+            fullGreenTimetableNumber: 4,
+            greenTimetableNumber: 32,
+            loadFullGreenTimetableCountCalled: false,
+            loadFullGreenTimetableCount() {
+                this.loadFullGreenTimetableCountCalled = true
+            },
+        }
+
+        expect(methods.timetableResultCardSelected.call(ctx, 'full_green')).toBe(false)
+
+        methods.setSelectedTimetableResultType.call(ctx, 'green', true)
+
+        expect(ctx.additionalCourseTimetableRequired).toBe(false)
+        expect(ctx.selectedTimetableResultType).toBe('green')
+        expect(ctx.greenTimetableNumber).toBe(1)
+        expect(methods.timetableResultCardSelected.call(ctx, 'green')).toBe(true)
+        expect(ctx.loadFullGreenTimetableCountCalled).toBe(true)
+    })
+
+    it('explains when the additional course filter has no matching timetable', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedCourses: [{ key: 'D2', code: 'D2' }],
+            selectedAdditionalCourses: [{ key: 'INF2', code: 'INF2', name: 'Informatik 2' }],
+            activeQualityCriterionRows: [],
+            selectedTimetableResultType: 'full_green',
+            selectedTimetableResultCount: 0,
+            fullGreenTimetableCount: 12,
+            greenTimetableCount: 12,
+            conflictTimetableCount: 0,
+            additionalCourseTimetableRequired: true,
+            additionalCourseTimetableCount: 0,
+            allQualityCriteriaCount: null,
+            fullGreenTimetableCountLoading: false,
+            fullGreenTimetableCountError: '',
+        }
+
+        ctx.timetableCountResultsAvailable = computed.timetableCountResultsAvailable.call(ctx)
+        ctx.selectedOptionsNoResultReasons = computed.selectedOptionsNoResultReasons.call(ctx)
+
+        expect(ctx.selectedOptionsNoResultReasons).toEqual([
+            'Der Zusatzkurs-Filter ist aktiv, aber kein voller grüner Stundenplan enthält alle gewählten Zusatzkurse: INF2 Informatik 2.',
+        ])
+        expect(computed.selectedOptionsNoResultAlertVisible.call(ctx)).toBe(true)
+    })
+
+    it('explains when active quality criteria have no matching timetable', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedCourses: [{ key: 'D2', code: 'D2' }],
+            selectedAdditionalCourses: [],
+            activeQualityCriterionRows: [
+                { key: 'saturday_free', label: 'Samstag kein Unterricht', enabled: true },
+                { key: 'free_days', label: 'Anzahl freie Tage', enabled: true },
+            ],
+            selectedTimetableResultType: 'green',
+            selectedTimetableResultCount: 12,
+            fullGreenTimetableCount: 0,
+            greenTimetableCount: 12,
+            conflictTimetableCount: 0,
+            additionalCourseTimetableRequired: false,
+            additionalCourseTimetableCount: 0,
+            allQualityCriteriaCount: 0,
+            fullGreenTimetableCountLoading: false,
+            fullGreenTimetableCountError: '',
+        }
+
+        ctx.timetableCountResultsAvailable = computed.timetableCountResultsAvailable.call(ctx)
+        ctx.selectedOptionsNoResultReasons = computed.selectedOptionsNoResultReasons.call(ctx)
+
+        expect(ctx.selectedOptionsNoResultReasons).toEqual([
+            'Kein grüner Stundenplan erfüllt alle aktiven Bewertungskriterien: Samstag kein Unterricht, Anzahl freie Tage.',
+        ])
+        expect(computed.selectedOptionsNoResultAlertVisible.call(ctx)).toBe(true)
     })
 
     it('falls back to conflict timetables when no green result exists', () => {
@@ -828,6 +944,50 @@ describe('Students timetable robot page', () => {
             'Dienstag, 3. Stunde',
             '4. Stunde',
         ])
+    })
+
+    it('clears the selected student directly', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: { student_code: '100' },
+            studentSelection: {
+                studentCode: '100',
+            },
+            studentSelectionDraft: {
+                studentCode: '100',
+            },
+            studentSelectionDefaultsPendingCode: '100',
+            additionalCourseSelectedKeys: ['D2'],
+            studentCompletedCoursesExpanded: true,
+            studentDialogOpen: true,
+            studentSearch: 'Mayr',
+            defaultSelectionApplied: false,
+            generatedCleared: false,
+            saved: false,
+            applySelectedStudentDefaultSelection() {
+                this.defaultSelectionApplied = true
+            },
+            clearGeneratedTimetables() {
+                this.generatedCleared = true
+            },
+            saveLastRobotState() {
+                this.saved = true
+            },
+        }
+
+        methods.clearStudentSelection.call(ctx)
+
+        expect(ctx.studentSelection).toEqual({ studentCode: null })
+        expect(ctx.studentSelectionDraft).toEqual({ studentCode: null })
+        expect(ctx.studentSelectionDefaultsPendingCode).toBeNull()
+        expect(ctx.additionalCourseSelectedKeys).toEqual([])
+        expect(ctx.studentCompletedCoursesExpanded).toBe(false)
+        expect(ctx.studentDialogOpen).toBe(false)
+        expect(ctx.studentSearch).toBe('')
+        expect(ctx.defaultSelectionApplied).toBe(true)
+        expect(ctx.generatedCleared).toBe(true)
+        expect(ctx.saved).toBe(true)
     })
 
     it('removes single time exclusions when a whole hour is disabled', () => {

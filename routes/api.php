@@ -47,6 +47,7 @@ use App\Http\Controllers\Admin\SchoolController;
 use App\Http\Controllers\Admin\SchoolToolController;
 use App\Http\Controllers\Admin\SchoolyearController;
 use App\Http\Controllers\Admin\SpaRoleController;
+use App\Http\Controllers\Admin\StudentsTimetables\AdminUserController as StudentsTimetablesAdminUserController;
 use App\Http\Controllers\Admin\StudentsTimetables\RecognitionCsvUploadController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentsTimetablesController;
 use App\Http\Controllers\Admin\StudentsTimetables\SubjectOverviewJsonUploadController;
@@ -145,6 +146,22 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     Route::middleware(['auth:sanctum', 'api-allowed:scope:students_timetables_access', 'tool-licensed:StudentsTimetables,auth,scope:students_timetables_access'])->group(function () {
         Route::get('/admin/students-timetables', [StudentsTimetablesController::class, 'index']);
+        Route::get('/admin/students-timetables/admin-users', [StudentsTimetablesAdminUserController::class, 'index'])
+            ->defaults('managedRole', 'studentstimetables_admin');
+        Route::post('/admin/students-timetables/admin-users', [StudentsTimetablesAdminUserController::class, 'store'])
+            ->defaults('managedRole', 'studentstimetables_admin');
+        Route::put('/admin/students-timetables/admin-users/{adminUser}', [StudentsTimetablesAdminUserController::class, 'update'])
+            ->defaults('managedRole', 'studentstimetables_admin');
+        Route::post('/admin/students-timetables/admin-users/toggle-active', [StudentsTimetablesAdminUserController::class, 'toggleActive'])
+            ->defaults('managedRole', 'studentstimetables_admin');
+        Route::get('/admin/students-timetables/moderator-users', [StudentsTimetablesAdminUserController::class, 'index'])
+            ->defaults('managedRole', 'studentstimetables_moderator');
+        Route::post('/admin/students-timetables/moderator-users', [StudentsTimetablesAdminUserController::class, 'store'])
+            ->defaults('managedRole', 'studentstimetables_moderator');
+        Route::put('/admin/students-timetables/moderator-users/{adminUser}', [StudentsTimetablesAdminUserController::class, 'update'])
+            ->defaults('managedRole', 'studentstimetables_moderator');
+        Route::post('/admin/students-timetables/moderator-users/toggle-active', [StudentsTimetablesAdminUserController::class, 'toggleActive'])
+            ->defaults('managedRole', 'studentstimetables_moderator');
         Route::get('/admin/students-timetables/school-hours', [StudentsTimetablesController::class, 'schoolHours']);
         Route::get('/admin/students-timetables/course-groups', [StudentsTimetablesController::class, 'courseGroups']);
         Route::get('/admin/students-timetables/robot/students', [StudentsTimetablesController::class, 'robotStudents']);
@@ -316,7 +333,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, lunch_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:scope:restaurant_access'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:scope:restaurant_access', 'tool-licensed:Restaurant,auto,scope:restaurant_access'])->group(function () {
         Route::get('/admin/restaurant/settings', [RestaurantSettingsController::class, 'index']);
         Route::get('/admin/restaurant/cdgym/legacy-stats', RestaurantCdgymLegacyStatsController::class);
         Route::post('/admin/restaurant/cdgym/legacy-import', RestaurantCdgymLegacyImportController::class);

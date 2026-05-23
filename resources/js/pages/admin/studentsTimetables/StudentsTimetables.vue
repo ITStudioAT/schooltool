@@ -105,13 +105,16 @@ export default {
             return chips
         },
         navigationItems() {
+            return this.allNavigationItems.filter(item => this.canAccessNavigationItem(item))
+        },
+        allNavigationItems() {
             return [
                 {
                     key: 'timetable',
                     label: 'Stundenplan',
                     meta: 'Center',
                     icon: 'mdi-calendar-clock-outline',
-                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
                 },
                 {
                     key: 'imports',
@@ -125,16 +128,26 @@ export default {
                     label: 'Fächer',
                     meta: 'Überblick',
                     icon: 'mdi-book-open-page-variant-outline',
-                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
                 },
             ]
         },
         activeNavigationKey() {
-            if (this.$route.params.section === 'timetable' && this.$route.params.subsection === 'imports') {
+            if (
+                this.canManageStudentsTimetables
+                && this.$route.params.section === 'timetable'
+                && this.$route.params.subsection === 'imports'
+            ) {
                 return 'imports'
             }
 
             return this.main_action
+        },
+        configuredRoleNames() {
+            return Array.isArray(this.config?.roles) ? this.config.roles : []
+        },
+        canManageStudentsTimetables() {
+            return this.hasAnyRole(['super_admin', 'admin', 'studentstimetables_admin'])
         },
         activeSection() {
             const sections = {
@@ -173,6 +186,7 @@ export default {
         if (section && mainSectionKeys.includes(section)) {
             this.main_action = section
         }
+        this.redirectUnauthorizedSection()
     },
     watch: {
         '$route.params.section'(section) {
@@ -187,9 +201,25 @@ export default {
             }
 
             this.main_action = 'timetable'
+            this.redirectUnauthorizedSection()
+        },
+        '$route.params.subsection'() {
+            this.redirectUnauthorizedSection()
         },
     },
     methods: {
+        hasAnyRole(roleNames) {
+            return roleNames.some(roleName => this.configuredRoleNames.includes(roleName))
+        },
+        canAccessNavigationItem(item) {
+            return this.hasAnyRole(item.roles || [])
+        },
+        redirectUnauthorizedSection() {
+            if (this.$route.params.section === 'timetable' && this.$route.params.subsection === 'imports' && !this.canManageStudentsTimetables) {
+                this.main_action = 'timetable'
+                this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
+            }
+        },
         redirectLegacySection(section) {
             if (section === 'overview') {
                 this.main_action = 'timetable'

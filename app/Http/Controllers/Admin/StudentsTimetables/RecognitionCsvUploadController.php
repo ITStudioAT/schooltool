@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
+use App\Models\SchoolTool;
 use App\Models\StudentTimetableRecognitionImport;
 use App\Models\StudentTimetableRecognitionRow;
+use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\StudentsTimetables\RecognitionImportService;
 use Carbon\CarbonImmutable;
@@ -18,11 +20,15 @@ use Illuminate\Support\Str;
 
 class RecognitionCsvUploadController extends Controller
 {
+    private const ADMIN_ROLES = ['super_admin', 'admin', 'studentstimetables_admin'];
+
     public function index(Request $request, RecognitionImportService $service): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         if ($request->boolean('summary')) {
             $import = StudentTimetableRecognitionImport::query()
@@ -70,7 +76,7 @@ class RecognitionCsvUploadController extends Controller
 
     public function upload(FileUploadService $fileUploadService): Response
     {
-        if (! $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
@@ -86,9 +92,11 @@ class RecognitionCsvUploadController extends Controller
         FileUploadService $fileUploadService,
         RecognitionImportService $service,
     ): Response {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         $this->ensureCsv();
 
@@ -115,9 +123,11 @@ class RecognitionCsvUploadController extends Controller
 
     public function destroy(StudentTimetableRecognitionImport $recognitionImport): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         if ($recognitionImport->school_id !== $authUser->school_id || $recognitionImport->schoolyear_id !== $authUser->schoolyear_id) {
             abort(404);
@@ -159,6 +169,21 @@ class RecognitionCsvUploadController extends Controller
         $timestamp = now()->format('Ymd_His');
 
         return "{$baseName}_{$timestamp}";
+    }
+
+    private function scopeToSchoolImportSchoolyear(User $authUser): User
+    {
+        $schoolyearId = SchoolTool::query()
+            ->where('school_id', $authUser->school_id)
+            ->value('active_schoolyear_id') ?: $authUser->schoolyear_id;
+
+        if (! $schoolyearId) {
+            abort(422, 'Kein aktives Schuljahr gefunden.');
+        }
+
+        $authUser->schoolyear_id = (int) $schoolyearId;
+
+        return $authUser;
     }
 
     private function recognitionImportPayload(StudentTimetableRecognitionImport $import): array

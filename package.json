@@ -16,6 +16,9 @@
         "mcp": "ruler apply",
         "mcp:revert": "ruler revert"
     },
+    "overrides": {
+        "glob": "13.0.6"
+    },
     "devDependencies": {
         "@intellectronica/ruler": "^0.3.40",
         "@laravel/echo-vue": "^2.3.4",

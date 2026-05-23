@@ -23,7 +23,7 @@ class SchoolyearController extends Controller
     public function index(SchoolyearIndexRequest $request)
     {
 
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'teacher', 'aba_teacher', 'studentstimetables_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin', 'register_admin', 'teacher', 'aba_teacher', 'studentstimetables_admin', 'studentstimetables_moderator'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -120,7 +120,7 @@ class SchoolyearController extends Controller
     // Set active schoolyear to user
     public function setActiveSchoolyear(SetActiveSchoolyearRequest $request, SchoolyearService $schoolyearService)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'teacher', 'aba_teacher', 'studentstimetables_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin', 'register_admin', 'teacher', 'aba_teacher', 'studentstimetables_admin', 'studentstimetables_moderator'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

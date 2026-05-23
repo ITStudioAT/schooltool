@@ -1139,6 +1139,7 @@ describe('Groups page header', () => {
         expect(source).toContain('scheduleSyncStatusReload()')
         expect(source).toContain('clearSyncStatusReload()')
         expect(source).toContain('groups-embedded-explorer')
+        expect(source).toContain('grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);')
         expect(source).toContain('embeddedSelectedGroupType')
         expect(source).toContain('embeddedGroupTypeButtons()')
         expect(source).toContain('activeEmbeddedGroupPanels()')

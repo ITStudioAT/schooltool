@@ -106,6 +106,7 @@ it('persists timetable evaluation settings with priorities and options', functio
     $settings = StudentTimetableEvaluationSetting::query()
         ->where('school_id', $user->school_id)
         ->where('schoolyear_id', $user->schoolyear_id)
+        ->where('user_id', $user->id)
         ->firstOrFail()
         ->settings;
 
@@ -133,6 +134,98 @@ it('persists timetable evaluation settings with priorities and options', functio
                 ->enabled->toBeTrue()
                 ->priority->toBe(5),
         );
+});
+
+it('keeps timetable evaluation settings separate for each user', function () {
+    $user = createEvaluationSettingsUser();
+    $otherUser = User::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+    ]);
+    $otherUser->assignRole('admin');
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/evaluation-settings', [
+            'criteria' => [
+                ['key' => 'saturday_free', 'enabled' => true, 'priority' => 1],
+                ['key' => 'free_days', 'enabled' => false, 'priority' => 2],
+                ['key' => 'few_gaps', 'enabled' => false, 'priority' => 3],
+                ['key' => 'starts_from_period_10', 'enabled' => false, 'priority' => 4],
+                ['key' => 'ends_by_period_13', 'enabled' => false, 'priority' => 5],
+            ],
+        ])
+        ->assertSuccessful();
+
+    $this->actingAs($otherUser)
+        ->putJson('/api/admin/students-timetables/evaluation-settings', [
+            'criteria' => [
+                ['key' => 'saturday_free', 'enabled' => false, 'priority' => 1],
+                ['key' => 'free_days', 'enabled' => true, 'priority' => 2],
+                ['key' => 'few_gaps', 'enabled' => false, 'priority' => 3],
+                ['key' => 'starts_from_period_10', 'enabled' => false, 'priority' => 4],
+                ['key' => 'ends_by_period_13', 'enabled' => false, 'priority' => 5],
+            ],
+        ])
+        ->assertSuccessful();
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/evaluation-settings')
+        ->assertSuccessful()
+        ->assertJsonPath('data.criteria.0.key', 'saturday_free')
+        ->assertJsonPath('data.criteria.0.enabled', true)
+        ->assertJsonPath('data.criteria.1.key', 'free_days')
+        ->assertJsonPath('data.criteria.1.enabled', false);
+
+    $this->actingAs($otherUser)
+        ->getJson('/api/admin/students-timetables/evaluation-settings')
+        ->assertSuccessful()
+        ->assertJsonPath('data.criteria.0.key', 'saturday_free')
+        ->assertJsonPath('data.criteria.0.enabled', false)
+        ->assertJsonPath('data.criteria.1.key', 'free_days')
+        ->assertJsonPath('data.criteria.1.enabled', true);
+
+    expect(StudentTimetableEvaluationSetting::query()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $user->schoolyear_id)
+        ->count())->toBe(2);
+});
+
+it('uses the school active schoolyear for user evaluation settings when no user schoolyear is selected', function () {
+    $user = createEvaluationSettingsUser();
+    $schoolyearId = $user->schoolyear_id;
+    $user->forceFill(['schoolyear_id' => null])->save();
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolyearId]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/evaluation-settings')
+        ->assertSuccessful()
+        ->assertJsonCount(5, 'data.criteria');
+});
+
+it('allows students timetables moderators to save their own evaluation settings', function () {
+    $user = createEvaluationSettingsUser();
+    Role::firstOrCreate([
+        'name' => 'studentstimetables_moderator',
+        'guard_name' => 'web',
+    ]);
+    $user->syncRoles(['studentstimetables_moderator']);
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/evaluation-settings', [
+            'criteria' => [
+                ['key' => 'saturday_free', 'enabled' => true, 'priority' => 1],
+                ['key' => 'free_days', 'enabled' => false, 'priority' => 2],
+                ['key' => 'few_gaps', 'enabled' => false, 'priority' => 3],
+                ['key' => 'starts_from_period_10', 'enabled' => false, 'priority' => 4],
+                ['key' => 'ends_by_period_13', 'enabled' => false, 'priority' => 5],
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.criteria.0.key', 'saturday_free')
+        ->assertJsonPath('data.criteria.0.enabled', true);
 });
 
 it('builds active run criteria from a submitted payload without persisting it', function () {

@@ -41,11 +41,49 @@ class RecordsCreateService
                 collect($licence)->except('name')->toArray()
             );
 
-            Licence::updateOrCreate(
-                ['name' => $name],
-                $attributes
-            );
+            $licence = Licence::firstOrNew(['name' => $name]);
+
+            if ($licence->exists) {
+                $licence->fill($this->seededLicenceAttributesForExistingLicence($attributes));
+                $licence->save();
+
+                continue;
+            }
+
+            $licence->fill($attributes);
+            $licence->save();
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    private function seededLicenceAttributesForExistingLicence(array $attributes): array
+    {
+        return collect($attributes)
+            ->except([
+                'licence_model',
+                'licence_schema_version',
+                'school_licence_enabled',
+                'school_price_per_year',
+                'school_included_storage_gb',
+                'school_extra_storage_step_gb',
+                'school_extra_storage_step_price',
+                'admin_licence_enabled',
+                'admin_price_per_year',
+                'admin_role_names',
+                'admin_included_storage_gb',
+                'admin_extra_storage_step_gb',
+                'admin_extra_storage_step_price',
+                'user_licence_enabled',
+                'user_price_per_year',
+                'user_role_names',
+                'user_included_storage_gb',
+                'user_extra_storage_step_gb',
+                'user_extra_storage_step_price',
+            ])
+            ->toArray();
     }
 
     /**

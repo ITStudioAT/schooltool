@@ -18,6 +18,10 @@ uses(TestCase::class, RefreshDatabase::class);
 
 it('passes explicit candidate roles to the licence service', function () {
     $school = School::factory()->create();
+    SchoolTool::factory()->create([
+        'school_id' => $school->id,
+        'teaching_visible_admin' => true,
+    ]);
     $user = User::factory()->create(['school_id' => $school->id]);
 
     Role::findOrCreate('admin', 'web');
@@ -67,6 +71,10 @@ it('passes explicit candidate roles to the licence service', function () {
 
 it('passes scope candidate roles to the licence service', function () {
     $school = School::factory()->create();
+    SchoolTool::factory()->create([
+        'school_id' => $school->id,
+        'materials_visible_admin' => true,
+    ]);
     $user = User::factory()->create(['school_id' => $school->id]);
 
     Role::findOrCreate('admin', 'web');
@@ -179,6 +187,10 @@ it('uses scope references on route middleware instead of raw role lists', functi
 
 it('redirects blocked admin web routes to /admin instead of /', function () {
     $school = School::factory()->create();
+    SchoolTool::factory()->create([
+        'school_id' => $school->id,
+        'teaching_visible_admin' => true,
+    ]);
     $user = User::factory()->create(['school_id' => $school->id]);
 
     $request = Request::create('/admin/teaching', 'GET');

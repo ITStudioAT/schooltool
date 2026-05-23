@@ -8,6 +8,7 @@ use App\Models\Import116;
 use App\Models\StudentTimetableRecognitionRow;
 use App\Models\User;
 use App\Services\SchoolHourService;
+use App\Services\SchoolyearService;
 use App\Services\StudentsTimetables\RobotTimetableGeneratorService;
 use App\Services\StudentsTimetables\StudentsTimetablesService;
 use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
@@ -18,11 +19,13 @@ use Illuminate\Validation\Rule;
 
 class StudentsTimetablesController extends Controller
 {
+    private const ADMIN_ROLES = ['super_admin', 'admin', 'studentstimetables_admin'];
+
+    private const MODERATOR_ROLES = ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'];
+
     public function index(StudentsTimetablesService $service): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
-            abort(403, 'Sie haben keine Berechtigung.');
-        }
+        $authUser = $this->studentsTimetablesUser();
 
         return response()->json([
             'data' => $service->dashboardForUser($authUser),
@@ -31,9 +34,7 @@ class StudentsTimetablesController extends Controller
 
     public function schoolHours(SchoolHourService $service): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
-            abort(403, 'Sie haben keine Berechtigung.');
-        }
+        $authUser = $this->studentsTimetablesUser();
 
         return response()->json([
             'data' => SchoolHourResource::collection($service->listForUser($authUser)),
@@ -42,9 +43,7 @@ class StudentsTimetablesController extends Controller
 
     public function courseGroups(StudentTimetableOverviewService $service): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
-            abort(403, 'Sie haben keine Berechtigung.');
-        }
+        $authUser = $this->studentsTimetablesUser();
 
         return response()->json([
             'data' => $service->courseGroupsForUser($authUser),
@@ -53,9 +52,7 @@ class StudentsTimetablesController extends Controller
 
     public function robotStudents(): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
-            abort(403, 'Sie haben keine Berechtigung.');
-        }
+        $authUser = $this->studentsTimetablesUser();
 
         $students = Import116::query()
             ->where('school_id', $authUser->school_id)
@@ -84,9 +81,7 @@ class StudentsTimetablesController extends Controller
 
     public function robotStudentCompletedCourses(Request $request): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
-            abort(403, 'Sie haben keine Berechtigung.');
-        }
+        $authUser = $this->studentsTimetablesUser();
 
         $validated = $request->validate([
             'student_code' => ['required', 'string', 'max:255'],
@@ -164,9 +159,7 @@ class StudentsTimetablesController extends Controller
         StudentTimetableOverviewService $overviewService,
         StudentTimetableEvaluationSettingsService $evaluationSettingsService,
     ): JsonResponse {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
-            abort(403, 'Sie haben keine Berechtigung.');
-        }
+        $authUser = $this->studentsTimetablesUser();
 
         $validated = $request->validate([
             'selection' => ['required', 'array'],
@@ -219,9 +212,7 @@ class StudentsTimetablesController extends Controller
 
     public function overviewSelections(StudentTimetableOverviewService $service): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
-            abort(403, 'Sie haben keine Berechtigung.');
-        }
+        $authUser = $this->studentsTimetablesUser();
 
         return response()->json([
             'data' => $service->selectedCourseGroupsForUser($authUser),
@@ -230,9 +221,7 @@ class StudentsTimetablesController extends Controller
 
     public function updateOverviewSelections(Request $request, StudentTimetableOverviewService $service): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
-            abort(403, 'Sie haben keine Berechtigung.');
-        }
+        $authUser = $this->studentsTimetablesUser();
 
         $validated = $request->validate([
             'course_group_keys' => ['array'],
@@ -250,9 +239,7 @@ class StudentsTimetablesController extends Controller
 
     public function evaluationSettings(StudentTimetableEvaluationSettingsService $service): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
-            abort(403, 'Sie haben keine Berechtigung.');
-        }
+        $authUser = $this->studentsTimetablesUser();
 
         $this->ensureEvaluationSettingsScope($authUser);
 
@@ -265,9 +252,7 @@ class StudentsTimetablesController extends Controller
         Request $request,
         StudentTimetableEvaluationSettingsService $service,
     ): JsonResponse {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
-            abort(403, 'Sie haben keine Berechtigung.');
-        }
+        $authUser = $this->studentsTimetablesUser();
 
         $this->ensureEvaluationSettingsScope($authUser);
 
@@ -287,8 +272,19 @@ class StudentsTimetablesController extends Controller
 
     private function ensureEvaluationSettingsScope(User $authUser): void
     {
-        if (! $authUser->school_id || ! $authUser->schoolyear_id) {
-            abort(422, 'Bitte wählen Sie zuerst eine Schule und ein Schuljahr aus.');
+        if (! $authUser->school_id) {
+            abort(422, 'Bitte wählen Sie zuerst eine Schule aus.');
         }
+    }
+
+    private function studentsTimetablesUser(): User
+    {
+        if (! $authUser = $this->userHasRole(self::MODERATOR_ROLES)) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        app(SchoolyearService::class)->ensureActualSchoolyearForUser($authUser);
+
+        return $authUser;
     }
 }

@@ -424,6 +424,53 @@ test('login step 2 allows lunch admin role', function () {
         ]);
 });
 
+test('login allows students timetables admin and moderator roles', function (string $roleName) {
+    Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
+
+    $user = User::factory()->create([
+        'email' => "{$roleName}@example.com",
+        'password' => Hash::make('password123'),
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'confirmed_at' => now(),
+        'email_verified_at' => now(),
+        'is_active' => true,
+    ]);
+    $user->assignRole($roleName);
+
+    $this->postJson('/api/admin/login_step_email', [
+        'data' => [
+            'step' => 'LOGIN_ENTER_EMAIL',
+            'email' => $user->email,
+        ],
+    ])
+        ->assertSuccessful()
+        ->assertJson([
+            'users_count' => 1,
+            'school_id' => $this->school->id,
+            'step' => 'LOGIN_ENTER_PASSWORD',
+        ]);
+
+    $this->postJson('/api/admin/login_step_2', [
+        'data' => [
+            'step' => 'LOGIN_ENTER_PASSWORD',
+            'email' => $user->email,
+            'password' => 'password123',
+            'remember' => false,
+            'school' => [
+                'id' => $this->school->id,
+            ],
+        ],
+    ])
+        ->assertSuccessful()
+        ->assertJson([
+            'step' => 'LOGIN_SUCCESS',
+        ]);
+})->with([
+    'studentstimetables_admin',
+    'studentstimetables_moderator',
+]);
+
 test('login step 3 sets remember token when remember is true', function () {
     $this->user->is_2fa = true;
     $this->user->email_2fa = 'second@example.com';

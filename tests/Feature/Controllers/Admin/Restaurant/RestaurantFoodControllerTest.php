@@ -1,9 +1,12 @@
 <?php
 
+use App\Models\Licence;
 use App\Models\RestaurantCategory;
 use App\Models\RestaurantFood;
 use App\Models\RestaurantIngredientIcon;
 use App\Models\School;
+use App\Models\SchoolLicence;
+use App\Models\SchoolTool;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -26,6 +29,19 @@ beforeEach(function () {
 
     $this->school = School::factory()->create();
     $this->otherSchool = School::factory()->create();
+    $licence = Licence::query()->create([
+        'name' => 'Restaurant',
+        'long_name' => 'Restaurant',
+    ]);
+    SchoolLicence::query()->create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+    SchoolTool::query()->create([
+        'school_id' => $this->school->id,
+        'restaurant_visible_admin' => true,
+    ]);
 
     $this->admin = User::factory()->create([
         'school_id' => $this->school->id,
@@ -57,6 +73,16 @@ test('returns 401 when restaurant food index is unauthenticated', function () {
 
 test('returns 403 when role has no restaurant access', function () {
     $this->actingAs($this->teacher, 'sanctum');
+
+    $this->getJson('/api/admin/restaurant/foods')->assertStatus(403);
+});
+
+test('returns 403 when school has no restaurant licence', function () {
+    SchoolLicence::query()
+        ->where('school_id', $this->school->id)
+        ->delete();
+
+    $this->actingAs($this->admin, 'sanctum');
 
     $this->getJson('/api/admin/restaurant/foods')->assertStatus(403);
 });

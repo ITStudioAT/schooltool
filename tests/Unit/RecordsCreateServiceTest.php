@@ -135,6 +135,36 @@ describe('initRecords', function () {
         expect(Licence::where('name', 'Restaurant')->count())->toBe(1);
     });
 
+    it('preserves existing structured licence role assignments when init runs again', function () {
+        Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'materials_moderator', 'guard_name' => 'web']);
+
+        $licence = Licence::create([
+            'name' => 'Materialientool',
+            'long_name' => 'Custom Materialientool',
+            'price_per_year' => 200,
+            'start_day_month' => '08-01',
+            'end_day_month' => '07-31',
+            'is_selectable' => true,
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => true,
+            'admin_licence_enabled' => true,
+            'admin_role_names' => ['materials_admin'],
+            'user_licence_enabled' => true,
+            'user_role_names' => ['materials_moderator'],
+        ]);
+
+        $this->service->initRecords();
+
+        $licence->refresh();
+
+        expect($licence->licence_schema_version)->toBe(2)
+            ->and($licence->admin_licence_enabled)->toBeTrue()
+            ->and($licence->admin_role_names)->toBe(['materials_admin'])
+            ->and($licence->user_licence_enabled)->toBeTrue()
+            ->and($licence->user_role_names)->toBe(['materials_moderator']);
+    });
+
     it('normalizes licence day month values from config before persisting', function () {
         Config::set('schooltool.licences', [
             [

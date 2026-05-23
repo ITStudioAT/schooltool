@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
+use App\Models\SchoolTool;
 use App\Models\StudentTimetableSubjectImport;
 use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
+use App\Models\User;
 use App\Services\FileUploadService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,11 +19,17 @@ use Illuminate\Support\Str;
 
 class SubjectOverviewJsonUploadController extends Controller
 {
+    private const ADMIN_ROLES = ['super_admin', 'admin', 'studentstimetables_admin'];
+
+    private const MODERATOR_ROLES = ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'];
+
     public function index(Request $request): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::MODERATOR_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         if ($request->boolean('summary')) {
             $import = StudentTimetableSubjectImport::query()
@@ -68,9 +76,11 @@ class SubjectOverviewJsonUploadController extends Controller
 
     public function settings(): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::MODERATOR_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         $this->seedEditableDataFromLatestImportIfMissing($authUser);
 
@@ -81,9 +91,11 @@ class SubjectOverviewJsonUploadController extends Controller
 
     public function updateSubjects(Request $request): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         $validated = $request->validate([
             'subjects' => ['array'],
@@ -129,9 +141,11 @@ class SubjectOverviewJsonUploadController extends Controller
 
     public function updateMappings(Request $request): JsonResponse
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         $validated = $request->validate([
             'mappings' => ['array'],
@@ -171,7 +185,7 @@ class SubjectOverviewJsonUploadController extends Controller
 
     public function upload(FileUploadService $fileUploadService): Response
     {
-        if (! $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
@@ -184,9 +198,11 @@ class SubjectOverviewJsonUploadController extends Controller
 
     public function uploadNext(Request $request, FileUploadService $fileUploadService): Response
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         $this->ensureJson();
 
@@ -990,6 +1006,21 @@ class SubjectOverviewJsonUploadController extends Controller
     private function storageDirectory(int|string|null $schoolId, int|string|null $schoolyearId): string
     {
         return "app/private/{$schoolId}/student-timetable-subjects/{$schoolyearId}";
+    }
+
+    private function scopeToSchoolImportSchoolyear(User $authUser): User
+    {
+        $schoolyearId = SchoolTool::query()
+            ->where('school_id', $authUser->school_id)
+            ->value('active_schoolyear_id') ?: $authUser->schoolyear_id;
+
+        if (! $schoolyearId) {
+            abort(422, 'Kein aktives Schuljahr gefunden.');
+        }
+
+        $authUser->schoolyear_id = (int) $schoolyearId;
+
+        return $authUser;
     }
 
     /**

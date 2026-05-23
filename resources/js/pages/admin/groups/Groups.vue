@@ -3331,7 +3331,7 @@ export default {
 
 .groups-embedded-explorer {
     display: grid;
-    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
     gap: 16px;
     align-items: start;
 }

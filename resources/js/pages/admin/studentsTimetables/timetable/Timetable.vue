@@ -23,8 +23,6 @@
 
     <RobotTimetable v-else-if="subAction === 'robot'" />
 
-    <EvaluationSettings v-else-if="subAction === 'settings'" />
-
     <v-col v-else cols="12" md="6" lg="7" xl="4">
         <v-card v-if="subAction === 'imports' && !activeImportPage" rounded="xl" class="st-dummy-card">
             <v-card-title class="d-flex align-center ga-2 pt-4 px-4">
@@ -1155,7 +1153,6 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import FileUpload from '@/pages/components/FileUpload.vue'
-import EvaluationSettings from '../evaluationSettings/EvaluationSettings.vue'
 import Overview from '../overview/Overview.vue'
 import RobotTimetable from '../robot/RobotTimetable.vue'
 
@@ -1175,7 +1172,7 @@ export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { EvaluationSettings, FileUpload, Overview, RobotTimetable },
+    components: { FileUpload, Overview, RobotTimetable },
     data() {
         return {
             subAction: this.normalizedSubAction(this.$route.params.subsection),
@@ -1215,11 +1212,16 @@ export default {
     },
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
+        configuredRoleNames() {
+            return Array.isArray(this.config?.roles) ? this.config.roles : []
+        },
+        canManageTimetableImports() {
+            return ['super_admin', 'admin', 'studentstimetables_admin'].some(roleName => this.configuredRoleNames.includes(roleName))
+        },
         subnavItems() {
             return [
                 { key: 'overview', label: 'Übersicht' },
-                { key: 'robot', label: 'Roboter' },
-                { key: 'settings', label: 'Einstellungen' },
+                { key: 'robot', label: 'Wizzard' },
             ]
         },
         showTimetableSubnav() {
@@ -1584,6 +1586,7 @@ export default {
         },
         '$route.params.subsection'(subsection) {
             this.subAction = this.normalizedSubAction(subsection)
+            this.redirectUnauthorizedImportRoute()
             this.loadImportButtonInfo()
         },
         '$route.params.detail'(detail) {
@@ -1597,6 +1600,7 @@ export default {
         },
     },
     mounted() {
+        this.redirectUnauthorizedImportRoute()
         this.loadImportButtonInfo()
     },
     unmounted() {
@@ -1604,20 +1608,37 @@ export default {
     },
     methods: {
         normalizedSubAction(subsection) {
-            const allowed = ['overview', 'robot', 'settings', 'imports']
+            const allowed = this.canManageTimetableImports
+                ? ['overview', 'robot', 'imports']
+                : ['overview', 'robot']
+
             return allowed.includes(subsection) ? subsection : 'overview'
         },
         normalizedImportPage(detail) {
+            if (!this.canManageTimetableImports) return ''
+
             const allowed = ['stundenplan', 'faecher', 'anrechnungen']
 
             return allowed.includes(detail) ? detail : ''
         },
         normalizedImportSubPage(action) {
+            if (!this.canManageTimetableImports) return ''
+
             const allowed = ['import']
 
             return allowed.includes(action) ? action : ''
         },
+        redirectUnauthorizedImportRoute() {
+            if (this.$route.params.subsection !== 'imports' || this.canManageTimetableImports) return
+
+            this.subAction = 'overview'
+            this.importPage = ''
+            this.importSubPage = ''
+            this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
+        },
         handleSubnavigation(key) {
+            if (key === 'imports' && !this.canManageTimetableImports) return
+
             this.subAction = key
             this.importPage = ''
             this.importSubPage = ''

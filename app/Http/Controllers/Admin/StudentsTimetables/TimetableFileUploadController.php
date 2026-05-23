@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
+use App\Models\SchoolTool;
+use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\StudentsTimetables\TimetableImportService;
 use Illuminate\Http\Request;
@@ -10,11 +12,15 @@ use Illuminate\Http\Response;
 
 class TimetableFileUploadController extends Controller
 {
+    private const ADMIN_ROLES = ['super_admin', 'admin', 'studentstimetables_admin'];
+
     public function upload(FileUploadService $fileUploadService, TimetableImportService $importService): Response
     {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         $this->ensureTxt();
         $importService->ensureSemesterTwoStart($authUser, $authUser->schoolyear_id);
@@ -28,9 +34,11 @@ class TimetableFileUploadController extends Controller
         FileUploadService $fileUploadService,
         TimetableImportService $importService,
     ): Response {
-        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+
+        $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
 
         $this->ensureTxt();
         $importService->ensureSemesterTwoStart($authUser, $authUser->schoolyear_id);
@@ -57,6 +65,21 @@ class TimetableFileUploadController extends Controller
         );
 
         return response($result, 200)->header('Content-Type', 'text/plain');
+    }
+
+    private function scopeToSchoolImportSchoolyear(User $authUser): User
+    {
+        $schoolyearId = SchoolTool::query()
+            ->where('school_id', $authUser->school_id)
+            ->value('active_schoolyear_id') ?: $authUser->schoolyear_id;
+
+        if (! $schoolyearId) {
+            abort(422, 'Kein aktives Schuljahr gefunden.');
+        }
+
+        $authUser->schoolyear_id = (int) $schoolyearId;
+
+        return $authUser;
     }
 
     private function ensureTxt(): void
