@@ -88,6 +88,8 @@ class Import116Job implements ShouldQueue
                         'school_id' => $schoolId,
                         'schoolyear_id' => $schoolyearId,
                         'class' => $mapped['class'] ?? '',
+                        'school_level' => $mapped['school_level'] ?? null,
+                        'attendance_year' => $mapped['attendance_year'] ?? null,
                         'student_code' => $studentCode,
                         'last_name' => $mapped['last_name'] ?? '',
                         'first_name' => $mapped['first_name'] ?? '',
@@ -563,6 +565,8 @@ class Import116Job implements ShouldQueue
             'school_id' => (int) $record->school_id,
             'schoolyear_id' => $record->schoolyear_id !== null ? (int) $record->schoolyear_id : null,
             'class' => (string) ($record->class ?? ''),
+            'school_level' => $record->school_level,
+            'attendance_year' => $record->attendance_year,
             'student_code' => (string) ($record->student_code ?? ''),
             'last_name' => (string) ($record->last_name ?? ''),
             'first_name' => (string) ($record->first_name ?? ''),
@@ -684,6 +688,8 @@ class Import116Job implements ShouldQueue
         return [
             'schoolyear_id',
             'class',
+            'school_level',
+            'attendance_year',
             'student_code',
             'last_name',
             'first_name',
@@ -737,6 +743,8 @@ class Import116Job implements ShouldQueue
         ];
 
         $optional = [
+            'school_level' => ['schulstufe', 'school_level', 'school level'],
+            'attendance_year' => ['besuchsjahr', 'attendance_year', 'attendance year'],
             'email' => ['mailadresse', 'e-mail', 'email'],
             'phone_1' => ['mobiltelefon', 'handy', 'telefonnummer', 'telefonnummer 1', 'tel1'],
             'phone_2' => ['telefonnummer 2', 'tel2', 'telefon 2'],

@@ -385,6 +385,8 @@ class Import116Controller extends Controller
             'school_id' => $schoolId,
             'schoolyear_id' => isset($snapshot['schoolyear_id']) && $snapshot['schoolyear_id'] !== null ? (int) $snapshot['schoolyear_id'] : null,
             'class' => (string) ($snapshot['class'] ?? ''),
+            'school_level' => $snapshot['school_level'] ?? null,
+            'attendance_year' => $snapshot['attendance_year'] ?? null,
             'student_code' => $studentCode,
             'last_name' => (string) ($snapshot['last_name'] ?? ''),
             'first_name' => (string) ($snapshot['first_name'] ?? ''),

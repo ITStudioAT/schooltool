@@ -3,7 +3,16 @@
         <v-card rounded="lg" border class="robot-timetable-card">
             <v-card-title class="robot-timetable-card__title d-flex align-center ga-2">
                 <v-icon icon="mdi-robot-outline" />
-                Roboter Stundenplan
+                <span>Roboter Stundenplan</span>
+                <v-spacer />
+                <v-btn
+                    icon="mdi-information-outline"
+                    variant="text"
+                    density="comfortable"
+                    color="primary"
+                    title="Hinweise zum Roboter Stundenplan"
+                    aria-label="Hinweise zum Roboter Stundenplan"
+                    @click="infoDialogOpen = true" />
             </v-card-title>
             <v-card-text class="robot-timetable-card__text">
                 <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-3" />
@@ -11,6 +20,147 @@
                 <v-alert v-if="error" type="error" variant="tonal" class="mb-3">
                     {{ error }}
                 </v-alert>
+
+                <div class="robot-student-selection">
+                    <div class="robot-student-selection__content">
+                        <div class="robot-selected-cards robot-selected-cards--student">
+                            <div
+                                class="robot-selected-card robot-selected-card--button"
+                                role="button"
+                                tabindex="0"
+                                @click="toggleStudentCompletedCourses"
+                                @keydown.enter.prevent="toggleStudentCompletedCourses"
+                                @keydown.space.prevent="toggleStudentCompletedCourses">
+                                <div class="robot-selected-card__header">
+                                    <div class="robot-selected-card__label">Student</div>
+                                    <v-icon
+                                        v-if="selectedStudent"
+                                        :icon="studentCompletedCoursesExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                                        size="18"
+                                        color="primary" />
+                                </div>
+                                <div class="robot-selected-card__value">{{ selectedStudentLabel }}</div>
+                            </div>
+                        </div>
+                        <v-expand-transition>
+                            <div
+                                v-if="selectedStudent && studentCompletedCoursesExpanded"
+                                class="robot-student-course-overview">
+                                <div class="robot-student-course-section robot-student-course-section--completed">
+                                    <div class="robot-student-course-section__title">
+                                        <v-icon icon="mdi-school-outline" />
+                                        <span>Abgeschlossene Kurse</span>
+                                        <v-chip size="x-small" color="primary" variant="tonal">
+                                            {{ studentCompletedCourses.length }}
+                                        </v-chip>
+                                    </div>
+                                    <v-progress-linear
+                                        v-if="studentCompletedCoursesLoading"
+                                        indeterminate
+                                        color="primary"
+                                        class="mt-3 mb-0" />
+                                    <v-alert
+                                        v-else-if="studentCompletedCoursesError"
+                                        type="error"
+                                        variant="tonal"
+                                        density="compact"
+                                        class="mt-3 mb-0">
+                                        {{ studentCompletedCoursesError }}
+                                    </v-alert>
+                                    <v-alert
+                                        v-else-if="!studentCompletedCourses.length"
+                                        type="info"
+                                        variant="tonal"
+                                        density="compact"
+                                        class="mt-3 mb-0">
+                                        Keine abgeschlossenen Kurse mit Note gefunden.
+                                    </v-alert>
+                                    <div v-else class="robot-student-completed-course-list">
+                                        <div
+                                            v-for="course in studentCompletedCourses"
+                                            :key="`${course.subject}-${course.grade}`"
+                                            class="robot-student-completed-course">
+                                            <span class="robot-student-completed-course__subject">{{ course.subject }}</span>
+                                            <v-chip size="x-small" color="primary" variant="tonal">
+                                                {{ course.grade }}
+                                            </v-chip>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    v-if="!studentCompletedCoursesLoading && !studentCompletedCoursesError"
+                                    class="robot-student-course-section robot-student-course-section--planned">
+                                    <div class="robot-student-course-section__title">
+                                        <v-icon icon="mdi-calendar-check-outline" />
+                                        <span>Vorgesehene Kurse</span>
+                                        <v-chip size="x-small" color="primary" variant="tonal">
+                                            {{ studentPlannedCourses.length }}
+                                        </v-chip>
+                                    </div>
+                                    <v-alert
+                                        v-if="!studentPlannedCourses.length"
+                                        type="info"
+                                        variant="tonal"
+                                        density="compact"
+                                        class="mt-3 mb-0">
+                                        Keine offenen Kurse für das Semester gefunden.
+                                    </v-alert>
+                                    <div v-else class="robot-student-completed-course-list">
+                                        <div
+                                            v-for="course in studentPlannedCourses"
+                                            :key="course.key"
+                                            class="robot-student-completed-course">
+                                            <span class="robot-student-completed-course__subject">
+                                                {{ course.code }}
+                                            </span>
+                                            <v-chip size="x-small" color="primary" variant="tonal">
+                                                {{ formatHours(course.hours) }}
+                                            </v-chip>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    v-if="!studentCompletedCoursesLoading && !studentCompletedCoursesError"
+                                    class="robot-student-course-section robot-student-course-section--additional">
+                                    <div class="robot-student-course-section__title">
+                                        <v-icon icon="mdi-plus-circle-outline" />
+                                        <span>Zusätzliche Kurse</span>
+                                        <v-chip size="x-small" color="primary" variant="tonal">
+                                            {{ studentAdditionalCourses.length }}
+                                        </v-chip>
+                                    </div>
+                                    <v-alert
+                                        v-if="!studentAdditionalCourses.length"
+                                        type="info"
+                                        variant="tonal"
+                                        density="compact"
+                                        class="mt-3 mb-0">
+                                        Keine zusätzlichen Kurse nach den bisherigen Abschlüssen gefunden.
+                                    </v-alert>
+                                    <div v-else class="robot-student-completed-course-list">
+                                        <div
+                                            v-for="course in studentAdditionalCourses"
+                                            :key="course.key"
+                                            class="robot-student-completed-course">
+                                            <span class="robot-student-completed-course__subject">
+                                                {{ course.code }}
+                                            </span>
+                                            <v-chip size="x-small" color="primary" variant="tonal">
+                                                {{ formatHours(course.hours) }}
+                                            </v-chip>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </v-expand-transition>
+                    </div>
+                    <v-btn
+                        icon="mdi-pencil"
+                        variant="tonal"
+                        color="primary"
+                        title="Student bearbeiten"
+                        @click="openStudentDialog" />
+                </div>
 
                 <div class="robot-selection">
                     <div class="robot-selected-cards">
@@ -74,7 +224,7 @@
                                 v-for="(courseColumn, columnIndex) in availableCourseColumns"
                                 :key="`course-column-${columnIndex}`"
                                 class="robot-course-item-list">
-                                <div class="robot-course-item-header">
+                                <div class="robot-course-item-header robot-course-item-header--expandable">
                                     <div>Aktiv</div>
                                     <div>Code</div>
                                     <div>Bezeichnung</div>
@@ -133,6 +283,100 @@
                                                                     class="robot-course-item-detail__check"
                                                                     @click.stop
                                                                     @update:model-value="setCourseGroupSelected(course, group, $event)" />
+                                                                <span>{{ group.title }}:</span>
+                                                            </div>
+                                                            <div class="robot-course-item-detail__meta">
+                                                                {{ group.meta }}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div v-else class="robot-course-item-details__empty">
+                                                        Keine TT-Stunden.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </v-expansion-panel-text>
+                                    </v-expansion-panel>
+                                </v-expansion-panels>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    v-if="studentAdditionalCourses.length"
+                    class="robot-course-list robot-course-panel">
+                    <div class="robot-course-panel__title">
+                        <div class="robot-course-list__header robot-course-list__header--panel">
+                            <div class="robot-course-list__title">Zusätzliche Kurse</div>
+                            <v-chip size="x-small" color="primary" variant="tonal">
+                                {{ studentAdditionalCourses.length }}
+                            </v-chip>
+                        </div>
+                    </div>
+                    <div class="robot-course-panel__body">
+                        <div class="robot-course-columns">
+                            <div
+                                v-for="(courseColumn, columnIndex) in additionalCourseColumns"
+                                :key="`additional-course-column-${columnIndex}`"
+                                class="robot-course-item-list">
+                                <div class="robot-course-item-header robot-course-item-header--expandable">
+                                    <div>Aktiv</div>
+                                    <div>Code</div>
+                                    <div>Bezeichnung</div>
+                                    <div>Zweig</div>
+                                    <div class="text-right">Std.</div>
+                                </div>
+                                <v-expansion-panels
+                                    multiple
+                                    variant="accordion"
+                                    class="robot-course-item-panels">
+                                    <v-expansion-panel
+                                        v-for="course in courseColumn"
+                                        :key="course.key"
+                                        :value="course.key"
+                                        class="robot-course-item-panel"
+                                        :class="{ 'robot-course-item-panel--disabled': !additionalCourseSelectable(course) }">
+                                        <v-expansion-panel-title class="robot-course-item-panel__title">
+                                            <div class="robot-course-item-row">
+                                                <div class="robot-course-item-row__select">
+                                                    <v-checkbox
+                                                        :model-value="additionalCourseSelected(course)"
+                                                        :aria-label="`${course.code} auswählen`"
+                                                        density="compact"
+                                                        color="primary"
+                                                        :disabled="!additionalCourseSelectable(course)"
+                                                        hide-details
+                                                        @click.stop
+                                                        @update:model-value="setAdditionalCourseSelected(course, $event)" />
+                                                </div>
+                                                <div class="robot-course-item-row__code">{{ course.code }}</div>
+                                                <div>{{ course.name }}</div>
+                                                <div>{{ course.branch }}</div>
+                                                <div class="text-right">{{ formatHours(course.hours) }}</div>
+                                            </div>
+                                        </v-expansion-panel-title>
+                                        <v-expansion-panel-text>
+                                            <div class="robot-course-item-details">
+                                                <div class="robot-course-item-details__section">
+                                                    <div class="robot-course-item-details__title">Stundenplan</div>
+                                                    <div
+                                                        v-if="courseGroupItems(course).length"
+                                                        class="robot-course-item-detail-list">
+                                                        <div
+                                                            v-for="group in courseGroupItems(course)"
+                                                            :key="group.key"
+                                                            class="robot-course-item-detail">
+                                                            <div class="robot-course-item-detail__main">
+                                                                <v-checkbox
+                                                                    :model-value="additionalCourseSelected(course)"
+                                                                    :aria-label="`${group.title} auswählen`"
+                                                                    density="compact"
+                                                                    color="primary"
+                                                                    readonly
+                                                                    hide-details
+                                                                    class="robot-course-item-detail__check"
+                                                                    @click.stop />
                                                                 <span>{{ group.title }}:</span>
                                                             </div>
                                                             <div class="robot-course-item-detail__meta">
@@ -492,6 +736,57 @@
             </v-card-text>
         </v-card>
 
+        <v-dialog v-model="infoDialogOpen" persistent max-width="680">
+            <v-card rounded="lg">
+                <v-card-title class="d-flex align-center ga-2">
+                    <v-icon icon="mdi-information-outline" />
+                    Hinweise zum Roboter Stundenplan
+                </v-card-title>
+                <v-card-text>
+                    <div class="robot-info-dialog">
+                        <div class="robot-info-dialog__section">
+                            <div class="robot-info-dialog__title">Noten</div>
+                            <p>
+                                Die Note B bedeutet befreit. Das Modul wurde also angerechnet und gilt für die Planung
+                                wie ein positiv abgeschlossenes Modul.
+                            </p>
+                        </div>
+
+                        <div class="robot-info-dialog__section">
+                            <div class="robot-info-dialog__title">Grundregel für Folgemodule</div>
+                            <p>
+                                In Deutsch, Englisch, Mathematik, Französisch, Latein, Spanisch und Informatik darf ein
+                                Modul erst gebucht werden, wenn das Modul zwei Stufen darunter positiv abgeschlossen
+                                oder mit B angerechnet wurde. Beispiel: M5 darf erst gebucht werden, wenn M3 positiv
+                                oder angerechnet ist.
+                            </p>
+                        </div>
+
+                        <div class="robot-info-dialog__section">
+                            <div class="robot-info-dialog__title">Letzte Module gemeinsam buchen</div>
+                            <p>
+                                In Englisch und Mathematik dürfen die letzten beiden Module nur gemeinsam gebucht
+                                werden, wenn das vorletzte Modul schon einmal besucht wurde. Dafür reicht auch ein
+                                negativer Abschluss.
+                            </p>
+                            <p>
+                                In Deutsch gilt diese Regel ebenfalls. Zusätzlich dürfen D7 und D8 gemeinsam gebucht
+                                werden, weil diese Module im Kompaktstudium zusammengehören.
+                            </p>
+                            <p>
+                                In Französisch, Latein und Spanisch dürfen die letzten beiden Module gemeinsam gebucht
+                                werden, wenn das Modul davor positiv abgeschlossen oder mit B angerechnet wurde.
+                            </p>
+                        </div>
+                    </div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn color="primary" variant="flat" @click="infoDialogOpen = false">Schließen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="selectionDialogOpen" persistent max-width="640">
             <v-card rounded="lg">
                 <v-card-title class="d-flex align-center ga-2">
@@ -551,6 +846,63 @@
                     <v-spacer />
                     <v-btn variant="text" @click="closeSelectionDialog">Abbrechen</v-btn>
                     <v-btn color="primary" variant="flat" @click="updateSelection">Aktualisieren</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="studentDialogOpen" persistent max-width="560">
+            <v-card rounded="lg">
+                <v-card-title class="d-flex align-center ga-2">
+                    <v-icon icon="mdi-account-school-outline" />
+                    Student bearbeiten
+                </v-card-title>
+                <v-card-text>
+                    <div class="robot-student-dialog__meta">
+                        {{ studentTotalCountLabel }}
+                    </div>
+                    <v-text-field
+                        v-model="studentSearch"
+                        label="Student suchen"
+                        variant="outlined"
+                        density="compact"
+                        :loading="studentOptionsLoading"
+                        clearable
+                        hide-details="auto" />
+                    <div class="robot-student-search-results">
+                        <v-btn
+                            size="small"
+                            variant="tonal"
+                            :color="studentSelectionDraft.studentCode === null ? 'primary' : 'secondary'"
+                            class="robot-student-search-results__item"
+                            block
+                            @click="selectStudentDraft(null)">
+                            Kein Student
+                        </v-btn>
+                        <template v-if="studentSearchReady">
+                            <v-btn
+                                v-for="student in filteredStudentResults"
+                                :key="student.student_code"
+                                size="small"
+                                variant="tonal"
+                                :color="String(studentSelectionDraft.studentCode) === String(student.student_code) ? 'primary' : 'secondary'"
+                                class="robot-student-search-results__item"
+                                block
+                                @click="selectStudentDraft(student.student_code)">
+                                {{ studentOptionTitle(student) }}
+                            </v-btn>
+                            <div v-if="!filteredStudentResults.length" class="robot-student-search-results__empty">
+                                Keine Schüler gefunden
+                            </div>
+                        </template>
+                        <div v-else class="robot-student-search-results__empty">
+                            Mindestens 2 Zeichen eingeben
+                        </div>
+                    </div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeStudentDialog">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" @click="updateStudentSelection">Aktualisieren</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -659,11 +1011,22 @@ export default {
             courseGroups: [],
             deselectedCourseKeys: [],
             deselectedCourseGroupKeys: [],
+            additionalCourseSelectedKeys: [],
             subjectMappings: [],
             subjectRows: [],
+            infoDialogOpen: false,
             selectionDialogOpen: false,
+            studentDialogOpen: false,
             constraintsDialogOpen: false,
             robotStateRestoring: false,
+            studentOptionsLoading: false,
+            studentSearch: '',
+            robotStudents: [],
+            studentCompletedCourses: [],
+            studentCompletedCoursesLoading: false,
+            studentCompletedCoursesError: '',
+            studentCompletedCoursesRequestId: 0,
+            studentCompletedCoursesExpanded: false,
             selection: {
                 semester: 1,
                 religion: 'ETH',
@@ -677,6 +1040,12 @@ export default {
                 branch: 'wirtschaftskundlich',
                 artsSubject: 'ME',
                 language: 'L',
+            },
+            studentSelection: {
+                studentCode: null,
+            },
+            studentSelectionDraft: {
+                studentCode: null,
             },
             constraints: {
                 availableWeekdays: [1, 2, 3, 4, 5, 6],
@@ -771,6 +1140,53 @@ export default {
                 { key: 'artsSubject', label: 'ME / BE', value: this.selectedOptionTitle(this.artsSubjectOptions, this.selection.artsSubject) },
             ]
         },
+        studentSearchReady() {
+            return this.normalizedStudentSearch.length >= 2
+        },
+        normalizedStudentSearch() {
+            return String(this.studentSearch || '').trim().toLowerCase()
+        },
+        filteredStudentResults() {
+            if (!this.studentSearchReady) return []
+
+            return this.robotStudents
+                .filter(student => this.studentOptionTitle(student).toLowerCase().includes(this.normalizedStudentSearch))
+        },
+        selectedStudent() {
+            const studentCode = this.normalizedStudentCode(this.studentSelection.studentCode)
+            if (!studentCode) return null
+
+            return this.robotStudents.find(student => String(student.student_code) === studentCode) || null
+        },
+        selectedStudentLabel() {
+            return this.selectedStudent ? this.studentOptionTitle(this.selectedStudent) : 'Kein Student'
+        },
+        studentPlannedCourses() {
+            const semester = this.selectedStudent ? this.studentSemester(this.selectedStudent) : null
+            if (!semester) return []
+
+            const completedCourseCodes = this.studentCompletedCourseCodes()
+
+            return this.studentPlannedCoursesForSemester(semester, completedCourseCodes)
+        },
+        studentAdditionalCourses() {
+            const semester = this.selectedStudent ? this.studentSemester(this.selectedStudent) : null
+            if (!semester) return []
+
+            const completedCourseCodes = this.studentCompletedCourseCodes()
+            const visitedCourseCodes = this.studentVisitedCourseCodes()
+            const plannedCourses = this.studentPlannedCoursesForSemester(semester, completedCourseCodes)
+            const unavailableCourseCodes = this.studentUnavailableAdditionalCourseCodes(completedCourseCodes, plannedCourses)
+
+            return this.coursesAfterSemester(semester)
+                .filter(course => !this.courseCompletedForStudentPlanning(course, unavailableCourseCodes))
+                .filter(course => this.coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes))
+        },
+        studentTotalCountLabel() {
+            const count = Array.isArray(this.robotStudents) ? this.robotStudents.length : 0
+
+            return `${this.formatNumber(count)} Studenten gesamt`
+        },
         selectedConstraintSummary() {
             return [
                 {
@@ -800,13 +1216,7 @@ export default {
             }]
         },
         availableCourses() {
-            return this.subjectRows
-                .filter(subject => subject.is_active !== false)
-                .filter(subject => Number(subject.semester) === Number(this.selection.semester))
-                .filter(subject => this.subjectMatchesSelectedBranch(subject))
-                .filter(subject => this.subjectMatchesSelectedChoices(subject))
-                .flatMap(subject => this.selectedCoursesFromSubject(subject))
-                .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
+            return this.coursesForSemester(this.selection.semester)
         },
         availableCourseColumns() {
             const splitIndex = Math.ceil(this.availableCourses.length / 2)
@@ -814,6 +1224,14 @@ export default {
             return [
                 this.availableCourses.slice(0, splitIndex),
                 this.availableCourses.slice(splitIndex),
+            ].filter(courseColumn => courseColumn.length)
+        },
+        additionalCourseColumns() {
+            const splitIndex = Math.ceil(this.studentAdditionalCourses.length / 2)
+
+            return [
+                this.studentAdditionalCourses.slice(0, splitIndex),
+                this.studentAdditionalCourses.slice(splitIndex),
             ].filter(courseColumn => courseColumn.length)
         },
         selectedCourses() {
@@ -969,6 +1387,16 @@ export default {
                 this.saveLastRobotState()
             },
         },
+        studentSelection: {
+            deep: true,
+            handler() {
+                if (this.loading || this.robotStateRestoring) return
+
+                this.clearGeneratedTimetables()
+                this.loadStudentCompletedCourses()
+                this.saveLastRobotState()
+            },
+        },
         constraints: {
             deep: true,
             handler() {
@@ -1003,11 +1431,19 @@ export default {
             this.generationError = ''
             this.generationProblems = []
             try {
-                const [settingsResponse, schoolHoursResponse, courseGroupsResponse, evaluationSettingsResponse] = await Promise.all([
+                this.studentOptionsLoading = true
+                const [
+                    settingsResponse,
+                    schoolHoursResponse,
+                    courseGroupsResponse,
+                    evaluationSettingsResponse,
+                    studentOptionsResponse,
+                ] = await Promise.all([
                     axios.get('/api/admin/students-timetables/subjects-overview-settings'),
                     axios.get('/api/admin/students-timetables/school-hours'),
                     axios.get('/api/admin/students-timetables/course-groups'),
                     axios.get('/api/admin/students-timetables/evaluation-settings'),
+                    axios.get('/api/admin/students-timetables/robot/students'),
                 ])
 
                 this.subjectRows = settingsResponse.data.data?.subjects || []
@@ -1015,16 +1451,21 @@ export default {
                 this.schoolHours = schoolHoursResponse.data?.data || []
                 this.courseGroups = courseGroupsResponse.data?.data || []
                 this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(evaluationSettingsResponse.data?.data?.criteria || [])
+                this.robotStudents = studentOptionsResponse.data?.data || []
                 this.restoreLastRobotState()
                 this.syncAvailableTimes()
+                this.loadStudentCompletedCourses()
             } catch {
                 this.schoolHours = []
                 this.courseGroups = []
                 this.subjectMappings = []
                 this.subjectRows = []
                 this.evaluationCriteria = []
+                this.robotStudents = []
+                this.studentCompletedCourses = []
                 this.error = 'Die Kurse konnten nicht geladen werden.'
             } finally {
+                this.studentOptionsLoading = false
                 this.loading = false
             }
         },
@@ -1040,6 +1481,74 @@ export default {
         selectedOptionTitle(options, value) {
             return options.find(option => option.value === value)?.title || value
         },
+        studentSemesterBySchoolLevel() {
+            return {
+                '09_1': 1,
+                '09_2': 2,
+                '10_1': 3,
+                '10_2': 4,
+                '11_1': 5,
+                '11_2': 6,
+                '12_1': 7,
+                '12_2': 8,
+            }
+        },
+        studentSemesterLabel(student) {
+            const semester = this.studentSemester(student)
+
+            return semester ? `Semester ${semester}` : ''
+        },
+        studentSemester(student) {
+            const schoolLevel = this.studentSchoolLevelKey(student)
+
+            return this.studentSemesterBySchoolLevel()[schoolLevel] || null
+        },
+        studentSchoolLevelKey(student) {
+            const importedSchoolLevel = this.normalizedStudentSchoolLevel(
+                student?.school_level,
+                student?.attendance_year,
+            )
+            if (importedSchoolLevel) return importedSchoolLevel
+
+            return this.normalizedStudentSchoolLevel(student?.class)
+        },
+        normalizedStudentSchoolLevel(schoolLevel, attendanceYear = null) {
+            const normalizedAttendanceYear = String(attendanceYear || '').trim()
+            if (normalizedAttendanceYear !== '') {
+                const normalizedSchoolLevel = this.normalizedStudentSchoolLevelToken(schoolLevel)
+                if (normalizedSchoolLevel && ['1', '2'].includes(normalizedAttendanceYear)) {
+                    return `${normalizedSchoolLevel}_${normalizedAttendanceYear}`
+                }
+            }
+
+            const value = String(schoolLevel || '').trim()
+            if (!value) return ''
+
+            const normalizedValue = value.replace(/[.\-\s]+/g, '_')
+            const schoolLevelMatch = normalizedValue.match(/(?:^|[^0-9])(0?9|1[0-2])_?([12])(?:$|[^0-9])/)
+            if (!schoolLevelMatch) return ''
+
+            return `${schoolLevelMatch[1].padStart(2, '0')}_${schoolLevelMatch[2]}`
+        },
+        normalizedStudentSchoolLevelToken(value) {
+            const schoolLevelMatch = String(value || '').trim().match(/^(0?9|1[0-2])$/)
+
+            return schoolLevelMatch ? schoolLevelMatch[1].padStart(2, '0') : ''
+        },
+        studentOptionTitle(student) {
+            const schoolClass = String(student?.class || '').trim()
+            const lastName = String(student?.last_name || '').trim()
+            const firstName = String(student?.first_name || '').trim()
+            const semester = this.studentSemesterLabel(student)
+            const name = [lastName, firstName].filter(Boolean).join(' ')
+
+            return [schoolClass, name, semester].filter(Boolean).join(' · ')
+        },
+        normalizedStudentCode(value) {
+            const studentCode = value === null || value === undefined ? '' : String(value).trim()
+
+            return studentCode === '' ? null : studentCode
+        },
         openSelectionDialog() {
             this.selectionDraft = { ...this.selection }
             this.selectionDialogOpen = true
@@ -1049,9 +1558,83 @@ export default {
         },
         updateSelection() {
             this.selection = { ...this.selectionDraft }
+            this.applyStudentPlannedCourseSelection()
             this.clearGeneratedTimetables()
             this.selectionDialogOpen = false
             this.saveLastRobotState()
+        },
+        openStudentDialog() {
+            this.studentSelectionDraft = { ...this.studentSelection }
+            this.studentSearch = ''
+            this.studentDialogOpen = true
+        },
+        closeStudentDialog() {
+            this.studentDialogOpen = false
+            this.studentSearch = ''
+        },
+        selectStudentDraft(studentCode) {
+            this.studentSelectionDraft.studentCode = this.normalizedStudentCode(studentCode)
+        },
+        updateStudentSelection() {
+            this.studentSelection = {
+                studentCode: this.normalizedStudentCode(this.studentSelectionDraft.studentCode),
+            }
+            this.additionalCourseSelectedKeys = []
+            this.studentCompletedCoursesExpanded = false
+            this.clearGeneratedTimetables()
+            this.studentDialogOpen = false
+            this.studentSearch = ''
+            this.saveLastRobotState()
+        },
+        toggleStudentCompletedCourses() {
+            if (!this.selectedStudent) return
+
+            this.studentCompletedCoursesExpanded = !this.studentCompletedCoursesExpanded
+        },
+        async loadStudentCompletedCourses() {
+            const studentCode = this.normalizedStudentCode(this.studentSelection.studentCode)
+            const requestId = this.studentCompletedCoursesRequestId + 1
+            this.studentCompletedCoursesRequestId = requestId
+
+            if (!studentCode) {
+                this.studentCompletedCourses = []
+                this.studentCompletedCoursesError = ''
+                this.studentCompletedCoursesLoading = false
+                this.studentCompletedCoursesExpanded = false
+                this.additionalCourseSelectedKeys = []
+                this.selectAllAvailableCourses()
+
+                return
+            }
+
+            this.studentCompletedCoursesLoading = true
+            this.studentCompletedCoursesError = ''
+
+            try {
+                const response = await axios.get('/api/admin/students-timetables/robot/student-completed-courses', {
+                    params: {
+                        student_code: studentCode,
+                    },
+                })
+
+                if (requestId !== this.studentCompletedCoursesRequestId) return
+
+                this.studentCompletedCourses = response.data?.data || []
+            } catch {
+                if (requestId !== this.studentCompletedCoursesRequestId) return
+
+                this.studentCompletedCourses = []
+                this.studentCompletedCoursesError = 'Die abgeschlossenen Kurse konnten nicht geladen werden.'
+            } finally {
+                if (requestId === this.studentCompletedCoursesRequestId) {
+                    this.studentCompletedCoursesLoading = false
+
+                    if (!this.studentCompletedCoursesError) {
+                        this.applyStudentPlannedCourseSelection()
+                        this.pruneAdditionalCourseSelections()
+                    }
+                }
+            }
         },
         openConstraintsDialog() {
             this.constraintsDraft = this.copyConstraints(this.constraints)
@@ -1103,6 +1686,7 @@ export default {
                 const response = await axios.post('/api/admin/students-timetables/robot/full-green-count', {
                     selection: this.selection,
                     constraints: this.constraints,
+                    student: this.studentSelection,
                     deselected_course_keys: this.deselectedCourseKeys,
                     deselected_course_group_keys: this.deselectedCourseGroupKeys,
                     selected_timetable_type: this.selectedTimetableResultType,
@@ -1295,6 +1879,9 @@ export default {
                     excludedWeekdayTimes: [],
                     availableTimes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
                 },
+                student: {
+                    studentCode: null,
+                },
                 deselectedCourseKeys: [],
                 deselectedCourseGroupKeys: [],
                 selectedCourseKeys: null,
@@ -1304,6 +1891,7 @@ export default {
             return {
                 selection: { ...this.selection },
                 constraints: this.copyConstraints(this.constraints),
+                student: { ...this.studentSelection },
                 deselectedCourseKeys: this.uniqueValues(this.deselectedCourseKeys),
                 deselectedCourseGroupKeys: this.uniqueValues(this.deselectedCourseGroupKeys),
                 selectedCourseKeys: this.selectedCourseKeysForState(),
@@ -1330,6 +1918,9 @@ export default {
                         state?.constraints?.availableTimes,
                         defaults.constraints.availableTimes,
                     ),
+                }
+                this.studentSelection = {
+                    studentCode: this.normalizedStudentCode(state?.student?.studentCode),
                 }
                 this.deselectedCourseKeys = this.restoredDeselectedCourseKeys(state)
                 this.deselectedCourseGroupKeys = this.uniqueValues(state?.deselectedCourseGroupKeys)
@@ -2185,6 +2776,131 @@ export default {
             }
 
             return groups.some(group => this.courseGroupSelected(course, group))
+        },
+        applyStudentPlannedCourseSelection() {
+            if (!this.selectedStudent) return false
+
+            const plannedCourseCodes = new Set(this.studentPlannedCourses
+                .flatMap(course => this.courseCodeAliases(course)))
+            const courses = Array.isArray(this.availableCourses) ? this.availableCourses : []
+            let selectionChanged = false
+
+            courses.forEach(course => {
+                const selected = this.courseMatchesStudentPlannedCourse(course, plannedCourseCodes)
+
+                selectionChanged = this.setCourseSelectedState(course, selected) || selectionChanged
+                selectionChanged = this.setCourseGroupsSelectedState(course, selected) || selectionChanged
+            })
+
+            if (selectionChanged) {
+                this.clearGeneratedTimetables()
+                this.saveLastRobotState()
+            }
+
+            return selectionChanged
+        },
+        selectAllAvailableCourses() {
+            const courses = Array.isArray(this.availableCourses) ? this.availableCourses : []
+            let selectionChanged = false
+
+            courses.forEach(course => {
+                selectionChanged = this.setCourseSelectedState(course, true) || selectionChanged
+                selectionChanged = this.setCourseGroupsSelectedState(course, true) || selectionChanged
+            })
+
+            if (selectionChanged) {
+                this.clearGeneratedTimetables()
+                this.saveLastRobotState()
+            }
+
+            return selectionChanged
+        },
+        courseMatchesStudentPlannedCourse(course, plannedCourseCodes) {
+            if (!(plannedCourseCodes instanceof Set) || !plannedCourseCodes.size) return false
+
+            return this.courseCodeAliases(course)
+                .some(courseCode => plannedCourseCodes.has(courseCode))
+        },
+        additionalCourseSelected(course) {
+            const selectedKeys = Array.isArray(this.additionalCourseSelectedKeys)
+                ? this.additionalCourseSelectedKeys
+                : []
+
+            return selectedKeys.includes(course?.key)
+        },
+        additionalCourseSelectable(course, selectedCourseKeys = null) {
+            const prerequisiteCourse = this.additionalCoursePrerequisiteCourse(course)
+            if (!prerequisiteCourse) return true
+
+            const selectedKeys = selectedCourseKeys instanceof Set
+                ? selectedCourseKeys
+                : new Set(Array.isArray(this.additionalCourseSelectedKeys) ? this.additionalCourseSelectedKeys : [])
+
+            return selectedKeys.has(prerequisiteCourse.key)
+        },
+        setAdditionalCourseSelected(course, selected) {
+            if (selected && !this.additionalCourseSelectable(course)) return
+
+            const courseKey = course?.key
+            if (!courseKey) return
+
+            const selectedKeys = new Set(Array.isArray(this.additionalCourseSelectedKeys)
+                ? this.additionalCourseSelectedKeys
+                : [])
+
+            if (selected) {
+                selectedKeys.add(courseKey)
+            } else {
+                selectedKeys.delete(courseKey)
+            }
+
+            this.additionalCourseSelectedKeys = [...selectedKeys]
+            this.pruneAdditionalCourseSelections()
+        },
+        pruneAdditionalCourseSelections() {
+            const additionalCourses = Array.isArray(this.studentAdditionalCourses) ? this.studentAdditionalCourses : []
+            let selectedKeys = this.uniqueValues(this.additionalCourseSelectedKeys)
+                .filter(courseKey => additionalCourses.some(course => course.key === courseKey))
+            let changed = true
+
+            while (changed) {
+                const selectedKeySet = new Set(selectedKeys)
+                const filteredKeys = selectedKeys.filter(courseKey => {
+                    const course = additionalCourses.find(additionalCourse => additionalCourse.key === courseKey)
+
+                    return course && this.additionalCourseSelectable(course, selectedKeySet)
+                })
+
+                changed = filteredKeys.length !== selectedKeys.length
+                selectedKeys = filteredKeys
+            }
+
+            this.additionalCourseSelectedKeys = selectedKeys
+        },
+        additionalCoursePrerequisiteCourse(course) {
+            const additionalCourses = Array.isArray(this.studentAdditionalCourses) ? this.studentAdditionalCourses : []
+            const courseParts = this.courseModulePartsForStudentPlanning(course)
+
+            for (const coursePart of courseParts) {
+                const moduleNumber = Number(coursePart.module)
+                if (!Number.isInteger(moduleNumber) || moduleNumber <= 1) continue
+
+                const prerequisiteModuleNumber = moduleNumber - 1
+                const baseAliases = this.studentCourseBaseAliases(coursePart.base)
+                const prerequisiteCourse = additionalCourses.find(additionalCourse =>
+                    additionalCourse.key !== course?.key
+                        && this.courseModulePartsForStudentPlanning(additionalCourse)
+                            .some(additionalCoursePart =>
+                                Number(additionalCoursePart.module) === prerequisiteModuleNumber
+                                    && this.studentCourseBaseAliases(additionalCoursePart.base)
+                                        .some(baseAlias => baseAliases.includes(baseAlias)),
+                            ),
+                )
+
+                if (prerequisiteCourse) return prerequisiteCourse
+            }
+
+            return null
         },
         setCourseSelected(course, selected) {
             const selectionChanged = this.setCourseSelectedState(course, selected)
@@ -3817,6 +4533,113 @@ export default {
         selectedOptionDescription(options, value) {
             return String(this.selectedOptionTitle(options, value)).split(' - ').pop()
         },
+        coursesForSemester(semester) {
+            return this.subjectRows
+                .filter(subject => subject.is_active !== false)
+                .filter(subject => Number(subject.semester) === Number(semester))
+                .filter(subject => this.subjectMatchesSelectedBranch(subject))
+                .filter(subject => this.subjectMatchesSelectedChoices(subject))
+                .flatMap(subject => this.selectedCoursesFromSubject(subject))
+                .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
+        },
+        coursesAfterSemester(semester) {
+            return this.subjectRows
+                .map(subject => Number(subject.semester))
+                .filter(subjectSemester => Number.isFinite(subjectSemester) && subjectSemester > Number(semester))
+                .filter((subjectSemester, index, subjectSemesters) => subjectSemesters.indexOf(subjectSemester) === index)
+                .sort((firstSemester, secondSemester) => firstSemester - secondSemester)
+                .flatMap(subjectSemester => this.coursesForSemester(subjectSemester))
+        },
+        studentPlannedCoursesForSemester(semester, completedCourseCodes) {
+            return this.coursesForSemester(semester)
+                .filter(course => !this.courseCompletedForStudentPlanning(course, completedCourseCodes))
+        },
+        studentCompletedCourseCodes() {
+            const completedCourses = Array.isArray(this.studentCompletedCourses)
+                ? this.studentCompletedCourses
+                : []
+
+            return new Set(completedCourses
+                .filter(course => this.completedCourseCountsAsDone(course?.grade))
+                .flatMap(course => this.courseCodeAliasParts(course?.subject))
+                .map(courseCode => this.normalizedCourseCode(courseCode))
+                .filter(Boolean))
+        },
+        studentVisitedCourseCodes() {
+            const completedCourses = Array.isArray(this.studentCompletedCourses)
+                ? this.studentCompletedCourses
+                : []
+
+            return new Set(completedCourses
+                .flatMap(course => this.courseCodeAliasParts(course?.subject))
+                .map(courseCode => this.normalizedCourseCode(courseCode))
+                .filter(Boolean))
+        },
+        studentUnavailableAdditionalCourseCodes(completedCourseCodes, plannedCourses) {
+            const unavailableCourseCodes = new Set(completedCourseCodes)
+
+            plannedCourses
+                .flatMap(course => this.courseCodeAliases(course))
+                .forEach(courseCode => unavailableCourseCodes.add(courseCode))
+
+            return unavailableCourseCodes
+        },
+        completedCourseCountsAsDone(grade) {
+            const normalizedGrade = String(grade || '').trim().toLocaleUpperCase('de-AT')
+
+            return normalizedGrade === 'B' || ['1', '2', '3', '4'].includes(normalizedGrade)
+        },
+        courseCompletedForStudentPlanning(course, completedCourseCodes) {
+            if (!(completedCourseCodes instanceof Set) || !completedCourseCodes.size) return false
+
+            return this.courseCodeAliases(course)
+                .some(courseCode => completedCourseCodes.has(courseCode))
+        },
+        coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes) {
+            return this.courseModulePartsForStudentPlanning(course)
+                .some(parts => this.courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes))
+        },
+        courseModulePartsForStudentPlanning(course) {
+            return this.courseCodeAliases(course)
+                .map(courseCode => this.courseCodeModuleParts(courseCode))
+                .filter(parts => parts.module)
+                .filter(parts => this.courseBaseEligibleForStudentAdditional(parts.base))
+                .filter((parts, index, allParts) =>
+                    allParts.findIndex(candidate => candidate.base === parts.base && candidate.module === parts.module) === index,
+                )
+        },
+        courseBaseEligibleForStudentAdditional(base) {
+            return this.studentCourseBaseAliases(base)
+                .some(baseAlias => ['D', 'E', 'M', 'F', 'L', 'S', 'SPA', 'INF'].includes(baseAlias))
+        },
+        courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes) {
+            const moduleNumber = Number(parts.module)
+            if (!Number.isInteger(moduleNumber) || moduleNumber <= 1) return false
+
+            const baseAliases = this.studentCourseBaseAliases(parts.base)
+            const prerequisiteModuleNumber = moduleNumber === 2 ? 1 : moduleNumber - 2
+            const hasPositivePrerequisite = baseAliases
+                .some(baseAlias => completedCourseCodes.has(`${baseAlias}${prerequisiteModuleNumber}`))
+
+            if (!hasPositivePrerequisite) return false
+
+            if (['E', 'M'].includes(this.normalizedCourseCode(parts.base)) && moduleNumber === 8) {
+                return baseAliases.some(baseAlias => visitedCourseCodes.has(`${baseAlias}7`))
+            }
+
+            return true
+        },
+        studentCourseBaseAliases(base) {
+            const normalizedBase = this.normalizedCourseCode(base)
+            const aliases = [normalizedBase]
+
+            if (normalizedBase === 'S') aliases.push('SPA')
+            if (normalizedBase === 'SPA') aliases.push('S')
+
+            return aliases
+                .filter(Boolean)
+                .filter((alias, index, allAliases) => allAliases.indexOf(alias) === index)
+        },
         subjectMatchesSelectedBranch(subject) {
             return !subject.branch || subject.branch === 'common' || subject.branch === this.selection.branch
         },
@@ -4099,12 +4922,41 @@ export default {
     grid-template-columns: repeat(3, minmax(120px, 1fr));
 }
 
+.robot-selected-cards--student {
+    grid-template-columns: minmax(180px, 1fr);
+}
+
+.robot-student-selection__content {
+    min-width: 0;
+}
+
 .robot-selected-card {
     min-height: 58px;
     padding: 8px 10px;
     border: 1px solid rgba(57, 73, 171, 0.2);
     border-radius: 8px;
     background: #f8fafc;
+}
+
+.robot-selected-card--button {
+    cursor: pointer;
+    transition:
+        border-color 0.16s ease,
+        background-color 0.16s ease;
+}
+
+.robot-selected-card--button:hover,
+.robot-selected-card--button:focus-visible {
+    border-color: rgba(57, 73, 171, 0.42);
+    background: #eef2ff;
+    outline: none;
+}
+
+.robot-selected-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
 }
 
 .robot-selected-card__label {
@@ -4124,6 +4976,94 @@ export default {
     white-space: pre-line;
 }
 
+.robot-student-dialog__meta {
+    margin-bottom: 10px;
+    color: rgba(var(--v-theme-on-surface), 0.68);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.robot-student-search-results {
+    display: grid;
+    gap: 6px;
+    margin-top: 10px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.robot-student-search-results__item {
+    justify-content: flex-start;
+    min-height: 32px;
+}
+
+.robot-student-search-results__empty {
+    padding: 8px 2px;
+    color: rgba(var(--v-theme-on-surface), 0.58);
+    font-size: 0.78rem;
+}
+
+.robot-student-course-overview {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.robot-student-course-section {
+    padding: 10px;
+    border: 1px solid rgba(57, 73, 171, 0.14);
+    border-radius: 8px;
+}
+
+.robot-student-course-section--completed {
+    border-color: rgba(5, 150, 105, 0.22);
+    background: #ecfdf5;
+}
+
+.robot-student-course-section--planned {
+    border-color: rgba(202, 138, 4, 0.24);
+    background: #fefce8;
+}
+
+.robot-student-course-section--additional {
+    border-color: rgba(217, 119, 6, 0.22);
+    background: #fff7ed;
+}
+
+.robot-student-course-section__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #172554;
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.robot-student-completed-course-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.robot-student-completed-course {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 34px;
+    padding: 7px 9px;
+    border: 1px solid rgba(57, 73, 171, 0.16);
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.robot-student-completed-course__subject {
+    color: #0f172a;
+    font-size: 0.78rem;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
 .robot-timetable-summary {
     display: flex;
     flex-wrap: wrap;
@@ -4141,6 +5081,29 @@ export default {
     gap: 4px;
     line-height: 1.2;
     white-space: normal;
+}
+
+.robot-info-dialog {
+    display: grid;
+    gap: 14px;
+    color: rgba(var(--v-theme-on-surface), 0.82);
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.robot-info-dialog__section {
+    display: grid;
+    gap: 6px;
+}
+
+.robot-info-dialog__title {
+    color: rgba(var(--v-theme-on-surface), 0.94);
+    font-size: 0.92rem;
+    font-weight: 800;
+}
+
+.robot-info-dialog p {
+    margin: 0;
 }
 
 .robot-course-list {
@@ -4597,12 +5560,21 @@ export default {
     border-top: 1px solid rgba(127, 29, 29, 0.24);
 }
 
-.robot-constraints {
+.robot-constraints,
+.robot-student-selection {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
     align-items: start;
     margin-top: 8px;
+}
+
+.robot-student-selection {
+    padding: 10px;
+    border: 1px solid rgba(57, 73, 171, 0.18);
+    border-radius: 8px;
+    background: #f8fafc;
+    margin-bottom: 12px;
 }
 
 .robot-constraint-block + .robot-constraint-block {
@@ -4717,6 +5689,19 @@ export default {
     font-weight: 750;
 }
 
+.robot-course-item-header--expandable {
+    padding-right: 42px;
+}
+
+.robot-course-item-header > :first-child {
+    justify-self: center;
+}
+
+.robot-course-item-header > :last-child,
+.robot-course-item-row > :last-child {
+    justify-self: end;
+}
+
 .robot-course-item-panels {
     border-radius: 0;
 }
@@ -4752,6 +5737,7 @@ export default {
 .robot-course-item-row__select {
     display: flex;
     align-items: center;
+    justify-content: center;
 }
 
 .robot-course-item-row__code {
@@ -4841,7 +5827,8 @@ export default {
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .robot-constraints {
+    .robot-constraints,
+    .robot-student-selection {
         grid-template-columns: minmax(0, 1fr);
     }
 

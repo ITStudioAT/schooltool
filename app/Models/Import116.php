@@ -11,6 +11,8 @@ use Illuminate\Support\Carbon;
  * @property int $school_id
  * @property int|null $schoolyear_id
  * @property string $class
+ * @property string|null $school_level
+ * @property string|null $attendance_year
  * @property string $student_code
  * @property string $last_name
  * @property string $first_name
@@ -45,6 +47,8 @@ class Import116 extends Model
         'school_id',
         'schoolyear_id',
         'class',
+        'school_level',
+        'attendance_year',
         'student_code',
         'last_name',
         'first_name',

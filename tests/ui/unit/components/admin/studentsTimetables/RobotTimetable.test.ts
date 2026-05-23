@@ -10,6 +10,14 @@ describe('Students timetable robot page', () => {
         )
 
         expect(componentSource).toContain('Roboter Stundenplan')
+        expect(componentSource).toContain('icon="mdi-information-outline"')
+        expect(componentSource).toContain('infoDialogOpen')
+        expect(componentSource).toContain('<v-dialog v-model="infoDialogOpen" persistent max-width="680">')
+        expect(componentSource).toContain('Hinweise zum Roboter Stundenplan')
+        expect(componentSource).toContain('Die Note B bedeutet befreit')
+        expect(componentSource).toContain('Grundregel für Folgemodule')
+        expect(componentSource).toContain('M5 darf erst gebucht werden, wenn M3 positiv')
+        expect(componentSource).toContain('D7 und D8 gemeinsam gebucht')
         expect(componentSource).toContain('semesterOptions()')
         expect(componentSource).toContain('Array.from({ length: 8 }')
         expect(componentSource).toContain('label="Semester"')
@@ -77,6 +85,66 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('1}. Stunde')
         expect(componentSource).not.toContain('<div class="robot-constraints__title">Zeitvorgaben</div>')
         expect(componentSource).toContain('Zeitliche Einschränkungen')
+        expect(componentSource).toContain('<div class="robot-selected-card__label">Student</div>')
+        expect(componentSource).toContain('Kein Student')
+        expect(componentSource).toContain('studentDialogOpen')
+        expect(componentSource).toContain('<v-dialog v-model="studentDialogOpen" persistent max-width="560">')
+        expect(componentSource).toContain('<v-text-field')
+        expect(componentSource).toContain('v-model="studentSearch"')
+        expect(componentSource).toContain('clearable')
+        expect(componentSource).toContain('filteredStudentResults()')
+        expect(componentSource).toContain('selectStudentDraft(studentCode)')
+        expect(componentSource).toContain('studentSearchReady()')
+        expect(componentSource).toContain('this.normalizedStudentSearch.length >= 2')
+        expect(componentSource).toContain('label="Student suchen"')
+        expect(componentSource).toContain('studentTotalCountLabel()')
+        expect(componentSource).toContain('Studenten gesamt')
+        expect(componentSource).toContain('studentSemesterBySchoolLevel()')
+        expect(componentSource).toContain("'09_1': 1")
+        expect(componentSource).toContain("'12_2': 8")
+        expect(componentSource).toContain('studentSemesterLabel(student)')
+        expect(componentSource).toContain('title="Student bearbeiten"')
+        expect(componentSource).toContain("axios.get('/api/admin/students-timetables/robot/students')")
+        expect(componentSource).toContain("axios.get('/api/admin/students-timetables/robot/student-completed-courses'")
+        expect(componentSource).toContain('Abgeschlossene Kurse')
+        expect(componentSource).toContain('Vorgesehene Kurse')
+        expect(componentSource).toContain('Zusätzliche Kurse')
+        expect(componentSource).toContain('robot-student-course-section--completed')
+        expect(componentSource).toContain('robot-student-course-section--planned')
+        expect(componentSource).toContain('robot-student-course-section--additional')
+        expect(componentSource).toContain('v-if="studentAdditionalCourses.length"')
+        expect(componentSource).toContain('robot-additional-course-panel')
+        expect(componentSource).toContain('robot-additional-course-panels')
+        expect(componentSource).not.toContain('robot-additional-course-panel-row')
+        expect(componentSource).not.toContain('robot-additional-course-row')
+        expect(componentSource).toContain('width: calc((100% - 10px) / 2)')
+        expect(componentSource).toContain(':model-value="additionalCourseSelected(course)"')
+        expect(componentSource).toContain(':disabled="!additionalCourseSelectable(course)"')
+        expect(componentSource).toContain('setAdditionalCourseSelected(course, $event)')
+        expect(componentSource).toContain('additionalCoursePrerequisiteCourse(course)')
+        expect(componentSource).toContain('grid-template-columns: repeat(auto-fill, minmax(120px, 1fr))')
+        expect(componentSource).toContain('studentPlannedCourses')
+        expect(componentSource).toContain('applyStudentPlannedCourseSelection()')
+        expect(componentSource).toContain('courseMatchesStudentPlannedCourse(course, plannedCourseCodes)')
+        expect(componentSource).toContain('selectAllAvailableCourses()')
+        expect(componentSource).toContain('studentAdditionalCourses')
+        expect(componentSource).toContain('completedCourseCountsAsDone(grade)')
+        expect(componentSource).toContain('courseCompletedForStudentPlanning(course, completedCourseCodes)')
+        expect(componentSource).toContain('coursesForSemester(semester)')
+        expect(componentSource).toContain('coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes)')
+        expect(componentSource).toContain('courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes)')
+        expect(componentSource).toContain('studentCompletedCourses')
+        expect(componentSource).toContain('studentCompletedCoursesExpanded')
+        expect(componentSource).toContain('toggleStudentCompletedCourses')
+        expect(componentSource).toContain('@click="toggleStudentCompletedCourses"')
+        expect(componentSource).toContain('class="robot-selected-card robot-selected-card--button"')
+        expect(componentSource).toContain('class="robot-student-selection__content"')
+        expect(componentSource).toContain('margin-bottom: 12px')
+        expect(componentSource).toContain('Keine abgeschlossenen Kurse mit Note gefunden.')
+        expect(componentSource.indexOf('class="robot-student-selection"')).toBeLessThan(
+            componentSource.indexOf('class="robot-selection"'),
+        )
+        expect(componentSource).toContain('student: this.studentSelection')
         expect(componentSource).toContain('Keine Zeiten')
         expect(componentSource).toContain('robot-selected-cards')
         expect(componentSource).toContain('robot-selected-card')
@@ -124,6 +192,9 @@ describe('Students timetable robot page', () => {
         expect(componentSource).not.toContain('Alle auswählen')
         expect(componentSource).not.toContain('Alle abwählen')
         expect(componentSource).toContain('robot-course-panel__body')
+        expect(componentSource).toContain('robot-course-item-header--expandable')
+        expect(componentSource).toContain('.robot-course-item-header > :first-child')
+        expect(componentSource).toContain('justify-content: center')
         expect(componentSource).not.toContain('courseSelectionPanels')
         expect(componentSource).toContain('v-model="courseItemPanels"')
         expect(componentSource).toContain('@update:model-value="setCourseSelected(course, $event)"')
@@ -2378,6 +2449,64 @@ describe('Students timetable robot page', () => {
         expect(computed.selectedCourses.call(ctx)).toEqual([])
     })
 
+    it('checks only planned student courses in the course area by default', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: {
+                student_code: '100',
+            },
+            studentPlannedCourses: [
+                { key: 'planned-d2', code: 'D2', ttCodes: ['D2'] },
+                { key: 'planned-gw2', code: 'GW2', ttCodes: ['GWB2'] },
+            ],
+            deselectedCourseKeys: [],
+            deselectedCourseGroupKeys: [],
+            configuredCourseGroups: [],
+            availableCourses: [
+                { key: 'D2', code: 'D2', ttCodes: ['D2'], name: 'Deutsch 2', hours: 3 },
+                { key: 'GW2', code: 'GW2', ttCodes: ['GWB2'], name: 'Geografie 2', hours: 2 },
+                { key: 'INF2', code: 'INF2', ttCodes: ['INF2'], name: 'Informatik 2', hours: 2 },
+            ],
+            clearGeneratedTimetables() {},
+            saveLastRobotState() {},
+        }
+
+        methods.applyStudentPlannedCourseSelection.call(ctx)
+
+        expect(ctx.deselectedCourseKeys).toEqual(['INF2'])
+        expect(computed.selectedCourses.call(ctx).map(course => course.code)).toEqual(['D2', 'GW2'])
+    })
+
+    it('requires the previous additional module before selecting a dependent additional course', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            subjectMappings: [],
+            additionalCourseSelectedKeys: [],
+            studentAdditionalCourses: [
+                { key: 'INF2', code: 'INF2', ttCodes: ['INF2'], name: 'Informatik 2', hours: 2 },
+                { key: 'INF3', code: 'INF3', ttCodes: ['INF3'], name: 'Informatik 3', hours: 2 },
+            ],
+        }
+
+        expect(methods.additionalCourseSelectable.call(ctx, ctx.studentAdditionalCourses[0])).toBe(true)
+        expect(methods.additionalCourseSelectable.call(ctx, ctx.studentAdditionalCourses[1])).toBe(false)
+
+        methods.setAdditionalCourseSelected.call(ctx, ctx.studentAdditionalCourses[1], true)
+        expect(ctx.additionalCourseSelectedKeys).toEqual([])
+
+        methods.setAdditionalCourseSelected.call(ctx, ctx.studentAdditionalCourses[0], true)
+        expect(methods.additionalCourseSelectable.call(ctx, ctx.studentAdditionalCourses[1])).toBe(true)
+
+        methods.setAdditionalCourseSelected.call(ctx, ctx.studentAdditionalCourses[1], true)
+        expect(ctx.additionalCourseSelectedKeys).toEqual(['INF2', 'INF3'])
+
+        methods.setAdditionalCourseSelected.call(ctx, ctx.studentAdditionalCourses[0], false)
+        expect(ctx.additionalCourseSelectedKeys).toEqual([])
+    })
+
     it('splits available courses into two display columns', () => {
         const computed = (RobotTimetable as any).computed
         const ctx = {
@@ -2589,6 +2718,141 @@ describe('Students timetable robot page', () => {
         expect(computed.availableCourses.call(ctx).map(course => course.code)).toEqual(['D5', 'S4'])
     })
 
+    it('shows planned student courses for the student semester without positively completed courses', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: {
+                class: '09_2',
+            },
+            selection: {
+                semester: 1,
+                religion: 'ETH',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+                language: 'L',
+            },
+            subjectMappings: [],
+            languageOptions: computed.languageOptions.call({}),
+            studentCompletedCourses: [
+                { subject: 'INF1', grade: '1' },
+                { subject: 'M2', grade: '1' },
+                { subject: 'E2', grade: 'B' },
+                { subject: 'GWB2', grade: '2' },
+                { subject: 'D2', grade: '5' },
+            ],
+            subjectRows: [
+                {
+                    id: 1,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'D2',
+                    json_subject: 'D',
+                    name: 'Deutsch 2',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 2,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'M2',
+                    json_subject: 'M',
+                    name: 'Mathematik 2',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 3,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'E2',
+                    json_subject: 'E',
+                    name: 'Englisch 2',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 4,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'GW2',
+                    json_subject: 'GW',
+                    name: 'Geografie 2',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 5,
+                    semester: 3,
+                    branch: 'common',
+                    json_code: 'INF2',
+                    json_subject: 'INF',
+                    name: 'Informatik 2',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 6,
+                    semester: 3,
+                    branch: 'common',
+                    json_code: 'INF3',
+                    json_subject: 'INF',
+                    name: 'Informatik 3',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 7,
+                    semester: 4,
+                    branch: 'common',
+                    json_code: 'D4',
+                    json_subject: 'D',
+                    name: 'Deutsch 4',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 8,
+                    semester: 4,
+                    branch: 'common',
+                    json_code: 'M4',
+                    json_subject: 'M',
+                    name: 'Mathematik 4',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 9,
+                    semester: 4,
+                    branch: 'common',
+                    json_code: 'E4',
+                    json_subject: 'E',
+                    name: 'Englisch 4',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 10,
+                    semester: 4,
+                    branch: 'common',
+                    json_code: 'GW4',
+                    json_subject: 'GW',
+                    name: 'Geografie 4',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+            ],
+        }
+
+        expect(computed.studentPlannedCourses.call(ctx).map(course => course.code)).toEqual(['D2'])
+        expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual(['INF2', 'INF3', 'E4', 'M4'])
+        expect(methods.completedCourseCountsAsDone.call(ctx, '4')).toBe(true)
+        expect(methods.completedCourseCountsAsDone.call(ctx, 'B')).toBe(true)
+        expect(methods.completedCourseCountsAsDone.call(ctx, '5')).toBe(false)
+    })
+
     it('splits ordinary slash-separated subject codes into separate robot courses', () => {
         const computed = (RobotTimetable as any).computed
         const methods = (RobotTimetable as any).methods
@@ -2759,6 +3023,25 @@ describe('Students timetable robot page', () => {
         expect(ctx.generatedTimetables[0].slots['1-2'].code).toBe('GW1')
         expect(ctx.generatedTimetables[0].slots['1-2'].isConflictPreview).toBe(true)
         expect(methods.generatedSlotConflicts.call(ctx, ctx.generatedTimetables[0].slots['1-2'])).toEqual([])
+    })
+
+    it('shows the mapped semester in student labels', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+        }
+
+        expect(methods.studentSemesterLabel.call(ctx, { class: '09_1' })).toBe('Semester 1')
+        expect(methods.studentSemesterLabel.call(ctx, { class: '12_2' })).toBe('Semester 8')
+        expect(methods.studentSemesterLabel.call(ctx, { class: '1A' })).toBe('')
+        expect(methods.studentSemesterLabel.call(ctx, { class: '1A', school_level: '11', attendance_year: '2' }))
+            .toBe('Semester 6')
+        expect(methods.studentOptionTitle.call(ctx, {
+            class: '09_2',
+            last_name: 'Alpha',
+            first_name: 'Anna',
+            student_code: '100',
+        })).toBe('09_2 · Alpha Anna · Semester 2')
     })
 
     it('prefers a free regular weekday when single appointments complete a partial course option', () => {

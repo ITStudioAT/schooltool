@@ -19,6 +19,8 @@ class Import116Factory extends Factory
         return [
             'school_id' => School::factory(),
             'class' => $this->faker->randomElement(['1A', '1B', '2A', '2B', '3A', '3B', '4A', '4B', '5A', '5B']),
+            'school_level' => $this->faker->optional()->randomElement(['1', '2', '3', '4', '5']),
+            'attendance_year' => $this->faker->optional()->randomElement(['1', '2', '3', '4', '5']),
             'student_code' => $this->faker->unique()->numerify('######'),
             'last_name' => $this->faker->lastName(),
             'first_name' => $this->faker->firstName(),

@@ -33,6 +33,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Spatie\Permission\Models\Role;
+use Spatie\SimpleExcel\SimpleExcelWriter;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -254,13 +255,49 @@ describe('import record handling', function () {
             'last_name' => 'Mustermann',
             'first_name' => 'Max',
             'class' => '5A',
+            'school_level' => '5',
+            'attendance_year' => '2',
         ]);
 
         expect($record)->toBeInstanceOf(Import116::class)
             ->and($record->student_code)->toBe('123456')
             ->and($record->last_name)->toBe('Mustermann')
             ->and($record->first_name)->toBe('Max')
-            ->and($record->class)->toBe('5A');
+            ->and($record->class)->toBe('5A')
+            ->and($record->school_level)->toBe('5')
+            ->and($record->attendance_year)->toBe('2');
+    });
+
+    test('imports Schulstufe and Besuchsjahr columns from spreadsheet', function () {
+        $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        $writer->addRow([
+            'Klasse' => '5A',
+            'Schulstufe' => '5',
+            'Besuchsjahr' => '2',
+            'Schülerkennzahl' => 'STU-116-001',
+            'Familienname' => 'Mustermann',
+            'Vorname' => 'Max',
+            'Geschlecht' => 'm',
+            'Adressart' => 'Eigen',
+            'Mailadresse' => 'max.mustermann@student.test',
+        ]);
+        $writer->close();
+
+        $job = new Import116Job($this->admin, $relativePath, $this->schoolyear->id, '116.xlsx');
+        $job->handle();
+
+        $this->assertDatabaseHas('import116', [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'STU-116-001',
+            'class' => '5A',
+            'school_level' => '5',
+            'attendance_year' => '2',
+            'last_name' => 'Mustermann',
+            'first_name' => 'Max',
+            'email' => 'max.mustermann@student.test',
+        ]);
     });
 
     test('factory creates records for correct school', function () {

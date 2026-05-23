@@ -2,6 +2,7 @@
 
 use App\Jobs\StudentsTimetables\ProcessRecognitionCsvImportJob;
 use App\Jobs\StudentsTimetables\ProcessTimetableUnimportJob;
+use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
@@ -953,6 +954,112 @@ it('returns school hours for the selected schoolyear', function () {
         ->assertJsonPath('data.0.hour', 1)
         ->assertJsonPath('data.0.from', '08:00')
         ->assertJsonPath('data.0.until', '08:45');
+});
+
+it('returns current schoolyear import116 students for the robot student selector', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '2B',
+        'student_code' => '200',
+        'last_name' => 'Zeller',
+        'first_name' => 'Berta',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '1A',
+        'school_level' => '09',
+        'attendance_year' => '1',
+        'student_code' => '100',
+        'last_name' => 'Alpha',
+        'first_name' => 'Anna',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'student_code' => '300',
+        'import_user_id' => $user->id,
+        'exists_date' => null,
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/students')
+        ->assertSuccessful()
+        ->assertJsonCount(2, 'data')
+        ->assertJsonPath('data.0.student_code', '100')
+        ->assertJsonPath('data.0.title', '1A · Alpha Anna')
+        ->assertJsonPath('data.0.school_level', '09')
+        ->assertJsonPath('data.0.attendance_year', '1')
+        ->assertJsonPath('data.1.student_code', '200');
+});
+
+it('returns graded recognition courses for the selected robot student', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $import = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'noten.csv',
+        'stored_filename' => 'noten.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten.csv",
+        'total_rows' => 7,
+        'imported_rows' => 7,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+
+    collect([
+        ['student_code' => '100', 'subject' => 'BU', 'grade' => '4', 'note' => '4', 'raw_data' => ['semester' => '1']],
+        ['student_code' => '100', 'subject' => 'BU', 'grade' => 'B', 'note' => 'B', 'raw_data' => ['semester' => '2']],
+        ['student_code' => '100', 'subject' => 'D', 'grade' => '2', 'note' => '2'],
+        ['student_code' => '100', 'subject' => 'E', 'grade' => 'B', 'note' => 'B'],
+        ['student_code' => '100', 'subject' => 'PG_ETH', 'grade' => '1', 'note' => '1', 'raw_data' => ['semester' => '1']],
+        ['student_code' => '100', 'subject' => 'M', 'grade' => '', 'note' => ''],
+        ['student_code' => '200', 'subject' => 'BU', 'grade' => '1', 'note' => '1'],
+    ])->each(fn (array $row, int $index): StudentTimetableRecognitionRow => StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $import->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => $index + 2,
+        'student_code' => $row['student_code'],
+        'subject' => $row['subject'],
+        'grade' => $row['grade'],
+        'note' => $row['note'],
+        'raw_data' => $row['raw_data'] ?? $row,
+    ]));
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/student-completed-courses?student_code=100')
+        ->assertSuccessful()
+        ->assertJsonCount(5, 'data')
+        ->assertJsonPath('data.0.subject', 'BU1')
+        ->assertJsonPath('data.0.grade', '4')
+        ->assertJsonPath('data.1.subject', 'BU2')
+        ->assertJsonPath('data.1.grade', 'B')
+        ->assertJsonPath('data.2.subject', 'D')
+        ->assertJsonPath('data.2.grade', '2')
+        ->assertJsonPath('data.3.subject', 'E')
+        ->assertJsonPath('data.3.grade', 'B')
+        ->assertJsonPath('data.4.subject', 'ETH1')
+        ->assertJsonPath('data.4.grade', '1')
+        ->assertJsonPath('total', 5);
 });
 
 it('returns the requested timetable import history for the selected schoolyear', function () {

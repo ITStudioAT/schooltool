@@ -19,6 +19,8 @@ class Import116Resource extends JsonResource
             'import116_id' => $this->id,
             'school_id' => $this->school_id,
             'class' => $this->class,
+            'school_level' => $this->school_level,
+            'attendance_year' => $this->attendance_year,
             'student_code' => $this->student_code,
             'last_name' => $this->last_name,
             'first_name' => $this->first_name,

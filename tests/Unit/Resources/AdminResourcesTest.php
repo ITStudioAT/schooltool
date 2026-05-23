@@ -12,8 +12,10 @@ use App\Http\Resources\Admin\SchoolToolResource;
 use App\Http\Resources\Admin\SchoolyearResource as AdminSchoolyearResource;
 use App\Http\Resources\Admin\TeacherResource;
 use App\Http\Resources\Admin\TeachersListResource;
+use App\Http\Resources\Admin\Teaching\Import116Resource;
 use App\Http\Resources\Admin\Tutoring\OfferResource as AdminTutoringOfferResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
+use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\Register;
 use App\Models\RegisterDate;
@@ -499,4 +501,16 @@ test('user with role resource formats date flags and role list', function () {
         ->and($data['is_verified'])->toBeTrue()
         ->and($data['email_verified_at'])->toBe('02.01.2024')
         ->and($data['roles']->values()->all())->toBe(['admin']);
+});
+
+test('admin teaching import116 resource exposes school level and attendance year', function () {
+    $record = Import116::factory()->create([
+        'school_level' => '5',
+        'attendance_year' => '2',
+    ]);
+
+    $data = (new Import116Resource($record))->toArray(request());
+
+    expect($data['school_level'])->toBe('5')
+        ->and($data['attendance_year'])->toBe('2');
 });
