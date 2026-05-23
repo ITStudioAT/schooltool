@@ -2114,6 +2114,11 @@ export default {
         },
         applyRobotState(state) {
             const defaults = this.defaultRobotState()
+            const studentCode = this.normalizedStudentCode(state?.student?.studentCode)
+            const selectedStudent = this.studentByCode(studentCode)
+            const studentDefaults = selectedStudent
+                ? this.selectedStudentDefaultSelection(selectedStudent, { includeCourseHistory: true })
+                : null
 
             this.robotStateRestoring = true
             try {
@@ -2121,6 +2126,7 @@ export default {
                     ...defaults.selection,
                     ...(state?.selection || {}),
                     semester: this.numberOrDefault(state?.selection?.semester, defaults.selection.semester),
+                    ...(studentDefaults || {}),
                 }
                 this.constraints = {
                     availableWeekdays: this.numberValuesOrDefault(
@@ -2134,12 +2140,13 @@ export default {
                     ),
                 }
                 this.studentSelection = {
-                    studentCode: this.normalizedStudentCode(state?.student?.studentCode),
+                    studentCode,
                 }
                 this.deselectedCourseKeys = this.restoredDeselectedCourseKeys(state)
                 this.deselectedCourseGroupKeys = this.uniqueValues(state?.deselectedCourseGroupKeys)
                 this.additionalCourseSelectedKeys = this.uniqueValues(state?.selectedAdditionalCourseKeys)
                 this.additionalCourseTimetableRequired = state?.additionalCourseTimetableRequired === true
+                this.studentSelectionDefaultsPendingCode = selectedStudent ? studentCode : null
             } finally {
                 this.robotStateRestoring = false
             }
@@ -2223,6 +2230,13 @@ export default {
             } catch {
                 this.applyRobotState(this.defaultRobotState())
             }
+        },
+        studentByCode(studentCode) {
+            const normalizedStudentCode = this.normalizedStudentCode(studentCode)
+            if (!normalizedStudentCode) return null
+
+            return (Array.isArray(this.robotStudents) ? this.robotStudents : [])
+                .find(student => String(student.student_code) === normalizedStudentCode) || null
         },
         numberValuesOrDefault(values, defaultValues) {
             if (!Array.isArray(values)) return [...defaultValues]

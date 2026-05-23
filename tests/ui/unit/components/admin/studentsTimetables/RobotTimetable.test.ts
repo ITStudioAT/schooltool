@@ -1051,6 +1051,54 @@ describe('Students timetable robot page', () => {
         })).toEqual(['new-ch2-key'])
     })
 
+    it('reconciles restored robot selection with the restored student defaults', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            robotStudents: [
+                { student_code: '100', school_level: '09', attendance_year: '2' },
+            ],
+            studentCompletedCourses: [
+                { subject: 'F1', grade: '5' },
+                { subject: 'RK1', grade: '5' },
+                { subject: 'BE1', grade: 'B' },
+            ],
+            selection: methods.defaultRobotState().selection,
+            constraints: methods.defaultRobotState().constraints,
+            availableCourses: [],
+            deselectedCourseKeys: [],
+            deselectedCourseGroupKeys: [],
+            additionalCourseSelectedKeys: [],
+            robotStateRestoring: false,
+        }
+
+        methods.applyRobotState.call(ctx, {
+            ...methods.defaultRobotState.call(ctx),
+            student: { studentCode: '100' },
+            selection: {
+                semester: 1,
+                religion: 'ETH',
+                branch: 'gymnasial',
+                artsSubject: 'ME',
+                language: 'L',
+            },
+        })
+
+        expect(ctx.selection).toEqual({
+            semester: 2,
+            religion: 'Rk',
+            branch: 'wirtschaftskundlich',
+            artsSubject: 'BE',
+            language: 'F',
+        })
+        expect(ctx.studentSelection).toEqual({ studentCode: '100' })
+        expect(ctx.studentSelectionDefaultsPendingCode).toBe('100')
+    })
+
     it('restores robot settings from selected schoolyear and default storage keys', () => {
         const methods = (RobotTimetable as any).methods
         const storedItems = new Map<string, string>()
