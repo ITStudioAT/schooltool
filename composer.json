@@ -15,10 +15,10 @@
         "doctrine/dbal": "^4.4",
         "google/cloud-document-ai": "^2.6",
         "intervention/image": "^3.11",
-        "itstudioat/spa": "^0.3.3",
         "lab404/laravel-impersonate": "^1.7.8",
         "laravel/ai": "^0.3.2",
         "laravel/framework": "^13.0",
+        "laravel/sanctum": "^4.3.1",
         "laravel/tinker": "^3.0",
         "league/flysystem-aws-s3-v3": "^3.31",
         "phpoffice/phppresentation": "dev-master",
@@ -27,6 +27,7 @@
         "predis/predis": "^3.3",
         "pusher/pusher-php-server": "^7.2",
         "smalot/pdfparser": "^2.12",
+        "spatie/laravel-permission": "^6.25",
         "spatie/laravel-pdf": "^2.4",
         "spatie/pdf-to-text": "^1.54",
         "spatie/simple-excel": "^3.9",
@@ -53,25 +54,13 @@
             "App\\": "app/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
-        },
-        "exclude-from-classmap": [
-            "vendor/itstudioat/spa/src/Facades/Spa.php"
-        ]
+        }
     },
     "autoload-dev": {
         "psr-4": {
             "Tests\\": "tests/"
         }
     },
-    "repositories": [
-        {
-            "type": "path",
-            "url": "bootstrap/itstudioat-spa-moved",
-            "options": {
-                "symlink": false
-            }
-        }
-    ],
     "scripts": {
         "setup": [
             "composer install",

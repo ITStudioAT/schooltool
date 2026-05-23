@@ -4,10 +4,6 @@ namespace App\Traits;
 
 use Illuminate\Support\Facades\Hash;
 
-/* ===============================
-ITStudioAT
-=============================== */
-
 trait UserTrait
 {
     public function setToken2Fa($minutes, $select = 1): string

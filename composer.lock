@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "78d78f0d88ccb1597aa2a4a5ac64ffcd",
+    "content-hash": "2281f5e727e8abb4d468f7ea7ae13518",
     "packages": [
         {
             "name": "aws/aws-crt-php",
@@ -2338,114 +2338,6 @@
                 }
             ],
             "time": "2026-05-01T08:20:10+00:00"
-        },
-        {
-            "name": "itstudioat/spa",
-            "version": "0.3.4",
-            "dist": {
-                "type": "path",
-                "url": "bootstrap/itstudioat-spa-moved",
-                "reference": "d521a97c5b8500ff6cd6c6fd7f818e377e830107"
-            },
-            "require": {
-                "illuminate/contracts": "^10.0||^11.0||^12.0||^13.0",
-                "laravel/sanctum": "^4.3.1",
-                "php": "^8.3",
-                "spatie/laravel-package-tools": "^1.93",
-                "spatie/laravel-permission": "^6.25"
-            },
-            "require-dev": {
-                "friendsofphp/php-cs-fixer": "^3.75",
-                "laravel/framework": "^10.0||^11.0||^12.0||^13.0",
-                "laravel/pint": "^1.14",
-                "nunomaduro/collision": "^8.9.1",
-                "orchestra/testbench": "^10.0.0||^9.0.0||^8.22.0",
-                "pestphp/pest": "^4.4.2",
-                "pestphp/pest-plugin-arch": "^4.0",
-                "pestphp/pest-plugin-laravel": "^4.1.0"
-            },
-            "type": "library",
-            "extra": {
-                "laravel": {
-                    "providers": [
-                        "Itstudioat\\Spa\\SpaServiceProvider"
-                    ],
-                    "aliases": {
-                        "Spa": "Itstudioat\\Spa\\Facades\\Spa"
-                    }
-                }
-            },
-            "autoload": {
-                "psr-4": {
-                    "Itstudioat\\Spa\\": "src/"
-                }
-            },
-            "autoload-dev": {
-                "psr-4": {
-                    "Itstudioat\\Spa\\Tests\\": "tests/",
-                    "Database\\Factories\\": "database/factories/",
-                    "Database\\Seeders\\": "database/seeders/",
-                    "App\\": "src/",
-                    "Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "post-autoload-dump": [
-                    "@clear",
-                    "@prepare",
-                    "@composer run prepare"
-                ],
-                "prepare": [
-                    "@php vendor/bin/testbench package:discover --ansi"
-                ],
-                "analyse": [
-                    "vendor/bin/phpstan analyse"
-                ],
-                "test": [
-                    "vendor/bin/pest"
-                ],
-                "test-coverage": [
-                    "vendor/bin/pest --coverage"
-                ],
-                "format": [
-                    "vendor/bin/php-cs-fixer fix --verbose --allow-risky=yes"
-                ],
-                "clear": [
-                    "@php vendor/bin/testbench package:purge-skeleton --ansi"
-                ],
-                "build": [
-                    "@php vendor/bin/testbench workbench:build --ansi"
-                ],
-                "serve": [
-                    "Composer\\Config::disableProcessTimeout",
-                    "@build",
-                    "@php vendor/bin/testbench serve --ansi"
-                ],
-                "lint": [
-                    "@php vendor/bin/pint --ansi"
-                ]
-            },
-            "license": [
-                "MIT"
-            ],
-            "authors": [
-                {
-                    "name": "Guenther Kron",
-                    "email": "kron@naturwelt.at",
-                    "role": "Developer"
-                }
-            ],
-            "description": "Initial Laraval Spa Installation",
-            "homepage": "https://github.com/itstudioat/spa",
-            "keywords": [
-                "itstudioat",
-                "laravel",
-                "spa"
-            ],
-            "transport-options": {
-                "symlink": false,
-                "relative": true
-            }
         },
         {
             "name": "lab404/laravel-impersonate",
