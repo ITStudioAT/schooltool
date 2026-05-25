@@ -1103,17 +1103,136 @@ describe('Students timetable overview', () => {
         })).toBe('07.09. - 12.10.')
     })
 
-    it('keeps timetable weekday columns at equal widths', () => {
+    it('renders the overview timetable with the robot-style generated grid', () => {
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/overview/Overview.vue',
             'utf8',
         )
 
-        expect(componentSource).toContain('class="timetable-hour-column"')
-        expect(componentSource).toContain('class="timetable-day-column"')
-        expect(componentSource).toContain('table-layout: fixed;')
+        expect(componentSource).toContain('class="timetable-generated-grid"')
+        expect(componentSource).toContain("'timetable-generated-cell--filled'")
+        expect(componentSource).toContain("'timetable-generated-cell--conflict'")
+        expect(componentSource).toContain("'timetable-generated-cell--related-overlap'")
+        expect(componentSource).toContain('grid-template-columns: 88px repeat(var(--overview-timetable-weekdays, 5), minmax(72px, 1fr));')
+        expect(componentSource).toContain('background: #bbf7d0;')
+        expect(componentSource).not.toContain('class="timetable-hour-column"')
+        expect(componentSource).not.toContain('class="timetable-day-column"')
+        expect(componentSource).not.toContain('table-layout: fixed;')
         expect(componentSource).toContain('overflow-wrap: anywhere;')
-        expect(componentSource).toContain("axios.get('/api/admin/students-timetables/overview-selections')")
-        expect(componentSource).toContain("axios.put('/api/admin/students-timetables/overview-selections'")
+        expect(componentSource).toContain('class="course-choice-panel"')
+        expect(componentSource).toContain('icon="mdi-plus"')
+        expect(componentSource).toContain('<v-dialog v-model="courseMenuDialog" persistent')
+        expect(componentSource).toContain('allCourseChoiceMenus')
+        expect(componentSource).toContain('selectedCourseMenu')
+        expect(componentSource).toContain('class="course-item-chips"')
+        expect(componentSource).toContain('class="course-choice-panel__semesters course-menu-dialog-items"')
+        expect(componentSource).toContain('.course-menu-dialog-items .course-item-chips')
+        expect(componentSource).toContain('grid-template-columns: minmax(0, 1fr);')
+        expect(componentSource).toContain('visibleCourseChoiceSemesters')
+        expect(componentSource).toContain('course-choice-semester__dates')
+        expect(componentSource).toContain('grid-template-columns: minmax(0, 1fr);')
+        expect(componentSource).toContain('selectedCourseFilterChipsAll')
+        expect(componentSource).toContain('selectedCourseCount')
+        expect(componentSource).not.toContain('v-for="courseMenu in semesterCourseMenus(semester.value)"')
+        expect(componentSource).toContain('class="semester-timetable"')
+        expect(componentSource).toContain('visibleTimetableSemesters')
+        expect(componentSource).toContain('Wähle oben Kurse aus, um den Stundenplan anzuzeigen.')
+        expect(componentSource).toContain("label: 'Semester'")
+        expect(componentSource).not.toContain("label: 'Semester 1'")
+        expect(componentSource).not.toContain("label: 'Semester 2'")
+        expect(componentSource).not.toContain('class="semester-section"')
+        expect(componentSource).not.toContain("axios.get('/api/admin/students-timetables/overview-selections')")
+        expect(componentSource).not.toContain("axios.put('/api/admin/students-timetables/overview-selections'")
+    })
+
+    it('shows only course-choice semesters that have courses', () => {
+        const computed = (Overview as any).computed
+
+        const ctx = {
+            semesters: [
+                { value: 1, label: 'Semester', dateRangeLabel: '08.09.2025 - 15.02.2026' },
+                { value: 2, label: 'Semester', dateRangeLabel: '16.02.2026 - 10.07.2026' },
+            ],
+            semesterCourseMenus(semester: number) {
+                return semester === 2 ? [{ key: 'kg' }] : []
+            },
+        }
+
+        expect(computed.visibleCourseChoiceSemesters.call(ctx)).toEqual([
+            { value: 2, label: 'Semester', dateRangeLabel: '16.02.2026 - 10.07.2026' },
+        ])
+    })
+
+    it('shows course items in the dialog only after a course menu is selected', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+
+        const ctx = {
+            courseMenuDialog: false,
+            selectedCourseMenuKey: '',
+            visibleCourseChoiceSemesters: [
+                { value: 2, label: 'Semester', dateRangeLabel: '16.02.2026 - 10.07.2026' },
+            ],
+            semesterCourseMenus(semester: number) {
+                return semester === 2
+                    ? [
+                        {
+                            key: 'semester-2-ETH',
+                            label: 'ETH',
+                            entries: [{ key: 'eth-1', label: 'ETH 1' }],
+                        },
+                    ]
+                    : []
+            },
+        }
+
+        const allCourseChoiceMenus = computed.allCourseChoiceMenus.call(ctx)
+
+        expect(computed.selectedCourseMenu.call({
+            ...ctx,
+            allCourseChoiceMenus,
+        })).toBeNull()
+
+        expect(allCourseChoiceMenus).toEqual([
+            {
+                key: 'semester-2-ETH',
+                label: 'ETH',
+                entries: [{ key: 'eth-1', label: 'ETH 1' }],
+                semesterValue: 2,
+                semesterLabel: 'Semester',
+                semesterDateRangeLabel: '16.02.2026 - 10.07.2026',
+            },
+        ])
+
+        ctx.selectedCourseMenuKey = 'semester-2-ETH'
+        methods.openCourseMenuDialog.call(ctx)
+        expect(ctx.courseMenuDialog).toBe(true)
+        expect(ctx.selectedCourseMenuKey).toBe('')
+
+        methods.selectCourseMenu.call(ctx, allCourseChoiceMenus[0])
+        expect(ctx.selectedCourseMenuKey).toBe('semester-2-ETH')
+        expect(ctx.courseMenuDialog).toBe(true)
+        expect(computed.selectedCourseMenu.call({
+            ...ctx,
+            allCourseChoiceMenus,
+        })).toEqual(allCourseChoiceMenus[0])
+    })
+
+    it('shows only semesters with selected timetable courses', () => {
+        const computed = (Overview as any).computed
+
+        const ctx = {
+            semesters: [
+                { value: 1, label: 'Semester' },
+                { value: 2, label: 'Semester' },
+            ],
+            selectedCourseMenuEntries(semester: number) {
+                return semester === 2 ? [{ key: 'kg1' }] : []
+            },
+        }
+
+        expect(computed.visibleTimetableSemesters.call(ctx)).toEqual([
+            { value: 2, label: 'Semester' },
+        ])
     })
 })

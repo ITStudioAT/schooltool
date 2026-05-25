@@ -17,7 +17,8 @@
         "mcp:revert": "ruler revert"
     },
     "overrides": {
-        "glob": "13.0.6"
+        "glob": "13.0.6",
+        "mute-stream": "3.0.0"
     },
     "devDependencies": {
         "@intellectronica/ruler": "^0.3.40",

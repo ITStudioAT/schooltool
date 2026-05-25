@@ -48,71 +48,67 @@
                     Es sind noch keine Schulstunden hinterlegt. Die Übersicht zeigt vorläufig 10 Stunden.
                 </v-alert>
 
-                <div class="semester-grid">
-                    <section v-for="semester in semesters" :key="semester.value" class="semester-section">
-                        <div class="semester-section__header">
+                <div class="course-choice-panel">
+                    <div class="course-choice-panel__header">
+                        <div class="course-choice-panel__title">
+                            <v-icon icon="mdi-format-list-checks" size="18" color="primary" />
+                            <span>Kursauswahl</span>
+                            <v-tooltip text="Kurs wählen">
+                                <template #activator="{ props }">
+                                    <v-btn
+                                        v-bind="props"
+                                        icon="mdi-plus"
+                                        color="primary"
+                                        variant="flat"
+                                        size="small"
+                                        aria-label="Kurs wählen"
+                                        @click="openCourseMenuDialog" />
+                                </template>
+                            </v-tooltip>
+                        </div>
+                        <div class="course-choice-panel__actions">
+                            <v-chip size="x-small" color="primary" variant="tonal">
+                                {{ selectedCourseCount }} ausgewählt
+                            </v-chip>
+                        </div>
+                    </div>
+
+                    <v-alert v-if="!selectedCourseFilterChipsAll.length" type="info" variant="tonal" density="compact" class="mb-0">
+                        Kurs über Plus auswählen.
+                    </v-alert>
+
+                    <div v-if="selectedCourseFilterChipsAll.length" class="selected-course-filter-chips">
+                        <v-chip
+                            v-for="filterChip in selectedCourseFilterChipsAll"
+                            :key="filterChip.key"
+                            size="small"
+                            :color="filterChip.hasOverlap ? 'error' : 'success'"
+                            variant="tonal"
+                            closable
+                            class="selected-course-filter-chip"
+                            @click:close="handleCourseMenuEntryFilterClick(filterChip.entry)">
+                            {{ filterChip.label }}
+                        </v-chip>
+                    </div>
+                </div>
+
+                <v-alert
+                    v-if="!visibleTimetableSemesters.length"
+                    type="info"
+                    variant="tonal"
+                    class="mb-0">
+                    Wähle oben Kurse aus, um den Stundenplan anzuzeigen.
+                </v-alert>
+
+                <div v-else class="semester-grid">
+                    <section v-for="semester in visibleTimetableSemesters" :key="semester.value" class="semester-timetable">
+                        <div class="semester-timetable__header">
                             <div class="d-flex flex-wrap align-center ga-2">
                                 <v-icon icon="mdi-calendar-range" size="18" color="primary" />
                                 <span class="text-subtitle-2 font-weight-bold">{{ semester.label }}</span>
-                                <span class="semester-section__dates">{{ semester.dateRangeLabel }}</span>
+                                <span class="semester-timetable__dates">{{ semester.dateRangeLabel }}</span>
                             </div>
                             <v-chip size="x-small" color="primary" variant="tonal">{{ weekdayRangeLabel }}</v-chip>
-                        </div>
-
-                        <div v-if="semesterCourseMenus(semester.value).length" class="semester-course-chips">
-                            <v-menu
-                                v-for="courseMenu in semesterCourseMenus(semester.value)"
-                                :key="courseMenu.key"
-                                location="bottom start"
-                                max-height="360">
-                                <template #activator="{ props }">
-                                    <v-chip
-                                        v-bind="props"
-                                        size="small"
-                                        color="primary"
-                                        variant="tonal"
-                                        append-icon="mdi-menu-down"
-                                        class="semester-course-chip">
-                                        {{ courseMenu.label }}
-                                    </v-chip>
-                                </template>
-
-                                <v-list density="compact" class="semester-course-menu-list">
-                                    <v-list-item
-                                        v-for="entry in courseMenu.entries"
-                                        :key="entry.key"
-                                        :active="isCourseMenuEntryFilterActive(entry)"
-                                        :color="courseMenuEntryHasOverlap(entry, semester.value) ? 'error' : 'primary'"
-                                        :class="{ 'semester-course-menu-item--overlap': courseMenuEntryHasOverlap(entry, semester.value) }"
-                                        @click="handleCourseMenuEntryFilterClick(entry)">
-                                        <template #prepend>
-                                            <v-icon
-                                                :icon="isCourseMenuEntryFilterActive(entry) ? 'mdi-check' : 'mdi-calendar-blank'"
-                                                size="18" />
-                                        </template>
-                                        <v-list-item-title class="semester-course-menu-title">
-                                            {{ entry.label }}
-                                        </v-list-item-title>
-                                        <v-list-item-subtitle v-if="entry.scheduleLabel" class="semester-course-menu-subtitle">
-                                            {{ entry.scheduleLabel }}
-                                        </v-list-item-subtitle>
-                                    </v-list-item>
-                                </v-list>
-                            </v-menu>
-                        </div>
-
-                        <div v-if="selectedCourseFilterChips(semester.value).length" class="selected-course-filter-chips">
-                            <v-chip
-                                v-for="filterChip in selectedCourseFilterChips(semester.value)"
-                                :key="filterChip.key"
-                                size="small"
-                                :color="filterChip.hasOverlap ? 'error' : 'success'"
-                                variant="tonal"
-                                closable
-                                class="selected-course-filter-chip"
-                                @click:close="handleCourseMenuEntryFilterClick(filterChip.entry)">
-                                {{ filterChip.label }}
-                            </v-chip>
                         </div>
 
                         <div v-if="recurrenceWeekOptions(semester.value).length > 1" class="recurrence-week-selector">
@@ -153,77 +149,63 @@
                                 {{ timetableWeek.label }}
                             </div>
 
-                            <div class="timetable-table-wrapper">
-                                <table class="timetable-grid-table">
-                                    <colgroup>
-                                        <col class="timetable-hour-column">
-                                        <col
-                                            v-for="weekday in displayedWeekdays"
-                                            :key="`${semester.value}-${timetableWeek.key}-${weekday.key}-column`"
-                                            class="timetable-day-column">
-                                    </colgroup>
-                                    <thead>
-                                        <tr>
-                                            <th class="timetable-hour-header-cell"></th>
-                                            <th v-for="weekday in displayedWeekdays" :key="`${semester.value}-${timetableWeek.key}-${weekday.key}`" class="timetable-day-header-cell">
-                                                <div>{{ weekday.label }}</div>
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="hour in timetableHoursForSemester(semester.value, timetableWeek)" :key="`${semester.value}-${timetableWeek.key}-${hour.hour}`">
-                                            <td class="timetable-hour-cell">
-                                                <div class="timetable-hour-num">{{ hour.hour }}.</div>
-                                                <div v-if="hour.from || hour.until" class="timetable-hour-time">
-                                                    {{ hour.from }}<br>{{ hour.until }}
-                                                </div>
-                                            </td>
-                                            <td
-                                                v-for="weekday in displayedWeekdays"
-                                                :key="`${semester.value}-${timetableWeek.key}-${weekday.key}-${hour.hour}`"
-                                                class="timetable-grid-cell">
-                                                <div
-                                                    v-for="courseGroup in courseGroupsForCell(semester.value, weekday.value, hour.hour, timetableWeek)"
-                                                    :key="courseGroup.key"
-                                                    :class="[
-                                                        'timetable-course-item',
-                                                        { 'timetable-course-item--overlap': courseGroupHasOverlap(courseGroup) },
-                                                        { 'timetable-course-item--related-overlap': courseGroupHasRelatedOverlap(courseGroup) },
-                                                    ]"
-                                                    role="button"
-                                                    tabindex="0"
-                                                    @click="openCourseGroupDialog(courseGroup)"
-                                                    @keydown.enter="openCourseGroupDialog(courseGroup)">
-                                                    <span class="timetable-course-title">{{ courseGroup.display_label || courseGroup.title }}</span>
-                                                    <span v-if="courseGroupRelatedOverlapMarker(courseGroup)" class="timetable-course-related-marker">
-                                                        {{ courseGroupRelatedOverlapMarker(courseGroup) }}
-                                                    </span>
-                                                    <span v-if="courseGroup.recurrence_label || courseGroup.is_block" class="timetable-course-markers">
-                                                        <v-chip
-                                                            v-if="courseGroup.recurrence_label"
-                                                            size="x-small"
-                                                            color="primary"
-                                                            variant="tonal">
-                                                            {{ courseGroup.recurrence_label }}
-                                                        </v-chip>
-                                                        <v-chip
-                                                            v-if="courseGroup.is_block"
-                                                            size="x-small"
-                                                            color="warning"
-                                                            variant="tonal">
-                                                            {{ courseGroupBlockLabel(courseGroup) }}
-                                                        </v-chip>
-                                                    </span>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                        <tr v-if="!timetableHoursForSemester(semester.value, timetableWeek).length">
-                                            <td :colspan="displayedWeekdays.length + 1" class="timetable-empty-cell">
-                                                Keine Einträge in den sichtbaren Wochentagen.
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                            <div
+                                class="timetable-generated-grid"
+                                :style="{ '--overview-timetable-weekdays': displayedWeekdays.length }">
+                                <div class="timetable-generated-cell timetable-generated-cell--header">Std.</div>
+                                <div
+                                    v-for="weekday in displayedWeekdays"
+                                    :key="`${semester.value}-${timetableWeek.key}-${weekday.key}`"
+                                    class="timetable-generated-cell timetable-generated-cell--header">
+                                    {{ weekday.label }}
+                                </div>
+
+                                <template
+                                    v-for="hour in timetableHoursForSemester(semester.value, timetableWeek)"
+                                    :key="`${semester.value}-${timetableWeek.key}-${hour.hour}`">
+                                    <div class="timetable-generated-cell timetable-generated-cell--time">
+                                        <div class="timetable-hour-num">{{ hour.hour }}.</div>
+                                        <div v-if="hour.from || hour.until" class="timetable-hour-time">
+                                            {{ hour.from }}<br>{{ hour.until }}
+                                        </div>
+                                    </div>
+                                    <div
+                                        v-for="weekday in displayedWeekdays"
+                                        :key="`${semester.value}-${timetableWeek.key}-${weekday.key}-${hour.hour}`"
+                                        class="timetable-generated-cell"
+                                        :class="{
+                                            'timetable-generated-cell--filled': courseGroupsForCell(semester.value, weekday.value, hour.hour, timetableWeek).length,
+                                            'timetable-generated-cell--conflict': cellHasOverlap(semester.value, weekday.value, hour.hour, timetableWeek),
+                                            'timetable-generated-cell--related-overlap': cellHasRelatedOverlap(semester.value, weekday.value, hour.hour, timetableWeek),
+                                        }">
+                                        <div
+                                            v-for="courseGroup in courseGroupsForCell(semester.value, weekday.value, hour.hour, timetableWeek)"
+                                            :key="courseGroup.key"
+                                            class="timetable-generated-cell__content"
+                                            role="button"
+                                            tabindex="0"
+                                            @click="openCourseGroupDialog(courseGroup)"
+                                            @keydown.enter="openCourseGroupDialog(courseGroup)">
+                                            <div class="timetable-generated-cell__code">
+                                                {{ courseGroup.display_label || courseGroup.title }}
+                                            </div>
+                                            <div v-if="courseGroupRelatedOverlapMarker(courseGroup)" class="timetable-generated-cell__details timetable-generated-cell__details--warning">
+                                                {{ courseGroupRelatedOverlapMarker(courseGroup) }}
+                                            </div>
+                                            <div v-if="courseGroup.recurrence_label || courseGroup.is_block" class="timetable-generated-cell__details">
+                                                <span v-if="courseGroup.recurrence_label">{{ courseGroup.recurrence_label }}</span>
+                                                <span v-if="courseGroup.recurrence_label && courseGroup.is_block"> · </span>
+                                                <span v-if="courseGroup.is_block">{{ courseGroupBlockLabel(courseGroup) }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <div
+                                    v-if="!timetableHoursForSemester(semester.value, timetableWeek).length"
+                                    class="timetable-generated-cell timetable-generated-cell--empty">
+                                    Keine Einträge in den sichtbaren Wochentagen.
+                                </div>
                             </div>
 
                             <div v-if="shouldShowExtraDatesNotice(semester.value, timetableWeek)" class="extra-dates-notice">
@@ -249,6 +231,65 @@
                 </template>
             </v-card-text>
         </v-card>
+
+        <v-dialog v-model="courseMenuDialog" persistent max-width="760">
+            <v-card rounded="lg">
+                <v-card-title class="d-flex align-center ga-2">
+                    <v-icon icon="mdi-plus-circle" color="primary" />
+                    Kurs wählen
+                    <v-spacer />
+                    <v-btn icon="mdi-close" variant="text" size="small" @click="courseMenuDialog = false" />
+                </v-card-title>
+                <v-divider />
+                <v-card-text>
+                    <div class="course-menu-dialog-chips">
+                        <v-chip
+                            v-for="courseMenu in allCourseChoiceMenus"
+                            :key="courseMenu.key"
+                            size="small"
+                            color="primary"
+                            :variant="selectedCourseMenuKey === courseMenu.key ? 'flat' : 'tonal'"
+                            class="course-menu-dialog-chip"
+                            @click="selectCourseMenu(courseMenu)">
+                            {{ courseMenu.label }}
+                        </v-chip>
+                    </div>
+
+                    <div v-if="selectedCourseMenu" class="course-choice-panel__semesters course-menu-dialog-items">
+                        <section
+                            :key="selectedCourseMenu.key"
+                            class="course-choice-semester">
+                            <div class="course-choice-semester__label">
+                                <span>{{ selectedCourseMenu.semesterLabel }}</span>
+                                <span class="course-choice-semester__dates">{{ selectedCourseMenu.semesterDateRangeLabel }}</span>
+                                <v-chip size="x-small" color="primary" variant="tonal">
+                                    {{ selectedCourseMenu.label }}
+                                </v-chip>
+                            </div>
+                            <div class="course-item-chips">
+                                <v-chip
+                                    v-for="entry in selectedCourseMenu.entries"
+                                    :key="entry.key"
+                                    size="small"
+                                    :color="courseMenuEntryHasOverlap(entry, selectedCourseMenu.semesterValue) ? 'error' : isCourseMenuEntryFilterActive(entry) ? 'success' : 'primary'"
+                                    :variant="isCourseMenuEntryFilterActive(entry) ? 'flat' : 'tonal'"
+                                    class="course-item-chip"
+                                    @click="handleCourseMenuEntryFilterClick(entry)">
+                                    <v-icon
+                                        :icon="isCourseMenuEntryFilterActive(entry) ? 'mdi-check' : 'mdi-calendar-blank'"
+                                        size="16"
+                                        start />
+                                    <span>{{ entry.label }}</span>
+                                    <span v-if="entry.scheduleLabel" class="course-item-chip__schedule">
+                                        {{ entry.scheduleLabel }}
+                                    </span>
+                                </v-chip>
+                            </div>
+                        </section>
+                    </div>
+                </v-card-text>
+            </v-card>
+        </v-dialog>
 
         <v-dialog v-model="courseGroupDialog" persistent max-width="520">
             <v-card>
@@ -318,10 +359,11 @@ export default {
             loading: false,
             schoolHours: [],
             courseGroups: [],
+            courseMenuDialog: false,
+            selectedCourseMenuKey: '',
             courseGroupDialog: false,
             selectedCourseGroup: null,
             timetableUpdatePending: false,
-            selectionSaveSequence: 0,
             activeCourseGroupFilterKeys: [],
             selectedRecurrenceWeeks: {
                 1: ALL_DATES_OPTION_VALUE,
@@ -359,12 +401,12 @@ export default {
             return [
                 {
                     value: 1,
-                    label: 'Semester 1',
+                    label: 'Semester',
                     dateRangeLabel: this.semesterDateRange(1),
                 },
                 {
                     value: 2,
-                    label: 'Semester 2',
+                    label: 'Semester',
                     dateRangeLabel: this.semesterDateRange(2),
                 },
             ]
@@ -454,6 +496,32 @@ export default {
                     .filter((entry) => this.isCourseMenuEntryFilterActive(entry)),
             }
         },
+        selectedCourseFilterChipsAll() {
+            return this.semesters.flatMap((semester) => this.selectedCourseFilterChips(semester.value))
+        },
+        selectedCourseCount() {
+            return this.selectedCourseMenuEntriesBySemester[1].length
+                + this.selectedCourseMenuEntriesBySemester[2].length
+        },
+        visibleCourseChoiceSemesters() {
+            return this.semesters.filter((semester) => this.semesterCourseMenus(semester.value).length > 0)
+        },
+        allCourseChoiceMenus() {
+            return this.visibleCourseChoiceSemesters.flatMap((semester) => (
+                this.semesterCourseMenus(semester.value).map((courseMenu) => ({
+                    ...courseMenu,
+                    semesterValue: semester.value,
+                    semesterLabel: semester.label,
+                    semesterDateRangeLabel: semester.dateRangeLabel,
+                }))
+            ))
+        },
+        selectedCourseMenu() {
+            return this.allCourseChoiceMenus.find((courseMenu) => courseMenu.key === this.selectedCourseMenuKey) || null
+        },
+        visibleTimetableSemesters() {
+            return this.semesters.filter((semester) => this.selectedCourseMenuEntries(semester.value).length > 0)
+        },
         recurrenceWeekOptionsBySemester() {
             return {
                 1: this.buildRecurrenceWeekOptions(1),
@@ -499,15 +567,13 @@ export default {
         async loadData() {
             this.loading = true
             try {
-                const [schoolHoursResponse, courseGroupsResponse, selectionsResponse] = await Promise.all([
+                const [schoolHoursResponse, courseGroupsResponse] = await Promise.all([
                     axios.get('/api/admin/students-timetables/school-hours'),
                     axios.get('/api/admin/students-timetables/course-groups'),
-                    axios.get('/api/admin/students-timetables/overview-selections'),
                 ])
 
                 this.schoolHours = schoolHoursResponse.data?.data || []
                 this.courseGroups = courseGroupsResponse.data?.data || []
-                this.applySavedCourseGroupSelection(selectionsResponse.data?.data?.course_group_keys)
             } catch {
                 this.schoolHours = []
                 this.courseGroups = []
@@ -590,7 +656,6 @@ export default {
             this.runTimetableUpdate(() => {
                 this.removeSavedTimetableState()
                 this.applyTimetableState(this.defaultTimetableState())
-                this.saveSelectedCourseGroupSelections?.()
             })
         },
         defaultTimetableState() {
@@ -694,30 +759,6 @@ export default {
         },
         persistTimetableState() {
             this.saveLastTimetableState()
-            this.saveSelectedCourseGroupSelections()
-        },
-        async saveSelectedCourseGroupSelections() {
-            const saveSequence = this.selectionSaveSequence + 1
-            this.selectionSaveSequence = saveSequence
-
-            try {
-                const response = await axios.put('/api/admin/students-timetables/overview-selections', {
-                    course_group_keys: [...new Set(this.activeCourseGroupFilterKeys || [])],
-                })
-                if (saveSequence !== this.selectionSaveSequence) {
-                    return
-                }
-
-                this.applySavedCourseGroupSelection(response.data?.data?.course_group_keys)
-                this.saveLastTimetableState()
-            } catch {
-                // Keep the local selection visible; a later click or reload can sync it again.
-            }
-        },
-        applySavedCourseGroupSelection(courseGroupKeys) {
-            this.activeCourseGroupFilterKeys = Array.isArray(courseGroupKeys)
-                ? [...new Set(courseGroupKeys.filter(Boolean))]
-                : []
         },
         courseGroupsForCell(semester, weekday, hour, recurrenceWeek = null) {
             const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
@@ -744,6 +785,13 @@ export default {
             }
 
             return this.buildSemesterCourseMenus(semester)
+        },
+        openCourseMenuDialog() {
+            this.selectedCourseMenuKey = ''
+            this.courseMenuDialog = true
+        },
+        selectCourseMenu(courseMenu) {
+            this.selectedCourseMenuKey = courseMenu?.key || ''
         },
         buildSemesterCourseMenus(semester) {
             const courseMenusByLabel = this.configuredCourseGroups
@@ -1252,6 +1300,14 @@ export default {
 
             return Boolean(containingEntry && this.courseMenuEntryHasOverlap(containingEntry, semester))
         },
+        cellHasOverlap(semester, weekday, hour, recurrenceWeek = null) {
+            return this.courseGroupsForCell(semester, weekday, hour, recurrenceWeek)
+                .some((courseGroup) => this.courseGroupHasOverlap(courseGroup))
+        },
+        cellHasRelatedOverlap(semester, weekday, hour, recurrenceWeek = null) {
+            return this.courseGroupsForCell(semester, weekday, hour, recurrenceWeek)
+                .some((courseGroup) => this.courseGroupHasRelatedOverlap(courseGroup))
+        },
         courseGroupRelatedOverlapMarker(courseGroup) {
             return this.courseGroupHasRelatedOverlap(courseGroup) ? '⚠ Mitbetroffen' : ''
         },
@@ -1581,74 +1637,133 @@ export default {
 .semester-grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 18px;
 }
 
-.semester-section {
-    border: 1px solid rgba(0, 0, 0, 0.12);
+.course-choice-panel {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    border: 1px solid rgba(57, 73, 171, 0.16);
     border-radius: 8px;
-    background: #ffffff;
+    background: #f8fafc;
+}
+
+.course-choice-panel__header,
+.course-choice-panel__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.course-choice-panel__header {
+    justify-content: space-between;
+}
+
+.course-choice-panel__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.course-choice-panel__title {
+    color: #172554;
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.course-choice-panel__semesters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+}
+
+.course-choice-semester {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.course-choice-semester__label {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.course-choice-semester__dates {
+    color: rgba(var(--v-theme-on-surface), 0.62);
+    font-weight: 700;
+}
+
+.course-item-chips,
+.course-menu-dialog-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.course-menu-dialog-items .course-item-chips {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+}
+
+.course-menu-dialog-items .course-item-chip {
+    justify-content: flex-start;
+    width: 100%;
+}
+
+.course-item-chip,
+.course-menu-dialog-chip {
+    font-weight: 650;
+}
+
+.course-item-chip__schedule {
+    margin-left: 6px;
+    color: rgba(var(--v-theme-on-surface), 0.68);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.course-menu-dialog-chips {
+    max-height: 52vh;
+    overflow-y: auto;
+}
+
+.course-menu-dialog-items {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(57, 73, 171, 0.16);
+}
+
+.semester-timetable {
     overflow: hidden;
 }
 
-.semester-section__header {
+.semester-timetable__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 10px 12px;
-    background-color: #f5f5f5;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    padding: 0 0 8px;
 }
 
-.semester-section__dates {
+.semester-timetable__dates {
     font-size: 0.75rem;
     color: rgba(0, 0, 0, 0.6);
     white-space: nowrap;
-}
-
-.semester-course-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 8px 12px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-    background: #ffffff;
-}
-
-.semester-course-chip {
-    font-weight: 650;
-}
-
-.semester-course-menu-list {
-    min-width: 220px;
-}
-
-.semester-course-menu-title {
-    font-size: 0.82rem;
-    font-weight: 650;
-}
-
-.semester-course-menu-subtitle {
-    font-size: 0.72rem;
-}
-
-.semester-course-menu-item--overlap:not(.v-list-item--active) .semester-course-menu-title,
-.semester-course-menu-item--overlap:not(.v-list-item--active) .semester-course-menu-subtitle {
-    color: #d32f2f;
-}
-
-.semester-course-menu-item--overlap:not(.v-list-item--active) .v-icon {
-    color: #d32f2f;
 }
 
 .selected-course-filter-chips {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    padding: 8px 12px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-    background: #ffffff;
+    padding-top: 2px;
 }
 
 .selected-course-filter-chip {
@@ -1659,9 +1774,7 @@ export default {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    padding: 8px 12px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-    background: #ffffff;
+    padding: 0 0 8px;
 }
 
 .recurrence-week-selector__btn {
@@ -1673,16 +1786,14 @@ export default {
 }
 
 .timetable-week + .timetable-week {
-    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    margin-top: 12px;
 }
 
 .timetable-week__title {
-    padding: 8px 12px;
+    padding: 6px 0;
     font-size: 0.78rem;
     font-weight: 700;
     color: rgba(0, 0, 0, 0.72);
-    background: #fafafa;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .extra-dates-notice {
@@ -1713,151 +1824,108 @@ export default {
     line-height: 1;
 }
 
-.timetable-table-wrapper {
-    overflow-x: auto;
-}
-
-.timetable-grid-table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-    min-width: 680px;
-    font-size: 0.8rem;
-}
-
-.timetable-hour-column {
-    width: 58px;
-}
-
-.timetable-day-column {
-    width: auto;
-}
-
-.timetable-grid-table th,
-.timetable-grid-table td {
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    padding: 0;
-    vertical-align: top;
-}
-
-.timetable-hour-header-cell {
-    width: 58px;
-    min-width: 58px;
-    background-color: #f5f5f5;
-}
-
-.timetable-day-header-cell {
-    text-align: center;
-    min-width: 96px;
-    background-color: #f5f5f5;
-    font-weight: 600;
-    padding: 8px 4px;
-}
-
-.timetable-hour-cell {
-    text-align: center;
-    background-color: #f5f5f5;
-    padding: 6px 4px;
-    white-space: nowrap;
-    min-width: 58px;
-}
-
 .timetable-hour-num {
-    font-weight: 600;
-    font-size: 0.8rem;
+    font-weight: 750;
+    font-size: 0.76rem;
 }
 
 .timetable-hour-time {
-    font-size: 0.7rem;
-    opacity: 0.65;
+    margin-top: 1px;
+    font-size: 0.66rem;
+    font-weight: 400;
+    line-height: 1.12;
+    opacity: 0.78;
 }
 
-.timetable-grid-cell {
-    min-width: 96px;
-    height: 52px;
-    background-color: #ffffff;
-    padding: 3px;
+.timetable-generated-grid {
+    display: grid;
+    grid-template-columns: 88px repeat(var(--overview-timetable-weekdays, 5), minmax(72px, 1fr));
+    gap: 2px;
+    overflow-x: auto;
 }
 
-.timetable-empty-cell {
-    padding: 12px;
+.timetable-generated-cell {
+    position: relative;
+    min-height: 34px;
+    padding: 5px;
+    border-radius: 5px;
+    background: #eef2f7;
+    color: #0f172a;
+    font-size: 0.76rem;
+    line-height: 1.15;
     text-align: center;
-    font-size: 0.75rem;
-    color: rgba(0, 0, 0, 0.6);
 }
 
-.timetable-course-item {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px;
-    min-width: 0;
-    border-left: 3px solid #1976d2;
-    background-color: #e3f2fd;
-    padding: 4px 6px;
-    min-height: 28px;
+.timetable-generated-cell--header,
+.timetable-generated-cell--time {
+    background: #dbeafe;
+    color: #1e3a8a;
+    font-weight: 750;
+}
+
+.timetable-generated-cell--filled {
+    background: #bbf7d0;
+    color: #052e16;
+}
+
+.timetable-generated-cell--conflict {
+    background: #fecaca;
+    color: #7f1d1d;
+}
+
+.timetable-generated-cell--related-overlap {
+    background: #fed7aa;
+    color: #7c2d12;
+}
+
+.timetable-generated-cell--empty {
+    grid-column: 1 / -1;
+    color: #475569;
+    font-weight: 650;
+}
+
+.timetable-generated-cell__content {
+    display: grid;
+    gap: 2px;
+    min-height: 100%;
     cursor: pointer;
-}
-
-.timetable-course-item + .timetable-course-item {
-    margin-top: 3px;
-}
-
-.timetable-course-item:hover,
-.timetable-course-item:focus-visible {
-    background-color: #bbdefb;
     outline: none;
 }
 
-.timetable-course-item--overlap {
-    border-left-color: #d32f2f;
-    background-color: #ffebee;
+.timetable-generated-cell__content + .timetable-generated-cell__content {
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid rgba(15, 23, 42, 0.14);
 }
 
-.timetable-course-item--overlap:hover,
-.timetable-course-item--overlap:focus-visible {
-    background-color: #ffcdd2;
+.timetable-generated-cell__content:hover .timetable-generated-cell__code,
+.timetable-generated-cell__content:focus-visible .timetable-generated-cell__code {
+    text-decoration: underline;
 }
 
-.timetable-course-item--related-overlap {
-    border-left-color: #fb8c00;
-    background-color: #fff3e0;
-}
-
-.timetable-course-item--related-overlap:hover,
-.timetable-course-item--related-overlap:focus-visible {
-    background-color: #ffe0b2;
-}
-
-.timetable-course-title {
-    font-weight: 700;
-    font-size: 0.75rem;
-    line-height: 1.15;
-    color: #0d47a1;
+.timetable-generated-cell__code {
+    display: inline-flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 2px;
+    font-weight: 750;
     overflow-wrap: anywhere;
 }
 
-.timetable-course-item--overlap .timetable-course-title {
-    color: #b71c1c;
+.timetable-generated-cell__details {
+    margin-top: 2px;
+    font-size: 0.66rem;
+    font-weight: 400;
+    line-height: 1.12;
+    opacity: 0.78;
+    overflow-wrap: anywhere;
+    white-space: pre-line;
 }
 
-.timetable-course-item--related-overlap .timetable-course-title {
-    color: #e65100;
-}
-
-.timetable-course-related-marker {
-    flex: 0 0 auto;
-    font-size: 0.68rem;
-    font-weight: 800;
-    line-height: 1.1;
-    color: #e65100;
-    white-space: nowrap;
-}
-
-.timetable-course-markers {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 3px;
+.timetable-generated-cell__details--warning {
+    color: #7c2d12;
+    font-weight: 750;
+    opacity: 1;
 }
 
 .course-date-list {
