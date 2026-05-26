@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import RobotTimetable from '@/pages/admin/studentsTimetables/robot/RobotTimetable.vue'
 
 describe('Students timetable robot page', () => {
@@ -9,11 +9,11 @@ describe('Students timetable robot page', () => {
             'utf8',
         )
 
-        expect(componentSource).toContain('Wizzard Stundenplan')
+        expect(componentSource).toContain('Stundenplan Wizzard')
         expect(componentSource).toContain('icon="mdi-information-outline"')
         expect(componentSource).toContain('infoDialogOpen')
         expect(componentSource).toContain('<v-dialog v-model="infoDialogOpen" persistent max-width="680">')
-        expect(componentSource).toContain('Hinweise zum Wizzard Stundenplan')
+        expect(componentSource).toContain('Hinweise zum Stundenplan Wizzard')
         expect(componentSource).toContain('Die Note B bedeutet befreit')
         expect(componentSource).toContain('Grundregel für Folgemodule')
         expect(componentSource).toContain('M5 darf erst gebucht werden, wenn M3 positiv')
@@ -45,6 +45,16 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('weekdayTimeOptions()')
         expect(componentSource).toContain('selectedConstraintSummary()')
         expect(componentSource).toContain("students-timetables:robot:last-settings")
+        expect(componentSource).toContain("students-timetables:overview:last-timetable")
+        expect(componentSource).toContain("const OVERVIEW_TIMETABLE_PATH = '/admin/students-timetables/timetable/overview'")
+        expect(componentSource).toContain('In Übersicht übernehmen')
+        expect(componentSource).toContain('overtakeSelectedTimetableToOverview')
+        expect(componentSource).toContain('selectedRobotTimetableCourseGroupKeys()')
+        expect(componentSource).toContain('overviewTimetableStateForSelectedRobotTimetable()')
+        expect(componentSource).toContain('selection: this.overviewSelectionState()')
+        expect(componentSource).toContain('overviewSelectionState()')
+        expect(componentSource).toContain('transferredStudentContext: this.overviewStudentContext()')
+        expect(componentSource).toContain('overviewStudentContext()')
         expect(componentSource).toContain('restoreLastRobotState()')
         expect(componentSource).toContain('saveLastRobotState()')
         expect(componentSource).toContain('ensureRobotConfigLoaded()')
@@ -144,6 +154,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).not.toContain('<sup v-if="courseGroupWeekMarker(group)"')
         expect(componentSource).toContain('setAdditionalCourseSelected(course, $event)')
         expect(componentSource).toContain('additionalCoursePrerequisiteCourse(course)')
+        expect(componentSource).toContain('courseUsesTwoLevelAdditionalPrerequisite(base)')
         expect(componentSource).toContain('grid-template-columns: repeat(auto-fill, minmax(120px, 1fr))')
         expect(componentSource).toContain('studentMissingCourses')
         expect(componentSource).toContain('studentPlannedCourses')
@@ -614,6 +625,7 @@ describe('Students timetable robot page', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {
             ...methods,
+            additionalCourseSelectedKeys: ['INF2', 'INF3'],
             selectedAdditionalCourses: [
                 { key: 'INF2', code: 'INF2' },
                 { key: 'INF3', code: 'INF3' },
@@ -645,6 +657,11 @@ describe('Students timetable robot page', () => {
         expect(methods.selectedTimetableMissingAdditionalCourseLabels.call(ctx)).toBe('INF3 Informatik 3')
         expect(methods.additionalCourseMissingInSelectedTimetable.call(ctx, { key: 'INF3', code: 'INF3' })).toBe(true)
         expect(methods.additionalCourseMissingInSelectedTimetable.call(ctx, { key: 'INF2', code: 'INF2' })).toBe(false)
+        expect(methods.additionalCourseMissingInSelectedTimetable.call(ctx, { key: 'M8', code: 'M8' })).toBe(false)
+
+        ctx.additionalCourseSelectedKeys = ['INF2']
+
+        expect(methods.additionalCourseMissingInSelectedTimetable.call(ctx, { key: 'INF3', code: 'INF3' })).toBe(false)
     })
 
     it('uses checked additional courses as a selectable timetable filter', () => {
@@ -1328,6 +1345,172 @@ describe('Students timetable robot page', () => {
         expect(restoredCtx.constraints).toEqual(ctx.constraints)
         expect(restoredCtx.deselectedCourseKeys).toEqual(['GW1'])
         expect(restoredCtx.deselectedCourseGroupKeys).toEqual(['D1|D1-1C-GOS'])
+    })
+
+    it('overtakes the displayed robot timetable into the overview storage and opens overview', () => {
+        const methods = (RobotTimetable as any).methods
+        const storedItems = new Map<string, string>()
+        const routerPush = vi.fn()
+        const ctx = {
+            ...methods,
+            config: { selected_schoolyear: { id: 42 } },
+            selected_schoolyear: null,
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'S',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            subjectMappings: [],
+            selectedStudent: {
+                student_code: '100',
+                class: '4Q',
+                last_name: 'GRASSL',
+                first_name: 'Tobias',
+                school_level: '11',
+                attendance_year: '2',
+            },
+            selectedStudentLabel: '4Q · GRASSL Tobias · Semester 6',
+            studentCompletedCourses: [
+                { subject: 'ETH1', grade: '1' },
+            ],
+            studentMissingCourses: [
+                { key: 'CH2', code: 'CH2', name: 'Chemie 2', hours: 3 },
+            ],
+            studentPlannedCourses: [
+                { key: 'S5', code: 'S5', name: 'Spanisch 5', hours: 4 },
+            ],
+            studentAdditionalCourses: [
+                { key: 'PP2', code: 'PP2', name: 'Philosophie/Psychologie 2', hours: 2 },
+            ],
+            configuredCourseGroups: [
+                {
+                    key: 'spa5-single',
+                    class_name: 'SPA5-4A-APP',
+                    course: 'SPA5',
+                    subject: 'SPA',
+                    weekday: 6,
+                    hour: 11,
+                },
+            ],
+            selectedRobotTimetable: {
+                slots: {
+                    '1-1': {
+                        courseGroup: { key: 'ch2-regular', weekday: 1, hour: 1 },
+                        conflicts: [
+                            { courseGroup: { key: 'pp2-conflict', weekday: 5, hour: 1 } },
+                        ],
+                    },
+                },
+                selectedOccasionalAppointmentGroups: {
+                    S5: 'S5|SPA5-4A-APP|S5 - SPA5-4A-APP',
+                },
+                occasionalAppointments: [
+                    {
+                        key: 'single-spa5',
+                        code: 'S5',
+                        courseKey: 'S5',
+                        sourceLabel: 'SPA5-4A-APP',
+                        weekday: 6,
+                        hour: 11,
+                    },
+                    {
+                        key: 'single-s3',
+                        code: 'S3',
+                        courseKey: 'S3',
+                        sourceLabel: 'SPA3-4A-APP',
+                        weekday: 5,
+                        hour: 10,
+                    },
+                ],
+            },
+            robotStorage() {
+                return {
+                    setItem(key: string, value: string) {
+                        storedItems.set(key, value)
+                    },
+                }
+            },
+            $router: {
+                push: routerPush,
+            },
+        }
+
+        methods.overtakeSelectedTimetableToOverview.call(ctx)
+
+        const storedState = JSON.parse(storedItems.get(
+            'students-timetables:overview:last-timetable:42',
+        ) || '{}')
+
+        expect(storedState).toEqual({
+            activeCourseGroupFilterKeys: ['ch2-regular', 'pp2-conflict', 'spa5-single'],
+            selectedRecurrenceWeeks: {
+                1: 'all_dates',
+                2: 'all_dates',
+            },
+            expandedRecurrenceWeeks: {
+                1: false,
+                2: false,
+            },
+            showExtraDatesInSelectedWeeks: {
+                1: false,
+                2: false,
+            },
+            showSaturday: true,
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'S',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            transferredStudentContext: {
+                student: {
+                    studentCode: '100',
+                    label: '4Q · GRASSL Tobias · Semester 6',
+                    semesterLabel: 'Semester 6',
+                },
+                courses: {
+                    completed: [
+                        {
+                            key: 'completed-ETH1-1',
+                            code: 'ETH1',
+                            label: 'ETH1',
+                            meta: '1',
+                        },
+                    ],
+                    missing: [
+                        {
+                            key: 'CH2',
+                            code: 'CH2',
+                            name: 'Chemie 2',
+                            label: 'CH2',
+                            meta: '3 Std.',
+                        },
+                    ],
+                    planned: [
+                        {
+                            key: 'S5',
+                            code: 'S5',
+                            name: 'Spanisch 5',
+                            label: 'S5',
+                            meta: '4 Std.',
+                        },
+                    ],
+                    additional: [
+                        {
+                            key: 'PP2',
+                            code: 'PP2',
+                            name: 'Philosophie/Psychologie 2',
+                            label: 'PP2',
+                            meta: '2 Std.',
+                        },
+                    ],
+                },
+            },
+        })
+        expect(routerPush).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable/overview' })
     })
 
     it('restores selected courses by course code when saved keys changed', () => {
@@ -3098,29 +3281,31 @@ describe('Students timetable robot page', () => {
         })
     })
 
-    it('requires the previous additional module before selecting a dependent additional course', () => {
+    it('requires the module two levels lower before selecting a dependent additional course', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {
             ...methods,
             subjectMappings: [],
             additionalCourseSelectedKeys: [],
             studentAdditionalCourses: [
-                { key: 'INF2', code: 'INF2', ttCodes: ['INF2'], name: 'Informatik 2', hours: 2 },
                 { key: 'INF3', code: 'INF3', ttCodes: ['INF3'], name: 'Informatik 3', hours: 2 },
+                { key: 'INF4', code: 'INF4', ttCodes: ['INF4'], name: 'Informatik 4', hours: 2 },
+                { key: 'INF5', code: 'INF5', ttCodes: ['INF5'], name: 'Informatik 5', hours: 2 },
             ],
         }
 
         expect(methods.additionalCourseSelectable.call(ctx, ctx.studentAdditionalCourses[0])).toBe(true)
-        expect(methods.additionalCourseSelectable.call(ctx, ctx.studentAdditionalCourses[1])).toBe(false)
+        expect(methods.additionalCourseSelectable.call(ctx, ctx.studentAdditionalCourses[1])).toBe(true)
+        expect(methods.additionalCourseSelectable.call(ctx, ctx.studentAdditionalCourses[2])).toBe(false)
 
-        methods.setAdditionalCourseSelected.call(ctx, ctx.studentAdditionalCourses[1], true)
+        methods.setAdditionalCourseSelected.call(ctx, ctx.studentAdditionalCourses[2], true)
         expect(ctx.additionalCourseSelectedKeys).toEqual([])
 
         methods.setAdditionalCourseSelected.call(ctx, ctx.studentAdditionalCourses[0], true)
-        expect(methods.additionalCourseSelectable.call(ctx, ctx.studentAdditionalCourses[1])).toBe(true)
+        expect(methods.additionalCourseSelectable.call(ctx, ctx.studentAdditionalCourses[2])).toBe(true)
 
-        methods.setAdditionalCourseSelected.call(ctx, ctx.studentAdditionalCourses[1], true)
-        expect(ctx.additionalCourseSelectedKeys).toEqual(['INF2', 'INF3'])
+        methods.setAdditionalCourseSelected.call(ctx, ctx.studentAdditionalCourses[2], true)
+        expect(ctx.additionalCourseSelectedKeys).toEqual(['INF3', 'INF5'])
 
         methods.setAdditionalCourseSelected.call(ctx, ctx.studentAdditionalCourses[0], false)
         expect(ctx.additionalCourseSelectedKeys).toEqual([])
@@ -4725,5 +4910,157 @@ describe('Students timetable robot page', () => {
                 rooms: ['EDV1', 'EDV2'],
             },
         })).toBe('INF1-Grp1-KRO · KRO · EDV1, EDV2')
+    })
+
+    it('keeps future courses available so prerequisites can make later modules bookable', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            subjectRows: [
+                { semester: 3, code: 'M3' },
+                { semester: 4, code: 'M4' },
+                { semester: 5, code: 'M5' },
+                { semester: 6, code: 'M6' },
+            ],
+            coursesForSemester(semester: number) {
+                return this.subjectRows
+                    .filter(subject => subject.semester === semester)
+                    .map(subject => subject.code)
+            },
+        }
+
+        expect(methods.coursesAfterSemester.call(ctx, 4)).toEqual(['M5', 'M6'])
+    })
+
+    it('shows first-semester modules as planned and only second modules as additional without completed courses', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: {
+                school_level: '09',
+                attendance_year: '1',
+            },
+            selection: {
+                semester: 1,
+                religion: 'ETH',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+                language: 'L',
+            },
+            subjectMappings: [],
+            studentCompletedCourses: [],
+            subjectRows: [
+                {
+                    id: 1,
+                    semester: 1,
+                    branch: 'common',
+                    json_code: 'D1',
+                    json_subject: 'D',
+                    name: 'Deutsch 1',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 2,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'D2',
+                    json_subject: 'D',
+                    name: 'Deutsch 2',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 3,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'M2',
+                    json_subject: 'M',
+                    name: 'Mathematik 2',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 4,
+                    semester: 3,
+                    branch: 'common',
+                    json_code: 'D3',
+                    json_subject: 'D',
+                    name: 'Deutsch 3',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+            ],
+        }
+
+        expect(computed.studentPlannedCourses.call(ctx).map(course => course.code)).toEqual(['D1'])
+        expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual(['D2', 'M2'])
+    })
+
+    it('shows second and third modules as additional after the first module is completed', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: {
+                school_level: '09',
+                attendance_year: '1',
+            },
+            selection: {
+                semester: 1,
+                religion: 'ETH',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+                language: 'L',
+            },
+            subjectMappings: [],
+            studentCompletedCourses: [
+                { subject: 'D1', grade: '3' },
+            ],
+            subjectRows: [
+                {
+                    id: 1,
+                    semester: 1,
+                    branch: 'common',
+                    json_code: 'D1',
+                    json_subject: 'D',
+                    name: 'Deutsch 1',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 2,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'D2',
+                    json_subject: 'D',
+                    name: 'Deutsch 2',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 3,
+                    semester: 3,
+                    branch: 'common',
+                    json_code: 'D3',
+                    json_subject: 'D',
+                    name: 'Deutsch 3',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 4,
+                    semester: 4,
+                    branch: 'common',
+                    json_code: 'D4',
+                    json_subject: 'D',
+                    name: 'Deutsch 4',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+            ],
+        }
+
+        expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual(['D2', 'D3'])
     })
 })

@@ -3,7 +3,7 @@
         <v-card rounded="lg" border class="robot-timetable-card">
             <v-card-title class="robot-timetable-card__title d-flex align-center ga-2">
                 <v-icon icon="mdi-robot-outline" />
-                <span>Wizzard Stundenplan</span>
+                <span>Stundenplan Wizzard</span>
                 <v-spacer />
                 <v-btn
                     icon="mdi-cog-outline"
@@ -18,8 +18,8 @@
                     variant="text"
                     density="comfortable"
                     color="primary"
-                    title="Hinweise zum Wizzard Stundenplan"
-                    aria-label="Hinweise zum Wizzard Stundenplan"
+                    title="Hinweise zum Stundenplan Wizzard"
+                    aria-label="Hinweise zum Stundenplan Wizzard"
                     @click="infoDialogOpen = true" />
             </v-card-title>
             <v-card-text class="robot-timetable-card__text">
@@ -733,28 +733,39 @@
                     <div v-if="selectedRobotTimetable" class="robot-generated">
                         <div class="robot-course-list__header robot-generated-header">
                             <div class="robot-course-list__title">Stundenplan</div>
-                            <div
-                                v-if="selectedTimetableResultCount > 0"
-                                class="robot-timetable-selector">
+                            <div class="robot-generated-header__actions">
                                 <v-btn
-                                    icon="mdi-chevron-left"
+                                    color="success"
                                     size="small"
                                     variant="tonal"
-                                    color="primary"
-                                    :disabled="timetableResultCounter(selectedTimetableResultType) <= 1"
-                                    :aria-label="`Vorheriger ${selectedTimetableResultTitle}`"
-                                    @click="moveTimetableResultCounter(selectedTimetableResultType, -1)" />
-                                <div class="robot-timetable-selector__value" aria-live="polite">
-                                    {{ timetableResultCounter(selectedTimetableResultType) }} / {{ selectedTimetableResultCount }}
+                                    prepend-icon="mdi-table-arrow-right"
+                                    :disabled="!selectedRobotTimetableCourseGroupKeys().length"
+                                    @click="overtakeSelectedTimetableToOverview">
+                                    In Übersicht übernehmen
+                                </v-btn>
+                                <div
+                                    v-if="selectedTimetableResultCount > 0"
+                                    class="robot-timetable-selector">
+                                    <v-btn
+                                        icon="mdi-chevron-left"
+                                        size="small"
+                                        variant="tonal"
+                                        color="primary"
+                                        :disabled="timetableResultCounter(selectedTimetableResultType) <= 1"
+                                        :aria-label="`Vorheriger ${selectedTimetableResultTitle}`"
+                                        @click="moveTimetableResultCounter(selectedTimetableResultType, -1)" />
+                                    <div class="robot-timetable-selector__value" aria-live="polite">
+                                        {{ timetableResultCounter(selectedTimetableResultType) }} / {{ selectedTimetableResultCount }}
+                                    </div>
+                                    <v-btn
+                                        icon="mdi-chevron-right"
+                                        size="small"
+                                        variant="tonal"
+                                        color="primary"
+                                        :disabled="timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
+                                        :aria-label="`Nächster ${selectedTimetableResultTitle}`"
+                                        @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
                                 </div>
-                                <v-btn
-                                    icon="mdi-chevron-right"
-                                    size="small"
-                                    variant="tonal"
-                                    color="primary"
-                                    :disabled="timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
-                                    :aria-label="`Nächster ${selectedTimetableResultTitle}`"
-                                    @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
                             </div>
                         </div>
 
@@ -944,7 +955,7 @@
             <v-card rounded="lg">
                 <v-card-title class="d-flex align-center ga-2">
                     <v-icon icon="mdi-information-outline" />
-                    Hinweise zum Wizzard Stundenplan
+                    Hinweise zum Stundenplan Wizzard
                 </v-card-title>
                 <v-card-text>
                     <div class="robot-info-dialog">
@@ -1195,6 +1206,9 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import EvaluationSettings from '../evaluationSettings/EvaluationSettings.vue'
 
 const ROBOT_TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:robot:last-settings'
+const OVERVIEW_TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:overview:last-timetable'
+const OVERVIEW_TIMETABLE_PATH = '/admin/students-timetables/timetable/overview'
+const ALL_DATES_OPTION_VALUE = 'all_dates'
 
 export default {
     components: { EvaluationSettings },
@@ -2526,6 +2540,196 @@ export default {
 
             return window.localStorage
         },
+        overviewTimetableStorageKey() {
+            return `${OVERVIEW_TIMETABLE_STORAGE_KEY_PREFIX}:${this.robotSchoolyearId() || 'default'}`
+        },
+        overviewTimetableStateForSelectedRobotTimetable() {
+            const courseGroupKeys = this.selectedRobotTimetableCourseGroupKeys()
+
+            return {
+                activeCourseGroupFilterKeys: courseGroupKeys,
+                selectedRecurrenceWeeks: {
+                    1: ALL_DATES_OPTION_VALUE,
+                    2: ALL_DATES_OPTION_VALUE,
+                },
+                expandedRecurrenceWeeks: {
+                    1: false,
+                    2: false,
+                },
+                showExtraDatesInSelectedWeeks: {
+                    1: false,
+                    2: false,
+                },
+                showSaturday: this.selectedRobotTimetableHasSaturday(),
+                selection: this.overviewSelectionState(),
+                transferredStudentContext: this.overviewStudentContext(),
+            }
+        },
+        overviewSelectionState() {
+            return {
+                semester: Number(this.selection?.semester || 1),
+                religion: this.selection?.religion || 'ETH',
+                language: this.selection?.language || 'L',
+                branch: this.selection?.branch || 'wirtschaftskundlich',
+                artsSubject: this.selection?.artsSubject || 'ME',
+            }
+        },
+        overviewStudentContext() {
+            if (!this.selectedStudent) return null
+
+            return {
+                student: {
+                    studentCode: this.normalizedStudentCode(this.selectedStudent?.student_code),
+                    label: this.selectedStudentLabel,
+                    semesterLabel: this.studentSemesterLabel(this.selectedStudent),
+                },
+                courses: {
+                    completed: this.overviewCompletedCourseItems(),
+                    missing: this.overviewCourseItems(this.studentMissingCourses),
+                    planned: this.overviewCourseItems(this.studentPlannedCourses),
+                    additional: this.overviewCourseItems(this.studentAdditionalCourses),
+                },
+            }
+        },
+        overviewCompletedCourseItems() {
+            return (Array.isArray(this.studentCompletedCourses) ? this.studentCompletedCourses : [])
+                .map((course, index) => {
+                    const code = String(course?.subject || course?.code || '').trim()
+                    const grade = String(course?.grade || '').trim()
+
+                    return {
+                        key: `completed-${code || index}-${grade || index}`,
+                        code,
+                        label: code,
+                        meta: grade,
+                    }
+                })
+                .filter(course => course.label)
+        },
+        overviewCourseItems(courses) {
+            return (Array.isArray(courses) ? courses : [])
+                .map((course, index) => {
+                    const code = String(course?.code || course?.subject || '').trim()
+                    const name = String(course?.name || course?.title || '').trim()
+                    const hours = Number(course?.hours || 0)
+
+                    return {
+                        key: course?.key || `${code || index}-${index}`,
+                        code,
+                        name,
+                        label: code || name,
+                        meta: hours ? `${this.formatHours(hours)} Std.` : '',
+                    }
+                })
+                .filter(course => course.label)
+        },
+        overtakeSelectedTimetableToOverview() {
+            const overviewTimetableState = this.overviewTimetableStateForSelectedRobotTimetable()
+
+            if (!overviewTimetableState.activeCourseGroupFilterKeys.length) return
+
+            try {
+                this.robotStorage()?.setItem(
+                    this.overviewTimetableStorageKey(),
+                    JSON.stringify(overviewTimetableState),
+                )
+            } catch {
+                this.generationError = 'Der Stundenplan konnte nicht für die Übersicht übernommen werden.'
+
+                return
+            }
+
+            this.openOverviewTimetable()
+        },
+        openOverviewTimetable() {
+            if (this.$router?.push) {
+                this.$router.push({ path: OVERVIEW_TIMETABLE_PATH })
+
+                return
+            }
+
+            if (typeof window !== 'undefined') {
+                window.location.href = OVERVIEW_TIMETABLE_PATH
+            }
+        },
+        selectedRobotTimetableCourseGroupKeys() {
+            return this.selectedRobotTimetableCourseGroups()
+                .map(courseGroup => courseGroup?.key)
+                .filter(Boolean)
+        },
+        selectedRobotTimetableHasSaturday() {
+            return this.selectedRobotTimetableCourseGroups()
+                .some(courseGroup => Number(courseGroup?.weekday) === 6)
+        },
+        selectedRobotTimetableCourseGroups() {
+            const timetable = this.selectedRobotTimetable
+            if (!timetable) return []
+
+            const slotCourseGroups = Object.values(timetable.slots || {})
+                .flatMap(slot => [
+                    slot?.courseGroup,
+                    ...(Array.isArray(slot?.conflicts)
+                        ? slot.conflicts.map(conflict => conflict?.courseGroup)
+                        : []),
+                ])
+
+            const appointmentCourseGroups = (Array.isArray(timetable.occasionalAppointments)
+                ? timetable.occasionalAppointments
+                : [])
+                .filter(appointment => this.occasionalAppointmentSelectedForTimetable(timetable, appointment))
+                .flatMap(appointment => this.courseGroupsForRobotAppointment(appointment))
+
+            return this.uniqueCourseGroupsByKey([
+                ...slotCourseGroups,
+                ...appointmentCourseGroups,
+            ])
+        },
+        courseGroupsForRobotAppointment(appointment) {
+            if (appointment?.courseGroup?.key) return [appointment.courseGroup]
+
+            const configuredCourseGroups = Array.isArray(this.configuredCourseGroups)
+                ? this.configuredCourseGroups
+                : []
+            const appointmentLabel = String(appointment?.sourceLabel || '').trim()
+            const appointmentWeekday = Number(appointment?.weekday)
+            const appointmentHour = Number(appointment?.hour)
+            const appointmentCourseCodes = this.courseCodeAliases({
+                code: appointment?.courseKey || appointment?.code,
+            })
+
+            return configuredCourseGroups.filter(courseGroup => {
+                if (appointmentWeekday && Number(courseGroup?.weekday) !== appointmentWeekday) return false
+                if (appointmentHour && Number(courseGroup?.hour) !== appointmentHour) return false
+
+                const courseGroupLabels = [
+                    this.courseGroupSourceLabel(courseGroup),
+                    this.courseGroupOptionLabel(courseGroup),
+                    courseGroup?.class_name,
+                    courseGroup?.display_label,
+                    courseGroup?.title,
+                ]
+                    .map(label => String(label || '').trim())
+                    .filter(Boolean)
+
+                const labelMatches = appointmentLabel && courseGroupLabels.includes(appointmentLabel)
+                const codeMatches = appointmentCourseCodes.length
+                    && this.courseGroupCodes(courseGroup).some(courseGroupCode =>
+                        appointmentCourseCodes.includes(courseGroupCode),
+                    )
+
+                return labelMatches || codeMatches
+            })
+        },
+        uniqueCourseGroupsByKey(courseGroups) {
+            return Object.values((Array.isArray(courseGroups) ? courseGroups : []).reduce((groups, courseGroup) => {
+                const key = String(courseGroup?.key || '').trim()
+                if (!key) return groups
+
+                groups[key] ??= courseGroup
+
+                return groups
+            }, {}))
+        },
         saveLastRobotState() {
             try {
                 const storage = this.robotStorage()
@@ -2901,6 +3105,8 @@ export default {
                 ])
         },
         additionalCourseMissingInSelectedTimetable(course) {
+            if (!this.additionalCourseSelected(course)) return false
+
             const courseKeys = this.courseComparisonKeys(course)
             if (!courseKeys.length) return false
 
@@ -4012,7 +4218,12 @@ export default {
                 const moduleNumber = Number(coursePart.module)
                 if (!Number.isInteger(moduleNumber) || moduleNumber <= 1) continue
 
-                const prerequisiteModuleNumber = moduleNumber - 1
+                const prerequisiteStep = this.courseUsesTwoLevelAdditionalPrerequisite(coursePart.base) && moduleNumber > 2
+                    ? 2
+                    : 1
+                const prerequisiteModuleNumber = moduleNumber - prerequisiteStep
+                if (prerequisiteModuleNumber <= 0) continue
+
                 const baseAliases = this.studentCourseBaseAliases(coursePart.base)
                 const prerequisiteCourse = additionalCourses.find(additionalCourse =>
                     additionalCourse.key !== course?.key
@@ -4028,6 +4239,10 @@ export default {
             }
 
             return null
+        },
+        courseUsesTwoLevelAdditionalPrerequisite(base) {
+            return this.studentCourseBaseAliases(base)
+                .some(baseAlias => ['D', 'E', 'M', 'F', 'L', 'S', 'SPA', 'INF'].includes(baseAlias))
         },
         setCourseSelected(course, selected) {
             const selectionChanged = this.setCourseSelectedState(course, selected)
@@ -5837,9 +6052,9 @@ export default {
                 return baseAliases.some(baseAlias => ['ME', 'MU', 'BE'].includes(baseAlias))
             }
 
-            if (moduleNumber <= 1) return false
+            if (moduleNumber === 2) return true
 
-            const prerequisiteModuleNumber = moduleNumber === 2 ? 1 : moduleNumber - 2
+            const prerequisiteModuleNumber = moduleNumber - 2
             const hasPositivePrerequisite = baseAliases
                 .some(baseAlias => completedCourseCodes.has(`${baseAlias}${prerequisiteModuleNumber}`))
 
@@ -6933,12 +7148,20 @@ export default {
     flex-wrap: wrap;
 }
 
+.robot-generated-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .robot-timetable-selector {
     display: inline-grid;
     grid-template-columns: 34px minmax(104px, auto) 34px;
     gap: 8px;
     align-items: center;
-    margin-left: auto;
     border: 1px solid rgba(var(--v-theme-primary), 0.28);
     border-radius: 8px;
     padding: 5px 8px;

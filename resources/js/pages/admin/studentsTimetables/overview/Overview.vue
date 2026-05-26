@@ -48,6 +48,108 @@
                     Es sind noch keine Schulstunden hinterlegt. Die Übersicht zeigt vorläufig 10 Stunden.
                 </v-alert>
 
+                <div class="overview-student-selection">
+                    <div
+                        class="transferred-student-context"
+                        :class="{ 'transferred-student-context--collapsed': !transferredStudentContextExpanded }">
+                        <div
+                            class="transferred-student-context__header"
+                            :role="transferredStudentContext ? 'button' : undefined"
+                            :tabindex="transferredStudentContext ? 0 : undefined"
+                            @click="toggleTransferredStudentContext"
+                            @keydown.enter.prevent="toggleTransferredStudentContext"
+                            @keydown.space.prevent="toggleTransferredStudentContext">
+                            <div class="transferred-student-context__title">
+                                <v-icon icon="mdi-account-school-outline" size="18" color="primary" />
+                                <span>{{ transferredStudentLabel }}</span>
+                                <span class="overview-student-inline-actions">
+                                    <v-btn
+                                        icon="mdi-pencil"
+                                        variant="tonal"
+                                        color="primary"
+                                        density="comfortable"
+                                        size="small"
+                                        title="Student bearbeiten"
+                                        aria-label="Student bearbeiten"
+                                        @click.stop="openStudentDialog" />
+                                    <v-btn
+                                        v-if="transferredStudentContext"
+                                        icon="mdi-close-circle-outline"
+                                        variant="text"
+                                        color="error"
+                                        density="comfortable"
+                                        size="small"
+                                        title="Student löschen"
+                                        aria-label="Student löschen"
+                                        @click.stop="clearTransferredStudentSelection" />
+                                </span>
+                            </div>
+                            <div class="transferred-student-context__header-actions">
+                                <v-btn
+                                    v-if="transferredStudentContext"
+                                    :icon="transferredStudentContextExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                                    variant="text"
+                                    density="comfortable"
+                                    color="primary"
+                                    :aria-label="transferredStudentContextExpanded ? 'Studentenkurse einklappen' : 'Studentenkurse ausklappen'"
+                                    @click.stop="toggleTransferredStudentContext" />
+                            </div>
+                        </div>
+                        <v-expand-transition>
+                            <div
+                                v-if="transferredStudentContext && transferredStudentContextExpanded"
+                                class="transferred-student-context__sections">
+                                <section
+                                    v-for="section in visibleTransferredStudentCourseSections"
+                                    :key="section.key"
+                                    class="transferred-student-course-section">
+                                    <div class="transferred-student-course-section__title">
+                                        <span>{{ section.title }}</span>
+                                        <v-chip size="x-small" :color="section.color" variant="tonal">
+                                            {{ section.items.length }}
+                                        </v-chip>
+                                    </div>
+                                    <div
+                                        v-if="section.items.length"
+                                        class="transferred-student-course-section__chips">
+                                        <v-chip
+                                            v-for="course in section.items"
+                                            :key="course.key"
+                                            size="x-small"
+                                            :color="section.color"
+                                            variant="tonal"
+                                            class="transferred-student-course-chip">
+                                            <span>{{ course.label }}</span>
+                                            <span v-if="course.meta" class="transferred-student-course-chip__meta">
+                                                {{ course.meta }}
+                                            </span>
+                                        </v-chip>
+                                    </div>
+                                    <div v-else class="transferred-student-course-section__empty">Keine</div>
+                                </section>
+                            </div>
+                        </v-expand-transition>
+                    </div>
+                </div>
+
+                <div class="overview-selection">
+                    <div class="overview-selected-cards">
+                        <div
+                            v-for="item in selectedSummary"
+                            :key="item.key"
+                            class="overview-selected-card">
+                            <div class="overview-selected-card__label">{{ item.label }}</div>
+                            <div class="overview-selected-card__value">{{ item.value }}</div>
+                        </div>
+                    </div>
+                    <v-btn
+                        icon="mdi-pencil"
+                        variant="tonal"
+                        color="primary"
+                        title="Auswahl bearbeiten"
+                        @click="openSelectionDialog" />
+                </div>
+
                 <div class="course-choice-panel">
                     <div class="course-choice-panel__header">
                         <div class="course-choice-panel__title">
@@ -67,6 +169,15 @@
                             </v-tooltip>
                         </div>
                         <div class="course-choice-panel__actions">
+                            <v-switch
+                                :model-value="restrictCourseChoiceBySelection"
+                                color="primary"
+                                density="compact"
+                                hide-details
+                                inset
+                                label="Nach Auswahl einschränken"
+                                class="course-choice-restriction-switch"
+                                @update:model-value="handleCourseChoiceRestrictionUpdate" />
                             <v-chip size="x-small" color="primary" variant="tonal">
                                 {{ selectedCourseCount }} ausgewählt
                             </v-chip>
@@ -179,12 +290,12 @@
                                         :key="`${semester.value}-${timetableWeek.key}-${weekday.key}-${hour.hour}`"
                                         class="timetable-generated-cell"
                                         :class="{
-                                            'timetable-generated-cell--filled': courseGroupsForCell(semester.value, weekday.value, hour.hour, timetableWeek).length,
+                                            'timetable-generated-cell--filled': displayCourseGroupsForCell(semester.value, weekday.value, hour.hour, timetableWeek).length,
                                             'timetable-generated-cell--conflict': cellHasOverlap(semester.value, weekday.value, hour.hour, timetableWeek),
                                             'timetable-generated-cell--related-overlap': cellHasRelatedOverlap(semester.value, weekday.value, hour.hour, timetableWeek),
                                         }">
                                         <div
-                                            v-for="courseGroup in courseGroupsForCell(semester.value, weekday.value, hour.hour, timetableWeek)"
+                                            v-for="courseGroup in displayCourseGroupsForCell(semester.value, weekday.value, hour.hour, timetableWeek)"
                                             :key="courseGroup.key"
                                             class="timetable-generated-cell__content"
                                             role="button"
@@ -237,6 +348,128 @@
             </v-card-text>
         </v-card>
 
+        <v-dialog v-model="selectionDialogOpen" persistent max-width="640">
+            <v-card rounded="lg">
+                <v-card-title class="d-flex align-center ga-2">
+                    <v-icon icon="mdi-pencil-outline" />
+                    Auswahl bearbeiten
+                </v-card-title>
+                <v-card-text>
+                    <div class="overview-selection-dialog-grid">
+                        <v-select
+                            v-model="selectionDraft.semester"
+                            :items="semesterOptions"
+                            item-title="title"
+                            item-value="value"
+                            label="Semester"
+                            variant="outlined"
+                            density="compact"
+                            hide-details="auto" />
+                        <v-select
+                            v-model="selectionDraft.religion"
+                            :items="religionOptions"
+                            item-title="title"
+                            item-value="value"
+                            label="Ethik / Religion"
+                            variant="outlined"
+                            density="compact"
+                            hide-details="auto" />
+                        <v-select
+                            v-model="selectionDraft.language"
+                            :items="languageOptions"
+                            item-title="title"
+                            item-value="value"
+                            label="Sprache"
+                            variant="outlined"
+                            density="compact"
+                            hide-details="auto" />
+                        <v-select
+                            v-model="selectionDraft.branch"
+                            :items="branchOptions"
+                            item-title="title"
+                            item-value="value"
+                            label="Zweig"
+                            variant="outlined"
+                            density="compact"
+                            hide-details="auto" />
+                        <v-select
+                            v-model="selectionDraft.artsSubject"
+                            :items="artsSubjectOptions"
+                            item-title="title"
+                            item-value="value"
+                            label="ME / BE"
+                            variant="outlined"
+                            density="compact"
+                            hide-details="auto" />
+                    </div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeSelectionDialog">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" @click="updateSelection">Aktualisieren</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="studentDialogOpen" persistent max-width="560">
+            <v-card rounded="lg">
+                <v-card-title class="d-flex align-center ga-2">
+                    <v-icon icon="mdi-account-school-outline" />
+                    Student bearbeiten
+                </v-card-title>
+                <v-card-text>
+                    <div class="overview-student-dialog__meta">
+                        {{ studentTotalCountLabel }}
+                    </div>
+                    <v-text-field
+                        ref="studentSearchField"
+                        v-model="studentSearch"
+                        label="Student suchen"
+                        variant="outlined"
+                        density="compact"
+                        :loading="studentOptionsLoading"
+                        clearable
+                        hide-details="auto"
+                        @keydown.enter.prevent="submitStudentSearch" />
+                    <div class="overview-student-search-results">
+                        <v-btn
+                            size="small"
+                            variant="tonal"
+                            :color="studentSelectionDraft.studentCode === null ? 'primary' : 'secondary'"
+                            class="overview-student-search-results__item"
+                            block
+                            @click="selectStudentDraft(null)">
+                            Kein Student
+                        </v-btn>
+                        <template v-if="studentSearchReady">
+                            <v-btn
+                                v-for="student in filteredStudentResults"
+                                :key="student.student_code"
+                                size="small"
+                                variant="tonal"
+                                :color="String(studentSelectionDraft.studentCode) === String(student.student_code) ? 'primary' : 'secondary'"
+                                class="overview-student-search-results__item"
+                                block
+                                @click="selectStudentDraft(student.student_code)">
+                                {{ studentOptionTitle(student) }}
+                            </v-btn>
+                            <div v-if="!filteredStudentResults.length" class="overview-student-search-results__empty">
+                                Keine Schüler gefunden
+                            </div>
+                        </template>
+                        <div v-else class="overview-student-search-results__empty">
+                            Mindestens 2 Zeichen eingeben
+                        </div>
+                    </div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeStudentDialog">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" @click="updateStudentSelection">Aktualisieren</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="courseMenuDialog" persistent max-width="760">
             <v-card rounded="lg">
                 <v-card-title class="d-flex align-center ga-2">
@@ -252,7 +485,7 @@
                             v-for="courseMenu in allCourseChoiceMenus"
                             :key="courseMenu.key"
                             size="small"
-                            color="primary"
+                            :color="courseMenuHasActiveSelection(courseMenu) ? 'success' : 'primary'"
                             :variant="selectedCourseMenuKey === courseMenu.key ? 'flat' : 'tonal'"
                             class="course-menu-dialog-chip"
                             @click="selectCourseMenu(courseMenu)">
@@ -369,6 +602,15 @@ export default {
             courseGroupDialog: false,
             selectedCourseGroup: null,
             timetableUpdatePending: false,
+            studentDialogOpen: false,
+            studentOptionsLoading: false,
+            studentSearch: '',
+            robotStudents: [],
+            subjectRows: [],
+            studentSelectionDraft: {
+                studentCode: null,
+            },
+            studentCompletedCoursesRequestId: 0,
             activeCourseGroupFilterKeys: [],
             selectedRecurrenceWeeks: {
                 1: ALL_DATES_OPTION_VALUE,
@@ -383,6 +625,24 @@ export default {
                 2: false,
             },
             showSaturday: false,
+            restrictCourseChoiceBySelection: false,
+            transferredStudentContext: null,
+            transferredStudentContextExpanded: false,
+            selectionDialogOpen: false,
+            selection: {
+                semester: 1,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            selectionDraft: {
+                semester: 1,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
             weekdays: [
                 { key: 'mo', label: 'Mo', value: 1 },
                 { key: 'tu', label: 'Di', value: 2 },
@@ -491,6 +751,48 @@ export default {
                 2: this.buildSemesterCourseMenus(2),
             }
         },
+        courseChoiceCourseGroups() {
+            if (!this.restrictCourseChoiceBySelection) return this.configuredCourseGroups
+
+            return this.configuredCourseGroups
+                .filter(courseGroup => this.courseGroupMatchesCourseChoiceRestriction(courseGroup))
+        },
+        selectionCourseChoiceCodes() {
+            const semester = Number(this.selection?.semester || 0)
+            if (!Number.isFinite(semester) || semester <= 0 || !Array.isArray(this.subjectRows) || !this.subjectRows.length) {
+                return new Set()
+            }
+
+            return new Set(this.coursesForSemester(semester)
+                .flatMap(course => this.courseAliasesFromValues([
+                    course?.code,
+                    course?.label,
+                    course?.name,
+                ])))
+        },
+        restrictedStudentCourseCodes() {
+            const courses = this.transferredStudentContext?.courses || {}
+            const selectionCourseChoiceCodes = this.selectionCourseChoiceCodes instanceof Set
+                ? this.selectionCourseChoiceCodes
+                : new Set()
+
+            return new Set([
+                ...selectionCourseChoiceCodes,
+                ...(courses.missing || []),
+                ...(courses.planned || []),
+                ...(courses.additional || []),
+            ]
+                .flatMap(course => (
+                    typeof course === 'string'
+                        ? [course]
+                        : this.courseAliasesFromValues([
+                            course?.code,
+                            course?.label,
+                            course?.name,
+                        ])
+                ))
+                .filter(Boolean))
+        },
         selectedCourseMenuEntriesBySemester() {
             return {
                 1: this.semesterCourseMenus(1)
@@ -507,6 +809,82 @@ export default {
         selectedCourseCount() {
             return this.selectedCourseMenuEntriesBySemester[1].length
                 + this.selectedCourseMenuEntriesBySemester[2].length
+        },
+        semesterOptions() {
+            return Array.from({ length: 8 }, (value, index) => ({
+                title: `Semester ${index + 1}`,
+                value: index + 1,
+            }))
+        },
+        religionOptions() {
+            return [
+                { title: 'ETH - Ethik', value: 'ETH' },
+                { title: 'Rev - Religion evangelisch', value: 'Rev' },
+                { title: 'Ris - Religion Islam', value: 'Ris' },
+                { title: 'Rk - Religion katholisch', value: 'Rk' },
+                { title: 'Ror - Religion orthodox', value: 'Ror' },
+            ]
+        },
+        branchOptions() {
+            return [
+                { title: 'Wirtschaftskundlicher Zweig', value: 'wirtschaftskundlich' },
+                { title: 'Gymnasialer Zweig', value: 'gymnasial' },
+            ]
+        },
+        artsSubjectOptions() {
+            return [
+                { title: 'ME - Musikerziehung', value: 'ME' },
+                { title: 'BE - Bildnerische Erziehung', value: 'BE' },
+            ]
+        },
+        languageOptions() {
+            return [
+                { title: 'L - Latein', value: 'L' },
+                { title: 'F - Französisch', value: 'F' },
+                { title: 'S - Spanisch', value: 'S' },
+            ]
+        },
+        selectedSummary() {
+            return [
+                { key: 'semester', label: 'Semester', value: this.selectedOptionTitle(this.semesterOptions, this.selection.semester) },
+                { key: 'religion', label: 'Ethik / Religion', value: this.selectedOptionTitle(this.religionOptions, this.selection.religion) },
+                { key: 'language', label: 'Sprache', value: this.selectedOptionTitle(this.languageOptions, this.selection.language) },
+                { key: 'branch', label: 'Zweig', value: this.selectedOptionTitle(this.branchOptions, this.selection.branch) },
+                { key: 'artsSubject', label: 'ME / BE', value: this.selectedOptionTitle(this.artsSubjectOptions, this.selection.artsSubject) },
+            ]
+        },
+        studentSearchReady() {
+            return this.normalizedStudentSearch.length >= 2
+        },
+        normalizedStudentSearch() {
+            return String(this.studentSearch || '').trim().toLowerCase()
+        },
+        filteredStudentResults() {
+            if (!this.studentSearchReady) return []
+
+            return this.robotStudents
+                .filter(student => this.studentOptionTitle(student).toLowerCase().includes(this.normalizedStudentSearch))
+        },
+        studentTotalCountLabel() {
+            const count = Array.isArray(this.robotStudents) ? this.robotStudents.length : 0
+
+            return `${this.formatNumber(count)} Studenten gesamt`
+        },
+        transferredStudentLabel() {
+            return this.transferredStudentContext?.student?.label || 'Kein Student'
+        },
+        transferredStudentCourseSections() {
+            const courses = this.transferredStudentContext?.courses || {}
+
+            return [
+                { key: 'completed', title: 'Abgeschlossene Kurse', color: 'primary', items: courses.completed || [] },
+                { key: 'missing', title: 'Fehlende Kurse', color: 'error', items: courses.missing || [] },
+                { key: 'planned', title: 'Vorgesehene Kurse', color: 'info', items: courses.planned || [] },
+                { key: 'additional', title: 'Zusätzliche Kurse', color: 'success', items: courses.additional || [] },
+            ]
+        },
+        visibleTransferredStudentCourseSections() {
+            return this.transferredStudentCourseSections
         },
         visibleCourseChoiceSemesters() {
             return this.semesters.filter((semester) => this.semesterCourseMenus(semester.value).length > 0)
@@ -586,6 +964,31 @@ export default {
             } finally {
                 this.loading = false
             }
+
+            this.studentOptionsLoading = true
+            try {
+                const studentsResponse = await axios.get('/api/admin/students-timetables/robot/students')
+
+                this.robotStudents = studentsResponse.data?.data || []
+            } catch {
+                this.robotStudents = []
+            } finally {
+                this.studentOptionsLoading = false
+            }
+
+            try {
+                const settingsResponse = await axios.get('/api/admin/students-timetables/subjects-overview-settings')
+
+                this.subjectRows = settingsResponse.data?.data?.subjects || []
+            } catch {
+                this.subjectRows = []
+            }
+
+            if (this.transferredStudentContext?.student?.studentCode) {
+                await this.loadTransferredStudentCompletedCourses(this.transferredStudentContext.student.studentCode)
+            } else {
+                this.refreshTransferredStudentCourseHistory()
+            }
         },
         formatTimeValue(value) {
             const raw = (value || '').toString().trim()
@@ -657,6 +1060,123 @@ export default {
                 this.setShowExtraDatesInSelectedWeek(semester, value)
             })
         },
+        handleCourseChoiceRestrictionUpdate(value) {
+            this.runTimetableUpdate(() => {
+                this.restrictCourseChoiceBySelection = Boolean(value)
+                this.selectedCourseMenuKey = ''
+                this.persistTimetableState()
+            })
+        },
+        openStudentDialog() {
+            this.studentSelectionDraft = {
+                studentCode: this.normalizedStudentCode(this.transferredStudentContext?.student?.studentCode),
+            }
+            this.studentSearch = ''
+            this.studentDialogOpen = true
+            this.$nextTick(() => this.focusStudentSearchField())
+        },
+        closeStudentDialog() {
+            this.studentDialogOpen = false
+            this.studentSearch = ''
+        },
+        focusStudentSearchField() {
+            const searchField = this.$refs.studentSearchField
+
+            searchField?.focus?.()
+            searchField?.$el?.querySelector?.('input')?.focus?.()
+        },
+        selectStudentDraft(studentCode) {
+            this.studentSelectionDraft.studentCode = this.normalizedStudentCode(studentCode)
+        },
+        submitStudentSearch() {
+            if (this.studentSearchReady && this.filteredStudentResults.length === 1) {
+                this.selectStudentDraft(this.filteredStudentResults[0].student_code)
+            }
+
+            this.updateStudentSelection()
+        },
+        updateStudentSelection() {
+            this.applyTransferredStudentSelection(this.studentSelectionDraft.studentCode)
+        },
+        clearTransferredStudentSelection() {
+            if (!this.transferredStudentContext) return
+
+            this.studentSelectionDraft = {
+                studentCode: null,
+            }
+            this.applyTransferredStudentSelection(null)
+        },
+        applyTransferredStudentSelection(studentCode) {
+            const nextStudentCode = this.normalizedStudentCode(studentCode)
+            const selectedStudent = nextStudentCode
+                ? this.robotStudents.find(student => String(student.student_code) === nextStudentCode)
+                : null
+
+            this.runTimetableUpdate(() => {
+                if (!selectedStudent) {
+                    this.transferredStudentContext = null
+                    this.transferredStudentContextExpanded = false
+                    this.studentDialogOpen = false
+                    this.studentSearch = ''
+                    this.persistTimetableState()
+
+                    return
+                }
+
+                const semester = this.studentSemester(selectedStudent)
+
+                if (semester) {
+                    this.selection = this.normalizedSelection({
+                        ...this.selection,
+                        semester,
+                    })
+                    this.selectionDraft = { ...this.selection }
+                }
+
+                this.transferredStudentContext = this.normalizedTransferredStudentContext({
+                    student: {
+                        studentCode: nextStudentCode,
+                        label: this.studentOptionTitle(selectedStudent),
+                        semesterLabel: this.studentSemesterLabel(selectedStudent),
+                    },
+                    courses: {
+                        completed: [],
+                        missing: [],
+                        planned: [],
+                        additional: [],
+                    },
+                })
+                this.transferredStudentContextExpanded = false
+                this.studentDialogOpen = false
+                this.studentSearch = ''
+                this.persistTimetableState()
+                this.loadTransferredStudentCompletedCourses(nextStudentCode)
+            })
+        },
+        openSelectionDialog() {
+            this.selectionDraft = { ...this.selection }
+            this.selectionDialogOpen = true
+        },
+        closeSelectionDialog() {
+            this.selectionDialogOpen = false
+        },
+        updateSelection() {
+            this.runTimetableUpdate(() => {
+                this.selection = this.normalizedSelection(this.selectionDraft)
+                this.refreshTransferredStudentCourseHistory()
+
+                if (!this.transferredStudentContext) {
+                    this.persistTimetableState()
+                }
+            })
+            this.selectionDialogOpen = false
+        },
+        toggleTransferredStudentContext() {
+            if (!this.transferredStudentContext) return
+
+            this.transferredStudentContextExpanded = !this.transferredStudentContextExpanded
+            this.persistTimetableState()
+        },
         deselectAllCourses() {
             this.runTimetableUpdate(() => {
                 this.activeCourseGroupFilterKeys = []
@@ -685,6 +1205,19 @@ export default {
                     2: false,
                 },
                 showSaturday: false,
+                restrictCourseChoiceBySelection: false,
+                selection: this.defaultSelection(),
+                transferredStudentContext: null,
+                transferredStudentContextExpanded: false,
+            }
+        },
+        defaultSelection() {
+            return {
+                semester: 1,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
             }
         },
         currentTimetableState() {
@@ -705,6 +1238,10 @@ export default {
                     ...(this.showExtraDatesInSelectedWeeks || {}),
                 },
                 showSaturday: Boolean(this.showSaturday),
+                restrictCourseChoiceBySelection: Boolean(this.restrictCourseChoiceBySelection),
+                selection: this.normalizedSelection(this.selection || defaults.selection),
+                transferredStudentContext: this.normalizedTransferredStudentContext(this.transferredStudentContext),
+                transferredStudentContextExpanded: Boolean(this.transferredStudentContextExpanded),
             }
         },
         applyTimetableState(state) {
@@ -726,6 +1263,556 @@ export default {
                 ...(state?.showExtraDatesInSelectedWeeks || {}),
             }
             this.showSaturday = Boolean(state?.showSaturday ?? defaults.showSaturday)
+            this.restrictCourseChoiceBySelection = Boolean(
+                state?.restrictCourseChoiceBySelection ?? defaults.restrictCourseChoiceBySelection,
+            )
+            this.selection = this.normalizedSelection(state?.selection || defaults.selection)
+            this.selectionDraft = { ...this.selection }
+            this.transferredStudentContext = this.normalizedTransferredStudentContext(
+                state?.transferredStudentContext ?? defaults.transferredStudentContext,
+            )
+            this.transferredStudentContextExpanded = Boolean(
+                state?.transferredStudentContextExpanded ?? defaults.transferredStudentContextExpanded,
+            )
+        },
+        async loadTransferredStudentCompletedCourses(studentCode) {
+            const normalizedStudentCode = this.normalizedStudentCode(studentCode)
+            const requestId = this.studentCompletedCoursesRequestId + 1
+            this.studentCompletedCoursesRequestId = requestId
+
+            if (!normalizedStudentCode) return
+
+            try {
+                const response = await axios.get('/api/admin/students-timetables/robot/student-completed-courses', {
+                    params: {
+                        student_code: normalizedStudentCode,
+                    },
+                })
+
+                if (requestId !== this.studentCompletedCoursesRequestId) return
+                if (this.normalizedStudentCode(this.transferredStudentContext?.student?.studentCode) !== normalizedStudentCode) return
+
+                const completedCourses = response.data?.data || []
+
+                this.transferredStudentContext = this.normalizedTransferredStudentContext({
+                    ...this.transferredStudentContext,
+                    courses: this.overviewStudentCourseHistory(completedCourses),
+                })
+                this.persistTimetableState()
+            } catch {
+                if (requestId !== this.studentCompletedCoursesRequestId) return
+            }
+        },
+        normalizedSelection(selection) {
+            const defaults = this.defaultSelection()
+            const semester = Number(selection?.semester ?? defaults.semester)
+
+            return {
+                semester: Number.isFinite(semester) ? semester : defaults.semester,
+                religion: selection?.religion || defaults.religion,
+                language: selection?.language || defaults.language,
+                branch: selection?.branch || defaults.branch,
+                artsSubject: selection?.artsSubject || defaults.artsSubject,
+            }
+        },
+        selectedOptionTitle(options, value) {
+            return options.find(option => option.value === value)?.title || String(value || '')
+        },
+        normalizedStudentCode(value) {
+            const studentCode = value === null || value === undefined ? '' : String(value).trim()
+
+            return studentCode === '' ? null : studentCode
+        },
+        studentSemesterBySchoolLevel() {
+            return {
+                '09_1': 1,
+                '09_2': 2,
+                '10_1': 3,
+                '10_2': 4,
+                '11_1': 5,
+                '11_2': 6,
+                '12_1': 7,
+                '12_2': 8,
+            }
+        },
+        studentSemesterLabel(student) {
+            const semester = this.studentSemester(student)
+
+            return semester ? `Semester ${semester}` : ''
+        },
+        studentSemester(student) {
+            const schoolLevel = this.studentSchoolLevelKey(student)
+
+            return this.studentSemesterBySchoolLevel()[schoolLevel] || null
+        },
+        studentSchoolLevelKey(student) {
+            const importedSchoolLevel = this.normalizedStudentSchoolLevel(
+                student?.school_level,
+                student?.attendance_year,
+            )
+            if (importedSchoolLevel) return importedSchoolLevel
+
+            return this.normalizedStudentSchoolLevel(student?.class)
+        },
+        normalizedStudentSchoolLevel(schoolLevel, attendanceYear = null) {
+            const normalizedAttendanceYear = String(attendanceYear || '').trim()
+            if (normalizedAttendanceYear !== '') {
+                const normalizedSchoolLevel = this.normalizedStudentSchoolLevelToken(schoolLevel)
+                if (normalizedSchoolLevel && ['1', '2'].includes(normalizedAttendanceYear)) {
+                    return `${normalizedSchoolLevel}_${normalizedAttendanceYear}`
+                }
+            }
+
+            const value = String(schoolLevel || '').trim()
+            if (!value) return ''
+
+            const normalizedValue = value.replace(/[.\-\s]+/g, '_')
+            const schoolLevelMatch = normalizedValue.match(/(?:^|[^0-9])(0?9|1[0-2])_?([12])(?:$|[^0-9])/)
+            if (!schoolLevelMatch) return ''
+
+            return `${schoolLevelMatch[1].padStart(2, '0')}_${schoolLevelMatch[2]}`
+        },
+        normalizedStudentSchoolLevelToken(value) {
+            const schoolLevelMatch = String(value || '').trim().match(/^(0?9|1[0-2])$/)
+
+            return schoolLevelMatch ? schoolLevelMatch[1].padStart(2, '0') : ''
+        },
+        studentOptionTitle(student) {
+            const schoolClass = String(student?.class || '').trim()
+            const lastName = String(student?.last_name || '').trim()
+            const firstName = String(student?.first_name || '').trim()
+            const semester = this.studentSemesterLabel(student)
+            const name = [lastName, firstName].filter(Boolean).join(' ')
+
+            return [schoolClass, name, semester].filter(Boolean).join(' · ')
+        },
+        formatNumber(value) {
+            return new Intl.NumberFormat('de-AT').format(Number(value || 0))
+        },
+        overviewCompletedCourseItems(courses) {
+            return (Array.isArray(courses) ? courses : [])
+                .map((course, index) => {
+                    const code = String(course?.subject || course?.code || '').trim()
+                    const grade = String(course?.grade || '').trim()
+
+                    return {
+                        key: `completed-${code || index}-${grade || index}`,
+                        code,
+                        label: code,
+                        meta: grade,
+                    }
+                })
+                .filter(course => course.label)
+        },
+        overviewStudentCourseHistory(completedCourses) {
+            const completedCourseItems = Array.isArray(completedCourses) ? completedCourses : []
+            const semester = Number(this.selection?.semester || 0)
+            const completedCourseCodes = this.studentCompletedCourseCodes(completedCourseItems)
+            const visitedCourseCodes = this.studentVisitedCourseCodes(completedCourseItems)
+            const missingCourses = semester
+                ? this.pendingStudentCoursesBeforeSemester(semester, completedCourseCodes, visitedCourseCodes)
+                : []
+            const plannedCourses = semester
+                ? this.studentPlannedCoursesForSemester(semester, completedCourseCodes)
+                : []
+            const unavailableAdditionalCourseCodes = this.studentUnavailableAdditionalCourseCodes(completedCourseCodes, [
+                ...missingCourses,
+                ...plannedCourses,
+            ])
+            const additionalCourses = semester
+                ? this.coursesAfterSemester(semester)
+                    .filter(course => !this.courseCompletedForStudentPlanning(course, unavailableAdditionalCourseCodes))
+                    .filter(course => this.coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes))
+                : []
+
+            return {
+                completed: this.overviewCompletedCourseItems(completedCourseItems),
+                missing: this.overviewCourseItems(missingCourses),
+                planned: this.overviewCourseItems(plannedCourses),
+                additional: this.overviewCourseItems(additionalCourses),
+            }
+        },
+        refreshTransferredStudentCourseHistory() {
+            if (!this.transferredStudentContext) return
+
+            const completedCourses = (this.transferredStudentContext.courses?.completed || [])
+                .map(course => ({
+                    subject: course?.code || course?.label,
+                    code: course?.code || course?.label,
+                    grade: course?.grade || course?.meta,
+                }))
+
+            this.transferredStudentContext = this.normalizedTransferredStudentContext({
+                ...this.transferredStudentContext,
+                courses: this.overviewStudentCourseHistory(completedCourses),
+            })
+            this.persistTimetableState()
+        },
+        overviewCourseItems(courses) {
+            return (Array.isArray(courses) ? courses : [])
+                .map((course, index) => {
+                    const code = String(course?.code || course?.subject || '').trim()
+                    const name = String(course?.name || course?.title || '').trim()
+                    const hours = Number(course?.hours || 0)
+
+                    return {
+                        key: course?.key || `${code || index}-${index}`,
+                        code,
+                        name,
+                        label: code || name,
+                        meta: hours ? `${this.formatHours(hours)} Std.` : '',
+                    }
+                })
+                .filter(course => course.label)
+        },
+        coursesForSemester(semester) {
+            return (Array.isArray(this.subjectRows) ? this.subjectRows : [])
+                .filter(subject => subject?.is_active !== false)
+                .filter(subject => Number(subject?.semester) === Number(semester))
+                .filter(subject => this.subjectMatchesSelectedBranch(subject))
+                .filter(subject => this.subjectMatchesSelectedChoices(subject))
+                .flatMap(subject => this.selectedCoursesFromSubject(subject))
+                .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
+        },
+        coursesAfterSemester(semester) {
+            return (Array.isArray(this.subjectRows) ? this.subjectRows : [])
+                .map(subject => Number(subject?.semester))
+                .filter(subjectSemester => Number.isFinite(subjectSemester) && subjectSemester > Number(semester))
+                .filter((subjectSemester, index, subjectSemesters) => subjectSemesters.indexOf(subjectSemester) === index)
+                .sort((firstSemester, secondSemester) => firstSemester - secondSemester)
+                .flatMap(subjectSemester => this.coursesForSemester(subjectSemester))
+        },
+        studentPlannedCoursesForSemester(semester, completedCourseCodes) {
+            return this.coursesForSemester(semester)
+                .filter(course => !this.courseCompletedForStudentPlanning(course, completedCourseCodes))
+                .filter((course, index, courses) =>
+                    courses.findIndex(candidate => candidate.key === course.key) === index,
+                )
+                .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
+        },
+        pendingStudentCoursesBeforeSemester(semester, completedCourseCodes, visitedCourseCodes) {
+            return (Array.isArray(this.subjectRows) ? this.subjectRows : [])
+                .map(subject => Number(subject?.semester))
+                .filter(subjectSemester => Number.isFinite(subjectSemester) && subjectSemester < Number(semester))
+                .filter((subjectSemester, index, subjectSemesters) => subjectSemesters.indexOf(subjectSemester) === index)
+                .sort((firstSemester, secondSemester) => firstSemester - secondSemester)
+                .flatMap(subjectSemester => this.coursesForSemester(subjectSemester))
+                .filter(course => !this.courseCompletedForStudentPlanning(course, completedCourseCodes))
+                .filter(course => this.coursePossibleAsStudentMissing(course, completedCourseCodes, visitedCourseCodes))
+                .filter((course, index, courses) =>
+                    courses.findIndex(candidate => candidate.key === course.key) === index,
+                )
+                .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
+        },
+        studentCompletedCourseCodes(completedCourses) {
+            return new Set((Array.isArray(completedCourses) ? completedCourses : [])
+                .filter(course => this.completedCourseCountsAsDone(course?.grade))
+                .flatMap(course => this.courseCodeAliasParts(course?.subject || course?.code))
+                .map(courseCode => this.normalizedCourseCode(courseCode))
+                .filter(Boolean))
+        },
+        studentVisitedCourseCodes(completedCourses) {
+            return new Set((Array.isArray(completedCourses) ? completedCourses : [])
+                .flatMap(course => this.courseCodeAliasParts(course?.subject || course?.code))
+                .map(courseCode => this.normalizedCourseCode(courseCode))
+                .filter(Boolean))
+        },
+        studentUnavailableAdditionalCourseCodes(completedCourseCodes, plannedCourses) {
+            const unavailableCourseCodes = new Set(completedCourseCodes)
+
+            ;(Array.isArray(plannedCourses) ? plannedCourses : [])
+                .flatMap(course => this.courseCodeAliases(course))
+                .forEach(courseCode => unavailableCourseCodes.add(courseCode))
+
+            return unavailableCourseCodes
+        },
+        completedCourseCountsAsDone(grade) {
+            const normalizedGrade = String(grade || '').trim().toLocaleUpperCase('de-AT')
+
+            return normalizedGrade === 'B' || ['1', '2', '3', '4'].includes(normalizedGrade)
+        },
+        courseCompletedForStudentPlanning(course, completedCourseCodes) {
+            if (!(completedCourseCodes instanceof Set) || !completedCourseCodes.size) return false
+
+            return this.courseCodeAliases(course)
+                .some(courseCode => completedCourseCodes.has(courseCode))
+        },
+        coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes) {
+            return this.courseModulePartsForStudentPlanning(course)
+                .some(parts => this.courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes))
+        },
+        coursePossibleAsStudentMissing(course, completedCourseCodes, visitedCourseCodes) {
+            return this.courseModulePartsForStudentPlanning(course)
+                .some(parts => this.courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes, {
+                    allowInitialModules: true,
+                }))
+        },
+        courseModulePartsForStudentPlanning(course) {
+            return this.courseCodeAliases(course)
+                .map(courseCode => this.courseCodeModuleParts(courseCode))
+                .filter(parts => parts.module)
+                .filter(parts => this.courseBaseEligibleForStudentAdditional(parts.base))
+                .filter((parts, index, allParts) =>
+                    allParts.findIndex(candidate => candidate.base === parts.base && candidate.module === parts.module) === index,
+                )
+        },
+        courseBaseEligibleForStudentAdditional(base) {
+            const baseAliases = this.studentCourseBaseAliases(base)
+            const subjectRows = Array.isArray(this.subjectRows) ? this.subjectRows : []
+
+            if (!subjectRows.length) return true
+
+            return subjectRows
+                .filter(subject => subject?.is_active !== false)
+                .some(subject => this.subjectRowMatchesStudentCourseBase(subject, baseAliases))
+        },
+        subjectRowMatchesStudentCourseBase(subject, baseAliases) {
+            return [
+                subject?.json_code,
+                subject?.json_subject,
+            ]
+                .flatMap(value => this.courseCodeAliasParts(value))
+                .map(value => this.courseCodeModuleParts(value).base)
+                .flatMap(base => this.studentCourseBaseAliases(base))
+                .some(baseAlias => baseAliases.includes(baseAlias))
+        },
+        courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes, options = {}) {
+            const moduleNumber = Number(parts.module)
+            if (!Number.isInteger(moduleNumber)) return false
+
+            const baseAliases = this.studentCourseBaseAliases(parts.base)
+            if (moduleNumber === 1) {
+                if (options?.allowInitialModules) {
+                    return !this.courseBaseHasVisitedLaterModule(baseAliases, visitedCourseCodes, moduleNumber)
+                }
+
+                return baseAliases.some(baseAlias => ['ME', 'MU', 'BE'].includes(baseAlias))
+            }
+
+            if (moduleNumber === 2) return true
+
+            const prerequisiteModuleNumber = moduleNumber - 2
+            const hasPositivePrerequisite = baseAliases
+                .some(baseAlias => completedCourseCodes.has(`${baseAlias}${prerequisiteModuleNumber}`))
+
+            if (!hasPositivePrerequisite) return false
+
+            if (['E', 'M'].includes(this.normalizedCourseCode(parts.base)) && moduleNumber === 8) {
+                return baseAliases.some(baseAlias => visitedCourseCodes.has(`${baseAlias}7`))
+            }
+
+            return true
+        },
+        courseBaseHasVisitedLaterModule(baseAliases, visitedCourseCodes, moduleNumber) {
+            if (!(visitedCourseCodes instanceof Set) || !visitedCourseCodes.size) return false
+
+            return [...visitedCourseCodes]
+                .map(courseCode => this.courseCodeModuleParts(courseCode))
+                .some(parts => {
+                    const visitedModuleNumber = Number(parts.module)
+
+                    return baseAliases.includes(parts.base)
+                        && Number.isInteger(visitedModuleNumber)
+                        && visitedModuleNumber > moduleNumber
+                })
+        },
+        studentCourseBaseAliases(base) {
+            const normalizedBase = this.normalizedCourseCode(base)
+            const mappedAliases = {
+                ET: ['ETH'],
+                ETH: ['ET'],
+                GPB: ['GS'],
+                GS: ['GPB'],
+                GW: ['GWB'],
+                GWB: ['GW'],
+                LPT: ['LET'],
+                LET: ['LPT'],
+                ME: ['MU'],
+                MU: ['ME'],
+                R: ['RK'],
+                RK: ['R'],
+                S: ['SPA'],
+                SPA: ['S'],
+            }
+
+            return this.uniqueValues([
+                normalizedBase,
+                ...(mappedAliases[normalizedBase] || []),
+            ])
+        },
+        subjectMatchesSelectedBranch(subject) {
+            if (this.isArtsSubject(subject)) {
+                return subject.branch === 'gymnasial' && this.selection.branch === 'gymnasial'
+            }
+
+            return !subject.branch || subject.branch === 'common' || subject.branch === this.selection.branch
+        },
+        subjectMatchesSelectedChoices(subject) {
+            if (this.isArtsSubject(subject)) return this.subjectBaseKey(subject) === this.selection.artsSubject
+            if (this.isLanguageSubject(subject)) return this.languageSubjectMatchesSelection(subject)
+
+            return true
+        },
+        languageSubjectMatchesSelection(subject) {
+            const languageCode = this.languageSubjectCode(subject)
+
+            return !languageCode || languageCode === this.selection.language
+        },
+        languageSubjectCode(subject) {
+            const baseKey = this.normalizedCourseCode(this.subjectBaseKey(subject))
+            if (['L', 'F', 'S'].includes(baseKey)) return baseKey
+            if (baseKey !== 'L/F/S') return ''
+
+            const jsonCodeParts = this.courseCodeAliasParts(this.courseCodeWithoutModule(subject.json_code))
+                .map(value => this.normalizedCourseCode(value))
+
+            return jsonCodeParts.length === 1 && ['L', 'F', 'S'].includes(jsonCodeParts[0])
+                ? jsonCodeParts[0]
+                : ''
+        },
+        selectedCoursesFromSubject(subject) {
+            return this.subjectCourseVariants(subject)
+                .map(courseSubject => this.selectedCourseFromSubject(courseSubject))
+        },
+        subjectCourseVariants(subject) {
+            if (this.isReligionSubject(subject) || this.isLanguageSubject(subject)) return [subject]
+
+            const courseCodes = this.courseCodeAliasParts(subject.json_code)
+            if (courseCodes.length <= 1) return [subject]
+
+            const splitHours = Number(subject.hours_per_week || 0) / courseCodes.length
+
+            return courseCodes.map(courseCode => ({
+                ...subject,
+                json_code: courseCode,
+                hours_per_week: Number.isFinite(splitHours) ? splitHours : subject.hours_per_week,
+            }))
+        },
+        selectedCourseFromSubject(subject) {
+            const selectedCourseCode = this.selectedCourseCode(subject)
+
+            return {
+                key: [
+                    subject.id || subject.local_id || '',
+                    subject.semester || '',
+                    subject.branch || 'common',
+                    subject.json_code || '',
+                    subject.json_subject || '',
+                    subject.name || '',
+                    selectedCourseCode,
+                ].join('|'),
+                code: selectedCourseCode,
+                name: this.selectedCourseName(subject),
+                branch: this.selectedCourseBranch(subject),
+                hours: Number(subject.hours_per_week || 0),
+            }
+        },
+        selectedCourseCode(subject) {
+            if (this.isReligionSubject(subject)) return `${this.selection.religion}${this.subjectModuleNumber(subject)}`
+            if (this.isLanguageSubject(subject)) return `${this.selection.language}${this.subjectModuleNumber(subject)}`
+
+            return this.alternativeDisplay(subject.json_code || subject.json_subject || subject.name)
+        },
+        selectedCourseName(subject) {
+            const moduleNumber = this.subjectModuleNumber(subject)
+
+            if (this.isReligionSubject(subject)) {
+                return `${this.selectedOptionDescription(this.religionOptions, this.selection.religion)} ${moduleNumber}`.trim()
+            }
+
+            if (this.isLanguageSubject(subject)) {
+                return `${this.selectedOptionDescription(this.languageOptions, this.selection.language)} ${moduleNumber}`.trim()
+            }
+
+            if (this.isArtsSubject(subject)) {
+                return `${this.selectedOptionDescription(this.artsSubjectOptions, this.selection.artsSubject)} ${moduleNumber}`.trim()
+            }
+
+            return subject.name || subject.json_subject || subject.json_code || '-'
+        },
+        selectedOptionDescription(options, value) {
+            return String(this.selectedOptionTitle(options, value)).split(' - ').pop()
+        },
+        selectedCourseBranch(subject) {
+            if (!subject.branch || subject.branch === 'common') return 'alle'
+
+            return this.selectedOptionTitle(this.branchOptions, subject.branch)
+        },
+        subjectBaseKey(subject) {
+            const jsonSubject = String(subject?.json_subject || '').trim()
+
+            return jsonSubject || String(subject?.json_code || '').replace(/\d+$/u, '')
+        },
+        subjectModuleNumber(subject) {
+            const moduleMatch = String(subject?.json_code || '').match(/(\d+)$/u)
+
+            return moduleMatch?.[1] || ''
+        },
+        isReligionSubject(subject) {
+            return this.subjectBaseKey(subject) === 'R/ET'
+        },
+        isLanguageSubject(subject) {
+            const baseKey = this.normalizedCourseCode(this.subjectBaseKey(subject))
+
+            return baseKey === 'L/F/S' || ['L', 'F', 'S'].includes(baseKey)
+        },
+        isArtsSubject(subject) {
+            return ['ME', 'BE'].includes(this.subjectBaseKey(subject))
+        },
+        alternativeDisplay(value) {
+            const normalizedValue = String(value || '').trim()
+            if (!normalizedValue.includes('/')) return normalizedValue || '-'
+
+            return normalizedValue
+                .split('/')
+                .map(part => part.trim())
+                .filter(Boolean)
+                .join(' / ')
+        },
+        compareCourses(firstCourse, secondCourse) {
+            return String(firstCourse?.code || '').localeCompare(String(secondCourse?.code || ''), 'de-AT', {
+                numeric: true,
+                sensitivity: 'base',
+            })
+        },
+        formatHours(value) {
+            const hours = Number(value || 0)
+
+            if (Number.isInteger(hours)) return String(hours)
+
+            return String(hours).replace('.', ',')
+        },
+        normalizedTransferredStudentContext(context) {
+            if (!context?.student) return null
+
+            return {
+                student: {
+                    studentCode: String(context.student?.studentCode || '').trim(),
+                    label: String(context.student?.label || '').trim(),
+                    semesterLabel: String(context.student?.semesterLabel || '').trim(),
+                },
+                courses: {
+                    completed: this.normalizedTransferredStudentCourses(context.courses?.completed),
+                    missing: this.normalizedTransferredStudentCourses(context.courses?.missing),
+                    planned: this.normalizedTransferredStudentCourses(context.courses?.planned),
+                    additional: this.normalizedTransferredStudentCourses(context.courses?.additional),
+                },
+            }
+        },
+        normalizedTransferredStudentCourses(courses) {
+            return (Array.isArray(courses) ? courses : [])
+                .map((course, index) => {
+                    const label = String(course?.label || course?.code || course?.subject || course?.name || '').trim()
+
+                    return {
+                        key: String(course?.key || `${label || 'course'}-${index}`).trim(),
+                        code: String(course?.code || course?.subject || '').trim(),
+                        name: String(course?.name || '').trim(),
+                        label,
+                        meta: String(course?.meta || course?.grade || '').trim(),
+                    }
+                })
+                .filter(course => course.label)
         },
         timetableStorageKey() {
             return `${TIMETABLE_STORAGE_KEY_PREFIX}:${this.selectedSchoolyear?.id || 'default'}`
@@ -787,6 +1874,43 @@ export default {
                     { sensitivity: 'base' },
                 ))
         },
+        displayCourseGroupsForCell(semester, weekday, hour, recurrenceWeek = null) {
+            const directCourseGroups = this.courseGroupsForCell(semester, weekday, hour, recurrenceWeek)
+            if (!directCourseGroups.length) return []
+
+            const directCourseGroupKeys = directCourseGroups
+                .map(courseGroup => courseGroup?.key)
+                .filter(Boolean)
+            const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
+                ? this.activeCourseGroupFilterKeySet
+                : new Set(this.activeCourseGroupFilterKeys || [])
+            const overlappingCourseGroups = this.configuredCourseGroups
+                .filter(courseGroup => activeCourseGroupFilterKeySet.has(courseGroup?.key))
+                .filter(courseGroup => !directCourseGroupKeys.includes(courseGroup?.key))
+                .filter(courseGroup => this.courseGroupMatchesSelectedRecurrenceWeek(courseGroup, semester, recurrenceWeek))
+                .filter(courseGroup => directCourseGroups.some(directCourseGroup =>
+                    this.courseGroupsOverlap(directCourseGroup, courseGroup),
+                ))
+
+            return this.uniqueCourseGroupsByKey([
+                ...directCourseGroups,
+                ...overlappingCourseGroups,
+            ]).sort((left, right) => this.courseGroupSortLabel(left).localeCompare(
+                this.courseGroupSortLabel(right),
+                'de',
+                { sensitivity: 'base' },
+            ))
+        },
+        uniqueCourseGroupsByKey(courseGroups) {
+            return Object.values((Array.isArray(courseGroups) ? courseGroups : []).reduce((groups, courseGroup) => {
+                const key = String(courseGroup?.key || '').trim()
+                if (!key) return groups
+
+                groups[key] ??= courseGroup
+
+                return groups
+            }, {}))
+        },
         courseGroupSortLabel(courseGroup) {
             return (courseGroup?.display_label || courseGroup?.title || '').toString()
         },
@@ -804,8 +1928,14 @@ export default {
         selectCourseMenu(courseMenu) {
             this.selectedCourseMenuKey = courseMenu?.key || ''
         },
+        courseMenuHasActiveSelection(courseMenu) {
+            return (courseMenu?.entries || []).some((entry) => this.isCourseMenuEntryFilterActive(entry))
+        },
         buildSemesterCourseMenus(semester) {
-            const courseMenusByLabel = this.configuredCourseGroups
+            const sourceCourseGroups = Array.isArray(this.courseChoiceCourseGroups)
+                ? this.courseChoiceCourseGroups
+                : this.configuredCourseGroups
+            const courseMenusByLabel = sourceCourseGroups
                 .filter((courseGroup) => Number(courseGroup?.semester) === Number(semester))
                 .reduce((courseMenus, courseGroup) => {
                     const label = this.mainCourseLabel(courseGroup)
@@ -859,6 +1989,190 @@ export default {
                 }))
                 .sort((left, right) => left.label.localeCompare(right.label, 'de', { sensitivity: 'base' }))
         },
+        courseGroupMatchesCourseChoiceRestriction(courseGroup) {
+            if (
+                this.shouldRestrictCourseChoiceByTimetableSemester()
+                && !this.courseGroupMatchesSelectedTimetableSemester(courseGroup)
+            ) return false
+            if (!this.courseGroupMatchesSelectedChoiceOptions(courseGroup)) return false
+
+            const studentCourseCodes = this.restrictedStudentCourseCodes instanceof Set
+                ? this.restrictedStudentCourseCodes
+                : new Set()
+            if (!studentCourseCodes.size) return true
+
+            return this.courseGroupCodes(courseGroup)
+                .some(courseCode => studentCourseCodes.has(courseCode))
+        },
+        shouldRestrictCourseChoiceByTimetableSemester() {
+            const selectedTimetableSemester = this.selectedTimetableSemesterForSelection()
+            if (!selectedTimetableSemester) return false
+
+            return (Array.isArray(this.configuredCourseGroups) ? this.configuredCourseGroups : [])
+                .some(courseGroup => Number(courseGroup?.semester) === selectedTimetableSemester)
+        },
+        selectedTimetableSemesterForSelection() {
+            const selectedSemester = Number(this.selection?.semester || 0)
+            if (!Number.isFinite(selectedSemester) || selectedSemester <= 0) return null
+
+            return selectedSemester % 2 === 0 ? 2 : 1
+        },
+        courseGroupMatchesSelectedTimetableSemester(courseGroup) {
+            const timetableSemester = this.selectedTimetableSemesterForSelection()
+            if (!timetableSemester) return true
+
+            return Number(courseGroup?.semester) === timetableSemester
+        },
+        courseGroupMatchesSelectedChoiceOptions(courseGroup) {
+            const courseBases = this.courseGroupCodes(courseGroup)
+                .map(courseCode => this.courseCodeWithoutModule(courseCode))
+                .filter(Boolean)
+
+            return this.courseBasesMatchSelectedOption(courseBases, this.religionCourseBases(), this.selection?.religion)
+                && this.courseBasesMatchSelectedOption(courseBases, this.languageCourseBases(), this.selection?.language)
+                && this.courseBasesMatchSelectedOption(courseBases, this.artsCourseBases(), this.selection?.artsSubject)
+        },
+        courseBasesMatchSelectedOption(courseBases, optionBases, selectedOption) {
+            const matchingOptionBases = courseBases
+                .filter(courseBase => optionBases.includes(courseBase))
+
+            if (!matchingOptionBases.length) return true
+
+            const selectedAliases = this.selectionCourseAliases(selectedOption)
+                .map(alias => this.courseCodeWithoutModule(alias))
+
+            return matchingOptionBases.some(courseBase => selectedAliases.includes(courseBase))
+        },
+        religionCourseBases() {
+            return this.uniqueValues(this.religionOptions
+                .flatMap(option => this.selectionCourseAliases(option.value))
+                .map(alias => this.courseCodeWithoutModule(alias)))
+        },
+        languageCourseBases() {
+            return this.uniqueValues([
+                ...this.languageOptions.flatMap(option => this.selectionCourseAliases(option.value)),
+                'SPA',
+                'LET',
+                'LPT',
+            ].map(alias => this.courseCodeWithoutModule(alias)))
+        },
+        artsCourseBases() {
+            return this.uniqueValues([
+                ...this.artsSubjectOptions.flatMap(option => this.selectionCourseAliases(option.value)),
+                'MU',
+            ].map(alias => this.courseCodeWithoutModule(alias)))
+        },
+        selectionCourseAliases(value) {
+            const normalizedValue = this.normalizedCourseCode(value)
+            const aliases = {
+                L: ['L', 'LET', 'LPT'],
+                LPT: ['L', 'LET', 'LPT'],
+                LET: ['L', 'LET', 'LPT'],
+                ME: ['ME', 'MU'],
+                MU: ['ME', 'MU'],
+                S: ['S', 'SPA'],
+                SPA: ['S', 'SPA'],
+            }
+
+            return this.uniqueValues([
+                normalizedValue,
+                ...(aliases[normalizedValue] || []),
+                this.defaultTimetableCodeAlias(normalizedValue),
+            ].filter(Boolean))
+        },
+        courseGroupCodes(courseGroup) {
+            return this.courseAliasesFromValues([
+                courseGroup?.course,
+                courseGroup?.title,
+                courseGroup?.display_label,
+                courseGroup?.subject,
+            ])
+        },
+        courseAliasesFromValues(values) {
+            return this.uniqueValues((Array.isArray(values) ? values : [])
+                .flatMap(value => this.courseCodeTokensFromValue(value))
+                .flatMap(value => [
+                    value,
+                    this.defaultTimetableCodeAlias(value),
+                ])
+                .map(value => this.normalizedCourseCode(value))
+                .filter(Boolean))
+        },
+        courseCodeAliases(course) {
+            return this.uniqueValues([
+                course?.code,
+                course?.ttCode,
+                ...(Array.isArray(course?.ttCodes) ? course.ttCodes : []),
+                course?.subject,
+            ]
+                .flatMap(value => this.courseCodeAliasParts(value))
+                .flatMap(value => [
+                    value,
+                    this.defaultTimetableCodeAlias(value),
+                ])
+                .map(value => this.normalizedCourseCode(value))
+                .filter(Boolean))
+        },
+        courseCodeAliasParts(value) {
+            return String(value || '')
+                .split('/')
+                .map(part => part.trim())
+                .filter(Boolean)
+        },
+        courseCodeModuleParts(value) {
+            const normalizedValue = this.normalizedCourseCode(value)
+            const moduleMatch = normalizedValue.match(/^([A-ZÄÖÜ]+)(\d+)$/u)
+
+            if (!moduleMatch) {
+                return {
+                    base: this.courseCodeWithoutModule(normalizedValue),
+                    module: '',
+                }
+            }
+
+            return {
+                base: this.courseCodeWithoutModule(moduleMatch[1]),
+                module: moduleMatch[2],
+            }
+        },
+        defaultTimetableCodeAlias(value) {
+            const normalizedValue = this.normalizedCourseCode(value)
+            const match = normalizedValue.match(/^([A-ZÄÖÜ]+)(\d*)$/u)
+            if (!match) return ''
+
+            const aliases = {
+                GS: 'GPB',
+                GW: 'GWB',
+                LPT: 'LET',
+                LET: 'LPT',
+                ME: 'MU',
+                MU: 'ME',
+                S: 'SPA',
+                SPA: 'S',
+            }
+            const mappedBase = aliases[match[1]]
+
+            return mappedBase ? `${mappedBase}${match[2] || ''}` : ''
+        },
+        courseCodeTokensFromValue(value) {
+            return [...String(value || '').matchAll(/[A-Za-zÄÖÜäöüß]+[0-9]*/gu)]
+                .map(match => match[0])
+        },
+        courseCodeWithoutModule(value) {
+            const normalizedValue = this.normalizedCourseCode(value)
+            const match = normalizedValue.match(/^([A-ZÄÖÜ]+)\d*$/u)
+
+            return match?.[1] || normalizedValue
+        },
+        normalizedCourseCode(value) {
+            return String(value || '')
+                .trim()
+                .toLocaleUpperCase('de-AT')
+                .replace(/\s+/gu, '')
+        },
+        uniqueValues(values) {
+            return [...new Set((Array.isArray(values) ? values : []).filter(Boolean))]
+        },
         semesterCourseChips(semester) {
             return this.semesterCourseMenus(semester).map((courseMenu) => ({
                 key: courseMenu.key,
@@ -898,6 +2212,13 @@ export default {
             ).toString()
         },
         courseMenuEntryScheduleLabel(entry) {
+            const mergeGapMinutes = 15
+            const timeLabelToMinutes = (value) => {
+                const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/u)
+                if (!match) return null
+
+                return Number(match[1]) * 60 + Number(match[2])
+            }
             const schedulesByWeekday = (entry?.courseGroups || []).reduce((schedules, courseGroup) => {
                 const weekday = this.weekdayForCourseGroup(courseGroup)
                 const timeRange = this.courseGroupTimeRangeParts(courseGroup)
@@ -910,16 +2231,19 @@ export default {
                     schedules.set(key, {
                         weekdayOrder: weekday.value || 99,
                         weekdayLabel: weekday.label,
-                        from: '',
-                        until: '',
+                        ranges: [],
                         fallbackLabels: new Set(),
                     })
                 }
 
                 const schedule = schedules.get(key)
                 if (timeRange.from && timeRange.until) {
-                    schedule.from = schedule.from && schedule.from < timeRange.from ? schedule.from : timeRange.from
-                    schedule.until = schedule.until && schedule.until > timeRange.until ? schedule.until : timeRange.until
+                    schedule.ranges.push({
+                        from: timeRange.from,
+                        until: timeRange.until,
+                        fromMinutes: timeLabelToMinutes(timeRange.from),
+                        untilMinutes: timeLabelToMinutes(timeRange.until),
+                    })
 
                     return schedules
                 }
@@ -932,11 +2256,33 @@ export default {
             return [...schedulesByWeekday.values()]
                 .sort((left, right) => left.weekdayOrder - right.weekdayOrder)
                 .flatMap((schedule) => {
-                    if (schedule.from && schedule.until) {
-                        return [[schedule.weekdayLabel, `${schedule.from} - ${schedule.until}`].filter(Boolean).join(' ')]
-                    }
+                    const mergedRanges = schedule.ranges
+                        .sort((left, right) => (left.fromMinutes ?? 0) - (right.fromMinutes ?? 0))
+                        .reduce((ranges, range) => {
+                            const lastRange = ranges[ranges.length - 1]
+                            const gapMinutes = lastRange && lastRange.untilMinutes !== null && range.fromMinutes !== null
+                                ? range.fromMinutes - lastRange.untilMinutes
+                                : null
 
-                    return [...schedule.fallbackLabels]
+                            if (lastRange && gapMinutes !== null && gapMinutes <= mergeGapMinutes) {
+                                if ((range.untilMinutes ?? 0) > (lastRange.untilMinutes ?? 0)) {
+                                    lastRange.until = range.until
+                                    lastRange.untilMinutes = range.untilMinutes
+                                }
+
+                                return ranges
+                            }
+
+                            ranges.push({ ...range })
+
+                            return ranges
+                        }, [])
+                        .map((range) => [schedule.weekdayLabel, `${range.from} - ${range.until}`].filter(Boolean).join(' '))
+
+                    return [
+                        ...mergedRanges,
+                        ...schedule.fallbackLabels,
+                    ]
                 })
                 .filter(Boolean)
                 .join(', ')
@@ -1661,6 +3007,50 @@ export default {
     background: #f8fafc;
 }
 
+.overview-selection {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.overview-selected-cards {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(128px, 1fr));
+    gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.overview-selected-card {
+    min-width: 0;
+    padding: 9px 11px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.26);
+    border-radius: 6px;
+    background: #f8fafc;
+}
+
+.overview-selected-card__label {
+    color: #172554;
+    font-size: 0.7rem;
+    font-weight: 850;
+}
+
+.overview-selected-card__value {
+    margin-top: 4px;
+    color: #020617;
+    font-size: 0.78rem;
+    font-weight: 800;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+}
+
+.overview-selection-dialog-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
 .course-choice-panel__header,
 .course-choice-panel__title {
     display: flex;
@@ -1675,7 +3065,12 @@ export default {
 .course-choice-panel__actions {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
+}
+
+.course-choice-restriction-switch {
+    flex: 0 0 auto;
 }
 
 .course-choice-panel__title {
@@ -1781,6 +3176,140 @@ export default {
     font-weight: 650;
 }
 
+.overview-student-selection {
+    margin-bottom: 14px;
+}
+
+.overview-student-selection .transferred-student-context {
+    margin-bottom: 0;
+}
+
+.overview-student-inline-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.overview-student-dialog__meta {
+    margin-bottom: 10px;
+    color: rgba(var(--v-theme-on-surface), 0.68);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.overview-student-search-results {
+    display: grid;
+    gap: 6px;
+    margin-top: 10px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.overview-student-search-results__item {
+    justify-content: flex-start;
+    min-height: 32px;
+}
+
+.overview-student-search-results__empty {
+    padding: 8px 2px;
+    color: rgba(var(--v-theme-on-surface), 0.58);
+    font-size: 0.78rem;
+}
+
+.transferred-student-context {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 10px;
+    border: 1px solid rgba(14, 165, 233, 0.22);
+    border-radius: 8px;
+    background: #f0f9ff;
+}
+
+.transferred-student-context--collapsed {
+    gap: 0;
+}
+
+.transferred-student-context__header,
+.transferred-student-context__title,
+.transferred-student-context__header-actions,
+.transferred-student-course-section,
+.transferred-student-course-section__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.transferred-student-context__header {
+    justify-content: space-between;
+    flex-wrap: wrap;
+    cursor: pointer;
+    outline: none;
+}
+
+.transferred-student-context__header:focus-visible {
+    box-shadow: 0 0 0 2px rgba(var(--v-theme-primary), 0.22);
+    border-radius: 6px;
+}
+
+.transferred-student-context__title {
+    min-width: 0;
+    color: #0f172a;
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.transferred-student-context__header-actions {
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.transferred-student-context__sections {
+    display: grid;
+    gap: 7px;
+    padding-top: 2px;
+}
+
+.transferred-student-course-section {
+    align-items: flex-start;
+    min-width: 0;
+    padding-top: 7px;
+    border-top: 1px solid rgba(14, 165, 233, 0.18);
+}
+
+.transferred-student-course-section__title {
+    flex: 0 0 164px;
+    justify-content: flex-start;
+    color: rgba(var(--v-theme-on-surface), 0.74);
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.transferred-student-course-section__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
+}
+
+.transferred-student-course-chip {
+    max-width: 100%;
+    font-weight: 750;
+}
+
+.transferred-student-course-chip__meta {
+    margin-left: 5px;
+    opacity: 0.78;
+}
+
+.transferred-student-course-section__empty {
+    color: rgba(var(--v-theme-on-surface), 0.54);
+    font-size: 0.72rem;
+    font-weight: 650;
+}
+
 .recurrence-week-selector {
     display: flex;
     flex-wrap: wrap;
@@ -1851,13 +3380,15 @@ export default {
 .timetable-generated-grid {
     display: grid;
     grid-template-columns: 88px repeat(var(--overview-timetable-weekdays, 5), minmax(72px, 1fr));
+    grid-template-rows: 34px;
+    grid-auto-rows: minmax(58px, auto);
     gap: 2px;
     overflow-x: auto;
 }
 
 .timetable-generated-cell {
     position: relative;
-    min-height: 34px;
+    min-height: 0;
     padding: 5px;
     border-radius: 5px;
     background: #eef2f7;
@@ -1865,6 +3396,7 @@ export default {
     font-size: 0.76rem;
     line-height: 1.15;
     text-align: center;
+    overflow: hidden;
 }
 
 .timetable-generated-cell--header,
@@ -1898,9 +3430,11 @@ export default {
 .timetable-generated-cell__content {
     display: grid;
     gap: 2px;
-    min-height: 100%;
+    align-content: center;
+    min-height: 48px;
     cursor: pointer;
     outline: none;
+    overflow: hidden;
 }
 
 .timetable-generated-cell__content + .timetable-generated-cell__content {
@@ -1930,7 +3464,9 @@ export default {
     line-height: 1.12;
     opacity: 0.78;
     overflow-wrap: anywhere;
-    white-space: pre-line;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .timetable-generated-cell__details--warning {
@@ -1956,5 +3492,35 @@ export default {
 
 .course-date-chip__time {
     font-weight: 700;
+}
+
+@media (max-width: 900px) {
+    .overview-selection {
+        align-items: stretch;
+    }
+
+    .overview-selected-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .overview-selection {
+        flex-direction: column;
+    }
+
+    .overview-selected-cards,
+    .overview-selection-dialog-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .transferred-student-course-section {
+        display: grid;
+        gap: 6px;
+    }
+
+    .transferred-student-course-section__title {
+        flex: initial;
+    }
 }
 </style>

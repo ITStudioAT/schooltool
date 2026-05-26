@@ -529,11 +529,11 @@ export default {
             this.selected_course_student = null
             this.action_2 = ''
             this.selected_courseDate = null
-            this.show_students = true
+            this.show_students = false
             this.show_infos = false
             this.show_works = false
             this.show_print = false
-            this.show_dates = false
+            this.show_dates = true
             this.show_curriculum = false
             this.show_attendance = false
             this.show_performances = false
@@ -542,7 +542,7 @@ export default {
             const query = {
                 ...this.$route.query,
                 course: String(course.id),
-                panel: 'students',
+                panel: 'dates',
             }
             delete query.date
             delete query.work
