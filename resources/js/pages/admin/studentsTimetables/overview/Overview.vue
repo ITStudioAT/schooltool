@@ -293,6 +293,7 @@
                                             'timetable-generated-cell--filled': displayCourseGroupsForCell(semester.value, weekday.value, hour.hour, timetableWeek).length,
                                             'timetable-generated-cell--conflict': cellHasOverlap(semester.value, weekday.value, hour.hour, timetableWeek),
                                             'timetable-generated-cell--related-overlap': cellHasRelatedOverlap(semester.value, weekday.value, hour.hour, timetableWeek),
+                                            'timetable-generated-cell--has-single-date-markers': courseGroupSingleDateOverlapMarkersForCell(semester.value, weekday.value, hour.hour, timetableWeek).length,
                                         }">
                                         <div
                                             v-for="courseGroup in displayCourseGroupsForCell(semester.value, weekday.value, hour.hour, timetableWeek)"
@@ -313,6 +314,18 @@
                                                 <span v-if="courseGroup.recurrence_label && courseGroup.is_block"> · </span>
                                                 <span v-if="courseGroup.is_block">{{ courseGroupBlockLabel(courseGroup) }}</span>
                                             </div>
+                                        </div>
+                                        <div
+                                            v-if="courseGroupSingleDateOverlapMarkersForCell(semester.value, weekday.value, hour.hour, timetableWeek).length"
+                                            class="timetable-generated-cell__single-date-markers">
+                                            <button
+                                                v-for="marker in courseGroupSingleDateOverlapMarkersForCell(semester.value, weekday.value, hour.hour, timetableWeek)"
+                                                :key="marker.key"
+                                                type="button"
+                                                class="timetable-generated-cell__single-date-marker"
+                                                @click="openCourseGroupDialog(marker.courseGroup)">
+                                                {{ marker.label }}
+                                            </button>
                                         </div>
                                     </div>
                                 </template>
@@ -1415,6 +1428,7 @@ export default {
             const plannedCourses = semester
                 ? this.studentPlannedCoursesForSemester(semester, completedCourseCodes)
                 : []
+            const plannedCourseCodes = this.studentPlannedCourseCodes(plannedCourses)
             const unavailableAdditionalCourseCodes = this.studentUnavailableAdditionalCourseCodes(completedCourseCodes, [
                 ...missingCourses,
                 ...plannedCourses,
@@ -1422,7 +1436,7 @@ export default {
             const additionalCourses = semester
                 ? this.coursesAfterSemester(semester)
                     .filter(course => !this.courseCompletedForStudentPlanning(course, unavailableAdditionalCourseCodes))
-                    .filter(course => this.coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes))
+                    .filter(course => this.coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes, plannedCourseCodes))
                 : []
 
             return {
@@ -1526,6 +1540,12 @@ export default {
 
             return unavailableCourseCodes
         },
+        studentPlannedCourseCodes(plannedCourses) {
+            return new Set((Array.isArray(plannedCourses) ? plannedCourses : [])
+                .flatMap(course => this.courseCodeAliases(course))
+                .map(courseCode => this.normalizedCourseCode(courseCode))
+                .filter(Boolean))
+        },
         completedCourseCountsAsDone(grade) {
             const normalizedGrade = String(grade || '').trim().toLocaleUpperCase('de-AT')
 
@@ -1537,9 +1557,11 @@ export default {
             return this.courseCodeAliases(course)
                 .some(courseCode => completedCourseCodes.has(courseCode))
         },
-        coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes) {
+        coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes, plannedCourseCodes = new Set()) {
             return this.courseModulePartsForStudentPlanning(course)
-                .some(parts => this.courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes))
+                .some(parts => this.courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes, {
+                    plannedCourseCodes,
+                }))
         },
         coursePossibleAsStudentMissing(course, completedCourseCodes, visitedCourseCodes) {
             return this.courseModulePartsForStudentPlanning(course)
@@ -1586,10 +1608,18 @@ export default {
                     return !this.courseBaseHasVisitedLaterModule(baseAliases, visitedCourseCodes, moduleNumber)
                 }
 
-                return baseAliases.some(baseAlias => ['ME', 'MU', 'BE'].includes(baseAlias))
+                return true
             }
 
-            if (moduleNumber === 2) return true
+            if (moduleNumber === 2) {
+                const plannedCourseCodes = options?.plannedCourseCodes instanceof Set
+                    ? options.plannedCourseCodes
+                    : new Set()
+
+                return baseAliases.some(baseAlias =>
+                    completedCourseCodes.has(`${baseAlias}1`) || plannedCourseCodes.has(`${baseAlias}1`),
+                )
+            }
 
             const prerequisiteModuleNumber = moduleNumber - 2
             const hasPositivePrerequisite = baseAliases
@@ -1878,6 +1908,9 @@ export default {
             const directCourseGroups = this.courseGroupsForCell(semester, weekday, hour, recurrenceWeek)
             if (!directCourseGroups.length) return []
 
+            const displayDirectCourseGroups = directCourseGroups.some(courseGroup => !this.courseGroupIsSingleDate(courseGroup))
+                ? directCourseGroups.filter(courseGroup => !this.courseGroupIsSingleDate(courseGroup))
+                : directCourseGroups
             const directCourseGroupKeys = directCourseGroups
                 .map(courseGroup => courseGroup?.key)
                 .filter(Boolean)
@@ -1889,17 +1922,67 @@ export default {
                 .filter(courseGroup => !directCourseGroupKeys.includes(courseGroup?.key))
                 .filter(courseGroup => this.courseGroupMatchesSelectedRecurrenceWeek(courseGroup, semester, recurrenceWeek))
                 .filter(courseGroup => directCourseGroups.some(directCourseGroup =>
-                    this.courseGroupsOverlap(directCourseGroup, courseGroup),
+                    this.courseGroupsOverlap(directCourseGroup, courseGroup)
+                        && !this.courseGroupOverlapIsSingleDateOnly(directCourseGroup, courseGroup),
                 ))
 
             return this.uniqueCourseGroupsByKey([
-                ...directCourseGroups,
+                ...displayDirectCourseGroups,
                 ...overlappingCourseGroups,
             ]).sort((left, right) => this.courseGroupSortLabel(left).localeCompare(
                 this.courseGroupSortLabel(right),
                 'de',
                 { sensitivity: 'base' },
             ))
+        },
+        courseGroupSingleDateOverlapMarkersForCell(semester, weekday, hour, recurrenceWeek = null) {
+            const directCourseGroups = this.courseGroupsForCell(semester, weekday, hour, recurrenceWeek)
+            const regularCourseGroups = directCourseGroups.filter(courseGroup => !this.courseGroupIsSingleDate(courseGroup))
+            if (!regularCourseGroups.length) return []
+
+            const directCourseGroupKeys = directCourseGroups
+                .map(courseGroup => courseGroup?.key)
+                .filter(Boolean)
+            const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
+                ? this.activeCourseGroupFilterKeySet
+                : new Set(this.activeCourseGroupFilterKeys || [])
+            const directSingleDateCourseGroups = directCourseGroups
+                .filter(courseGroup => this.courseGroupIsSingleDate(courseGroup))
+                .filter(courseGroup => regularCourseGroups.some(regularCourseGroup =>
+                    this.courseGroupsOverlap(regularCourseGroup, courseGroup),
+                ))
+            const overlappingSingleDateCourseGroups = this.configuredCourseGroups
+                .filter(courseGroup => activeCourseGroupFilterKeySet.has(courseGroup?.key))
+                .filter(courseGroup => !directCourseGroupKeys.includes(courseGroup?.key))
+                .filter(courseGroup => this.courseGroupIsSingleDate(courseGroup))
+                .filter(courseGroup => this.courseGroupMatchesSelectedRecurrenceWeek(courseGroup, semester, recurrenceWeek))
+                .filter(courseGroup => regularCourseGroups.some(regularCourseGroup =>
+                    this.courseGroupsOverlap(regularCourseGroup, courseGroup),
+                ))
+
+            return this.uniqueCourseGroupsByKey([
+                ...directSingleDateCourseGroups,
+                ...overlappingSingleDateCourseGroups,
+            ])
+                .sort((left, right) => this.courseGroupSortLabel(left).localeCompare(
+                    this.courseGroupSortLabel(right),
+                    'de',
+                    { sensitivity: 'base' },
+                ))
+                .map(courseGroup => ({
+                    key: courseGroup?.key,
+                    label: this.courseGroupSingleDateMarkerLabel(courseGroup),
+                    courseGroup,
+                }))
+        },
+        courseGroupSingleDateMarkerLabel(courseGroup) {
+            return [
+                courseGroup?.display_label,
+                courseGroup?.title,
+                courseGroup?.course,
+            ]
+                .map(value => String(value || '').trim())
+                .find(Boolean) || 'Einzeltermin'
         },
         uniqueCourseGroupsByKey(courseGroups) {
             return Object.values((Array.isArray(courseGroups) ? courseGroups : []).reduce((groups, courseGroup) => {
@@ -2622,6 +2705,9 @@ export default {
                 ))
         },
         courseGroupHasOverlap(courseGroup) {
+            return this.courseGroupHasBlockingOverlap(courseGroup)
+        },
+        courseGroupHasBlockingOverlap(courseGroup) {
             const semester = Number(courseGroup?.semester)
             if (!Number.isFinite(semester)) {
                 return false
@@ -2639,8 +2725,38 @@ export default {
                 .some((selectedEntry) => (
                     (selectedEntry?.courseGroups || []).some((selectedCourseGroup) => (
                         this.courseGroupsOverlap(courseGroup, selectedCourseGroup)
+                            && !this.courseGroupOverlapIsSingleDateOnly(courseGroup, selectedCourseGroup)
                     ))
                 ))
+        },
+        courseGroupHasSingleDateOverlap(courseGroup) {
+            const semester = Number(courseGroup?.semester)
+            if (!Number.isFinite(semester)) {
+                return false
+            }
+
+            const containingEntry = this.selectedCourseMenuEntries(semester)
+                .find((entry) => this.courseMenuEntryKeys(entry).includes(courseGroup?.key))
+
+            if (!containingEntry) {
+                return false
+            }
+
+            return this.selectedCourseMenuEntries(semester)
+                .filter((selectedEntry) => selectedEntry.key !== containingEntry.key)
+                .some((selectedEntry) => (
+                    (selectedEntry?.courseGroups || []).some((selectedCourseGroup) => (
+                        this.courseGroupsOverlap(courseGroup, selectedCourseGroup)
+                            && this.courseGroupOverlapIsSingleDateOnly(courseGroup, selectedCourseGroup)
+                    ))
+                ))
+        },
+        courseGroupOverlapIsSingleDateOnly(leftCourseGroup, rightCourseGroup) {
+            return this.courseGroupIsSingleDate(leftCourseGroup)
+                || this.courseGroupIsSingleDate(rightCourseGroup)
+        },
+        courseGroupIsSingleDate(courseGroup) {
+            return ![1, 2, 3, 4].includes(Number(courseGroup?.recurrence_interval))
         },
         courseGroupHasRelatedOverlap(courseGroup) {
             if (this.courseGroupHasOverlap(courseGroup)) {
@@ -2668,10 +2784,14 @@ export default {
         courseGroupRelatedOverlapMarker(courseGroup) {
             return this.courseGroupHasRelatedOverlap(courseGroup) ? '⚠ Mitbetroffen' : ''
         },
+        courseGroupSingleDateOverlapMarker(courseGroup) {
+            return this.courseGroupHasSingleDateOverlap(courseGroup) ? 'Auch Einzeltermine' : ''
+        },
         courseMenuEntriesOverlap(leftEntry, rightEntry) {
             return (leftEntry?.courseGroups || []).some((leftCourseGroup) => (
                 (rightEntry?.courseGroups || []).some((rightCourseGroup) => (
                     this.courseGroupsOverlap(leftCourseGroup, rightCourseGroup)
+                        && !this.courseGroupOverlapIsSingleDateOnly(leftCourseGroup, rightCourseGroup)
                 ))
             ))
         },
@@ -3411,6 +3531,10 @@ export default {
     color: #052e16;
 }
 
+.timetable-generated-cell--has-single-date-markers {
+    padding-top: 24px;
+}
+
 .timetable-generated-cell--conflict {
     background: #fecaca;
     color: #7f1d1d;
@@ -3473,6 +3597,43 @@ export default {
     color: #7c2d12;
     font-weight: 750;
     opacity: 1;
+}
+
+.timetable-generated-cell__single-date-markers {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 2px;
+    max-width: calc(100% - 6px);
+}
+
+.timetable-generated-cell__single-date-marker {
+    display: inline-flex;
+    align-items: flex-start;
+    max-width: 100%;
+    min-height: 14px;
+    padding: 0 4px;
+    border: 1px solid rgba(30, 64, 175, 0.2);
+    border-radius: 4px;
+    background: #bfdbfe;
+    color: #1e3a8a;
+    font-size: 0.58rem;
+    font-weight: 850;
+    line-height: 1.15;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.timetable-generated-cell__single-date-marker:hover,
+.timetable-generated-cell__single-date-marker:focus-visible {
+    border-color: rgba(30, 64, 175, 0.42);
+    text-decoration: underline;
+    outline: none;
 }
 
 .course-date-list {

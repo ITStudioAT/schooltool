@@ -269,6 +269,8 @@ describe('Students timetable overview', () => {
             buildSelectedCourseMenuEntries: methods.buildSelectedCourseMenuEntries,
             courseMenuEntriesOverlap: methods.courseMenuEntriesOverlap,
             courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
         }
 
         const filterChips = methods.selectedCourseFilterChips.call(ctx, 1)
@@ -293,6 +295,7 @@ describe('Students timetable overview', () => {
             display_label: 'MATH - 4A - KOW',
             subject: '20:25',
             teacher: '21:10',
+            recurrence_interval: 1,
         }
         const mathRelatedCourseGroup = {
             key: 'math-related',
@@ -304,6 +307,7 @@ describe('Students timetable overview', () => {
             display_label: 'MATH - 4A - KOW',
             subject: '10:40',
             teacher: '11:25',
+            recurrence_interval: 1,
         }
         const bioCourseGroup = {
             key: 'bio',
@@ -315,6 +319,7 @@ describe('Students timetable overview', () => {
             display_label: 'BIO - 4A - KOW',
             subject: '20:50',
             teacher: '21:30',
+            recurrence_interval: 1,
         }
         const ctx = {
             activeCourseGroupFilterKeys: ['math', 'math-related', 'bio'],
@@ -352,6 +357,7 @@ describe('Students timetable overview', () => {
             courseMenuEntryKeys: methods.courseMenuEntryKeys,
             courseMenuEntryHasOverlap: methods.courseMenuEntryHasOverlap,
             courseGroupHasOverlap: methods.courseGroupHasOverlap,
+            courseGroupHasBlockingOverlap: methods.courseGroupHasBlockingOverlap,
             courseGroupHasRelatedOverlap: methods.courseGroupHasRelatedOverlap,
             courseGroupRelatedOverlapMarker: methods.courseGroupRelatedOverlapMarker,
             displayCourseGroupsForCell: methods.displayCourseGroupsForCell,
@@ -368,6 +374,8 @@ describe('Students timetable overview', () => {
             uniqueCourseGroupsByKey: methods.uniqueCourseGroupsByKey,
             courseMenuEntriesOverlap: methods.courseMenuEntriesOverlap,
             courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
             courseGroupSortLabel: methods.courseGroupSortLabel,
         }
 
@@ -386,6 +394,98 @@ describe('Students timetable overview', () => {
         expect(methods.courseGroupHasOverlap.call(ctx, bioCourseGroup)).toBe(true)
         expect(methods.courseGroupHasRelatedOverlap.call(ctx, bioCourseGroup)).toBe(false)
         expect(methods.courseGroupRelatedOverlapMarker.call(ctx, bioCourseGroup)).toBe('')
+    })
+
+    it('shows overlapping single appointments as cell markers without marking the timetable cell red', () => {
+        const methods = (Overview as any).methods
+        const regularCourseGroup = {
+            key: 'd1-regular',
+            semester: 1,
+            weekday: 1,
+            hour: 11,
+            course: 'D1',
+            title: 'D1',
+            display_label: 'D1 - 1C - GOS',
+            subject: '17:50',
+            teacher: '18:35',
+            recurrence_interval: 1,
+        }
+        const singleAppointmentGroup = {
+            key: 'lpt-single',
+            semester: 1,
+            weekday: 1,
+            hour: 11,
+            course: 'LPT',
+            title: 'LPT',
+            display_label: 'LPT - Einzeltermin',
+            subject: '17:55',
+            teacher: '18:20',
+            recurrence_interval: null,
+            dates_count: 1,
+        }
+        const ctx = {
+            activeCourseGroupFilterKeys: ['d1-regular', 'lpt-single'],
+            configuredCourseGroups: [regularCourseGroup, singleAppointmentGroup],
+            configuredSchoolHours: [],
+            semesterCourseMenus: methods.semesterCourseMenus,
+            buildSemesterCourseMenus: methods.buildSemesterCourseMenus,
+            selectedCourseMenuEntries: methods.selectedCourseMenuEntries,
+            buildSelectedCourseMenuEntries: methods.buildSelectedCourseMenuEntries,
+            courseGroupMenuLabel: methods.courseGroupMenuLabel,
+            courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
+            courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
+            courseMenuEntryFrequencyLabel: methods.courseMenuEntryFrequencyLabel,
+            courseMenuEntrySingleDateCount: methods.courseMenuEntrySingleDateCount,
+            courseGroupScheduleLabel: methods.courseGroupScheduleLabel,
+            weekdayForCourseGroup: methods.weekdayForCourseGroup,
+            weekdays: [{ label: 'Mo', value: 1 }],
+            courseGroupTimeRangeLabel: methods.courseGroupTimeRangeLabel,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            formatTimeValue: methods.formatTimeValue,
+            courseGroupCourseSource: methods.courseGroupCourseSource,
+            mainCourseLabel: methods.mainCourseLabel,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+            isCourseMenuEntryFilterActive: methods.isCourseMenuEntryFilterActive,
+            courseMenuEntryKeys: methods.courseMenuEntryKeys,
+            courseMenuEntryHasOverlap: methods.courseMenuEntryHasOverlap,
+            courseMenuEntriesOverlap: methods.courseMenuEntriesOverlap,
+            courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
+            courseGroupHasOverlap: methods.courseGroupHasOverlap,
+            courseGroupHasBlockingOverlap: methods.courseGroupHasBlockingOverlap,
+            courseGroupHasRelatedOverlap: methods.courseGroupHasRelatedOverlap,
+            courseGroupHasSingleDateOverlap: methods.courseGroupHasSingleDateOverlap,
+            courseGroupSingleDateOverlapMarker: methods.courseGroupSingleDateOverlapMarker,
+            courseGroupSingleDateOverlapMarkersForCell: methods.courseGroupSingleDateOverlapMarkersForCell,
+            courseGroupSingleDateMarkerLabel: methods.courseGroupSingleDateMarkerLabel,
+            displayCourseGroupsForCell: methods.displayCourseGroupsForCell,
+            courseGroupsForCell: methods.courseGroupsForCell,
+            cellHasOverlap: methods.cellHasOverlap,
+            courseCellKey: methods.courseCellKey,
+            courseGroupMatchesSelectedRecurrenceWeek() {
+                return true
+            },
+            courseGroupsByCell: {
+                '1-1-11': [regularCourseGroup],
+            },
+            uniqueCourseGroupsByKey: methods.uniqueCourseGroupsByKey,
+            courseGroupSortLabel: methods.courseGroupSortLabel,
+        }
+
+        expect(methods.displayCourseGroupsForCell.call(ctx, 1, 1, 11).map((courseGroup: Record<string, string>) => courseGroup.key))
+            .toEqual(['d1-regular'])
+        expect(methods.courseGroupSingleDateOverlapMarkersForCell.call(ctx, 1, 1, 11))
+            .toEqual([{
+                key: 'lpt-single',
+                label: 'LPT - Einzeltermin',
+                courseGroup: singleAppointmentGroup,
+            }])
+        expect(methods.cellHasOverlap.call(ctx, 1, 1, 11)).toBe(false)
+        expect(methods.courseGroupHasOverlap.call(ctx, regularCourseGroup)).toBe(false)
+        expect(methods.courseGroupSingleDateOverlapMarker.call(ctx, regularCourseGroup)).toBe('Auch Einzeltermine')
     })
 
     it('connects menu schedule times per weekday into one time area', () => {
@@ -1213,6 +1313,9 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain("'timetable-generated-cell--filled'")
         expect(componentSource).toContain("'timetable-generated-cell--conflict'")
         expect(componentSource).toContain("'timetable-generated-cell--related-overlap'")
+        expect(componentSource).toContain("'timetable-generated-cell--has-single-date-markers'")
+        expect(componentSource).toContain('courseGroupSingleDateOverlapMarkersForCell(semester.value, weekday.value, hour.hour, timetableWeek)')
+        expect(componentSource).toContain('timetable-generated-cell__single-date-marker')
         expect(componentSource).toContain('grid-template-columns: 88px repeat(var(--overview-timetable-weekdays, 5), minmax(72px, 1fr));')
         expect(componentSource).toContain('grid-template-rows: 34px;')
         expect(componentSource).toContain('grid-auto-rows: minmax(58px, auto);')
@@ -1322,6 +1425,7 @@ describe('Students timetable overview', () => {
     it('allows second modules as transferred student additional courses without completed first modules', () => {
         const methods = (Overview as any).methods
         const completedCourseCodes = new Set()
+        const plannedCourseCodes = new Set(['M1'])
         const visitedCourseCodes = new Set()
         const ctx = {
             studentCourseBaseAliases: methods.studentCourseBaseAliases,
@@ -1334,6 +1438,7 @@ describe('Students timetable overview', () => {
             { base: 'M', module: '2' },
             completedCourseCodes,
             visitedCourseCodes,
+            { plannedCourseCodes },
         )).toBe(true)
     })
 
