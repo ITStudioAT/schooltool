@@ -70,12 +70,17 @@
                             <v-chip size="x-small" color="primary" variant="tonal">
                                 {{ selectedCourseCount }} ausgewählt
                             </v-chip>
+                            <v-btn
+                                v-if="selectedCourseCount > 0"
+                                size="x-small"
+                                variant="tonal"
+                                color="error"
+                                prepend-icon="mdi-close-circle-outline"
+                                @click="deselectAllCourses">
+                                Alle abwählen
+                            </v-btn>
                         </div>
                     </div>
-
-                    <v-alert v-if="!selectedCourseFilterChipsAll.length" type="info" variant="tonal" density="compact" class="mb-0">
-                        Kurs über Plus auswählen.
-                    </v-alert>
 
                     <div v-if="selectedCourseFilterChipsAll.length" class="selected-course-filter-chips">
                         <v-chip
@@ -650,6 +655,12 @@ export default {
         handleShowExtraDatesUpdate(semester, value) {
             this.runTimetableUpdate(() => {
                 this.setShowExtraDatesInSelectedWeek(semester, value)
+            })
+        },
+        deselectAllCourses() {
+            this.runTimetableUpdate(() => {
+                this.activeCourseGroupFilterKeys = []
+                this.persistTimetableState()
             })
         },
         resetSavedTimetable() {

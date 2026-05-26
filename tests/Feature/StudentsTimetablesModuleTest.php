@@ -1501,6 +1501,84 @@ it('returns graded recognition courses for the selected robot student', function
         ->assertJsonPath('total', 5);
 });
 
+it('normalizes recognized completed course school semesters to subject plan modules', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $subjectRows = [
+        ['semester' => 6, 'branch' => null, 'json_code' => 'PP1', 'json_subject' => 'PP', 'name' => 'Philosophie/Psychologie 1'],
+        ['semester' => 7, 'branch' => null, 'json_code' => 'PP2', 'json_subject' => 'PP', 'name' => 'Philosophie/Psychologie 2'],
+        ['semester' => 7, 'branch' => 'wirtschaftskundlich', 'json_code' => 'INF2', 'json_subject' => 'INF', 'name' => 'Informatik 2'],
+        ['semester' => 3, 'branch' => null, 'json_code' => 'S2', 'json_subject' => 'S', 'name' => 'Spanisch 2'],
+        ['semester' => 7, 'branch' => 'wirtschaftskundlich', 'json_code' => 'ÖKO1', 'json_subject' => 'ÖKO', 'name' => 'Ökonomie und Ökologie 1'],
+        ['semester' => 8, 'branch' => 'wirtschaftskundlich', 'json_code' => 'ÖKO2', 'json_subject' => 'ÖKO', 'name' => 'Ökonomie und Ökologie 2'],
+        ['semester' => 8, 'branch' => 'wirtschaftskundlich', 'json_code' => 'ÖKO3', 'json_subject' => 'ÖKO', 'name' => 'Ökonomie und Ökologie 3'],
+    ];
+
+    collect($subjectRows)->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => $subjectRow['semester'],
+        'branch' => $subjectRow['branch'],
+        'json_code' => $subjectRow['json_code'],
+        'json_subject' => $subjectRow['json_subject'],
+        'name' => $subjectRow['name'],
+        'hours_per_week' => 2,
+        'is_active' => true,
+        'sort_order' => $index,
+        'source' => 'test',
+    ]));
+
+    $import = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'noten.csv',
+        'stored_filename' => 'noten.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten.csv",
+        'total_rows' => 7,
+        'imported_rows' => 7,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+
+    collect([
+        ['subject' => 'PP', 'note' => '3', 'raw_data' => ['semester' => '6']],
+        ['subject' => 'PP7', 'note' => '4', 'raw_data' => ['semester' => '7']],
+        ['subject' => 'INF7', 'note' => '2', 'raw_data' => ['semester' => '7']],
+        ['subject' => 'SPA2', 'note' => '1', 'raw_data' => ['semester' => '2']],
+        ['subject' => 'ÖKO', 'note' => '1', 'raw_data' => ['semester' => '6']],
+        ['subject' => 'ÖKO', 'note' => '2', 'raw_data' => ['semester' => '7']],
+        ['subject' => 'ÖKO', 'note' => '3', 'raw_data' => ['semester' => '8']],
+    ])->each(fn (array $row, int $index): StudentTimetableRecognitionRow => StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $import->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => $index + 2,
+        'student_code' => '100',
+        'subject' => $row['subject'],
+        'grade' => $row['note'],
+        'note' => $row['note'],
+        'raw_data' => $row['raw_data'],
+    ]));
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/student-completed-courses?student_code=100')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.subject', 'INF2')
+        ->assertJsonPath('data.1.subject', 'PP1')
+        ->assertJsonPath('data.2.subject', 'PP2')
+        ->assertJsonPath('data.3.subject', 'S2')
+        ->assertJsonPath('data.4.subject', 'ÖKO1')
+        ->assertJsonPath('data.5.subject', 'ÖKO2')
+        ->assertJsonPath('data.6.subject', 'ÖKO3')
+        ->assertJsonPath('total', 7);
+});
+
 it('returns the requested timetable import history for the selected schoolyear', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([

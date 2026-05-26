@@ -24,6 +24,88 @@ it('counts full green timetable combinations without overlapping slots', functio
         ->selected_course_count->toBe(2);
 });
 
+it('counts explicitly selected courses outside the active semester', function () {
+    $chemistry = [
+        ...robotSubjectRow('CH2', 3),
+        'semester' => 5,
+        'json_subject' => 'CH',
+        'name' => 'Chemie 2',
+    ];
+    $chemistryKey = implode('|', [
+        'CH2',
+        5,
+        'common',
+        'CH2',
+        'CH',
+        'Chemie 2',
+        'CH2',
+    ]);
+
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('D6', 1),
+            $chemistry,
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('CH2-5C-KOW', 'CH', 2, 14),
+            robotCourseGroup('CH2-5C-KOW', 'CH', 2, 15),
+            robotCourseGroup('CH2-5C-KOW', 'CH', 3, 13),
+            robotCourseGroup('D6-a', 'D6', 1, 1),
+        ],
+        settings: robotSettings([
+            'selection' => [
+                'semester' => 6,
+            ],
+            'constraints' => [
+                'availableTimes' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            ],
+            'selected_course_keys' => [$chemistryKey],
+        ]),
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(1)
+        ->selected_course_count->toBe(1)
+        ->and($result['selected_timetable']['slots'])
+        ->toHaveKey('2-14')
+        ->toHaveKey('2-15')
+        ->toHaveKey('3-13')
+        ->not->toHaveKey('1-1');
+});
+
+it('uses Fach-Zuordnung for selected language timetable codes', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            [
+                ...robotSubjectRow('L/F/S3', 1),
+                'json_subject' => 'L/F/S',
+                'name' => 'Sprache 3',
+            ],
+        ],
+        subjectMappings: [
+            ['json_subject' => 'S', 'tt_subject' => 'SPA', 'is_active' => true],
+        ],
+        courseGroups: [
+            robotCourseGroup('SPA3-7A-MAY', 'SPA', 1, 1),
+        ],
+        settings: robotSettings([
+            'selection' => [
+                'language' => 'S',
+            ],
+        ]),
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(1)
+        ->selected_course_count->toBe(1)
+        ->and($result['selected_timetable']['slots']['1-1']['code'])->toBe('S3');
+});
+
 it('counts and displays checked additional courses only when they do not overlap a timetable', function () {
     $additionalCourse = [
         ...robotSubjectRow('INF2', 1),
@@ -68,6 +150,76 @@ it('counts and displays checked additional courses only when they do not overlap
         ->toHaveKey('1-1')
         ->and($result['selected_timetable']['slots']['1-1']['code'])->toBe('INF2')
         ->and($result['selected_timetable']['slots']['1-1']['isAdditionalCourse'])->toBeTrue();
+});
+
+it('returns a fallback timetable with the additional courses that fit when selected additional courses cannot all fit', function () {
+    $informatik = [
+        ...robotSubjectRow('INF2', 1),
+        'semester' => 2,
+        'name' => 'Informatik 2',
+    ];
+    $psychologie = [
+        ...robotSubjectRow('PP2', 1),
+        'semester' => 2,
+        'name' => 'Philosophie/Psychologie 2',
+    ];
+    $informatikKey = implode('|', [
+        'INF2',
+        2,
+        'common',
+        'INF2',
+        'INF2',
+        'Informatik 2',
+        'INF2',
+    ]);
+    $psychologieKey = implode('|', [
+        'PP2',
+        2,
+        'common',
+        'PP2',
+        'PP2',
+        'Philosophie/Psychologie 2',
+        'PP2',
+    ]);
+
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            $informatik,
+            $psychologie,
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-a', 'M1', 1, 1),
+            robotCourseGroup('INF2-a', 'INF2', 2, 1),
+            robotCourseGroup('PP2-a', 'PP2', 1, 1),
+        ],
+        settings: robotSettings([
+            'selected_additional_course_keys' => [$informatikKey, $psychologieKey],
+        ]),
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+        selectedAdditionalCoursesRequired: true,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(1)
+        ->additional_course_timetable_count->toBe(0)
+        ->selected_additional_course_count->toBe(2)
+        ->and($result['selected_timetable'])
+        ->not->toBeNull()
+        ->and($result['selected_timetable']['additionalCoursesAccepted'])
+        ->toBeFalse()
+        ->and($result['selected_timetable']['acceptedAdditionalCourseCount'])
+        ->toBe(1)
+        ->and($result['selected_timetable']['missingAdditionalCourses'])
+        ->toHaveCount(1)
+        ->and($result['selected_timetable']['missingAdditionalCourses'][0]['code'])
+        ->toBe('PP2')
+        ->and($result['selected_timetable']['slots']['2-1']['code'])
+        ->toBe('INF2')
+        ->and($result['selected_timetable']['slots']['2-1']['isAdditionalCourse'])
+        ->toBeTrue();
 });
 
 it('uses selected imported course groups for checked additional courses', function () {
@@ -322,6 +474,48 @@ it('returns complete timetables with regular conflicts when no green timetable i
         ->toHaveCount(1)
         ->and($result['selected_timetable']['problems'][0])
         ->toContain('überschneidet sich mit');
+});
+
+it('treats regular courses in the same weekly slots as conflicts even when imported dates differ', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('S4', 4),
+            robotSubjectRow('S5', 4),
+        ],
+        subjectMappings: [
+            ['json_subject' => 'S', 'tt_subject' => 'SPA', 'is_active' => true],
+        ],
+        courseGroups: [
+            robotCourseGroup('SPA4-KOR', 'SPA', 5, 7, ['2026-02-20']),
+            robotCourseGroup('SPA4-KOR', 'SPA', 5, 8, ['2026-02-20']),
+            robotCourseGroup('SPA4-KOR', 'SPA', 5, 12, ['2026-02-20']),
+            robotCourseGroup('SPA4-KOR', 'SPA', 5, 13, ['2026-02-20']),
+            robotCourseGroup('SPA5-PIB', 'SPA', 5, 7, ['2026-05-08']),
+            robotCourseGroup('SPA5-PIB', 'SPA', 5, 8, ['2026-05-08']),
+            robotCourseGroup('SPA5-PIB', 'SPA', 5, 12, ['2026-05-08']),
+            robotCourseGroup('SPA5-PIB', 'SPA', 5, 13, ['2026-05-08']),
+        ],
+        settings: robotSettings([
+            'selection' => [
+                'language' => 'S',
+            ],
+            'constraints' => [
+                'availableTimes' => [7, 8, 12, 13],
+            ],
+        ]),
+        selectedTimetableType: 'conflict',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(0)
+        ->green_timetable_count->toBe(0)
+        ->conflict_timetable_count->toBe(1)
+        ->and($result['selected_timetable']['type'])->toBe('conflict')
+        ->and($result['selected_timetable']['slots']['5-7']['conflicts'])
+        ->toHaveCount(1)
+        ->and($result['selected_timetable']['problems'])
+        ->not->toBeEmpty();
 });
 
 it('selects conflict timetables with fewer regular conflicts first', function () {

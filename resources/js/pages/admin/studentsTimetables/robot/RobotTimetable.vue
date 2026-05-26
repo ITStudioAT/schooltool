@@ -97,6 +97,38 @@
                                 </div>
                                 <div
                                     v-if="!studentCompletedCoursesLoading && !studentCompletedCoursesError"
+                                    class="robot-student-course-section robot-student-course-section--missing">
+                                    <div class="robot-student-course-section__title">
+                                        <v-icon icon="mdi-alert-circle-outline" />
+                                        <span>Fehlende Kurse</span>
+                                        <v-chip size="x-small" color="primary" variant="tonal">
+                                            {{ studentMissingCourses.length }}
+                                        </v-chip>
+                                    </div>
+                                    <v-alert
+                                        v-if="!studentMissingCourses.length"
+                                        type="info"
+                                        variant="tonal"
+                                        density="compact"
+                                        class="mt-3 mb-0">
+                                        Keine fehlenden Kurse aus früheren Semestern gefunden.
+                                    </v-alert>
+                                    <div v-else class="robot-student-completed-course-list">
+                                        <div
+                                            v-for="course in studentMissingCourses"
+                                            :key="course.key"
+                                            class="robot-student-completed-course">
+                                            <span class="robot-student-completed-course__subject">
+                                                <span>{{ course.code }}</span>
+                                            </span>
+                                            <v-chip size="x-small" color="primary" variant="tonal">
+                                                {{ formatHours(course.hours) }}
+                                            </v-chip>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    v-if="!studentCompletedCoursesLoading && !studentCompletedCoursesError"
                                     class="robot-student-course-section robot-student-course-section--planned">
                                     <div class="robot-student-course-section__title">
                                         <v-icon icon="mdi-calendar-check-outline" />
@@ -245,6 +277,16 @@
                             <v-chip size="x-small" color="secondary" variant="tonal">
                                 {{ formatHours(selectedCoursesHours) }} Std.
                             </v-chip>
+                            <v-btn
+                                class="robot-course-list__reset"
+                                size="small"
+                                variant="text"
+                                color="primary"
+                                prepend-icon="mdi-restore"
+                                :disabled="!courseSelectionResettable"
+                                @click="resetCourseSelection">
+                                Zurücksetzen
+                            </v-btn>
                         </div>
                     </div>
                     <div class="robot-course-panel__body">
@@ -278,7 +320,10 @@
                                         :key="course.key"
                                         :value="course.key"
                                         class="robot-course-item-panel"
-                                        :class="{ 'robot-course-item-panel--disabled': !courseSelected(course) }">
+                                        :class="{
+                                            'robot-course-item-panel--disabled': !courseSelected(course),
+                                            'robot-course-item-panel--conflict': courseOverlapsInSelectedTimetable(course),
+                                        }">
                                         <v-expansion-panel-title class="robot-course-item-panel__title">
                                             <div class="robot-course-item-row">
                                                 <div class="robot-course-item-row__select">
@@ -353,6 +398,16 @@
                             <v-chip size="x-small" color="primary" variant="tonal">
                                 {{ studentAdditionalCourses.length }}
                             </v-chip>
+                            <v-btn
+                                class="robot-course-list__reset"
+                                size="small"
+                                variant="text"
+                                color="primary"
+                                prepend-icon="mdi-restore"
+                                :disabled="!additionalCourseSelectionResettable"
+                                @click="resetAdditionalCourseSelection">
+                                Zurücksetzen
+                            </v-btn>
                         </div>
                     </div>
                     <div class="robot-course-panel__body">
@@ -377,7 +432,10 @@
                                         :key="course.key"
                                         :value="course.key"
                                         class="robot-course-item-panel"
-                                        :class="{ 'robot-course-item-panel--disabled': !additionalCourseSelectable(course) }">
+                                        :class="{
+                                            'robot-course-item-panel--disabled': !additionalCourseSelectable(course),
+                                            'robot-course-item-panel--missing-additional': additionalCourseMissingInSelectedTimetable(course),
+                                        }">
                                         <v-expansion-panel-title class="robot-course-item-panel__title">
                                             <div class="robot-course-item-row">
                                                 <div class="robot-course-item-row__select">
@@ -716,13 +774,23 @@
                             <span
                                 v-if="selectedAdditionalCourses.length"
                                 class="robot-quality-summary__item">
-                                <span class="robot-quality-summary__label">Zusatzkurse:</span>
+                                <span class="robot-quality-summary__label">Zusatzkurse: {{ additionalCourseAcceptanceLabel() }}</span>
                                 <v-icon
-                                    :icon="additionalCoursesAcceptedBySelectedTimetable() ? 'mdi-check-circle' : 'mdi-close-circle'"
-                                    :color="additionalCoursesAcceptedBySelectedTimetable() ? 'success' : 'error'"
+                                    :icon="additionalCourseAcceptanceIcon()"
+                                    :color="additionalCourseAcceptanceColor()"
                                     size="16" />
                             </span>
                         </div>
+
+                        <v-alert
+                            v-if="selectedTimetableMissingAdditionalCourses().length"
+                            type="error"
+                            variant="tonal"
+                            density="compact"
+                            class="robot-no-result-alert">
+                            Nicht alle gewählten Zusatzkurse konnten berücksichtigt werden:
+                            {{ selectedTimetableMissingAdditionalCourseLabels() }}.
+                        </v-alert>
 
                         <div
                             v-if="displayedTimetableProblems(selectedRobotTimetable).length"
@@ -997,13 +1065,15 @@
                         {{ studentTotalCountLabel }}
                     </div>
                     <v-text-field
+                        ref="studentSearchField"
                         v-model="studentSearch"
                         label="Student suchen"
                         variant="outlined"
                         density="compact"
                         :loading="studentOptionsLoading"
                         clearable
-                        hide-details="auto" />
+                        hide-details="auto"
+                        @keydown.enter.prevent="submitStudentSearch" />
                     <div class="robot-student-search-results">
                         <v-btn
                             size="small"
@@ -1326,14 +1396,26 @@ export default {
 
             return this.studentPlannedCoursesForSemester(semester, completedCourseCodes)
         },
+        studentMissingCourses() {
+            const semester = this.selectedStudent ? this.studentSemester(this.selectedStudent) : null
+            if (!semester) return []
+
+            const completedCourseCodes = this.studentCompletedCourseCodes()
+            const visitedCourseCodes = this.studentVisitedCourseCodes()
+
+            return this.pendingStudentCoursesBeforeSemester(semester, completedCourseCodes, visitedCourseCodes)
+        },
         studentAdditionalCourses() {
             const semester = this.selectedStudent ? this.studentSemester(this.selectedStudent) : null
             if (!semester) return []
 
             const completedCourseCodes = this.studentCompletedCourseCodes()
             const visitedCourseCodes = this.studentVisitedCourseCodes()
-            const plannedCourses = this.studentPlannedCoursesForSemester(semester, completedCourseCodes)
-            const unavailableCourseCodes = this.studentUnavailableAdditionalCourseCodes(completedCourseCodes, plannedCourses)
+            const missingCourses = this.pendingStudentCoursesBeforeSemester(semester, completedCourseCodes, visitedCourseCodes)
+            const unavailableCourseCodes = this.studentUnavailableAdditionalCourseCodes(completedCourseCodes, [
+                ...missingCourses,
+                ...this.studentPlannedCoursesForSemester(semester, completedCourseCodes),
+            ])
 
             return this.coursesAfterSemester(semester)
                 .filter(course => !this.courseCompletedForStudentPlanning(course, unavailableCourseCodes))
@@ -1373,7 +1455,30 @@ export default {
             }]
         },
         availableCourses() {
-            return this.coursesForSemester(this.selection.semester)
+            const semesterCourses = this.coursesForSemester(this.selection.semester)
+            if (!this.selectedStudent) return semesterCourses
+
+            const studentSemester = this.studentSemester(this.selectedStudent)
+            const plannedCourses = studentSemester
+                ? this.studentPlannedCoursesForSemester(studentSemester, this.studentCompletedCourseCodes())
+                : []
+            const missingCourses = studentSemester
+                ? this.pendingStudentCoursesBeforeSemester(
+                    studentSemester,
+                    this.studentCompletedCourseCodes(),
+                    this.studentVisitedCourseCodes(),
+                )
+                : []
+
+            return [
+                ...semesterCourses,
+                ...missingCourses,
+                ...plannedCourses,
+            ]
+                .filter((course, index, courses) =>
+                    courses.findIndex(candidate => candidate.key === course.key) === index,
+                )
+                .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
         },
         availableCourseColumns() {
             const splitIndex = Math.ceil(this.availableCourses.length / 2)
@@ -1399,6 +1504,16 @@ export default {
         },
         selectedCoursesHours() {
             return this.selectedCourses.reduce((total, course) => total + Number(course.hours || 0), 0)
+        },
+        courseSelectionResettable() {
+            return this.courseSelectionStateSnapshot(
+                this.currentCourseSelectionState(this.availableCourses),
+            ) !== this.courseSelectionStateSnapshot(this.defaultCourseSelectionState())
+        },
+        additionalCourseSelectionResettable() {
+            return this.additionalCourseSelectionStateSnapshot(
+                this.currentAdditionalCourseSelectionState(),
+            ) !== this.additionalCourseSelectionStateSnapshot(this.defaultAdditionalCourseSelectionState())
         },
         configuredCourseGroups() {
             return Array.isArray(this.courseGroups) ? this.courseGroups : []
@@ -1835,13 +1950,27 @@ export default {
             this.studentSelectionDraft = { ...this.studentSelection }
             this.studentSearch = ''
             this.studentDialogOpen = true
+            this.$nextTick(() => this.focusStudentSearchField())
         },
         closeStudentDialog() {
             this.studentDialogOpen = false
             this.studentSearch = ''
         },
+        focusStudentSearchField() {
+            const searchField = this.$refs.studentSearchField
+
+            searchField?.focus?.()
+            searchField?.$el?.querySelector?.('input')?.focus?.()
+        },
         selectStudentDraft(studentCode) {
             this.studentSelectionDraft.studentCode = this.normalizedStudentCode(studentCode)
+        },
+        submitStudentSearch() {
+            if (this.studentSearchReady && this.filteredStudentResults.length === 1) {
+                this.selectStudentDraft(this.filteredStudentResults[0].student_code)
+            }
+
+            this.updateStudentSelection()
         },
         updateStudentSelection() {
             this.applyStudentSelection(this.studentSelectionDraft.studentCode)
@@ -1992,6 +2121,7 @@ export default {
                     selection: this.selection,
                     constraints: this.constraints,
                     student: this.studentSelection,
+                    selected_course_keys: this.selectedCourses.map(course => course.key),
                     deselected_course_keys: this.deselectedCourseKeys,
                     deselected_course_group_keys: this.deselectedCourseGroupKeys,
                     selected_additional_course_keys: this.selectedAdditionalCourses.map(course => course.key),
@@ -2245,6 +2375,10 @@ export default {
                     ? timetable.occasionalAppointments
                     : [],
                 problems: Array.isArray(timetable?.problems) ? timetable.problems : [],
+                acceptedAdditionalCourseCount: Number(timetable?.acceptedAdditionalCourseCount || 0),
+                missingAdditionalCourses: Array.isArray(timetable?.missingAdditionalCourses)
+                    ? timetable.missingAdditionalCourses
+                    : [],
             }
 
             return {
@@ -2737,6 +2871,81 @@ export default {
         },
         additionalCoursesAcceptedBySelectedTimetable() {
             return this.selectedRobotTimetable?.additionalCoursesAccepted === true
+        },
+        selectedTimetableMissingAdditionalCourses() {
+            return Array.isArray(this.selectedRobotTimetable?.missingAdditionalCourses)
+                ? this.selectedRobotTimetable.missingAdditionalCourses
+                : []
+        },
+        selectedTimetableMissingAdditionalCourseLabels() {
+            return this.selectedTimetableMissingAdditionalCourses()
+                .map(course => [course.code, course.name].filter(Boolean).join(' '))
+                .filter(Boolean)
+                .join(', ')
+        },
+        courseOverlapsInSelectedTimetable(course) {
+            const courseKeys = this.courseComparisonKeys(course)
+            if (!courseKeys.length) return false
+
+            const conflictKeys = this.selectedTimetableConflictCourses()
+                .flatMap(conflictCourse => this.courseComparisonKeys(conflictCourse))
+
+            return courseKeys.some(courseKey => conflictKeys.includes(courseKey))
+        },
+        selectedTimetableConflictCourses() {
+            return Object.values(this.selectedRobotTimetable?.slots || {})
+                .filter(slot => Array.isArray(slot?.conflicts) && slot.conflicts.length)
+                .flatMap(slot => [
+                    slot,
+                    ...slot.conflicts,
+                ])
+        },
+        additionalCourseMissingInSelectedTimetable(course) {
+            const courseKeys = this.courseComparisonKeys(course)
+            if (!courseKeys.length) return false
+
+            const missingCourseKeys = this.selectedTimetableMissingAdditionalCourses()
+                .flatMap(missingCourse => this.courseComparisonKeys(missingCourse))
+
+            return courseKeys.some(courseKey => missingCourseKeys.includes(courseKey))
+        },
+        courseComparisonKeys(course) {
+            return [
+                course?.key,
+                course?.code,
+                ...(Array.isArray(course?.ttCodes) ? course.ttCodes : []),
+                ...this.courseCodeAliases(course),
+            ]
+                .map(value => String(value || '').trim())
+                .filter(Boolean)
+                .map(value => this.normalizedCourseCode(value) || value)
+                .filter((value, index, values) => values.indexOf(value) === index)
+        },
+        selectedTimetableAcceptedAdditionalCourseCount() {
+            if (!this.selectedAdditionalCourses.length) return 0
+            if (this.additionalCoursesAcceptedBySelectedTimetable()) return this.selectedAdditionalCourses.length
+
+            const acceptedCount = Number(this.selectedRobotTimetable?.acceptedAdditionalCourseCount)
+            if (Number.isFinite(acceptedCount) && acceptedCount > 0) return acceptedCount
+
+            return Math.max(0, this.selectedAdditionalCourses.length - this.selectedTimetableMissingAdditionalCourses().length)
+        },
+        additionalCourseAcceptanceLabel() {
+            if (!this.selectedAdditionalCourses.length) return '-'
+
+            return `${this.selectedTimetableAcceptedAdditionalCourseCount()} / ${this.selectedAdditionalCourses.length}`
+        },
+        additionalCourseAcceptanceIcon() {
+            if (this.additionalCoursesAcceptedBySelectedTimetable()) return 'mdi-check-circle'
+            if (this.selectedTimetableMissingAdditionalCourses().length) return 'mdi-alert-circle'
+
+            return 'mdi-close-circle'
+        },
+        additionalCourseAcceptanceColor() {
+            if (this.additionalCoursesAcceptedBySelectedTimetable()) return 'success'
+            if (this.selectedTimetableMissingAdditionalCourses().length) return 'error'
+
+            return 'error'
         },
         qualityCounterCountLabel(counter) {
             if (counter?.enabled !== true) return '-'
@@ -3460,7 +3669,11 @@ export default {
         applyStudentPlannedCourseSelection() {
             if (!this.selectedStudent) return false
 
-            const plannedCourseCodes = new Set(this.studentPlannedCourses
+            const studentRequiredCourses = [
+                ...(Array.isArray(this.studentMissingCourses) ? this.studentMissingCourses : []),
+                ...(Array.isArray(this.studentPlannedCourses) ? this.studentPlannedCourses : []),
+            ]
+            const plannedCourseCodes = new Set(studentRequiredCourses
                 .flatMap(course => this.courseCodeAliases(course)))
             const courses = Array.isArray(this.availableCourses) ? this.availableCourses : []
             let selectionChanged = false
@@ -3494,6 +3707,71 @@ export default {
             }
 
             return selectionChanged
+        },
+        resetCourseSelection() {
+            if (this.selectedStudent) {
+                this.applyStudentPlannedCourseSelection()
+
+                return
+            }
+
+            this.selectAllAvailableCourses()
+        },
+        currentCourseSelectionState(courses) {
+            const courseItems = Array.isArray(courses) ? courses : []
+            const courseKeys = courseItems
+                .map(course => course?.key)
+                .filter(Boolean)
+            const groupKeys = courseItems
+                .flatMap(course => this.courseGroupSelectionKeys(course))
+
+            return {
+                deselectedCourseKeys: this.uniqueValues(this.deselectedCourseKeys)
+                    .filter(courseKey => courseKeys.includes(courseKey))
+                    .toSorted(),
+                deselectedCourseGroupKeys: this.uniqueValues(this.deselectedCourseGroupKeys)
+                    .filter(groupKey => groupKeys.includes(groupKey))
+                    .toSorted(),
+            }
+        },
+        defaultCourseSelectionState() {
+            const courses = Array.isArray(this.availableCourses) ? this.availableCourses : []
+
+            if (!this.selectedStudent) {
+                return {
+                    deselectedCourseKeys: [],
+                    deselectedCourseGroupKeys: [],
+                }
+            }
+
+            const studentRequiredCourses = [
+                ...(Array.isArray(this.studentMissingCourses) ? this.studentMissingCourses : []),
+                ...(Array.isArray(this.studentPlannedCourses) ? this.studentPlannedCourses : []),
+            ]
+            const plannedCourseCodes = new Set(studentRequiredCourses
+                .flatMap(course => this.courseCodeAliases(course)))
+            const deselectedCourses = courses
+                .filter(course => !this.courseMatchesStudentPlannedCourse(course, plannedCourseCodes))
+
+            return {
+                deselectedCourseKeys: this.uniqueValues(deselectedCourses
+                    .map(course => course?.key)
+                    .filter(Boolean))
+                    .toSorted(),
+                deselectedCourseGroupKeys: this.uniqueValues(deselectedCourses
+                    .flatMap(course => this.courseGroupSelectionKeys(course)))
+                    .toSorted(),
+            }
+        },
+        courseSelectionStateSnapshot(state) {
+            const deselectedCourseKeys = this.uniqueValues(state?.deselectedCourseKeys)
+                .toSorted()
+                .join('|')
+            const deselectedCourseGroupKeys = this.uniqueValues(state?.deselectedCourseGroupKeys)
+                .toSorted()
+                .join('|')
+
+            return `${deselectedCourseKeys}::${deselectedCourseGroupKeys}`
         },
         courseMatchesStudentPlannedCourse(course, plannedCourseCodes) {
             if (!(plannedCourseCodes instanceof Set) || !plannedCourseCodes.size) return false
@@ -3657,6 +3935,66 @@ export default {
                 .join('|')
 
             return `${selectedKeys}::${deselectedGroupKeys}`
+        },
+        resetAdditionalCourseSelection() {
+            const previousSnapshot = this.additionalCourseSelectionStateSnapshot(
+                this.currentAdditionalCourseSelectionState(),
+            )
+            const additionalGroupKeys = this.additionalCourseGroupSelectionKeys()
+
+            this.additionalCourseSelectedKeys = []
+            this.additionalCourseTimetableRequired = false
+            this.deselectedCourseGroupKeys = Array.isArray(this.deselectedCourseGroupKeys)
+                ? this.deselectedCourseGroupKeys.filter(groupKey => !additionalGroupKeys.includes(groupKey))
+                : []
+
+            const nextSnapshot = this.additionalCourseSelectionStateSnapshot(
+                this.currentAdditionalCourseSelectionState(),
+            )
+
+            if (previousSnapshot !== nextSnapshot) {
+                this.clearGeneratedTimetables()
+                this.saveLastRobotState()
+            }
+        },
+        currentAdditionalCourseSelectionState() {
+            const additionalCourses = Array.isArray(this.studentAdditionalCourses) ? this.studentAdditionalCourses : []
+            const additionalCourseKeys = additionalCourses.map(course => course?.key).filter(Boolean)
+            const additionalGroupKeys = this.additionalCourseGroupSelectionKeys()
+
+            return {
+                selectedAdditionalCourseKeys: this.uniqueValues(this.additionalCourseSelectedKeys)
+                    .filter(courseKey => additionalCourseKeys.includes(courseKey))
+                    .toSorted(),
+                deselectedCourseGroupKeys: this.uniqueValues(this.deselectedCourseGroupKeys)
+                    .filter(groupKey => additionalGroupKeys.includes(groupKey))
+                    .toSorted(),
+                additionalCourseTimetableRequired: this.additionalCourseTimetableRequired === true,
+            }
+        },
+        defaultAdditionalCourseSelectionState() {
+            return {
+                selectedAdditionalCourseKeys: [],
+                deselectedCourseGroupKeys: [],
+                additionalCourseTimetableRequired: false,
+            }
+        },
+        additionalCourseSelectionStateSnapshot(state) {
+            const selectedAdditionalCourseKeys = this.uniqueValues(state?.selectedAdditionalCourseKeys)
+                .toSorted()
+                .join('|')
+            const deselectedCourseGroupKeys = this.uniqueValues(state?.deselectedCourseGroupKeys)
+                .toSorted()
+                .join('|')
+            const additionalCourseTimetableRequired = state?.additionalCourseTimetableRequired === true
+                ? '1'
+                : '0'
+
+            return `${selectedAdditionalCourseKeys}::${deselectedCourseGroupKeys}::${additionalCourseTimetableRequired}`
+        },
+        additionalCourseGroupSelectionKeys() {
+            return (Array.isArray(this.studentAdditionalCourses) ? this.studentAdditionalCourses : [])
+                .flatMap(course => this.courseGroupSelectionKeys(course))
         },
         clearCourseGroupDeselections(course) {
             const groupKeys = this.courseGroupSelectionKeys(course)
@@ -4430,6 +4768,8 @@ export default {
                 GS: 'GPB',
                 GW: 'GWB',
                 ME: 'MU',
+                S: 'SPA',
+                SPA: 'S',
                 LPT: 'LET',
             }
             const mappedBase = aliases[match[1]]
@@ -5357,6 +5697,24 @@ export default {
         studentPlannedCoursesForSemester(semester, completedCourseCodes) {
             return this.coursesForSemester(semester)
                 .filter(course => !this.courseCompletedForStudentPlanning(course, completedCourseCodes))
+                .filter((course, index, courses) =>
+                    courses.findIndex(candidate => candidate.key === course.key) === index,
+                )
+                .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
+        },
+        pendingStudentCoursesBeforeSemester(semester, completedCourseCodes, visitedCourseCodes) {
+            return this.subjectRows
+                .map(subject => Number(subject.semester))
+                .filter(subjectSemester => Number.isFinite(subjectSemester) && subjectSemester < Number(semester))
+                .filter((subjectSemester, index, subjectSemesters) => subjectSemesters.indexOf(subjectSemester) === index)
+                .sort((firstSemester, secondSemester) => firstSemester - secondSemester)
+                .flatMap(subjectSemester => this.coursesForSemester(subjectSemester))
+                .filter(course => !this.courseCompletedForStudentPlanning(course, completedCourseCodes))
+                .filter(course => this.coursePossibleAsStudentMissing(course, completedCourseCodes, visitedCourseCodes))
+                .filter((course, index, courses) =>
+                    courses.findIndex(candidate => candidate.key === course.key) === index,
+                )
+                .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
         },
         studentCompletedCourseCodes() {
             const completedCourses = Array.isArray(this.studentCompletedCourses)
@@ -5403,6 +5761,12 @@ export default {
             return this.courseModulePartsForStudentPlanning(course)
                 .some(parts => this.courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes))
         },
+        coursePossibleAsStudentMissing(course, completedCourseCodes, visitedCourseCodes) {
+            return this.courseModulePartsForStudentPlanning(course)
+                .some(parts => this.courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes, {
+                    allowInitialModules: true,
+                }))
+        },
         courseModulePartsForStudentPlanning(course) {
             return this.courseCodeAliases(course)
                 .map(courseCode => this.courseCodeModuleParts(courseCode))
@@ -5413,14 +5777,68 @@ export default {
                 )
         },
         courseBaseEligibleForStudentAdditional(base) {
-            return this.studentCourseBaseAliases(base)
-                .some(baseAlias => ['D', 'E', 'M', 'F', 'L', 'S', 'SPA', 'INF'].includes(baseAlias))
+            const baseAliases = this.studentCourseBaseAliases(base)
+            const subjectRows = Array.isArray(this.subjectRows) ? this.subjectRows : []
+
+            if (!subjectRows.length) {
+                return baseAliases
+                    .some(baseAlias => [
+                        'BE',
+                        'BU',
+                        'CH',
+                        'D',
+                        'E',
+                        'ET',
+                        'ETH',
+                        'F',
+                        'GPB',
+                        'GS',
+                        'GW',
+                        'GWB',
+                        'INF',
+                        'L',
+                        'M',
+                        'ME',
+                        'MU',
+                        'PH',
+                        'PP',
+                        'R',
+                        'RK',
+                        'S',
+                        'SPA',
+                        'ÖKO',
+                    ].includes(baseAlias))
+            }
+
+            return subjectRows
+                .filter(subject => subject?.is_active !== false)
+                .some(subject => this.subjectRowMatchesStudentCourseBase(subject, baseAliases))
         },
-        courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes) {
+        subjectRowMatchesStudentCourseBase(subject, baseAliases) {
+            return [
+                subject?.json_code,
+                subject?.json_subject,
+            ]
+                .flatMap(value => this.courseCodeAliasParts(value))
+                .map(value => this.courseCodeModuleParts(value).base)
+                .flatMap(base => this.studentCourseBaseAliases(base))
+                .some(baseAlias => baseAliases.includes(baseAlias))
+        },
+        courseModulePrerequisiteMet(parts, completedCourseCodes, visitedCourseCodes, options = {}) {
             const moduleNumber = Number(parts.module)
-            if (!Number.isInteger(moduleNumber) || moduleNumber <= 1) return false
+            if (!Number.isInteger(moduleNumber)) return false
 
             const baseAliases = this.studentCourseBaseAliases(parts.base)
+            if (moduleNumber === 1) {
+                if (options?.allowInitialModules) {
+                    return !this.courseBaseHasVisitedLaterModule(baseAliases, visitedCourseCodes, moduleNumber)
+                }
+
+                return baseAliases.some(baseAlias => ['ME', 'MU', 'BE'].includes(baseAlias))
+            }
+
+            if (moduleNumber <= 1) return false
+
             const prerequisiteModuleNumber = moduleNumber === 2 ? 1 : moduleNumber - 2
             const hasPositivePrerequisite = baseAliases
                 .some(baseAlias => completedCourseCodes.has(`${baseAlias}${prerequisiteModuleNumber}`))
@@ -5433,18 +5851,51 @@ export default {
 
             return true
         },
+        courseBaseHasVisitedLaterModule(baseAliases, visitedCourseCodes, moduleNumber) {
+            if (!(visitedCourseCodes instanceof Set) || !visitedCourseCodes.size) return false
+
+            return [...visitedCourseCodes]
+                .map(courseCode => this.courseCodeModuleParts(courseCode))
+                .some(parts => {
+                    const visitedModuleNumber = Number(parts.module)
+
+                    return baseAliases.includes(parts.base)
+                        && Number.isInteger(visitedModuleNumber)
+                        && visitedModuleNumber > moduleNumber
+                })
+        },
         studentCourseBaseAliases(base) {
             const normalizedBase = this.normalizedCourseCode(base)
             const aliases = [normalizedBase]
+            const mappedAliases = {
+                GS: ['GPB'],
+                GPB: ['GS'],
+                GW: ['GWB'],
+                GWB: ['GW'],
+                ET: ['ETH'],
+                ETH: ['ET'],
+                ME: ['MU'],
+                MU: ['ME'],
+                R: ['RK'],
+                RK: ['R'],
+                S: ['SPA'],
+                SPA: ['S'],
+                LPT: ['LET'],
+                LET: ['LPT'],
+            }
 
-            if (normalizedBase === 'S') aliases.push('SPA')
-            if (normalizedBase === 'SPA') aliases.push('S')
-
-            return aliases
+            return [
+                ...aliases,
+                ...(mappedAliases[normalizedBase] || []),
+            ]
                 .filter(Boolean)
                 .filter((alias, index, allAliases) => allAliases.indexOf(alias) === index)
         },
         subjectMatchesSelectedBranch(subject) {
+            if (this.isArtsSubject(subject)) {
+                return subject.branch === 'gymnasial' && this.selection.branch === 'gymnasial'
+            }
+
             return !subject.branch || subject.branch === 'common' || subject.branch === this.selection.branch
         },
         subjectMatchesSelectedChoices(subject) {
@@ -5522,19 +5973,18 @@ export default {
             return this.alternativeDisplay(subject.json_code || subject.json_subject || subject.name)
         },
         selectedCourseTimetableCodes(subject) {
-            if (this.isLanguageSubject(subject)) {
-                return [this.selectedCourseCode(subject)]
-            }
-
             const moduleNumber = this.subjectModuleNumber(subject)
             const jsonSubjectAliases = this.subjectMappingJsonAliases(subject)
             const mappingCodes = this.activeSubjectMappings()
                 .filter(mapping => jsonSubjectAliases.includes(this.normalizedCourseCode(mapping.json_subject)))
                 .flatMap(mapping => this.timetableCodesForSubjectMapping(mapping, subject, moduleNumber))
+            const fallbackCodes = this.isLanguageSubject(subject)
+                ? [this.selectedCourseCode(subject)]
+                : this.timetableCodesForMappedSubject(subject.tt_subject, moduleNumber)
 
             return [
                 ...mappingCodes,
-                ...this.timetableCodesForMappedSubject(subject.tt_subject, moduleNumber),
+                ...fallbackCodes,
             ]
                 .map(value => this.normalizedCourseCode(value))
                 .filter(Boolean)
@@ -5830,13 +6280,18 @@ export default {
 }
 
 .robot-student-course-section--planned {
-    border-color: rgba(202, 138, 4, 0.24);
-    background: #fefce8;
+    border-color: rgba(var(--v-theme-success), 0.42);
+    background: rgba(var(--v-theme-success), 0.18);
+}
+
+.robot-student-course-section--missing {
+    border-color: rgba(var(--v-theme-error), 0.3);
+    background: rgba(var(--v-theme-error), 0.1);
 }
 
 .robot-student-course-section--additional {
-    border-color: rgba(217, 119, 6, 0.22);
-    background: #fff7ed;
+    border-color: #15803d;
+    background: #bbf7d0;
 }
 
 .robot-student-course-section__title {
@@ -6506,12 +6961,17 @@ export default {
 }
 
 .robot-course-list__header--panel {
+    flex-wrap: wrap;
     margin-bottom: 0;
 }
 
 .robot-course-list__title {
     font-size: 0.9rem;
     font-weight: 750;
+}
+
+.robot-course-list__reset {
+    margin-left: auto;
 }
 
 .robot-course-columns {
@@ -6576,6 +7036,23 @@ export default {
 .robot-course-item-panel--disabled {
     color: #64748b;
     opacity: 0.62;
+}
+
+.robot-course-item-panel--conflict,
+.robot-course-item-panel--missing-additional {
+    background: rgba(var(--v-theme-error), 0.12);
+}
+
+.robot-course-item-panel--conflict :deep(.v-expansion-panel-title),
+.robot-course-item-panel--missing-additional :deep(.v-expansion-panel-title) {
+    color: rgb(var(--v-theme-error));
+}
+
+.robot-course-item-panel--conflict + .robot-course-item-panel,
+.robot-course-item-panel + .robot-course-item-panel--conflict,
+.robot-course-item-panel--missing-additional + .robot-course-item-panel,
+.robot-course-item-panel + .robot-course-item-panel--missing-additional {
+    border-top-color: rgba(var(--v-theme-error), 0.45);
 }
 
 .robot-course-item-panel__title {

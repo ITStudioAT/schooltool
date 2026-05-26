@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Teaching\SchoolHourResource;
 use App\Models\Import116;
 use App\Models\StudentTimetableRecognitionRow;
+use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use App\Services\SchoolHourService;
 use App\Services\SchoolyearService;
@@ -15,6 +16,7 @@ use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 
 class StudentsTimetablesController extends Controller
@@ -87,15 +89,26 @@ class StudentsTimetablesController extends Controller
             'student_code' => ['required', 'string', 'max:255'],
         ]);
 
-        $courses = StudentTimetableRecognitionRow::query()
+        $subjectRows = StudentTimetableSubjectRow::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where('is_active', true)
+            ->get(['semester', 'json_code', 'json_subject']);
+
+        $recognitionRows = StudentTimetableRecognitionRow::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
             ->where('student_code', $validated['student_code'])
             ->orderBy('subject')
             ->orderBy('row_number')
-            ->get(['subject', 'grade', 'note', 'raw_data'])
+            ->get(['id', 'subject', 'grade', 'note', 'raw_data']);
+
+        $sequentialSubjectLabels = $this->sequentialRecognitionSubjectLabels($recognitionRows, $subjectRows);
+
+        $courses = $recognitionRows
             ->map(fn (StudentTimetableRecognitionRow $row): array => [
-                'subject' => $this->recognitionCompletedCourseSubjectLabel($row),
+                'subject' => $sequentialSubjectLabels[$row->id]
+                    ?? $this->recognitionCompletedCourseSubjectLabel($row, $subjectRows),
                 'grade' => $this->recognitionCompletedCourseGrade($row),
             ])
             ->filter(fn (array $row): bool => $row['subject'] !== '' && $row['grade'] !== '')
@@ -116,10 +129,66 @@ class StudentsTimetablesController extends Controller
         ]);
     }
 
-    private function recognitionCompletedCourseSubjectLabel(StudentTimetableRecognitionRow $row): string
+    /**
+     * @param  Collection<int, StudentTimetableRecognitionRow>  $recognitionRows
+     * @param  Collection<int, StudentTimetableSubjectRow>  $subjectRows
+     * @return array<int, string>
+     */
+    private function sequentialRecognitionSubjectLabels(Collection $recognitionRows, Collection $subjectRows): array
+    {
+        $labels = [];
+
+        $recognitionRows
+            ->groupBy(fn (StudentTimetableRecognitionRow $row): string => $this->normalizedTimetableCourseCode(
+                $this->recognitionTimetableCourseCode((string) $row->subject),
+            ))
+            ->each(function (Collection $rows, string $subject) use ($subjectRows, &$labels): void {
+                if ($subject === '' || $this->timetableCourseModuleNumber($subject) !== '') {
+                    return;
+                }
+
+                $exactLabels = $rows
+                    ->map(fn (StudentTimetableRecognitionRow $row): string => $this->resolvedRecognitionSubjectFromSubjectRows(
+                        $subject,
+                        trim((string) data_get($row->raw_data, 'semester', '')),
+                        $subjectRows,
+                    ));
+
+                if ($exactLabels->every(fn (string $label): bool => $label !== '')) {
+                    return;
+                }
+
+                $candidateLabels = $this->subjectPlanModuleLabelsForRecognitionSubject($subject, $subjectRows);
+                if ($candidateLabels->count() < $rows->count()) {
+                    return;
+                }
+
+                $rows
+                    ->values()
+                    ->each(function (StudentTimetableRecognitionRow $row, int $index) use ($candidateLabels, &$labels): void {
+                        $labels[$row->id] = $candidateLabels[$index];
+                    });
+            });
+
+        return $labels;
+    }
+
+    /**
+     * @param  Collection<int, StudentTimetableSubjectRow>  $subjectRows
+     */
+    private function recognitionCompletedCourseSubjectLabel(StudentTimetableRecognitionRow $row, Collection $subjectRows): string
     {
         $subject = $this->recognitionTimetableCourseCode((string) $row->subject);
         $semester = trim((string) data_get($row->raw_data, 'semester', ''));
+        $normalizedSubject = $this->normalizedTimetableCourseCode($subject);
+
+        if ($normalizedSubject !== '') {
+            $resolvedSubject = $this->resolvedRecognitionSubjectFromSubjectRows($normalizedSubject, $semester, $subjectRows);
+
+            if ($resolvedSubject !== '') {
+                return $resolvedSubject;
+            }
+        }
 
         if ($subject === '' || $semester === '' || preg_match('/\d+$/u', $subject) === 1) {
             return $subject;
@@ -128,9 +197,167 @@ class StudentsTimetablesController extends Controller
         return "{$subject}{$semester}";
     }
 
+    /**
+     * @param  Collection<int, StudentTimetableSubjectRow>  $subjectRows
+     */
+    private function resolvedRecognitionSubjectFromSubjectRows(string $subject, string $semester, Collection $subjectRows): string
+    {
+        $subjectCodeAliases = $this->timetableCourseCodeAliases($subject);
+
+        foreach ($subjectRows as $subjectRow) {
+            $jsonCode = $this->normalizedTimetableCourseCode((string) $subjectRow->json_code);
+            if ($jsonCode === '') {
+                continue;
+            }
+
+            if (array_intersect($subjectCodeAliases, $this->timetableCourseCodeAliases($jsonCode)) !== []) {
+                return $jsonCode;
+            }
+        }
+
+        $subjectBaseAliases = $this->timetableCourseBaseAliases($this->timetableCourseCodeWithoutModule($subject));
+        $semesterCandidates = collect([
+            $semester,
+            $this->timetableCourseModuleNumber($subject),
+        ])
+            ->map(fn (mixed $value): int => (int) $value)
+            ->filter(fn (int $value): bool => $value > 0)
+            ->unique()
+            ->values();
+
+        if ($semesterCandidates->isEmpty()) {
+            return '';
+        }
+
+        foreach ($subjectRows as $subjectRow) {
+            if (! $semesterCandidates->contains((int) $subjectRow->semester)) {
+                continue;
+            }
+
+            $jsonCode = $this->normalizedTimetableCourseCode((string) $subjectRow->json_code);
+            $jsonSubject = $this->normalizedTimetableCourseCode((string) $subjectRow->json_subject);
+            $rowBaseAliases = array_values(array_unique([
+                ...$this->timetableCourseBaseAliases($this->timetableCourseCodeWithoutModule($jsonCode)),
+                ...$this->timetableCourseBaseAliases($jsonSubject),
+            ]));
+
+            if (array_intersect($subjectBaseAliases, $rowBaseAliases) !== []) {
+                return $jsonCode;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param  Collection<int, StudentTimetableSubjectRow>  $subjectRows
+     * @return Collection<int, string>
+     */
+    private function subjectPlanModuleLabelsForRecognitionSubject(string $subject, Collection $subjectRows): Collection
+    {
+        $subjectBaseAliases = $this->timetableCourseBaseAliases($this->timetableCourseCodeWithoutModule($subject));
+
+        return $subjectRows
+            ->map(function (StudentTimetableSubjectRow $subjectRow) use ($subjectBaseAliases): ?array {
+                $jsonCode = $this->normalizedTimetableCourseCode((string) $subjectRow->json_code);
+                if ($jsonCode === '' || $this->timetableCourseModuleNumber($jsonCode) === '') {
+                    return null;
+                }
+
+                $jsonSubject = $this->normalizedTimetableCourseCode((string) $subjectRow->json_subject);
+                $rowBaseAliases = array_values(array_unique([
+                    ...$this->timetableCourseBaseAliases($this->timetableCourseCodeWithoutModule($jsonCode)),
+                    ...$this->timetableCourseBaseAliases($jsonSubject),
+                ]));
+
+                if (array_intersect($subjectBaseAliases, $rowBaseAliases) === []) {
+                    return null;
+                }
+
+                return [
+                    'semester' => (int) $subjectRow->semester,
+                    'module' => (int) $this->timetableCourseModuleNumber($jsonCode),
+                    'json_code' => $jsonCode,
+                ];
+            })
+            ->filter()
+            ->sortBy([
+                ['semester', 'asc'],
+                ['module', 'asc'],
+                ['json_code', 'asc'],
+            ], SORT_NATURAL)
+            ->pluck('json_code')
+            ->unique()
+            ->values();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function timetableCourseCodeAliases(string $code): array
+    {
+        $normalizedCode = $this->normalizedTimetableCourseCode($code);
+        $moduleNumber = $this->timetableCourseModuleNumber($normalizedCode);
+
+        return collect($this->timetableCourseBaseAliases($this->timetableCourseCodeWithoutModule($normalizedCode)))
+            ->map(fn (string $base): string => "{$base}{$moduleNumber}")
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function timetableCourseBaseAliases(string $base): array
+    {
+        $normalizedBase = $this->normalizedTimetableCourseCode($base);
+        $aliases = [$normalizedBase];
+
+        $mappedAliases = [
+            'GS' => ['GPB'],
+            'GPB' => ['GS'],
+            'GW' => ['GWB'],
+            'GWB' => ['GW'],
+            'ME' => ['MU'],
+            'MU' => ['ME'],
+            'S' => ['SPA'],
+            'SPA' => ['S'],
+            'LPT' => ['LET'],
+            'LET' => ['LPT'],
+        ];
+
+        return collect([
+            ...$aliases,
+            ...($mappedAliases[$normalizedBase] ?? []),
+        ])
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function timetableCourseCodeWithoutModule(string $code): string
+    {
+        return preg_replace('/\d+$/u', '', $code) ?: $code;
+    }
+
+    private function timetableCourseModuleNumber(string $code): string
+    {
+        preg_match('/(\d+)$/u', $code, $matches);
+
+        return $matches[1] ?? '';
+    }
+
+    private function normalizedTimetableCourseCode(string $code): string
+    {
+        return preg_replace('/\s+/u', '', mb_strtoupper(trim($code), 'UTF-8')) ?: '';
+    }
+
     private function recognitionTimetableCourseCode(string $subject): string
     {
-        $code = preg_replace('/\s+/u', '', mb_strtoupper(trim($subject), 'UTF-8')) ?: '';
+        $code = $this->normalizedTimetableCourseCode($subject);
 
         if (! str_contains($code, '_')) {
             return $code;
@@ -177,6 +404,8 @@ class StudentsTimetablesController extends Controller
             'constraints.excludedWeekdayTimes.*' => ['string', 'max:20'],
             'student' => ['nullable', 'array'],
             'student.studentCode' => ['nullable', 'string', 'max:255'],
+            'selected_course_keys' => ['array'],
+            'selected_course_keys.*' => ['string', 'max:255'],
             'deselected_course_keys' => ['array'],
             'deselected_course_keys.*' => ['string', 'max:255'],
             'deselected_course_group_keys' => ['array'],

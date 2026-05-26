@@ -90,10 +90,14 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('studentDialogOpen')
         expect(componentSource).toContain('<v-dialog v-model="studentDialogOpen" persistent max-width="560">')
         expect(componentSource).toContain('<v-text-field')
+        expect(componentSource).toContain('ref="studentSearchField"')
         expect(componentSource).toContain('v-model="studentSearch"')
+        expect(componentSource).toContain('@keydown.enter.prevent="submitStudentSearch"')
         expect(componentSource).toContain('clearable')
         expect(componentSource).toContain('filteredStudentResults()')
         expect(componentSource).toContain('selectStudentDraft(studentCode)')
+        expect(componentSource).toContain('submitStudentSearch()')
+        expect(componentSource).toContain('focusStudentSearchField()')
         expect(componentSource).toContain('studentSearchReady()')
         expect(componentSource).toContain('this.normalizedStudentSearch.length >= 2')
         expect(componentSource).toContain('label="Student suchen"')
@@ -111,11 +115,21 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/robot/students')")
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/robot/student-completed-courses'")
         expect(componentSource).toContain('Abgeschlossene Kurse')
+        expect(componentSource).toContain('Fehlende Kurse')
         expect(componentSource).toContain('Vorgesehene Kurse')
         expect(componentSource).toContain('Zusätzliche Kurse')
         expect(componentSource).toContain('robot-student-course-section--completed')
+        expect(componentSource).toContain('robot-student-course-section--missing')
         expect(componentSource).toContain('robot-student-course-section--planned')
         expect(componentSource).toContain('robot-student-course-section--additional')
+        expect(componentSource).toContain('.robot-student-course-section--missing')
+        expect(componentSource).toContain('rgba(var(--v-theme-error), 0.1)')
+        expect(componentSource).toContain('.robot-student-course-section--planned')
+        expect(componentSource).toContain('.robot-student-course-section--additional')
+        expect(componentSource).toContain('background: rgba(var(--v-theme-success), 0.18)')
+        expect(componentSource).toContain('border-color: rgba(var(--v-theme-success), 0.42)')
+        expect(componentSource).toContain('background: #bbf7d0')
+        expect(componentSource).toContain('border-color: #15803d')
         expect(componentSource).toContain('v-if="studentAdditionalCourses.length"')
         expect(componentSource).toContain('additionalCourseColumns')
         expect(componentSource).toContain('robot-course-item-panels')
@@ -131,6 +145,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('setAdditionalCourseSelected(course, $event)')
         expect(componentSource).toContain('additionalCoursePrerequisiteCourse(course)')
         expect(componentSource).toContain('grid-template-columns: repeat(auto-fill, minmax(120px, 1fr))')
+        expect(componentSource).toContain('studentMissingCourses')
         expect(componentSource).toContain('studentPlannedCourses')
         expect(componentSource).toContain('applyStudentPlannedCourseSelection()')
         expect(componentSource).toContain('courseMatchesStudentPlannedCourse(course, plannedCourseCodes)')
@@ -194,6 +209,11 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('courseFullySelected(course)')
         expect(componentSource).toContain('coursePartiallySelected(course)')
         expect(componentSource).toContain('setCourseSelected(course, selected)')
+        expect(componentSource).toContain(':disabled="!courseSelectionResettable"')
+        expect(componentSource).toContain('@click="resetCourseSelection"')
+        expect(componentSource).toContain('courseOverlapsInSelectedTimetable(course)')
+        expect(componentSource).toContain('selectedTimetableConflictCourses()')
+        expect(componentSource).toContain('robot-course-item-panel--conflict')
         expect(componentSource).toContain('courseGroupSelectionKeys(course)')
         expect(componentSource).not.toContain('selectAllCourses()')
         expect(componentSource).not.toContain('deselectAllCourses()')
@@ -218,7 +238,16 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('additionalCourseTimetableRequired')
         expect(componentSource).toContain('selected_additional_courses_required: this.additionalCourseTimetableRequired === true')
         expect(componentSource).toContain('setAdditionalCourseTimetableRequired($event)')
+        expect(componentSource).toContain(':disabled="!additionalCourseSelectionResettable"')
+        expect(componentSource).toContain('@click="resetAdditionalCourseSelection"')
         expect(componentSource).toContain('additionalCoursesAcceptedBySelectedTimetable()')
+        expect(componentSource).toContain('selectedTimetableMissingAdditionalCourses()')
+        expect(componentSource).toContain('selectedTimetableMissingAdditionalCourseLabels()')
+        expect(componentSource).toContain('additionalCourseMissingInSelectedTimetable(course)')
+        expect(componentSource).toContain('robot-course-item-panel--missing-additional')
+        expect(componentSource).toContain('type="error"')
+        expect(componentSource).toContain('additionalCourseAcceptanceLabel()')
+        expect(componentSource).toContain('Nicht alle gewählten Zusatzkurse konnten berücksichtigt werden')
         expect(componentSource).not.toContain('additionalCourseTimetableCountDetail()')
         expect(componentSource).toContain('robot-count-card--additional')
         expect(componentSource).toContain('robot-generated-cell--additional')
@@ -304,6 +333,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('selectedOccasionalAppointmentGroupsForTimetable(timetable)')
         expect(componentSource).toContain('@click="loadFullGreenTimetableCount"')
         expect(componentSource).toContain("axios.post('/api/admin/students-timetables/robot/full-green-count'")
+        expect(componentSource).toContain('selected_course_keys: this.selectedCourses.map(course => course.key)')
         expect(componentSource).toContain('emptyTimetableWeekdays()')
         expect(componentSource).toContain('emptyTimetableTimes()')
         expect(componentSource).toContain('fullGreenTimetableCountLabel()')
@@ -594,11 +624,27 @@ describe('Students timetable robot page', () => {
             additionalCourseTimetableCount: 12,
             selectedRobotTimetable: {
                 additionalCoursesAccepted: true,
+                acceptedAdditionalCourseCount: 2,
+                missingAdditionalCourses: [],
             },
         }
 
         expect(computed.additionalCourseTimetableCountLabel.call(ctx)).toBe('12 / 48')
         expect(methods.additionalCoursesAcceptedBySelectedTimetable.call(ctx)).toBe(true)
+        expect(methods.additionalCourseAcceptanceLabel.call(ctx)).toBe('2 / 2')
+
+        ctx.selectedRobotTimetable = {
+            additionalCoursesAccepted: false,
+            acceptedAdditionalCourseCount: 1,
+            missingAdditionalCourses: [{ key: 'INF3', code: 'INF3', name: 'Informatik 3' }],
+        }
+
+        expect(methods.additionalCourseAcceptanceLabel.call(ctx)).toBe('1 / 2')
+        expect(methods.additionalCourseAcceptanceIcon.call(ctx)).toBe('mdi-alert-circle')
+        expect(methods.additionalCourseAcceptanceColor.call(ctx)).toBe('error')
+        expect(methods.selectedTimetableMissingAdditionalCourseLabels.call(ctx)).toBe('INF3 Informatik 3')
+        expect(methods.additionalCourseMissingInSelectedTimetable.call(ctx, { key: 'INF3', code: 'INF3' })).toBe(true)
+        expect(methods.additionalCourseMissingInSelectedTimetable.call(ctx, { key: 'INF2', code: 'INF2' })).toBe(false)
     })
 
     it('uses checked additional courses as a selectable timetable filter', () => {
@@ -988,6 +1034,96 @@ describe('Students timetable robot page', () => {
         expect(ctx.defaultSelectionApplied).toBe(true)
         expect(ctx.generatedCleared).toBe(true)
         expect(ctx.saved).toBe(true)
+    })
+
+    it('focuses the student search field when editing the student', () => {
+        const methods = (RobotTimetable as any).methods
+        const focusCalls: string[] = []
+        const ctx = {
+            ...methods,
+            studentSelection: {
+                studentCode: '100',
+            },
+            studentSelectionDraft: {
+                studentCode: null,
+            },
+            studentDialogOpen: false,
+            studentSearch: 'Grassl',
+            $refs: {
+                studentSearchField: {
+                    focus() {
+                        focusCalls.push('field')
+                    },
+                    $el: {
+                        querySelector(selector: string) {
+                            expect(selector).toBe('input')
+
+                            return {
+                                focus() {
+                                    focusCalls.push('input')
+                                },
+                            }
+                        },
+                    },
+                },
+            },
+            $nextTick(callback: () => void) {
+                callback()
+            },
+        }
+
+        methods.openStudentDialog.call(ctx)
+
+        expect(ctx.studentSelectionDraft).toEqual({ studentCode: '100' })
+        expect(ctx.studentSearch).toBe('')
+        expect(ctx.studentDialogOpen).toBe(true)
+        expect(focusCalls).toEqual(['field', 'input'])
+    })
+
+    it('selects the only matching student before updating on enter', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            studentSearch: 'grassl',
+            studentSelectionDraft: {
+                studentCode: null,
+            },
+            robotStudents: [
+                { student_code: '100', class: '4Q', last_name: 'GRASSL', first_name: 'Tobias' },
+                { student_code: '200', class: '4Q', last_name: 'MAYR', first_name: 'Anna' },
+            ],
+            normalizedStudentCode(value) {
+                return value === null || value === undefined || value === '' ? null : String(value)
+            },
+            studentOptionTitle(student) {
+                return [student.class, student.last_name, student.first_name].filter(Boolean).join(' ')
+            },
+            applyStudentSelection(studentCode) {
+                this.appliedStudentCode = studentCode
+            },
+        }
+
+        Object.defineProperty(ctx, 'normalizedStudentSearch', {
+            get() {
+                return computed.normalizedStudentSearch.call(ctx)
+            },
+        })
+        Object.defineProperty(ctx, 'studentSearchReady', {
+            get() {
+                return computed.studentSearchReady.call(ctx)
+            },
+        })
+        Object.defineProperty(ctx, 'filteredStudentResults', {
+            get() {
+                return computed.filteredStudentResults.call(ctx)
+            },
+        })
+
+        methods.submitStudentSearch.call(ctx)
+
+        expect(ctx.studentSelectionDraft.studentCode).toBe('100')
+        expect(ctx.appliedStudentCode).toBe('100')
     })
 
     it('removes single time exclusions when a whole hour is disabled', () => {
@@ -1538,9 +1674,14 @@ describe('Students timetable robot page', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {
             ...methods,
+            selection: {
+                language: 'S',
+                religion: 'ETH',
+            },
             subjectMappings: [
                 { json_subject: 'GW', tt_subject: 'GWB', is_active: true },
                 { json_subject: 'LPT', tt_subject: 'LET', is_active: true },
+                { json_subject: 'S', tt_subject: 'SPA', is_active: true },
                 { json_subject: 'ME', tt_subject: 'MU', is_active: false },
             ],
         }
@@ -1554,6 +1695,11 @@ describe('Students timetable robot page', () => {
             json_code: 'LPT',
             json_subject: 'LPT',
         })).toEqual(['LET'])
+
+        expect(methods.selectedCourseTimetableCodes.call(ctx, {
+            json_code: 'L/F/S3',
+            json_subject: 'L/F/S',
+        })).toEqual(['SPA3', 'S3'])
     })
 
     it('uses exact mapped TT codes when module expansion would miss the imported course', () => {
@@ -1626,6 +1772,26 @@ describe('Students timetable robot page', () => {
             code: 'F1',
             ttCodes: timetableCodes,
         })).toBe(false)
+        expect(methods.courseGroupMatchesCourse.call(ctx, {
+            class_name: 'SPA1-7A-MAY',
+            course: 'SPA',
+            subject: 'SPA',
+        }, {
+            code: 'S1',
+            ttCodes: ['S1'],
+        })).toBe(true)
+        expect(methods.courseCodeAliases.call(ctx, {
+            code: 'S3',
+            ttCodes: ['S3'],
+        })).toEqual(['S3', 'SPA3'])
+        expect(methods.courseGroupMatchesCourse.call(ctx, {
+            class_name: 'SPA3-7A-MAY',
+            course: 'SPA',
+            subject: 'SPA',
+        }, {
+            code: 'S3',
+            ttCodes: ['S3'],
+        })).toBe(true)
         expect(methods.courseGroupMatchesCourse.call(ctx, {
             class_name: 'S1-7A-MAY',
             course: 'S',
@@ -2599,29 +2765,38 @@ describe('Students timetable robot page', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {
             ...methods,
-        }
-        const blocks = methods.generatedSlotConflictBlocks.call(ctx, {
-            code: 'INF3',
-            name: 'Informatik 3',
-            sourceLabel: 'INF3-8AB-MAY',
-            courseGroup: { class_name: 'INF3-8AB-MAY', weekday: 5, hour: 13 },
-            conflicts: [
-                {
-                    label: 'ÖKO2 - Ökonomie 19:30-20:15',
-                    sortValue: '13-ÖKO2',
-                    code: 'ÖKO2',
-                    name: 'Ökonomie',
-                    sourceLabel: 'ÖKO2- BIE',
-                    courseGroup: { class_name: 'ÖKO2- BIE', weekday: 5, hour: 13 },
+            selectedRobotTimetable: {
+                slots: {
+                    '5-13': {
+                        key: 'INF3',
+                        code: 'INF3',
+                        name: 'Informatik 3',
+                        sourceLabel: 'INF3-8AB-MAY',
+                        courseGroup: { class_name: 'INF3-8AB-MAY', weekday: 5, hour: 13 },
+                        conflicts: [
+                            {
+                                label: 'ÖKO2 - Ökonomie 19:30-20:15',
+                                sortValue: '13-ÖKO2',
+                                code: 'ÖKO2',
+                                name: 'Ökonomie',
+                                sourceLabel: 'ÖKO2- BIE',
+                                courseGroup: { class_name: 'ÖKO2- BIE', weekday: 5, hour: 13 },
+                            },
+                        ],
+                    },
                 },
-            ],
-        })
+            },
+        }
+        const blocks = methods.generatedSlotConflictBlocks.call(ctx, ctx.selectedRobotTimetable.slots['5-13'])
 
         expect(blocks.map(block => block.code)).toEqual(['ÖKO2', 'INF3'])
         expect(blocks.map(block => methods.generatedSlotDetails.call(ctx, block))).toEqual([
             'ÖKO2- BIE',
             'INF3-8AB-MAY',
         ])
+        expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'INF3', code: 'INF3' })).toBe(true)
+        expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'ÖKO2', code: 'ÖKO2' })).toBe(true)
+        expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'D1', code: 'D1' })).toBe(false)
     })
 
     it('does not render red conflicts when same weekday and hour have different dates', () => {
@@ -2764,7 +2939,7 @@ describe('Students timetable robot page', () => {
         expect(computed.selectedCourses.call(ctx)).toEqual([])
     })
 
-    it('checks only planned student courses in the course area by default', () => {
+    it('checks missing and planned student courses in the course area by default', () => {
         const computed = (RobotTimetable as any).computed
         const methods = (RobotTimetable as any).methods
         const ctx = {
@@ -2773,8 +2948,10 @@ describe('Students timetable robot page', () => {
                 student_code: '100',
             },
             studentPlannedCourses: [
-                { key: 'planned-d2', code: 'D2', ttCodes: ['D2'] },
                 { key: 'planned-gw2', code: 'GW2', ttCodes: ['GWB2'] },
+            ],
+            studentMissingCourses: [
+                { key: 'missing-d2', code: 'D2', ttCodes: ['D2'] },
             ],
             deselectedCourseKeys: [],
             deselectedCourseGroupKeys: [],
@@ -2792,6 +2969,47 @@ describe('Students timetable robot page', () => {
 
         expect(ctx.deselectedCourseKeys).toEqual(['INF2'])
         expect(computed.selectedCourses.call(ctx).map(course => course.code)).toEqual(['D2', 'GW2'])
+    })
+
+    it('resets changed course selections to the selected student defaults', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: {
+                student_code: '100',
+            },
+            studentPlannedCourses: [
+                { key: 'planned-s5', code: 'S5', ttCodes: ['SPA5'] },
+            ],
+            studentMissingCourses: [
+                { key: 'missing-ch2', code: 'CH2', ttCodes: ['CH2'] },
+            ],
+            deselectedCourseKeys: ['CH2'],
+            deselectedCourseGroupKeys: [],
+            configuredCourseGroups: [],
+            availableCourses: [
+                { key: 'CH2', code: 'CH2', ttCodes: ['CH2'], name: 'Chemie 2', hours: 3 },
+                { key: 'D6', code: 'D6', ttCodes: ['D6'], name: 'Deutsch 6', hours: 3 },
+                { key: 'S5', code: 'S5', ttCodes: ['SPA5'], name: 'Spanisch 5', hours: 4 },
+            ],
+            clearGeneratedTimetables() {
+                this.cleared = true
+            },
+            saveLastRobotState() {
+                this.saved = true
+            },
+        }
+
+        expect(computed.courseSelectionResettable.call(ctx)).toBe(true)
+
+        methods.resetCourseSelection.call(ctx)
+
+        expect(ctx.deselectedCourseKeys).toEqual(['D6'])
+        expect(computed.selectedCourses.call(ctx).map(course => course.code)).toEqual(['CH2', 'S5'])
+        expect(computed.courseSelectionResettable.call(ctx)).toBe(false)
+        expect(ctx.cleared).toBe(true)
+        expect(ctx.saved).toBe(true)
     })
 
     it('resets robot selection defaults from a newly selected student', () => {
@@ -2954,6 +3172,46 @@ describe('Students timetable robot page', () => {
         expect(ctx.deselectedCourseGroupKeys).toEqual([])
     })
 
+    it('resets changed additional course selections without touching regular course groups', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const additionalCourse = { key: 'INF2', code: 'INF2', ttCodes: ['INF2'], name: 'Informatik 2', hours: 2 }
+        const courseGroups = {
+            D1: [{ title: 'D1-1C-GOS' }],
+            INF2: [
+                { title: 'INF2-4Q-GOS' },
+                { title: 'INF2-4Q-MAY' },
+            ],
+        }
+        const ctx = {
+            ...methods,
+            additionalCourseSelectedKeys: ['INF2'],
+            additionalCourseTimetableRequired: true,
+            studentAdditionalCourses: [additionalCourse],
+            deselectedCourseGroupKeys: ['D1|D1-1C-GOS', 'INF2|INF2-4Q-MAY'],
+            courseGroupItems(course) {
+                return courseGroups[course.key] || []
+            },
+            clearGeneratedTimetables() {
+                this.cleared = true
+            },
+            saveLastRobotState() {
+                this.saved = true
+            },
+        }
+
+        expect(computed.additionalCourseSelectionResettable.call(ctx)).toBe(true)
+
+        methods.resetAdditionalCourseSelection.call(ctx)
+
+        expect(ctx.additionalCourseSelectedKeys).toEqual([])
+        expect(ctx.additionalCourseTimetableRequired).toBe(false)
+        expect(ctx.deselectedCourseGroupKeys).toEqual(['D1|D1-1C-GOS'])
+        expect(computed.additionalCourseSelectionResettable.call(ctx)).toBe(false)
+        expect(ctx.cleared).toBe(true)
+        expect(ctx.saved).toBe(true)
+    })
+
     it('splits available courses into two display columns', () => {
         const computed = (RobotTimetable as any).computed
         const ctx = {
@@ -3035,7 +3293,7 @@ describe('Students timetable robot page', () => {
                 {
                     id: 5,
                     semester: 1,
-                    branch: 'common',
+                    branch: 'gymnasial',
                     json_code: 'ME1',
                     json_subject: 'ME',
                     name: 'Musikerziehung 1',
@@ -3045,7 +3303,7 @@ describe('Students timetable robot page', () => {
                 {
                     id: 6,
                     semester: 1,
-                    branch: 'common',
+                    branch: 'gymnasial',
                     json_code: 'BE1',
                     json_subject: 'BE',
                     name: 'Bildnerische Erziehung 1',
@@ -3077,7 +3335,7 @@ describe('Students timetable robot page', () => {
         const courses = () => computed.availableCourses.call(ctx)
         const courseCodes = () => courses().map(course => course.code)
 
-        expect(courseCodes()).toEqual(['D1', 'ETH1', 'L1', 'ME1', 'WIK1'])
+        expect(courseCodes()).toEqual(['D1', 'ETH1', 'L1', 'WIK1'])
 
         ctx.selection.semester = 2
         expect(courseCodes()).toEqual(['D2'])
@@ -3294,10 +3552,247 @@ describe('Students timetable robot page', () => {
         }
 
         expect(computed.studentPlannedCourses.call(ctx).map(course => course.code)).toEqual(['D2'])
-        expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual(['INF2', 'INF3', 'E4', 'M4'])
+        expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual(['INF2', 'INF3', 'E4', 'GW4', 'M4'])
         expect(methods.completedCourseCountsAsDone.call(ctx, '4')).toBe(true)
         expect(methods.completedCourseCountsAsDone.call(ctx, 'B')).toBe(true)
         expect(methods.completedCourseCountsAsDone.call(ctx, '5')).toBe(false)
+    })
+
+    it('shows selected arts module one as an additional course without previous arts history', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: {
+                school_level: '11',
+                attendance_year: '2',
+            },
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                branch: 'gymnasial',
+                artsSubject: 'ME',
+                language: 'L',
+            },
+            subjectMappings: [],
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            studentCompletedCourses: [
+                { subject: 'D6', grade: '3' },
+                { subject: 'M6', grade: '2' },
+            ],
+            subjectRows: [
+                {
+                    id: 1,
+                    semester: 7,
+                    branch: 'gymnasial',
+                    json_code: 'ME1',
+                    json_subject: 'ME',
+                    name: 'Musikerziehung 1',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 2,
+                    semester: 7,
+                    branch: 'gymnasial',
+                    json_code: 'BE1',
+                    json_subject: 'BE',
+                    name: 'Bildnerische Erziehung 1',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+            ],
+        }
+
+        expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual(['ME1'])
+
+        ctx.selection.branch = 'wirtschaftskundlich'
+
+        expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual([])
+    })
+
+    it('shows unfinished earlier Spanish modules as missing courses and keeps planned courses semester-scoped', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: {
+                school_level: '11',
+                attendance_year: '2',
+            },
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+                language: 'S',
+            },
+            subjectMappings: [],
+            languageOptions: computed.languageOptions.call({}),
+            studentCompletedCourses: [
+                { subject: 'CH1', grade: 'B' },
+                { subject: 'SPA2', grade: '3' },
+                { subject: 'SPA3', grade: '2' },
+            ],
+            subjectRows: [
+                {
+                    id: 1,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'S1',
+                    json_subject: 'S',
+                    name: 'Spanisch 1',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 2,
+                    semester: 3,
+                    branch: 'common',
+                    json_code: 'S2',
+                    json_subject: 'S',
+                    name: 'Spanisch 2',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 3,
+                    semester: 4,
+                    branch: 'common',
+                    json_code: 'S3',
+                    json_subject: 'S',
+                    name: 'Spanisch 3',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 4,
+                    semester: 5,
+                    branch: 'common',
+                    json_code: 'S4',
+                    json_subject: 'S',
+                    name: 'Spanisch 4',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 5,
+                    semester: 4,
+                    branch: 'common',
+                    json_code: 'CH1',
+                    json_subject: 'CH',
+                    name: 'Chemie 1',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 6,
+                    semester: 5,
+                    branch: 'common',
+                    json_code: 'CH2',
+                    json_subject: 'CH',
+                    name: 'Chemie 2',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 7,
+                    semester: 6,
+                    branch: 'common',
+                    json_code: 'D6',
+                    json_subject: 'D',
+                    name: 'Deutsch 6',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 8,
+                    semester: 6,
+                    branch: 'common',
+                    json_code: 'S5',
+                    json_subject: 'S',
+                    name: 'Spanisch 5',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+            ],
+        }
+
+        expect(computed.studentMissingCourses.call(ctx).map(course => course.code)).toEqual(['CH2', 'S4'])
+        expect(computed.studentPlannedCourses.call(ctx).map(course => course.code)).toEqual(['D6', 'S5'])
+        expect(computed.availableCourses.call(ctx).map(course => course.code)).toEqual(['CH2', 'D6', 'S4', 'S5'])
+    })
+
+    it('shows missing ethics modules from shared religion and ethics subject rows', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: {
+                school_level: '11',
+                attendance_year: '2',
+            },
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+                language: 'S',
+            },
+            subjectMappings: [],
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            studentCompletedCourses: [
+                { subject: 'ETH1', grade: '1' },
+                { subject: 'ETH3', grade: '1' },
+                { subject: 'ETH4', grade: '' },
+            ],
+            subjectRows: [
+                {
+                    id: 1,
+                    semester: 1,
+                    branch: 'common',
+                    json_code: 'R/ET1',
+                    json_subject: 'R/ET',
+                    name: 'Religion / Ethik 1',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 2,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'R/ET2',
+                    json_subject: 'R/ET',
+                    name: 'Religion / Ethik 2',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 3,
+                    semester: 3,
+                    branch: 'common',
+                    json_code: 'R/ET3',
+                    json_subject: 'R/ET',
+                    name: 'Religion / Ethik 3',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 4,
+                    semester: 4,
+                    branch: 'common',
+                    json_code: 'R/ET4',
+                    json_subject: 'R/ET',
+                    name: 'Religion / Ethik 4',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+            ],
+        }
+
+        expect(computed.studentMissingCourses.call(ctx).map(course => course.code)).toEqual(['ETH2'])
     })
 
     it('splits ordinary slash-separated subject codes into separate robot courses', () => {
