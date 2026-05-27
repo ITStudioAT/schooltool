@@ -512,10 +512,78 @@ it('treats regular courses in the same weekly slots as conflicts even when impor
         ->green_timetable_count->toBe(0)
         ->conflict_timetable_count->toBe(1)
         ->and($result['selected_timetable']['type'])->toBe('conflict')
+        ->and($result['selected_timetable']['metrics']['regular_conflict_count'])->toBe(4)
+        ->and($result['selected_timetable']['slots']['5-7']['conflicts'])
+        ->toBeEmpty()
+        ->and($result['selected_timetable']['slots']['5-7']['sameSlotEntries'])
+        ->toHaveCount(1)
+        ->and($result['selected_timetable']['problems'])
+        ->toBeEmpty();
+});
+
+it('treats regular courses in the same dated slots as conflicts', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('S4', 1),
+            robotSubjectRow('S5', 1),
+        ],
+        subjectMappings: [
+            ['json_subject' => 'S', 'tt_subject' => 'SPA', 'is_active' => true],
+        ],
+        courseGroups: [
+            robotCourseGroup('SPA4-KOR', 'SPA', 5, 7, ['2026-02-20']),
+            robotCourseGroup('SPA5-PIB', 'SPA', 5, 7, ['2026-02-20']),
+        ],
+        settings: robotSettings([
+            'selection' => [
+                'language' => 'S',
+            ],
+            'constraints' => [
+                'availableTimes' => [7],
+            ],
+        ]),
+        selectedTimetableType: 'conflict',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(0)
+        ->green_timetable_count->toBe(0)
+        ->conflict_timetable_count->toBe(1)
+        ->and($result['selected_timetable']['type'])->toBe('conflict')
         ->and($result['selected_timetable']['slots']['5-7']['conflicts'])
         ->toHaveCount(1)
         ->and($result['selected_timetable']['problems'])
         ->not->toBeEmpty();
+});
+
+it('treats date-less regular courses as conflicting with dated regular courses in the same weekly slot', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('A1', 1),
+            robotSubjectRow('B1', 1),
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('A1-weekly', 'A1', 5, 7),
+            robotCourseGroup('B1-dated', 'B1', 5, 7, ['2026-02-20']),
+        ],
+        settings: robotSettings([
+            'constraints' => [
+                'availableTimes' => [7],
+            ],
+        ]),
+        selectedTimetableType: 'conflict',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(0)
+        ->green_timetable_count->toBe(0)
+        ->conflict_timetable_count->toBe(1)
+        ->and($result['selected_timetable']['type'])->toBe('conflict')
+        ->and($result['selected_timetable']['slots']['5-7']['conflicts'])
+        ->toHaveCount(1);
 });
 
 it('selects conflict timetables with fewer regular conflicts first', function () {
@@ -615,11 +683,15 @@ it('counts green timetables when only an attached one-off appointment overlaps',
             robotCourseGroup('M1-a', 'M1', 5, 8, ['2026-03-06']),
         ],
         settings: robotSettings(),
+        selectedTimetableType: 'green',
+        selectedTimetableNumber: 1,
     );
 
     expect($result)
         ->full_green_timetable_count->toBe(0)
-        ->green_timetable_count->toBe(1);
+        ->green_timetable_count->toBe(1)
+        ->conflict_timetable_count->toBe(0)
+        ->and($result['selected_timetable']['type'])->toBe('green');
 });
 
 it('marks recurrence-weighted half-load regular options as distance learning', function () {
@@ -699,6 +771,7 @@ it('does not count a timetable as full green when a one-off appointment overlaps
     expect($result)
         ->full_green_timetable_count->toBe(0)
         ->green_timetable_count->toBe(1)
+        ->conflict_timetable_count->toBe(0)
         ->and($result['selected_timetable']['type'])->toBe('green')
         ->and($result['selected_timetable']['occasionalAppointments'][0]['recurrence_interval'])->toBe(2)
         ->and($result['selected_timetable']['occasionalAppointments'][0]['recurrence_label'])->toBe('2-wöchig')
@@ -951,7 +1024,7 @@ it('counts quality criteria only for the selected timetable result type', functi
         ->and(array_column($greenResult['quality_counters'], 'total'))->toBe([1, 1]);
 });
 
-it('marks quality criteria reached only when the selected timetable hits the best value', function () {
+it('keeps selected timetables inside the best available quality criteria subset', function () {
     $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
         subjectRows: [
             robotSubjectRow('M1', 1),
@@ -989,10 +1062,10 @@ it('marks quality criteria reached only when the selected timetable hits the bes
         ->count->toBe(2)
         ->total->toBe(4)
         ->best_value->toBe(5)
-        ->selected_value->toBe(4)
-        ->selected_reached->toBeFalse()
+        ->selected_value->toBe(5)
+        ->selected_reached->toBeTrue()
         ->and($result['selected_timetable']['qualityCriteria'][0])
-        ->selected_reached->toBeFalse();
+        ->selected_reached->toBeTrue();
 });
 
 it('counts one-off appointments between regular lessons as gaps', function () {
@@ -1034,6 +1107,72 @@ it('counts one-off appointments between regular lessons as gaps', function () {
         ->best_value->toBe(1)
         ->best_label->toBe('1 Lücken')
         ->selected_value->toBe(1);
+});
+
+it('shows timetables that fulfill all active quality criteria first', function () {
+    $arguments = [
+        'subjectRows' => [
+            robotSubjectRow('A1', 1),
+            robotSubjectRow('B1', 1),
+            robotSubjectRow('C1', 1),
+            robotSubjectRow('D1', 1),
+        ],
+        'subjectMappings' => [],
+        'courseGroups' => [
+            robotCourseGroup('A1-saturday', 'A1', 6, 1),
+            robotCourseGroup('A1-monday', 'A1', 1, 1),
+            robotCourseGroup('B1-tuesday', 'B1', 2, 1),
+            robotCourseGroup('B1-monday', 'B1', 1, 2),
+            robotCourseGroup('C1-wednesday', 'C1', 3, 1),
+            robotCourseGroup('B1-monday-late', 'B1', 1, 3),
+            robotCourseGroup('C1-monday', 'C1', 1, 2),
+            robotCourseGroup('C1-monday-late', 'C1', 1, 3),
+            robotCourseGroup('D1-thursday', 'D1', 4, 1),
+            robotCourseGroup('D1-monday', 'D1', 1, 4),
+        ],
+        'settings' => robotSettings(),
+        'evaluationCriteria' => [
+            [
+                'key' => 'saturday_free',
+                'label' => 'Samstag kein Unterricht',
+                'enabled' => true,
+                'priority' => 1,
+            ],
+            [
+                'key' => 'free_days',
+                'label' => 'Anzahl freie Tage',
+                'enabled' => true,
+                'priority' => 2,
+            ],
+            [
+                'key' => 'few_gaps',
+                'label' => 'Wenig Lücken',
+                'enabled' => true,
+                'priority' => 3,
+            ],
+        ],
+        'selectedTimetableType' => 'full_green',
+    ];
+
+    $firstResult = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        ...$arguments,
+        selectedTimetableNumber: 1,
+    );
+    $secondResult = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        ...$arguments,
+        selectedTimetableNumber: 2,
+    );
+
+    expect($firstResult['full_green_timetable_count'])->toBeGreaterThan(2);
+
+    expect($firstResult)
+        ->all_quality_criteria_count->toBe(2)
+        ->and($firstResult['selected_timetable']['metrics']['saturday_free_all_appointments'])->toBeTrue()
+        ->and($firstResult['selected_timetable']['metrics']['free_days'])->toBe(5)
+        ->and($firstResult['selected_timetable']['metrics']['gap_count'])->toBe(0)
+        ->and($secondResult['selected_timetable']['metrics']['saturday_free_all_appointments'])->toBeTrue()
+        ->and($secondResult['selected_timetable']['metrics']['free_days'])->toBe(5)
+        ->and($secondResult['selected_timetable']['metrics']['gap_count'])->toBe(0);
 });
 
 /**

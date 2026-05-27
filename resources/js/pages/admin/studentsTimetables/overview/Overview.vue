@@ -153,26 +153,55 @@
                 <div class="overview-context-card">
                     <div class="overview-wizard-row">
                         <v-btn
+                            v-if="!wizardPanelOpen"
                             class="overview-wizard-button"
-                            variant="flat"
+                            variant="tonal"
+                            color="primary"
                             size="large"
-                            prepend-icon="mdi-star-four-points"
-                            append-icon="mdi-auto-fix"
+                            prepend-icon="mdi-calendar-clock"
                             :active="wizardPanelOpen"
-                            @click="toggleWizardPanel">
-                            Wizzard
+                            @click="openWizardPanel">
+                            <span class="overview-manual-button__label">
+                                <span>Automatischer</span>
+                                <span>Stundenplan</span>
+                            </span>
                         </v-btn>
+                        <div v-else class="overview-wizard-active-label">
+                            Automatischer Stundenplan
+                        </div>
                         <v-btn
+                            v-if="!wizardPanelOpen"
                             class="overview-manual-button"
                             variant="tonal"
                             color="primary"
                             size="large"
                             prepend-icon="mdi-calendar-edit"
-                            active>
+                            :active="manualPanelOpen"
+                            @click="toggleManualPanel">
                             <span class="overview-manual-button__label">
                                 <span>Manueller</span>
                                 <span>Stundenplan</span>
                             </span>
+                        </v-btn>
+                        <v-btn
+                            v-if="wizardPanelOpen"
+                            class="overview-wizard-create-button"
+                            variant="flat"
+                            color="success"
+                            size="large"
+                            prepend-icon="mdi-calendar-clock"
+                            @click="createWizardTimetable">
+                            Stundenplan erstellen
+                        </v-btn>
+                        <v-btn
+                            v-if="wizardPanelOpen"
+                            class="overview-wizard-close-button"
+                            variant="tonal"
+                            color="primary"
+                            size="large"
+                            prepend-icon="mdi-close"
+                            @click="closeWizardPanel">
+                            Schließen
                         </v-btn>
 
                         <div class="overview-wizard-settings-summary">
@@ -220,10 +249,11 @@
 
                 <RobotTimetable
                     v-if="wizardPanelOpen"
+                    ref="wizardCourseCards"
                     embedded-course-cards-only
                     class="overview-wizard-course-cards" />
 
-                <div class="course-choice-panel">
+                <div v-if="manualPanelOpen" class="course-choice-panel">
                     <div class="course-choice-panel__header">
                         <div class="course-choice-panel__title">
                             <v-icon icon="mdi-format-list-checks" size="18" color="primary" />
@@ -282,7 +312,7 @@
                 </div>
 
                 <v-alert
-                    v-if="!visibleTimetableSemesters.length"
+                    v-if="!wizardPanelOpen && !visibleTimetableSemesters.length"
                     type="info"
                     variant="tonal"
                     class="mb-0">
@@ -749,6 +779,7 @@ export default {
             infoDialogOpen: false,
             settingsDialogOpen: false,
             wizardPanelOpen: false,
+            manualPanelOpen: false,
             timetableUpdatePending: false,
             studentDialogOpen: false,
             studentOptionsLoading: false,
@@ -1196,8 +1227,22 @@ export default {
 
             this.$nextTick(scheduleActionAfterPaint)
         },
-        toggleWizardPanel() {
-            this.wizardPanelOpen = !this.wizardPanelOpen
+        openWizardPanel() {
+            this.wizardPanelOpen = true
+            this.manualPanelOpen = false
+        },
+        closeWizardPanel() {
+            this.wizardPanelOpen = false
+        },
+        createWizardTimetable() {
+            this.$refs.wizardCourseCards?.loadFullGreenTimetableCount?.()
+        },
+        toggleManualPanel() {
+            this.manualPanelOpen = !this.manualPanelOpen
+
+            if (this.manualPanelOpen) {
+                this.wizardPanelOpen = false
+            }
         },
         async onSettingsSaved() {
             this.settingsDialogOpen = false
@@ -1383,9 +1428,23 @@ export default {
         },
         resetSavedTimetable() {
             this.runTimetableUpdate(() => {
+                this.resetTimetablePanels()
                 this.removeSavedTimetableState()
                 this.applyTimetableState(this.defaultTimetableState())
             })
+        },
+        resetTimetablePanels() {
+            this.$refs.wizardCourseCards?.clearGeneratedTimetables?.()
+            this.wizardPanelOpen = false
+            this.manualPanelOpen = false
+            this.infoDialogOpen = false
+            this.settingsDialogOpen = false
+            this.courseMenuDialog = false
+            this.courseGroupDialog = false
+            this.studentDialogOpen = false
+            this.selectionDialogOpen = false
+            this.selectedCourseMenuKey = ''
+            this.selectedCourseGroup = null
         },
         defaultTimetableState() {
             return {
@@ -3368,19 +3427,7 @@ export default {
     min-width: 0;
 }
 
-.overview-wizard-button {
-    flex: 0 0 auto;
-    min-height: 48px;
-    border-radius: 8px;
-    background: linear-gradient(90deg, #e11d48, #f59e0b 32%, #16a34a 66%, #2563eb);
-    color: #ffffff;
-    font-size: 0.92rem;
-    font-weight: 800;
-    letter-spacing: 0;
-    text-transform: none;
-    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
-}
-
+.overview-wizard-button,
 .overview-manual-button {
     flex: 0 0 auto;
     min-height: 48px;
@@ -3396,6 +3443,24 @@ export default {
     gap: 1px;
     line-height: 1.05;
     text-align: left;
+}
+
+.overview-wizard-active-label {
+    flex: 0 0 auto;
+    color: #1f2937;
+    font-size: 0.92rem;
+    font-weight: 850;
+    letter-spacing: 0;
+}
+
+.overview-wizard-close-button,
+.overview-wizard-create-button {
+    flex: 0 0 auto;
+    min-height: 48px;
+    border-radius: 8px;
+    font-weight: 850;
+    letter-spacing: 0;
+    text-transform: none;
 }
 
 .overview-wizard-settings-summary {

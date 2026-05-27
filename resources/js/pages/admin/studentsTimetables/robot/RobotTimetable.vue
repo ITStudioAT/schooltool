@@ -1132,6 +1132,30 @@
                                             {{ generatedSlotDetails(robotTimetableSlot(weekday.value, time.value)) }}
                                         </div>
                                         <div
+                                            v-if="generatedSlotSameSlotBlocks(robotTimetableSlot(weekday.value, time.value)).length"
+                                            class="robot-generated-cell__same-slots">
+                                            <div
+                                                v-for="sameSlotBlock in generatedSlotSameSlotBlocks(robotTimetableSlot(weekday.value, time.value))"
+                                                :key="sameSlotBlock.key"
+                                                class="robot-generated-cell__same-slot-block">
+                                                <div class="robot-generated-cell__code">
+                                                    <span>{{ sameSlotBlock.code }}</span>
+                                                    <sup v-if="sameSlotBlock.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                                                    <sup v-if="generatedSlotWeekMarker(sameSlotBlock, selectedRobotTimetable)" class="robot-course-fu robot-course-week-marker">
+                                                        {{ generatedSlotWeekMarker(sameSlotBlock, selectedRobotTimetable) }}
+                                                    </sup>
+                                                </div>
+                                                <div
+                                                    v-if="generatedSlotDateLabel(sameSlotBlock)"
+                                                    class="robot-generated-cell__date">
+                                                    {{ generatedSlotDateLabel(sameSlotBlock) }}
+                                                </div>
+                                                <div class="robot-generated-cell__details">
+                                                    {{ generatedSlotDetails(sameSlotBlock) }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div
                                             v-if="generatedSlotConflicts(robotTimetableSlot(weekday.value, time.value)).length"
                                             class="robot-generated-cell__conflicts">
                                             <div
@@ -1467,6 +1491,473 @@
             <EvaluationSettings :closable="true" @close="settingsDialogOpen = false" @saved="onSettingsSaved" />
         </v-dialog>
     </v-col>
+
+    <div
+        v-if="embeddedCourseCardsOnly && (fullGreenTimetableCountLoading || fullGreenTimetableCountError || timetableCountResultsAvailable || selectedRobotTimetable)"
+        class="robot-generator robot-generator--embedded">
+        <v-progress-linear
+            v-if="fullGreenTimetableCountLoading"
+            indeterminate
+            color="primary"
+            class="mb-3" />
+
+        <v-alert
+            v-if="fullGreenTimetableCountError"
+            type="error"
+            variant="tonal"
+            class="mb-0">
+            {{ fullGreenTimetableCountError }}
+        </v-alert>
+
+        <template v-if="timetableCountResultsAvailable">
+            <div class="robot-count-cards">
+                <div
+                    class="robot-count-card"
+                    :class="{ 'robot-count-card--selected': timetableResultCardSelected('full_green') }">
+                    <div class="robot-count-card__content">
+                        <div class="robot-count-card__label">Volle grüne Stundenpläne</div>
+                        <div class="robot-count-card__value">
+                            <v-progress-circular
+                                v-if="fullGreenTimetableCountLoading"
+                                indeterminate
+                                size="22"
+                                width="2"
+                                color="primary" />
+                            <template v-else>
+                                {{ fullGreenTimetableCountLabel }}
+                            </template>
+                        </div>
+                    </div>
+                    <div class="robot-count-card__actions">
+                        <v-switch
+                            :model-value="timetableResultCardSelected('full_green')"
+                            color="success"
+                            inset
+                            hide-details
+                            density="compact"
+                            :disabled="!isTimetableResultTypeSelectable('full_green')"
+                            aria-label="Volle grüne Stundenpläne auswählen"
+                            @update:modelValue="setSelectedTimetableResultType('full_green', $event)" />
+                        <v-icon icon="mdi-check-circle-outline" color="success" />
+                    </div>
+                </div>
+
+                <div
+                    class="robot-count-card robot-count-card--green"
+                    :class="{ 'robot-count-card--selected': timetableResultCardSelected('green') }">
+                    <div class="robot-count-card__content">
+                        <div class="robot-count-card__label">Grüne Stundenpläne</div>
+                        <div class="robot-count-card__value">
+                            <v-progress-circular
+                                v-if="fullGreenTimetableCountLoading"
+                                indeterminate
+                                size="22"
+                                width="2"
+                                color="primary" />
+                            <template v-else>
+                                {{ greenTimetableCountLabel }}
+                            </template>
+                        </div>
+                    </div>
+                    <div class="robot-count-card__actions">
+                        <v-switch
+                            :model-value="timetableResultCardSelected('green')"
+                            color="primary"
+                            inset
+                            hide-details
+                            density="compact"
+                            :disabled="!isTimetableResultTypeSelectable('green')"
+                            aria-label="Grüne Stundenpläne auswählen"
+                            @update:modelValue="setSelectedTimetableResultType('green', $event)" />
+                        <v-icon icon="mdi-calendar-check-outline" color="primary" />
+                    </div>
+                </div>
+
+                <div
+                    v-if="showConflictTimetableResults"
+                    class="robot-count-card robot-count-card--conflict"
+                    :class="{ 'robot-count-card--selected': timetableResultCardSelected('conflict') }">
+                    <div class="robot-count-card__content">
+                        <div class="robot-count-card__label">Stundenpläne mit Konflikten</div>
+                        <div class="robot-count-card__value">
+                            <v-progress-circular
+                                v-if="fullGreenTimetableCountLoading"
+                                indeterminate
+                                size="22"
+                                width="2"
+                                color="primary" />
+                            <template v-else>
+                                {{ conflictTimetableCountLabel }}
+                            </template>
+                        </div>
+                    </div>
+                    <div class="robot-count-card__actions">
+                        <v-switch
+                            :model-value="timetableResultCardSelected('conflict')"
+                            color="warning"
+                            inset
+                            hide-details
+                            density="compact"
+                            :disabled="!isTimetableResultTypeSelectable('conflict')"
+                            aria-label="Stundenpläne mit Konflikten auswählen"
+                            @update:modelValue="setSelectedTimetableResultType('conflict', $event)" />
+                        <v-icon icon="mdi-alert-circle-outline" color="warning" />
+                    </div>
+                </div>
+
+                <div
+                    v-if="selectedAdditionalCourses.length"
+                    class="robot-count-card robot-count-card--additional"
+                    :class="{ 'robot-count-card--selected': additionalCourseTimetableRequired }">
+                    <div class="robot-count-card__content">
+                        <div class="robot-count-card__label">Stundenpläne mit Zusatzkursen</div>
+                        <div class="robot-count-card__value">
+                            <v-progress-circular
+                                v-if="fullGreenTimetableCountLoading"
+                                indeterminate
+                                size="22"
+                                width="2"
+                                color="primary" />
+                            <template v-else>
+                                {{ additionalCourseTimetableCountLabel }}
+                            </template>
+                        </div>
+                    </div>
+                    <div class="robot-count-card__actions">
+                        <v-switch
+                            :model-value="additionalCourseTimetableRequired"
+                            color="deep-orange"
+                            inset
+                            hide-details
+                            density="compact"
+                            :disabled="!isAdditionalCourseTimetableFilterSelectable()"
+                            aria-label="Stundenpläne mit Zusatzkursen auswählen"
+                            @update:modelValue="setAdditionalCourseTimetableRequired($event)" />
+                        <v-icon icon="mdi-plus-circle-outline" color="deep-orange" />
+                    </div>
+                </div>
+            </div>
+
+            <v-alert
+                v-if="selectedOptionsNoResultAlertVisible"
+                type="info"
+                variant="tonal"
+                density="compact"
+                class="robot-no-result-alert">
+                <div class="robot-no-result-alert__title">
+                    Keine passenden Stundenpläne für die aktuelle Auswahl.
+                </div>
+                <ul
+                    v-if="selectedOptionsNoResultReasons.length"
+                    class="robot-no-result-alert__reasons">
+                    <li
+                        v-for="reason in selectedOptionsNoResultReasons"
+                        :key="reason">
+                        {{ reason }}
+                    </li>
+                </ul>
+            </v-alert>
+
+            <div class="robot-quality-card">
+                <div class="robot-quality-card__header">
+                    <div>
+                        <div class="robot-quality-card__title">Qualitätskriterien</div>
+                        <div class="robot-quality-card__meta">
+                            Erreichte aktive Bewertungskriterien
+                        </div>
+                    </div>
+                    <v-icon icon="mdi-chart-box-outline" color="primary" />
+                </div>
+
+                <div v-if="qualityCriterionRows.length" class="robot-quality-card__items">
+                    <div class="robot-quality-card__item robot-quality-card__item--summary">
+                        <div class="robot-quality-card__item-copy">
+                            <div class="robot-quality-card__item-label">
+                                Alle Qualitätskriterien erfüllt
+                            </div>
+                            <div class="robot-quality-card__item-meta">
+                                {{ allQualityCriteriaCountDetail() }}
+                            </div>
+                        </div>
+                        <div class="robot-quality-card__item-count">
+                            {{ allQualityCriteriaCountLabel() }}
+                        </div>
+                    </div>
+
+                    <div
+                        v-for="(counter, counterIndex) in qualityCriterionRows"
+                        :key="`embedded-quality-${counter.key}`"
+                        class="robot-quality-card__item">
+                        <div class="robot-quality-card__item-copy">
+                            <div class="robot-quality-card__item-label">
+                                {{ counterIndex + 1 }}. {{ counter.label }}
+                            </div>
+                            <div class="robot-quality-card__item-meta">
+                                {{ qualityCounterDetail(counter) }}
+                            </div>
+                        </div>
+                        <v-checkbox-btn
+                            :model-value="counter.enabled === true"
+                            color="primary"
+                            density="compact"
+                            :disabled="fullGreenTimetableCountLoading"
+                            :aria-label="`${counter.label} für diese Berechnung verwenden`"
+                            class="robot-quality-card__item-check"
+                            @update:model-value="setEvaluationCriterionEnabled(counter, $event)" />
+                        <div class="robot-quality-card__item-count">
+                            {{ qualityCounterCountLabel(counter) }}
+                        </div>
+                    </div>
+                </div>
+
+                <v-alert v-else type="info" variant="tonal" density="compact" class="mb-0">
+                    Keine aktiven Bewertungskriterien gespeichert.
+                </v-alert>
+            </div>
+        </template>
+
+        <div v-if="selectedRobotTimetable" class="robot-generated">
+            <div class="robot-course-list__header robot-generated-header">
+                <div class="robot-course-list__title">Stundenplan</div>
+                <div class="robot-generated-header__actions">
+                    <v-btn
+                        color="success"
+                        size="small"
+                        variant="tonal"
+                        prepend-icon="mdi-table-arrow-right"
+                        :disabled="!selectedRobotTimetableCourseGroupKeys().length"
+                        @click="overtakeSelectedTimetableToOverview">
+                        In Übersicht übernehmen
+                    </v-btn>
+                    <div
+                        v-if="selectedTimetableResultCount > 0"
+                        class="robot-timetable-selector">
+                        <v-btn
+                            icon="mdi-chevron-left"
+                            size="small"
+                            variant="tonal"
+                            color="primary"
+                            :disabled="timetableResultCounter(selectedTimetableResultType) <= 1"
+                            :aria-label="`Vorheriger ${selectedTimetableResultTitle}`"
+                            @click="moveTimetableResultCounter(selectedTimetableResultType, -1)" />
+                        <div class="robot-timetable-selector__value" aria-live="polite">
+                            {{ timetableResultCounter(selectedTimetableResultType) }} / {{ selectedTimetableResultCount }}
+                        </div>
+                        <v-btn
+                            icon="mdi-chevron-right"
+                            size="small"
+                            variant="tonal"
+                            color="primary"
+                            :disabled="timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
+                            :aria-label="`Nächster ${selectedTimetableResultTitle}`"
+                            @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
+                    </div>
+                </div>
+            </div>
+
+            <div
+                v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length"
+                class="robot-quality-summary">
+                <span
+                    v-for="counter in activeQualityCriterionRows"
+                    :key="`embedded-quality-summary-${counter.key}`"
+                    class="robot-quality-summary__item">
+                    <span class="robot-quality-summary__label">{{ counter.label }}:</span>
+                    <v-icon
+                        :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
+                        :color="qualityCounterReached(counter) ? 'success' : 'error'"
+                        size="16" />
+                </span>
+                <span
+                    v-if="selectedAdditionalCourses.length"
+                    class="robot-quality-summary__item">
+                    <span class="robot-quality-summary__label">Zusatzkurse: {{ additionalCourseAcceptanceLabel() }}</span>
+                    <v-icon
+                        :icon="additionalCourseAcceptanceIcon()"
+                        :color="additionalCourseAcceptanceColor()"
+                        size="16" />
+                </span>
+            </div>
+
+            <v-alert
+                v-if="selectedTimetableMissingAdditionalCourses().length"
+                type="error"
+                variant="tonal"
+                density="compact"
+                class="robot-no-result-alert">
+                Nicht alle gewählten Zusatzkurse konnten berücksichtigt werden:
+                {{ selectedTimetableMissingAdditionalCourseLabels() }}.
+            </v-alert>
+
+            <div
+                v-if="displayedTimetableProblems(selectedRobotTimetable).length"
+                class="robot-generated-timetable__problems robot-problems">
+                <div class="robot-problems__title">Konflikte</div>
+                <ul class="robot-problems__details">
+                    <li
+                        v-for="problem in displayedTimetableProblems(selectedRobotTimetable)"
+                        :key="problem">
+                        {{ problemSummary(problem) }}
+                    </li>
+                </ul>
+            </div>
+
+            <div
+                class="robot-generated-grid"
+                :style="{ '--robot-generated-weekdays': robotTimetableWeekdays.length }">
+                <div class="robot-generated-cell robot-generated-cell--header">Std.</div>
+                <div
+                    v-for="weekday in robotTimetableWeekdays"
+                    :key="`embedded-robot-header-${weekday.value}`"
+                    class="robot-generated-cell robot-generated-cell--header">
+                    {{ weekday.shortTitle }}
+                </div>
+
+                <template
+                    v-for="time in robotTimetableTimes"
+                    :key="`embedded-robot-time-${time.value}`">
+                    <div class="robot-generated-cell robot-generated-cell--time">
+                        {{ time.shortTitle }}
+                    </div>
+                    <div
+                        v-for="weekday in robotTimetableWeekdays"
+                        :key="`embedded-robot-${weekday.value}-${time.value}`"
+                        class="robot-generated-cell"
+                        :class="robotTimetableCellClasses(weekday.value, time.value)">
+                        <div
+                            v-if="robotTimetableSlot(weekday.value, time.value)"
+                            class="robot-generated-cell__content">
+                            <div class="robot-generated-cell__code">
+                                <span>{{ robotTimetableSlot(weekday.value, time.value).code }}</span>
+                                <sup
+                                    v-if="robotTimetableSlot(weekday.value, time.value).isDistanceLearningCourse"
+                                    class="robot-course-fu">
+                                    FU
+                                </sup>
+                                <sup
+                                    v-if="generatedSlotWeekMarker(robotTimetableSlot(weekday.value, time.value), selectedRobotTimetable)"
+                                    class="robot-course-fu robot-course-week-marker">
+                                    {{ generatedSlotWeekMarker(robotTimetableSlot(weekday.value, time.value), selectedRobotTimetable) }}
+                                </sup>
+                            </div>
+                            <div
+                                v-if="generatedSlotDateLabel(robotTimetableSlot(weekday.value, time.value))"
+                                class="robot-generated-cell__date">
+                                {{ generatedSlotDateLabel(robotTimetableSlot(weekday.value, time.value)) }}
+                            </div>
+                            <div class="robot-generated-cell__details">
+                                {{ generatedSlotDetails(robotTimetableSlot(weekday.value, time.value)) }}
+                            </div>
+                            <div
+                                v-if="generatedSlotSameSlotBlocks(robotTimetableSlot(weekday.value, time.value)).length"
+                                class="robot-generated-cell__same-slots">
+                                <div
+                                    v-for="sameSlotBlock in generatedSlotSameSlotBlocks(robotTimetableSlot(weekday.value, time.value))"
+                                    :key="sameSlotBlock.key"
+                                    class="robot-generated-cell__same-slot-block">
+                                    <div class="robot-generated-cell__code">
+                                        <span>{{ sameSlotBlock.code }}</span>
+                                        <sup v-if="sameSlotBlock.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                                        <sup v-if="generatedSlotWeekMarker(sameSlotBlock, selectedRobotTimetable)" class="robot-course-fu robot-course-week-marker">
+                                            {{ generatedSlotWeekMarker(sameSlotBlock, selectedRobotTimetable) }}
+                                        </sup>
+                                    </div>
+                                    <div
+                                        v-if="generatedSlotDateLabel(sameSlotBlock)"
+                                        class="robot-generated-cell__date">
+                                        {{ generatedSlotDateLabel(sameSlotBlock) }}
+                                    </div>
+                                    <div class="robot-generated-cell__details">
+                                        {{ generatedSlotDetails(sameSlotBlock) }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div
+                                v-if="generatedSlotConflicts(robotTimetableSlot(weekday.value, time.value)).length"
+                                class="robot-generated-cell__conflicts">
+                                <div
+                                    v-for="conflictBlock in generatedSlotConflictBlocks(robotTimetableSlot(weekday.value, time.value))"
+                                    :key="conflictBlock.key"
+                                    class="robot-generated-cell__conflict-block">
+                                    <div class="robot-generated-cell__code">
+                                        <span>{{ conflictBlock.code }}</span>
+                                        <sup v-if="conflictBlock.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                                        <sup v-if="generatedSlotWeekMarker(conflictBlock, selectedRobotTimetable)" class="robot-course-fu robot-course-week-marker">
+                                            {{ generatedSlotWeekMarker(conflictBlock, selectedRobotTimetable) }}
+                                        </sup>
+                                    </div>
+                                    <div class="robot-generated-cell__details">
+                                        {{ generatedSlotDetails(conflictBlock) }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div
+                            v-if="robotTimetableOccasionalMarkers(weekday.value, time.value).length"
+                            class="robot-generated-cell__occasional-markers">
+                            <span
+                                v-for="marker in robotTimetableOccasionalMarkers(weekday.value, time.value)"
+                                :key="marker.key"
+                                class="robot-generated-cell__occasional-marker"
+                                :class="{ 'robot-generated-cell__occasional-marker--additional': marker.isAdditionalCourse }">
+                                <span>{{ marker.code }}</span>
+                                <sup v-if="marker.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                                <sup v-if="marker.weekMarker" class="robot-course-fu robot-course-week-marker">
+                                    {{ marker.weekMarker }}
+                                </sup>
+                            </span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <div
+                v-if="selectedRobotTimetable && groupedOccasionalAppointments(selectedRobotTimetable).length"
+                class="robot-generated-appointments">
+                <div class="robot-generated-appointments__title">Einzeltermine</div>
+                <div class="robot-generated-appointments__groups">
+                    <div
+                        v-for="group in groupedOccasionalAppointments(selectedRobotTimetable)"
+                        :key="`embedded-appointment-${group.key}`"
+                        class="robot-generated-appointment-group">
+                        <div class="robot-generated-appointment-group__title">
+                            <span>{{ group.title }}</span>
+                            <sup v-if="group.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                            <sup v-if="group.weekMarker" class="robot-course-fu robot-course-week-marker">
+                                {{ group.weekMarker }}
+                            </sup>
+                        </div>
+                        <ul class="robot-generated-appointments__list">
+                            <li
+                                v-for="row in group.rows"
+                                :key="row.key"
+                                class="robot-generated-appointment"
+                                :class="{
+                                    'robot-generated-appointment--clear': !row.hasConflict,
+                                    'robot-generated-appointment--conflict': row.hasConflict,
+                                }">
+                                <v-icon
+                                    :icon="row.hasConflict ? 'mdi-alert-circle-outline' : 'mdi-check-circle-outline'"
+                                    :color="row.hasConflict ? 'error' : 'success'"
+                                    size="15"
+                                    class="robot-generated-appointment__icon" />
+                                <span class="robot-generated-appointment__text">
+                                    <span class="robot-generated-appointment__date">
+                                        {{ row.dateTimeLabel }}
+                                    </span>
+                                    <span
+                                        v-if="row.metaLabel"
+                                        class="robot-generated-appointment__meta">
+                                        {{ row.metaLabel }}
+                                    </span>
+                                </span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </template>
 
 <script>
@@ -1979,7 +2470,16 @@ export default {
                 ].some(count => count !== null)
         },
         selectedTimetableResultCount() {
+            if (this.qualityCriteriaResultFilterActive) {
+                return Math.max(0, Number(this.allQualityCriteriaCount || 0))
+            }
+
             return this.timetableResultCounterLimit(this.selectedTimetableResultType)
+        },
+        qualityCriteriaResultFilterActive() {
+            return this.activeQualityCriterionRows.length > 0
+                && this.allQualityCriteriaCount !== null
+                && Number(this.allQualityCriteriaCount || 0) > 0
         },
         selectedOptionsNoResultAlertVisible() {
             return this.timetableCountResultsAvailable
@@ -2643,7 +3143,7 @@ export default {
             }
         },
         setTimetableResultCounter(type, value) {
-            const counter = this.normalizedTimetableResultCounter(value, this.timetableResultCounterLimit(type))
+            const counter = this.normalizedTimetableResultCounter(value, this.timetableResultCounterLimitForCounter(type))
 
             if (type === 'conflict') {
                 this.conflictTimetableNumber = counter
@@ -2658,6 +3158,13 @@ export default {
             }
 
             this.fullGreenTimetableNumber = counter
+        },
+        timetableResultCounterLimitForCounter(type) {
+            if (type === this.selectedTimetableResultType && this.qualityCriteriaResultFilterActive) {
+                return this.selectedTimetableResultCount
+            }
+
+            return this.timetableResultCounterLimit(type)
         },
         normalizeTimetableResultCounters() {
             this.setTimetableResultCounter('full_green', this.fullGreenTimetableNumber)
@@ -2990,6 +3497,9 @@ export default {
             const slotCourseGroups = Object.values(timetable.slots || {})
                 .flatMap(slot => [
                     slot?.courseGroup,
+                    ...(Array.isArray(slot?.sameSlotEntries)
+                        ? slot.sameSlotEntries.map(entry => entry?.courseGroup)
+                        : []),
                     ...(Array.isArray(slot?.conflicts)
                         ? slot.conflicts.map(conflict => conflict?.courseGroup)
                         : []),
@@ -3230,15 +3740,21 @@ export default {
         robotTimetableCellClasses(weekday, time) {
             const slot = this.robotTimetableSlot(weekday, time)
             const occasionalMarkers = this.robotTimetableOccasionalMarkers(weekday, time)
-            const hasConflicts = slot && this.generatedSlotConflicts(slot).length > 0
 
             return {
                 'robot-generated-cell--filled': Boolean(slot),
                 'robot-generated-cell--additional': slot?.isAdditionalCourse === true,
-                'robot-generated-cell--conflict': hasConflicts,
+                'robot-generated-cell--conflict': this.slotHasVisualConflict(slot),
                 'robot-generated-cell--has-occasional': occasionalMarkers.length > 0,
                 'robot-generated-cell--unavailable': !this.weekdayTimeAvailable(weekday, time),
             }
+        },
+        slotHasVisualConflict(slot) {
+            return Boolean(slot)
+                && (
+                    this.generatedSlotConflicts(slot).length > 0
+                    || this.generatedSlotSameSlotBlocks(slot).length > 0
+                )
         },
         weekdayTimeAvailable(weekday, time) {
             return this.weekdayTimeAvailableFor(this.constraints, weekday, time)
@@ -3377,7 +3893,7 @@ export default {
             if (this.allQualityCriteriaCount === null) return '-'
 
             return `${this.formatNumber(this.allQualityCriteriaCount)} / ${
-                this.formatNumber(this.selectedTimetableResultCount)
+                this.formatNumber(this.timetableResultCounterLimit(this.selectedTimetableResultType))
             }`
         },
         allQualityCriteriaCountDetail() {
@@ -3505,10 +4021,11 @@ export default {
         },
         selectedTimetableConflictCourses() {
             return Object.values(this.selectedRobotTimetable?.slots || {})
-                .filter(slot => Array.isArray(slot?.conflicts) && slot.conflicts.length)
+                .filter(slot => this.slotHasVisualConflict(slot))
                 .flatMap(slot => [
                     slot,
-                    ...slot.conflicts,
+                    ...(Array.isArray(slot.sameSlotEntries) ? slot.sameSlotEntries : []),
+                    ...(Array.isArray(slot.conflicts) ? slot.conflicts : []),
                 ])
         },
         additionalCourseMissingInSelectedTimetable(course) {
@@ -3718,6 +4235,16 @@ export default {
                 isOccasional: Boolean(source?.isOccasional),
                 isDistanceLearningCourse: source?.isDistanceLearningCourse === true,
             }
+        },
+        generatedSlotSameSlotBlocks(slot) {
+            return Array.isArray(slot?.sameSlotEntries)
+                ? slot.sameSlotEntries
+                    .toSorted((firstEntry, secondEntry) =>
+                        String(firstEntry.sortValue || '').localeCompare(String(secondEntry.sortValue || '')),
+                    )
+                    .map(entry => this.generatedSlotConflictBlock(entry))
+                    .filter(block => block.code || this.generatedSlotDetails(block))
+                : []
         },
         courseGroupItems(course) {
             if (this.courseGroupItemsByCourseKey instanceof Map) {
@@ -5563,14 +6090,23 @@ export default {
 
                 option.courseGroups.forEach(courseGroup => {
                     const key = this.slotKey(courseGroup.weekday, courseGroup.hour)
-
-                    nextAssignedSlots[key] = {
+                    const timetableSlot = {
                         ...option.course,
                         sourceLabel: option.label,
                         alternativeLabels: this.optionAlternativeLabelsForSlot(option, key),
                         courseGroup,
                         isDistanceLearningCourse: this.optionIsDistanceLearningCourse(option),
                     }
+                    const existingSlot = nextAssignedSlots[key]
+
+                    if (existingSlot && !existingSlot.isConflictPreview) {
+                        nextAssignedSlots[key] = this.assignedSlotWithSameSlotEntry(existingSlot, timetableSlot)
+                        nextUsedSlotKeys.add(key)
+
+                        return
+                    }
+
+                    nextAssignedSlots[key] = timetableSlot
                     nextUsedSlotKeys.add(key)
                 })
 
@@ -5667,18 +6203,20 @@ export default {
         timetableCombinationSignature(combination) {
             return Object.entries(combination?.slots || {})
                 .filter(([, slot]) => slot && !slot.isConflictPreview)
-                .map(([slotKey, slot]) => [
+                .flatMap(([slotKey, slot]) => this.assignedSlotEntries(slot).map(entry => [
                     slotKey,
-                    slot?.key || slot?.code || '',
-                    slot?.sourceLabel || '',
-                ].join(':'))
+                    entry?.key || entry?.code || '',
+                    entry?.sourceLabel || '',
+                    this.courseGroupDates(entry?.courseGroup).join(','),
+                ].join(':')))
                 .sort()
                 .join('|')
         },
         scheduledCourseCountForSlots(slots) {
             return new Set(Object.values(slots || {})
                 .filter(slot => slot && !slot.isConflictPreview)
-                .map(slot => slot?.key || slot?.code)
+                .flatMap(slot => this.assignedSlotEntries(slot))
+                .map(entry => entry?.key || entry?.code)
                 .filter(Boolean))
                 .size
         },
@@ -5967,30 +6505,50 @@ export default {
 
             return nextAssignedSlots
         },
+        assignedSlotWithSameSlotEntry(slot, sameSlotEntry) {
+            const sameSlotEntries = [
+                ...(Array.isArray(slot.sameSlotEntries) ? slot.sameSlotEntries : []),
+                sameSlotEntry,
+            ]
+                .filter(entry => (entry?.key || entry?.code) !== (slot?.key || slot?.code))
+                .filter((entry, index, entries) => entries.findIndex(existingEntry =>
+                    (existingEntry?.key || existingEntry?.code) === (entry?.key || entry?.code)
+                        && String(existingEntry?.sourceLabel || '') === String(entry?.sourceLabel || ''),
+                ) === index)
+
+            return {
+                ...slot,
+                sameSlotEntries,
+            }
+        },
         optionCourseConflictEntries(option, assignedSlots, usedSlotKeys) {
             return option.courseGroups
                 .filter(courseGroup => usedSlotKeys.has(this.slotKey(courseGroup.weekday, courseGroup.hour)))
                 .filter(courseGroup => this.assignedSlotConfrontsCourseGroup(assignedSlots, courseGroup))
-                .map(courseGroup => {
+                .flatMap(courseGroup => {
                     const key = this.slotKey(courseGroup.weekday, courseGroup.hour)
                     const assignedSlot = assignedSlots[key]
-                    const label = [
-                        this.courseProblemLabel(assignedSlot),
-                        this.courseGroupTimeRangeLabel(assignedSlot?.courseGroup || courseGroup),
-                    ]
-                        .filter(Boolean)
-                        .join(' ')
+                    return this.assignedSlotEntries(assignedSlot)
+                        .filter(entry => this.courseGroupsConfront(entry.courseGroup, courseGroup))
+                        .map(entry => {
+                            const label = [
+                                this.courseProblemLabel(entry),
+                                this.courseGroupTimeRangeLabel(entry?.courseGroup || courseGroup),
+                            ]
+                                .filter(Boolean)
+                                .join(' ')
 
-                    return {
-                        label,
-                        sortValue: `${String(courseGroup?.weekday || '').padStart(2, '0')}-${String(courseGroup?.hour || '').padStart(2, '0')}-${label}`,
-                        code: assignedSlot?.code || '',
-                        name: assignedSlot?.name || '',
-                        sourceLabel: assignedSlot?.sourceLabel || this.courseGroupSourceLabel(assignedSlot?.courseGroup),
-                        alternativeLabels: assignedSlot?.alternativeLabels || [],
-                        courseGroup: assignedSlot?.courseGroup,
-                        isDistanceLearningCourse: assignedSlot?.isDistanceLearningCourse === true,
-                    }
+                            return {
+                                label,
+                                sortValue: `${String(courseGroup?.weekday || '').padStart(2, '0')}-${String(courseGroup?.hour || '').padStart(2, '0')}-${label}`,
+                                code: entry?.code || '',
+                                name: entry?.name || '',
+                                sourceLabel: entry?.sourceLabel || this.courseGroupSourceLabel(entry?.courseGroup),
+                                alternativeLabels: entry?.alternativeLabels || [],
+                                courseGroup: entry?.courseGroup,
+                                isDistanceLearningCourse: entry?.isDistanceLearningCourse === true,
+                            }
+                        })
                 })
                 .filter(conflict => conflict.label)
                 .filter((conflict, index, conflicts) =>
@@ -6023,14 +6581,16 @@ export default {
                 option.courseGroups
                     .filter(courseGroup => usedSlotKeys.has(this.slotKey(courseGroup.weekday, courseGroup.hour)))
                     .filter(courseGroup => this.assignedSlotConfrontsCourseGroup(assignedSlots, courseGroup))
-                    .map(courseGroup => {
+                    .flatMap(courseGroup => {
                         const key = this.slotKey(courseGroup.weekday, courseGroup.hour)
                         const assignedSlot = assignedSlots[key]
                         const weekday = this.weekdayOptions.find(item => Number(item.value) === Number(courseGroup.weekday))
                         const time = this.timeOptions.find(item => Number(item.value) === Number(courseGroup.hour))
                         const slotLabel = `${weekday?.shortTitle || courseGroup.weekday} ${time?.shortTitle || `${courseGroup.hour}. Stunde`}`
 
-                        return assignedSlot?.code ? `${assignedSlot.code} (${slotLabel})` : slotLabel
+                        return this.assignedSlotEntries(assignedSlot)
+                            .filter(entry => this.courseGroupsConfront(entry.courseGroup, courseGroup))
+                            .map(entry => entry?.code ? `${entry.code} (${slotLabel})` : slotLabel)
                     }),
             )).slice(0, 4)
         },
@@ -6192,14 +6752,26 @@ export default {
                 const assignedSlot = assignedSlots?.[key]
                 if (!assignedSlot?.courseGroup) return true
 
-                return this.courseGroupsBlockTimetableSlot(assignedSlot.courseGroup, courseGroup)
+                return this.assignedSlotEntries(assignedSlot).some(entry =>
+                    this.courseGroupsBlockTimetableSlot(entry.courseGroup, courseGroup),
+                )
             })
         },
         assignedSlotConfrontsCourseGroup(assignedSlots, courseGroup) {
             const assignedSlot = assignedSlots[this.slotKey(courseGroup.weekday, courseGroup.hour)]
             if (!assignedSlot) return false
 
-            return this.courseGroupsConfront(assignedSlot.courseGroup, courseGroup)
+            return this.assignedSlotEntries(assignedSlot).some(entry =>
+                this.courseGroupsConfront(entry.courseGroup, courseGroup),
+            )
+        },
+        assignedSlotEntries(slot) {
+            if (!slot) return []
+
+            return [
+                slot,
+                ...(Array.isArray(slot.sameSlotEntries) ? slot.sameSlotEntries : []),
+            ].filter(entry => entry?.courseGroup)
         },
         optionAlternativeLabelsForSlot(option, slotKey) {
             return option.slotAlternativeLabels?.[slotKey] || option.alternativeLabels || [option.label]
@@ -6831,8 +7403,119 @@ export default {
 
 .robot-timetable-embedded-course-cards {
     display: grid;
-    gap: 14px;
+    gap: 10px;
     margin-bottom: 16px;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-list {
+    margin-top: 0;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-panel {
+    border-color: rgba(37, 99, 235, 0.32);
+    background: #f8fbff;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.robot-timetable-embedded-course-cards .robot-course-panel + .robot-course-panel {
+    border-color: rgba(234, 88, 12, 0.32);
+    background: #fff7ed;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-panel__title {
+    min-height: 34px;
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(37, 99, 235, 0.14);
+    border-radius: 8px 8px 0 0;
+    background: rgba(219, 234, 254, 0.72);
+}
+
+.robot-timetable-embedded-course-cards .robot-course-panel + .robot-course-panel .robot-course-panel__title {
+    border-bottom-color: rgba(234, 88, 12, 0.16);
+    background: rgba(255, 237, 213, 0.86);
+}
+
+.robot-timetable-embedded-course-cards .robot-course-panel__body {
+    padding: 8px;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-list__title {
+    font-size: 0.82rem;
+    font-weight: 850;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-list__reset {
+    min-height: 28px;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-columns {
+    gap: 8px;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-list {
+    border-color: rgba(15, 23, 42, 0.14);
+    background: #ffffff;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-header,
+.robot-timetable-embedded-course-cards .robot-course-item-row {
+    grid-template-columns: 42px minmax(42px, 0.7fr) minmax(96px, 1.6fr) minmax(58px, 0.72fr) minmax(34px, 0.45fr);
+    gap: 6px;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-header {
+    padding: 5px 8px;
+    background: #f8fafc;
+    font-size: 0.68rem;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-header--expandable {
+    padding-right: 34px;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-panel__title {
+    min-height: 39px;
+    padding: 0 8px;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-row {
+    font-size: 0.77rem;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-row > :nth-child(3),
+.robot-timetable-embedded-course-cards .robot-course-item-row > :nth-child(4) {
+    font-size: 0.72rem;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-panels :deep(.v-expansion-panel-text__wrapper) {
+    padding: 0 8px 8px;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-details {
+    gap: 5px;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-details__section {
+    padding: 6px;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-detail-list {
+    gap: 4px;
+}
+
+.robot-timetable-embedded-course-cards .robot-course-item-detail {
+    padding: 4px 6px;
+}
+
+@media (min-width: 1280px) {
+    .robot-timetable-embedded-course-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+    }
+
+    .robot-timetable-embedded-course-cards .robot-course-columns {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 .robot-timetable-grid {
@@ -7081,6 +7764,48 @@ export default {
     margin-top: 14px;
     padding-top: 12px;
     border-top: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.robot-generator--embedded {
+    width: 100%;
+    margin-top: 0;
+    padding: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+@media (min-width: 1280px) {
+    .robot-generator--embedded .robot-quality-card {
+        gap: 8px;
+        padding: 10px;
+    }
+
+    .robot-generator--embedded .robot-quality-card__items {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 5px;
+    }
+
+    .robot-generator--embedded .robot-quality-card__item {
+        gap: 3px 8px;
+        padding: 6px 8px;
+    }
+
+    .robot-generator--embedded .robot-quality-card__item-label {
+        font-size: 0.76rem;
+        line-height: 1.18;
+    }
+
+    .robot-generator--embedded .robot-quality-card__item-meta {
+        font-size: 0.68rem;
+        line-height: 1.18;
+    }
+
+    .robot-generator--embedded .robot-quality-card__item-count {
+        min-width: 58px;
+        padding: 3px 9px;
+        font-size: 0.7rem;
+    }
 }
 
 .robot-generator__actions {
@@ -7545,6 +8270,22 @@ export default {
     font-weight: 650;
     line-height: 1.12;
     overflow-wrap: anywhere;
+}
+
+.robot-generated-cell__same-slots {
+    margin-top: 5px;
+    font-size: 0.64rem;
+    line-height: 1.12;
+    overflow-wrap: anywhere;
+}
+
+.robot-generated-cell__same-slot-block {
+    padding-top: 5px;
+    border-top: 1px solid rgba(127, 29, 29, 0.24);
+}
+
+.robot-generated-cell__same-slot-block + .robot-generated-cell__same-slot-block {
+    margin-top: 5px;
 }
 
 .robot-generated-cell__conflict-block + .robot-generated-cell__conflict-block {

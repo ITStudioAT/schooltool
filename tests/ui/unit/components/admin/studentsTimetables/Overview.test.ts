@@ -1129,9 +1129,25 @@ describe('Students timetable overview', () => {
 
     it('persists and resets the last timetable view state per schoolyear', () => {
         const methods = (Overview as any).methods
+        const clearGeneratedTimetables = vi.fn()
         const ctx = {
             selectedSchoolyear: {
                 id: 42,
+            },
+            wizardPanelOpen: true,
+            manualPanelOpen: true,
+            infoDialogOpen: true,
+            settingsDialogOpen: true,
+            courseMenuDialog: true,
+            courseGroupDialog: true,
+            studentDialogOpen: true,
+            selectionDialogOpen: true,
+            selectedCourseMenuKey: 'menu-1',
+            selectedCourseGroup: { key: 'group-1' },
+            $refs: {
+                wizardCourseCards: {
+                    clearGeneratedTimetables,
+                },
             },
             activeCourseGroupFilterKeys: ['bio-1', 'bio-1', 'inf-1'],
             selectedRecurrenceWeeks: {
@@ -1180,6 +1196,7 @@ describe('Students timetable overview', () => {
             defaultSelection: methods.defaultSelection,
             currentTimetableState: methods.currentTimetableState,
             applyTimetableState: methods.applyTimetableState,
+            resetTimetablePanels: methods.resetTimetablePanels,
             normalizedSelection: methods.normalizedSelection,
             normalizedTransferredStudentContext: methods.normalizedTransferredStudentContext,
             normalizedTransferredStudentCourses: methods.normalizedTransferredStudentCourses,
@@ -1257,6 +1274,17 @@ describe('Students timetable overview', () => {
         methods.resetSavedTimetable.call(ctx)
 
         expect(window.localStorage.getItem(methods.timetableStorageKey.call(ctx))).toBeNull()
+        expect(clearGeneratedTimetables).toHaveBeenCalled()
+        expect(ctx.wizardPanelOpen).toBe(false)
+        expect(ctx.manualPanelOpen).toBe(false)
+        expect(ctx.infoDialogOpen).toBe(false)
+        expect(ctx.settingsDialogOpen).toBe(false)
+        expect(ctx.courseMenuDialog).toBe(false)
+        expect(ctx.courseGroupDialog).toBe(false)
+        expect(ctx.studentDialogOpen).toBe(false)
+        expect(ctx.selectionDialogOpen).toBe(false)
+        expect(ctx.selectedCourseMenuKey).toBe('')
+        expect(ctx.selectedCourseGroup).toBeNull()
         expect(ctx.activeCourseGroupFilterKeys).toEqual([])
         expect(ctx.selectedRecurrenceWeeks).toEqual({
             1: 'all_dates',
@@ -1369,20 +1397,39 @@ describe('Students timetable overview', () => {
             componentSource.indexOf('</v-btn>', componentSource.indexOf('class="overview-wizard-button"')),
         )
         expect(wizardButtonSource).not.toContain('block')
-        expect(componentSource).toContain('prepend-icon="mdi-star-four-points"')
-        expect(componentSource).toContain('append-icon="mdi-auto-fix"')
+        expect(wizardButtonSource).toContain('variant="tonal"')
+        expect(wizardButtonSource).toContain('color="primary"')
+        expect(wizardButtonSource).toContain('prepend-icon="mdi-calendar-clock"')
+        expect(wizardButtonSource).not.toContain('append-icon')
         expect(componentSource).toContain(':active="wizardPanelOpen"')
-        expect(componentSource).toContain('@click="toggleWizardPanel"')
-        expect(componentSource).toContain('Wizzard')
+        expect(componentSource).toContain('@click="openWizardPanel"')
+        expect(componentSource).toContain('<span>Automatischer</span>')
+        expect(componentSource).toContain('<span>Stundenplan</span>')
+        expect(componentSource).toContain('class="overview-wizard-active-label"')
+        expect(componentSource).toContain('Automatischer Stundenplan')
         expect(componentSource).toContain('RobotTimetable')
         expect(componentSource).toContain('v-if="wizardPanelOpen"')
+        expect(componentSource).toContain('ref="wizardCourseCards"')
         expect(componentSource).toContain('embedded-course-cards-only')
         expect(componentSource).toContain('class="overview-wizard-course-cards"')
+        expect(componentSource).toContain('v-if="!wizardPanelOpen"')
         expect(componentSource).toContain('class="overview-manual-button"')
+        expect(componentSource).toContain(':active="manualPanelOpen"')
+        expect(componentSource).toContain('@click="toggleManualPanel"')
         expect(componentSource).toContain('prepend-icon="mdi-calendar-edit"')
         expect(componentSource).toContain('class="overview-manual-button__label"')
         expect(componentSource).toContain('<span>Manueller</span>')
         expect(componentSource).toContain('<span>Stundenplan</span>')
+        expect(componentSource).toContain('class="overview-wizard-close-button"')
+        expect(componentSource).toContain('@click="closeWizardPanel"')
+        expect(componentSource).toContain('Schließen')
+        expect(componentSource).toContain('class="overview-wizard-create-button"')
+        expect(componentSource).toContain('@click="createWizardTimetable"')
+        expect(componentSource).toContain('Stundenplan erstellen')
+        expect(componentSource.indexOf('class="overview-wizard-create-button"')).toBeLessThan(
+            componentSource.indexOf('class="overview-wizard-close-button"'),
+        )
+        expect(componentSource).toContain('<div v-if="manualPanelOpen" class="course-choice-panel">')
         expect(componentSource).toContain('class="overview-wizard-settings-summary"')
         expect(componentSource).toContain('activeEvaluationCriteria')
         expect(componentSource).toContain('Bewertungskriterien')
@@ -1440,6 +1487,7 @@ describe('Students timetable overview', () => {
         expect(componentSource).not.toContain('v-for="courseMenu in semesterCourseMenus(semester.value)"')
         expect(componentSource).toContain('class="semester-timetable"')
         expect(componentSource).toContain('visibleTimetableSemesters')
+        expect(componentSource).toContain('v-if="!wizardPanelOpen && !visibleTimetableSemesters.length"')
         expect(componentSource).toContain('Wähle oben Kurse aus, um den Stundenplan anzuzeigen.')
         expect(componentSource).toContain("label: 'Semester'")
         expect(componentSource).not.toContain("label: 'Semester 1'")
@@ -1901,19 +1949,45 @@ describe('Students timetable overview', () => {
         ])
     })
 
-    it('toggles the embedded Wizzard course cards on the overview page', () => {
+    it('switches the embedded Wizzard and manual course panels on the overview page', () => {
         const methods = (Overview as any).methods
+        const loadFullGreenTimetableCount = vi.fn()
         const ctx = {
             wizardPanelOpen: false,
+            manualPanelOpen: false,
+            $refs: {
+                wizardCourseCards: {
+                    loadFullGreenTimetableCount,
+                },
+            },
         }
 
-        methods.toggleWizardPanel.call(ctx)
+        methods.openWizardPanel.call(ctx)
 
         expect(ctx.wizardPanelOpen).toBe(true)
+        expect(ctx.manualPanelOpen).toBe(false)
 
-        methods.toggleWizardPanel.call(ctx)
+        methods.createWizardTimetable.call(ctx)
+
+        expect(loadFullGreenTimetableCount).toHaveBeenCalled()
+
+        methods.toggleManualPanel.call(ctx)
 
         expect(ctx.wizardPanelOpen).toBe(false)
+        expect(ctx.manualPanelOpen).toBe(true)
+
+        methods.openWizardPanel.call(ctx)
+        methods.closeWizardPanel.call(ctx)
+
+        expect(ctx.wizardPanelOpen).toBe(false)
+
+        methods.toggleManualPanel.call(ctx)
+
+        expect(ctx.manualPanelOpen).toBe(true)
+
+        methods.toggleManualPanel.call(ctx)
+
+        expect(ctx.manualPanelOpen).toBe(false)
     })
 
     it('shows all transferred student course rows even when some are empty', () => {
