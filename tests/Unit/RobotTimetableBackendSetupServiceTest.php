@@ -1,0 +1,379 @@
+<?php
+
+use App\Services\StudentsTimetables\RobotTimetableBackendSetupService;
+
+it('counts all selected course variations and the overlap free full green variations', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'M1',
+                'json_subject' => 'M',
+                'name' => 'Mathematik 1',
+                'tt_subject' => 'M',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'D1-A',
+                'display_label' => 'D1-A',
+                'title' => 'D1-A',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 1,
+                'class_name' => 'D1-B',
+                'display_label' => 'D1-B',
+                'title' => 'D1-B',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'M1-A',
+                'display_label' => 'M1-A',
+                'title' => 'M1-A',
+                'course' => 'M1',
+                'subject' => 'Mathematik',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 3,
+                'hour' => 1,
+                'class_name' => 'M1-B',
+                'display_label' => 'M1-B',
+                'title' => 'M1-B',
+                'course' => 'M1',
+                'subject' => 'Mathematik',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 3, 4, 5],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '1|1|common|D1|D|Deutsch 1|D1',
+                '2|1|common|M1|M|Mathematik 1|M1',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+        ],
+    );
+
+    expect($result['selected_course_count'])->toBe(2)
+        ->and($result['timetable_variation_count'])->toBe(4)
+        ->and($result['full_green_timetable_count'])->toBe(3)
+        ->and($result['red_timetable_count'])->toBe(1);
+});
+
+it('counts shorter imported variants for a single selected course as full green', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 10,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'CH2',
+                'json_subject' => 'CH',
+                'name' => 'Chemie 2',
+                'tt_subject' => 'CH',
+                'hours_per_week' => 3,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 2,
+                'hour' => 14,
+                'class_name' => 'CH2-5C-KOW',
+                'display_label' => 'CH2-5C-KOW',
+                'title' => 'CH2-5C-KOW',
+                'course' => 'CH2',
+                'subject' => 'Chemie',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 15,
+                'class_name' => 'CH2-5C-KOW',
+                'display_label' => 'CH2-5C-KOW',
+                'title' => 'CH2-5C-KOW',
+                'course' => 'CH2',
+                'subject' => 'Chemie',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 3,
+                'hour' => 13,
+                'class_name' => 'CH2-5C-KOW',
+                'display_label' => 'CH2-5C-KOW',
+                'title' => 'CH2-5C-KOW',
+                'course' => 'CH2',
+                'subject' => 'Chemie',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 13,
+                'class_name' => 'CH2-5K-PLA',
+                'display_label' => 'CH2-5K-PLA',
+                'title' => 'CH2-5K-PLA',
+                'course' => 'CH2',
+                'subject' => 'Chemie',
+                'dates' => ['2026-02-03', '2026-02-17'],
+                'dates_count' => 2,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 14,
+                'class_name' => 'CH2-5K-PLA',
+                'display_label' => 'CH2-5K-PLA',
+                'title' => 'CH2-5K-PLA',
+                'course' => 'CH2',
+                'subject' => 'Chemie',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 5,
+                'hour' => 10,
+                'class_name' => 'CH2-5RU-PLA',
+                'display_label' => 'CH2-5RU-PLA',
+                'title' => 'CH2-5RU-PLA',
+                'course' => 'CH2',
+                'subject' => 'Chemie',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 5,
+                'hour' => 11,
+                'class_name' => 'CH2-5RU-PLA',
+                'display_label' => 'CH2-5RU-PLA',
+                'title' => 'CH2-5RU-PLA',
+                'course' => 'CH2',
+                'subject' => 'Chemie',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 2,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '10|2|common|CH2|CH|Chemie 2|CH2',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 3,
+        ],
+    );
+
+    expect($result['selected_course_count'])->toBe(1)
+        ->and($result['timetable_variation_count'])->toBe(3)
+        ->and($result['full_green_timetable_count'])->toBe(3)
+        ->and($result['red_timetable_count'])->toBe(0)
+        ->and($result['selected_timetable']['type'])->toBe('full_green')
+        ->and($result['selected_timetable']['number'])->toBe(3)
+        ->and($result['selected_timetable']['slots']['5-10']['code'])->toBe('CH2')
+        ->and($result['selected_timetable']['slots']['5-10']['conflicts'])->toBe([]);
+});
+
+it('does not collapse different imported options that share the same time slots', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 20,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'CH2',
+                'json_subject' => 'CH',
+                'name' => 'Chemie 2',
+                'tt_subject' => 'CH',
+                'hours_per_week' => 3,
+                'is_active' => true,
+            ],
+            [
+                'id' => 21,
+                'semester' => 6,
+                'branch' => 'common',
+                'json_code' => 'D6',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 6',
+                'tt_subject' => 'D',
+                'hours_per_week' => 3,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'CH2-A',
+                'display_label' => 'CH2-A',
+                'title' => 'CH2-A',
+                'course' => 'CH2',
+                'subject' => 'Chemie',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 2,
+                'class_name' => 'CH2-B',
+                'display_label' => 'CH2-B',
+                'title' => 'CH2-B',
+                'course' => 'CH2',
+                'subject' => 'Chemie',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 3,
+                'class_name' => 'CH2-C',
+                'display_label' => 'CH2-C',
+                'title' => 'CH2-C',
+                'course' => 'CH2',
+                'subject' => 'Chemie',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 1,
+                'class_name' => 'D6-A',
+                'display_label' => 'D6-A',
+                'title' => 'D6-A',
+                'course' => 'D6',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'D6-B',
+                'display_label' => 'D6-B',
+                'title' => 'D6-B',
+                'course' => 'D6',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'D6-C',
+                'display_label' => 'D6-C',
+                'title' => 'D6-C',
+                'course' => 'D6',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 3,
+                'class_name' => 'D6-D',
+                'display_label' => 'D6-D',
+                'title' => 'D6-D',
+                'course' => 'D6',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 6,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 3, 4, 5],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '20|2|common|CH2|CH|Chemie 2|CH2',
+                '21|6|common|D6|D|Deutsch 6|D6',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_timetable_type' => 'conflict',
+            'selected_timetable_number' => 2,
+        ],
+    );
+
+    expect($result['selected_course_count'])->toBe(2)
+        ->and($result['timetable_variation_count'])->toBe(12)
+        ->and($result['full_green_timetable_count'])->toBe(10)
+        ->and($result['red_timetable_count'])->toBe(2)
+        ->and($result['selected_timetable']['type'])->toBe('conflict')
+        ->and($result['selected_timetable']['number'])->toBe(2)
+        ->and($result['selected_timetable']['slots']['1-1']['code'])->toBe('CH2')
+        ->and($result['selected_timetable']['slots']['1-1']['conflicts'][0]['code'])->toBe('D6')
+        ->and($result['selected_timetable']['problems'])->toHaveCount(1);
+});

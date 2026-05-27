@@ -106,6 +106,51 @@ it('allows students timetables moderators to call the permitted module areas', f
         ->assertUnprocessable();
 });
 
+it('returns a backend ready setup for the new robot timetable logic', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable', [
+            'selection' => [
+                'semester' => 6,
+                'religion' => 'ETH',
+                'branch' => 'Wirtschaftskundlicher Zweig',
+                'artsSubject' => 'ME',
+                'language' => 'S',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5],
+                'availableTimes' => [7, 8, 9, 10],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => ['D6', 'ETH3'],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => ['INF2'],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.algorithm.key', 'backend-v2')
+        ->assertJsonPath('data.algorithm.status', 'step-1-counts-ready')
+        ->assertJsonPath('data.timetable_variation_count', 0)
+        ->assertJsonPath('data.full_green_timetable_count', 0)
+        ->assertJsonPath('data.red_timetable_count', 0)
+        ->assertJsonPath('data.conflict_timetable_count', 0)
+        ->assertJsonPath('data.selected_additional_course_count', 1)
+        ->assertJsonPath('data.selected_timetable', null);
+});
+
 it('denies students timetables moderators access to admin-only import and subject editing endpoints', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_moderator');
 

@@ -251,6 +251,7 @@
                     v-if="wizardPanelOpen"
                     ref="wizardCourseCards"
                     embedded-course-cards-only
+                    :student-code="transferredStudentContext?.student?.studentCode || null"
                     class="overview-wizard-course-cards" />
 
                 <div v-if="manualPanelOpen" class="course-choice-panel">
@@ -311,15 +312,7 @@
                     </div>
                 </div>
 
-                <v-alert
-                    v-if="!wizardPanelOpen && !visibleTimetableSemesters.length"
-                    type="info"
-                    variant="tonal"
-                    class="mb-0">
-                    Wähle oben Kurse aus, um den Stundenplan anzuzeigen.
-                </v-alert>
-
-                <div v-else class="semester-grid">
+                <div v-if="visibleTimetableSemesters.length" class="semester-grid">
                     <section v-for="semester in visibleTimetableSemesters" :key="semester.value" class="semester-timetable">
                         <div class="semester-timetable__header">
                             <div class="d-flex flex-wrap align-center ga-2">
@@ -758,6 +751,7 @@ import RobotTimetable from '../robot/RobotTimetable.vue'
 const FALLBACK_HOUR_COUNT = 10
 const ALL_DATES_OPTION_VALUE = 'all_dates'
 const TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:overview:last-timetable'
+const ROBOT_TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:robot:last-settings'
 
 export default {
     name: 'StudentsTimetablesOverview',
@@ -1393,7 +1387,7 @@ export default {
                 this.studentDialogOpen = false
                 this.studentSearch = ''
                 this.persistTimetableState()
-                this.loadTransferredStudentCompletedCourses(nextStudentCode)
+                this.loadTransferredStudentCompletedCourses(nextStudentCode, { applySelectionDefaults: true })
             })
         },
         openSelectionDialog() {
@@ -1430,11 +1424,16 @@ export default {
             this.runTimetableUpdate(() => {
                 this.resetTimetablePanels()
                 this.removeSavedTimetableState()
+                this.removeSavedRobotTimetableState()
                 this.applyTimetableState(this.defaultTimetableState())
             })
         },
         resetTimetablePanels() {
-            this.$refs.wizardCourseCards?.clearGeneratedTimetables?.()
+            const wizardCourseCards = this.$refs.wizardCourseCards
+
+            wizardCourseCards?.resetCourseSelection?.()
+            wizardCourseCards?.resetAdditionalCourseSelection?.()
+            wizardCourseCards?.clearGeneratedTimetables?.()
             this.wizardPanelOpen = false
             this.manualPanelOpen = false
             this.infoDialogOpen = false
@@ -1532,7 +1531,7 @@ export default {
                 state?.transferredStudentContextExpanded ?? defaults.transferredStudentContextExpanded,
             )
         },
-        async loadTransferredStudentCompletedCourses(studentCode) {
+        async loadTransferredStudentCompletedCourses(studentCode, options = {}) {
             const normalizedStudentCode = this.normalizedStudentCode(studentCode)
             const requestId = this.studentCompletedCoursesRequestId + 1
             this.studentCompletedCoursesRequestId = requestId
@@ -1550,6 +1549,10 @@ export default {
                 if (this.normalizedStudentCode(this.transferredStudentContext?.student?.studentCode) !== normalizedStudentCode) return
 
                 const completedCourses = response.data?.data || []
+
+                if (options?.applySelectionDefaults) {
+                    this.applyTransferredStudentSelectionDefaultsFromCourses(completedCourses)
+                }
 
                 this.transferredStudentContext = this.normalizedTransferredStudentContext({
                     ...this.transferredStudentContext,
@@ -1574,6 +1577,78 @@ export default {
         },
         selectedOptionTitle(options, value) {
             return options.find(option => option.value === value)?.title || String(value || '')
+        },
+        applyTransferredStudentSelectionDefaultsFromCourses(completedCourses) {
+            const selectionDefaults = this.selectedStudentCourseHistoryDefaults(completedCourses)
+            if (!Object.keys(selectionDefaults).length) return
+
+            const nextSelection = this.normalizedSelection({
+                ...this.selection,
+                ...selectionDefaults,
+            })
+
+            if (JSON.stringify(nextSelection) === JSON.stringify(this.selection)) return
+
+            this.selection = nextSelection
+            this.selectionDraft = { ...nextSelection }
+            this.selectedCourseMenuKey = ''
+            this.selectedCourseGroup = null
+        },
+        selectedStudentCourseHistoryDefaults(completedCourses) {
+            const visitedCourseCodes = this.studentVisitedCourseCodes(completedCourses)
+
+            return Object.fromEntries([
+                ['religion', this.inferredSelectionOptionFromCourseCodes(this.religionOptions, visitedCourseCodes)],
+                ['language', this.inferredSelectionOptionFromCourseCodes(this.languageOptions, visitedCourseCodes)],
+                ['artsSubject', this.inferredSelectionOptionFromCourseCodes(this.artsSubjectOptions, visitedCourseCodes)],
+            ].filter(([, value]) => Boolean(value)))
+        },
+        inferredSelectionOptionFromCourseCodes(options, courseCodes, aliases = {}) {
+            if (!(courseCodes instanceof Set) || !courseCodes.size) return ''
+
+            return (Array.isArray(options) ? options : [])
+                .map((option, optionIndex) => ({
+                    option,
+                    optionIndex,
+                    match: this.bestSelectionOptionCourseCodeMatch(option?.value, courseCodes, aliases),
+                }))
+                .filter(({ match }) => match)
+                .sort((firstOption, secondOption) =>
+                    secondOption.match.module - firstOption.match.module
+                    || secondOption.match.courseIndex - firstOption.match.courseIndex
+                    || firstOption.optionIndex - secondOption.optionIndex,
+                )[0]?.option?.value || ''
+        },
+        selectionOptionCodeAliases(value, aliases = {}) {
+            const normalizedValue = this.normalizedCourseCode(value)
+
+            return this.uniqueValues([
+                normalizedValue,
+                ...this.selectionCourseAliases(normalizedValue),
+                ...(aliases[normalizedValue] || []),
+            ]
+                .map(alias => this.normalizedCourseCode(alias))
+                .filter(Boolean))
+        },
+        bestSelectionOptionCourseCodeMatch(value, courseCodes, aliases = {}) {
+            const optionAliases = this.selectionOptionCodeAliases(value, aliases)
+                .map(alias => this.courseCodeWithoutModule(alias))
+            if (!optionAliases.length) return null
+
+            return [...courseCodes]
+                .map((courseCode, courseIndex) => ({
+                    ...this.courseCodeModuleParts(courseCode),
+                    courseIndex,
+                }))
+                .filter(parts => optionAliases.includes(parts.base))
+                .map(parts => ({
+                    module: Number(parts.module || 0),
+                    courseIndex: parts.courseIndex,
+                }))
+                .sort((firstMatch, secondMatch) =>
+                    secondMatch.module - firstMatch.module
+                    || secondMatch.courseIndex - firstMatch.courseIndex,
+                )[0] || null
         },
         normalizedStudentCode(value) {
             const studentCode = value === null || value === undefined ? '' : String(value).trim()
@@ -1798,8 +1873,27 @@ export default {
         courseCompletedForStudentPlanning(course, completedCourseCodes) {
             if (!(completedCourseCodes instanceof Set) || !completedCourseCodes.size) return false
 
-            return this.courseCodeAliases(course)
+            if (this.courseCodeAliases(course)
                 .some(courseCode => completedCourseCodes.has(courseCode))
+            ) return true
+
+            return this.courseModulePartsForStudentPlanning(course)
+                .some(parts => this.studentCourseCodesContainEquivalentModule(completedCourseCodes, parts))
+        },
+        studentCourseCodesContainEquivalentModule(courseCodes, courseParts) {
+            if (!(courseCodes instanceof Set) || !courseCodes.size) return false
+
+            const moduleNumber = String(courseParts?.module || '')
+            if (!moduleNumber) return false
+
+            const baseAliases = this.studentCourseBaseAliases(courseParts.base)
+
+            return [...courseCodes]
+                .map(courseCode => this.courseCodeModuleParts(courseCode))
+                .some(parts =>
+                    String(parts.module || '') === moduleNumber
+                    && baseAliases.includes(parts.base),
+                )
         },
         coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes, plannedCourseCodes = new Set()) {
             return this.courseModulePartsForStudentPlanning(course)
@@ -1893,8 +1987,8 @@ export default {
         studentCourseBaseAliases(base) {
             const normalizedBase = this.normalizedCourseCode(base)
             const mappedAliases = {
-                ET: ['ETH'],
-                ETH: ['ET'],
+                ET: ['ETH', 'R', 'RK'],
+                ETH: ['ET', 'R', 'RK'],
                 GPB: ['GS'],
                 GS: ['GPB'],
                 GW: ['GWB'],
@@ -1903,8 +1997,8 @@ export default {
                 LET: ['LPT'],
                 ME: ['MU'],
                 MU: ['ME'],
-                R: ['RK'],
-                RK: ['R'],
+                R: ['RK', 'ET', 'ETH'],
+                RK: ['R', 'ET', 'ETH'],
                 S: ['SPA'],
                 SPA: ['S'],
             }
@@ -2091,6 +2185,15 @@ export default {
         timetableStorageKey() {
             return `${TIMETABLE_STORAGE_KEY_PREFIX}:${this.selectedSchoolyear?.id || 'default'}`
         },
+        robotTimetableStorageKey(schoolyearId = this.selectedSchoolyear?.id || 'default') {
+            return `${ROBOT_TIMETABLE_STORAGE_KEY_PREFIX}:${schoolyearId || 'default'}`
+        },
+        robotTimetableStorageKeys() {
+            return [
+                this.robotTimetableStorageKey(),
+                this.robotTimetableStorageKey('default'),
+            ].filter((key, index, keys) => keys.indexOf(key) === index)
+        },
         timetableStorage() {
             if (typeof window === 'undefined' || !window.localStorage) {
                 return null
@@ -2125,6 +2228,17 @@ export default {
         removeSavedTimetableState() {
             try {
                 this.timetableStorage()?.removeItem(this.timetableStorageKey())
+            } catch {
+                // Ignore unavailable browser storage.
+            }
+        },
+        removeSavedRobotTimetableState() {
+            try {
+                const storage = this.timetableStorage()
+
+                this.robotTimetableStorageKeys().forEach(key => {
+                    storage?.removeItem(key)
+                })
             } catch {
                 // Ignore unavailable browser storage.
             }
@@ -2392,11 +2506,15 @@ export default {
         selectionCourseAliases(value) {
             const normalizedValue = this.normalizedCourseCode(value)
             const aliases = {
+                ET: ['ETH', 'ET'],
+                ETH: ['ETH', 'ET'],
                 L: ['L', 'LET', 'LPT'],
                 LPT: ['L', 'LET', 'LPT'],
                 LET: ['L', 'LET', 'LPT'],
                 ME: ['ME', 'MU'],
                 MU: ['ME', 'MU'],
+                R: ['RK', 'R'],
+                RK: ['RK', 'R'],
                 S: ['S', 'SPA'],
                 SPA: ['S', 'SPA'],
             }
@@ -2468,12 +2586,16 @@ export default {
             if (!match) return ''
 
             const aliases = {
+                ET: 'ETH',
+                ETH: 'ET',
                 GS: 'GPB',
                 GW: 'GWB',
                 LPT: 'LET',
                 LET: 'LPT',
                 ME: 'MU',
                 MU: 'ME',
+                R: 'RK',
+                RK: 'R',
                 S: 'SPA',
                 SPA: 'S',
             }

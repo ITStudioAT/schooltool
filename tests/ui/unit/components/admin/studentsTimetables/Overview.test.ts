@@ -1130,6 +1130,8 @@ describe('Students timetable overview', () => {
     it('persists and resets the last timetable view state per schoolyear', () => {
         const methods = (Overview as any).methods
         const clearGeneratedTimetables = vi.fn()
+        const resetAdditionalCourseSelection = vi.fn()
+        const resetCourseSelection = vi.fn()
         const ctx = {
             selectedSchoolyear: {
                 id: 42,
@@ -1147,6 +1149,8 @@ describe('Students timetable overview', () => {
             $refs: {
                 wizardCourseCards: {
                     clearGeneratedTimetables,
+                    resetAdditionalCourseSelection,
+                    resetCourseSelection,
                 },
             },
             activeCourseGroupFilterKeys: ['bio-1', 'bio-1', 'inf-1'],
@@ -1201,10 +1205,13 @@ describe('Students timetable overview', () => {
             normalizedTransferredStudentContext: methods.normalizedTransferredStudentContext,
             normalizedTransferredStudentCourses: methods.normalizedTransferredStudentCourses,
             timetableStorageKey: methods.timetableStorageKey,
+            robotTimetableStorageKey: methods.robotTimetableStorageKey,
+            robotTimetableStorageKeys: methods.robotTimetableStorageKeys,
             timetableStorage: methods.timetableStorage,
             saveLastTimetableState: methods.saveLastTimetableState,
             restoreLastTimetableState: methods.restoreLastTimetableState,
             removeSavedTimetableState: methods.removeSavedTimetableState,
+            removeSavedRobotTimetableState: methods.removeSavedRobotTimetableState,
             runTimetableUpdate(action: () => void) {
                 action()
             },
@@ -1213,6 +1220,12 @@ describe('Students timetable overview', () => {
         window.localStorage.clear()
 
         methods.saveLastTimetableState.call(ctx)
+        window.localStorage.setItem(methods.robotTimetableStorageKey.call(ctx), JSON.stringify({
+            selectedAdditionalCourseKeys: ['INF2'],
+        }))
+        window.localStorage.setItem(methods.robotTimetableStorageKey.call(ctx, 'default'), JSON.stringify({
+            selectedAdditionalCourseKeys: ['INF2'],
+        }))
 
         ctx.activeCourseGroupFilterKeys = []
         ctx.selectedRecurrenceWeeks = {
@@ -1274,6 +1287,10 @@ describe('Students timetable overview', () => {
         methods.resetSavedTimetable.call(ctx)
 
         expect(window.localStorage.getItem(methods.timetableStorageKey.call(ctx))).toBeNull()
+        expect(window.localStorage.getItem(methods.robotTimetableStorageKey.call(ctx))).toBeNull()
+        expect(window.localStorage.getItem(methods.robotTimetableStorageKey.call(ctx, 'default'))).toBeNull()
+        expect(resetCourseSelection).toHaveBeenCalled()
+        expect(resetAdditionalCourseSelection).toHaveBeenCalled()
         expect(clearGeneratedTimetables).toHaveBeenCalled()
         expect(ctx.wizardPanelOpen).toBe(false)
         expect(ctx.manualPanelOpen).toBe(false)
@@ -1356,6 +1373,7 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('overflow-wrap: anywhere;')
         expect(componentSource).toContain('class="course-choice-panel"')
         expect(componentSource).toContain('icon="mdi-plus"')
+        expect(componentSource).toContain(':student-code="transferredStudentContext?.student?.studentCode || null"')
         expect(componentSource).toContain('<v-dialog v-model="courseMenuDialog" persistent')
         expect(componentSource).toContain('allCourseChoiceMenus')
         expect(componentSource).toContain('selectedCourseMenu')
@@ -1465,6 +1483,9 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('toggleTransferredStudentContext')
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/subjects-overview-settings')")
         expect(componentSource).toContain('this.loadTransferredStudentCompletedCourses(this.transferredStudentContext.student.studentCode)')
+        expect(componentSource).toContain('applySelectionDefaults: true')
+        expect(componentSource).toContain('selectedStudentCourseHistoryDefaults(completedCourses)')
+        expect(componentSource).toContain('inferredSelectionOptionFromCourseCodes(options, courseCodes')
         expect(componentSource).toContain('overviewStudentCourseHistory(completedCourses)')
         expect(componentSource).toContain('refreshTransferredStudentCourseHistory()')
         expect(componentSource).toContain('pendingStudentCoursesBeforeSemester')
@@ -1487,8 +1508,7 @@ describe('Students timetable overview', () => {
         expect(componentSource).not.toContain('v-for="courseMenu in semesterCourseMenus(semester.value)"')
         expect(componentSource).toContain('class="semester-timetable"')
         expect(componentSource).toContain('visibleTimetableSemesters')
-        expect(componentSource).toContain('v-if="!wizardPanelOpen && !visibleTimetableSemesters.length"')
-        expect(componentSource).toContain('Wähle oben Kurse aus, um den Stundenplan anzuzeigen.')
+        expect(componentSource).not.toContain('Wähle oben Kurse aus, um den Stundenplan anzuzeigen.')
         expect(componentSource).toContain("label: 'Semester'")
         expect(componentSource).not.toContain("label: 'Semester 1'")
         expect(componentSource).not.toContain("label: 'Semester 2'")
@@ -2093,6 +2113,117 @@ describe('Students timetable overview', () => {
         expect(history.missing.map((course: Record<string, string>) => course.label)).toEqual(['CH2'])
         expect(history.planned.map((course: Record<string, string>) => course.label)).toEqual(['S5'])
         expect(history.additional.map((course: Record<string, string>) => course.label)).toEqual(['INF2'])
+    })
+
+    it('continues religion or ethics modules after completed alternate modules for overview students', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            subjectRows: [
+                {
+                    id: 1,
+                    is_active: true,
+                    semester: 1,
+                    json_subject: 'R/ET',
+                    json_code: 'R/ET1',
+                    name: 'Religion / Ethik 1',
+                    branch: 'common',
+                    hours_per_week: 2,
+                },
+                {
+                    id: 2,
+                    is_active: true,
+                    semester: 2,
+                    json_subject: 'R/ET',
+                    json_code: 'R/ET2',
+                    name: 'Religion / Ethik 2',
+                    branch: 'common',
+                    hours_per_week: 2,
+                },
+                {
+                    id: 3,
+                    is_active: true,
+                    semester: 3,
+                    json_subject: 'R/ET',
+                    json_code: 'R/ET3',
+                    name: 'Religion / Ethik 3',
+                    branch: 'common',
+                    hours_per_week: 2,
+                },
+            ],
+        }
+        const completedReligionCourses = [
+            { subject: 'R1', grade: '2' },
+            { subject: 'R2', grade: '3' },
+        ]
+
+        expect(methods.overviewStudentCourseHistory.call(ctx, completedReligionCourses).missing
+            .map((course: Record<string, string>) => course.label))
+            .toEqual(['ETH3'])
+
+        ctx.selection.religion = 'Rk'
+
+        expect(methods.overviewStudentCourseHistory.call(ctx, completedReligionCourses).missing
+            .map((course: Record<string, string>) => course.label))
+            .toEqual(['Rk3'])
+    })
+
+    it('infers selected overview alternatives from selected student course history', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'BE',
+            },
+            selectionDraft: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'BE',
+            },
+            selectedCourseMenuKey: 'old-menu',
+            selectedCourseGroup: { key: 'old-group' },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+        }
+
+        methods.applyTransferredStudentSelectionDefaultsFromCourses.call(ctx, [
+            { subject: 'L1', grade: '2' },
+            { subject: 'L2', grade: '3' },
+            { subject: 'SPA3', grade: '3' },
+            { subject: 'MU1', grade: 'B' },
+            { subject: 'R1', grade: '4' },
+        ])
+
+        expect(ctx.selection).toEqual({
+            semester: 6,
+            religion: 'Rk',
+            language: 'S',
+            branch: 'wirtschaftskundlich',
+            artsSubject: 'ME',
+        })
+        expect(ctx.selectionDraft).toEqual(ctx.selection)
+        expect(ctx.selectedCourseMenuKey).toBe('')
+        expect(ctx.selectedCourseGroup).toBeNull()
     })
 
     it('focuses the student search field when editing the overview student', () => {

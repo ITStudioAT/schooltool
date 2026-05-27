@@ -3,7 +3,7 @@
         <div class="robot-course-list robot-course-panel">
             <div class="robot-course-panel__title">
                 <div class="robot-course-list__header robot-course-list__header--panel">
-                    <div class="robot-course-list__title">Kurse</div>
+                    <div class="robot-course-list__title">{{ regularCourseListTitle }}</div>
                     <v-chip size="x-small" color="primary" variant="tonal">
                         {{ selectedCourses.length }} / {{ availableCourses.length }}
                     </v-chip>
@@ -529,7 +529,7 @@
                 <div class="robot-course-list robot-course-panel">
                     <div class="robot-course-panel__title">
                         <div class="robot-course-list__header robot-course-list__header--panel">
-                            <div class="robot-course-list__title">Kurse</div>
+                            <div class="robot-course-list__title">{{ regularCourseListTitle }}</div>
                             <v-chip size="x-small" color="primary" variant="tonal">
                                 {{ selectedCourses.length }} / {{ availableCourses.length }}
                             </v-chip>
@@ -796,9 +796,11 @@
                         <div class="robot-count-cards">
                             <div
                                 class="robot-count-card"
-                                :class="{ 'robot-count-card--selected': timetableResultCardSelected('full_green') }">
+                                :class="{ 'robot-count-card--selected': !backendVariationCountsAvailable && timetableResultCardSelected('full_green') }">
                                 <div class="robot-count-card__content">
-                                    <div class="robot-count-card__label">Volle grüne Stundenpläne</div>
+                                    <div class="robot-count-card__label">
+                                        {{ backendVariationCountsAvailable ? 'Variationen gesamt' : 'Volle grüne Stundenpläne' }}
+                                    </div>
                                     <div class="robot-count-card__value">
                                         <v-progress-circular
                                             v-if="fullGreenTimetableCountLoading"
@@ -807,11 +809,11 @@
                                             width="2"
                                             color="primary" />
                                         <template v-else>
-                                            {{ fullGreenTimetableCountLabel }}
+                                            {{ backendVariationCountsAvailable ? totalTimetableVariationCountLabel : fullGreenTimetableCountLabel }}
                                         </template>
                                     </div>
                                 </div>
-                                <div class="robot-count-card__actions">
+                                <div v-if="!backendVariationCountsAvailable" class="robot-count-card__actions">
                                     <v-switch
                                         :model-value="timetableResultCardSelected('full_green')"
                                         color="success"
@@ -827,9 +829,19 @@
 
                             <div
                                 class="robot-count-card robot-count-card--green"
-                                :class="{ 'robot-count-card--selected': timetableResultCardSelected('green') }">
+                                :class="{
+                                    'robot-count-card--selected': backendVariationCountsAvailable ? timetableResultCardSelected('full_green') : timetableResultCardSelected('green'),
+                                    'robot-count-card--clickable': backendCountCardSelectable('full_green'),
+                                }"
+                                :role="backendCountCardSelectable('full_green') ? 'button' : null"
+                                :tabindex="backendCountCardSelectable('full_green') ? 0 : null"
+                                @click="selectBackendCountCard('full_green')"
+                                @keydown.enter.prevent="selectBackendCountCard('full_green')"
+                                @keydown.space.prevent="selectBackendCountCard('full_green')">
                                 <div class="robot-count-card__content">
-                                    <div class="robot-count-card__label">Grüne Stundenpläne</div>
+                                    <div class="robot-count-card__label">
+                                        {{ backendVariationCountsAvailable ? 'Volle grüne Stundenpläne' : 'Grüne Stundenpläne' }}
+                                    </div>
                                     <div class="robot-count-card__value">
                                         <v-progress-circular
                                             v-if="fullGreenTimetableCountLoading"
@@ -838,11 +850,11 @@
                                             width="2"
                                             color="primary" />
                                         <template v-else>
-                                            {{ greenTimetableCountLabel }}
+                                            {{ backendVariationCountsAvailable ? fullGreenTimetableCountLabel : greenTimetableCountLabel }}
                                         </template>
                                     </div>
                                 </div>
-                                <div class="robot-count-card__actions">
+                                <div v-if="!backendVariationCountsAvailable" class="robot-count-card__actions">
                                     <v-switch
                                         :model-value="timetableResultCardSelected('green')"
                                         color="primary"
@@ -857,11 +869,21 @@
                             </div>
 
                             <div
-                                v-if="showConflictTimetableResults"
+                                v-if="backendVariationCountsAvailable || showConflictTimetableResults"
                                 class="robot-count-card robot-count-card--conflict"
-                                :class="{ 'robot-count-card--selected': timetableResultCardSelected('conflict') }">
+                                :class="{
+                                    'robot-count-card--selected': timetableResultCardSelected('conflict'),
+                                    'robot-count-card--clickable': backendCountCardSelectable('conflict'),
+                                }"
+                                :role="backendCountCardSelectable('conflict') ? 'button' : null"
+                                :tabindex="backendCountCardSelectable('conflict') ? 0 : null"
+                                @click="selectBackendCountCard('conflict')"
+                                @keydown.enter.prevent="selectBackendCountCard('conflict')"
+                                @keydown.space.prevent="selectBackendCountCard('conflict')">
                                 <div class="robot-count-card__content">
-                                    <div class="robot-count-card__label">Stundenpläne mit Konflikten</div>
+                                    <div class="robot-count-card__label">
+                                        {{ backendVariationCountsAvailable ? 'Rote Stundenpläne' : 'Stundenpläne mit Konflikten' }}
+                                    </div>
                                     <div class="robot-count-card__value">
                                         <v-progress-circular
                                             v-if="fullGreenTimetableCountLoading"
@@ -874,7 +896,7 @@
                                         </template>
                                     </div>
                                 </div>
-                                <div class="robot-count-card__actions">
+                                <div v-if="!backendVariationCountsAvailable" class="robot-count-card__actions">
                                     <v-switch
                                         :model-value="timetableResultCardSelected('conflict')"
                                         color="warning"
@@ -889,7 +911,7 @@
                             </div>
 
                             <div
-                                v-if="selectedAdditionalCourses.length"
+                                v-if="!backendVariationCountsAvailable && selectedAdditionalCourses.length"
                                 class="robot-count-card robot-count-card--additional"
                                 :class="{ 'robot-count-card--selected': additionalCourseTimetableRequired }">
                                 <div class="robot-count-card__content">
@@ -922,7 +944,7 @@
                         </div>
 
                         <v-alert
-                            v-if="selectedOptionsNoResultAlertVisible"
+                            v-if="!backendVariationCountsAvailable && selectedOptionsNoResultAlertVisible"
                             type="info"
                             variant="tonal"
                             density="compact"
@@ -941,7 +963,7 @@
                             </ul>
                         </v-alert>
 
-                        <div class="robot-quality-card">
+                        <div v-if="!backendVariationCountsAvailable" class="robot-quality-card">
                             <div class="robot-quality-card__header">
                                 <div>
                                     <div class="robot-quality-card__title">Qualitätskriterien</div>
@@ -1061,6 +1083,15 @@
                                     size="16" />
                             </span>
                         </div>
+
+                        <v-alert
+                            v-if="selectedRobotTimetable.statusMessage"
+                            type="info"
+                            variant="tonal"
+                            density="compact"
+                            class="robot-no-result-alert">
+                            {{ selectedRobotTimetable.statusMessage }}
+                        </v-alert>
 
                         <v-alert
                             v-if="selectedTimetableMissingAdditionalCourses().length"
@@ -1513,9 +1544,11 @@
             <div class="robot-count-cards">
                 <div
                     class="robot-count-card"
-                    :class="{ 'robot-count-card--selected': timetableResultCardSelected('full_green') }">
+                    :class="{ 'robot-count-card--selected': !backendVariationCountsAvailable && timetableResultCardSelected('full_green') }">
                     <div class="robot-count-card__content">
-                        <div class="robot-count-card__label">Volle grüne Stundenpläne</div>
+                        <div class="robot-count-card__label">
+                            {{ backendVariationCountsAvailable ? 'Variationen gesamt' : 'Volle grüne Stundenpläne' }}
+                        </div>
                         <div class="robot-count-card__value">
                             <v-progress-circular
                                 v-if="fullGreenTimetableCountLoading"
@@ -1524,11 +1557,11 @@
                                 width="2"
                                 color="primary" />
                             <template v-else>
-                                {{ fullGreenTimetableCountLabel }}
+                                {{ backendVariationCountsAvailable ? totalTimetableVariationCountLabel : fullGreenTimetableCountLabel }}
                             </template>
                         </div>
                     </div>
-                    <div class="robot-count-card__actions">
+                    <div v-if="!backendVariationCountsAvailable" class="robot-count-card__actions">
                         <v-switch
                             :model-value="timetableResultCardSelected('full_green')"
                             color="success"
@@ -1544,9 +1577,19 @@
 
                 <div
                     class="robot-count-card robot-count-card--green"
-                    :class="{ 'robot-count-card--selected': timetableResultCardSelected('green') }">
+                    :class="{
+                        'robot-count-card--selected': backendVariationCountsAvailable ? timetableResultCardSelected('full_green') : timetableResultCardSelected('green'),
+                        'robot-count-card--clickable': backendCountCardSelectable('full_green'),
+                    }"
+                    :role="backendCountCardSelectable('full_green') ? 'button' : null"
+                    :tabindex="backendCountCardSelectable('full_green') ? 0 : null"
+                    @click="selectBackendCountCard('full_green')"
+                    @keydown.enter.prevent="selectBackendCountCard('full_green')"
+                    @keydown.space.prevent="selectBackendCountCard('full_green')">
                     <div class="robot-count-card__content">
-                        <div class="robot-count-card__label">Grüne Stundenpläne</div>
+                        <div class="robot-count-card__label">
+                            {{ backendVariationCountsAvailable ? 'Volle grüne Stundenpläne' : 'Grüne Stundenpläne' }}
+                        </div>
                         <div class="robot-count-card__value">
                             <v-progress-circular
                                 v-if="fullGreenTimetableCountLoading"
@@ -1555,11 +1598,11 @@
                                 width="2"
                                 color="primary" />
                             <template v-else>
-                                {{ greenTimetableCountLabel }}
+                                {{ backendVariationCountsAvailable ? fullGreenTimetableCountLabel : greenTimetableCountLabel }}
                             </template>
                         </div>
                     </div>
-                    <div class="robot-count-card__actions">
+                    <div v-if="!backendVariationCountsAvailable" class="robot-count-card__actions">
                         <v-switch
                             :model-value="timetableResultCardSelected('green')"
                             color="primary"
@@ -1574,11 +1617,21 @@
                 </div>
 
                 <div
-                    v-if="showConflictTimetableResults"
+                    v-if="backendVariationCountsAvailable || showConflictTimetableResults"
                     class="robot-count-card robot-count-card--conflict"
-                    :class="{ 'robot-count-card--selected': timetableResultCardSelected('conflict') }">
+                    :class="{
+                        'robot-count-card--selected': timetableResultCardSelected('conflict'),
+                        'robot-count-card--clickable': backendCountCardSelectable('conflict'),
+                    }"
+                    :role="backendCountCardSelectable('conflict') ? 'button' : null"
+                    :tabindex="backendCountCardSelectable('conflict') ? 0 : null"
+                    @click="selectBackendCountCard('conflict')"
+                    @keydown.enter.prevent="selectBackendCountCard('conflict')"
+                    @keydown.space.prevent="selectBackendCountCard('conflict')">
                     <div class="robot-count-card__content">
-                        <div class="robot-count-card__label">Stundenpläne mit Konflikten</div>
+                        <div class="robot-count-card__label">
+                            {{ backendVariationCountsAvailable ? 'Rote Stundenpläne' : 'Stundenpläne mit Konflikten' }}
+                        </div>
                         <div class="robot-count-card__value">
                             <v-progress-circular
                                 v-if="fullGreenTimetableCountLoading"
@@ -1591,7 +1644,7 @@
                             </template>
                         </div>
                     </div>
-                    <div class="robot-count-card__actions">
+                    <div v-if="!backendVariationCountsAvailable" class="robot-count-card__actions">
                         <v-switch
                             :model-value="timetableResultCardSelected('conflict')"
                             color="warning"
@@ -1606,7 +1659,7 @@
                 </div>
 
                 <div
-                    v-if="selectedAdditionalCourses.length"
+                    v-if="!backendVariationCountsAvailable && selectedAdditionalCourses.length"
                     class="robot-count-card robot-count-card--additional"
                     :class="{ 'robot-count-card--selected': additionalCourseTimetableRequired }">
                     <div class="robot-count-card__content">
@@ -1639,7 +1692,7 @@
             </div>
 
             <v-alert
-                v-if="selectedOptionsNoResultAlertVisible"
+                v-if="!backendVariationCountsAvailable && selectedOptionsNoResultAlertVisible"
                 type="info"
                 variant="tonal"
                 density="compact"
@@ -1658,7 +1711,7 @@
                 </ul>
             </v-alert>
 
-            <div class="robot-quality-card">
+            <div v-if="!backendVariationCountsAvailable" class="robot-quality-card">
                 <div class="robot-quality-card__header">
                     <div>
                         <div class="robot-quality-card__title">Qualitätskriterien</div>
@@ -1778,6 +1831,15 @@
                         size="16" />
                 </span>
             </div>
+
+            <v-alert
+                v-if="selectedRobotTimetable.statusMessage"
+                type="info"
+                variant="tonal"
+                density="compact"
+                class="robot-no-result-alert">
+                {{ selectedRobotTimetable.statusMessage }}
+            </v-alert>
 
             <v-alert
                 v-if="selectedTimetableMissingAdditionalCourses().length"
@@ -1977,6 +2039,10 @@ export default {
             type: Boolean,
             default: false,
         },
+        studentCode: {
+            type: [String, Number],
+            default: null,
+        },
     },
     data() {
         return {
@@ -1985,6 +2051,7 @@ export default {
             generationError: '',
             generationProblems: [],
             generatedTimetables: [],
+            totalTimetableVariationCount: null,
             fullGreenTimetableCount: null,
             greenTimetableCount: null,
             conflictTimetableCount: null,
@@ -2201,8 +2268,8 @@ export default {
             ])
 
             return this.coursesAfterSemester(semester)
-                .filter(course => !this.courseMatchesCourseCodeSet(course, unavailableCourseCodes))
-                .filter(course => !this.courseMatchesCourseCodeSet(course, regularCourseCodes))
+                .filter(course => !this.courseCompletedForStudentPlanning(course, unavailableCourseCodes))
+                .filter(course => !this.courseCompletedForStudentPlanning(course, regularCourseCodes))
                 .filter(course => this.coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes, plannedCourseCodes))
         },
         studentTotalCountLabel() {
@@ -2238,6 +2305,9 @@ export default {
                 value: 'Keine Einschränkungen',
             }]
         },
+        regularCourseListTitle() {
+            return this.selectedStudent ? 'Fehlende Kurse + Vorgesehene Kurse' : 'Kurse'
+        },
         availableCourses() {
             const semesterCourses = this.coursesForSemester(this.selection.semester)
             if (!this.selectedStudent) return semesterCourses
@@ -2255,7 +2325,6 @@ export default {
                 : []
 
             return [
-                ...semesterCourses,
                 ...missingCourses,
                 ...plannedCourses,
             ]
@@ -2433,6 +2502,12 @@ export default {
 
             return new Intl.NumberFormat('de-AT').format(this.fullGreenTimetableCount)
         },
+        totalTimetableVariationCountLabel() {
+            if (!this.selectedCourses.length) return '0'
+            if (this.totalTimetableVariationCount === null) return '-'
+
+            return new Intl.NumberFormat('de-AT').format(this.totalTimetableVariationCount)
+        },
         greenTimetableCountLabel() {
             if (!this.selectedCourses.length) return '0'
             if (this.greenTimetableCount === null) return '-'
@@ -2461,9 +2536,13 @@ export default {
             return !this.hasGreenTimetableResults
                 && this.timetableResultCount('conflict') > 0
         },
+        backendVariationCountsAvailable() {
+            return this.totalTimetableVariationCount !== null
+        },
         timetableCountResultsAvailable() {
             return this.selectedCourses.length > 0
                 && [
+                    this.totalTimetableVariationCount,
                     this.fullGreenTimetableCount,
                     this.greenTimetableCount,
                     this.conflictTimetableCount,
@@ -2534,6 +2613,9 @@ export default {
         },
         'selected_schoolyear.id'() {
             this.loadSettings()
+        },
+        studentCode() {
+            this.syncExternalStudentSelection()
         },
         selection: {
             deep: true,
@@ -2610,6 +2692,7 @@ export default {
                 this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(evaluationSettingsResponse.data?.data?.criteria || [])
                 this.robotStudents = studentOptionsResponse.data?.data || []
                 this.restoreLastRobotState()
+                this.syncExternalStudentSelection()
                 this.syncAvailableTimes()
                 this.loadStudentCompletedCourses()
             } catch {
@@ -2691,19 +2774,57 @@ export default {
             if (!(courseCodes instanceof Set) || !courseCodes.size) return ''
 
             return (Array.isArray(options) ? options : [])
-                .find(option => this.selectionOptionCodeAliases(option?.value, aliases)
-                    .some(alias => this.courseCodesContainBase(courseCodes, alias)))?.value || ''
+                .map((option, optionIndex) => ({
+                    option,
+                    optionIndex,
+                    match: this.bestSelectionOptionCourseCodeMatch(option?.value, courseCodes, aliases),
+                }))
+                .filter(({ match }) => match)
+                .sort((firstOption, secondOption) =>
+                    secondOption.match.module - firstOption.match.module
+                    || secondOption.match.courseIndex - firstOption.match.courseIndex
+                    || firstOption.optionIndex - secondOption.optionIndex,
+                )[0]?.option?.value || ''
         },
         selectionOptionCodeAliases(value, aliases = {}) {
             const normalizedValue = this.normalizedCourseCode(value)
+            const mappedAliases = {
+                ET: ['ETH', 'ET'],
+                ETH: ['ETH', 'ET'],
+                R: ['RK', 'R'],
+                RK: ['RK', 'R'],
+                S: ['S', 'SPA'],
+                SPA: ['S', 'SPA'],
+            }
 
             return [
                 normalizedValue,
+                ...(mappedAliases[normalizedValue] || []),
                 ...(aliases[normalizedValue] || []),
             ]
                 .map(alias => this.normalizedCourseCode(alias))
                 .filter(Boolean)
                 .filter((alias, index, allAliases) => allAliases.indexOf(alias) === index)
+        },
+        bestSelectionOptionCourseCodeMatch(value, courseCodes, aliases = {}) {
+            const optionAliases = this.selectionOptionCodeAliases(value, aliases)
+                .map(alias => this.courseCodeWithoutModule(alias))
+            if (!optionAliases.length) return null
+
+            return [...courseCodes]
+                .map((courseCode, courseIndex) => ({
+                    ...this.courseCodeModuleParts(courseCode),
+                    courseIndex,
+                }))
+                .filter(parts => optionAliases.includes(parts.base))
+                .map(parts => ({
+                    module: Number(parts.module || 0),
+                    courseIndex: parts.courseIndex,
+                }))
+                .sort((firstMatch, secondMatch) =>
+                    secondMatch.module - firstMatch.module
+                    || secondMatch.courseIndex - firstMatch.courseIndex,
+                )[0] || null
         },
         selectionStateSnapshot(selection) {
             return [
@@ -2713,13 +2834,6 @@ export default {
                 String(selection?.artsSubject || ''),
                 String(selection?.language || ''),
             ].join('|')
-        },
-        courseCodesContainBase(courseCodes, base) {
-            const normalizedBase = this.normalizedCourseCode(base)
-            if (!normalizedBase) return false
-
-            return [...courseCodes]
-                .some(courseCode => this.courseCodeWithoutModule(courseCode) === normalizedBase)
         },
         studentSchoolLevelKey(student) {
             const importedSchoolLevel = this.normalizedStudentSchoolLevel(
@@ -2837,6 +2951,15 @@ export default {
             this.studentSearch = ''
             this.saveLastRobotState()
         },
+        syncExternalStudentSelection() {
+            if (!this.embeddedCourseCardsOnly) return
+
+            const nextStudentCode = this.normalizedStudentCode(this.studentCode)
+            if (nextStudentCode && !this.studentByCode(nextStudentCode)) return
+            if (this.normalizedStudentCode(this.studentSelection.studentCode) === nextStudentCode) return
+
+            this.applyStudentSelection(nextStudentCode)
+        },
         toggleStudentCompletedCourses() {
             if (!this.selectedStudent) return
 
@@ -2933,6 +3056,7 @@ export default {
                 || !(this.courseGroups || []).length
                 || !(this.selectedCourses || []).length
             ) {
+                this.totalTimetableVariationCount = 0
                 this.fullGreenTimetableCount = 0
                 this.greenTimetableCount = 0
                 this.conflictTimetableCount = 0
@@ -2953,7 +3077,7 @@ export default {
             this.resetQualityCounterSelection()
 
             try {
-                const response = await axios.post('/api/admin/students-timetables/robot/full-green-count', {
+                const response = await axios.post('/api/admin/students-timetables/robot/backend-timetable', {
                     selection: this.selection,
                     constraints: this.constraints,
                     student: this.studentSelection,
@@ -2969,6 +3093,7 @@ export default {
 
                 if (requestId !== this.fullGreenTimetableCountRequestId) return
 
+                this.totalTimetableVariationCount = Number(response.data?.data?.timetable_variation_count || 0)
                 this.fullGreenTimetableCount = Number(response.data?.data?.full_green_timetable_count || 0)
                 this.greenTimetableCount = Number(response.data?.data?.green_timetable_count || 0)
                 this.conflictTimetableCount = Number(response.data?.data?.conflict_timetable_count || 0)
@@ -2993,6 +3118,7 @@ export default {
             } catch {
                 if (requestId !== this.fullGreenTimetableCountRequestId) return
 
+                this.totalTimetableVariationCount = null
                 this.fullGreenTimetableCount = null
                 this.greenTimetableCount = null
                 this.conflictTimetableCount = null
@@ -3009,7 +3135,9 @@ export default {
             }
         },
         autoSelectTimetableResultType() {
-            const selectableResultTypes = this.hasGreenTimetableResults
+            const selectableResultTypes = this.backendVariationCountsAvailable
+                ? ['full_green', 'conflict']
+                : this.hasGreenTimetableResults
                 ? ['full_green', 'green']
                 : ['full_green', 'green', 'conflict']
 
@@ -3033,6 +3161,17 @@ export default {
             this.selectedTimetableResultType = 'full_green'
 
             return !wasFullGreenSelected
+        },
+        backendCountCardSelectable(type) {
+            return this.backendVariationCountsAvailable
+                && !this.fullGreenTimetableCountLoading
+                && ['full_green', 'conflict'].includes(type)
+                && this.isTimetableResultTypeSelectable(type)
+        },
+        selectBackendCountCard(type) {
+            if (!this.backendCountCardSelectable(type)) return
+
+            this.setSelectedTimetableResultType(type, true)
         },
         setSelectedTimetableResultType(type, selected) {
             if (selected === false) return
@@ -3116,6 +3255,11 @@ export default {
                 .join(', ')
         },
         isTimetableResultTypeSelectable(type) {
+            if (this.backendVariationCountsAvailable) {
+                return ['full_green', 'conflict'].includes(type)
+                    && this.timetableResultCount(type) > 0
+            }
+
             if (type === 'conflict') {
                 return this.showConflictTimetableResults
                     && this.timetableResultCount(type) > 0
@@ -3211,6 +3355,7 @@ export default {
                 number: Number(timetable?.number || this.timetableResultCounter(this.selectedTimetableResultType)),
                 type: timetable?.type || this.selectedTimetableResultType,
                 metrics: timetable?.metrics || {},
+                statusMessage: String(timetable?.statusMessage || '').trim(),
                 additionalCoursesAccepted: timetable?.additionalCoursesAccepted === true,
                 qualityCriteria: Array.isArray(timetable?.qualityCriteria) ? timetable.qualityCriteria : [],
                 slots: timetable?.slots || {},
@@ -3876,6 +4021,7 @@ export default {
             this.clearTimetableCountResults()
         },
         clearTimetableCountResults() {
+            this.totalTimetableVariationCount = null
             this.fullGreenTimetableCount = null
             this.greenTimetableCount = null
             this.conflictTimetableCount = null
@@ -5949,12 +6095,17 @@ export default {
             if (!match) return ''
 
             const aliases = {
+                ET: 'ETH',
+                ETH: 'ET',
                 GS: 'GPB',
                 GW: 'GWB',
                 ME: 'MU',
+                R: 'RK',
+                RK: 'R',
                 S: 'SPA',
                 SPA: 'S',
                 LPT: 'LET',
+                LET: 'LPT',
             }
             const mappedBase = aliases[match[1]]
 
@@ -6987,13 +7138,31 @@ export default {
             return normalizedGrade === 'B' || ['1', '2', '3', '4'].includes(normalizedGrade)
         },
         courseCompletedForStudentPlanning(course, completedCourseCodes) {
-            return this.courseMatchesCourseCodeSet(course, completedCourseCodes)
+            if (this.courseMatchesCourseCodeSet(course, completedCourseCodes)) return true
+
+            return this.courseModulePartsForStudentPlanning(course)
+                .some(parts => this.studentCourseCodesContainEquivalentModule(completedCourseCodes, parts))
         },
         courseMatchesCourseCodeSet(course, courseCodes) {
             if (!(courseCodes instanceof Set) || !courseCodes.size) return false
 
             return this.courseCodeAliases(course)
                 .some(courseCode => courseCodes.has(courseCode))
+        },
+        studentCourseCodesContainEquivalentModule(courseCodes, courseParts) {
+            if (!(courseCodes instanceof Set) || !courseCodes.size) return false
+
+            const moduleNumber = String(courseParts?.module || '')
+            if (!moduleNumber) return false
+
+            const baseAliases = this.studentCourseBaseAliases(courseParts.base)
+
+            return [...courseCodes]
+                .map(courseCode => this.courseCodeModuleParts(courseCode))
+                .some(parts =>
+                    String(parts.module || '') === moduleNumber
+                    && baseAliases.includes(parts.base),
+                )
         },
         coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes, plannedCourseCodes = new Set()) {
             return this.courseModulePartsForStudentPlanning(course)
@@ -7120,12 +7289,12 @@ export default {
                 GPB: ['GS'],
                 GW: ['GWB'],
                 GWB: ['GW'],
-                ET: ['ETH'],
-                ETH: ['ET'],
+                ET: ['ETH', 'R', 'RK'],
+                ETH: ['ET', 'R', 'RK'],
                 ME: ['MU'],
                 MU: ['ME'],
-                R: ['RK'],
-                RK: ['R'],
+                R: ['RK', 'ET', 'ETH'],
+                RK: ['R', 'ET', 'ETH'],
                 S: ['SPA'],
                 SPA: ['S'],
                 LPT: ['LET'],
@@ -7852,6 +8021,22 @@ export default {
 
 .robot-count-card--selected {
     box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.2);
+}
+
+.robot-count-card--clickable {
+    cursor: pointer;
+    transition:
+        border-color 0.16s ease,
+        box-shadow 0.16s ease,
+        transform 0.16s ease;
+}
+
+.robot-count-card--clickable:hover,
+.robot-count-card--clickable:focus-visible {
+    border-color: rgba(var(--v-theme-primary), 0.48);
+    box-shadow: inset 0 0 0 1px rgba(var(--v-theme-primary), 0.26);
+    outline: none;
+    transform: translateY(-1px);
 }
 
 .robot-count-card__content {
