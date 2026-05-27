@@ -5340,4 +5340,81 @@ describe('Students timetable robot page', () => {
 
         expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual(['D2', 'D3'])
     })
+
+    it('caches expanded course groups per course for checkbox state checks', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const course = { key: 'D1', code: 'D1', name: 'Deutsch 1', branch: 'alle', hours: 3 }
+        const ctx = {
+            ...methods,
+            availableCourses: [course],
+            studentAdditionalCourses: [course],
+            configuredCourseGroups: [
+                {
+                    key: 'd1-1k-mo-12',
+                    class_name: 'D1-1C-GOS',
+                    course: 'D1',
+                    subject: 'D',
+                    weekday: 1,
+                    hour: 12,
+                },
+            ],
+            weekdayOptions: [
+                { title: 'Montag', shortTitle: 'Mo', value: 1 },
+            ],
+            timeOptions: [
+                { title: '12. Stunde', shortTitle: '12.', value: 12 },
+            ],
+            schoolHours: [
+                { hour: 12, from: '18:45:00', until: '19:30:00' },
+            ],
+        }
+
+        const courseGroupItemsByCourseKey = computed.courseGroupItemsByCourseKey.call(ctx)
+
+        expect(courseGroupItemsByCourseKey.get('D1')).toHaveLength(1)
+        expect(courseGroupItemsByCourseKey.get('D1')?.[0].title).toBe('D1-1C-GOS')
+
+        const cachedContext = {
+            ...ctx,
+            configuredCourseGroups: [],
+            courseGroupItemsByCourseKey,
+        }
+
+        expect(methods.courseGroupItems.call(cachedContext, course)).toBe(courseGroupItemsByCourseKey.get('D1'))
+    })
+
+    it('clears timetable counts without rebuilding additional course candidates', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            fullGreenTimetableCount: 4,
+            greenTimetableCount: 3,
+            conflictTimetableCount: 2,
+            additionalCourseTimetableCount: 1,
+            additionalCourseSelectedKeys: [],
+            additionalCourseTimetableRequired: true,
+            qualityCounters: [{ key: 'compact_days' }],
+            allQualityCriteriaCount: 7,
+            fullGreenTimetableCountError: 'Fehler',
+            normalizeTimetableResultCounters: vi.fn(),
+        }
+
+        Object.defineProperty(ctx, 'selectedAdditionalCourses', {
+            get() {
+                throw new Error('selectedAdditionalCourses should not be read while clearing stale counts')
+            },
+        })
+
+        methods.clearTimetableCountResults.call(ctx)
+
+        expect(ctx.fullGreenTimetableCount).toBeNull()
+        expect(ctx.greenTimetableCount).toBeNull()
+        expect(ctx.conflictTimetableCount).toBeNull()
+        expect(ctx.additionalCourseTimetableCount).toBeNull()
+        expect(ctx.additionalCourseTimetableRequired).toBe(false)
+        expect(ctx.qualityCounters).toEqual([])
+        expect(ctx.allQualityCriteriaCount).toBeNull()
+        expect(ctx.fullGreenTimetableCountError).toBe('')
+        expect(ctx.normalizeTimetableResultCounters).toHaveBeenCalledOnce()
+    })
 })

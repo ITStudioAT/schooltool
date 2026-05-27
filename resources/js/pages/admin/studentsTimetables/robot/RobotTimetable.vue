@@ -1535,6 +1535,30 @@ export default {
                 this.studentAdditionalCourses.slice(splitIndex),
             ].filter(courseColumn => courseColumn.length)
         },
+        courseGroupItemsByCourseKey() {
+            const courseItems = [
+                ...(Array.isArray(this.availableCourses) ? this.availableCourses : []),
+                ...(Array.isArray(this.studentAdditionalCourses) ? this.studentAdditionalCourses : []),
+            ]
+                .filter(course => course?.key)
+                .filter((course, index, courses) =>
+                    courses.findIndex(candidate => candidate?.key === course.key) === index,
+                )
+
+            return new Map(courseItems.map(course => [
+                course.key,
+                this.uncachedCourseGroupItems(course),
+            ]))
+        },
+        deselectedCourseKeySet() {
+            return new Set(Array.isArray(this.deselectedCourseKeys) ? this.deselectedCourseKeys : [])
+        },
+        deselectedCourseGroupKeySet() {
+            return new Set(Array.isArray(this.deselectedCourseGroupKeys) ? this.deselectedCourseGroupKeys : [])
+        },
+        additionalCourseSelectedKeySet() {
+            return new Set(Array.isArray(this.additionalCourseSelectedKeys) ? this.additionalCourseSelectedKeys : [])
+        },
         selectedAdditionalCourses() {
             return this.studentAdditionalCourses.filter(course => this.additionalCourseSelected(course))
         },
@@ -3086,7 +3110,7 @@ export default {
             this.greenTimetableCount = null
             this.conflictTimetableCount = null
             this.additionalCourseTimetableCount = null
-            if (!(this.selectedAdditionalCourses || []).length) {
+            if (!(this.additionalCourseSelectedKeys || []).length) {
                 this.additionalCourseTimetableRequired = false
             }
             this.qualityCounters = []
@@ -3442,6 +3466,13 @@ export default {
             }
         },
         courseGroupItems(course) {
+            if (this.courseGroupItemsByCourseKey instanceof Map) {
+                return this.courseGroupItemsByCourseKey.get(course?.key) || []
+            }
+
+            return this.uncachedCourseGroupItems(course)
+        },
+        uncachedCourseGroupItems(course) {
             const configuredCourseGroups = Array.isArray(this.configuredCourseGroups)
                 ? this.configuredCourseGroups
                 : []
@@ -3496,18 +3527,18 @@ export default {
                 .sort((firstItem, secondItem) => firstItem.sortValue.localeCompare(secondItem.sortValue))
         },
         courseGroupSelected(course, group) {
-            const deselectedCourseGroupKeys = Array.isArray(this.deselectedCourseGroupKeys)
-                ? this.deselectedCourseGroupKeys
-                : []
+            const deselectedCourseGroupKeys = this.deselectedCourseGroupKeySet instanceof Set
+                ? this.deselectedCourseGroupKeySet
+                : new Set(Array.isArray(this.deselectedCourseGroupKeys) ? this.deselectedCourseGroupKeys : [])
 
-            return !deselectedCourseGroupKeys.includes(this.courseGroupSelectionKey(course, group))
+            return !deselectedCourseGroupKeys.has(this.courseGroupSelectionKey(course, group))
         },
         courseGroupSelectedByLabel(course, label) {
-            const deselectedCourseGroupKeys = Array.isArray(this.deselectedCourseGroupKeys)
-                ? this.deselectedCourseGroupKeys
-                : []
+            const deselectedCourseGroupKeys = this.deselectedCourseGroupKeySet instanceof Set
+                ? this.deselectedCourseGroupKeySet
+                : new Set(Array.isArray(this.deselectedCourseGroupKeys) ? this.deselectedCourseGroupKeys : [])
 
-            return !deselectedCourseGroupKeys.includes(this.courseGroupSelectionKey(course, { title: label }))
+            return !deselectedCourseGroupKeys.has(this.courseGroupSelectionKey(course, { title: label }))
         },
         courseDistanceLearning(course) {
             const groups = this.courseGroupItems(course)
@@ -4004,7 +4035,11 @@ export default {
             const groups = this.courseGroupItems(course)
 
             if (!groups.length) {
-                return !this.deselectedCourseKeys.includes(course.key)
+                const deselectedCourseKeys = this.deselectedCourseKeySet instanceof Set
+                    ? this.deselectedCourseKeySet
+                    : new Set(Array.isArray(this.deselectedCourseKeys) ? this.deselectedCourseKeys : [])
+
+                return !deselectedCourseKeys.has(course.key)
             }
 
             return groups.some(group => this.courseGroupSelected(course, group))
@@ -4139,11 +4174,11 @@ export default {
                 .some(courseCode => plannedCourseCodes.has(courseCode))
         },
         additionalCourseSelected(course) {
-            const selectedKeys = Array.isArray(this.additionalCourseSelectedKeys)
-                ? this.additionalCourseSelectedKeys
-                : []
+            const selectedKeys = this.additionalCourseSelectedKeySet instanceof Set
+                ? this.additionalCourseSelectedKeySet
+                : new Set(Array.isArray(this.additionalCourseSelectedKeys) ? this.additionalCourseSelectedKeys : [])
 
-            return selectedKeys.includes(course?.key)
+            return selectedKeys.has(course?.key)
         },
         additionalCourseGroupSelected(course, group) {
             if (!this.additionalCourseSelected(course)) return false
