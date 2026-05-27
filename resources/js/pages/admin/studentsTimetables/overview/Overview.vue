@@ -150,6 +150,79 @@
                         @click="openSelectionDialog" />
                 </div>
 
+                <div class="overview-context-card">
+                    <div class="overview-wizard-row">
+                        <v-btn
+                            class="overview-wizard-button"
+                            variant="flat"
+                            size="large"
+                            prepend-icon="mdi-star-four-points"
+                            append-icon="mdi-auto-fix"
+                            :active="wizardPanelOpen"
+                            @click="toggleWizardPanel">
+                            Wizzard
+                        </v-btn>
+                        <v-btn
+                            class="overview-manual-button"
+                            variant="tonal"
+                            color="primary"
+                            size="large"
+                            prepend-icon="mdi-calendar-edit"
+                            active>
+                            <span class="overview-manual-button__label">
+                                <span>Manueller</span>
+                                <span>Stundenplan</span>
+                            </span>
+                        </v-btn>
+
+                        <div class="overview-wizard-settings-summary">
+                            <div class="overview-wizard-settings-summary__title">
+                                <v-icon icon="mdi-tune-variant" size="14" />
+                                Bewertungskriterien
+                            </div>
+                            <div v-if="activeEvaluationCriteria.length" class="overview-wizard-settings-summary__list">
+                                <span
+                                    v-for="(criterion, index) in activeEvaluationCriteria"
+                                    :key="criterion.key"
+                                    class="overview-wizard-settings-summary__item">
+                                    <span class="overview-wizard-settings-summary__rank">{{ index + 1 }}</span>
+                                    <span class="overview-wizard-settings-summary__label">{{ criterion.label }}</span>
+                                    <span v-if="criterion.optionLabel" class="overview-wizard-settings-summary__option">
+                                        {{ criterion.optionLabel }}
+                                    </span>
+                                </span>
+                            </div>
+                            <div v-else class="overview-wizard-settings-summary__empty">
+                                Keine Bewertungskriterien aktiv
+                            </div>
+                        </div>
+
+                        <div class="overview-wizard-actions">
+                            <v-btn
+                                icon="mdi-cog-outline"
+                                variant="text"
+                                density="comfortable"
+                                color="primary"
+                                title="Einstellungen"
+                                aria-label="Einstellungen"
+                                @click="settingsDialogOpen = true" />
+                            <v-btn
+                                icon="mdi-information-outline"
+                                variant="text"
+                                density="comfortable"
+                                color="primary"
+                                title="Hinweise zum Stundenplan Wizzard"
+                                aria-label="Hinweise zum Stundenplan Wizzard"
+                                @click="infoDialogOpen = true" />
+                        </div>
+                    </div>
+                </div>
+
+                <RobotTimetable
+                    v-if="wizardPanelOpen"
+                    embedded-course-cards-only
+                    class="overview-wizard-course-cards" />
+
                 <div class="course-choice-panel">
                     <div class="course-choice-panel__header">
                         <div class="course-choice-panel__title">
@@ -586,6 +659,61 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+
+        <v-dialog v-model="infoDialogOpen" persistent max-width="680">
+            <v-card rounded="lg">
+                <v-card-title class="d-flex align-center ga-2">
+                    <v-icon icon="mdi-information-outline" />
+                    Hinweise zum Stundenplan Wizzard
+                </v-card-title>
+                <v-card-text>
+                    <div class="overview-wizard-info-dialog">
+                        <div class="overview-wizard-info-dialog__section">
+                            <div class="overview-wizard-info-dialog__title">Noten</div>
+                            <p>
+                                Die Note B bedeutet befreit. Das Modul wurde also angerechnet und gilt für die Planung
+                                wie ein positiv abgeschlossenes Modul.
+                            </p>
+                        </div>
+
+                        <div class="overview-wizard-info-dialog__section">
+                            <div class="overview-wizard-info-dialog__title">Grundregel für Folgemodule</div>
+                            <p>
+                                In Deutsch, Englisch, Mathematik, Französisch, Latein, Spanisch und Informatik darf ein
+                                Modul erst gebucht werden, wenn das Modul zwei Stufen darunter positiv abgeschlossen
+                                oder mit B angerechnet wurde. Beispiel: M5 darf erst gebucht werden, wenn M3 positiv
+                                oder angerechnet ist.
+                            </p>
+                        </div>
+
+                        <div class="overview-wizard-info-dialog__section">
+                            <div class="overview-wizard-info-dialog__title">Letzte Module gemeinsam buchen</div>
+                            <p>
+                                In Englisch und Mathematik dürfen die letzten beiden Module nur gemeinsam gebucht
+                                werden, wenn das vorletzte Modul schon einmal besucht wurde. Dafür reicht auch ein
+                                negativer Abschluss.
+                            </p>
+                            <p>
+                                In Deutsch gilt diese Regel ebenfalls. Zusätzlich dürfen D7 und D8 gemeinsam gebucht
+                                werden, weil diese Module im Kompaktstudium zusammengehören.
+                            </p>
+                            <p>
+                                In Französisch, Latein und Spanisch dürfen die letzten beiden Module gemeinsam gebucht
+                                werden, wenn das Modul davor positiv abgeschlossen oder mit B angerechnet wurde.
+                            </p>
+                        </div>
+                    </div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn color="primary" variant="flat" @click="infoDialogOpen = false">Schließen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="settingsDialogOpen" persistent max-width="1120" scrollable>
+            <EvaluationSettings :closable="true" @close="settingsDialogOpen = false" @saved="onSettingsSaved" />
+        </v-dialog>
     </v-col>
 </template>
 
@@ -594,6 +722,8 @@ import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
+import EvaluationSettings from '../evaluationSettings/EvaluationSettings.vue'
+import RobotTimetable from '../robot/RobotTimetable.vue'
 
 const FALLBACK_HOUR_COUNT = 10
 const ALL_DATES_OPTION_VALUE = 'all_dates'
@@ -602,7 +732,9 @@ const TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:overview:last-timetabl
 export default {
     name: 'StudentsTimetablesOverview',
     components: {
+        EvaluationSettings,
         LoadingAnimation,
+        RobotTimetable,
     },
 
     data() {
@@ -614,12 +746,16 @@ export default {
             selectedCourseMenuKey: '',
             courseGroupDialog: false,
             selectedCourseGroup: null,
+            infoDialogOpen: false,
+            settingsDialogOpen: false,
+            wizardPanelOpen: false,
             timetableUpdatePending: false,
             studentDialogOpen: false,
             studentOptionsLoading: false,
             studentSearch: '',
             robotStudents: [],
             subjectRows: [],
+            evaluationCriteria: [],
             studentSelectionDraft: {
                 studentCode: null,
             },
@@ -674,6 +810,17 @@ export default {
         },
         schoolyearName() {
             return this.selectedSchoolyear?.name || ''
+        },
+        activeEvaluationCriteria() {
+            return this.evaluationCriteria
+                .filter(criterion => criterion.enabled)
+                .map(criterion => ({
+                    key: criterion.key,
+                    label: criterion.label,
+                    optionLabel: criterion.option && criterion.options.length
+                        ? (criterion.options.find(option => option.value === criterion.option)?.label || null)
+                        : null,
+                }))
         },
         semesters() {
             return [
@@ -997,6 +1144,14 @@ export default {
                 this.subjectRows = []
             }
 
+            try {
+                const evaluationSettingsResponse = await axios.get('/api/admin/students-timetables/evaluation-settings')
+
+                this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(evaluationSettingsResponse.data?.data?.criteria || [])
+            } catch {
+                this.evaluationCriteria = []
+            }
+
             if (this.transferredStudentContext?.student?.studentCode) {
                 await this.loadTransferredStudentCompletedCourses(this.transferredStudentContext.student.studentCode)
             } else {
@@ -1040,6 +1195,36 @@ export default {
             }
 
             this.$nextTick(scheduleActionAfterPaint)
+        },
+        toggleWizardPanel() {
+            this.wizardPanelOpen = !this.wizardPanelOpen
+        },
+        async onSettingsSaved() {
+            this.settingsDialogOpen = false
+
+            try {
+                const response = await axios.get('/api/admin/students-timetables/evaluation-settings')
+                this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(response.data?.data?.criteria || [])
+            } catch {
+                // keep existing criteria on failure
+            }
+        },
+        cloneCriteria(criteria) {
+            return JSON.parse(JSON.stringify(criteria || []))
+        },
+        normalizedEvaluationCriteria(criteria) {
+            return this.cloneCriteria(criteria)
+                .map((criterion, index) => ({
+                    ...criterion,
+                    enabled: criterion.enabled === true,
+                    priority: Number(criterion.priority || index + 1),
+                    option: criterion.option || null,
+                    options: Array.isArray(criterion.options) ? criterion.options : [],
+                }))
+        },
+        enabledEvaluationCriteriaFromSettings(criteria) {
+            return this.normalizedEvaluationCriteria(criteria)
+                .filter(criterion => criterion.enabled === true)
         },
         handleShowSaturdayClick() {
             this.runTimetableUpdate(() => {
@@ -3165,6 +3350,164 @@ export default {
     overflow-wrap: anywhere;
 }
 
+.overview-context-card {
+    margin-bottom: 14px;
+    padding: 10px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.2);
+    border-radius: 8px;
+    background:
+        radial-gradient(circle at 10% 18%, rgba(250, 204, 21, 0.26), transparent 18%),
+        radial-gradient(circle at 92% 22%, rgba(14, 165, 233, 0.2), transparent 19%),
+        linear-gradient(135deg, rgba(236, 72, 153, 0.1), rgba(34, 197, 94, 0.12) 46%, rgba(249, 115, 22, 0.13));
+}
+
+.overview-wizard-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.overview-wizard-button {
+    flex: 0 0 auto;
+    min-height: 48px;
+    border-radius: 8px;
+    background: linear-gradient(90deg, #e11d48, #f59e0b 32%, #16a34a 66%, #2563eb);
+    color: #ffffff;
+    font-size: 0.92rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: none;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
+}
+
+.overview-manual-button {
+    flex: 0 0 auto;
+    min-height: 48px;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    font-weight: 850;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.overview-manual-button__label {
+    display: grid;
+    gap: 1px;
+    line-height: 1.05;
+    text-align: left;
+}
+
+.overview-wizard-settings-summary {
+    display: grid;
+    gap: 5px;
+    flex: 0 1 720px;
+    justify-items: end;
+    margin-left: auto;
+    min-width: 0;
+    max-width: 720px;
+    padding: 8px 10px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.18);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+    text-align: right;
+}
+
+.overview-wizard-settings-summary__title,
+.overview-wizard-settings-summary__list,
+.overview-wizard-actions {
+    display: flex;
+    align-items: center;
+}
+
+.overview-wizard-settings-summary__title {
+    gap: 6px;
+    color: #172554;
+    font-size: 0.72rem;
+    font-weight: 850;
+}
+
+.overview-wizard-settings-summary__list {
+    gap: 6px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.overview-wizard-settings-summary__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 3px 7px 3px 4px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.78);
+    color: #172554;
+    font-size: 0.68rem;
+    font-weight: 800;
+}
+
+.overview-wizard-settings-summary__rank {
+    display: inline-grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 0.62rem;
+}
+
+.overview-wizard-settings-summary__label,
+.overview-wizard-settings-summary__option {
+    overflow-wrap: anywhere;
+}
+
+.overview-wizard-settings-summary__option {
+    color: #475569;
+}
+
+.overview-wizard-settings-summary__option::before {
+    content: "· ";
+}
+
+.overview-wizard-settings-summary__empty {
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.overview-wizard-actions {
+    flex: 0 0 auto;
+    gap: 2px;
+}
+
+.overview-wizard-info-dialog {
+    display: grid;
+    gap: 14px;
+}
+
+.overview-wizard-info-dialog__section {
+    display: grid;
+    gap: 6px;
+}
+
+.overview-wizard-info-dialog__title {
+    color: #172554;
+    font-weight: 850;
+}
+
+.overview-wizard-info-dialog p {
+    margin: 0;
+    color: #334155;
+    line-height: 1.45;
+}
+
+.overview-wizard-course-cards {
+    margin-bottom: 16px;
+}
+
 .overview-selection-dialog-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3668,6 +4011,15 @@ export default {
 @media (max-width: 640px) {
     .overview-selection {
         flex-direction: column;
+    }
+
+    .overview-wizard-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .overview-wizard-actions {
+        justify-content: flex-end;
     }
 
     .overview-selected-cards,

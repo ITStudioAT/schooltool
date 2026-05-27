@@ -1,5 +1,253 @@
 <template>
-    <v-col cols="12" lg="8" xl="7">
+    <div v-if="embeddedCourseCardsOnly" class="robot-timetable-embedded-course-cards">
+        <div class="robot-course-list robot-course-panel">
+            <div class="robot-course-panel__title">
+                <div class="robot-course-list__header robot-course-list__header--panel">
+                    <div class="robot-course-list__title">Kurse</div>
+                    <v-chip size="x-small" color="primary" variant="tonal">
+                        {{ selectedCourses.length }} / {{ availableCourses.length }}
+                    </v-chip>
+                    <v-chip size="x-small" color="secondary" variant="tonal">
+                        {{ formatHours(selectedCoursesHours) }} Std.
+                    </v-chip>
+                    <v-btn
+                        class="robot-course-list__reset"
+                        size="small"
+                        variant="text"
+                        color="primary"
+                        prepend-icon="mdi-restore"
+                        :disabled="!courseSelectionResettable"
+                        @click="resetCourseSelection">
+                        Zurücksetzen
+                    </v-btn>
+                </div>
+            </div>
+            <div class="robot-course-panel__body">
+                <v-alert v-if="!loading && !availableCourses.length" type="info" variant="tonal" class="mb-0">
+                    Keine passenden Kurse gefunden.
+                </v-alert>
+
+                <v-alert v-else-if="!selectedCourses.length" type="warning" variant="tonal" class="mb-3">
+                    Keine Kurse ausgewählt.
+                </v-alert>
+
+                <div v-if="availableCourses.length" class="robot-course-columns">
+                    <div
+                        v-for="(courseColumn, columnIndex) in availableCourseColumns"
+                        :key="`embedded-course-column-${columnIndex}`"
+                        class="robot-course-item-list">
+                        <div class="robot-course-item-header robot-course-item-header--expandable">
+                            <div>Aktiv</div>
+                            <div>Code</div>
+                            <div>Bezeichnung</div>
+                            <div>Zweig</div>
+                            <div class="text-right">Std.</div>
+                        </div>
+                        <v-expansion-panels
+                            v-model="courseItemPanels"
+                            multiple
+                            variant="accordion"
+                            class="robot-course-item-panels">
+                            <v-expansion-panel
+                                v-for="course in courseColumn"
+                                :key="course.key"
+                                :value="course.key"
+                                class="robot-course-item-panel"
+                                :class="{
+                                    'robot-course-item-panel--disabled': !courseSelected(course),
+                                    'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
+                                    'robot-course-item-panel--conflict': courseOverlapsInSelectedTimetable(course) || courseAllGroupsNoLongerFitSelectedTimetable(course),
+                                }">
+                                <v-expansion-panel-title class="robot-course-item-panel__title">
+                                    <div class="robot-course-item-row">
+                                        <div class="robot-course-item-row__select">
+                                            <v-checkbox
+                                                :model-value="courseFullySelected(course)"
+                                                :indeterminate="coursePartiallySelected(course)"
+                                                :aria-label="`${course.code} auswählen`"
+                                                density="compact"
+                                                color="primary"
+                                                hide-details
+                                                @click.stop
+                                                @update:model-value="setCourseSelected(course, $event)" />
+                                        </div>
+                                        <div class="robot-course-item-row__code">
+                                            <span>{{ course.code }}</span>
+                                        </div>
+                                        <div>{{ course.name }}</div>
+                                        <div>{{ course.branch }}</div>
+                                        <div class="text-right">{{ formatHours(course.hours) }}</div>
+                                    </div>
+                                </v-expansion-panel-title>
+                                <v-expansion-panel-text>
+                                    <div class="robot-course-item-details">
+                                        <div class="robot-course-item-details__section">
+                                            <div class="robot-course-item-details__title">Stundenplan</div>
+                                            <div
+                                                v-if="courseGroupItems(course).length"
+                                                class="robot-course-item-detail-list">
+                                                <div
+                                                    v-for="group in courseGroupItems(course)"
+                                                    :key="group.key"
+                                                    class="robot-course-item-detail"
+                                                    :class="{
+                                                        'robot-course-item-detail--disabled': !courseGroupSelected(course, group),
+                                                        'robot-course-item-detail--used': courseGroupUsedInSelectedTimetable(course, group),
+                                                        'robot-course-item-detail--conflict': courseGroupNoLongerFitsSelectedTimetable(course, group),
+                                                    }">
+                                                    <div class="robot-course-item-detail__main">
+                                                        <v-checkbox
+                                                            :model-value="courseGroupSelected(course, group)"
+                                                            :aria-label="`${group.title} auswählen`"
+                                                            density="compact"
+                                                            color="primary"
+                                                            hide-details
+                                                            class="robot-course-item-detail__check"
+                                                            @click.stop
+                                                            @update:model-value="setCourseGroupSelected(course, group, $event)" />
+                                                        <span>
+                                                            {{ group.title }}<sup v-if="courseGroupDistanceLearning(course, group)" class="robot-course-fu">FU</sup>:
+                                                        </span>
+                                                    </div>
+                                                    <div class="robot-course-item-detail__meta">
+                                                        {{ group.meta }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div v-else class="robot-course-item-details__empty">
+                                                Keine TT-Stunden.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </v-expansion-panel-text>
+                            </v-expansion-panel>
+                        </v-expansion-panels>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
+            v-if="studentAdditionalCourses.length"
+            class="robot-course-list robot-course-panel">
+            <div class="robot-course-panel__title">
+                <div class="robot-course-list__header robot-course-list__header--panel">
+                    <div class="robot-course-list__title">Zusätzliche Kurse</div>
+                    <v-chip size="x-small" color="primary" variant="tonal">
+                        {{ studentAdditionalCourses.length }}
+                    </v-chip>
+                    <v-btn
+                        class="robot-course-list__reset"
+                        size="small"
+                        variant="text"
+                        color="primary"
+                        prepend-icon="mdi-restore"
+                        :disabled="!additionalCourseSelectionResettable"
+                        @click="resetAdditionalCourseSelection">
+                        Zurücksetzen
+                    </v-btn>
+                </div>
+            </div>
+            <div class="robot-course-panel__body">
+                <div class="robot-course-columns">
+                    <div
+                        v-for="(courseColumn, columnIndex) in additionalCourseColumns"
+                        :key="`embedded-additional-course-column-${columnIndex}`"
+                        class="robot-course-item-list">
+                        <div class="robot-course-item-header robot-course-item-header--expandable">
+                            <div>Aktiv</div>
+                            <div>Code</div>
+                            <div>Bezeichnung</div>
+                            <div>Zweig</div>
+                            <div class="text-right">Std.</div>
+                        </div>
+                        <v-expansion-panels
+                            multiple
+                            variant="accordion"
+                            class="robot-course-item-panels">
+                            <v-expansion-panel
+                                v-for="course in courseColumn"
+                                :key="course.key"
+                                :value="course.key"
+                                class="robot-course-item-panel"
+                                :class="{
+                                    'robot-course-item-panel--disabled': !additionalCourseSelectable(course),
+                                    'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
+                                    'robot-course-item-panel--missing-additional': additionalCourseMissingInSelectedTimetable(course) || courseAllGroupsNoLongerFitSelectedTimetable(course),
+                                }">
+                                <v-expansion-panel-title class="robot-course-item-panel__title">
+                                    <div class="robot-course-item-row">
+                                        <div class="robot-course-item-row__select">
+                                            <v-checkbox
+                                                :model-value="additionalCourseFullySelected(course)"
+                                                :indeterminate="additionalCoursePartiallySelected(course)"
+                                                :aria-label="`${course.code} auswählen`"
+                                                density="compact"
+                                                color="primary"
+                                                :disabled="!additionalCourseSelectable(course)"
+                                                hide-details
+                                                @click.stop
+                                                @update:model-value="setAdditionalCourseSelected(course, $event)" />
+                                        </div>
+                                        <div class="robot-course-item-row__code">
+                                            <span>{{ course.code }}</span>
+                                        </div>
+                                        <div>{{ course.name }}</div>
+                                        <div>{{ course.branch }}</div>
+                                        <div class="text-right">{{ formatHours(course.hours) }}</div>
+                                    </div>
+                                </v-expansion-panel-title>
+                                <v-expansion-panel-text>
+                                    <div class="robot-course-item-details">
+                                        <div class="robot-course-item-details__section">
+                                            <div class="robot-course-item-details__title">Stundenplan</div>
+                                            <div
+                                                v-if="courseGroupItems(course).length"
+                                                class="robot-course-item-detail-list">
+                                                <div
+                                                    v-for="group in courseGroupItems(course)"
+                                                    :key="group.key"
+                                                    class="robot-course-item-detail"
+                                                    :class="{
+                                                        'robot-course-item-detail--disabled': !additionalCourseGroupSelected(course, group),
+                                                        'robot-course-item-detail--used': courseGroupUsedInSelectedTimetable(course, group),
+                                                        'robot-course-item-detail--conflict': courseGroupNoLongerFitsSelectedTimetable(course, group),
+                                                    }">
+                                                    <div class="robot-course-item-detail__main">
+                                                        <v-checkbox
+                                                            :model-value="additionalCourseGroupSelected(course, group)"
+                                                            :aria-label="`${group.title} auswählen`"
+                                                            density="compact"
+                                                            color="primary"
+                                                            :disabled="!additionalCourseSelectable(course)"
+                                                            hide-details
+                                                            class="robot-course-item-detail__check"
+                                                            @click.stop
+                                                            @update:model-value="setAdditionalCourseGroupSelected(course, group, $event)" />
+                                                        <span>
+                                                            {{ group.title }}<sup v-if="courseGroupDistanceLearning(course, group)" class="robot-course-fu">FU</sup>:
+                                                        </span>
+                                                    </div>
+                                                    <div class="robot-course-item-detail__meta">
+                                                        {{ group.meta }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div v-else class="robot-course-item-details__empty">
+                                                Keine TT-Stunden.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </v-expansion-panel-text>
+                            </v-expansion-panel>
+                        </v-expansion-panels>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <v-col v-else cols="12" lg="8" xl="7">
         <v-card rounded="lg" border class="robot-timetable-card">
             <v-card-title class="robot-timetable-card__title d-flex align-center ga-2">
                 <v-icon icon="mdi-robot-outline" />
@@ -1233,6 +1481,12 @@ const ALL_DATES_OPTION_VALUE = 'all_dates'
 
 export default {
     components: { EvaluationSettings },
+    props: {
+        embeddedCourseCardsOnly: {
+            type: Boolean,
+            default: false,
+        },
+    },
     data() {
         return {
             loading: false,
@@ -6573,6 +6827,12 @@ export default {
 
 .robot-timetable-card__text {
     padding: 12px;
+}
+
+.robot-timetable-embedded-course-cards {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 16px;
 }
 
 .robot-timetable-grid {

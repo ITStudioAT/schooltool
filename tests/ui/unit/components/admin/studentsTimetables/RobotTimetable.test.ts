@@ -10,6 +10,11 @@ describe('Students timetable robot page', () => {
         )
 
         expect(componentSource).toContain('Stundenplan Wizzard')
+        expect(componentSource).toContain('embeddedCourseCardsOnly')
+        expect(componentSource).toContain('class="robot-timetable-embedded-course-cards"')
+        expect(componentSource).toContain('<v-col v-else cols="12" lg="8" xl="7">')
+        expect(componentSource).toContain('embedded-course-column')
+        expect(componentSource).toContain('embedded-additional-course-column')
         expect(componentSource).toContain('icon="mdi-information-outline"')
         expect(componentSource).toContain('infoDialogOpen')
         expect(componentSource).toContain('<v-dialog v-model="infoDialogOpen" persistent max-width="680">')

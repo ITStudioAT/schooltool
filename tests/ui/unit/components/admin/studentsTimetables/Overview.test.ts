@@ -1362,6 +1362,46 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('Kein Student')
         expect(componentSource).toContain('class="overview-selection"')
         expect(componentSource).toContain('class="overview-selected-card"')
+        expect(componentSource).toContain('class="overview-context-card"')
+        expect(componentSource).toContain('class="overview-wizard-button"')
+        const wizardButtonSource = componentSource.slice(
+            componentSource.indexOf('class="overview-wizard-button"'),
+            componentSource.indexOf('</v-btn>', componentSource.indexOf('class="overview-wizard-button"')),
+        )
+        expect(wizardButtonSource).not.toContain('block')
+        expect(componentSource).toContain('prepend-icon="mdi-star-four-points"')
+        expect(componentSource).toContain('append-icon="mdi-auto-fix"')
+        expect(componentSource).toContain(':active="wizardPanelOpen"')
+        expect(componentSource).toContain('@click="toggleWizardPanel"')
+        expect(componentSource).toContain('Wizzard')
+        expect(componentSource).toContain('RobotTimetable')
+        expect(componentSource).toContain('v-if="wizardPanelOpen"')
+        expect(componentSource).toContain('embedded-course-cards-only')
+        expect(componentSource).toContain('class="overview-wizard-course-cards"')
+        expect(componentSource).toContain('class="overview-manual-button"')
+        expect(componentSource).toContain('prepend-icon="mdi-calendar-edit"')
+        expect(componentSource).toContain('class="overview-manual-button__label"')
+        expect(componentSource).toContain('<span>Manueller</span>')
+        expect(componentSource).toContain('<span>Stundenplan</span>')
+        expect(componentSource).toContain('class="overview-wizard-settings-summary"')
+        expect(componentSource).toContain('activeEvaluationCriteria')
+        expect(componentSource).toContain('Bewertungskriterien')
+        expect(componentSource).toContain('Keine Bewertungskriterien aktiv')
+        expect(componentSource).toContain('justify-items: end;')
+        expect(componentSource).toContain('margin-left: auto;')
+        expect(componentSource).toContain('justify-content: flex-end;')
+        expect(componentSource).toContain('border: 1px solid rgba(var(--v-theme-primary), 0.18);')
+        expect(componentSource).toContain('background: rgba(255, 255, 255, 0.72);')
+        expect(componentSource).toContain('icon="mdi-cog-outline"')
+        expect(componentSource).toContain('@click="settingsDialogOpen = true"')
+        expect(componentSource).toContain('icon="mdi-information-outline"')
+        expect(componentSource).toContain('@click="infoDialogOpen = true"')
+        expect(componentSource).toContain('<v-dialog v-model="infoDialogOpen" persistent max-width="680">')
+        expect(componentSource).toContain('Hinweise zum Stundenplan Wizzard')
+        expect(componentSource).toContain('<v-dialog v-model="settingsDialogOpen" persistent max-width="1120" scrollable>')
+        expect(componentSource).toContain('<EvaluationSettings :closable="true" @close="settingsDialogOpen = false" @saved="onSettingsSaved" />')
+        expect(componentSource).toContain("axios.get('/api/admin/students-timetables/evaluation-settings')")
+        expect(componentSource).not.toContain('WU-Design')
         expect(componentSource).toContain('<v-dialog v-model="selectionDialogOpen" persistent max-width="640">')
         expect(componentSource).toContain('label="Semester"')
         expect(componentSource).toContain('label="Ethik / Religion"')
@@ -1384,6 +1424,12 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('studentPlannedCoursesForSemester')
         expect(componentSource.indexOf('class="transferred-student-context"')).toBeLessThan(
             componentSource.indexOf('class="overview-selection"'),
+        )
+        expect(componentSource.indexOf('class="overview-selection"')).toBeLessThan(
+            componentSource.indexOf('class="overview-context-card"'),
+        )
+        expect(componentSource.indexOf('class="overview-context-card"')).toBeLessThan(
+            componentSource.indexOf('class="course-choice-panel"'),
         )
         expect(componentSource).toContain('<v-expand-transition>')
         expect(componentSource).toContain('return this.transferredStudentCourseSections')
@@ -1814,6 +1860,60 @@ describe('Students timetable overview', () => {
             'Wirtschaftskundlicher Zweig',
             'ME - Musikerziehung',
         ])
+    })
+
+    it('summarizes enabled Wizzard evaluation criteria like the robot settings', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const criteria = methods.enabledEvaluationCriteriaFromSettings.call(methods, [
+            {
+                key: 'full-green',
+                label: 'Voller grüner Stundenplan',
+                enabled: true,
+                priority: 2,
+                option: null,
+                options: [],
+            },
+            {
+                key: 'compact-days',
+                label: 'Kompakte Tage',
+                enabled: true,
+                priority: 1,
+                option: 'strict',
+                options: [
+                    { value: 'strict', label: 'streng' },
+                ],
+            },
+            {
+                key: 'disabled',
+                label: 'Inaktiv',
+                enabled: false,
+                priority: 3,
+                option: null,
+                options: [],
+            },
+        ])
+
+        expect(criteria).toHaveLength(2)
+        expect(computed.activeEvaluationCriteria.call({ evaluationCriteria: criteria })).toEqual([
+            { key: 'full-green', label: 'Voller grüner Stundenplan', optionLabel: null },
+            { key: 'compact-days', label: 'Kompakte Tage', optionLabel: 'streng' },
+        ])
+    })
+
+    it('toggles the embedded Wizzard course cards on the overview page', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            wizardPanelOpen: false,
+        }
+
+        methods.toggleWizardPanel.call(ctx)
+
+        expect(ctx.wizardPanelOpen).toBe(true)
+
+        methods.toggleWizardPanel.call(ctx)
+
+        expect(ctx.wizardPanelOpen).toBe(false)
     })
 
     it('shows all transferred student course rows even when some are empty', () => {
