@@ -408,6 +408,9 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).toContain('setSingleDateAppointmentActive(courseItem, appointment, $event)')
         expect(componentSource).toContain('/api/admin/students-timetables/imports/single-date-appointments')
         expect(componentSource).toContain('singleDateActivationPayload()')
+        expect(componentSource).toContain('singleDateActivationSaveInProgress')
+        expect(componentSource).toContain('Änderungen werden im Hintergrund gespeichert.')
+        expect(componentSource).toContain('queueSingleDateAppointmentActivationSave()')
         expect(routeSource).toContain('/admin/students-timetables/:section?/:subsection?/:detail?/:action?')
     })
 

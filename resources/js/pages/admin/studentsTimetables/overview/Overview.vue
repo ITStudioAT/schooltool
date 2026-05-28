@@ -190,6 +190,8 @@
                             color="success"
                             size="large"
                             prepend-icon="mdi-calendar-clock"
+                            :disabled="wizardTimetableCreating"
+                            :loading="wizardTimetableCreating"
                             @click="createWizardTimetable">
                             Stundenplan erstellen
                         </v-btn>
@@ -418,6 +420,7 @@
                                                 v-for="marker in courseGroupSingleDateOverlapMarkersForCell(semester.value, weekday.value, hour.hour, timetableWeek)"
                                                 :key="marker.key"
                                                 type="button"
+                                                :title="marker.title"
                                                 class="timetable-generated-cell__single-date-marker"
                                                 @click="openCourseGroupDialog(marker.courseGroup)">
                                                 {{ marker.label }}
@@ -774,6 +777,7 @@ export default {
             settingsDialogOpen: false,
             wizardPanelOpen: false,
             manualPanelOpen: false,
+            wizardTimetableCreating: false,
             timetableUpdatePending: false,
             studentDialogOpen: false,
             studentOptionsLoading: false,
@@ -1228,8 +1232,21 @@ export default {
         closeWizardPanel() {
             this.wizardPanelOpen = false
         },
-        createWizardTimetable() {
-            this.$refs.wizardCourseCards?.loadFullGreenTimetableCount?.()
+        async createWizardTimetable() {
+            if (this.wizardTimetableCreating) return
+
+            const wizardCourseCards = this.$refs.wizardCourseCards
+            const createTimetables = wizardCourseCards?.createTimetables || wizardCourseCards?.loadFullGreenTimetableCount
+
+            if (!createTimetables) return
+
+            this.wizardTimetableCreating = true
+
+            try {
+                await createTimetables.call(wizardCourseCards)
+            } finally {
+                this.wizardTimetableCreating = false
+            }
         },
         toggleManualPanel() {
             this.manualPanelOpen = !this.manualPanelOpen
@@ -2284,7 +2301,7 @@ export default {
                         && !this.courseGroupOverlapIsSingleDateOnly(directCourseGroup, courseGroup),
                 ))
 
-            return this.uniqueCourseGroupsByKey([
+            return this.uniqueDisplayCourseGroups([
                 ...displayDirectCourseGroups,
                 ...overlappingCourseGroups,
             ]).sort((left, right) => this.courseGroupSortLabel(left).localeCompare(
@@ -2330,10 +2347,20 @@ export default {
                 .map(courseGroup => ({
                     key: courseGroup?.key,
                     label: this.courseGroupSingleDateMarkerLabel(courseGroup),
+                    title: this.courseGroupSingleDateMarkerTitle(courseGroup),
                     courseGroup,
                 }))
         },
         courseGroupSingleDateMarkerLabel(courseGroup) {
+            return [
+                courseGroup?.course,
+                courseGroup?.display_label,
+                courseGroup?.title,
+            ]
+                .map(value => String(value || '').trim())
+                .find(Boolean) || 'Einzeltermin'
+        },
+        courseGroupSingleDateMarkerTitle(courseGroup) {
             return [
                 courseGroup?.display_label,
                 courseGroup?.title,
@@ -2351,6 +2378,29 @@ export default {
 
                 return groups
             }, {}))
+        },
+        uniqueDisplayCourseGroups(courseGroups) {
+            return Object.values((Array.isArray(courseGroups) ? courseGroups : []).reduce((groups, courseGroup) => {
+                const key = this.courseGroupDisplayIdentityKey(courseGroup)
+                if (!key) return groups
+
+                groups[key] ??= courseGroup
+
+                return groups
+            }, {}))
+        },
+        courseGroupDisplayIdentityKey(courseGroup) {
+            return [
+                courseGroup?.semester,
+                courseGroup?.weekday,
+                courseGroup?.course,
+                courseGroup?.display_label,
+                courseGroup?.title,
+                courseGroup?.recurrence_label,
+                courseGroup?.recurrence_interval,
+            ]
+                .map(value => String(value || '').trim())
+                .join('|')
         },
         courseGroupSortLabel(courseGroup) {
             return (courseGroup?.display_label || courseGroup?.title || '').toString()
@@ -4147,7 +4197,7 @@ export default {
     min-height: 14px;
     padding: 0 4px;
     border: 1px solid rgba(30, 64, 175, 0.2);
-    border-radius: 4px;
+    border-radius: 999px;
     background: #bfdbfe;
     color: #1e3a8a;
     font-size: 0.58rem;

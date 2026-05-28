@@ -372,6 +372,8 @@ describe('Students timetable overview', () => {
                 '1-4-3': [mathRelatedCourseGroup],
             },
             uniqueCourseGroupsByKey: methods.uniqueCourseGroupsByKey,
+            uniqueDisplayCourseGroups: methods.uniqueDisplayCourseGroups,
+            courseGroupDisplayIdentityKey: methods.courseGroupDisplayIdentityKey,
             courseMenuEntriesOverlap: methods.courseMenuEntriesOverlap,
             courseGroupsOverlap: methods.courseGroupsOverlap,
             courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
@@ -394,6 +396,69 @@ describe('Students timetable overview', () => {
         expect(methods.courseGroupHasOverlap.call(ctx, bioCourseGroup)).toBe(true)
         expect(methods.courseGroupHasRelatedOverlap.call(ctx, bioCourseGroup)).toBe(false)
         expect(methods.courseGroupRelatedOverlapMarker.call(ctx, bioCourseGroup)).toBe('')
+    })
+
+    it('does not render duplicate course blocks when overlapping entries share the same visible course identity', () => {
+        const methods = (Overview as any).methods
+        const gwCourseGroup = {
+            key: 'gw1-direct',
+            semester: 1,
+            weekday: 1,
+            hour: 11,
+            course: 'GW1',
+            title: 'GW1',
+            display_label: 'GWB1-1C-HÖF',
+            subject: '17:50',
+            teacher: '18:35',
+            recurrence_interval: 1,
+        }
+        const duplicatedGwCourseGroup = {
+            ...gwCourseGroup,
+            key: 'gw1-overlap-copy',
+            hour: 12,
+            subject: '18:30',
+            teacher: '19:15',
+        }
+        const lptCourseGroup = {
+            key: 'lpt-direct',
+            semester: 1,
+            weekday: 1,
+            hour: 11,
+            course: 'LPT',
+            title: 'LPT',
+            display_label: 'LPT-1CK-DREI',
+            subject: '17:55',
+            teacher: '18:20',
+            recurrence_interval: 1,
+        }
+        const ctx = {
+            activeCourseGroupFilterKeys: ['gw1-direct', 'gw1-overlap-copy', 'lpt-direct'],
+            configuredCourseGroups: [gwCourseGroup, duplicatedGwCourseGroup, lptCourseGroup],
+            configuredSchoolHours: [],
+            courseGroupsByCell: {
+                '1-1-11': [gwCourseGroup, lptCourseGroup],
+            },
+            courseCellKey: methods.courseCellKey,
+            courseGroupsForCell: methods.courseGroupsForCell,
+            displayCourseGroupsForCell: methods.displayCourseGroupsForCell,
+            uniqueDisplayCourseGroups: methods.uniqueDisplayCourseGroups,
+            courseGroupDisplayIdentityKey: methods.courseGroupDisplayIdentityKey,
+            courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
+            courseGroupSortLabel: methods.courseGroupSortLabel,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            formatTimeValue: methods.formatTimeValue,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+            courseGroupMatchesSelectedRecurrenceWeek() {
+                return true
+            },
+        }
+
+        expect(methods.displayCourseGroupsForCell.call(ctx, 1, 1, 11).map((courseGroup: Record<string, string>) => courseGroup.key))
+            .toEqual(['gw1-direct', 'lpt-direct'])
     })
 
     it('shows overlapping single appointments as cell markers without marking the timetable cell red', () => {
@@ -461,6 +526,7 @@ describe('Students timetable overview', () => {
             courseGroupSingleDateOverlapMarker: methods.courseGroupSingleDateOverlapMarker,
             courseGroupSingleDateOverlapMarkersForCell: methods.courseGroupSingleDateOverlapMarkersForCell,
             courseGroupSingleDateMarkerLabel: methods.courseGroupSingleDateMarkerLabel,
+            courseGroupSingleDateMarkerTitle: methods.courseGroupSingleDateMarkerTitle,
             displayCourseGroupsForCell: methods.displayCourseGroupsForCell,
             courseGroupsForCell: methods.courseGroupsForCell,
             cellHasOverlap: methods.cellHasOverlap,
@@ -472,6 +538,8 @@ describe('Students timetable overview', () => {
                 '1-1-11': [regularCourseGroup],
             },
             uniqueCourseGroupsByKey: methods.uniqueCourseGroupsByKey,
+            uniqueDisplayCourseGroups: methods.uniqueDisplayCourseGroups,
+            courseGroupDisplayIdentityKey: methods.courseGroupDisplayIdentityKey,
             courseGroupSortLabel: methods.courseGroupSortLabel,
         }
 
@@ -480,7 +548,8 @@ describe('Students timetable overview', () => {
         expect(methods.courseGroupSingleDateOverlapMarkersForCell.call(ctx, 1, 1, 11))
             .toEqual([{
                 key: 'lpt-single',
-                label: 'LPT - Einzeltermin',
+                label: 'LPT',
+                title: 'LPT - Einzeltermin',
                 courseGroup: singleAppointmentGroup,
             }])
         expect(methods.cellHasOverlap.call(ctx, 1, 1, 11)).toBe(false)
@@ -1360,6 +1429,7 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain("'timetable-generated-cell--related-overlap'")
         expect(componentSource).toContain("'timetable-generated-cell--has-single-date-markers'")
         expect(componentSource).toContain('courseGroupSingleDateOverlapMarkersForCell(semester.value, weekday.value, hour.hour, timetableWeek)')
+        expect(componentSource).toContain(':title="marker.title"')
         expect(componentSource).toContain('timetable-generated-cell__single-date-marker')
         expect(componentSource).toContain('grid-template-columns: 88px repeat(var(--overview-timetable-weekdays, 5), minmax(72px, 1fr));')
         expect(componentSource).toContain('grid-template-rows: 34px;')
@@ -1443,6 +1513,10 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('Schließen')
         expect(componentSource).toContain('class="overview-wizard-create-button"')
         expect(componentSource).toContain('@click="createWizardTimetable"')
+        expect(componentSource).toContain(':disabled="wizardTimetableCreating"')
+        expect(componentSource).toContain(':loading="wizardTimetableCreating"')
+        expect(componentSource).toContain('async createWizardTimetable()')
+        expect(componentSource).toContain('this.wizardTimetableCreating = true')
         expect(componentSource).toContain('Stundenplan erstellen')
         expect(componentSource.indexOf('class="overview-wizard-create-button"')).toBeLessThan(
             componentSource.indexOf('class="overview-wizard-close-button"'),
@@ -1969,12 +2043,13 @@ describe('Students timetable overview', () => {
         ])
     })
 
-    it('switches the embedded Wizzard and manual course panels on the overview page', () => {
+    it('switches the embedded Wizzard and manual course panels on the overview page', async () => {
         const methods = (Overview as any).methods
         const loadFullGreenTimetableCount = vi.fn()
         const ctx = {
             wizardPanelOpen: false,
             manualPanelOpen: false,
+            wizardTimetableCreating: false,
             $refs: {
                 wizardCourseCards: {
                     loadFullGreenTimetableCount,
@@ -1987,7 +2062,7 @@ describe('Students timetable overview', () => {
         expect(ctx.wizardPanelOpen).toBe(true)
         expect(ctx.manualPanelOpen).toBe(false)
 
-        methods.createWizardTimetable.call(ctx)
+        await methods.createWizardTimetable.call(ctx)
 
         expect(loadFullGreenTimetableCount).toHaveBeenCalled()
 
@@ -2008,6 +2083,32 @@ describe('Students timetable overview', () => {
         methods.toggleManualPanel.call(ctx)
 
         expect(ctx.manualPanelOpen).toBe(false)
+    })
+
+    it('keeps the overview create button loading while the embedded Wizzard creates timetables', async () => {
+        const methods = (Overview as any).methods
+        let finishCreation = () => {}
+        const createTimetables = vi.fn(() => new Promise(resolve => {
+            finishCreation = resolve
+        }))
+        const ctx = {
+            wizardTimetableCreating: false,
+            $refs: {
+                wizardCourseCards: {
+                    createTimetables,
+                },
+            },
+        }
+
+        const createPromise = methods.createWizardTimetable.call(ctx)
+
+        expect(ctx.wizardTimetableCreating).toBe(true)
+        expect(createTimetables).toHaveBeenCalled()
+
+        finishCreation()
+        await createPromise
+
+        expect(ctx.wizardTimetableCreating).toBe(false)
     })
 
     it('shows all transferred student course rows even when some are empty', () => {

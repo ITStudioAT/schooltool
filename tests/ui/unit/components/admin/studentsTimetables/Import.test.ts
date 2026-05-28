@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import Import from '@/pages/admin/studentsTimetables/import/Import.vue'
 
 describe('Students timetable import', () => {
@@ -39,6 +39,9 @@ describe('Students timetable import', () => {
         expect(componentSource).toContain('single-date-appointment-row--inactive')
         expect(componentSource).toContain('LoadingAnimation')
         expect(componentSource).toContain('single-date-saving-dots')
+        expect(componentSource).toContain('singleDateActivationSaveInProgress')
+        expect(componentSource).toContain('Änderungen werden im Hintergrund gespeichert.')
+        expect(componentSource).toContain('queueSingleDateAppointmentActivationSave()')
         expect(componentSource).toContain('Importverlauf')
         expect(componentSource).toContain('<v-expansion-panels')
         expect(componentSource).toContain('Nicht importierte TT-Einträge')
@@ -181,5 +184,39 @@ describe('Students timetable import', () => {
             { entry_ids: [1], active: true },
             { entry_ids: [2], active: false },
         ])
+    })
+
+    it('queues single-date activation saves so rapid selection stays responsive', () => {
+        vi.useFakeTimers()
+
+        try {
+            const methods = (Import as any).methods
+            const ctx = {
+                singleDateActivationError: 'old',
+                singleDateActivationSaveQueued: false,
+                singleDateActivationSaveTimer: null,
+                savingSingleDateActivation: false,
+                saved: 0,
+                clearSingleDateActivationSaveTimer: methods.clearSingleDateActivationSaveTimer,
+                saveSingleDateAppointmentActivation() {
+                    this.saved++
+                },
+            }
+
+            methods.queueSingleDateAppointmentActivationSave.call(ctx)
+
+            expect(ctx.singleDateActivationError).toBe('')
+            expect(ctx.singleDateActivationSaveQueued).toBe(true)
+            expect(ctx.saved).toBe(0)
+
+            vi.advanceTimersByTime(349)
+            expect(ctx.saved).toBe(0)
+
+            vi.advanceTimersByTime(1)
+            expect(ctx.saved).toBe(1)
+            expect(ctx.singleDateActivationSaveTimer).toBeNull()
+        } finally {
+            vi.useRealTimers()
+        }
     })
 })

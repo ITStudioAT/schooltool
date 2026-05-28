@@ -54,7 +54,7 @@ class RobotTimetableBackendSetupService
             ],
             'timetable_variation_count' => $variationResult['timetable_variation_count'],
             'full_green_timetable_count' => $variationResult['full_green_timetable_count'],
-            'green_timetable_count' => 0,
+            'green_timetable_count' => $variationResult['green_timetable_count'],
             'red_timetable_count' => $variationResult['red_timetable_count'],
             'conflict_timetable_count' => $variationResult['red_timetable_count'],
             'selected_course_count' => $variationResult['selected_course_count'],
@@ -71,7 +71,7 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $subjectMappings
      * @param  list<array<string, mixed>>  $courseGroups
      * @param  array<string, mixed>  $settings
-     * @return array{timetable_variation_count: int, full_green_timetable_count: int, red_timetable_count: int, selected_course_count: int}
+     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int}
      */
     public function countTimetableVariations(
         array $subjectRows,
@@ -84,6 +84,7 @@ class RobotTimetableBackendSetupService
         return [
             'timetable_variation_count' => $result['timetable_variation_count'],
             'full_green_timetable_count' => $result['full_green_timetable_count'],
+            'green_timetable_count' => $result['green_timetable_count'],
             'red_timetable_count' => $result['red_timetable_count'],
             'selected_course_count' => $result['selected_course_count'],
         ];
@@ -94,7 +95,7 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $subjectMappings
      * @param  list<array<string, mixed>>  $courseGroups
      * @param  array<string, mixed>  $settings
-     * @return array{timetable_variation_count: int, full_green_timetable_count: int, red_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>}
+     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>}
      */
     public function calculateTimetableVariations(
         array $subjectRows,
@@ -147,7 +148,7 @@ class RobotTimetableBackendSetupService
     /**
      * @param  list<array<string, mixed>>  $selectedCourses
      * @param  list<list<array<string, mixed>>>  $courseOptions
-     * @return array{timetable_variation_count: int, full_green_timetable_count: int, red_timetable_count: int, selected_course_count: int}
+     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int}
      */
     private function timetableVariationCounts(array $selectedCourses, array $courseOptions, bool $hasMissingOptions): array
     {
@@ -155,6 +156,7 @@ class RobotTimetableBackendSetupService
             return [
                 'timetable_variation_count' => 0,
                 'full_green_timetable_count' => 0,
+                'green_timetable_count' => 0,
                 'red_timetable_count' => 0,
                 'selected_course_count' => 0,
             ];
@@ -164,18 +166,20 @@ class RobotTimetableBackendSetupService
             return [
                 'timetable_variation_count' => 0,
                 'full_green_timetable_count' => 0,
+                'green_timetable_count' => 0,
                 'red_timetable_count' => 0,
                 'selected_course_count' => count($selectedCourses),
             ];
         }
 
         $timetableVariationCount = $this->totalVariationCount($courseOptions);
-        $fullGreenTimetableCount = $this->fullGreenVariationCount($courseOptions);
+        $typeCounts = $this->timetableTypeVariationCounts($courseOptions);
 
         return [
             'timetable_variation_count' => $timetableVariationCount,
-            'full_green_timetable_count' => $fullGreenTimetableCount,
-            'red_timetable_count' => max(0, $timetableVariationCount - $fullGreenTimetableCount),
+            'full_green_timetable_count' => $typeCounts['full_green'],
+            'green_timetable_count' => $typeCounts['green'],
+            'red_timetable_count' => $typeCounts['conflict'],
             'selected_course_count' => count($selectedCourses),
         ];
     }
@@ -191,38 +195,114 @@ class RobotTimetableBackendSetupService
 
     /**
      * @param  list<list<array<string, mixed>>>  $courseOptions
-     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
+     * @return array{full_green: int, green: int, conflict: int}
      */
-    private function fullGreenVariationCount(array $courseOptions, int $courseIndex = 0, ?array $usedSummary = null): int
-    {
+    private function timetableTypeVariationCounts(
+        array $courseOptions,
+        int $courseIndex = 0,
+        ?array $usedAllSummary = null,
+        ?array $usedRegularDateSummary = null,
+        ?array $usedRegularWeeklySlotSummary = null,
+        bool $isFullGreenCandidate = true,
+        bool $hasRegularConflict = false,
+    ): array {
         if ($courseIndex >= count($courseOptions)) {
-            return 1;
+            $type = $hasRegularConflict
+                ? 'conflict'
+                : ($isFullGreenCandidate ? 'full_green' : 'green');
+
+            return [
+                'full_green' => $type === 'full_green' ? 1 : 0,
+                'green' => $type === 'green' ? 1 : 0,
+                'conflict' => $type === 'conflict' ? 1 : 0,
+            ];
         }
 
-        $count = 0;
-        $usedSummary ??= $this->emptyDateKeySummary();
+        $counts = [
+            'full_green' => 0,
+            'green' => 0,
+            'conflict' => 0,
+        ];
+        $usedAllSummary ??= $this->emptyDateKeySummary();
+        $usedRegularDateSummary ??= $this->emptyDateKeySummary();
+        $usedRegularWeeklySlotSummary ??= $this->emptyDateKeySummary();
 
         foreach ($courseOptions[$courseIndex] as $option) {
-            $optionSummary = $this->dateKeySummary($option['date_keys']);
-
-            if ($optionSummary['has_overlap'] || $this->dateKeySummariesOverlap($usedSummary, $optionSummary)) {
-                continue;
-            }
-
-            $count += $this->fullGreenVariationCount(
+            $nextState = $this->nextTimetableTypeState(
+                $option,
+                $usedAllSummary,
+                $usedRegularDateSummary,
+                $usedRegularWeeklySlotSummary,
+                $isFullGreenCandidate,
+                $hasRegularConflict,
+            );
+            $nextCounts = $this->timetableTypeVariationCounts(
                 $courseOptions,
                 $courseIndex + 1,
-                $this->mergeDateKeySummaries($usedSummary, $optionSummary),
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $nextState['is_full_green_candidate'],
+                $nextState['has_regular_conflict'],
             );
+
+            $counts['full_green'] += $nextCounts['full_green'];
+            $counts['green'] += $nextCounts['green'];
+            $counts['conflict'] += $nextCounts['conflict'];
         }
 
-        return $count;
+        return $counts;
+    }
+
+    /**
+     * @param  array<string, mixed>  $option
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedRegularWeeklySlotSummary
+     * @return array{
+     *     used_all_summary: array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool},
+     *     used_regular_date_summary: array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool},
+     *     used_regular_weekly_slot_summary: array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool},
+     *     is_full_green_candidate: bool,
+     *     has_regular_conflict: bool
+     * }
+     */
+    private function nextTimetableTypeState(
+        array $option,
+        array $usedAllSummary,
+        array $usedRegularDateSummary,
+        array $usedRegularWeeklySlotSummary,
+        bool $isFullGreenCandidate,
+        bool $hasRegularConflict,
+    ): array {
+        $allSummary = $option['all_date_summary'] ?? $this->dateKeySummary($option['date_keys'] ?? []);
+        $regularDateSummary = $option['regular_date_summary'] ?? $this->emptyDateKeySummary();
+        $regularWeeklySlotSummary = $option['regular_weekly_slot_summary'] ?? $this->emptyDateKeySummary();
+        $nextHasRegularConflict = $hasRegularConflict
+            || $regularDateSummary['has_overlap']
+            || $this->dateKeySummariesOverlap($usedRegularDateSummary, $regularDateSummary)
+            || $regularWeeklySlotSummary['has_overlap']
+            || $this->dateKeySummariesOverlap($usedRegularWeeklySlotSummary, $regularWeeklySlotSummary);
+
+        return [
+            'used_all_summary' => $this->mergeDateKeySummaries($usedAllSummary, $allSummary),
+            'used_regular_date_summary' => $this->mergeDateKeySummaries($usedRegularDateSummary, $regularDateSummary),
+            'used_regular_weekly_slot_summary' => $this->mergeDateKeySummaries($usedRegularWeeklySlotSummary, $regularWeeklySlotSummary),
+            'is_full_green_candidate' => $isFullGreenCandidate
+                && ! $nextHasRegularConflict
+                && ! $allSummary['has_overlap']
+                && ! $this->dateKeySummariesOverlap($usedAllSummary, $allSummary),
+            'has_regular_conflict' => $nextHasRegularConflict,
+        ];
     }
 
     /**
      * @param  list<list<array<string, mixed>>>  $courseOptions
      * @param  array<string, mixed>  $settings
-     * @param  array{timetable_variation_count: int, full_green_timetable_count: int, red_timetable_count: int, selected_course_count: int}  $counts
+     * @param  array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int}  $counts
      * @return ?array<string, mixed>
      */
     private function selectedTimetable(array $courseOptions, array $settings, array $counts): ?array
@@ -236,9 +316,11 @@ class RobotTimetableBackendSetupService
             return null;
         }
 
-        $availableCount = $selectedType === 'conflict'
-            ? $counts['red_timetable_count']
-            : $counts['full_green_timetable_count'];
+        $availableCount = match ($selectedType) {
+            'conflict' => $counts['red_timetable_count'],
+            'green' => $counts['green_timetable_count'],
+            default => $counts['full_green_timetable_count'],
+        };
 
         if ($availableCount <= 0) {
             return null;
@@ -259,14 +341,16 @@ class RobotTimetableBackendSetupService
     private function selectedBackendTimetableType(mixed $value): ?string
     {
         return match ((string) $value) {
-            'full_green', 'conflict' => (string) $value,
+            'full_green', 'green', 'conflict' => (string) $value,
             default => null,
         };
     }
 
     /**
      * @param  list<list<array<string, mixed>>>  $courseOptions
-     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
      * @param  list<array<string, mixed>>  $selectedOptions
      * @return ?list<array<string, mixed>>
      */
@@ -275,11 +359,17 @@ class RobotTimetableBackendSetupService
         string $selectedType,
         int &$remainingNumber,
         int $courseIndex = 0,
-        ?array $usedSummary = null,
+        ?array $usedAllSummary = null,
+        ?array $usedRegularDateSummary = null,
+        ?array $usedRegularWeeklySlotSummary = null,
+        bool $isFullGreenCandidate = true,
+        bool $hasRegularConflict = false,
         array $selectedOptions = [],
     ): ?array {
         if ($courseIndex >= count($courseOptions)) {
-            $combinationType = ($usedSummary['has_overlap'] ?? false) ? 'conflict' : 'full_green';
+            $combinationType = $hasRegularConflict
+                ? 'conflict'
+                : ($isFullGreenCandidate ? 'full_green' : 'green');
 
             if ($combinationType !== $selectedType) {
                 return null;
@@ -290,18 +380,29 @@ class RobotTimetableBackendSetupService
             return $remainingNumber === 0 ? $selectedOptions : null;
         }
 
-        $usedSummary ??= $this->emptyDateKeySummary();
+        $usedAllSummary ??= $this->emptyDateKeySummary();
+        $usedRegularDateSummary ??= $this->emptyDateKeySummary();
+        $usedRegularWeeklySlotSummary ??= $this->emptyDateKeySummary();
 
         foreach ($courseOptions[$courseIndex] as $option) {
-            $optionSummary = $this->dateKeySummary($option['date_keys']);
-            $nextSummary = $this->mergeDateKeySummaries($usedSummary, $optionSummary);
-            $remainingCourseOptionsCount = $this->remainingVariationCount($courseOptions, $courseIndex + 1);
-            $fullGreenCount = $nextSummary['has_overlap']
-                ? 0
-                : $this->fullGreenVariationCount($courseOptions, $courseIndex + 1, $nextSummary);
-            $matchingCount = $selectedType === 'full_green'
-                ? $fullGreenCount
-                : $remainingCourseOptionsCount - $fullGreenCount;
+            $nextState = $this->nextTimetableTypeState(
+                $option,
+                $usedAllSummary,
+                $usedRegularDateSummary,
+                $usedRegularWeeklySlotSummary,
+                $isFullGreenCandidate,
+                $hasRegularConflict,
+            );
+            $remainingCounts = $this->timetableTypeVariationCounts(
+                $courseOptions,
+                $courseIndex + 1,
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $nextState['is_full_green_candidate'],
+                $nextState['has_regular_conflict'],
+            );
+            $matchingCount = $remainingCounts[$selectedType] ?? 0;
 
             if ($matchingCount <= 0) {
                 continue;
@@ -318,21 +419,16 @@ class RobotTimetableBackendSetupService
                 $selectedType,
                 $remainingNumber,
                 $courseIndex + 1,
-                $nextSummary,
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $nextState['is_full_green_candidate'],
+                $nextState['has_regular_conflict'],
                 [...$selectedOptions, $option],
             );
         }
 
         return null;
-    }
-
-    /**
-     * @param  list<list<array<string, mixed>>>  $courseOptions
-     */
-    private function remainingVariationCount(array $courseOptions, int $startIndex): int
-    {
-        return collect(array_slice($courseOptions, $startIndex))
-            ->reduce(fn (int $total, array $options): int => $total * count($options), 1);
     }
 
     /**
@@ -369,7 +465,11 @@ class RobotTimetableBackendSetupService
             'metrics' => [
                 'regular_conflict_count' => count($this->uniqueStrings($regularProblems)),
             ],
-            'statusMessage' => $type === 'conflict' ? 'Roter Stundenplan mit Überschneidung' : 'Voller grüner Stundenplan',
+            'statusMessage' => match ($type) {
+                'conflict' => 'Roter Stundenplan mit Überschneidung',
+                'green' => 'Grüner Stundenplan mit Einzeltermin-Überschneidung',
+                default => 'Voller grüner Stundenplan',
+            },
             'additionalCoursesAccepted' => false,
             'acceptedAdditionalCourseCount' => 0,
             'missingAdditionalCourses' => [],
@@ -401,7 +501,10 @@ class RobotTimetableBackendSetupService
 
                 $conflictingEntryIndexes[$firstIndex] = true;
                 $conflictingEntryIndexes[$secondIndex] = true;
-                $regularProblems[] = $this->regularConflictProblem($firstEntry, $secondEntry);
+
+                if (! $this->timetableSlotIsOccasional($firstEntry) && ! $this->timetableSlotIsOccasional($secondEntry)) {
+                    $regularProblems[] = $this->regularConflictProblem($firstEntry, $secondEntry);
+                }
             }
         }
 
@@ -440,9 +543,19 @@ class RobotTimetableBackendSetupService
             'alternativeLabels' => [$option['label'] ?? $this->courseGroupOptionLabel($courseGroup)],
             'courseGroup' => $courseGroup,
             'conflicts' => [],
+            'isOccasional' => $this->isOccasionalCourseGroup($courseGroup),
             'isAdditionalCourse' => false,
             'isDistanceLearningCourse' => false,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $slot
+     */
+    private function timetableSlotIsOccasional(array $slot): bool
+    {
+        return ($slot['isOccasional'] ?? false) === true
+            || $this->isOccasionalCourseGroup($slot['courseGroup'] ?? []);
     }
 
     /**
@@ -500,6 +613,7 @@ class RobotTimetableBackendSetupService
             'sourceLabel' => $conflictSlot['sourceLabel'] ?? '',
             'alternativeLabels' => $conflictSlot['alternativeLabels'] ?? [],
             'courseGroup' => $conflictSlot['courseGroup'] ?? [],
+            'isOccasional' => $this->timetableSlotIsOccasional($conflictSlot),
             'isDistanceLearningCourse' => false,
         ];
     }
@@ -692,12 +806,28 @@ class RobotTimetableBackendSetupService
             ->groupBy(fn (array $courseGroup): string => $this->courseGroupOptionLabel($courseGroup))
             ->reject(fn (Collection $groups, string $label): bool => $label === '')
             ->reject(fn (Collection $groups, string $label): bool => in_array($this->courseGroupSelectionKey($course, $label), $settings['deselected_course_group_keys'] ?? [], true))
-            ->map(fn (Collection $groups, string $label): array => [
-                'label' => $label,
-                'course' => $course,
-                'course_groups' => $groups->values()->all(),
-                'date_keys' => $this->courseGroupDateSlotKeys($groups->values()->all()),
-            ])
+            ->map(function (Collection $groups, string $label) use ($course): array {
+                $courseGroups = $groups->values()->all();
+                $regularCourseGroups = collect($courseGroups)
+                    ->reject(fn (array $courseGroup): bool => $this->isOccasionalCourseGroup($courseGroup))
+                    ->values()
+                    ->all();
+                $dateKeys = $this->courseGroupDateSlotKeys($courseGroups);
+                $regularDateKeys = $this->courseGroupDateSlotKeys($regularCourseGroups);
+                $regularWeeklySlotKeys = $this->weeklyCourseGroupSlotKeys($regularCourseGroups);
+
+                return [
+                    'label' => $label,
+                    'course' => $course,
+                    'course_groups' => $courseGroups,
+                    'date_keys' => $dateKeys,
+                    'regular_date_keys' => $regularDateKeys,
+                    'regular_weekly_slot_keys' => $regularWeeklySlotKeys,
+                    'all_date_summary' => $this->dateKeySummary($dateKeys),
+                    'regular_date_summary' => $this->dateKeySummary($regularDateKeys),
+                    'regular_weekly_slot_summary' => $this->dateKeySummary($regularWeeklySlotKeys),
+                ];
+            })
             ->sortBy(fn (array $option): string => $this->optionSortValue($option))
             ->values()
             ->all();
@@ -1278,6 +1408,18 @@ class RobotTimetableBackendSetupService
     }
 
     /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @return list<string>
+     */
+    private function weeklyCourseGroupSlotKeys(array $courseGroups): array
+    {
+        return collect($courseGroups)
+            ->map(fn (array $courseGroup): string => 'weekly|'.($courseGroup['weekday'] ?? '').'|'.($courseGroup['hour'] ?? ''))
+            ->values()
+            ->all();
+    }
+
+    /**
      * @param  array<string, mixed>  $courseGroup
      * @return list<string>
      */
@@ -1302,6 +1444,32 @@ class RobotTimetableBackendSetupService
         return collect($dates)
             ->map(fn (string $date): string => "date|{$date}|{$weekday}|{$hour}")
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function isOccasionalCourseGroup(array $courseGroup): bool
+    {
+        $datesCount = $this->courseGroupDatesCount($courseGroup);
+
+        return $datesCount !== null && $datesCount > 0 && $datesCount <= 2;
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function courseGroupDatesCount(array $courseGroup): ?int
+    {
+        if (is_numeric($courseGroup['dates_count'] ?? null)) {
+            return (int) $courseGroup['dates_count'];
+        }
+
+        if (is_array($courseGroup['dates'] ?? null)) {
+            return collect($courseGroup['dates'])->filter()->count();
+        }
+
+        return null;
     }
 
     /**

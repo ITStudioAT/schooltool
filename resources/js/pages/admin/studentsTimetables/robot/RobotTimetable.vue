@@ -786,9 +786,9 @@
                         <v-btn
                             color="primary"
                             prepend-icon="mdi-calendar-clock"
-                            :disabled="loading || !selectedCourses.length"
-                            :loading="fullGreenTimetableCountLoading"
-                            @click="loadFullGreenTimetableCount({ preferFullGreen: true })">
+                            :disabled="loading || timetableGenerationLoading || !selectedCourses.length"
+                            :loading="timetableGenerationLoading"
+                            @click="createTimetables">
                             Stundenpläne erstellen
                         </v-btn>
                     </div>
@@ -833,6 +833,15 @@
                                         aria-label="Volle grüne Stundenpläne auswählen"
                                         @update:modelValue="setSelectedTimetableResultType('full_green', $event)" />
                                     <v-icon icon="mdi-check-circle-outline" color="success" />
+                                    <v-checkbox-btn
+                                        v-if="timetableResultCardSelected('full_green')"
+                                        :model-value="timetableResultCardSelected('full_green')"
+                                        color="success"
+                                        density="compact"
+                                        readonly
+                                        tabindex="-1"
+                                        aria-label="Volle grüne Stundenpläne ausgewählt"
+                                        class="robot-count-card__selected-checkbox" />
                                 </div>
                             </div>
 
@@ -874,6 +883,63 @@
                                         aria-label="Grüne Stundenpläne auswählen"
                                         @update:modelValue="setSelectedTimetableResultType('green', $event)" />
                                     <v-icon icon="mdi-calendar-check-outline" color="primary" />
+                                    <v-checkbox-btn
+                                        v-if="timetableResultCardSelected('green')"
+                                        :model-value="timetableResultCardSelected('green')"
+                                        color="primary"
+                                        density="compact"
+                                        readonly
+                                        tabindex="-1"
+                                        aria-label="Grüne Stundenpläne ausgewählt"
+                                        class="robot-count-card__selected-checkbox" />
+                                </div>
+                                <div v-else-if="timetableResultCardSelected('full_green')" class="robot-count-card__actions">
+                                    <v-checkbox-btn
+                                        :model-value="timetableResultCardSelected('full_green')"
+                                        color="success"
+                                        density="compact"
+                                        readonly
+                                        tabindex="-1"
+                                        aria-label="Volle grüne Stundenpläne ausgewählt"
+                                        class="robot-count-card__selected-checkbox" />
+                                </div>
+                            </div>
+
+                            <div
+                                v-if="backendVariationCountsAvailable"
+                                class="robot-count-card robot-count-card--green"
+                                :class="{
+                                    'robot-count-card--selected': timetableResultCardSelected('green'),
+                                    'robot-count-card--clickable': backendCountCardSelectable('green'),
+                                }"
+                                :role="backendCountCardSelectable('green') ? 'button' : null"
+                                :tabindex="backendCountCardSelectable('green') ? 0 : null"
+                                @click="selectBackendCountCard('green')"
+                                @keydown.enter.prevent="selectBackendCountCard('green')"
+                                @keydown.space.prevent="selectBackendCountCard('green')">
+                                <div class="robot-count-card__content">
+                                    <div class="robot-count-card__label">Grüne Stundenpläne</div>
+                                    <div class="robot-count-card__value">
+                                        <v-progress-circular
+                                            v-if="fullGreenTimetableCountLoading"
+                                            indeterminate
+                                            size="22"
+                                            width="2"
+                                            color="primary" />
+                                        <template v-else>
+                                            {{ greenTimetableCountLabel }}
+                                        </template>
+                                    </div>
+                                </div>
+                                <div v-if="timetableResultCardSelected('green')" class="robot-count-card__actions">
+                                    <v-checkbox-btn
+                                        :model-value="timetableResultCardSelected('green')"
+                                        color="primary"
+                                        density="compact"
+                                        readonly
+                                        tabindex="-1"
+                                        aria-label="Grüne Stundenpläne ausgewählt"
+                                        class="robot-count-card__selected-checkbox" />
                                 </div>
                             </div>
 
@@ -916,6 +982,25 @@
                                         aria-label="Stundenpläne mit Konflikten auswählen"
                                         @update:modelValue="setSelectedTimetableResultType('conflict', $event)" />
                                     <v-icon icon="mdi-alert-circle-outline" color="warning" />
+                                    <v-checkbox-btn
+                                        v-if="timetableResultCardSelected('conflict')"
+                                        :model-value="timetableResultCardSelected('conflict')"
+                                        color="warning"
+                                        density="compact"
+                                        readonly
+                                        tabindex="-1"
+                                        aria-label="Rote Stundenpläne ausgewählt"
+                                        class="robot-count-card__selected-checkbox" />
+                                </div>
+                                <div v-else-if="timetableResultCardSelected('conflict')" class="robot-count-card__actions">
+                                    <v-checkbox-btn
+                                        :model-value="timetableResultCardSelected('conflict')"
+                                        color="warning"
+                                        density="compact"
+                                        readonly
+                                        tabindex="-1"
+                                        aria-label="Rote Stundenpläne ausgewählt"
+                                        class="robot-count-card__selected-checkbox" />
                                 </div>
                             </div>
 
@@ -948,6 +1033,15 @@
                                         aria-label="Stundenpläne mit Zusatzkursen auswählen"
                                         @update:modelValue="setAdditionalCourseTimetableRequired($event)" />
                                     <v-icon icon="mdi-plus-circle-outline" color="deep-orange" />
+                                    <v-checkbox-btn
+                                        v-if="additionalCourseTimetableRequired"
+                                        :model-value="additionalCourseTimetableRequired"
+                                        color="deep-orange"
+                                        density="compact"
+                                        readonly
+                                        tabindex="-1"
+                                        aria-label="Stundenpläne mit Zusatzkursen ausgewählt"
+                                        class="robot-count-card__selected-checkbox" />
                                 </div>
                             </div>
                         </div>
@@ -1039,7 +1133,7 @@
                                     size="small"
                                     variant="tonal"
                                     prepend-icon="mdi-table-arrow-right"
-                                    :disabled="!selectedRobotTimetableCourseGroupKeys().length"
+                                    :disabled="timetableGenerationLoading || !selectedRobotTimetableCourseGroupKeys().length"
                                     @click="overtakeSelectedTimetableToOverview">
                                     In Übersicht übernehmen
                                 </v-btn>
@@ -1051,7 +1145,7 @@
                                         size="small"
                                         variant="tonal"
                                         color="primary"
-                                        :disabled="timetableResultCounter(selectedTimetableResultType) <= 1"
+                                        :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) <= 1"
                                         :aria-label="`Vorheriger ${selectedTimetableResultTitle}`"
                                         @click="moveTimetableResultCounter(selectedTimetableResultType, -1)" />
                                     <div class="robot-timetable-selector__value" aria-live="polite">
@@ -1062,7 +1156,7 @@
                                         size="small"
                                         variant="tonal"
                                         color="primary"
-                                        :disabled="timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
+                                        :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
                                         :aria-label="`Nächster ${selectedTimetableResultTitle}`"
                                         @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
                                 </div>
@@ -1148,34 +1242,34 @@
                                     class="robot-generated-cell"
                                     :class="robotTimetableCellClasses(weekday.value, time.value)">
                                     <div
-                                        v-if="robotTimetableSlot(weekday.value, time.value)"
+                                        v-if="robotTimetableDisplaySlot(weekday.value, time.value)"
                                         class="robot-generated-cell__content">
                                         <div class="robot-generated-cell__code">
-                                            <span>{{ robotTimetableSlot(weekday.value, time.value).code }}</span>
+                                            <span>{{ robotTimetableDisplaySlot(weekday.value, time.value).code }}</span>
                                             <sup
-                                                v-if="robotTimetableSlot(weekday.value, time.value).isDistanceLearningCourse"
+                                                v-if="robotTimetableDisplaySlot(weekday.value, time.value).isDistanceLearningCourse"
                                                 class="robot-course-fu">
                                                 FU
                                             </sup>
                                             <sup
-                                                v-if="generatedSlotWeekMarker(robotTimetableSlot(weekday.value, time.value), selectedRobotTimetable)"
+                                                v-if="generatedSlotWeekMarker(robotTimetableDisplaySlot(weekday.value, time.value), selectedRobotTimetable)"
                                                 class="robot-course-fu robot-course-week-marker">
-                                                {{ generatedSlotWeekMarker(robotTimetableSlot(weekday.value, time.value), selectedRobotTimetable) }}
+                                                {{ generatedSlotWeekMarker(robotTimetableDisplaySlot(weekday.value, time.value), selectedRobotTimetable) }}
                                             </sup>
                                         </div>
                                         <div
-                                            v-if="generatedSlotDateLabel(robotTimetableSlot(weekday.value, time.value))"
+                                            v-if="generatedSlotDateLabel(robotTimetableDisplaySlot(weekday.value, time.value))"
                                             class="robot-generated-cell__date">
-                                            {{ generatedSlotDateLabel(robotTimetableSlot(weekday.value, time.value)) }}
+                                            {{ generatedSlotDateLabel(robotTimetableDisplaySlot(weekday.value, time.value)) }}
                                         </div>
                                         <div class="robot-generated-cell__details">
-                                            {{ generatedSlotDetails(robotTimetableSlot(weekday.value, time.value)) }}
+                                            {{ generatedSlotDetails(robotTimetableDisplaySlot(weekday.value, time.value)) }}
                                         </div>
                                         <div
-                                            v-if="generatedSlotSameSlotBlocks(robotTimetableSlot(weekday.value, time.value)).length"
+                                            v-if="generatedSlotSameSlotBlocks(robotTimetableDisplaySlot(weekday.value, time.value)).length"
                                             class="robot-generated-cell__same-slots">
                                             <div
-                                                v-for="sameSlotBlock in generatedSlotSameSlotBlocks(robotTimetableSlot(weekday.value, time.value))"
+                                                v-for="sameSlotBlock in generatedSlotSameSlotBlocks(robotTimetableDisplaySlot(weekday.value, time.value))"
                                                 :key="sameSlotBlock.key"
                                                 class="robot-generated-cell__same-slot-block">
                                                 <div class="robot-generated-cell__code">
@@ -1196,10 +1290,10 @@
                                             </div>
                                         </div>
                                         <div
-                                            v-if="generatedSlotConflicts(robotTimetableSlot(weekday.value, time.value)).length"
+                                            v-if="generatedSlotConflictBlocks(robotTimetableDisplaySlot(weekday.value, time.value)).length"
                                             class="robot-generated-cell__conflicts">
                                             <div
-                                                v-for="conflictBlock in generatedSlotConflictBlocks(robotTimetableSlot(weekday.value, time.value))"
+                                                v-for="conflictBlock in generatedSlotConflictBlocks(robotTimetableDisplaySlot(weekday.value, time.value))"
                                                 :key="conflictBlock.key"
                                                 class="robot-generated-cell__conflict-block">
                                                 <div class="robot-generated-cell__code">
@@ -1235,12 +1329,12 @@
                         </div>
 
                         <div
-                            v-if="selectedRobotTimetable && groupedOccasionalAppointments(selectedRobotTimetable).length"
+                            v-if="selectedRobotTimetable && displayedOccasionalAppointmentGroups(selectedRobotTimetable).length"
                             class="robot-generated-appointments">
                             <div class="robot-generated-appointments__title">Einzeltermine</div>
                             <div class="robot-generated-appointments__groups">
                                 <div
-                                    v-for="group in groupedOccasionalAppointments(selectedRobotTimetable)"
+                                    v-for="group in displayedOccasionalAppointmentGroups(selectedRobotTimetable)"
                                     :key="group.key"
                                     class="robot-generated-appointment-group">
                                     <div class="robot-generated-appointment-group__title">
@@ -1581,6 +1675,15 @@
                             aria-label="Volle grüne Stundenpläne auswählen"
                             @update:modelValue="setSelectedTimetableResultType('full_green', $event)" />
                         <v-icon icon="mdi-check-circle-outline" color="success" />
+                        <v-checkbox-btn
+                            v-if="timetableResultCardSelected('full_green')"
+                            :model-value="timetableResultCardSelected('full_green')"
+                            color="success"
+                            density="compact"
+                            readonly
+                            tabindex="-1"
+                            aria-label="Volle grüne Stundenpläne ausgewählt"
+                            class="robot-count-card__selected-checkbox" />
                     </div>
                 </div>
 
@@ -1622,6 +1725,63 @@
                             aria-label="Grüne Stundenpläne auswählen"
                             @update:modelValue="setSelectedTimetableResultType('green', $event)" />
                         <v-icon icon="mdi-calendar-check-outline" color="primary" />
+                        <v-checkbox-btn
+                            v-if="timetableResultCardSelected('green')"
+                            :model-value="timetableResultCardSelected('green')"
+                            color="primary"
+                            density="compact"
+                            readonly
+                            tabindex="-1"
+                            aria-label="Grüne Stundenpläne ausgewählt"
+                            class="robot-count-card__selected-checkbox" />
+                    </div>
+                    <div v-else-if="timetableResultCardSelected('full_green')" class="robot-count-card__actions">
+                        <v-checkbox-btn
+                            :model-value="timetableResultCardSelected('full_green')"
+                            color="success"
+                            density="compact"
+                            readonly
+                            tabindex="-1"
+                            aria-label="Volle grüne Stundenpläne ausgewählt"
+                            class="robot-count-card__selected-checkbox" />
+                    </div>
+                </div>
+
+                <div
+                    v-if="backendVariationCountsAvailable"
+                    class="robot-count-card robot-count-card--green"
+                    :class="{
+                        'robot-count-card--selected': timetableResultCardSelected('green'),
+                        'robot-count-card--clickable': backendCountCardSelectable('green'),
+                    }"
+                    :role="backendCountCardSelectable('green') ? 'button' : null"
+                    :tabindex="backendCountCardSelectable('green') ? 0 : null"
+                    @click="selectBackendCountCard('green')"
+                    @keydown.enter.prevent="selectBackendCountCard('green')"
+                    @keydown.space.prevent="selectBackendCountCard('green')">
+                    <div class="robot-count-card__content">
+                        <div class="robot-count-card__label">Grüne Stundenpläne</div>
+                        <div class="robot-count-card__value">
+                            <v-progress-circular
+                                v-if="fullGreenTimetableCountLoading"
+                                indeterminate
+                                size="22"
+                                width="2"
+                                color="primary" />
+                            <template v-else>
+                                {{ greenTimetableCountLabel }}
+                            </template>
+                        </div>
+                    </div>
+                    <div v-if="timetableResultCardSelected('green')" class="robot-count-card__actions">
+                        <v-checkbox-btn
+                            :model-value="timetableResultCardSelected('green')"
+                            color="primary"
+                            density="compact"
+                            readonly
+                            tabindex="-1"
+                            aria-label="Grüne Stundenpläne ausgewählt"
+                            class="robot-count-card__selected-checkbox" />
                     </div>
                 </div>
 
@@ -1664,6 +1824,25 @@
                             aria-label="Stundenpläne mit Konflikten auswählen"
                             @update:modelValue="setSelectedTimetableResultType('conflict', $event)" />
                         <v-icon icon="mdi-alert-circle-outline" color="warning" />
+                        <v-checkbox-btn
+                            v-if="timetableResultCardSelected('conflict')"
+                            :model-value="timetableResultCardSelected('conflict')"
+                            color="warning"
+                            density="compact"
+                            readonly
+                            tabindex="-1"
+                            aria-label="Rote Stundenpläne ausgewählt"
+                            class="robot-count-card__selected-checkbox" />
+                    </div>
+                    <div v-else-if="timetableResultCardSelected('conflict')" class="robot-count-card__actions">
+                        <v-checkbox-btn
+                            :model-value="timetableResultCardSelected('conflict')"
+                            color="warning"
+                            density="compact"
+                            readonly
+                            tabindex="-1"
+                            aria-label="Rote Stundenpläne ausgewählt"
+                            class="robot-count-card__selected-checkbox" />
                     </div>
                 </div>
 
@@ -1696,6 +1875,15 @@
                             aria-label="Stundenpläne mit Zusatzkursen auswählen"
                             @update:modelValue="setAdditionalCourseTimetableRequired($event)" />
                         <v-icon icon="mdi-plus-circle-outline" color="deep-orange" />
+                        <v-checkbox-btn
+                            v-if="additionalCourseTimetableRequired"
+                            :model-value="additionalCourseTimetableRequired"
+                            color="deep-orange"
+                            density="compact"
+                            readonly
+                            tabindex="-1"
+                            aria-label="Stundenpläne mit Zusatzkursen ausgewählt"
+                            class="robot-count-card__selected-checkbox" />
                     </div>
                 </div>
             </div>
@@ -1787,7 +1975,7 @@
                         size="small"
                         variant="tonal"
                         prepend-icon="mdi-table-arrow-right"
-                        :disabled="!selectedRobotTimetableCourseGroupKeys().length"
+                        :disabled="timetableGenerationLoading || !selectedRobotTimetableCourseGroupKeys().length"
                         @click="overtakeSelectedTimetableToOverview">
                         In Übersicht übernehmen
                     </v-btn>
@@ -1799,7 +1987,7 @@
                             size="small"
                             variant="tonal"
                             color="primary"
-                            :disabled="timetableResultCounter(selectedTimetableResultType) <= 1"
+                            :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) <= 1"
                             :aria-label="`Vorheriger ${selectedTimetableResultTitle}`"
                             @click="moveTimetableResultCounter(selectedTimetableResultType, -1)" />
                         <div class="robot-timetable-selector__value" aria-live="polite">
@@ -1810,7 +1998,7 @@
                             size="small"
                             variant="tonal"
                             color="primary"
-                            :disabled="timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
+                            :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
                             :aria-label="`Nächster ${selectedTimetableResultTitle}`"
                             @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
                     </div>
@@ -1896,34 +2084,34 @@
                         class="robot-generated-cell"
                         :class="robotTimetableCellClasses(weekday.value, time.value)">
                         <div
-                            v-if="robotTimetableSlot(weekday.value, time.value)"
+                            v-if="robotTimetableDisplaySlot(weekday.value, time.value)"
                             class="robot-generated-cell__content">
                             <div class="robot-generated-cell__code">
-                                <span>{{ robotTimetableSlot(weekday.value, time.value).code }}</span>
+                                <span>{{ robotTimetableDisplaySlot(weekday.value, time.value).code }}</span>
                                 <sup
-                                    v-if="robotTimetableSlot(weekday.value, time.value).isDistanceLearningCourse"
+                                    v-if="robotTimetableDisplaySlot(weekday.value, time.value).isDistanceLearningCourse"
                                     class="robot-course-fu">
                                     FU
                                 </sup>
                                 <sup
-                                    v-if="generatedSlotWeekMarker(robotTimetableSlot(weekday.value, time.value), selectedRobotTimetable)"
+                                    v-if="generatedSlotWeekMarker(robotTimetableDisplaySlot(weekday.value, time.value), selectedRobotTimetable)"
                                     class="robot-course-fu robot-course-week-marker">
-                                    {{ generatedSlotWeekMarker(robotTimetableSlot(weekday.value, time.value), selectedRobotTimetable) }}
+                                    {{ generatedSlotWeekMarker(robotTimetableDisplaySlot(weekday.value, time.value), selectedRobotTimetable) }}
                                 </sup>
                             </div>
                             <div
-                                v-if="generatedSlotDateLabel(robotTimetableSlot(weekday.value, time.value))"
+                                v-if="generatedSlotDateLabel(robotTimetableDisplaySlot(weekday.value, time.value))"
                                 class="robot-generated-cell__date">
-                                {{ generatedSlotDateLabel(robotTimetableSlot(weekday.value, time.value)) }}
+                                {{ generatedSlotDateLabel(robotTimetableDisplaySlot(weekday.value, time.value)) }}
                             </div>
                             <div class="robot-generated-cell__details">
-                                {{ generatedSlotDetails(robotTimetableSlot(weekday.value, time.value)) }}
+                                {{ generatedSlotDetails(robotTimetableDisplaySlot(weekday.value, time.value)) }}
                             </div>
                             <div
-                                v-if="generatedSlotSameSlotBlocks(robotTimetableSlot(weekday.value, time.value)).length"
+                                v-if="generatedSlotSameSlotBlocks(robotTimetableDisplaySlot(weekday.value, time.value)).length"
                                 class="robot-generated-cell__same-slots">
                                 <div
-                                    v-for="sameSlotBlock in generatedSlotSameSlotBlocks(robotTimetableSlot(weekday.value, time.value))"
+                                    v-for="sameSlotBlock in generatedSlotSameSlotBlocks(robotTimetableDisplaySlot(weekday.value, time.value))"
                                     :key="sameSlotBlock.key"
                                     class="robot-generated-cell__same-slot-block">
                                     <div class="robot-generated-cell__code">
@@ -1944,10 +2132,10 @@
                                 </div>
                             </div>
                             <div
-                                v-if="generatedSlotConflicts(robotTimetableSlot(weekday.value, time.value)).length"
+                                v-if="generatedSlotConflictBlocks(robotTimetableDisplaySlot(weekday.value, time.value)).length"
                                 class="robot-generated-cell__conflicts">
                                 <div
-                                    v-for="conflictBlock in generatedSlotConflictBlocks(robotTimetableSlot(weekday.value, time.value))"
+                                    v-for="conflictBlock in generatedSlotConflictBlocks(robotTimetableDisplaySlot(weekday.value, time.value))"
                                     :key="conflictBlock.key"
                                     class="robot-generated-cell__conflict-block">
                                     <div class="robot-generated-cell__code">
@@ -1983,12 +2171,12 @@
             </div>
 
             <div
-                v-if="selectedRobotTimetable && groupedOccasionalAppointments(selectedRobotTimetable).length"
+                v-if="selectedRobotTimetable && displayedOccasionalAppointmentGroups(selectedRobotTimetable).length"
                 class="robot-generated-appointments">
                 <div class="robot-generated-appointments__title">Einzeltermine</div>
                 <div class="robot-generated-appointments__groups">
                     <div
-                        v-for="group in groupedOccasionalAppointments(selectedRobotTimetable)"
+                        v-for="group in displayedOccasionalAppointmentGroups(selectedRobotTimetable)"
                         :key="`embedded-appointment-${group.key}`"
                         class="robot-generated-appointment-group">
                         <div class="robot-generated-appointment-group__title">
@@ -2073,6 +2261,7 @@ export default {
             conflictTimetableNumber: 1,
             fullGreenTimetableCountError: '',
             fullGreenTimetableCountLoading: false,
+            timetableCreateLoading: false,
             fullGreenTimetableCountRequestId: 0,
             selectedTimetableResultType: 'full_green',
             additionalCourseTimetableRequired: false,
@@ -2192,6 +2381,9 @@ export default {
                 { title: 'Samstag', shortTitle: 'Sa', value: 6 },
             ]
         },
+        timetableGenerationLoading() {
+            return this.timetableCreateLoading || this.fullGreenTimetableCountLoading
+        },
         timeOptions() {
             const configuredHours = Array.isArray(this.schoolHours) ? this.schoolHours : []
 
@@ -2244,8 +2436,11 @@ export default {
         selectedStudentLabel() {
             return this.selectedStudent ? this.studentOptionTitle(this.selectedStudent) : 'Kein Student'
         },
+        selectedStudentPlanningSemester() {
+            return this.selectedStudentPlanningSemesterValue()
+        },
         studentPlannedCourses() {
-            const semester = this.selectedStudent ? this.studentSemester(this.selectedStudent) : null
+            const semester = this.selectedStudentPlanningSemesterValue()
             if (!semester) return []
 
             const completedCourseCodes = this.studentCompletedCourseCodes()
@@ -2253,7 +2448,7 @@ export default {
             return this.studentPlannedCoursesForSemester(semester, completedCourseCodes)
         },
         studentMissingCourses() {
-            const semester = this.selectedStudent ? this.studentSemester(this.selectedStudent) : null
+            const semester = this.selectedStudentPlanningSemesterValue()
             if (!semester) return []
 
             const completedCourseCodes = this.studentCompletedCourseCodes()
@@ -2262,7 +2457,7 @@ export default {
             return this.pendingStudentCoursesBeforeSemester(semester, completedCourseCodes, visitedCourseCodes)
         },
         studentAdditionalCourses() {
-            const semester = this.selectedStudent ? this.studentSemester(this.selectedStudent) : null
+            const semester = this.selectedStudentPlanningSemesterValue()
             if (!semester) return []
 
             const completedCourseCodes = this.studentCompletedCourseCodes()
@@ -2321,7 +2516,7 @@ export default {
             const semesterCourses = this.coursesForSemester(this.selection.semester)
             if (!this.selectedStudent) return semesterCourses
 
-            const studentSemester = this.studentSemester(this.selectedStudent)
+            const studentSemester = this.selectedStudentPlanningSemesterValue()
             const plannedCourses = studentSemester
                 ? this.studentPlannedCoursesForSemester(studentSemester, this.studentCompletedCourseCodes())
                 : []
@@ -2752,6 +2947,11 @@ export default {
 
             return this.studentSemesterBySchoolLevel()[schoolLevel] || null
         },
+        selectedStudentPlanningSemesterValue() {
+            if (!this.selectedStudent) return null
+
+            return this.studentSemester(this.selectedStudent) || Number(this.selection?.semester) || null
+        },
         applySelectedStudentDefaultSelection(options = {}) {
             const nextSelection = this.selectedStudentDefaultSelection(this.selectedStudent, options)
 
@@ -3056,6 +3256,23 @@ export default {
                 availableTimes: [...(source?.availableTimes || [])],
             }
         },
+        async createTimetables() {
+            if (
+                this.loading
+                || this.timetableGenerationLoading
+                || !(this.selectedCourses || []).length
+            ) {
+                return
+            }
+
+            this.timetableCreateLoading = true
+
+            try {
+                await this.loadFullGreenTimetableCount({ preferFullGreen: true })
+            } finally {
+                this.timetableCreateLoading = false
+            }
+        },
         async loadFullGreenTimetableCount(options = {}) {
             this.fullGreenTimetableCountError = ''
 
@@ -3116,7 +3333,7 @@ export default {
                     this.qualityCounters = []
                     this.allQualityCriteriaCount = null
                     this.generatedTimetables = []
-                    this.loadFullGreenTimetableCount()
+                    await this.loadFullGreenTimetableCount()
 
                     return
                 }
@@ -3145,7 +3362,7 @@ export default {
         },
         autoSelectTimetableResultType(options = {}) {
             const selectableResultTypes = this.backendVariationCountsAvailable
-                ? ['full_green', 'conflict']
+                ? ['full_green', 'green', 'conflict']
                 : this.hasGreenTimetableResults
                 ? ['full_green', 'green']
                 : ['full_green', 'green', 'conflict']
@@ -3185,7 +3402,7 @@ export default {
         backendCountCardSelectable(type) {
             return this.backendVariationCountsAvailable
                 && !this.fullGreenTimetableCountLoading
-                && ['full_green', 'conflict'].includes(type)
+                && ['full_green', 'green', 'conflict'].includes(type)
                 && this.isTimetableResultTypeSelectable(type)
         },
         selectBackendCountCard(type) {
@@ -3276,7 +3493,7 @@ export default {
         },
         isTimetableResultTypeSelectable(type) {
             if (this.backendVariationCountsAvailable) {
-                return ['full_green', 'conflict'].includes(type)
+                return ['full_green', 'green', 'conflict'].includes(type)
                     && this.timetableResultCount(type) > 0
             }
 
@@ -3897,13 +4114,21 @@ export default {
         robotTimetableSlot(weekday, time) {
             return this.selectedRobotTimetable?.slots?.[this.slotKey(weekday, time)] || null
         },
+        robotTimetableDisplaySlot(weekday, time) {
+            return this.displaySlotForGeneratedSlot(this.robotTimetableSlot(weekday, time))
+        },
+        displaySlotForGeneratedSlot(slot) {
+            if (slot?.isOccasional !== true) return slot
+
+            return this.generatedSlotConflictBlocksIncludingRegular(slot)[0] || null
+        },
         robotTimetableOccasionalMarkers(weekday, time) {
             if (!this.selectedRobotTimetable) return []
 
             return this.generatedCellOccasionalMarkers(this.selectedRobotTimetable, weekday, time)
         },
         robotTimetableCellClasses(weekday, time) {
-            const slot = this.robotTimetableSlot(weekday, time)
+            const slot = this.robotTimetableDisplaySlot(weekday, time)
             const occasionalMarkers = this.robotTimetableOccasionalMarkers(weekday, time)
 
             return {
@@ -3917,7 +4142,7 @@ export default {
         slotHasVisualConflict(slot) {
             return Boolean(slot)
                 && (
-                    this.generatedSlotConflicts(slot).length > 0
+                    this.generatedSlotConflictBlocks(slot).length > 0
                     || this.generatedSlotSameSlotBlocks(slot).length > 0
                 )
         },
@@ -4369,21 +4594,21 @@ export default {
         generatedSlotConflictBlocks(slot) {
             if (!Array.isArray(slot?.conflicts) || !slot.conflicts.length) return []
 
-            const conflictBlocks = slot.conflicts
+            return this.generatedSlotConflictBlocksIncludingRegular(slot)
+                .filter(block => !this.generatedSlotBlockIsOccasional(block))
+        },
+        generatedSlotConflictBlocksIncludingRegular(slot) {
+            if (!Array.isArray(slot?.conflicts) || !slot.conflicts.length) return []
+
+            const slotBlock = this.generatedSlotConflictBlock(slot)
+
+            return this.uniqueGeneratedSlotBlocks(slot.conflicts
                 .toSorted((firstConflict, secondConflict) =>
                     String(firstConflict.sortValue || '').localeCompare(String(secondConflict.sortValue || '')),
                 )
                 .map(conflict => this.generatedSlotConflictBlock(conflict))
                 .filter(block => block.code || this.generatedSlotDetails(block))
-
-            return [
-                ...conflictBlocks,
-                this.generatedSlotConflictBlock({
-                    ...slot,
-                    sortValue: `zz-${slot?.code || ''}`,
-                }),
-            ]
-                .filter(block => block.code || this.generatedSlotDetails(block))
+                .filter(block => !this.generatedSlotBlocksMatch(block, slotBlock)))
         },
         generatedSlotConflictBlock(source) {
             return {
@@ -4402,14 +4627,58 @@ export default {
                 isDistanceLearningCourse: source?.isDistanceLearningCourse === true,
             }
         },
+        generatedSlotBlocksMatch(firstBlock, secondBlock) {
+            const firstIdentity = this.generatedSlotBlockIdentity(firstBlock)
+            const secondIdentity = this.generatedSlotBlockIdentity(secondBlock)
+
+            return Boolean(firstIdentity && secondIdentity && firstIdentity === secondIdentity)
+        },
+        generatedSlotBlockIsOccasional(block) {
+            return block?.isOccasional === true || this.isOccasionalCourseGroup(block?.courseGroup)
+        },
+        generatedSlotBlockIdentity(block) {
+            const courseGroup = block?.courseGroup || {}
+            const dates = Array.isArray(courseGroup?.dates) ? courseGroup.dates.join(',') : ''
+
+            return [
+                block?.code,
+                block?.sourceLabel,
+                courseGroup?.course,
+                courseGroup?.subject,
+                courseGroup?.class_name,
+                courseGroup?.display_label,
+                courseGroup?.title,
+                courseGroup?.recurrence_label,
+                courseGroup?.recurrence_interval,
+                dates,
+            ]
+                .map(value => String(value || '').trim())
+                .filter(Boolean)
+                .join('|')
+        },
+        uniqueGeneratedSlotBlocks(blocks) {
+            const uniqueBlocks = new Map()
+
+            blocks.forEach(block => {
+                const identity = this.generatedSlotBlockIdentity(block) || block?.key
+
+                if (!identity || uniqueBlocks.has(identity)) {
+                    return
+                }
+
+                uniqueBlocks.set(identity, block)
+            })
+
+            return Array.from(uniqueBlocks.values())
+        },
         generatedSlotSameSlotBlocks(slot) {
             return Array.isArray(slot?.sameSlotEntries)
-                ? slot.sameSlotEntries
+                ? this.uniqueGeneratedSlotBlocks(slot.sameSlotEntries
                     .toSorted((firstEntry, secondEntry) =>
                         String(firstEntry.sortValue || '').localeCompare(String(secondEntry.sortValue || '')),
                     )
                     .map(entry => this.generatedSlotConflictBlock(entry))
-                    .filter(block => block.code || this.generatedSlotDetails(block))
+                    .filter(block => block.code || this.generatedSlotDetails(block)))
                 : []
         },
         courseGroupItems(course) {
@@ -5462,7 +5731,16 @@ export default {
                 || /: Einzeltermin .* überschneidet sich mit .*?\.$/u.test(problemText)
         },
         groupedOccasionalAppointments(timetable) {
-            const appointments = this.sortedOccasionalAppointments(timetable?.occasionalAppointments || [])
+            return this.groupOccasionalAppointments(timetable, timetable?.occasionalAppointments || [])
+        },
+        displayedOccasionalAppointmentGroups(timetable) {
+            return this.groupOccasionalAppointments(timetable, this.uniqueOccasionalAppointments([
+                ...(Array.isArray(timetable?.occasionalAppointments) ? timetable.occasionalAppointments : []),
+                ...this.timetableSlotOccasionalAppointments(timetable),
+            ]))
+        },
+        groupOccasionalAppointments(timetable, appointmentItems) {
+            const appointments = this.sortedOccasionalAppointments(appointmentItems)
 
             return Object.values(appointments.reduce((groups, appointment) => {
                 const title = this.occasionalAppointmentGroupTitle(appointment)
@@ -5497,9 +5775,102 @@ export default {
                 .toSorted((firstGroup, secondGroup) =>
                     firstGroup.sortValue.localeCompare(secondGroup.sortValue, 'de-AT', {
                         numeric: true,
-                        sensitivity: 'base',
-                    }),
-                )
+                    sensitivity: 'base',
+                }),
+            )
+        },
+        timetableSlotOccasionalAppointments(timetable) {
+            return Object.values(timetable?.slots || {})
+                .flatMap(slot => this.slotOccasionalAppointments(slot))
+        },
+        slotOccasionalAppointments(slot) {
+            if (!slot) return []
+
+            const slotBlock = this.generatedSlotConflictBlock(slot)
+            const regularConflictBlock = this.generatedSlotConflictBlocksIncludingRegular(slot)
+                .find(block => !this.generatedSlotBlockIsOccasional(block))
+            const conflictBlocks = [
+                ...(Array.isArray(slot?.conflicts) ? slot.conflicts : []),
+                ...(Array.isArray(slot?.sameSlotEntries) ? slot.sameSlotEntries : []),
+            ]
+                .map(entry => this.generatedSlotConflictBlock(entry))
+                .filter(block => this.generatedSlotBlockIsOccasional(block))
+                .filter(block => !this.generatedSlotBlocksMatch(block, slotBlock))
+
+            return [
+                ...(slot?.isOccasional === true
+                    ? [this.occasionalAppointmentFromSlotBlock(slotBlock, regularConflictBlock)]
+                    : []),
+                ...conflictBlocks.map(block => this.occasionalAppointmentFromSlotBlock(block, slot)),
+            ]
+        },
+        occasionalAppointmentFromSlotBlock(block, existingSlot = null) {
+            const courseGroup = block?.courseGroup || {}
+            const firstDate = this.courseGroupDates(courseGroup)[0] || ''
+            const sourceLabel = block?.sourceLabel || this.courseGroupSourceLabel(courseGroup)
+            const conflictLabel = existingSlot
+                ? `überschneidet sich mit ${this.courseProblemLabel(existingSlot)}`
+                : ''
+
+            return {
+                key: [
+                    'slot-occasional',
+                    block?.key,
+                    block?.code,
+                    sourceLabel,
+                    firstDate,
+                    courseGroup?.weekday,
+                    courseGroup?.hour,
+                ].filter(Boolean).join('|'),
+                courseKey: courseGroup?.course || block?.code || '',
+                code: block?.code || '',
+                name: block?.name || '',
+                sourceLabel,
+                isDistanceLearningCourse: block?.isDistanceLearningCourse === true,
+                courseGroup,
+                dateTimeLabel: this.courseGroupDetailOccasionalLabel(courseGroup)
+                    || this.courseGroupDateTimeLabel(courseGroup),
+                date: firstDate,
+                dateLabel: this.courseGroupDetailDateLabel(courseGroup),
+                weekday: Number(courseGroup?.weekday),
+                hour: Number(courseGroup?.hour),
+                timeFrom: this.courseGroupStartTime(courseGroup),
+                timeUntil: this.courseGroupEndTime(courseGroup),
+                details: '',
+                conflictLabel,
+                sortValue: [
+                    firstDate,
+                    String(courseGroup?.weekday || '').padStart(2, '0'),
+                    String(courseGroup?.hour || '').padStart(2, '0'),
+                    block?.code || '',
+                ].join('|'),
+            }
+        },
+        uniqueOccasionalAppointments(appointments) {
+            const uniqueAppointments = new Map()
+
+            appointments
+                .filter(appointment => appointment?.dateTimeLabel)
+                .forEach(appointment => {
+                    const identity = [
+                        appointment?.courseKey || appointment?.code,
+                        appointment?.sourceLabel,
+                        appointment?.date,
+                        appointment?.weekday,
+                        appointment?.hour,
+                    ]
+                        .map(value => String(value || '').trim())
+                        .filter(Boolean)
+                        .join('|')
+
+                    if (!identity || uniqueAppointments.has(identity)) {
+                        return
+                    }
+
+                    uniqueAppointments.set(identity, appointment)
+                })
+
+            return Array.from(uniqueAppointments.values())
         },
         defaultOccasionalAppointmentGroupSelections(timetable) {
             const selections = {}
@@ -5604,7 +5975,7 @@ export default {
             return String(group?.courseKey || '').trim()
         },
         generatedCellOccasionalMarkers(timetable, weekday, time) {
-            return this.sortedOccasionalAppointments(timetable?.occasionalAppointments || [])
+            const appointmentMarkers = this.sortedOccasionalAppointments(timetable?.occasionalAppointments || [])
                 .filter(appointment =>
                     Number(appointment?.weekday) === Number(weekday)
                     && Number(appointment?.hour) === Number(time)
@@ -5620,6 +5991,66 @@ export default {
                         ? { weekMarker: this.generatedAppointmentWeekMarker(timetable, appointment) }
                         : {}),
                 }))
+
+            return this.uniqueGeneratedCellOccasionalMarkers([
+                ...appointmentMarkers,
+                ...this.generatedSlotOccasionalConflictMarkers(timetable, weekday, time),
+            ])
+        },
+        generatedSlotOccasionalConflictMarkers(timetable, weekday, time) {
+            const slot = timetable?.slots?.[this.slotKey(weekday, time)]
+
+            if (!slot) return []
+
+            const slotBlock = this.generatedSlotConflictBlock(slot)
+            const slotBlocks = slotBlock.isOccasional === true ? [slotBlock] : []
+            const conflictBlocks = Array.isArray(slot?.conflicts) && slot.conflicts.length
+                ? slot.conflicts
+                    .toSorted((firstConflict, secondConflict) =>
+                        String(firstConflict.sortValue || '').localeCompare(String(secondConflict.sortValue || '')),
+                    )
+                    .map(conflict => this.generatedSlotConflictBlock(conflict))
+                    .filter(block => this.generatedSlotBlockIsOccasional(block))
+                    .filter(block => !this.generatedSlotBlocksMatch(block, slotBlock))
+                : []
+
+            return this.uniqueGeneratedSlotBlocks([
+                ...slotBlocks,
+                ...conflictBlocks,
+            ])
+                .map(block => ({
+                    key: `conflict-${block.key}`,
+                    code: block.code,
+                    sourceLabel: block.sourceLabel,
+                    date: this.courseGroupDates(block.courseGroup)[0] || '',
+                    ...(block.isDistanceLearningCourse === true ? { isDistanceLearningCourse: true } : {}),
+                    ...(this.generatedSlotWeekMarker(block, timetable)
+                        ? { weekMarker: this.generatedSlotWeekMarker(block, timetable) }
+                        : {}),
+                }))
+        },
+        uniqueGeneratedCellOccasionalMarkers(markers) {
+            const uniqueMarkers = new Map()
+
+            markers.forEach(marker => {
+                const identity = [
+                    marker?.code,
+                    marker?.sourceLabel,
+                    marker?.date,
+                    marker?.weekMarker,
+                ]
+                    .map(value => String(value || '').trim())
+                    .filter(Boolean)
+                    .join('|')
+
+                if (!identity || uniqueMarkers.has(identity)) {
+                    return
+                }
+
+                uniqueMarkers.set(identity, marker)
+            })
+
+            return Array.from(uniqueMarkers.values())
         },
         occasionalAppointmentVisibleInTimetableCell(timetable, appointment) {
             const slot = timetable?.slots?.[this.slotKey(appointment?.weekday, appointment?.hour)]
@@ -8121,6 +8552,15 @@ export default {
 
 .robot-count-card__actions :deep(.v-input) {
     flex: 0 0 auto;
+}
+
+.robot-count-card__selected-checkbox {
+    flex: 0 0 auto;
+    pointer-events: none;
+}
+
+.robot-count-card__selected-checkbox :deep(.v-selection-control) {
+    min-height: 32px;
 }
 
 @media (max-width: 720px) {

@@ -102,7 +102,106 @@ it('counts all selected course variations and the overlap free full green variat
     expect($result['selected_course_count'])->toBe(2)
         ->and($result['timetable_variation_count'])->toBe(4)
         ->and($result['full_green_timetable_count'])->toBe(3)
+        ->and($result['green_timetable_count'])->toBe(0)
         ->and($result['red_timetable_count'])->toBe(1);
+});
+
+it('counts green backend timetables when only one-off appointments overlap', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'ETH1',
+                'json_subject' => 'ETH',
+                'name' => 'Ethik 1',
+                'tt_subject' => 'ETH',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'M1',
+                'json_subject' => 'M',
+                'name' => 'Mathematik 1',
+                'tt_subject' => 'M',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 5,
+                'hour' => 7,
+                'class_name' => 'ETH1 - 1RU - PLÖC',
+                'display_label' => 'ETH1 - 1RU - PLÖC',
+                'title' => 'ETH1 - 1RU - PLÖC',
+                'course' => 'ETH1',
+                'subject' => 'Ethik',
+                'dates' => ['2026-03-13'],
+                'dates_count' => 20,
+            ],
+            [
+                'weekday' => 5,
+                'hour' => 8,
+                'class_name' => 'ETH1 - 1RU - PLÖC',
+                'display_label' => 'ETH1 - 1RU - PLÖC',
+                'title' => 'ETH1 - 1RU - PLÖC',
+                'course' => 'ETH1',
+                'subject' => 'Ethik',
+                'dates' => ['2026-03-06'],
+                'dates_count' => 1,
+            ],
+            [
+                'weekday' => 5,
+                'hour' => 8,
+                'class_name' => 'M1-A',
+                'display_label' => 'M1-A',
+                'title' => 'M1-A',
+                'course' => 'M1',
+                'subject' => 'Mathematik',
+                'dates' => ['2026-03-06'],
+                'dates_count' => 20,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 3, 4, 5, 6, 7, 8],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '1|1|common|ETH1|ETH|Ethik 1|ETH1',
+                '2|1|common|M1|M|Mathematik 1|M1',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_timetable_type' => 'green',
+            'selected_timetable_number' => 1,
+        ],
+    );
+
+    expect($result['selected_course_count'])->toBe(2)
+        ->and($result['timetable_variation_count'])->toBe(1)
+        ->and($result['full_green_timetable_count'])->toBe(0)
+        ->and($result['green_timetable_count'])->toBe(1)
+        ->and($result['red_timetable_count'])->toBe(0)
+        ->and($result['selected_timetable']['type'])->toBe('green')
+        ->and($result['selected_timetable']['metrics']['regular_conflict_count'])->toBe(0)
+        ->and($result['selected_timetable']['problems'])->toBeEmpty();
 });
 
 it('counts shorter imported variants for a single selected course as full green', function () {

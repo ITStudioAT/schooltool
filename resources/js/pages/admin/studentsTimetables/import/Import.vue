@@ -142,12 +142,15 @@
                                             {{ activeDatasetSingleDateAppointmentsCount }}
                                         </v-chip>
                                         <LoadingAnimation
-                                            v-if="savingSingleDateActivation"
+                                            v-if="singleDateActivationSaveInProgress"
                                             class="single-date-saving-dots" />
                                     </div>
                                 </v-expansion-panel-title>
                                 <v-expansion-panel-text>
                                     <v-table density="compact">
+                                        <caption v-if="singleDateActivationSaveInProgress" class="single-date-save-caption">
+                                            Änderungen werden im Hintergrund gespeichert.
+                                        </caption>
                                         <thead>
                                             <tr>
                                                 <th class="single-date-select-col">
@@ -158,7 +161,6 @@
                                                         density="compact"
                                                         hide-details
                                                         color="warning"
-                                                        :disabled="savingSingleDateActivation"
                                                         @update:model-value="setAllSingleDateAppointmentsActive"
                                                         @click.stop />
                                                 </th>
@@ -185,7 +187,6 @@
                                                             density="compact"
                                                             hide-details
                                                             color="warning"
-                                                            :disabled="savingSingleDateActivation"
                                                             @update:model-value="setCourseSingleDateAppointmentsActive(courseItem, $event)"
                                                             @click.stop />
                                                     </td>
@@ -208,7 +209,6 @@
                                                             density="compact"
                                                             hide-details
                                                             color="warning"
-                                                            :disabled="savingSingleDateActivation"
                                                             @update:model-value="setSingleDateAppointmentActive(courseItem, appointment, $event)"
                                                             @click.stop />
                                                     </td>
@@ -491,6 +491,8 @@ export default {
             uploadError: '',
             pollingInterval: null,
             savingSingleDateActivation: false,
+            singleDateActivationSaveQueued: false,
+            singleDateActivationSaveTimer: null,
             singleDateActivationError: '',
             activeSingleDateAppointmentKeys: [],
             singleDateActivationDatasetSignature: '',
@@ -540,6 +542,9 @@ export default {
         partlyActiveSingleDateAppointments() {
             return this.activeSingleDateAppointmentKeys.length > 0 && !this.allSingleDateAppointmentsActive
         },
+        singleDateActivationSaveInProgress() {
+            return this.savingSingleDateActivation || this.singleDateActivationSaveQueued
+        },
         semester2StartRaw() {
             return this.config?.selected_schoolyear?.sem_2_start || ''
         },
@@ -577,6 +582,7 @@ export default {
     },
     unmounted() {
         this.clearPolling()
+        this.clearSingleDateActivationSaveTimer()
     },
     methods: {
         normalizedImportAction(subsection) {
@@ -597,7 +603,9 @@ export default {
                 })
                 this.imports = response.data.data || []
                 this.mainDataset = response.data.main_dataset || null
-                this.syncSingleDateAppointmentActivation()
+                if (!this.singleDateActivationSaveInProgress) {
+                    this.syncSingleDateAppointmentActivation()
+                }
                 this.updatePolling()
             } catch {
                 this.imports = []
@@ -744,7 +752,7 @@ export default {
         },
         setAllSingleDateAppointmentsActive(active) {
             this.activeSingleDateAppointmentKeys = active ? [...this.allSingleDateAppointmentKeys] : []
-            this.saveSingleDateAppointmentActivation()
+            this.queueSingleDateAppointmentActivationSave()
         },
         courseSingleDateAppointmentKeys(courseItem) {
             return (courseItem?.appointments || []).map(appointment => this.singleDateAppointmentKey(courseItem, appointment))
@@ -777,7 +785,7 @@ export default {
             })
 
             this.activeSingleDateAppointmentKeys = [...activeKeys]
-            this.saveSingleDateAppointmentActivation()
+            this.queueSingleDateAppointmentActivationSave()
         },
         singleDateAppointmentActive(courseItem, appointment) {
             return this.activeSingleDateAppointmentKeySet.has(this.singleDateAppointmentKey(courseItem, appointment))
@@ -793,7 +801,7 @@ export default {
             }
 
             this.activeSingleDateAppointmentKeys = [...activeKeys]
-            this.saveSingleDateAppointmentActivation()
+            this.queueSingleDateAppointmentActivationSave()
         },
         singleDateActivationPayload() {
             const activeKeys = this.activeSingleDateAppointmentKeySet
@@ -805,20 +813,54 @@ export default {
                 })))
                 .filter(appointment => appointment.entry_ids.length > 0)
         },
+        queueSingleDateAppointmentActivationSave() {
+            this.singleDateActivationError = ''
+            this.singleDateActivationSaveQueued = true
+
+            if (this.savingSingleDateActivation) return
+
+            this.clearSingleDateActivationSaveTimer()
+            this.singleDateActivationSaveTimer = window.setTimeout(() => {
+                this.singleDateActivationSaveTimer = null
+                this.saveSingleDateAppointmentActivation()
+            }, 350)
+        },
+        clearSingleDateActivationSaveTimer() {
+            if (!this.singleDateActivationSaveTimer) return
+
+            window.clearTimeout(this.singleDateActivationSaveTimer)
+            this.singleDateActivationSaveTimer = null
+        },
         async saveSingleDateAppointmentActivation() {
+            this.clearSingleDateActivationSaveTimer()
+
+            if (this.savingSingleDateActivation) {
+                this.singleDateActivationSaveQueued = true
+
+                return
+            }
+
             this.savingSingleDateActivation = true
+            this.singleDateActivationSaveQueued = false
             this.singleDateActivationError = ''
 
             try {
                 const response = await axios.put('/api/admin/students-timetables/imports/single-date-appointments', {
                     appointments: this.singleDateActivationPayload(),
                 })
-                this.mainDataset = response.data.main_dataset || this.mainDataset
-                this.syncSingleDateAppointmentActivation()
+
+                if (!this.singleDateActivationSaveQueued) {
+                    this.mainDataset = response.data.main_dataset || this.mainDataset
+                    this.syncSingleDateAppointmentActivation()
+                }
             } catch {
                 this.singleDateActivationError = 'Die Aktivierung der Einzeltermine konnte nicht gespeichert werden.'
             } finally {
                 this.savingSingleDateActivation = false
+
+                if (this.singleDateActivationSaveQueued) {
+                    this.queueSingleDateAppointmentActivationSave()
+                }
             }
         },
         singleDateAppointmentKey(courseItem, appointment) {
@@ -1021,6 +1063,14 @@ export default {
 .single-date-saving-dots :deep(.dot) {
     width: 7px;
     height: 7px;
+}
+
+.single-date-save-caption {
+    caption-side: top;
+    padding: 6px 8px 10px;
+    color: rgba(0, 0, 0, 0.62);
+    font-size: 0.78rem;
+    text-align: left;
 }
 
 .single-date-course-row td {
