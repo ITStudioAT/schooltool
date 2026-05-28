@@ -2614,6 +2614,7 @@ class RobotTimetableGeneratorService
             'sourceLabel' => $conflictSlot['sourceLabel'] ?? '',
             'alternativeLabels' => $conflictSlot['alternativeLabels'] ?? [],
             'courseGroup' => $conflictSlot['courseGroup'] ?? [],
+            'dateRangeLabel' => $conflictSlot['dateRangeLabel'] ?? '',
             'isAdditionalCourse' => ($conflictSlot['isAdditionalCourse'] ?? false) === true,
             'isDistanceLearningCourse' => ($conflictSlot['isDistanceLearningCourse'] ?? false) === true,
         ];
@@ -2676,6 +2677,7 @@ class RobotTimetableGeneratorService
             'sourceLabel' => $option['label'] ?? $this->courseGroupOptionLabel($courseGroup),
             'alternativeLabels' => [$option['label'] ?? $this->courseGroupOptionLabel($courseGroup)],
             'courseGroup' => $courseGroup,
+            'dateRangeLabel' => $this->courseGroupDateRangeLabel($courseGroup),
             'conflicts' => [],
             'isAdditionalCourse' => ($option['isAdditionalCourse'] ?? false) === true,
             'isDistanceLearningCourse' => $this->optionIsDistanceLearningCourse($course, $option),
@@ -2883,6 +2885,42 @@ class RobotTimetableGeneratorService
     /**
      * @param  array<string, mixed>  $courseGroup
      */
+    private function courseGroupDateRangeLabel(array $courseGroup): string
+    {
+        $dates = $this->courseGroupDates($courseGroup);
+
+        if ($dates === []) {
+            return '';
+        }
+
+        if ($dates[0] === $dates[count($dates) - 1]) {
+            return $this->shortCourseGroupDateLabel($dates[0], true);
+        }
+
+        $firstDate = $this->shortCourseGroupDateLabel($dates[0], true);
+        $lastDate = $this->shortCourseGroupDateLabel($dates[count($dates) - 1]);
+
+        return "{$firstDate}-{$lastDate}";
+    }
+
+    private function shortCourseGroupDateLabel(string $date, bool $preserveEarlyMonthPadding = false): string
+    {
+        $dateTime = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+
+        if ($dateTime === false) {
+            return $date;
+        }
+
+        if ($preserveEarlyMonthPadding && (int) $dateTime->format('n') <= 4) {
+            return $dateTime->format('j.m.');
+        }
+
+        return $dateTime->format('j.n.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
     private function courseGroupDetailsLabel(array $courseGroup): string
     {
         $rooms = is_array($courseGroup['rooms'] ?? null)
@@ -2917,6 +2955,7 @@ class RobotTimetableGeneratorService
     private function weeklyCourseGroupSlotKeys(array $courseGroups): array
     {
         return collect($courseGroups)
+            ->filter(fn (array $courseGroup): bool => $this->courseGroupDates($courseGroup) === [])
             ->map(fn (array $courseGroup): string => $this->recurringDateSlotKey(
                 (string) ($courseGroup['weekday'] ?? ''),
                 (string) ($courseGroup['hour'] ?? ''),
@@ -3035,7 +3074,7 @@ class RobotTimetableGeneratorService
                 continue;
             }
 
-            $datedSlot = ($parts[1] ?? '').'|'.($parts[3] ?? '');
+            $datedSlot = ($parts[1] ?? '').'|'.($parts[2] ?? '').'|'.($parts[3] ?? '');
             $weekdaySlot = ($parts[2] ?? '').'|'.($parts[3] ?? '');
             $summary['has_overlap'] = $summary['has_overlap'] || isset($summary['dated'][$datedSlot]);
             $summary['dated'][$datedSlot] = true;

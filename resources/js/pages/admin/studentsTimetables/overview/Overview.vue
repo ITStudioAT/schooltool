@@ -243,9 +243,9 @@
                     embedded-course-cards-only
                     :student-code="transferredStudentContext?.student?.studentCode || null"
                     class="overview-wizard-course-cards">
-                    <template #course-actions="{ ready, loading, extending, hasSelectedAdditionalCourses }">
+                    <template #course-actions="{ ready, loading, extending, hasSelectedAdditionalCourses, extensionActionVisible }">
                         <div
-                            v-if="ready && (!extending || hasSelectedAdditionalCourses)"
+                            v-if="ready && (!extending || (hasSelectedAdditionalCourses && extensionActionVisible))"
                             class="overview-wizard-footer">
                             <v-btn
                                 class="overview-wizard-create-button"

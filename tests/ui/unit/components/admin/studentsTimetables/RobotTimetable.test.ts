@@ -19,6 +19,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain(':ready="courseCardsReady"')
         expect(componentSource).toContain(':extending="additionalCoursePanelVisible"')
         expect(componentSource).toContain(':has-selected-additional-courses="selectedAdditionalCourses.length > 0"')
+        expect(componentSource).toContain(':extension-action-visible="additionalCourseExtensionActionVisible"')
         expect(componentSource).toContain("'robot-timetable-embedded-course-cards--with-additional': additionalCoursePanelVisible")
         expect(componentSource).toContain('class="robot-generator robot-generator--embedded"')
         expect(componentSource).toContain('fullGreenTimetableCountLoading || fullGreenTimetableCountError || timetableCountResultsAvailable || selectedRobotTimetable')
@@ -304,9 +305,15 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('additional_course_timetable_count')
         expect(componentSource).toContain('selectedAdditionalCourses')
         expect(componentSource).toContain('additionalCourseTimetableCountLabel')
+        expect(componentSource).toContain('additionalCourseTimetableCountCardValue')
+        expect(componentSource).toContain('additionalCourseTimetableCountCardVisible')
+        expect(componentSource).toContain('additionalCourseTimetableCountCardTitle')
+        expect(componentSource).toContain('inkl. Zusätzliche Stunden')
+        expect(componentSource).toContain('autoSelectAdditionalCourseTimetableFilter(options)')
         expect(componentSource).toContain('additionalCourseTimetableRequired')
         expect(componentSource).toContain('selected_additional_courses_required: this.additionalCourseTimetableRequired === true')
-        expect(componentSource).toContain('setAdditionalCourseTimetableRequired($event)')
+        expect(componentSource).toContain('@click="setAdditionalCourseTimetableRequired(true)"')
+        expect(componentSource).not.toContain('setAdditionalCourseTimetableRequired($event)')
         expect(componentSource).toContain(':disabled="!additionalCourseSelectionResettable"')
         expect(componentSource).toContain('@click="resetAdditionalCourseSelection"')
         expect(componentSource).toContain('additionalCoursesAcceptedBySelectedTimetable()')
@@ -320,6 +327,9 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('Nicht alle gewählten Zusatzkurse konnten berücksichtigt werden')
         expect(componentSource).not.toContain('additionalCourseTimetableCountDetail()')
         expect(componentSource).toContain('robot-count-card--additional')
+        expect(componentSource.indexOf('robot-count-card--additional')).toBeLessThan(
+            componentSource.indexOf('robot-count-card--conflict'),
+        )
         expect(componentSource).toContain('robot-generated-cell--additional')
         expect(componentSource).toContain('robot-course-fu')
         expect(componentSource).toContain('robot-course-week-marker')
@@ -332,7 +342,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('allQualityCriteriaCount')
         expect(componentSource).toContain('all_quality_criteria_count')
         expect(componentSource).toContain('evaluationCriteria')
-        expect(componentSource).toContain('evaluation_criteria: this.storageEvaluationCriteria(this.evaluationCriteria)')
+        expect(componentSource).not.toContain('evaluation_criteria: this.storageEvaluationCriteria(this.evaluationCriteria)')
         expect(componentSource).toContain('enabledEvaluationCriteriaFromSettings')
         expect(componentSource).toContain('qualityCriterionRows()')
         expect(componentSource).toContain('activeQualityCriterionRows()')
@@ -364,6 +374,10 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain("backendCountCardSelectable('full_green')")
         expect(componentSource).toContain("backendCountCardSelectable('green')")
         expect(componentSource).toContain("backendCountCardSelectable('conflict')")
+        expect(componentSource).toContain("backendCountCardSelectable('green') || timetableResultCardSelected('green')")
+        expect(componentSource).toContain('isAdditionalCourseTimetableFilterSelectable() || additionalCourseTimetableRequired')
+        expect(componentSource).toContain('Grüne Stundenpläne auswählbar')
+        expect(componentSource).toContain('Stundenpläne mit Zusatzkursen auswählbar')
         expect(componentSource).toContain("selectBackendCountCard('full_green')")
         expect(componentSource).toContain("selectBackendCountCard('green')")
         expect(componentSource).toContain("selectBackendCountCard('conflict')")
@@ -371,6 +385,8 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain(`:disabled="!isTimetableResultTypeSelectable('full_green')"`)
         expect(componentSource).toContain(`:disabled="!isTimetableResultTypeSelectable('green')"`)
         expect(componentSource).toContain('robot-count-card--selected')
+        expect(componentSource).toContain('0 0 0 3px rgba(var(--v-theme-success), 0.2)')
+        expect(componentSource).toContain('0 0 0 3px rgba(234, 88, 12, 0.22)')
         expect(componentSource).toContain('robot-count-cards')
         expect(componentSource).toContain('grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))')
         expect(componentSource).toContain('fullGreenTimetableNumber')
@@ -796,6 +812,9 @@ describe('Students timetable robot page', () => {
         }
 
         expect(computed.additionalCourseTimetableCountLabel.call(ctx)).toBe('12 / 48')
+        expect(computed.additionalCourseTimetableCountCardValue.call(ctx)).toBe('12')
+        expect(computed.additionalCourseTimetableCountCardVisible.call(ctx)).toBe(true)
+        expect(computed.additionalCourseTimetableCountCardTitle.call(ctx)).toBe('Grüne Stundenpläne')
         expect(methods.additionalCoursesAcceptedBySelectedTimetable.call(ctx)).toBe(true)
         expect(methods.additionalCourseAcceptanceLabel.call(ctx)).toBe('2 / 2')
 
@@ -873,15 +892,39 @@ describe('Students timetable robot page', () => {
             greenTimetableCount: 24,
             conflictTimetableCount: 3,
             additionalCourseTimetableCount: null,
+            additionalCourseExtensionActionHidden: false,
             loadFullGreenTimetableCount,
         }
 
         await methods.createTimetables.call(ctx, { requireAdditionalCourses: true })
 
         expect(ctx.additionalCourseTimetableRequired).toBe(true)
+        expect(ctx.additionalCourseExtensionActionHidden).toBe(true)
         expect(ctx.greenTimetableNumber).toBe(1)
         expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({ preferFullGreen: true })
         expect(ctx.timetableCreateLoading).toBe(false)
+    })
+
+    it('shows the extend timetable action again when additional course selection changes', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedRobotTimetable: { slots: {} },
+            selectedAdditionalCourses: [{ key: 'D2' }],
+            additionalCourseExtensionActionHidden: true,
+            clearGeneratedTimetables: vi.fn(),
+            saveLastRobotState: vi.fn(),
+        }
+
+        expect(computed.additionalCourseExtensionActionVisible.call(ctx)).toBe(false)
+
+        methods.commitAdditionalCourseSelectionChange.call(ctx)
+
+        expect(ctx.additionalCourseExtensionActionHidden).toBe(false)
+        expect(computed.additionalCourseExtensionActionVisible.call(ctx)).toBe(true)
+        expect(ctx.clearGeneratedTimetables).not.toHaveBeenCalled()
+        expect(ctx.saveLastRobotState).toHaveBeenCalled()
     })
 
     it('switches to a conflict timetable when required additional courses are not visible in the selected timetable', () => {
@@ -1125,6 +1168,30 @@ describe('Students timetable robot page', () => {
 
         expect(methods.autoSelectTimetableResultType.call(ctx, { preferFullGreen: true })).toBe(true)
         expect(ctx.selectedTimetableResultType).toBe('full_green')
+    })
+
+    it('selects the additional-course timetable filter by default when matching timetables exist', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedAdditionalCourses: [{ key: 'INF2', code: 'INF2' }],
+            selectedTimetableResultType: 'green',
+            additionalCourseTimetableRequired: false,
+            additionalCourseTimetableCount: 960,
+            greenTimetableCount: 2160,
+            greenTimetableNumber: 12,
+        }
+
+        expect(methods.autoSelectAdditionalCourseTimetableFilter.call(ctx)).toBe(true)
+        expect(ctx.additionalCourseTimetableRequired).toBe(true)
+        expect(ctx.greenTimetableNumber).toBe(1)
+
+        ctx.additionalCourseTimetableRequired = false
+
+        expect(methods.autoSelectAdditionalCourseTimetableFilter.call(ctx, {
+            skipAdditionalCourseDefaultSelection: true,
+        })).toBe(false)
+        expect(ctx.additionalCourseTimetableRequired).toBe(false)
     })
 
     it('allows backend red timetables to stay selectable next to full green results', () => {
@@ -3486,6 +3553,7 @@ describe('Students timetable robot page', () => {
                                 code: 'M1',
                                 name: 'Mathematik 1',
                                 sourceLabel: 'M1-1C-MAY',
+                                dateRangeLabel: '18.02.-8.7.',
                                 courseGroup: {
                                     course: 'M1',
                                     class_name: 'M1-1C-MAY',
@@ -3504,6 +3572,7 @@ describe('Students timetable robot page', () => {
             code: 'M1',
             sourceLabel: 'M1-1C-MAY',
         })
+        expect(methods.generatedSlotTitle.call(ctx, methods.robotTimetableDisplaySlot.call(ctx, 3, 10))).toBe('M1')
         expect(methods.generatedSlotDateLabel.call(ctx, methods.robotTimetableDisplaySlot.call(ctx, 3, 10))).toBe('')
         expect(methods.robotTimetableOccasionalMarkers.call(ctx, 3, 10)).toMatchObject([
             {
@@ -3516,6 +3585,8 @@ describe('Students timetable robot page', () => {
             'robot-generated-cell--conflict': false,
             'robot-generated-cell--has-occasional': true,
         })
+        expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'M1', code: 'M1' })).toBe(false)
+        expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'LPT', code: 'LPT' })).toBe(false)
         expect(methods.displayedOccasionalAppointmentGroups.call(ctx, ctx.selectedRobotTimetable)).toMatchObject([
             {
                 code: 'LPT',
@@ -3542,12 +3613,14 @@ describe('Students timetable robot page', () => {
                         code: 'S4',
                         name: 'Spanisch 4',
                         sourceLabel: 'SPA4-KOR',
+                        dateRangeLabel: '20.02.',
                         courseGroup: {
                             key: 'spa4',
                             class_name: 'SPA4-KOR',
                             weekday: 5,
                             hour: 7,
                             dates: ['2026-02-20'],
+                            dates_count: 4,
                         },
                         sameSlotEntries: [
                             {
@@ -3555,12 +3628,14 @@ describe('Students timetable robot page', () => {
                                 code: 'S5',
                                 name: 'Spanisch 5',
                                 sourceLabel: 'SPA5-PIB',
+                                dateRangeLabel: '8.5.',
                                 courseGroup: {
                                     key: 'spa5',
                                     class_name: 'SPA5-PIB',
                                     weekday: 5,
                                     hour: 7,
                                     dates: ['2026-05-08'],
+                                    dates_count: 4,
                                 },
                             },
                         ],
@@ -3572,14 +3647,83 @@ describe('Students timetable robot page', () => {
         const sameSlotBlocks = methods.generatedSlotSameSlotBlocks.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])
 
         expect(methods.generatedSlotConflicts.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])).toEqual([])
-        expect(methods.robotTimetableCellClasses.call(ctx, 5, 7)['robot-generated-cell--conflict']).toBe(true)
+        expect(methods.robotTimetableCellClasses.call(ctx, 5, 7)['robot-generated-cell--conflict']).toBe(false)
+        expect(methods.generatedSlotTitle.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])).toBe('SPA4-KOR / S4')
+        expect(methods.generatedSlotDateLabel.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])).toBe('20.02.')
+        expect(methods.generatedSlotTitle.call(ctx, sameSlotBlocks[0])).toBe('SPA5-PIB / S5')
+        expect(methods.generatedSlotDateLabel.call(ctx, sameSlotBlocks[0])).toBe('8.5.')
         expect(sameSlotBlocks.map(block => block.code)).toEqual(['S5'])
         expect(methods.selectedRobotTimetableCourseGroups.call(ctx).map(courseGroup => courseGroup.key)).toEqual([
             'spa4',
             'spa5',
         ])
-        expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'S4', code: 'S4' })).toBe(true)
-        expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'S5', code: 'S5' })).toBe(true)
+        expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'S4', code: 'S4' })).toBe(false)
+        expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'S5', code: 'S5' })).toBe(false)
+    })
+
+    it('hides generated date ranges for plain single-course cells', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = { ...methods }
+        const slot = {
+            key: 'D2',
+            code: 'D2',
+            name: 'Deutsch 2',
+            sourceLabel: 'D2-1U-HER',
+            dateRangeLabel: '21.02.-18.4.',
+            courseGroup: {
+                key: 'd2',
+                class_name: 'D2-1U-HER',
+                weekday: 6,
+                hour: 4,
+                dates: ['2026-02-21', '2026-03-07', '2026-03-21', '2026-04-18'],
+            },
+        }
+
+        expect(methods.generatedSlotTitle.call(ctx, slot)).toBe('D2')
+        expect(methods.generatedSlotDateLabel.call(ctx, slot)).toBe('')
+        expect(methods.generatedSlotDetails.call(ctx, slot)).toBe('D2-1U-HER')
+    })
+
+    it('does not show a regular date range when only an Einzeltermin shares the cell', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = { ...methods }
+        const slot = {
+            key: 'M1',
+            code: 'M1',
+            name: 'Mathematik 1',
+            sourceLabel: 'M1-1C-MAY',
+            dateRangeLabel: '18.02.-8.7.',
+            courseGroup: {
+                key: 'm1',
+                class_name: 'M1-1C-MAY',
+                weekday: 3,
+                hour: 10,
+                dates: ['2026-02-18', '2026-07-08'],
+                dates_count: 20,
+            },
+            sameSlotEntries: [
+                {
+                    key: 'lpt',
+                    code: 'LPT',
+                    name: 'LPT',
+                    sourceLabel: 'LPT-1CK-DREI',
+                    dateRangeLabel: '18.02.',
+                    isOccasional: true,
+                    courseGroup: {
+                        key: 'lpt',
+                        class_name: 'LPT-1CK-DREI',
+                        weekday: 3,
+                        hour: 10,
+                        dates: ['2026-02-18'],
+                        dates_count: 1,
+                    },
+                },
+            ],
+        }
+
+        expect(methods.generatedSlotTitle.call(ctx, slot)).toBe('M1')
+        expect(methods.generatedSlotDateLabel.call(ctx, slot)).toBe('')
+        expect(methods.generatedSlotDetails.call(ctx, slot)).toBe('M1-1C-MAY')
     })
 
     it('keeps date-different same-slot courses in locally generated timetables', () => {
@@ -3638,8 +3782,10 @@ describe('Students timetable robot page', () => {
         expect(methods.scheduledCourseCountForSlots.call(ctx, ctx.generatedTimetables[0].slots)).toBe(2)
         expect(ctx.generatedTimetables[0].slots['5-7'].code).toBe('S4')
         expect(ctx.generatedTimetables[0].slots['5-7'].sameSlotEntries.map(entry => entry.code)).toEqual(['S5'])
+        expect(ctx.generatedTimetables[0].slots['5-7'].dateRangeLabel).toBe('20.02.')
+        expect(ctx.generatedTimetables[0].slots['5-7'].sameSlotEntries[0].dateRangeLabel).toBe('8.5.')
         ctx.selectedRobotTimetable = ctx.generatedTimetables[0]
-        expect(methods.robotTimetableCellClasses.call(ctx, 5, 7)['robot-generated-cell--conflict']).toBe(true)
+        expect(methods.robotTimetableCellClasses.call(ctx, 5, 7)['robot-generated-cell--conflict']).toBe(false)
     })
 
     it('marks exact course group details as used or no longer fitting in the selected timetable', () => {
