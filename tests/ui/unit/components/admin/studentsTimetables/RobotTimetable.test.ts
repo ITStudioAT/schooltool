@@ -173,9 +173,13 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain(':indeterminate="additionalCoursePartiallySelected(course)"')
         expect(componentSource).toContain(':model-value="additionalCourseGroupSelected(course, group)"')
         expect(componentSource).toContain('setAdditionalCourseGroupSelected(course, group, $event)')
+        expect(componentSource).toContain(':disabled="!courseSelectable(course)"')
         expect(componentSource).toContain(':disabled="!additionalCourseSelectable(course)"')
+        expect(componentSource).toContain("'robot-course-item-panel--no-timetable-hours': !courseSelectable(course)")
+        expect(componentSource).toContain("'robot-student-completed-course--no-timetable-hours': !courseSelectable(course)")
         expect(componentSource).not.toContain('<sup v-if="courseGroupWeekMarker(group)"')
         expect(componentSource).toContain('setAdditionalCourseSelected(course, $event)')
+        expect(componentSource).toContain('courseHasTimetableHours(course)')
         expect(componentSource).toContain('additionalCoursePrerequisiteCourse(course)')
         expect(componentSource).toContain('courseUsesTwoLevelAdditionalPrerequisite(base)')
         expect(componentSource).toContain('grid-template-columns: repeat(auto-fill, minmax(120px, 1fr))')
@@ -391,7 +395,8 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('slotHasVisualConflict(slot)')
         expect(componentSource).toContain('robotTimetableOccasionalMarkers(weekday, time)')
         expect(componentSource).toContain('selectedOccasionalAppointmentGroupsForTimetable(timetable)')
-        expect(componentSource).toContain('@click="loadFullGreenTimetableCount"')
+        expect(componentSource).toContain('@click="loadFullGreenTimetableCount({ preferFullGreen: true })"')
+        expect(componentSource).toContain('options?.preferFullGreen === true')
         expect(componentSource).toContain("axios.post('/api/admin/students-timetables/robot/backend-timetable'")
         expect(componentSource).toContain('selected_course_keys: this.selectedCourses.map(course => course.key)')
         expect(componentSource).toContain('timetable_variation_count')
@@ -711,6 +716,9 @@ describe('Students timetable robot page', () => {
                 { key: 'INF2', code: 'INF2' },
                 { key: 'INF3', code: 'INF3' },
             ],
+            courseGroupItems(course) {
+                return [{ title: `${course.code}-A` }]
+            },
             selectedTimetableResultType: 'green',
             fullGreenTimetableCount: 4,
             greenTimetableCount: 48,
@@ -937,6 +945,24 @@ describe('Students timetable robot page', () => {
 
         expect(methods.autoSelectTimetableResultType.call(ctx)).toBe(true)
         expect(ctx.selectedTimetableResultType).toBe('green')
+    })
+
+    it('selects full green timetables first when creating timetables', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedTimetableResultType: 'green',
+            hasGreenTimetableResults: true,
+            fullGreenTimetableCount: 2,
+            greenTimetableCount: 12,
+            conflictTimetableCount: 0,
+        }
+
+        expect(methods.autoSelectTimetableResultType.call(ctx)).toBe(false)
+        expect(ctx.selectedTimetableResultType).toBe('green')
+
+        expect(methods.autoSelectTimetableResultType.call(ctx, { preferFullGreen: true })).toBe(true)
+        expect(ctx.selectedTimetableResultType).toBe('full_green')
     })
 
     it('allows backend red timetables to stay selectable next to full green results', () => {
@@ -1418,6 +1444,13 @@ describe('Students timetable robot page', () => {
             deselectedCourseKeys: ['GW1'],
             deselectedCourseGroupKeys: ['D1|D1-1C-GOS'],
             robotStateRestoring: false,
+            courseGroupItems(course) {
+                if (course.key === 'D1') {
+                    return [{ title: 'D1-1C-GOS' }, { title: 'D1-1C-HER' }]
+                }
+
+                return [{ title: `${course.key}-1C-GOS` }]
+            },
             robotStorage() {
                 return storage
             },
@@ -1441,6 +1474,13 @@ describe('Students timetable robot page', () => {
             deselectedCourseKeys: [],
             deselectedCourseGroupKeys: [],
             robotStateRestoring: false,
+            courseGroupItems(course) {
+                if (course.key === 'D1') {
+                    return [{ title: 'D1-1C-GOS' }, { title: 'D1-1C-HER' }]
+                }
+
+                return [{ title: `${course.key}-1C-GOS` }]
+            },
             robotStorage() {
                 return storage
             },
@@ -2345,6 +2385,42 @@ describe('Students timetable robot page', () => {
         expect(ctx.deselectedCourseKeys).toEqual(['D1'])
         expect(ctx.deselectedCourseGroupKeys).toEqual(['D1|D1-1C-HER', 'D1|D1-1C-GOS'])
         expect(methods.courseSelected.call(ctx, course)).toBe(false)
+    })
+
+    it('does not select courses without imported timetable hours', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            deselectedCourseKeys: [],
+            deselectedCourseGroupKeys: [],
+            additionalCourseSelectedKeys: [],
+            courseGroupItems() {
+                return []
+            },
+            clearGeneratedTimetables() {
+                this.cleared = true
+            },
+            saveLastRobotState() {
+                this.saved = true
+            },
+        }
+        const course = { key: 'Rk4', code: 'Rk4' }
+
+        expect(methods.courseSelectable.call(ctx, course)).toBe(false)
+        expect(methods.courseSelected.call(ctx, course)).toBe(false)
+        expect(methods.courseFullySelected.call(ctx, course)).toBe(false)
+        expect(methods.additionalCourseSelectable.call(ctx, course)).toBe(false)
+        ctx.additionalCourseSelectedKeys = ['Rk4']
+        expect(methods.additionalCourseSelected.call(ctx, course)).toBe(false)
+        ctx.additionalCourseSelectedKeys = []
+
+        methods.setCourseSelected.call(ctx, course, true)
+        methods.setAdditionalCourseSelected.call(ctx, course, true)
+
+        expect(ctx.deselectedCourseKeys).toEqual([])
+        expect(ctx.additionalCourseSelectedKeys).toEqual([])
+        expect(ctx.cleared).toBeUndefined()
+        expect(ctx.saved).toBeUndefined()
     })
 
     it('ignores deselected imported timetable course groups during generation', () => {
@@ -3421,6 +3497,9 @@ describe('Students timetable robot page', () => {
                 { key: 'INF1', code: 'INF1', name: 'Informatik 1', hours: 2 },
                 { key: 'GW1', code: 'GW1', name: 'Geografie 1', hours: 4 },
             ],
+            courseGroupItems(course) {
+                return [{ title: `${course.code}-A` }]
+            },
             clearGeneratedTimetables() {},
             saveLastRobotState() {},
         }
@@ -3458,6 +3537,9 @@ describe('Students timetable robot page', () => {
                 { key: 'GW2', code: 'GW2', ttCodes: ['GWB2'], name: 'Geografie 2', hours: 2 },
                 { key: 'INF2', code: 'INF2', ttCodes: ['INF2'], name: 'Informatik 2', hours: 2 },
             ],
+            courseGroupItems(course) {
+                return [{ title: `${course.code}-A` }]
+            },
             clearGeneratedTimetables() {},
             saveLastRobotState() {},
         }
@@ -3490,6 +3572,9 @@ describe('Students timetable robot page', () => {
                 { key: 'D6', code: 'D6', ttCodes: ['D6'], name: 'Deutsch 6', hours: 3 },
                 { key: 'S5', code: 'S5', ttCodes: ['SPA5'], name: 'Spanisch 5', hours: 4 },
             ],
+            courseGroupItems(course) {
+                return [{ title: `${course.code}-A` }]
+            },
             clearGeneratedTimetables() {
                 this.cleared = true
             },
@@ -3717,6 +3802,9 @@ describe('Students timetable robot page', () => {
             ...methods,
             subjectMappings: [],
             additionalCourseSelectedKeys: [],
+            courseGroupItems(course) {
+                return [{ title: `${course.code}-A` }]
+            },
             studentAdditionalCourses: [
                 { key: 'INF3', code: 'INF3', ttCodes: ['INF3'], name: 'Informatik 3', hours: 2 },
                 { key: 'INF4', code: 'INF4', ttCodes: ['INF4'], name: 'Informatik 4', hours: 2 },

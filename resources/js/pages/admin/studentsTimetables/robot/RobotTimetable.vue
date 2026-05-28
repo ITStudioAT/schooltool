@@ -55,6 +55,7 @@
                                 class="robot-course-item-panel"
                                 :class="{
                                     'robot-course-item-panel--disabled': !courseSelected(course),
+                                    'robot-course-item-panel--no-timetable-hours': !courseSelectable(course),
                                     'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
                                     'robot-course-item-panel--conflict': courseOverlapsInSelectedTimetable(course) || courseAllGroupsNoLongerFitSelectedTimetable(course),
                                 }">
@@ -67,6 +68,7 @@
                                                 :aria-label="`${course.code} auswählen`"
                                                 density="compact"
                                                 color="primary"
+                                                :disabled="!courseSelectable(course)"
                                                 hide-details
                                                 @click.stop
                                                 @update:model-value="setCourseSelected(course, $event)" />
@@ -172,6 +174,7 @@
                                 class="robot-course-item-panel"
                                 :class="{
                                     'robot-course-item-panel--disabled': !additionalCourseSelectable(course),
+                                    'robot-course-item-panel--no-timetable-hours': !courseSelectable(course),
                                     'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
                                     'robot-course-item-panel--missing-additional': additionalCourseMissingInSelectedTimetable(course) || courseAllGroupsNoLongerFitSelectedTimetable(course),
                                 }">
@@ -365,7 +368,8 @@
                                         <div
                                             v-for="course in studentMissingCourses"
                                             :key="course.key"
-                                            class="robot-student-completed-course">
+                                            class="robot-student-completed-course"
+                                            :class="{ 'robot-student-completed-course--no-timetable-hours': !courseSelectable(course) }">
                                             <span class="robot-student-completed-course__subject">
                                                 <span>{{ course.code }}</span>
                                             </span>
@@ -397,7 +401,8 @@
                                         <div
                                             v-for="course in studentPlannedCourses"
                                             :key="course.key"
-                                            class="robot-student-completed-course">
+                                            class="robot-student-completed-course"
+                                            :class="{ 'robot-student-completed-course--no-timetable-hours': !courseSelectable(course) }">
                                             <span class="robot-student-completed-course__subject">
                                                 <span>{{ course.code }}</span>
                                             </span>
@@ -429,7 +434,8 @@
                                         <div
                                             v-for="course in studentAdditionalCourses"
                                             :key="course.key"
-                                            class="robot-student-completed-course">
+                                            class="robot-student-completed-course"
+                                            :class="{ 'robot-student-completed-course--no-timetable-hours': !courseSelectable(course) }">
                                             <span class="robot-student-completed-course__subject">
                                                 <span>{{ course.code }}</span>
                                             </span>
@@ -581,6 +587,7 @@
                                         class="robot-course-item-panel"
                                         :class="{
                                             'robot-course-item-panel--disabled': !courseSelected(course),
+                                            'robot-course-item-panel--no-timetable-hours': !courseSelectable(course),
                                             'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
                                             'robot-course-item-panel--conflict': courseOverlapsInSelectedTimetable(course) || courseAllGroupsNoLongerFitSelectedTimetable(course),
                                         }">
@@ -593,6 +600,7 @@
                                                         :aria-label="`${course.code} auswählen`"
                                                         density="compact"
                                                         color="primary"
+                                                        :disabled="!courseSelectable(course)"
                                                         hide-details
                                                         @click.stop
                                                         @update:model-value="setCourseSelected(course, $event)" />
@@ -698,6 +706,7 @@
                                         class="robot-course-item-panel"
                                         :class="{
                                             'robot-course-item-panel--disabled': !additionalCourseSelectable(course),
+                                            'robot-course-item-panel--no-timetable-hours': !courseSelectable(course),
                                             'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
                                             'robot-course-item-panel--missing-additional': additionalCourseMissingInSelectedTimetable(course) || courseAllGroupsNoLongerFitSelectedTimetable(course),
                                         }">
@@ -779,7 +788,7 @@
                             prepend-icon="mdi-calendar-clock"
                             :disabled="loading || !selectedCourses.length"
                             :loading="fullGreenTimetableCountLoading"
-                            @click="loadFullGreenTimetableCount">
+                            @click="loadFullGreenTimetableCount({ preferFullGreen: true })">
                             Stundenpläne erstellen
                         </v-btn>
                     </div>
@@ -3047,7 +3056,7 @@ export default {
                 availableTimes: [...(source?.availableTimes || [])],
             }
         },
-        async loadFullGreenTimetableCount() {
+        async loadFullGreenTimetableCount(options = {}) {
             this.fullGreenTimetableCountError = ''
 
             if (
@@ -3100,7 +3109,7 @@ export default {
                 this.additionalCourseTimetableCount = Number(response.data?.data?.additional_course_timetable_count || 0)
                 this.qualityCounters = response.data?.data?.quality_counters || []
                 this.allQualityCriteriaCount = Number(response.data?.data?.all_quality_criteria_count || 0)
-                const selectedResultTypeChanged = this.autoSelectTimetableResultType()
+                const selectedResultTypeChanged = this.autoSelectTimetableResultType(options)
                 this.normalizeTimetableResultCounters()
 
                 if (selectedResultTypeChanged && this.timetableResultCount(this.selectedTimetableResultType) > 0) {
@@ -3134,12 +3143,23 @@ export default {
                 }
             }
         },
-        autoSelectTimetableResultType() {
+        autoSelectTimetableResultType(options = {}) {
             const selectableResultTypes = this.backendVariationCountsAvailable
                 ? ['full_green', 'conflict']
                 : this.hasGreenTimetableResults
                 ? ['full_green', 'green']
                 : ['full_green', 'green', 'conflict']
+
+            if (
+                options?.preferFullGreen === true
+                && selectableResultTypes.includes('full_green')
+                && this.timetableResultCount('full_green') > 0
+                && this.selectedTimetableResultType !== 'full_green'
+            ) {
+                this.selectedTimetableResultType = 'full_green'
+
+                return true
+            }
 
             if (
                 selectableResultTypes.includes(this.selectedTimetableResultType)
@@ -4959,17 +4979,23 @@ export default {
             return String(courseGroup?.room || courseGroup?.rooms || '').trim()
         },
         courseSelected(course) {
+            if (!this.courseSelectable(course)) return false
+
+            const deselectedCourseKeys = this.deselectedCourseKeySet instanceof Set
+                ? this.deselectedCourseKeySet
+                : new Set(Array.isArray(this.deselectedCourseKeys) ? this.deselectedCourseKeys : [])
+
+            if (deselectedCourseKeys.has(course.key)) return false
+
             const groups = this.courseGroupItems(course)
 
-            if (!groups.length) {
-                const deselectedCourseKeys = this.deselectedCourseKeySet instanceof Set
-                    ? this.deselectedCourseKeySet
-                    : new Set(Array.isArray(this.deselectedCourseKeys) ? this.deselectedCourseKeys : [])
-
-                return !deselectedCourseKeys.has(course.key)
-            }
-
             return groups.some(group => this.courseGroupSelected(course, group))
+        },
+        courseSelectable(course) {
+            return this.courseHasTimetableHours(course)
+        },
+        courseHasTimetableHours(course) {
+            return this.courseGroupItems(course).length > 0
         },
         applyStudentPlannedCourseSelection() {
             if (!this.selectedStudent) return false
@@ -5101,6 +5127,8 @@ export default {
                 .some(courseCode => plannedCourseCodes.has(courseCode))
         },
         additionalCourseSelected(course) {
+            if (!this.additionalCourseSelectable(course)) return false
+
             const selectedKeys = this.additionalCourseSelectedKeySet instanceof Set
                 ? this.additionalCourseSelectedKeySet
                 : new Set(Array.isArray(this.additionalCourseSelectedKeys) ? this.additionalCourseSelectedKeys : [])
@@ -5131,6 +5159,8 @@ export default {
             return selectedGroupsCount > 0 && selectedGroupsCount < groups.length
         },
         additionalCourseSelectable(course, selectedCourseKeys = null) {
+            if (!this.courseSelectable(course)) return false
+
             const prerequisiteCourse = this.additionalCoursePrerequisiteCourse(course)
             if (!prerequisiteCourse) return true
 
@@ -5138,7 +5168,7 @@ export default {
                 ? selectedCourseKeys
                 : new Set(Array.isArray(this.additionalCourseSelectedKeys) ? this.additionalCourseSelectedKeys : [])
 
-            return selectedKeys.has(prerequisiteCourse.key)
+            return selectedKeys.has(prerequisiteCourse.key) && this.courseSelectable(prerequisiteCourse)
         },
         setAdditionalCourseSelected(course, selected) {
             if (selected && !this.additionalCourseSelectable(course)) return
@@ -5369,6 +5399,8 @@ export default {
             }
         },
         setCourseSelectedState(course, selected) {
+            if (selected && !this.courseSelectable(course)) return false
+
             const courseKey = course.key
             const deselectedIndex = this.deselectedCourseKeys.indexOf(courseKey)
 
@@ -7868,6 +7900,17 @@ export default {
     overflow-wrap: anywhere;
 }
 
+.robot-student-completed-course--no-timetable-hours {
+    color: #64748b;
+    opacity: 0.66;
+}
+
+.robot-student-completed-course--no-timetable-hours .robot-student-completed-course__subject,
+.robot-student-completed-course--no-timetable-hours :deep(.v-chip__content) {
+    text-decoration: line-through;
+    text-decoration-thickness: 2px;
+}
+
 .robot-timetable-summary {
     display: flex;
     flex-wrap: wrap;
@@ -8654,6 +8697,11 @@ export default {
 .robot-course-item-panel--disabled {
     color: #64748b;
     opacity: 0.62;
+}
+
+.robot-course-item-panel--no-timetable-hours .robot-course-item-row > :not(:first-child) {
+    text-decoration: line-through;
+    text-decoration-thickness: 2px;
 }
 
 .robot-course-item-panel--used {
