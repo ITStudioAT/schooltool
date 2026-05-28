@@ -1500,6 +1500,7 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('ref="wizardCourseCards"')
         expect(componentSource).toContain('embedded-course-cards-only')
         expect(componentSource).toContain('class="overview-wizard-course-cards"')
+        expect(componentSource).toContain('<template #course-actions="{ ready, loading, extending, hasSelectedAdditionalCourses }">')
         expect(componentSource).toContain('v-if="!wizardPanelOpen"')
         expect(componentSource).toContain('class="overview-manual-button"')
         expect(componentSource).toContain(':active="manualPanelOpen"')
@@ -1512,14 +1513,20 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('@click="closeWizardPanel"')
         expect(componentSource).toContain('Schließen')
         expect(componentSource).toContain('class="overview-wizard-create-button"')
-        expect(componentSource).toContain('@click="createWizardTimetable"')
+        expect(componentSource).toContain('class="overview-wizard-footer"')
+        expect(componentSource).toContain('class="overview-wizard-loading"')
+        expect(componentSource).toContain('@click="createWizardTimetable(extending)"')
+        expect(componentSource).toContain('v-if="ready && (!extending || hasSelectedAdditionalCourses)"')
+        expect(componentSource).toContain('v-else-if="loading"')
         expect(componentSource).toContain(':disabled="wizardTimetableCreating"')
         expect(componentSource).toContain(':loading="wizardTimetableCreating"')
-        expect(componentSource).toContain('async createWizardTimetable()')
+        expect(componentSource).toContain('Kurse werden geladen')
+        expect(componentSource).toContain('async createWizardTimetable(requireAdditionalCourses = false)')
+        expect(componentSource).toContain('requireAdditionalCourses: requireAdditionalCourses === true')
         expect(componentSource).toContain('this.wizardTimetableCreating = true')
-        expect(componentSource).toContain('Stundenplan erstellen')
-        expect(componentSource.indexOf('class="overview-wizard-create-button"')).toBeLessThan(
-            componentSource.indexOf('class="overview-wizard-close-button"'),
+        expect(componentSource).toContain("{{ extending ? 'Stundenplan erweitern' : 'Stundenplan erstellen' }}")
+        expect(componentSource.indexOf('class="overview-wizard-course-cards"')).toBeLessThan(
+            componentSource.indexOf('class="overview-wizard-create-button"'),
         )
         expect(componentSource).toContain('<div v-if="manualPanelOpen" class="course-choice-panel">')
         expect(componentSource).toContain('class="overview-wizard-settings-summary"')
@@ -1529,6 +1536,8 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('justify-items: end;')
         expect(componentSource).toContain('margin-left: auto;')
         expect(componentSource).toContain('justify-content: flex-end;')
+        expect(componentSource).toContain('margin: -6px 0 16px;')
+        expect(componentSource).toContain('min-height: 48px;')
         expect(componentSource).toContain('border: 1px solid rgba(var(--v-theme-primary), 0.18);')
         expect(componentSource).toContain('background: rgba(255, 255, 255, 0.72);')
         expect(componentSource).toContain('icon="mdi-cog-outline"')
@@ -2083,6 +2092,25 @@ describe('Students timetable overview', () => {
         methods.toggleManualPanel.call(ctx)
 
         expect(ctx.manualPanelOpen).toBe(false)
+    })
+
+    it('asks the embedded Wizzard to require additional courses when extending timetables', async () => {
+        const methods = (Overview as any).methods
+        const createTimetables = vi.fn()
+        const ctx = {
+            wizardTimetableCreating: false,
+            $refs: {
+                wizardCourseCards: {
+                    createTimetables,
+                },
+            },
+        }
+
+        await methods.createWizardTimetable.call(ctx, true)
+
+        expect(createTimetables).toHaveBeenCalledWith({
+            requireAdditionalCourses: true,
+        })
     })
 
     it('keeps the overview create button loading while the embedded Wizzard creates timetables', async () => {

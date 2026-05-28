@@ -152,7 +152,7 @@ it('counts and displays checked additional courses only when they do not overlap
         ->and($result['selected_timetable']['slots']['1-1']['isAdditionalCourse'])->toBeTrue();
 });
 
-it('returns a fallback timetable with the additional courses that fit when selected additional courses cannot all fit', function () {
+it('does not return a required additional course timetable when selected additional courses cannot all fit', function () {
     $informatik = [
         ...robotSubjectRow('INF2', 1),
         'semester' => 2,
@@ -203,22 +203,41 @@ it('returns a fallback timetable with the additional courses that fit when selec
     );
 
     expect($result)
-        ->full_green_timetable_count->toBe(1)
+        ->full_green_timetable_count->toBe(0)
+        ->conflict_timetable_count->toBe(1)
         ->additional_course_timetable_count->toBe(0)
         ->selected_additional_course_count->toBe(2)
         ->and($result['selected_timetable'])
-        ->not->toBeNull()
-        ->and($result['selected_timetable']['additionalCoursesAccepted'])
-        ->toBeFalse()
-        ->and($result['selected_timetable']['acceptedAdditionalCourseCount'])
-        ->toBe(1)
-        ->and($result['selected_timetable']['missingAdditionalCourses'])
-        ->toHaveCount(1)
-        ->and($result['selected_timetable']['missingAdditionalCourses'][0]['code'])
-        ->toBe('PP2')
-        ->and($result['selected_timetable']['slots']['2-1']['code'])
+        ->toBeNull();
+
+    $conflictResult = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            $informatik,
+            $psychologie,
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-a', 'M1', 1, 1),
+            robotCourseGroup('INF2-a', 'INF2', 2, 1),
+            robotCourseGroup('PP2-a', 'PP2', 1, 1),
+        ],
+        settings: robotSettings([
+            'selected_additional_course_keys' => [$informatikKey, $psychologieKey],
+        ]),
+        selectedTimetableType: 'conflict',
+        selectedTimetableNumber: 1,
+        selectedAdditionalCoursesRequired: true,
+    );
+
+    expect($conflictResult['selected_timetable']['slots'])
+        ->toHaveKey('2-1')
+        ->toHaveKey('1-1')
+        ->and($conflictResult['selected_timetable']['slots']['2-1']['code'])
         ->toBe('INF2')
-        ->and($result['selected_timetable']['slots']['2-1']['isAdditionalCourse'])
+        ->and($conflictResult['selected_timetable']['slots']['1-1']['conflicts'][0]['code'])
+        ->toBe('PP2')
+        ->and($conflictResult['selected_timetable']['slots']['1-1']['conflicts'][0]['isAdditionalCourse'])
         ->toBeTrue();
 });
 
@@ -302,13 +321,60 @@ it('selects only timetables that accept checked additional courses when requeste
     );
 
     expect($result)
-        ->full_green_timetable_count->toBe(2)
+        ->full_green_timetable_count->toBe(1)
+        ->conflict_timetable_count->toBe(1)
         ->additional_course_timetable_count->toBe(1)
         ->and($result['selected_timetable']['additionalCoursesAccepted'])->toBeTrue()
         ->and($result['selected_timetable']['number'])->toBe(1)
         ->and($result['selected_timetable']['slots']['2-1']['code'])->toBe('M1')
         ->and($result['selected_timetable']['slots']['1-1']['code'])->toBe('INF2')
         ->and($result['selected_timetable']['slots']['1-1']['isAdditionalCourse'])->toBeTrue();
+});
+
+it('counts every fitting imported group of a required additional course as a selectable timetable', function () {
+    $additionalCourse = [
+        ...robotSubjectRow('D2', 1),
+        'semester' => 2,
+        'name' => 'Deutsch 2',
+    ];
+    $additionalCourseKey = implode('|', [
+        'D2',
+        2,
+        'common',
+        'D2',
+        'D2',
+        'Deutsch 2',
+        'D2',
+    ]);
+
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            $additionalCourse,
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-a', 'M1', 3, 1),
+            robotCourseGroup('D2-a', 'D2', 1, 1),
+            robotCourseGroup('D2-b', 'D2', 2, 1),
+            robotCourseGroup('D2-conflict', 'D2', 3, 1),
+        ],
+        settings: robotSettings([
+            'selected_additional_course_keys' => [$additionalCourseKey],
+        ]),
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 2,
+        selectedAdditionalCoursesRequired: true,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(2)
+        ->conflict_timetable_count->toBe(0)
+        ->additional_course_timetable_count->toBe(2)
+        ->and($result['selected_timetable']['number'])->toBe(2)
+        ->and($result['selected_timetable']['slots']['2-1']['code'])->toBe('D2')
+        ->and($result['selected_timetable']['slots']['2-1']['sourceLabel'])->toBe('D2-b')
+        ->and($result['selected_timetable']['slots']['2-1']['isAdditionalCourse'])->toBeTrue();
 });
 
 it('counts accepted additional courses in selected timetable quality criteria', function () {
@@ -410,7 +476,8 @@ it('counts quality criteria only for timetables that accept checked additional c
     );
 
     expect($result)
-        ->full_green_timetable_count->toBe(2)
+        ->full_green_timetable_count->toBe(1)
+        ->conflict_timetable_count->toBe(1)
         ->additional_course_timetable_count->toBe(1)
         ->all_quality_criteria_count->toBe(1)
         ->and($result['quality_counters'][0])

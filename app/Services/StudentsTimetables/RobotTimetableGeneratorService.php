@@ -97,30 +97,23 @@ class RobotTimetableGeneratorService
             ];
         }
 
-        $candidateOptions = collect($selectedCourses)
-            ->map(fn (array $course): array => $this->completeRegularOptionsForCourse(
-                $course,
-                $courseGroups,
-                $subjectMappings,
-                $settings,
-            ))
-            ->map(fn (array $options): array => array_map(
-                fn (array $option): array => $this->preparedTimetableOption($option),
-                $options,
-            ))
-            ->all();
-        $additionalCandidateOptions = collect($selectedAdditionalCourses)
-            ->map(fn (array $course): array => $this->completeRegularOptionsForCourse(
-                $course,
-                $courseGroups,
-                $subjectMappings,
-                $settings,
-            ))
-            ->map(fn (array $options): array => array_map(
-                fn (array $option): array => $this->preparedTimetableOption($option),
-                $options,
-            ))
-            ->all();
+        $candidateOptions = $this->candidateOptionsForCourses(
+            $selectedCourses,
+            $courseGroups,
+            $subjectMappings,
+            $settings,
+        );
+        $additionalCourseKeys = collect($selectedAdditionalCourses)
+            ->map(fn (array $course): string => (string) ($course['key'] ?? ''))
+            ->filter()
+            ->flip();
+        $additionalCandidateOptions = $this->candidateOptionsForCourses(
+            $selectedAdditionalCourses,
+            $courseGroups,
+            $subjectMappings,
+            $settings,
+            $additionalCourseKeys,
+        );
 
         if (collect($candidateOptions)->contains(fn (array $options): bool => $options === [])) {
             return [
@@ -177,6 +170,47 @@ class RobotTimetableGeneratorService
             'quality_counters' => $this->qualityCountersFromSummary($qualitySummary, $selectedTimetable['metrics'] ?? null),
             'all_quality_criteria_count' => $allQualityCriteriaCount,
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courses
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  array<string, mixed>  $settings
+     * @param  Collection<string, int>|null  $additionalCourseKeys
+     * @return list<list<array<string, mixed>>>
+     */
+    private function candidateOptionsForCourses(
+        array $courses,
+        array $courseGroups,
+        array $subjectMappings,
+        array $settings,
+        ?Collection $additionalCourseKeys = null,
+    ): array {
+        $additionalCourseKeys ??= collect();
+
+        return collect($courses)
+            ->map(function (array $course) use ($courseGroups, $subjectMappings, $settings, $additionalCourseKeys): array {
+                $options = $this->completeRegularOptionsForCourse(
+                    $course,
+                    $courseGroups,
+                    $subjectMappings,
+                    $settings,
+                );
+
+                if ($additionalCourseKeys->has((string) ($course['key'] ?? ''))) {
+                    $options = array_map(
+                        fn (array $option): array => $this->additionalTimetableOption($option),
+                        $options,
+                    );
+                }
+
+                return array_map(
+                    fn (array $option): array => $this->preparedTimetableOption($option),
+                    $options,
+                );
+            })
+            ->all();
     }
 
     /**
@@ -1132,23 +1166,43 @@ class RobotTimetableGeneratorService
         array &$qualitySelectedBuckets = [],
     ): array {
         if ($candidateIndex >= count($candidateOptions)) {
-            $timetableType = $hasRegularConflict
+            $baseTimetableType = $hasRegularConflict
                 ? 'conflict'
                 : ($isFullGreenCandidate ? 'full_green' : 'green');
-            $shouldRecordQualityMetrics = $this->shouldRecordQualityMetricsForType($selectedTimetableType, $timetableType);
+
+            if ($selectedAdditionalCoursesRequired && $additionalCandidateOptions !== []) {
+                return $this->countRequiredAdditionalCourseSelections(
+                    $additionalCandidateOptions,
+                    $selectedAdditionalCourses,
+                    $usedTimetableDateSummary ?? $this->emptyDateKeySummary(),
+                    $baseTimetableType,
+                    $selectedOptions,
+                    $qualityState ?? $this->emptyQualityState(),
+                    $evaluationCriteria,
+                    $qualitySummary,
+                    $qualityMetricCombinationCounts,
+                    $selectedTimetableType,
+                    $selectedTimetableLimit,
+                    $selectedBucket,
+                    $qualitySelectedBuckets,
+                );
+            }
+
             $additionalSelection = $this->bestAdditionalOptionsForTimetable(
                 $additionalCandidateOptions,
                 $usedTimetableDateSummary ?? $this->emptyDateKeySummary(),
             );
+            $additionalCoursesAccepted = count($additionalCandidateOptions) === 0
+                || count($additionalSelection['accepted_indexes']) === count($additionalCandidateOptions);
+
             $matchingAdditionalOptions = $additionalSelection['options'];
             $missingAdditionalCourses = $this->missingAdditionalCoursesForTimetable(
                 $selectedAdditionalCourses,
                 $additionalSelection['accepted_indexes'],
             );
-            $additionalCoursesAccepted = count($additionalCandidateOptions) === 0
-                || count($additionalSelection['accepted_indexes']) === count($additionalCandidateOptions);
-            $shouldCountTimetableForQuality = $shouldRecordQualityMetrics
-                && (! $selectedAdditionalCoursesRequired || $additionalCoursesAccepted);
+            $timetableType = $baseTimetableType;
+            $shouldRecordQualityMetrics = $this->shouldRecordQualityMetricsForType($selectedTimetableType, $timetableType);
+            $shouldCountTimetableForQuality = $shouldRecordQualityMetrics;
             $shouldRecordSelectedTimetable = $selectedTimetableType === $timetableType;
             $metrics = ($shouldCountTimetableForQuality || $shouldRecordSelectedTimetable)
                 ? $this->qualityMetricsFromState($this->qualityStateWithAdditionalOptions(
@@ -1280,6 +1334,182 @@ class RobotTimetableGeneratorService
 
     /**
      * @param  list<list<array<string, mixed>>>  $additionalCandidateOptions
+     * @param  list<array<string, mixed>>  $selectedAdditionalCourses
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedTimetableDateSummary
+     * @param  list<array<string, mixed>>  $selectedOptions
+     * @param  array<string, mixed>  $qualityState
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  array<string, array<string, mixed>>  $qualitySummary
+     * @param  array<string, int>  $qualityMetricCombinationCounts
+     * @param  list<array{additionalCoursesAccepted: bool, additionalOptions: list<array<string, mixed>>, metrics: array<string, int|bool>, options: list<array<string, mixed>>, type: string, number: int}>  $selectedBucket
+     * @param  array<string, list<array{additionalCoursesAccepted: bool, additionalOptions: list<array<string, mixed>>, metrics: array<string, int|bool>, options: list<array<string, mixed>>, type: string, number: int}>>  $qualitySelectedBuckets
+     * @return array{full_green_timetable_count: int, green_timetable_count: int, conflict_timetable_count: int, additional_course_timetable_count: int}
+     */
+    private function countRequiredAdditionalCourseSelections(
+        array $additionalCandidateOptions,
+        array $selectedAdditionalCourses,
+        array $usedTimetableDateSummary,
+        string $baseTimetableType,
+        array $selectedOptions,
+        array $qualityState,
+        array $evaluationCriteria,
+        array &$qualitySummary,
+        array &$qualityMetricCombinationCounts,
+        ?string $selectedTimetableType,
+        int $selectedTimetableLimit,
+        array &$selectedBucket,
+        array &$qualitySelectedBuckets,
+    ): array {
+        $acceptedSelections = $this->acceptedAdditionalOptionSelectionsForTimetable(
+            $additionalCandidateOptions,
+            $usedTimetableDateSummary,
+        );
+
+        if ($acceptedSelections === []) {
+            $additionalSelection = $this->requiredAdditionalOptionsForTimetable(
+                $additionalCandidateOptions,
+                $usedTimetableDateSummary,
+            );
+
+            $this->recordRequiredAdditionalCourseSelection(
+                'conflict',
+                $additionalSelection,
+                $selectedAdditionalCourses,
+                $selectedOptions,
+                $qualityState,
+                $evaluationCriteria,
+                $qualitySummary,
+                $qualityMetricCombinationCounts,
+                $selectedTimetableType,
+                $selectedTimetableLimit,
+                $selectedBucket,
+                $qualitySelectedBuckets,
+            );
+
+            return [
+                'full_green_timetable_count' => 0,
+                'green_timetable_count' => 0,
+                'conflict_timetable_count' => 1,
+                'additional_course_timetable_count' => 0,
+            ];
+        }
+
+        $counts = [
+            'full_green_timetable_count' => 0,
+            'green_timetable_count' => 0,
+            'conflict_timetable_count' => 0,
+            'additional_course_timetable_count' => 0,
+        ];
+
+        foreach ($acceptedSelections as $additionalSelection) {
+            $this->recordRequiredAdditionalCourseSelection(
+                $baseTimetableType,
+                $additionalSelection,
+                $selectedAdditionalCourses,
+                $selectedOptions,
+                $qualityState,
+                $evaluationCriteria,
+                $qualitySummary,
+                $qualityMetricCombinationCounts,
+                $selectedTimetableType,
+                $selectedTimetableLimit,
+                $selectedBucket,
+                $qualitySelectedBuckets,
+            );
+
+            $counts["{$baseTimetableType}_timetable_count"]++;
+            $counts['additional_course_timetable_count'] += $this->shouldRecordQualityMetricsForType(
+                $selectedTimetableType,
+                $baseTimetableType,
+            ) ? 1 : 0;
+        }
+
+        return $counts;
+    }
+
+    /**
+     * @param  array{options: list<array<string, mixed>>, accepted_indexes: array<int, true>}  $additionalSelection
+     * @param  list<array<string, mixed>>  $selectedAdditionalCourses
+     * @param  list<array<string, mixed>>  $selectedOptions
+     * @param  array<string, mixed>  $qualityState
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  array<string, array<string, mixed>>  $qualitySummary
+     * @param  array<string, int>  $qualityMetricCombinationCounts
+     * @param  list<array{additionalCoursesAccepted: bool, additionalOptions: list<array<string, mixed>>, metrics: array<string, int|bool>, options: list<array<string, mixed>>, type: string, number: int}>  $selectedBucket
+     * @param  array<string, list<array{additionalCoursesAccepted: bool, additionalOptions: list<array<string, mixed>>, metrics: array<string, int|bool>, options: list<array<string, mixed>>, type: string, number: int}>>  $qualitySelectedBuckets
+     */
+    private function recordRequiredAdditionalCourseSelection(
+        string $timetableType,
+        array $additionalSelection,
+        array $selectedAdditionalCourses,
+        array $selectedOptions,
+        array $qualityState,
+        array $evaluationCriteria,
+        array &$qualitySummary,
+        array &$qualityMetricCombinationCounts,
+        ?string $selectedTimetableType,
+        int $selectedTimetableLimit,
+        array &$selectedBucket,
+        array &$qualitySelectedBuckets,
+    ): void {
+        $shouldRecordQualityMetrics = $this->shouldRecordQualityMetricsForType($selectedTimetableType, $timetableType);
+        $shouldRecordSelectedTimetable = $selectedTimetableType === $timetableType;
+
+        if (! $shouldRecordQualityMetrics && ! $shouldRecordSelectedTimetable) {
+            return;
+        }
+
+        $metrics = $this->qualityMetricsFromState($this->qualityStateWithAdditionalOptions(
+            $qualityState,
+            $additionalSelection['options'],
+        ));
+
+        if ($shouldRecordQualityMetrics) {
+            $this->recordQualityMetrics($qualitySummary, $metrics);
+            $this->recordQualityMetricCombination($qualityMetricCombinationCounts, $evaluationCriteria, $metrics);
+        }
+
+        if (! $shouldRecordSelectedTimetable) {
+            return;
+        }
+
+        $candidate = [
+            'metrics' => $metrics,
+            'options' => $selectedOptions,
+            'additionalOptions' => $additionalSelection['options'],
+            'missingAdditionalCourses' => $this->missingAdditionalCoursesForTimetable(
+                $selectedAdditionalCourses,
+                $additionalSelection['accepted_indexes'],
+            ),
+            'acceptedAdditionalCourseCount' => count($additionalSelection['accepted_indexes']),
+            'additionalCoursesAccepted' => count($additionalSelection['accepted_indexes']) === count($selectedAdditionalCourses),
+            'preferAdditionalCourses' => true,
+            'type' => $timetableType,
+            'number' => 0,
+        ];
+
+        $this->recordSelectedTimetableCandidate(
+            $selectedBucket,
+            $candidate,
+            $evaluationCriteria,
+            $selectedTimetableLimit,
+        );
+
+        if ($shouldRecordQualityMetrics && $evaluationCriteria !== []) {
+            $signature = $this->qualityMetricCombinationSignatureForMetrics($evaluationCriteria, $metrics);
+            $qualitySelectedBuckets[$signature] ??= [];
+
+            $this->recordSelectedTimetableCandidate(
+                $qualitySelectedBuckets[$signature],
+                $candidate,
+                $evaluationCriteria,
+                $selectedTimetableLimit,
+            );
+        }
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $additionalCandidateOptions
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedDateSummary
      * @param  list<array<string, mixed>>  $selectedOptions
      * @param  array<int, true>  $acceptedIndexes
@@ -1335,6 +1565,119 @@ class RobotTimetableGeneratorService
         }
 
         return $bestMatch;
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $additionalCandidateOptions
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedDateSummary
+     * @param  list<array<string, mixed>>  $selectedOptions
+     * @param  array<int, true>  $acceptedIndexes
+     * @return list<array{options: list<array<string, mixed>>, accepted_indexes: array<int, true>}>
+     */
+    private function acceptedAdditionalOptionSelectionsForTimetable(
+        array $additionalCandidateOptions,
+        array $usedDateSummary,
+        int $candidateIndex = 0,
+        array $selectedOptions = [],
+        array $acceptedIndexes = [],
+    ): array {
+        if ($candidateIndex >= count($additionalCandidateOptions)) {
+            return count($acceptedIndexes) === count($additionalCandidateOptions)
+                ? [[
+                    'options' => $selectedOptions,
+                    'accepted_indexes' => $acceptedIndexes,
+                ]]
+                : [];
+        }
+
+        $selections = [];
+
+        foreach ($additionalCandidateOptions[$candidateIndex] as $option) {
+            $optionDateSummary = $option['_all_date_summary'] ?? $this->dateKeySummary($option['_all_date_keys'] ?? []);
+
+            if (($option['_all_date_keys_have_internal_overlap'] ?? false) === true) {
+                continue;
+            }
+
+            if ($this->dateKeySummariesOverlap($optionDateSummary, $usedDateSummary)) {
+                continue;
+            }
+
+            $selections = [
+                ...$selections,
+                ...$this->acceptedAdditionalOptionSelectionsForTimetable(
+                    $additionalCandidateOptions,
+                    $this->mergeDateKeySummaries($usedDateSummary, $optionDateSummary),
+                    $candidateIndex + 1,
+                    [...$selectedOptions, $this->additionalTimetableOption($option)],
+                    [
+                        ...$acceptedIndexes,
+                        $candidateIndex => true,
+                    ],
+                ),
+            ];
+        }
+
+        return $selections;
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $additionalCandidateOptions
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedDateSummary
+     * @return array{options: list<array<string, mixed>>, accepted_indexes: array<int, true>}
+     */
+    private function requiredAdditionalOptionsForTimetable(array $additionalCandidateOptions, array $usedDateSummary): array
+    {
+        $selectedOptions = [];
+        $acceptedIndexes = [];
+        $currentDateSummary = $usedDateSummary;
+
+        foreach ($additionalCandidateOptions as $candidateIndex => $candidateOptions) {
+            $matchingOption = $this->firstAdditionalOptionForTimetable($candidateOptions, $currentDateSummary);
+            $additionalOption = $matchingOption ?? ($candidateOptions[0] ?? null);
+
+            if ($additionalOption === null) {
+                continue;
+            }
+
+            if ($matchingOption !== null) {
+                $acceptedIndexes[$candidateIndex] = true;
+            }
+
+            $optionDateSummary = $additionalOption['_all_date_summary']
+                ?? $this->dateKeySummary($additionalOption['_all_date_keys'] ?? []);
+            $currentDateSummary = $this->mergeDateKeySummaries($currentDateSummary, $optionDateSummary);
+            $selectedOptions[] = $this->additionalTimetableOption($additionalOption);
+        }
+
+        return [
+            'options' => $selectedOptions,
+            'accepted_indexes' => $acceptedIndexes,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $candidateOptions
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedDateSummary
+     * @return array<string, mixed>|null
+     */
+    private function firstAdditionalOptionForTimetable(array $candidateOptions, array $usedDateSummary): ?array
+    {
+        foreach ($candidateOptions as $option) {
+            $optionDateSummary = $option['_all_date_summary'] ?? $this->dateKeySummary($option['_all_date_keys'] ?? []);
+
+            if (($option['_all_date_keys_have_internal_overlap'] ?? false) === true) {
+                continue;
+            }
+
+            if ($this->dateKeySummariesOverlap($optionDateSummary, $usedDateSummary)) {
+                continue;
+            }
+
+            return $option;
+        }
+
+        return null;
     }
 
     /**
@@ -2271,6 +2614,7 @@ class RobotTimetableGeneratorService
             'sourceLabel' => $conflictSlot['sourceLabel'] ?? '',
             'alternativeLabels' => $conflictSlot['alternativeLabels'] ?? [],
             'courseGroup' => $conflictSlot['courseGroup'] ?? [],
+            'isAdditionalCourse' => ($conflictSlot['isAdditionalCourse'] ?? false) === true,
             'isDistanceLearningCourse' => ($conflictSlot['isDistanceLearningCourse'] ?? false) === true,
         ];
     }

@@ -185,18 +185,6 @@
                         </v-btn>
                         <v-btn
                             v-if="wizardPanelOpen"
-                            class="overview-wizard-create-button"
-                            variant="flat"
-                            color="success"
-                            size="large"
-                            prepend-icon="mdi-calendar-clock"
-                            :disabled="wizardTimetableCreating"
-                            :loading="wizardTimetableCreating"
-                            @click="createWizardTimetable">
-                            Stundenplan erstellen
-                        </v-btn>
-                        <v-btn
-                            v-if="wizardPanelOpen"
                             class="overview-wizard-close-button"
                             variant="tonal"
                             color="primary"
@@ -254,7 +242,37 @@
                     ref="wizardCourseCards"
                     embedded-course-cards-only
                     :student-code="transferredStudentContext?.student?.studentCode || null"
-                    class="overview-wizard-course-cards" />
+                    class="overview-wizard-course-cards">
+                    <template #course-actions="{ ready, loading, extending, hasSelectedAdditionalCourses }">
+                        <div
+                            v-if="ready && (!extending || hasSelectedAdditionalCourses)"
+                            class="overview-wizard-footer">
+                            <v-btn
+                                class="overview-wizard-create-button"
+                                variant="flat"
+                                color="success"
+                                size="large"
+                                prepend-icon="mdi-calendar-clock"
+                                :disabled="wizardTimetableCreating"
+                                :loading="wizardTimetableCreating"
+                                @click="createWizardTimetable(extending)">
+                                {{ extending ? 'Stundenplan erweitern' : 'Stundenplan erstellen' }}
+                            </v-btn>
+                        </div>
+                        <div
+                            v-else-if="loading"
+                            class="overview-wizard-footer">
+                            <div class="overview-wizard-loading">
+                                <v-progress-circular
+                                    indeterminate
+                                    size="18"
+                                    width="2"
+                                    color="primary" />
+                                <span>Kurse werden geladen</span>
+                            </div>
+                        </div>
+                    </template>
+                </RobotTimetable>
 
                 <div v-if="manualPanelOpen" class="course-choice-panel">
                     <div class="course-choice-panel__header">
@@ -1232,7 +1250,7 @@ export default {
         closeWizardPanel() {
             this.wizardPanelOpen = false
         },
-        async createWizardTimetable() {
+        async createWizardTimetable(requireAdditionalCourses = false) {
             if (this.wizardTimetableCreating) return
 
             const wizardCourseCards = this.$refs.wizardCourseCards
@@ -1243,7 +1261,9 @@ export default {
             this.wizardTimetableCreating = true
 
             try {
-                await createTimetables.call(wizardCourseCards)
+                await createTimetables.call(wizardCourseCards, {
+                    requireAdditionalCourses: requireAdditionalCourses === true,
+                })
             } finally {
                 this.wizardTimetableCreating = false
             }
@@ -3743,6 +3763,23 @@ export default {
 
 .overview-wizard-course-cards {
     margin-bottom: 16px;
+}
+
+.overview-wizard-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin: -6px 0 16px;
+}
+
+.overview-wizard-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 0 12px;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 800;
 }
 
 .overview-selection-dialog-grid {

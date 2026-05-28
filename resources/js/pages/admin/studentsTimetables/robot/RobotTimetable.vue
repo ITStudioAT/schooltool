@@ -1,5 +1,8 @@
 <template>
-    <div v-if="embeddedCourseCardsOnly" class="robot-timetable-embedded-course-cards">
+    <div
+        v-if="embeddedCourseCardsOnly"
+        class="robot-timetable-embedded-course-cards"
+        :class="{ 'robot-timetable-embedded-course-cards--with-additional': additionalCoursePanelVisible }">
         <div class="robot-course-list robot-course-panel">
             <div class="robot-course-panel__title">
                 <div class="robot-course-list__header robot-course-list__header--panel">
@@ -33,9 +36,15 @@
 
                 <div v-if="availableCourses.length" class="robot-course-columns">
                     <div
-                        v-for="(courseColumn, columnIndex) in availableCourseColumns"
-                        :key="`embedded-course-column-${columnIndex}`"
+                        v-for="(courseColumn, columnIndex) in regularCourseColumns"
+                        :key="`embedded-course-column-${courseColumn.key || columnIndex}`"
                         class="robot-course-item-list">
+                        <div v-if="courseColumn.title" class="robot-regular-course-column-title">
+                            <span>{{ courseColumn.title }}</span>
+                            <v-chip size="x-small" color="primary" variant="tonal">
+                                {{ courseColumn.courses.length }}
+                            </v-chip>
+                        </div>
                         <div class="robot-course-item-header robot-course-item-header--expandable">
                             <div>Aktiv</div>
                             <div>Code</div>
@@ -49,7 +58,7 @@
                             variant="accordion"
                             class="robot-course-item-panels">
                             <v-expansion-panel
-                                v-for="course in courseColumn"
+                                v-for="course in courseColumn.courses"
                                 :key="course.key"
                                 :value="course.key"
                                 class="robot-course-item-panel"
@@ -130,7 +139,7 @@
         </div>
 
         <div
-            v-if="studentAdditionalCourses.length"
+            v-if="additionalCoursePanelVisible"
             class="robot-course-list robot-course-panel">
             <div class="robot-course-panel__title">
                 <div class="robot-course-list__header robot-course-list__header--panel">
@@ -176,7 +185,7 @@
                                     'robot-course-item-panel--disabled': !additionalCourseSelectable(course),
                                     'robot-course-item-panel--no-timetable-hours': !courseSelectable(course),
                                     'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
-                                    'robot-course-item-panel--missing-additional': additionalCourseMissingInSelectedTimetable(course) || courseAllGroupsNoLongerFitSelectedTimetable(course),
+                                    'robot-course-item-panel--missing-additional': additionalCourseInteractionDisabled(course),
                                 }">
                                 <v-expansion-panel-title class="robot-course-item-panel__title">
                                     <div class="robot-course-item-row">
@@ -187,7 +196,7 @@
                                                 :aria-label="`${course.code} auswählen`"
                                                 density="compact"
                                                 color="primary"
-                                                :disabled="!additionalCourseSelectable(course)"
+                                                :disabled="!additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
                                                 hide-details
                                                 @click.stop
                                                 @update:model-value="setAdditionalCourseSelected(course, $event)" />
@@ -222,7 +231,7 @@
                                                             :aria-label="`${group.title} auswählen`"
                                                             density="compact"
                                                             color="primary"
-                                                            :disabled="!additionalCourseSelectable(course)"
+                                                            :disabled="!additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
                                                             hide-details
                                                             class="robot-course-item-detail__check"
                                                             @click.stop
@@ -249,6 +258,14 @@
             </div>
         </div>
     </div>
+
+    <slot
+        v-if="embeddedCourseCardsOnly"
+        name="course-actions"
+        :loading="courseCardsLoading"
+        :ready="courseCardsReady"
+        :extending="additionalCoursePanelVisible"
+        :has-selected-additional-courses="selectedAdditionalCourses.length > 0" />
 
     <v-col v-else cols="12" lg="8" xl="7">
         <v-card rounded="lg" border class="robot-timetable-card">
@@ -565,9 +582,15 @@
 
                         <div v-if="availableCourses.length" class="robot-course-columns">
                             <div
-                                v-for="(courseColumn, columnIndex) in availableCourseColumns"
-                                :key="`course-column-${columnIndex}`"
+                                v-for="(courseColumn, columnIndex) in regularCourseColumns"
+                                :key="`course-column-${courseColumn.key || columnIndex}`"
                                 class="robot-course-item-list">
+                                <div v-if="courseColumn.title" class="robot-regular-course-column-title">
+                                    <span>{{ courseColumn.title }}</span>
+                                    <v-chip size="x-small" color="primary" variant="tonal">
+                                        {{ courseColumn.courses.length }}
+                                    </v-chip>
+                                </div>
                                 <div class="robot-course-item-header robot-course-item-header--expandable">
                                     <div>Aktiv</div>
                                     <div>Code</div>
@@ -581,7 +604,7 @@
                                     variant="accordion"
                                     class="robot-course-item-panels">
                                     <v-expansion-panel
-                                        v-for="course in courseColumn"
+                                        v-for="course in courseColumn.courses"
                                         :key="course.key"
                                         :value="course.key"
                                         class="robot-course-item-panel"
@@ -662,7 +685,7 @@
                 </div>
 
                 <div
-                    v-if="studentAdditionalCourses.length"
+                    v-if="additionalCoursePanelVisible"
                     class="robot-course-list robot-course-panel">
                     <div class="robot-course-panel__title">
                         <div class="robot-course-list__header robot-course-list__header--panel">
@@ -708,7 +731,7 @@
                                             'robot-course-item-panel--disabled': !additionalCourseSelectable(course),
                                             'robot-course-item-panel--no-timetable-hours': !courseSelectable(course),
                                             'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
-                                            'robot-course-item-panel--missing-additional': additionalCourseMissingInSelectedTimetable(course) || courseAllGroupsNoLongerFitSelectedTimetable(course),
+                                            'robot-course-item-panel--missing-additional': additionalCourseInteractionDisabled(course),
                                         }">
                                         <v-expansion-panel-title class="robot-course-item-panel__title">
                                             <div class="robot-course-item-row">
@@ -719,7 +742,7 @@
                                                         :aria-label="`${course.code} auswählen`"
                                                         density="compact"
                                                         color="primary"
-                                                        :disabled="!additionalCourseSelectable(course)"
+                                                        :disabled="!additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
                                                         hide-details
                                                         @click.stop
                                                         @update:model-value="setAdditionalCourseSelected(course, $event)" />
@@ -754,7 +777,7 @@
                                                                     :aria-label="`${group.title} auswählen`"
                                                                     density="compact"
                                                                     color="primary"
-                                                                    :disabled="!additionalCourseSelectable(course)"
+                                                                    :disabled="!additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
                                                                     hide-details
                                                                     class="robot-course-item-detail__check"
                                                                     @click.stop
@@ -2384,6 +2407,15 @@ export default {
         timetableGenerationLoading() {
             return this.timetableCreateLoading || this.fullGreenTimetableCountLoading
         },
+        courseCardsReady() {
+            return this.embeddedCourseCardsOnly
+                && !this.loading
+                && this.availableCourses.length > 0
+        },
+        courseCardsLoading() {
+            return this.embeddedCourseCardsOnly
+                && this.loading
+        },
         timeOptions() {
             const configuredHours = Array.isArray(this.schoolHours) ? this.schoolHours : []
 
@@ -2545,6 +2577,46 @@ export default {
                 this.availableCourses.slice(splitIndex),
             ].filter(courseColumn => courseColumn.length)
         },
+        regularCourseColumns() {
+            if (!this.selectedStudent) {
+                return this.availableCourseColumns.map((courses, index) => ({
+                    key: `courses-${index}`,
+                    title: '',
+                    courses,
+                }))
+            }
+
+            const studentCourseColumns = [
+                {
+                    key: 'missing',
+                    title: 'Fehlende Kurse',
+                    courses: this.studentMissingCourses,
+                },
+                {
+                    key: 'planned',
+                    title: 'Vorgesehene Kurse',
+                    courses: this.studentPlannedCourses,
+                },
+            ].filter(courseColumn => courseColumn.courses.length)
+
+            if (studentCourseColumns.length !== 1) return studentCourseColumns
+
+            const [studentCourseColumn] = studentCourseColumns
+            const splitIndex = Math.ceil(studentCourseColumn.courses.length / 2)
+
+            return [
+                {
+                    ...studentCourseColumn,
+                    courses: studentCourseColumn.courses.slice(0, splitIndex),
+                },
+                {
+                    ...studentCourseColumn,
+                    key: `${studentCourseColumn.key}-overflow`,
+                    title: '',
+                    courses: studentCourseColumn.courses.slice(splitIndex),
+                },
+            ].filter(courseColumn => courseColumn.courses.length)
+        },
         additionalCourseColumns() {
             const splitIndex = Math.ceil(this.studentAdditionalCourses.length / 2)
 
@@ -2552,6 +2624,10 @@ export default {
                 this.studentAdditionalCourses.slice(0, splitIndex),
                 this.studentAdditionalCourses.slice(splitIndex),
             ].filter(courseColumn => courseColumn.length)
+        },
+        additionalCoursePanelVisible() {
+            return this.studentAdditionalCourses.length > 0
+                && !!this.selectedRobotTimetable
         },
         courseGroupItemsByCourseKey() {
             const courseItems = [
@@ -3256,7 +3332,7 @@ export default {
                 availableTimes: [...(source?.availableTimes || [])],
             }
         },
-        async createTimetables() {
+        async createTimetables(options = {}) {
             if (
                 this.loading
                 || this.timetableGenerationLoading
@@ -3268,10 +3344,38 @@ export default {
             this.timetableCreateLoading = true
 
             try {
+                this.prepareTimetableCreationOptions(options)
+
                 await this.loadFullGreenTimetableCount({ preferFullGreen: true })
             } finally {
                 this.timetableCreateLoading = false
             }
+        },
+        prepareTimetableCreationOptions(options = {}) {
+            if (options?.requireAdditionalCourses !== true) {
+                this.clearAdditionalCourseSelectionForTimetableCreation()
+
+                return
+            }
+
+            if (!this.selectedAdditionalCourses.length) return
+
+            const requiredStateChanged = this.additionalCourseTimetableRequired !== true
+            this.additionalCourseTimetableRequired = true
+
+            if (requiredStateChanged) {
+                this.setTimetableResultCounter(this.selectedTimetableResultType, 1)
+            }
+
+            this.normalizeTimetableResultCounters()
+        },
+        clearAdditionalCourseSelectionForTimetableCreation() {
+            const hasSelectedAdditionalCourses = Array.isArray(this.additionalCourseSelectedKeys)
+                && this.additionalCourseSelectedKeys.length > 0
+
+            if (!hasSelectedAdditionalCourses && this.additionalCourseTimetableRequired !== true) return
+
+            this.resetAdditionalCourseSelection()
         },
         async loadFullGreenTimetableCount(options = {}) {
             this.fullGreenTimetableCountError = ''
@@ -3338,9 +3442,22 @@ export default {
                     return
                 }
 
-                this.generatedTimetables = response.data?.data?.selected_timetable
-                    ? [this.backendTimetableFromResponse(response.data.data.selected_timetable)]
-                    : []
+                const selectedTimetable = response.data?.data?.selected_timetable
+                    ? this.backendTimetableFromResponse(response.data.data.selected_timetable)
+                    : null
+
+                if (this.shouldLoadConflictTimetableForRequiredAdditionalCourses(selectedTimetable)) {
+                    this.selectedTimetableResultType = 'conflict'
+                    this.setTimetableResultCounter('conflict', 1)
+                    this.qualityCounters = []
+                    this.allQualityCriteriaCount = null
+                    this.generatedTimetables = []
+                    await this.loadFullGreenTimetableCount()
+
+                    return
+                }
+
+                this.generatedTimetables = selectedTimetable ? [selectedTimetable] : []
             } catch {
                 if (requestId !== this.fullGreenTimetableCountRequestId) return
 
@@ -3398,6 +3515,32 @@ export default {
             this.selectedTimetableResultType = 'full_green'
 
             return !wasFullGreenSelected
+        },
+        shouldLoadConflictTimetableForRequiredAdditionalCourses(timetable) {
+            return this.additionalCourseTimetableRequired === true
+                && this.selectedTimetableResultType !== 'conflict'
+                && this.timetableResultCount('conflict') > 0
+                && !this.timetableIncludesSelectedAdditionalCourses(timetable)
+        },
+        timetableIncludesSelectedAdditionalCourses(timetable) {
+            if (!this.selectedAdditionalCourses.length) return true
+            if (!timetable) return false
+
+            const scheduledKeys = this.timetableScheduledCourseComparisonKeys(timetable)
+
+            return this.selectedAdditionalCourses.every(course =>
+                this.courseComparisonKeys(course).some(courseKey => scheduledKeys.has(courseKey)),
+            )
+        },
+        timetableScheduledCourseComparisonKeys(timetable) {
+            return new Set([
+                ...Object.values(timetable?.slots || {}),
+                ...Object.values(timetable?.slots || {}).flatMap(slot => [
+                    ...(Array.isArray(slot?.sameSlotEntries) ? slot.sameSlotEntries : []),
+                    ...(Array.isArray(slot?.conflicts) ? slot.conflicts : []),
+                ]),
+                ...(Array.isArray(timetable?.occasionalAppointments) ? timetable.occasionalAppointments : []),
+            ].flatMap(course => this.courseComparisonKeys(course)))
         },
         backendCountCardSelectable(type) {
             return this.backendVariationCountsAvailable
@@ -4624,6 +4767,7 @@ export default {
                 alternativeLabels: source?.alternativeLabels || [],
                 courseGroup: source?.courseGroup || {},
                 isOccasional: Boolean(source?.isOccasional),
+                isAdditionalCourse: source?.isAdditionalCourse === true,
                 isDistanceLearningCourse: source?.isDistanceLearningCourse === true,
             }
         },
@@ -5439,7 +5583,19 @@ export default {
 
             return selectedKeys.has(prerequisiteCourse.key) && this.courseSelectable(prerequisiteCourse)
         },
+        additionalCourseInteractionDisabled(course) {
+            return this.additionalCourseMissingInSelectedTimetable(course)
+                || this.courseAllGroupsNoLongerFitSelectedTimetable(course)
+        },
+        commitAdditionalCourseSelectionChange() {
+            if (!this.selectedRobotTimetable) {
+                this.clearGeneratedTimetables()
+            }
+
+            this.saveLastRobotState()
+        },
         setAdditionalCourseSelected(course, selected) {
+            if (this.additionalCourseInteractionDisabled(course)) return
             if (selected && !this.additionalCourseSelectable(course)) return
 
             const courseKey = course?.key
@@ -5461,11 +5617,11 @@ export default {
             this.pruneAdditionalCourseSelections()
 
             if (previousSnapshot !== this.additionalCourseSelectionSnapshot()) {
-                this.clearGeneratedTimetables()
-                this.saveLastRobotState()
+                this.commitAdditionalCourseSelectionChange()
             }
         },
         setAdditionalCourseGroupSelected(course, group, selected) {
+            if (this.additionalCourseInteractionDisabled(course)) return
             if (selected && !this.additionalCourseSelectable(course)) return
 
             const courseKey = course?.key
@@ -5514,8 +5670,7 @@ export default {
             this.pruneAdditionalCourseSelections()
 
             if (previousSnapshot !== this.additionalCourseSelectionSnapshot()) {
-                this.clearGeneratedTimetables()
-                this.saveLastRobotState()
+                this.commitAdditionalCourseSelectionChange()
             }
         },
         pruneAdditionalCourseSelections() {
@@ -5573,8 +5728,7 @@ export default {
             )
 
             if (previousSnapshot !== nextSnapshot) {
-                this.clearGeneratedTimetables()
-                this.saveLastRobotState()
+                this.commitAdditionalCourseSelectionChange()
             }
         },
         currentAdditionalCourseSelectionState() {
@@ -8140,12 +8294,12 @@ export default {
 }
 
 @media (min-width: 1280px) {
-    .robot-timetable-embedded-course-cards {
+    .robot-timetable-embedded-course-cards--with-additional {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         align-items: start;
     }
 
-    .robot-timetable-embedded-course-cards .robot-course-columns {
+    .robot-timetable-embedded-course-cards--with-additional .robot-course-columns {
         grid-template-columns: minmax(0, 1fr);
     }
 }
@@ -9086,6 +9240,18 @@ export default {
     border: 1px solid rgba(15, 23, 42, 0.1);
     border-radius: 8px;
     overflow: hidden;
+}
+
+.robot-regular-course-column-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: 0.82rem;
+    font-weight: 800;
 }
 
 .robot-course-item-header,
