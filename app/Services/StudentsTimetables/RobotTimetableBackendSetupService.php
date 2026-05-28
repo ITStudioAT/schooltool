@@ -490,12 +490,6 @@ class RobotTimetableBackendSetupService
         }
 
         $combination = $this->findSelectedCombination($courseOptions, $selectedType, $remainingNumber);
-        $additionalOptions = $combination === null || $additionalCourseOptions === []
-            ? []
-            : $this->additionalOptionsForTimetable(
-                $additionalCourseOptions,
-                $this->dateSummaryForOptions($combination),
-            );
 
         return $combination === null
             ? null
@@ -503,9 +497,9 @@ class RobotTimetableBackendSetupService
                 $combination,
                 $selectedType,
                 $selectedNumber,
-                $additionalOptions,
-                $additionalOptions !== [] && count($additionalOptions) === count($additionalCourseOptions),
-                count($additionalOptions),
+                [],
+                false,
+                0,
             );
     }
 

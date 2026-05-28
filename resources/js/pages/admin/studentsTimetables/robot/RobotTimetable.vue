@@ -2688,6 +2688,38 @@ export default {
         selectedAdditionalCourses() {
             return this.studentAdditionalCourses.filter(course => this.additionalCourseSelected(course))
         },
+        selectedTimetableScheduledCourseKeySet() {
+            return new Set(this.selectedTimetableScheduledCourses()
+                .flatMap(scheduledCourse => this.courseComparisonKeys(scheduledCourse)))
+        },
+        selectedTimetableConflictCourseKeySet() {
+            return new Set(this.selectedTimetableConflictCourses()
+                .flatMap(conflictCourse => this.courseComparisonKeys(conflictCourse)))
+        },
+        selectedTimetableMissingAdditionalCourseKeySet() {
+            return new Set(this.selectedTimetableMissingAdditionalCourses()
+                .flatMap(missingCourse => this.courseComparisonKeys(missingCourse)))
+        },
+        additionalCourseInteractionDisabledKeySet() {
+            const disabledKeys = new Set()
+            const additionalCourses = Array.isArray(this.studentAdditionalCourses)
+                ? this.studentAdditionalCourses
+                : []
+
+            additionalCourses.forEach(course => {
+                const courseKey = course?.key
+                if (!courseKey) return
+
+                if (
+                    this.additionalCourseMissingInSelectedTimetable(course)
+                    || this.courseAllGroupsNoLongerFitSelectedTimetable(course)
+                ) {
+                    disabledKeys.add(courseKey)
+                }
+            })
+
+            return disabledKeys
+        },
         selectedCourses() {
             return this.availableCourses.filter(course => this.courseSelected(course))
         },
@@ -3455,6 +3487,7 @@ export default {
             const requestId = this.fullGreenTimetableCountRequestId + 1
             this.fullGreenTimetableCountRequestId = requestId
             this.fullGreenTimetableCountLoading = true
+            this.generatedTimetables = []
             this.resetQualityCounterSelection()
 
             try {
@@ -4534,13 +4567,12 @@ export default {
                 .join(', ')
         },
         courseUsedInSelectedTimetable(course) {
-            const courseKeys = this.courseComparisonKeys(course)
-            if (!courseKeys.length) return false
+            const comparisonKeySet = this.selectedTimetableScheduledCourseKeySet instanceof Set
+                ? this.selectedTimetableScheduledCourseKeySet
+                : new Set(this.selectedTimetableScheduledCourses()
+                    .flatMap(scheduledCourse => this.courseComparisonKeys(scheduledCourse)))
 
-            const scheduledKeys = this.selectedTimetableScheduledCourses()
-                .flatMap(scheduledCourse => this.courseComparisonKeys(scheduledCourse))
-
-            return courseKeys.some(courseKey => scheduledKeys.includes(courseKey))
+            return this.courseMatchesComparisonKeySet(course, comparisonKeySet)
         },
         selectedTimetableScheduledCourses() {
             const timetable = this.selectedRobotTimetable
@@ -4619,13 +4651,12 @@ export default {
                 && this.courseGroupSourceLabel(firstCourseGroup) === this.courseGroupSourceLabel(secondCourseGroup)
         },
         courseOverlapsInSelectedTimetable(course) {
-            const courseKeys = this.courseComparisonKeys(course)
-            if (!courseKeys.length) return false
+            const comparisonKeySet = this.selectedTimetableConflictCourseKeySet instanceof Set
+                ? this.selectedTimetableConflictCourseKeySet
+                : new Set(this.selectedTimetableConflictCourses()
+                    .flatMap(conflictCourse => this.courseComparisonKeys(conflictCourse)))
 
-            const conflictKeys = this.selectedTimetableConflictCourses()
-                .flatMap(conflictCourse => this.courseComparisonKeys(conflictCourse))
-
-            return courseKeys.some(courseKey => conflictKeys.includes(courseKey))
+            return this.courseMatchesComparisonKeySet(course, comparisonKeySet)
         },
         selectedTimetableConflictCourses() {
             return Object.values(this.selectedRobotTimetable?.slots || {})
@@ -4640,13 +4671,12 @@ export default {
         additionalCourseMissingInSelectedTimetable(course) {
             if (!this.additionalCourseSelected(course)) return false
 
-            const courseKeys = this.courseComparisonKeys(course)
-            if (!courseKeys.length) return false
+            const comparisonKeySet = this.selectedTimetableMissingAdditionalCourseKeySet instanceof Set
+                ? this.selectedTimetableMissingAdditionalCourseKeySet
+                : new Set(this.selectedTimetableMissingAdditionalCourses()
+                    .flatMap(missingCourse => this.courseComparisonKeys(missingCourse)))
 
-            const missingCourseKeys = this.selectedTimetableMissingAdditionalCourses()
-                .flatMap(missingCourse => this.courseComparisonKeys(missingCourse))
-
-            return courseKeys.some(courseKey => missingCourseKeys.includes(courseKey))
+            return this.courseMatchesComparisonKeySet(course, comparisonKeySet)
         },
         courseAllGroupsNoLongerFitSelectedTimetable(course) {
             if (!this.selectedRobotTimetable || this.courseUsedInSelectedTimetable(course)) return false
@@ -4667,6 +4697,12 @@ export default {
                 .filter(Boolean)
                 .map(value => this.normalizedCourseCode(value) || value)
                 .filter((value, index, values) => values.indexOf(value) === index)
+        },
+        courseMatchesComparisonKeySet(course, comparisonKeySet) {
+            if (!(comparisonKeySet instanceof Set) || !comparisonKeySet.size) return false
+
+            return this.courseComparisonKeys(course)
+                .some(courseKey => comparisonKeySet.has(courseKey))
         },
         selectedTimetableAcceptedAdditionalCourseCount() {
             if (!this.selectedAdditionalCourses.length) return 0
@@ -5680,6 +5716,12 @@ export default {
             return selectedKeys.has(prerequisiteCourse.key) && this.courseSelectable(prerequisiteCourse)
         },
         additionalCourseInteractionDisabled(course) {
+            const courseKey = course?.key
+
+            if (courseKey && this.additionalCourseInteractionDisabledKeySet instanceof Set) {
+                return this.additionalCourseInteractionDisabledKeySet.has(courseKey)
+            }
+
             return this.additionalCourseMissingInSelectedTimetable(course)
                 || this.courseAllGroupsNoLongerFitSelectedTimetable(course)
         },

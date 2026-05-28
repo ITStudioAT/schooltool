@@ -209,6 +209,93 @@ it('counts selected green timetables that can include additional courses', funct
         ->and($result['selected_timetable']['problems'])->toBeEmpty();
 });
 
+it('does not include selected additional courses in plain backend timetables', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'M2',
+                'json_subject' => 'M',
+                'name' => 'Mathematik 2',
+                'tt_subject' => 'M',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'D1-A',
+                'display_label' => 'D1-A',
+                'title' => 'D1-A',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 1,
+                'class_name' => 'M2-A',
+                'display_label' => 'M2-A',
+                'title' => 'M2-A',
+                'course' => 'M2',
+                'subject' => 'Mathematik',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 3, 4, 5],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '1|1|common|D1|D|Deutsch 1|D1',
+            ],
+            'selected_additional_course_keys' => [
+                '2|2|common|M2|M|Mathematik 2|M2',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+            'selected_additional_courses_required' => false,
+        ],
+    );
+
+    expect($result['additional_course_timetable_count'])->toBe(1)
+        ->and($result['selected_timetable']['additionalCoursesAccepted'])->toBeFalse()
+        ->and($result['selected_timetable']['acceptedAdditionalCourseCount'])->toBe(0)
+        ->and($result['selected_timetable']['slots']['1-1']['code'])->toBe('D1')
+        ->and($result['selected_timetable']['slots'])->not->toHaveKey('2-1');
+});
+
 it('keeps dated saturday courses green when their actual dates do not overlap', function () {
     $service = app(RobotTimetableBackendSetupService::class);
 
