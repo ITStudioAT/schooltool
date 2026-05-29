@@ -347,10 +347,12 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('allQualityCriteriaCount')
         expect(componentSource).toContain('all_quality_criteria_count')
         expect(componentSource).toContain('evaluationCriteria')
-        expect(componentSource).not.toContain('evaluation_criteria: this.storageEvaluationCriteria(this.evaluationCriteria)')
+        expect(componentSource).toContain('evaluation_criteria: this.storageEvaluationCriteria(this.evaluationCriteria)')
         expect(componentSource).toContain('enabledEvaluationCriteriaFromSettings')
         expect(componentSource).toContain('qualityCriterionRows()')
         expect(componentSource).toContain('activeQualityCriterionRows()')
+        expect(componentSource).toContain('evaluationCriteriaSettings')
+        expect(componentSource).toContain('applyEvaluationCriteriaSettings(criteria)')
         expect(componentSource).toContain('Qualitätskriterien')
         expect(componentSource).toContain('Alle Qualitätskriterien erfüllt')
         expect(componentSource).toContain('v-for="(counter, counterIndex) in qualityCriterionRows"')
@@ -361,11 +363,16 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('allQualityCriteriaCountLabel()')
         expect(componentSource).toContain('allQualityCriteriaCountDetail()')
         expect(componentSource).toContain('qualityCounterCountLabel(counter)')
+        expect(componentSource).toContain('qualityCounterFulfilledCountLabel(counter)')
         expect(componentSource).toContain('qualityCounterDetail(counter)')
         expect(componentSource).toContain('resetQualityCounterSelection()')
         expect(componentSource).toContain('setEvaluationCriterionEnabled(counter, $event)')
         expect(componentSource).toContain('<v-checkbox-btn')
         expect(componentSource).toContain('qualityCounterReached(counter)')
+        expect(componentSource).toContain('robot-quality-summary__check')
+        expect(componentSource).toContain(':model-value="false"')
+        expect(componentSource).toContain('readonly')
+        expect(componentSource).toContain('{{ counter.label }}: {{ qualityCounterFulfilledCountLabel(counter) }}')
         expect(componentSource).toContain("selectedTimetableResultType: 'full_green'")
         expect(componentSource).toContain("timetableResultCardSelected('full_green')")
         expect(componentSource).toContain("timetableResultCardSelected('green')")
@@ -426,6 +433,8 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('conflict_timetable_count')
         expect(componentSource).toContain('selected_timetable_type: this.selectedTimetableResultType')
         expect(componentSource).toContain('selected_timetable_number: this.timetableResultCounter(this.selectedTimetableResultType)')
+        expect(componentSource).toContain('include_quality_counters: options?.calculateQualityCounters === true')
+        expect(componentSource).toContain("'/api/admin/students-timetables/robot/quality-counters'")
         expect(componentSource).toContain('this.generatedTimetables = []')
         expect(componentSource).toContain('backendTimetableFromResponse(response.data.data.selected_timetable)')
         expect(componentSource).toContain('shouldLoadConflictTimetableForRequiredAdditionalCourses(selectedTimetable)')
@@ -451,7 +460,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('this.timetableCreateLoading = true')
         expect(componentSource).toContain('await this.loadFullGreenTimetableCount({ preferFullGreen: true })')
         expect(componentSource).toContain('options?.preferFullGreen === true')
-        expect(componentSource).toContain("axios.post('/api/admin/students-timetables/robot/backend-timetable'")
+        expect(componentSource).toContain("'/api/admin/students-timetables/robot/backend-timetable'")
         expect(componentSource).toContain('selected_course_keys: this.selectedCourses.map(course => course.key)')
         expect(componentSource).toContain('timetable_variation_count')
         expect(componentSource).toContain('Variationen gesamt')
@@ -654,6 +663,95 @@ describe('Students timetable robot page', () => {
         ])
     })
 
+    it('updates displayed quality criteria immediately from settings changes', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            evaluationCriteria: [
+                { key: 'free_days', label: 'Anzahl freie Tage', enabled: true, priority: 1 },
+            ],
+            evaluationCriteriaLoaded: false,
+        }
+
+        methods.onSettingsChanged.call(ctx, [
+            { key: 'few_gaps', label: 'Wenig Lücken', enabled: true, priority: 1 },
+            { key: 'free_days', label: 'Anzahl freie Tage', enabled: false, priority: 2 },
+        ])
+
+        expect(ctx.evaluationCriteriaLoaded).toBe(true)
+        expect(ctx.evaluationCriteria).toEqual([
+            {
+                key: 'few_gaps',
+                label: 'Wenig Lücken',
+                enabled: true,
+                priority: 1,
+                option: null,
+                options: [],
+            },
+        ])
+    })
+
+    it('applies parent-provided quality criteria to embedded robot summaries', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            evaluationCriteria: [],
+            evaluationCriteriaLoaded: false,
+        }
+
+        methods.applyEvaluationCriteriaSettings.call(ctx, [
+            { key: 'saturday_free', label: 'Samstag kein Unterricht', enabled: false, priority: 1 },
+            { key: 'free_days', label: 'Anzahl freie Tage', enabled: true, priority: 2 },
+        ])
+
+        expect(ctx.evaluationCriteriaLoaded).toBe(true)
+        expect(ctx.evaluationCriteria).toEqual([
+            {
+                key: 'free_days',
+                label: 'Anzahl freie Tage',
+                enabled: true,
+                priority: 2,
+                option: null,
+                options: [],
+            },
+        ])
+    })
+
+    it('does not recalculate quality counters while settings are changed', () => {
+        const methods = (RobotTimetable as any).methods
+        const loadFullGreenTimetableCount = vi.fn()
+        const ctx = {
+            ...methods,
+            evaluationCriteria: [],
+            evaluationCriteriaLoaded: false,
+            timetableCountResultsAvailable: true,
+            timetableCalculationReady() {
+                return true
+            },
+            loadFullGreenTimetableCount,
+        }
+
+        methods.applyEvaluationCriteriaSettings.call(ctx, [
+            { key: 'free_days', label: 'Anzahl freie Tage', enabled: true, priority: 1 },
+        ])
+
+        expect(loadFullGreenTimetableCount).not.toHaveBeenCalled()
+    })
+
+    it('does not show stale quality counters after settings disable every criterion', () => {
+        const computed = (RobotTimetable as any).computed
+        const ctx = {
+            evaluationCriteria: [],
+            evaluationCriteriaLoaded: true,
+            qualityCounters: [
+                { key: 'saturday_free', label: 'Samstag kein Unterricht', enabled: true, count: 0, total: 0 },
+                { key: 'free_days', label: 'Anzahl freie Tage', enabled: true, count: 0, total: 0 },
+            ],
+        }
+
+        expect(computed.qualityCriterionRows.call(ctx)).toEqual([])
+    })
+
     it('toggles a robot quality criterion without removing the visible timetable', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {
@@ -734,6 +832,42 @@ describe('Students timetable robot page', () => {
 
         expect(methods.allQualityCriteriaCountLabel.call(ctx)).toBe('12 / 48')
         expect(methods.allQualityCriteriaCountDetail.call(ctx)).toBe('Ausgewählt: erfüllt')
+    })
+
+    it('shows only the fulfilled timetable count in the selected timetable quality summary', () => {
+        const methods = (RobotTimetable as any).methods
+
+        expect(methods.qualityCounterFulfilledCountLabel.call(methods, {
+            enabled: true,
+            count: 2160,
+            total: 8400,
+        }).replace(/\u00a0/gu, ' ')).toBe('2 160')
+        expect(methods.qualityCounterFulfilledCountLabel.call(methods, {
+            enabled: true,
+        })).toBe('-')
+    })
+
+    it('calculates quality counters only when navigating to another timetable number', () => {
+        const methods = (RobotTimetable as any).methods
+        const loadFullGreenTimetableCount = vi.fn()
+        const loadQualityCountersForSelectedTimetableType = vi.fn()
+        const ctx = {
+            ...methods,
+            selectedTimetableResultType: 'green',
+            greenTimetableNumber: 1,
+            greenTimetableCount: 4,
+            fullGreenTimetableCount: 0,
+            conflictTimetableCount: 0,
+            additionalCourseTimetableRequired: false,
+            loadFullGreenTimetableCount,
+            loadQualityCountersForSelectedTimetableType,
+        }
+
+        methods.moveTimetableResultCounter.call(ctx, 'green', 1)
+
+        expect(ctx.greenTimetableNumber).toBe(2)
+        expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({ preserveQualityCounters: true })
+        expect(loadQualityCountersForSelectedTimetableType).toHaveBeenCalledOnce()
     })
 
     it('shows the all quality criteria count against the active filtered timetable result count', () => {

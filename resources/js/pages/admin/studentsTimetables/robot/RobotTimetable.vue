@@ -1201,7 +1201,16 @@
                                 v-for="counter in activeQualityCriterionRows"
                                 :key="`quality-summary-${counter.key}`"
                                 class="robot-quality-summary__item">
-                                <span class="robot-quality-summary__label">{{ counter.label }}:</span>
+                                <v-checkbox-btn
+                                    :model-value="false"
+                                    density="compact"
+                                    readonly
+                                    tabindex="-1"
+                                    :aria-label="`${counter.label}: ${qualityCounterFulfilledCountLabel(counter)}`"
+                                    class="robot-quality-summary__check" />
+                                <span class="robot-quality-summary__label">
+                                    {{ counter.label }}: {{ qualityCounterFulfilledCountLabel(counter) }}
+                                </span>
                                 <v-icon
                                     :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
                                     :color="qualityCounterReached(counter) ? 'success' : 'error'"
@@ -1659,7 +1668,11 @@
         </v-dialog>
 
         <v-dialog v-model="settingsDialogOpen" persistent max-width="1120" scrollable>
-            <EvaluationSettings :closable="true" @close="settingsDialogOpen = false" @saved="onSettingsSaved" />
+            <EvaluationSettings
+                :closable="true"
+                @changed="onSettingsChanged"
+                @close="settingsDialogOpen = false"
+                @saved="onSettingsSaved" />
         </v-dialog>
     </v-col>
 
@@ -2056,7 +2069,16 @@
                     v-for="counter in activeQualityCriterionRows"
                     :key="`embedded-quality-summary-${counter.key}`"
                     class="robot-quality-summary__item">
-                    <span class="robot-quality-summary__label">{{ counter.label }}:</span>
+                    <v-checkbox-btn
+                        :model-value="false"
+                        density="compact"
+                        readonly
+                        tabindex="-1"
+                        :aria-label="`${counter.label}: ${qualityCounterFulfilledCountLabel(counter)}`"
+                        class="robot-quality-summary__check" />
+                    <span class="robot-quality-summary__label">
+                        {{ counter.label }}: {{ qualityCounterFulfilledCountLabel(counter) }}
+                    </span>
                     <v-icon
                         :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
                         :color="qualityCounterReached(counter) ? 'success' : 'error'"
@@ -2290,6 +2312,10 @@ export default {
             type: [String, Number],
             default: null,
         },
+        evaluationCriteriaSettings: {
+            type: Array,
+            default: null,
+        },
     },
     data() {
         return {
@@ -2306,13 +2332,16 @@ export default {
             qualityCounters: [],
             allQualityCriteriaCount: null,
             evaluationCriteria: [],
+            evaluationCriteriaLoaded: false,
             fullGreenTimetableNumber: 1,
             greenTimetableNumber: 1,
             conflictTimetableNumber: 1,
             fullGreenTimetableCountError: '',
             fullGreenTimetableCountLoading: false,
+            qualityCountersLoading: false,
             timetableCreateLoading: false,
             fullGreenTimetableCountRequestId: 0,
+            qualityCountersRequestId: 0,
             selectedTimetableResultType: 'full_green',
             additionalCourseTimetableRequired: false,
             additionalCourseExtensionActionHidden: false,
@@ -2751,7 +2780,9 @@ export default {
         },
         qualityCriterionRows() {
             const countersByKey = new Map((this.qualityCounters || []).map(counter => [counter.key, counter]))
-            const sourceCriteria = this.evaluationCriteria.length ? this.evaluationCriteria : this.qualityCounters
+            const sourceCriteria = this.evaluationCriteriaLoaded || this.evaluationCriteria.length
+                ? this.evaluationCriteria
+                : this.qualityCounters
 
             return sourceCriteria.map(criterion => ({
                 ...criterion,
@@ -2970,6 +3001,15 @@ export default {
         },
     },
     watch: {
+        evaluationCriteriaSettings: {
+            deep: true,
+            immediate: true,
+            handler(criteria) {
+                if (!Array.isArray(criteria)) return
+
+                this.applyEvaluationCriteriaSettings(criteria)
+            },
+        },
         'config.selected_schoolyear.id'() {
             this.loadSettings()
         },
@@ -3051,7 +3091,11 @@ export default {
                 this.subjectMappings = settingsResponse.data.data?.mappings || []
                 this.schoolHours = schoolHoursResponse.data?.data || []
                 this.courseGroups = courseGroupsResponse.data?.data || []
-                this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(evaluationSettingsResponse.data?.data?.criteria || [])
+                this.applyEvaluationCriteriaSettings(
+                    Array.isArray(this.evaluationCriteriaSettings)
+                        ? this.evaluationCriteriaSettings
+                        : evaluationSettingsResponse.data?.data?.criteria || [],
+                )
                 this.robotStudents = studentOptionsResponse.data?.data || []
                 this.restoreLastRobotState()
                 this.syncExternalStudentSelection()
@@ -3063,6 +3107,7 @@ export default {
                 this.subjectMappings = []
                 this.subjectRows = []
                 this.evaluationCriteria = []
+                this.evaluationCriteriaLoaded = false
                 this.robotStudents = []
                 this.studentCompletedCourses = []
                 this.error = 'Die Kurse konnten nicht geladen werden.'
@@ -3391,15 +3436,28 @@ export default {
         closeConstraintsDialog() {
             this.constraintsDialogOpen = false
         },
-        async onSettingsSaved() {
+        onSettingsChanged(criteria) {
+            this.applyEvaluationCriteriaSettings(criteria || [])
+        },
+        async onSettingsSaved(criteria = []) {
             this.settingsDialogOpen = false
+
+            if (criteria.length) {
+                this.onSettingsChanged(criteria)
+
+                return
+            }
 
             try {
                 const response = await axios.get('/api/admin/students-timetables/evaluation-settings')
-                this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(response.data?.data?.criteria || [])
+                this.onSettingsChanged(response.data?.data?.criteria || [])
             } catch {
                 // keep existing criteria on failure
             }
+        },
+        applyEvaluationCriteriaSettings(criteria) {
+            this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(criteria || [])
+            this.evaluationCriteriaLoaded = true
         },
         updateConstraints() {
             this.constraints = this.copyConstraints(this.constraintsDraft)
@@ -3460,6 +3518,22 @@ export default {
 
             this.resetAdditionalCourseSelection()
         },
+        backendTimetableRequestPayload(options = {}) {
+            return {
+                selection: this.selection,
+                constraints: this.constraints,
+                student: this.studentSelection,
+                selected_course_keys: this.selectedCourses.map(course => course.key),
+                deselected_course_keys: this.deselectedCourseKeys,
+                deselected_course_group_keys: this.deselectedCourseGroupKeys,
+                selected_additional_course_keys: this.selectedAdditionalCourses.map(course => course.key),
+                selected_additional_courses_required: this.additionalCourseTimetableRequired === true,
+                selected_timetable_type: this.selectedTimetableResultType,
+                selected_timetable_number: this.timetableResultCounter(this.selectedTimetableResultType),
+                include_quality_counters: options?.calculateQualityCounters === true,
+                evaluation_criteria: this.storageEvaluationCriteria(this.evaluationCriteria),
+            }
+        },
         async loadFullGreenTimetableCount(options = {}) {
             this.fullGreenTimetableCountError = ''
 
@@ -3491,18 +3565,10 @@ export default {
             this.resetQualityCounterSelection()
 
             try {
-                const response = await axios.post('/api/admin/students-timetables/robot/backend-timetable', {
-                    selection: this.selection,
-                    constraints: this.constraints,
-                    student: this.studentSelection,
-                    selected_course_keys: this.selectedCourses.map(course => course.key),
-                    deselected_course_keys: this.deselectedCourseKeys,
-                    deselected_course_group_keys: this.deselectedCourseGroupKeys,
-                    selected_additional_course_keys: this.selectedAdditionalCourses.map(course => course.key),
-                    selected_additional_courses_required: this.additionalCourseTimetableRequired === true,
-                    selected_timetable_type: this.selectedTimetableResultType,
-                    selected_timetable_number: this.timetableResultCounter(this.selectedTimetableResultType),
-                })
+                const response = await axios.post(
+                    '/api/admin/students-timetables/robot/backend-timetable',
+                    this.backendTimetableRequestPayload(options),
+                )
 
                 if (requestId !== this.fullGreenTimetableCountRequestId) return
 
@@ -3511,8 +3577,10 @@ export default {
                 this.greenTimetableCount = Number(response.data?.data?.green_timetable_count || 0)
                 this.conflictTimetableCount = Number(response.data?.data?.conflict_timetable_count || 0)
                 this.additionalCourseTimetableCount = Number(response.data?.data?.additional_course_timetable_count || 0)
-                this.qualityCounters = response.data?.data?.quality_counters || []
-                this.allQualityCriteriaCount = Number(response.data?.data?.all_quality_criteria_count || 0)
+                if (options?.preserveQualityCounters !== true || options?.calculateQualityCounters === true) {
+                    this.qualityCounters = response.data?.data?.quality_counters || []
+                    this.allQualityCriteriaCount = Number(response.data?.data?.all_quality_criteria_count || 0)
+                }
                 const selectedResultTypeChanged = this.autoSelectTimetableResultType(options)
                 this.normalizeTimetableResultCounters()
 
@@ -3569,6 +3637,40 @@ export default {
             } finally {
                 if (requestId === this.fullGreenTimetableCountRequestId) {
                     this.fullGreenTimetableCountLoading = false
+                }
+            }
+        },
+        async loadQualityCountersForSelectedTimetableType() {
+            if (!this.timetableCalculationReady() || !this.activeQualityCriterionRows.length) {
+                this.qualityCounters = []
+                this.allQualityCriteriaCount = null
+                this.qualityCountersLoading = false
+
+                return
+            }
+
+            const requestId = this.qualityCountersRequestId + 1
+            this.qualityCountersRequestId = requestId
+            this.qualityCountersLoading = true
+
+            try {
+                const response = await axios.post(
+                    '/api/admin/students-timetables/robot/quality-counters',
+                    this.backendTimetableRequestPayload(),
+                )
+
+                if (requestId !== this.qualityCountersRequestId) return
+
+                this.qualityCounters = response.data?.data?.quality_counters || []
+                this.allQualityCriteriaCount = Number(response.data?.data?.all_quality_criteria_count || 0)
+            } catch {
+                if (requestId !== this.qualityCountersRequestId) return
+
+                this.qualityCounters = []
+                this.allQualityCriteriaCount = null
+            } finally {
+                if (requestId === this.qualityCountersRequestId) {
+                    this.qualityCountersLoading = false
                 }
             }
         },
@@ -3773,7 +3875,8 @@ export default {
             this.setTimetableResultCounter(type, this.timetableResultCounter(type) + direction)
 
             if (type === this.selectedTimetableResultType && previousCounter !== this.timetableResultCounter(type)) {
-                this.loadFullGreenTimetableCount()
+                this.loadFullGreenTimetableCount({ preserveQualityCounters: true })
+                this.loadQualityCountersForSelectedTimetableType()
             }
         },
         setTimetableResultCounter(type, value) {
@@ -4734,6 +4837,12 @@ export default {
             if (counter?.enabled !== true) return '-'
 
             return `${this.formatNumber(counter?.count || 0)} / ${this.formatNumber(counter?.total || 0)}`
+        },
+        qualityCounterFulfilledCountLabel(counter) {
+            if (counter?.enabled !== true) return '-'
+            if (!Object.prototype.hasOwnProperty.call(counter || {}, 'count')) return '-'
+
+            return this.formatNumber(counter?.count || 0)
         },
         qualityCounterDetail(counter) {
             if (counter?.enabled !== true) return 'Nicht berücksichtigt.'
@@ -9186,8 +9295,23 @@ export default {
 .robot-quality-summary__item {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
     white-space: nowrap;
+}
+
+.robot-quality-summary__check {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+}
+
+.robot-quality-summary__check :deep(.v-selection-control) {
+    min-height: 18px;
+}
+
+.robot-quality-summary__check :deep(.v-selection-control__wrapper) {
+    width: 18px;
+    height: 18px;
 }
 
 .robot-quality-summary__label {

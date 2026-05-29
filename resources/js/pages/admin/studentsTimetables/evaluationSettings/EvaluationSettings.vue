@@ -25,7 +25,7 @@
                     variant="text"
                     density="comfortable"
                     class="ml-2"
-                    @click="$emit('close')" />
+                    @click="closeSettings" />
             </v-card-title>
 
             <v-card-text>
@@ -137,7 +137,7 @@ export default {
     props: {
         closable: { type: Boolean, default: false },
     },
-    emits: ['close', 'saved'],
+    emits: ['changed', 'close', 'saved'],
     data() {
         return {
             loading: false,
@@ -159,6 +159,12 @@ export default {
     watch: {
         selectedSchoolyearId() {
             this.loadSettings()
+        },
+        criteria: {
+            deep: true,
+            handler() {
+                this.emitChangedCriteria()
+            },
         },
     },
     mounted() {
@@ -197,7 +203,7 @@ export default {
                     type: 'success',
                     timeout: 3000,
                 })
-                this.$emit('saved')
+                this.$emit('saved', this.cloneCriteria(this.criteria))
             } catch (error) {
                 this.error = error?.response?.data?.message || 'Die Bewertungseinstellungen konnten nicht gespeichert werden.'
             } finally {
@@ -220,6 +226,13 @@ export default {
         },
         resetChanges() {
             this.criteria = this.cloneCriteria(this.originalCriteria)
+        },
+        closeSettings() {
+            this.$emit('changed', this.cloneCriteria(this.originalCriteria))
+            this.$emit('close')
+        },
+        emitChangedCriteria() {
+            this.$emit('changed', this.normalizedCriteria(this.criteria))
         },
         normalizePriorities() {
             this.criteria = this.criteria.map((criterion, index) => ({

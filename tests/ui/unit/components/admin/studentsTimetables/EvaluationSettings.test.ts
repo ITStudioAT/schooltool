@@ -18,12 +18,16 @@ describe('Students timetable evaluation settings', () => {
         expect(componentSource).toContain('Einzeltermine werden nicht berücksichtigt.')
         expect(componentSource).toContain('v-model="criterion.enabled"')
         expect(componentSource).toContain('v-model="criterion.option"')
+        expect(componentSource).toContain("emits: ['changed', 'close', 'saved']")
+        expect(componentSource).toContain('this.emitChangedCriteria()')
+        expect(componentSource).toContain("this.$emit('saved', this.cloneCriteria(this.criteria))")
+        expect(componentSource).toContain("this.$emit('changed', this.cloneCriteria(this.originalCriteria))")
         expect(componentSource).toContain('mdi-arrow-up')
         expect(componentSource).toContain('mdi-arrow-down')
         expect(componentSource).toContain('moveCriterion(index, -1)')
         expect(componentSource).toContain('moveCriterion(index, 1)')
         expect(componentSource).toContain('storageCriteria(criteria)')
-        expect(timetableSource).toContain('components: { EvaluationSettings, FileUpload, Overview, RobotTimetable }')
+        expect(timetableSource).toContain('components: { FileUpload, LoadingAnimation, Overview, RobotTimetable }')
     })
 
     it('normalizes priorities and builds the storage payload', () => {
@@ -69,6 +73,34 @@ describe('Students timetable evaluation settings', () => {
                 priority: 2,
                 option: null,
             },
+        ])
+    })
+
+    it('emits the saved criteria when closing without saving', () => {
+        const methods = (EvaluationSettings as any).methods
+        const emitted: Array<{ event: string, payload?: unknown }> = []
+        const ctx = {
+            originalCriteria: [
+                { key: 'free_days', enabled: true, priority: 1 },
+                { key: 'few_gaps', enabled: false, priority: 2 },
+            ],
+            cloneCriteria: methods.cloneCriteria,
+            $emit(event: string, payload?: unknown) {
+                emitted.push({ event, payload })
+            },
+        }
+
+        methods.closeSettings.call(ctx)
+
+        expect(emitted).toEqual([
+            {
+                event: 'changed',
+                payload: [
+                    { key: 'free_days', enabled: true, priority: 1 },
+                    { key: 'few_gaps', enabled: false, priority: 2 },
+                ],
+            },
+            { event: 'close', payload: undefined },
         ])
     })
 })

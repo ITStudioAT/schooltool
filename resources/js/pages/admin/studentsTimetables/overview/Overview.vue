@@ -241,6 +241,7 @@
                     v-if="wizardPanelOpen"
                     ref="wizardCourseCards"
                     embedded-course-cards-only
+                    :evaluation-criteria-settings="evaluationCriteria"
                     :student-code="transferredStudentContext?.student?.studentCode || null"
                     class="overview-wizard-course-cards">
                     <template #course-actions="{ ready, loading, extending, hasSelectedAdditionalCourses, extensionActionVisible }">
@@ -756,7 +757,11 @@
         </v-dialog>
 
         <v-dialog v-model="settingsDialogOpen" persistent max-width="1120" scrollable>
-            <EvaluationSettings :closable="true" @close="settingsDialogOpen = false" @saved="onSettingsSaved" />
+            <EvaluationSettings
+                :closable="true"
+                @changed="onSettingsChanged"
+                @close="settingsDialogOpen = false"
+                @saved="onSettingsSaved" />
         </v-dialog>
     </v-col>
 </template>
@@ -1275,12 +1280,21 @@ export default {
                 this.wizardPanelOpen = false
             }
         },
-        async onSettingsSaved() {
+        onSettingsChanged(criteria) {
+            this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(criteria || [])
+        },
+        async onSettingsSaved(criteria = []) {
             this.settingsDialogOpen = false
+
+            if (criteria.length) {
+                this.onSettingsChanged(criteria)
+
+                return
+            }
 
             try {
                 const response = await axios.get('/api/admin/students-timetables/evaluation-settings')
-                this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(response.data?.data?.criteria || [])
+                this.onSettingsChanged(response.data?.data?.criteria || [])
             } catch {
                 // keep existing criteria on failure
             }
