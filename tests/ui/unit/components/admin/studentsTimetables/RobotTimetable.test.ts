@@ -347,7 +347,9 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('allQualityCriteriaCount')
         expect(componentSource).toContain('all_quality_criteria_count')
         expect(componentSource).toContain('evaluationCriteria')
-        expect(componentSource).toContain('evaluation_criteria: this.storageEvaluationCriteria(this.evaluationCriteria)')
+        expect(componentSource).toContain('const evaluationCriteria = this.storageEvaluationCriteria(this.evaluationCriteria)')
+        expect(componentSource).toContain('evaluation_criteria: evaluationCriteria')
+        expect(componentSource).toContain('selected_quality_criterion_keys: this.selectedQualityCriterionKeys()')
         expect(componentSource).toContain('enabledEvaluationCriteriaFromSettings')
         expect(componentSource).toContain('qualityCriterionRows()')
         expect(componentSource).toContain('activeQualityCriterionRows()')
@@ -370,8 +372,10 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('<v-checkbox-btn')
         expect(componentSource).toContain('qualityCounterReached(counter)')
         expect(componentSource).toContain('robot-quality-summary__check')
-        expect(componentSource).toContain(':model-value="false"')
-        expect(componentSource).toContain('readonly')
+        expect(componentSource).toContain(':model-value="qualitySummaryCheckboxChecked(counter)"')
+        expect(componentSource).toContain('@update:model-value="setQualitySummaryCheckboxChecked(counter, $event)"')
+        expect(componentSource).toContain('selectedQualityCriteriaCount')
+        expect(componentSource).toContain('selectedQualityCriteriaCountFromResponse(responseData)')
         expect(componentSource).toContain('{{ counter.label }}: {{ qualityCounterFulfilledCountLabel(counter) }}')
         expect(componentSource).toContain("selectedTimetableResultType: 'full_green'")
         expect(componentSource).toContain("timetableResultCardSelected('full_green')")
@@ -834,14 +838,14 @@ describe('Students timetable robot page', () => {
         expect(methods.allQualityCriteriaCountDetail.call(ctx)).toBe('Ausgewählt: erfüllt')
     })
 
-    it('shows only the fulfilled timetable count in the selected timetable quality summary', () => {
+    it('shows fulfilled timetables over the current criteria total in the selected timetable quality summary', () => {
         const methods = (RobotTimetable as any).methods
 
         expect(methods.qualityCounterFulfilledCountLabel.call(methods, {
             enabled: true,
             count: 2160,
             total: 8400,
-        }).replace(/\u00a0/gu, ' ')).toBe('2 160')
+        }).replace(/\u00a0/gu, ' ')).toBe('2 160 / 8 400')
         expect(methods.qualityCounterFulfilledCountLabel.call(methods, {
             enabled: true,
         })).toBe('-')
@@ -859,6 +863,8 @@ describe('Students timetable robot page', () => {
             fullGreenTimetableCount: 0,
             conflictTimetableCount: 0,
             additionalCourseTimetableRequired: false,
+            qualityCounters: [],
+            activeQualityCriterionRows: [{ key: 'free_days', enabled: true }],
             loadFullGreenTimetableCount,
             loadQualityCountersForSelectedTimetableType,
         }

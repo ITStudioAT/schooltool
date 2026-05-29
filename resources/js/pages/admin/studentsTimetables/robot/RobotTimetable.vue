@@ -1194,6 +1194,15 @@
                             </div>
                         </div>
 
+                        <div class="robot-generated-criteria-count">
+                            <div class="robot-count-card robot-count-card--green robot-count-card--criteria">
+                                <div class="robot-count-card__content">
+                                    <div class="robot-count-card__label">Stundenpläne mit Kriterien</div>
+                                    <div class="robot-count-card__value">{{ selectedCriteriaTimetableCountLabel }}</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div
                             v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length"
                             class="robot-quality-summary">
@@ -1202,12 +1211,11 @@
                                 :key="`quality-summary-${counter.key}`"
                                 class="robot-quality-summary__item">
                                 <v-checkbox-btn
-                                    :model-value="false"
+                                    :model-value="qualitySummaryCheckboxChecked(counter)"
                                     density="compact"
-                                    readonly
-                                    tabindex="-1"
                                     :aria-label="`${counter.label}: ${qualityCounterFulfilledCountLabel(counter)}`"
-                                    class="robot-quality-summary__check" />
+                                    class="robot-quality-summary__check"
+                                    @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
                                 <span class="robot-quality-summary__label">
                                     {{ counter.label }}: {{ qualityCounterFulfilledCountLabel(counter) }}
                                 </span>
@@ -2062,6 +2070,15 @@
                 </div>
             </div>
 
+            <div class="robot-generated-criteria-count">
+                <div class="robot-count-card robot-count-card--green robot-count-card--criteria">
+                    <div class="robot-count-card__content">
+                        <div class="robot-count-card__label">Stundenpläne mit Kriterien</div>
+                        <div class="robot-count-card__value">{{ selectedCriteriaTimetableCountLabel }}</div>
+                    </div>
+                </div>
+            </div>
+
             <div
                 v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length"
                 class="robot-quality-summary">
@@ -2070,12 +2087,11 @@
                     :key="`embedded-quality-summary-${counter.key}`"
                     class="robot-quality-summary__item">
                     <v-checkbox-btn
-                        :model-value="false"
+                        :model-value="qualitySummaryCheckboxChecked(counter)"
                         density="compact"
-                        readonly
-                        tabindex="-1"
                         :aria-label="`${counter.label}: ${qualityCounterFulfilledCountLabel(counter)}`"
-                        class="robot-quality-summary__check" />
+                        class="robot-quality-summary__check"
+                        @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
                     <span class="robot-quality-summary__label">
                         {{ counter.label }}: {{ qualityCounterFulfilledCountLabel(counter) }}
                     </span>
@@ -2330,7 +2346,9 @@ export default {
             conflictTimetableCount: null,
             additionalCourseTimetableCount: null,
             qualityCounters: [],
+            qualitySummaryCheckedKeys: [],
             allQualityCriteriaCount: null,
+            selectedQualityCriteriaCount: null,
             evaluationCriteria: [],
             evaluationCriteriaLoaded: false,
             fullGreenTimetableNumber: 1,
@@ -2792,6 +2810,14 @@ export default {
         },
         activeQualityCriterionRows() {
             return this.qualityCriterionRows.filter(criterion => criterion.enabled === true)
+        },
+        selectedCriteriaTimetableCountLabel() {
+            if (!this.qualitySummaryCheckedKeys.length) return '0'
+            if (this.selectedQualityCriteriaCount !== null) return this.formatNumber(this.selectedQualityCriteriaCount)
+
+            const selectedCriterion = this.selectedQualitySummaryCriterion()
+
+            return selectedCriterion ? this.formatNumber(selectedCriterion.count || 0) : '0'
         },
         unavailableWeekdays() {
             return this.weekdayOptions
@@ -3519,6 +3545,8 @@ export default {
             this.resetAdditionalCourseSelection()
         },
         backendTimetableRequestPayload(options = {}) {
+            const evaluationCriteria = this.storageEvaluationCriteria(this.evaluationCriteria)
+
             return {
                 selection: this.selection,
                 constraints: this.constraints,
@@ -3530,8 +3558,9 @@ export default {
                 selected_additional_courses_required: this.additionalCourseTimetableRequired === true,
                 selected_timetable_type: this.selectedTimetableResultType,
                 selected_timetable_number: this.timetableResultCounter(this.selectedTimetableResultType),
+                selected_quality_criterion_keys: this.selectedQualityCriterionKeys(),
                 include_quality_counters: options?.calculateQualityCounters === true,
-                evaluation_criteria: this.storageEvaluationCriteria(this.evaluationCriteria),
+                evaluation_criteria: evaluationCriteria,
             }
         },
         async loadFullGreenTimetableCount(options = {}) {
@@ -3550,6 +3579,7 @@ export default {
                 this.additionalCourseTimetableCount = 0
                 this.qualityCounters = []
                 this.allQualityCriteriaCount = 0
+                this.selectedQualityCriteriaCount = 0
                 this.generatedTimetables = []
                 this.additionalCourseTimetableRequired = false
                 this.normalizeTimetableResultCounters()
@@ -3577,9 +3607,14 @@ export default {
                 this.greenTimetableCount = Number(response.data?.data?.green_timetable_count || 0)
                 this.conflictTimetableCount = Number(response.data?.data?.conflict_timetable_count || 0)
                 this.additionalCourseTimetableCount = Number(response.data?.data?.additional_course_timetable_count || 0)
-                if (options?.preserveQualityCounters !== true || options?.calculateQualityCounters === true) {
+                if (options?.calculateQualityCounters === true) {
                     this.qualityCounters = response.data?.data?.quality_counters || []
                     this.allQualityCriteriaCount = Number(response.data?.data?.all_quality_criteria_count || 0)
+                    this.selectedQualityCriteriaCount = this.selectedQualityCriteriaCountFromResponse(response.data?.data || {})
+                } else if (options?.preserveQualityCounters !== true) {
+                    this.qualityCounters = []
+                    this.allQualityCriteriaCount = null
+                    this.selectedQualityCriteriaCount = null
                 }
                 const selectedResultTypeChanged = this.autoSelectTimetableResultType(options)
                 this.normalizeTimetableResultCounters()
@@ -3587,6 +3622,7 @@ export default {
                 if (selectedResultTypeChanged && this.timetableResultCount(this.selectedTimetableResultType) > 0) {
                     this.qualityCounters = []
                     this.allQualityCriteriaCount = null
+                    this.selectedQualityCriteriaCount = null
                     this.generatedTimetables = []
                     await this.loadFullGreenTimetableCount()
 
@@ -3599,6 +3635,7 @@ export default {
                 if (additionalCourseFilterChanged && this.timetableResultCount(this.selectedTimetableResultType) > 0) {
                     this.qualityCounters = []
                     this.allQualityCriteriaCount = null
+                    this.selectedQualityCriteriaCount = null
                     this.generatedTimetables = []
                     await this.loadFullGreenTimetableCount()
 
@@ -3614,6 +3651,7 @@ export default {
                     this.setTimetableResultCounter('conflict', 1)
                     this.qualityCounters = []
                     this.allQualityCriteriaCount = null
+                    this.selectedQualityCriteriaCount = null
                     this.generatedTimetables = []
                     await this.loadFullGreenTimetableCount()
 
@@ -3621,6 +3659,8 @@ export default {
                 }
 
                 this.generatedTimetables = selectedTimetable ? [selectedTimetable] : []
+                this.applySelectedQualityMetricsToCounters()
+                this.refreshQualityCountersAfterTimetableLoad(options)
             } catch {
                 if (requestId !== this.fullGreenTimetableCountRequestId) return
 
@@ -3631,6 +3671,7 @@ export default {
                 this.additionalCourseTimetableCount = null
                 this.qualityCounters = []
                 this.allQualityCriteriaCount = null
+                this.selectedQualityCriteriaCount = null
                 this.generatedTimetables = []
                 this.normalizeTimetableResultCounters()
                 this.fullGreenTimetableCountError = 'Die Anzahl der Stundenpläne konnte nicht berechnet werden.'
@@ -3644,6 +3685,7 @@ export default {
             if (!this.timetableCalculationReady() || !this.activeQualityCriterionRows.length) {
                 this.qualityCounters = []
                 this.allQualityCriteriaCount = null
+                this.selectedQualityCriteriaCount = null
                 this.qualityCountersLoading = false
 
                 return
@@ -3663,16 +3705,34 @@ export default {
 
                 this.qualityCounters = response.data?.data?.quality_counters || []
                 this.allQualityCriteriaCount = Number(response.data?.data?.all_quality_criteria_count || 0)
+                this.selectedQualityCriteriaCount = this.selectedQualityCriteriaCountFromResponse(response.data?.data || {})
+                this.applySelectedQualityMetricsToCounters()
             } catch {
                 if (requestId !== this.qualityCountersRequestId) return
 
                 this.qualityCounters = []
                 this.allQualityCriteriaCount = null
+                this.selectedQualityCriteriaCount = null
             } finally {
                 if (requestId === this.qualityCountersRequestId) {
                     this.qualityCountersLoading = false
                 }
             }
+        },
+        refreshQualityCountersAfterTimetableLoad(options = {}) {
+            if (options?.calculateQualityCounters === true || options?.preserveQualityCounters === true) {
+                return
+            }
+
+            if (!this.activeQualityCriterionRows.length) {
+                this.qualityCounters = []
+                this.allQualityCriteriaCount = null
+                this.selectedQualityCriteriaCount = null
+
+                return
+            }
+
+            this.loadQualityCountersForSelectedTimetableType()
         },
         autoSelectTimetableResultType(options = {}) {
             const selectableResultTypes = this.backendVariationCountsAvailable
@@ -3876,7 +3936,10 @@ export default {
 
             if (type === this.selectedTimetableResultType && previousCounter !== this.timetableResultCounter(type)) {
                 this.loadFullGreenTimetableCount({ preserveQualityCounters: true })
-                this.loadQualityCountersForSelectedTimetableType()
+
+                if (!(this.qualityCounters || []).length && (this.activeQualityCriterionRows || []).length) {
+                    this.loadQualityCountersForSelectedTimetableType()
+                }
             }
         },
         setTimetableResultCounter(type, value) {
@@ -4629,6 +4692,7 @@ export default {
             }
             this.qualityCounters = []
             this.allQualityCriteriaCount = null
+            this.selectedQualityCriteriaCount = null
             this.normalizeTimetableResultCounters()
             this.fullGreenTimetableCountError = ''
         },
@@ -4639,6 +4703,13 @@ export default {
             return `${this.formatNumber(this.allQualityCriteriaCount)} / ${
                 this.formatNumber(this.timetableResultCounterLimit(this.selectedTimetableResultType))
             }`
+        },
+        selectedQualityCriteriaCountFromResponse(responseData) {
+            if (!Object.prototype.hasOwnProperty.call(responseData || {}, 'selected_quality_criteria_count')) {
+                return null
+            }
+
+            return Number(responseData.selected_quality_criteria_count || 0)
         },
         allQualityCriteriaCountDetail() {
             if (!this.activeQualityCriterionRows.length) {
@@ -4842,7 +4913,7 @@ export default {
             if (counter?.enabled !== true) return '-'
             if (!Object.prototype.hasOwnProperty.call(counter || {}, 'count')) return '-'
 
-            return this.formatNumber(counter?.count || 0)
+            return `${this.formatNumber(counter?.count || 0)} / ${this.formatNumber(counter?.total || 0)}`
         },
         qualityCounterDetail(counter) {
             if (counter?.enabled !== true) return 'Nicht berücksichtigt.'
@@ -4856,8 +4927,99 @@ export default {
 
             return bestLabel && bestLabel !== '-' ? `Bestwert: ${bestLabel}` : 'Noch keine Berechnung.'
         },
+        applySelectedQualityMetricsToCounters() {
+            this.qualityCounters = this.qualityCountersWithSelectedTimetableMetrics(this.qualityCounters)
+        },
+        qualityCountersWithSelectedTimetableMetrics(counters) {
+            const metrics = this.selectedRobotTimetable?.metrics || null
+
+            if (!metrics) return counters
+
+            return (Array.isArray(counters) ? counters : [])
+                .map(counter => this.qualityCounterWithSelectedTimetableMetrics(counter, metrics))
+        },
+        qualityCounterWithSelectedTimetableMetrics(counter, metrics) {
+            const selectedValue = this.selectedQualityMetricValue(counter, metrics)
+
+            return {
+                ...counter,
+                selected_value: selectedValue,
+                selected_label: this.selectedQualityMetricLabel(counter, selectedValue),
+                selected_reached: this.selectedQualityMetricReachedBest(selectedValue, counter?.best_value),
+            }
+        },
+        selectedQualityMetricValue(counter, metrics) {
+            if (!counter?.key || !metrics) return null
+
+            if (counter.key === 'saturday_free') {
+                return counter.option === 'ignore_single_date_appointments'
+                    ? metrics.saturday_free_ignore_single_date_appointments === true
+                    : metrics.saturday_free_all_appointments === true
+            }
+
+            if (counter.key === 'free_days') return Number(metrics.free_days || 0)
+            if (counter.key === 'few_gaps') return Number(metrics.gap_count || 0)
+            if (counter.key === 'starts_from_period_10') return metrics.starts_from_period_10 === true
+            if (counter.key === 'ends_by_period_13') return metrics.ends_by_period_13 === true
+
+            return null
+        },
+        selectedQualityMetricLabel(counter, value) {
+            if (typeof value === 'boolean') return value ? 'erfüllt' : 'nicht erfüllt'
+            if (!Number.isFinite(Number(value))) return '-'
+
+            if (counter?.key === 'free_days') return `${Number(value)} freie Tage`
+            if (counter?.key === 'few_gaps') return `${Number(value)} Lücken`
+
+            return String(value)
+        },
+        selectedQualityMetricReachedBest(value, bestValue) {
+            if (typeof value === 'boolean') return value === true && bestValue === true
+            if (!Number.isFinite(Number(value)) || !Number.isFinite(Number(bestValue))) return false
+
+            return Number(value) === Number(bestValue)
+        },
+        qualitySummaryCheckboxKey(counter) {
+            return [counter?.key || '', counter?.option || ''].join('|')
+        },
+        selectedQualityCriterionKeys() {
+            const qualityCriterionRows = this.qualityCriterionRows || []
+
+            return this.qualitySummaryCheckedKeys
+                .map(selectedKey => qualityCriterionRows.find(counter => this.qualitySummaryCheckboxKey(counter) === selectedKey)?.key)
+                .filter(Boolean)
+                .filter((key, index, keys) => keys.indexOf(key) === index)
+        },
+        selectedQualitySummaryCriterion() {
+            const selectedKeys = [...this.qualitySummaryCheckedKeys].reverse()
+
+            return selectedKeys
+                .map(selectedKey => this.qualityCriterionRows.find(counter => this.qualitySummaryCheckboxKey(counter) === selectedKey))
+                .find(Boolean) || null
+        },
+        qualitySummaryCheckboxChecked(counter) {
+            return this.qualitySummaryCheckedKeys.includes(this.qualitySummaryCheckboxKey(counter))
+        },
+        setQualitySummaryCheckboxChecked(counter, checked) {
+            const checkedKeys = new Set(this.qualitySummaryCheckedKeys)
+            const checkboxKey = this.qualitySummaryCheckboxKey(counter)
+
+            if (checked === true) {
+                checkedKeys.add(checkboxKey)
+            } else {
+                checkedKeys.delete(checkboxKey)
+            }
+
+            this.qualitySummaryCheckedKeys = Array.from(checkedKeys)
+            this.selectedQualityCriteriaCount = null
+
+            if (typeof this.timetableCalculationReady === 'function' && this.timetableCalculationReady()) {
+                this.loadQualityCountersForSelectedTimetableType()
+            }
+        },
         resetQualityCounterSelection() {
             this.allQualityCriteriaCount = null
+            this.selectedQualityCriteriaCount = null
             this.qualityCounters = this.qualityCounters.map(counter => ({
                 ...counter,
                 selected_value: null,
@@ -8905,6 +9067,11 @@ export default {
     margin-top: 14px;
 }
 
+.robot-generated-criteria-count {
+    display: flex;
+    margin: 8px 0 10px;
+}
+
 .robot-count-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -8926,6 +9093,10 @@ export default {
 .robot-count-card--green {
     border-color: rgba(var(--v-theme-primary), 0.24);
     background: rgba(var(--v-theme-primary), 0.06);
+}
+
+.robot-count-card--criteria {
+    width: min(100%, 286px);
 }
 
 .robot-count-card--conflict {

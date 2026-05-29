@@ -70,6 +70,8 @@ class RobotTimetableBackendSetupService
 
     /**
      * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
      * @return array<string, mixed>
      */
     public function qualityCountersForUser(
@@ -77,6 +79,7 @@ class RobotTimetableBackendSetupService
         array $settings,
         StudentTimetableOverviewService $overviewService,
         array $evaluationCriteria,
+        array $selectedQualityCriterionKeys = [],
     ): array {
         $subjectRows = StudentTimetableSubjectRow::query()
             ->where('school_id', $authUser->school_id)
@@ -102,6 +105,7 @@ class RobotTimetableBackendSetupService
             courseGroups: $overviewService->courseGroupsForUser($authUser),
             settings: $settings,
             evaluationCriteria: $evaluationCriteria,
+            selectedQualityCriterionKeys: $selectedQualityCriterionKeys,
         );
     }
 
@@ -110,7 +114,8 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $subjectMappings
      * @param  list<array<string, mixed>>  $courseGroups
      * @param  array<string, mixed>  $settings
-     * @return array{quality_counters: array<int, array<string, mixed>>, all_quality_criteria_count: int}
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @return array{quality_counters: array<int, array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
      */
     public function qualityCountersForTimetableVariations(
         array $subjectRows,
@@ -118,11 +123,13 @@ class RobotTimetableBackendSetupService
         array $courseGroups,
         array $settings,
         array $evaluationCriteria,
+        array $selectedQualityCriterionKeys = [],
     ): array {
         if ($evaluationCriteria === []) {
             return [
                 'quality_counters' => [],
                 'all_quality_criteria_count' => 0,
+                'selected_quality_criteria_count' => 0,
             ];
         }
 
@@ -133,13 +140,32 @@ class RobotTimetableBackendSetupService
             $settings,
             $evaluationCriteria,
         );
+        $selectedQualityCriterionKeys = $this->selectedQualityCriterionKeys(
+            $selectedQualityCriterionKeys,
+            $evaluationCriteria,
+        );
+        $selectedQualityCriteriaCount = $selectedQualityCriterionKeys === []
+            ? 0
+            : $this->qualityMetricCombinationCountForCriteria(
+                $qualityResult['combination_counts'],
+                $qualityResult['summary'],
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
+            );
 
         return [
-            'quality_counters' => $this->qualityCountersFromSummary($qualityResult['summary']),
+            'quality_counters' => $this->qualityCountersFromSummary(
+                $qualityResult['summary'],
+                null,
+                $qualityResult['combination_counts'],
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
+            ),
             'all_quality_criteria_count' => $this->allQualityCriteriaCount(
                 $qualityResult['combination_counts'],
                 $qualityResult['summary'],
             ),
+            'selected_quality_criteria_count' => $selectedQualityCriteriaCount,
         ];
     }
 
@@ -525,10 +551,10 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  array<string, array<string, mixed>>  $qualitySummary
      * @param  array<string, int>  $qualityMetricCombinationCounts
+     * @param  array<string, mixed>|null  $qualityState
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
-     * @param  list<array<string, mixed>>  $selectedOptions
      */
     private function recordQualityResultForSelectedTimetableType(
         array $courseOptions,
@@ -539,12 +565,12 @@ class RobotTimetableBackendSetupService
         array &$qualitySummary,
         array &$qualityMetricCombinationCounts,
         int $courseIndex = 0,
+        ?array $qualityState = null,
         ?array $usedAllSummary = null,
         ?array $usedRegularDateSummary = null,
         ?array $usedRegularWeeklySlotSummary = null,
         bool $isFullGreenCandidate = true,
         bool $hasRegularConflict = false,
-        array $selectedOptions = [],
     ): void {
         if ($courseIndex >= count($courseOptions)) {
             $combinationType = $hasRegularConflict
@@ -568,7 +594,10 @@ class RobotTimetableBackendSetupService
                 }
             }
 
-            $metrics = $this->qualityMetricsFromOptions($selectedOptions, $additionalOptions);
+            $metrics = $this->qualityMetricsFromState($this->qualityStateWithOptions(
+                $qualityState ?? $this->emptyQualityState(),
+                $additionalOptions,
+            ));
             $this->recordQualityMetrics($qualitySummary, $metrics);
             $signature = $this->qualityMetricCombinationSignatureForMetrics($evaluationCriteria, $metrics);
             $qualityMetricCombinationCounts[$signature] = (int) ($qualityMetricCombinationCounts[$signature] ?? 0) + 1;
@@ -576,6 +605,7 @@ class RobotTimetableBackendSetupService
             return;
         }
 
+        $qualityState ??= $this->emptyQualityState();
         $usedAllSummary ??= $this->emptyDateKeySummary();
         $usedRegularDateSummary ??= $this->emptyDateKeySummary();
         $usedRegularWeeklySlotSummary ??= $this->emptyDateKeySummary();
@@ -599,12 +629,12 @@ class RobotTimetableBackendSetupService
                 $qualitySummary,
                 $qualityMetricCombinationCounts,
                 $courseIndex + 1,
+                $this->mergeQualityStates($qualityState, $option['quality_state'] ?? $this->qualityStateForOption($option)),
                 $nextState['used_all_summary'],
                 $nextState['used_regular_date_summary'],
                 $nextState['used_regular_weekly_slot_summary'],
                 $nextState['is_full_green_candidate'],
                 $nextState['has_regular_conflict'],
-                [...$selectedOptions, $option],
             );
         }
     }
@@ -665,16 +695,55 @@ class RobotTimetableBackendSetupService
     /**
      * @param  array<string, array<string, mixed>>  $qualitySummary
      * @param  ?array<string, int|bool>  $selectedMetrics
+     * @param  array<string, int>  $qualityMetricCombinationCounts
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
      * @return list<array<string, mixed>>
      */
-    private function qualityCountersFromSummary(array $qualitySummary, ?array $selectedMetrics = null): array
-    {
+    private function qualityCountersFromSummary(
+        array $qualitySummary,
+        ?array $selectedMetrics = null,
+        array $qualityMetricCombinationCounts = [],
+        array $evaluationCriteria = [],
+        array $selectedQualityCriterionKeys = [],
+    ): array {
+        if ($selectedQualityCriterionKeys === [] || $qualityMetricCombinationCounts === [] || $evaluationCriteria === []) {
+            return collect($qualitySummary)
+                ->values()
+                ->map(fn (array $summary): array => [
+                    ...$this->qualityCounterPayload($summary),
+                    ...$this->selectedQualityCounterPayload($summary, $selectedMetrics),
+                ])
+                ->all();
+        }
+
+        $selectedTotal = $this->qualityMetricCombinationCountForCriteria(
+            $qualityMetricCombinationCounts,
+            $qualitySummary,
+            $evaluationCriteria,
+            $selectedQualityCriterionKeys,
+        );
+
         return collect($qualitySummary)
             ->values()
-            ->map(fn (array $summary): array => [
-                ...$this->qualityCounterPayload($summary),
-                ...$this->selectedQualityCounterPayload($summary, $selectedMetrics),
-            ])
+            ->map(function (array $summary) use ($selectedMetrics, $qualityMetricCombinationCounts, $qualitySummary, $evaluationCriteria, $selectedQualityCriterionKeys, $selectedTotal): array {
+                $counterPayload = $this->qualityCounterPayload($summary);
+                $counterPayload['count'] = $this->qualityMetricCombinationCountForCriteria(
+                    $qualityMetricCombinationCounts,
+                    $qualitySummary,
+                    $evaluationCriteria,
+                    $this->selectedQualityCriterionKeys([
+                        ...$selectedQualityCriterionKeys,
+                        (string) ($summary['key'] ?? ''),
+                    ], $evaluationCriteria),
+                );
+                $counterPayload['total'] = $selectedTotal;
+
+                return [
+                    ...$counterPayload,
+                    ...$this->selectedQualityCounterPayload($summary, $selectedMetrics),
+                ];
+            })
             ->all();
     }
 
@@ -741,6 +810,76 @@ class RobotTimetableBackendSetupService
     }
 
     /**
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @return list<string>
+     */
+    private function selectedQualityCriterionKeys(array $selectedQualityCriterionKeys, array $evaluationCriteria): array
+    {
+        $availableKeys = collect($evaluationCriteria)
+            ->pluck('key')
+            ->map(fn (mixed $key): string => (string) $key)
+            ->flip();
+
+        return collect($selectedQualityCriterionKeys)
+            ->map(fn (mixed $key): string => (string) $key)
+            ->filter(fn (string $key): bool => $key !== '' && $availableKeys->has($key))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, int>  $qualityMetricCombinationCounts
+     * @param  array<string, array<string, mixed>>  $qualitySummary
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $criterionKeys
+     */
+    private function qualityMetricCombinationCountForCriteria(
+        array $qualityMetricCombinationCounts,
+        array $qualitySummary,
+        array $evaluationCriteria,
+        array $criterionKeys,
+    ): int {
+        if ($criterionKeys === []) {
+            return (int) array_sum($qualityMetricCombinationCounts);
+        }
+
+        $criteriaIndexesByKey = collect($evaluationCriteria)
+            ->values()
+            ->mapWithKeys(fn (array $criterion, int $index): array => [(string) ($criterion['key'] ?? '') => $index])
+            ->all();
+        $requiredParts = [];
+
+        foreach ($criterionKeys as $criterionKey) {
+            if (! array_key_exists($criterionKey, $criteriaIndexesByKey) || ! array_key_exists($criterionKey, $qualitySummary)) {
+                return 0;
+            }
+
+            $bestValue = $qualitySummary[$criterionKey]['best_value'] ?? null;
+
+            if ($bestValue === null) {
+                return 0;
+            }
+
+            $requiredParts[(int) $criteriaIndexesByKey[$criterionKey]] = $this->qualityMetricSignaturePart($bestValue);
+        }
+
+        return collect($qualityMetricCombinationCounts)
+            ->reduce(function (int $total, int $count, string $signature) use ($requiredParts): int {
+                $signatureParts = explode('|', $signature);
+
+                foreach ($requiredParts as $index => $requiredPart) {
+                    if (($signatureParts[$index] ?? null) !== $requiredPart) {
+                        return $total;
+                    }
+                }
+
+                return $total + $count;
+            }, 0);
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  array<string, int|bool>  $metrics
      */
@@ -781,8 +920,17 @@ class RobotTimetableBackendSetupService
     private function qualityMetricCombinationSignature(array $values): string
     {
         return collect($values)
-            ->map(fn (int|bool|null $value): string => is_bool($value) ? 'bool:'.(int) $value : 'int:'.(int) $value)
+            ->map(fn (int|bool|null $value): string => $this->qualityMetricSignaturePart($value))
             ->implode('|');
+    }
+
+    private function qualityMetricSignaturePart(int|bool|null $value): string
+    {
+        if (is_bool($value)) {
+            return 'bool:'.(int) $value;
+        }
+
+        return 'int:'.(int) $value;
     }
 
     /**
@@ -847,6 +995,160 @@ class RobotTimetableBackendSetupService
             'starts_from_period_10' => $startsFromPeriod10,
             'ends_by_period_13' => $endsByPeriod13,
             'regular_conflict_count' => $this->regularConflictCountForCourseGroups($regularCourseGroups),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     all_weekdays: array<int, true>,
+     *     regular_weekday_hours: array<int, array<int, true>>,
+     *     occasional_weekday_hours: array<int, array<int, true>>,
+     *     all_uses_saturday: bool,
+     *     regular_uses_saturday: bool,
+     *     starts_from_period_10: bool,
+     *     ends_by_period_13: bool
+     * }
+     */
+    private function emptyQualityState(): array
+    {
+        return [
+            'all_weekdays' => [],
+            'regular_weekday_hours' => [],
+            'occasional_weekday_hours' => [],
+            'all_uses_saturday' => false,
+            'regular_uses_saturday' => false,
+            'starts_from_period_10' => true,
+            'ends_by_period_13' => true,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @return array<string, mixed>
+     */
+    private function qualityStateForCourseGroups(array $courseGroups): array
+    {
+        $state = $this->emptyQualityState();
+
+        foreach ($courseGroups as $courseGroup) {
+            $isOccasional = $this->isOccasionalCourseGroup($courseGroup);
+            $weekday = (int) ($courseGroup['weekday'] ?? 0);
+            $hour = (int) ($courseGroup['hour'] ?? 0);
+
+            if ($weekday >= 1 && $weekday <= 6) {
+                $state['all_weekdays'][$weekday] = true;
+
+                if ($weekday === 6) {
+                    $state['all_uses_saturday'] = true;
+                    $state['regular_uses_saturday'] = $state['regular_uses_saturday'] || ! $isOccasional;
+                }
+            }
+
+            if ($hour > 0 && $hour < 10) {
+                $state['starts_from_period_10'] = false;
+            }
+
+            if ($hour > 13) {
+                $state['ends_by_period_13'] = false;
+            }
+
+            if ($hour <= 0) {
+                continue;
+            }
+
+            if ($isOccasional) {
+                $state['occasional_weekday_hours'][$weekday][$hour] = true;
+
+                continue;
+            }
+
+            $state['regular_weekday_hours'][$weekday][$hour] = true;
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param  array<string, mixed>  $option
+     * @return array<string, mixed>
+     */
+    private function qualityStateForOption(array $option): array
+    {
+        return $this->qualityStateForCourseGroups($option['course_groups'] ?? []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @param  list<array<string, mixed>>  $options
+     * @return array<string, mixed>
+     */
+    private function qualityStateWithOptions(array $state, array $options): array
+    {
+        foreach ($options as $option) {
+            $state = $this->mergeQualityStates(
+                $state,
+                $option['quality_state'] ?? $this->qualityStateForOption($option),
+            );
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param  array<string, mixed>  $firstState
+     * @param  array<string, mixed>  $secondState
+     * @return array<string, mixed>
+     */
+    private function mergeQualityStates(array $firstState, array $secondState): array
+    {
+        return [
+            'all_weekdays' => ($firstState['all_weekdays'] ?? []) + ($secondState['all_weekdays'] ?? []),
+            'regular_weekday_hours' => $this->mergeWeekdayHourStates(
+                $firstState['regular_weekday_hours'] ?? [],
+                $secondState['regular_weekday_hours'] ?? [],
+            ),
+            'occasional_weekday_hours' => $this->mergeWeekdayHourStates(
+                $firstState['occasional_weekday_hours'] ?? [],
+                $secondState['occasional_weekday_hours'] ?? [],
+            ),
+            'all_uses_saturday' => ($firstState['all_uses_saturday'] ?? false) || ($secondState['all_uses_saturday'] ?? false),
+            'regular_uses_saturday' => ($firstState['regular_uses_saturday'] ?? false) || ($secondState['regular_uses_saturday'] ?? false),
+            'starts_from_period_10' => ($firstState['starts_from_period_10'] ?? true) && ($secondState['starts_from_period_10'] ?? true),
+            'ends_by_period_13' => ($firstState['ends_by_period_13'] ?? true) && ($secondState['ends_by_period_13'] ?? true),
+        ];
+    }
+
+    /**
+     * @param  array<int, array<int, true>>  $firstHours
+     * @param  array<int, array<int, true>>  $secondHours
+     * @return array<int, array<int, true>>
+     */
+    private function mergeWeekdayHourStates(array $firstHours, array $secondHours): array
+    {
+        foreach ($secondHours as $weekday => $hours) {
+            $firstHours[(int) $weekday] = ($firstHours[(int) $weekday] ?? []) + $hours;
+        }
+
+        return $firstHours;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @return array<string, int|bool>
+     */
+    private function qualityMetricsFromState(array $state): array
+    {
+        return [
+            'saturday_free_all_appointments' => ! ($state['all_uses_saturday'] ?? false),
+            'saturday_free_ignore_single_date_appointments' => ! ($state['regular_uses_saturday'] ?? false),
+            'free_days' => max(0, 6 - count($state['all_weekdays'] ?? [])),
+            'gap_count' => $this->gapCountFromWeekdayHours(
+                $state['regular_weekday_hours'] ?? [],
+                $state['occasional_weekday_hours'] ?? [],
+            ),
+            'starts_from_period_10' => (bool) ($state['starts_from_period_10'] ?? true),
+            'ends_by_period_13' => (bool) ($state['ends_by_period_13'] ?? true),
+            'regular_conflict_count' => 0,
         ];
     }
 
@@ -1764,6 +2066,7 @@ class RobotTimetableBackendSetupService
                     'all_date_summary' => $this->dateKeySummary($dateKeys),
                     'regular_date_summary' => $this->dateKeySummary($regularDateKeys),
                     'regular_weekly_slot_summary' => $this->dateKeySummary($regularWeeklySlotKeys),
+                    'quality_state' => $this->qualityStateForCourseGroups($courseGroups),
                 ];
             })
             ->sortBy(fn (array $option): string => $this->optionSortValue($option))

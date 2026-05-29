@@ -416,6 +416,8 @@ class StudentsTimetablesController extends Controller
             'selected_additional_courses_required' => ['sometimes', 'boolean'],
             'selected_timetable_type' => ['nullable', 'string', 'in:full_green,green,conflict'],
             'selected_timetable_number' => ['nullable', 'integer', 'min:1', 'max:1000000'],
+            'selected_quality_criterion_keys' => ['sometimes', 'array'],
+            'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
             'evaluation_criteria' => ['sometimes', 'array'],
             'evaluation_criteria.*.key' => ['required_with:evaluation_criteria', 'string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
             'evaluation_criteria.*.enabled' => ['required_with:evaluation_criteria', 'boolean'],
@@ -476,6 +478,8 @@ class StudentsTimetablesController extends Controller
             'selected_timetable_type' => ['nullable', 'string', 'in:full_green,green,conflict'],
             'selected_timetable_number' => ['nullable', 'integer', 'min:1', 'max:1000000'],
             'include_quality_counters' => ['sometimes', 'boolean'],
+            'selected_quality_criterion_keys' => ['sometimes', 'array'],
+            'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
             'evaluation_criteria' => ['sometimes', 'array'],
             'evaluation_criteria.*.key' => ['required_with:evaluation_criteria', 'string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
             'evaluation_criteria.*.enabled' => ['required_with:evaluation_criteria', 'boolean'],
@@ -517,6 +521,7 @@ class StudentsTimetablesController extends Controller
                 $validated,
                 $overviewService,
                 $evaluationCriteria,
+                $validated['selected_quality_criterion_keys'] ?? [],
             ),
         ]);
     }

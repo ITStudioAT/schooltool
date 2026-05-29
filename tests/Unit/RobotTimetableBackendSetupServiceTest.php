@@ -325,6 +325,158 @@ it('counts quality criteria without building the selected timetable payload', fu
         ->and($result['all_quality_criteria_count'])->toBe(1);
 });
 
+it('counts quality criteria inside the selected quality criteria subset', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->qualityCountersForTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D1',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'M1',
+                'json_subject' => 'M',
+                'name' => 'Mathematik 1',
+                'tt_subject' => 'M1',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 3,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'E1',
+                'json_subject' => 'E',
+                'name' => 'Englisch 1',
+                'tt_subject' => 'E1',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 6,
+                'hour' => 10,
+                'class_name' => 'D1-S',
+                'display_label' => 'D1-S',
+                'title' => 'D1-S',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 10,
+                'class_name' => 'D1-M',
+                'display_label' => 'D1-M',
+                'title' => 'D1-M',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 10,
+                'class_name' => 'M1-L',
+                'display_label' => 'M1-L',
+                'title' => 'M1-L',
+                'course' => 'M1',
+                'subject' => 'Mathematik',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 1,
+                'class_name' => 'M1-E',
+                'display_label' => 'M1-E',
+                'title' => 'M1-E',
+                'course' => 'M1',
+                'subject' => 'Mathematik',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 3,
+                'hour' => 10,
+                'class_name' => 'E1-L',
+                'display_label' => 'E1-L',
+                'title' => 'E1-L',
+                'course' => 'E1',
+                'subject' => 'Englisch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '1|1|common|D1|D|Deutsch 1|D1',
+                '2|1|common|M1|M|Mathematik 1|M1',
+                '3|1|common|E1|E|Englisch 1|E1',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        evaluationCriteria: [
+            [
+                'key' => 'saturday_free',
+                'label' => 'Samstag kein Unterricht',
+                'enabled' => true,
+                'priority' => 1,
+            ],
+            [
+                'key' => 'starts_from_period_10',
+                'label' => 'Unterricht idealerweise ab 10. Stunde',
+                'enabled' => true,
+                'priority' => 2,
+            ],
+        ],
+        selectedQualityCriterionKeys: ['saturday_free'],
+    );
+
+    expect($result['selected_quality_criteria_count'])->toBe(2)
+        ->and($result['all_quality_criteria_count'])->toBe(1)
+        ->and($result['quality_counters'])
+        ->sequence(
+            fn ($counter) => $counter
+                ->key->toBe('saturday_free')
+                ->count->toBe(2)
+                ->total->toBe(2),
+            fn ($counter) => $counter
+                ->key->toBe('starts_from_period_10')
+                ->count->toBe(1)
+                ->total->toBe(2),
+        );
+});
+
 it('counts selected green timetables that can include additional courses', function () {
     $service = app(RobotTimetableBackendSetupService::class);
 
