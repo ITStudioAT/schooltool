@@ -1161,12 +1161,11 @@
                             <div class="robot-generated-header__actions">
                                 <v-btn
                                     color="success"
-                                    size="small"
                                     variant="tonal"
                                     prepend-icon="mdi-table-arrow-right"
                                     :disabled="timetableGenerationLoading || !selectedRobotTimetableCourseGroupKeys().length"
                                     @click="overtakeSelectedTimetableToOverview">
-                                    In Übersicht übernehmen
+                                    Übernehmen
                                 </v-btn>
                                 <div
                                     v-if="selectedTimetableResultCount > 0"
@@ -1232,11 +1231,11 @@
                                 <v-checkbox-btn
                                     :model-value="qualitySummaryCheckboxChecked(counter)"
                                     density="compact"
-                                    :aria-label="`${counter.label}: ${qualityCounterFulfilledCountLabel(counter)}`"
+                                    :aria-label="qualityCounterSummaryLabel(counter)"
                                     class="robot-quality-summary__check"
                                     @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
                                 <span class="robot-quality-summary__label">
-                                    {{ counter.label }}: {{ qualityCounterFulfilledCountLabel(counter) }}
+                                    {{ qualityCounterSummaryLabel(counter) }}
                                 </span>
                                 <v-icon
                                     :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
@@ -1399,6 +1398,47 @@
                                     </div>
                                 </div>
                             </template>
+                        </div>
+
+                        <div
+                            v-if="selectedRobotTimetable && sameSlotDateOverviewGroups(selectedRobotTimetable).length"
+                            class="robot-generated-date-overview">
+                            <div class="robot-generated-date-overview__title">Termine in gleichen Zellen</div>
+                            <div class="robot-generated-date-overview__groups">
+                                <div
+                                    v-for="group in sameSlotDateOverviewGroups(selectedRobotTimetable)"
+                                    :key="group.key"
+                                    class="robot-generated-date-overview__group">
+                                    <div class="robot-generated-date-overview__slot">{{ group.title }}</div>
+                                    <div class="robot-generated-date-overview__courses">
+                                        <div
+                                            v-for="course in group.courses"
+                                            :key="course.key"
+                                            class="robot-generated-date-overview__course">
+                                            <div class="robot-generated-date-overview__course-title">
+                                                <span>{{ course.title }}</span>
+                                                <sup v-if="course.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                                                <sup v-if="course.weekMarker" class="robot-course-fu robot-course-week-marker">
+                                                    {{ course.weekMarker }}
+                                                </sup>
+                                                <span
+                                                    v-if="course.dateRangeLabel"
+                                                    class="robot-generated-date-overview__range">
+                                                    {{ course.dateRangeLabel }}
+                                                </span>
+                                            </div>
+                                            <div class="robot-generated-date-overview__dates">
+                                                <span
+                                                    v-for="dateLabel in course.dateLabels"
+                                                    :key="dateLabel"
+                                                    class="robot-generated-date-overview__date">
+                                                    {{ dateLabel }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div
@@ -2056,12 +2096,11 @@
                 <div class="robot-generated-header__actions">
                     <v-btn
                         color="success"
-                        size="small"
                         variant="tonal"
                         prepend-icon="mdi-table-arrow-right"
                         :disabled="timetableGenerationLoading || !selectedRobotTimetableCourseGroupKeys().length"
                         @click="overtakeSelectedTimetableToOverview">
-                        In Übersicht übernehmen
+                        Übernehmen
                     </v-btn>
                     <div
                         v-if="selectedTimetableResultCount > 0"
@@ -2127,11 +2166,11 @@
                     <v-checkbox-btn
                         :model-value="qualitySummaryCheckboxChecked(counter)"
                         density="compact"
-                        :aria-label="`${counter.label}: ${qualityCounterFulfilledCountLabel(counter)}`"
+                        :aria-label="qualityCounterSummaryLabel(counter)"
                         class="robot-quality-summary__check"
                         @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
                     <span class="robot-quality-summary__label">
-                        {{ counter.label }}: {{ qualityCounterFulfilledCountLabel(counter) }}
+                        {{ qualityCounterSummaryLabel(counter) }}
                     </span>
                     <v-icon
                         :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
@@ -2297,6 +2336,47 @@
             </div>
 
             <div
+                v-if="selectedRobotTimetable && sameSlotDateOverviewGroups(selectedRobotTimetable).length"
+                class="robot-generated-date-overview">
+                <div class="robot-generated-date-overview__title">Termine in gleichen Zellen</div>
+                <div class="robot-generated-date-overview__groups">
+                    <div
+                        v-for="group in sameSlotDateOverviewGroups(selectedRobotTimetable)"
+                        :key="`embedded-date-overview-${group.key}`"
+                        class="robot-generated-date-overview__group">
+                        <div class="robot-generated-date-overview__slot">{{ group.title }}</div>
+                        <div class="robot-generated-date-overview__courses">
+                            <div
+                                v-for="course in group.courses"
+                                :key="course.key"
+                                class="robot-generated-date-overview__course">
+                                <div class="robot-generated-date-overview__course-title">
+                                    <span>{{ course.title }}</span>
+                                    <sup v-if="course.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                                    <sup v-if="course.weekMarker" class="robot-course-fu robot-course-week-marker">
+                                        {{ course.weekMarker }}
+                                    </sup>
+                                    <span
+                                        v-if="course.dateRangeLabel"
+                                        class="robot-generated-date-overview__range">
+                                        {{ course.dateRangeLabel }}
+                                    </span>
+                                </div>
+                                <div class="robot-generated-date-overview__dates">
+                                    <span
+                                        v-for="dateLabel in course.dateLabels"
+                                        :key="dateLabel"
+                                        class="robot-generated-date-overview__date">
+                                        {{ dateLabel }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div
                 v-if="selectedRobotTimetable && displayedOccasionalAppointmentGroups(selectedRobotTimetable).length"
                 class="robot-generated-appointments">
                 <div class="robot-generated-appointments__title">Einzeltermine</div>
@@ -2357,6 +2437,7 @@ const ALL_DATES_OPTION_VALUE = 'all_dates'
 
 export default {
     components: { EvaluationSettings },
+    emits: ['timetable-overtaken'],
     props: {
         embeddedCourseCardsOnly: {
             type: Boolean,
@@ -3592,6 +3673,7 @@ export default {
                 selected_timetable_type: this.selectedTimetableResultType,
                 selected_timetable_number: this.timetableResultCounter(this.selectedTimetableResultType),
                 selected_quality_criterion_keys: this.selectedQualityCriterionKeys(),
+                selected_quality_criteria_required: this.qualityCriteriaResultFilterActive,
                 include_quality_counters: options?.calculateQualityCounters === true,
                 evaluation_criteria: evaluationCriteria,
             }
@@ -3625,7 +3707,9 @@ export default {
             const requestId = this.fullGreenTimetableCountRequestId + 1
             this.fullGreenTimetableCountRequestId = requestId
             this.fullGreenTimetableCountLoading = true
-            this.generatedTimetables = []
+            if (options?.preserveGeneratedTimetable !== true) {
+                this.generatedTimetables = []
+            }
             this.resetQualityCounterSelection()
 
             try {
@@ -3969,7 +4053,10 @@ export default {
             this.setTimetableResultCounter(type, this.timetableResultCounter(type) + direction)
 
             if (type === this.selectedTimetableResultType && previousCounter !== this.timetableResultCounter(type)) {
-                this.loadFullGreenTimetableCount({ preserveQualityCounters: true })
+                this.loadFullGreenTimetableCount({
+                    preserveGeneratedTimetable: true,
+                    preserveQualityCounters: true,
+                })
 
                 if (!(this.qualityCounters || []).length && (this.activeQualityCriterionRows || []).length) {
                     this.loadQualityCountersForSelectedTimetableType()
@@ -4225,6 +4312,7 @@ export default {
                     2: false,
                 },
                 showSaturday: this.selectedRobotTimetableHasSaturday(),
+                manualPanelOpen: true,
                 selection: this.overviewSelectionState(),
                 transferredStudentContext: this.overviewStudentContext(),
             }
@@ -4300,6 +4388,12 @@ export default {
             } catch {
                 this.generationError = 'Der Stundenplan konnte nicht für die Übersicht übernommen werden.'
 
+                return
+            }
+
+            this.$emit('timetable-overtaken', overviewTimetableState)
+
+            if (this.embeddedCourseCardsOnly) {
                 return
             }
 
@@ -4977,6 +5071,22 @@ export default {
 
             return `${this.formatNumber(counter?.count || 0)} / ${this.formatNumber(counter?.total || 0)}`
         },
+        qualityCounterSummaryLabel(counter) {
+            const countLabel = this.qualityCounterFulfilledCountLabel(counter)
+            const bestValueLabel = this.qualityCounterBestValueLabel(counter)
+            const suffix = bestValueLabel ? ` (${bestValueLabel})` : ''
+
+            return `${counter?.label || '-'}: ${countLabel}${suffix}`
+        },
+        qualityCounterBestValueLabel(counter) {
+            if (counter?.enabled !== true) return ''
+
+            const bestLabel = String(counter?.best_label || '').trim()
+
+            if (!bestLabel || bestLabel === '-') return ''
+
+            return bestLabel
+        },
         qualityCounterDetail(counter) {
             if (counter?.enabled !== true) return 'Nicht berücksichtigt.'
 
@@ -5080,6 +5190,15 @@ export default {
             this.setTimetableResultCounter(this.selectedTimetableResultType, 1)
 
             if (typeof this.timetableCalculationReady === 'function' && this.timetableCalculationReady()) {
+                if (this.qualityCriteriaResultFilterActive) {
+                    this.loadFullGreenTimetableCount({
+                        calculateQualityCounters: true,
+                        preserveGeneratedTimetable: true,
+                    })
+
+                    return
+                }
+
                 this.loadQualityCountersForSelectedTimetableType()
             }
         },
@@ -6358,6 +6477,78 @@ export default {
         generatedSlotDateRangeSameSlotBlocks(slot) {
             return this.generatedSlotSameSlotBlocks(slot)
                 .filter(block => !this.generatedSlotBlockIsOccasional(block))
+        },
+        sameSlotDateOverviewGroups(timetable) {
+            return Object.values(timetable?.slots || {})
+                .map(slot => this.sameSlotDateOverviewGroup(timetable, slot))
+                .filter(Boolean)
+                .toSorted((firstGroup, secondGroup) =>
+                    firstGroup.sortValue.localeCompare(secondGroup.sortValue, 'de-AT', {
+                        numeric: true,
+                        sensitivity: 'base',
+                    }),
+                )
+        },
+        sameSlotDateOverviewGroup(timetable, slot) {
+            const courses = this.sameSlotDateOverviewCourses(timetable, slot)
+
+            if (courses.length < 2) return null
+
+            const courseGroup = slot?.courseGroup || {}
+            const weekday = String(courseGroup?.weekday || '').padStart(2, '0')
+            const hour = String(courseGroup?.hour || '').padStart(2, '0')
+
+            return {
+                key: this.slotKey(courseGroup?.weekday, courseGroup?.hour),
+                title: this.sameSlotDateOverviewSlotTitle(courseGroup),
+                courses,
+                sortValue: `${weekday}-${hour}`,
+            }
+        },
+        sameSlotDateOverviewCourses(timetable, slot) {
+            if (!slot) return []
+
+            return this.uniqueGeneratedSlotBlocks([
+                this.generatedSlotConflictBlock(slot),
+                ...(Array.isArray(slot?.sameSlotEntries)
+                    ? slot.sameSlotEntries.map(entry => this.generatedSlotConflictBlock(entry))
+                    : []),
+                ...(Array.isArray(slot?.conflicts)
+                    ? slot.conflicts.map(entry => this.generatedSlotConflictBlock(entry))
+                    : []),
+            ])
+                .filter(block => !this.generatedSlotBlockIsOccasional(block))
+                .map(block => this.sameSlotDateOverviewCourse(timetable, block))
+                .filter(course => course.dateLabels.length > 0)
+        },
+        sameSlotDateOverviewCourse(timetable, block) {
+            const dates = this.courseGroupDates(block?.courseGroup)
+            const title = this.sameSlotDateOverviewCourseTitle(block)
+
+            return {
+                key: this.generatedSlotBlockIdentity(block) || block?.key || title,
+                title,
+                dateRangeLabel: block?.dateRangeLabel || this.courseGroupDateRangeLabel(block?.courseGroup),
+                dateLabels: dates.map(date => this.formatDateWithWeekdayLabel(date)),
+                isDistanceLearningCourse: block?.isDistanceLearningCourse === true,
+                weekMarker: this.generatedSlotWeekMarker(block, timetable),
+            }
+        },
+        sameSlotDateOverviewCourseTitle(block) {
+            const code = String(block?.code || '').trim()
+            const sourceLabel = String(block?.sourceLabel || this.courseGroupSourceLabel(block?.courseGroup) || '').trim()
+
+            if (!sourceLabel || sourceLabel === code) return code
+
+            return [sourceLabel, code].filter(Boolean).join(' / ')
+        },
+        sameSlotDateOverviewSlotTitle(courseGroup) {
+            const weekday = this.courseGroupWeekdayLabel(courseGroup?.weekday)
+            const timeOptions = Array.isArray(this.timeOptions) ? this.timeOptions : []
+            const time = timeOptions.find(option => Number(option.value) === Number(courseGroup?.hour))
+            const timeLabel = time?.shortTitle || `${courseGroup?.hour}.`
+
+            return [weekday, timeLabel].filter(Boolean).join(' ')
         },
         appointmentMetaLabel(appointment) {
             return [appointment?.details, appointment?.conflictLabel]
@@ -9433,6 +9624,77 @@ export default {
     font-weight: 750;
 }
 
+.robot-generated-date-overview {
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f172a;
+}
+
+.robot-generated-date-overview__title {
+    margin-bottom: 5px;
+    font-size: 0.78rem;
+    font-weight: 750;
+}
+
+.robot-generated-date-overview__groups {
+    display: grid;
+    gap: 8px;
+}
+
+.robot-generated-date-overview__group {
+    display: grid;
+    gap: 5px;
+}
+
+.robot-generated-date-overview__slot {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #475569;
+}
+
+.robot-generated-date-overview__courses {
+    display: grid;
+    gap: 6px;
+}
+
+.robot-generated-date-overview__course {
+    display: grid;
+    gap: 3px;
+}
+
+.robot-generated-date-overview__course-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px;
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.robot-generated-date-overview__range {
+    color: #64748b;
+    font-weight: 650;
+}
+
+.robot-generated-date-overview__dates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+
+.robot-generated-date-overview__date {
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 0.69rem;
+    line-height: 1.45;
+    white-space: nowrap;
+}
+
 .robot-generated-appointments {
     margin-bottom: 8px;
     padding: 8px 10px;
@@ -9537,7 +9799,7 @@ export default {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    white-space: nowrap;
+    min-width: 0;
 }
 
 .robot-quality-summary__check {
@@ -9557,6 +9819,7 @@ export default {
 
 .robot-quality-summary__label {
     font-weight: 600;
+    line-height: 1.25;
 }
 
 .robot-generated-grid {

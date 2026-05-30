@@ -75,7 +75,8 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain("students-timetables:robot:last-settings")
         expect(componentSource).toContain("students-timetables:overview:last-timetable")
         expect(componentSource).toContain("const OVERVIEW_TIMETABLE_PATH = '/admin/students-timetables/timetable/overview'")
-        expect(componentSource).toContain('In Übersicht übernehmen')
+        expect(componentSource).toContain('Übernehmen')
+        expect(componentSource).not.toContain('In Übersicht übernehmen')
         expect(componentSource).toContain('overtakeSelectedTimetableToOverview')
         expect(componentSource).toContain('selectedRobotTimetableCourseGroupKeys()')
         expect(componentSource).toContain('overviewTimetableStateForSelectedRobotTimetable()')
@@ -350,6 +351,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('const evaluationCriteria = this.storageEvaluationCriteria(this.evaluationCriteria)')
         expect(componentSource).toContain('evaluation_criteria: evaluationCriteria')
         expect(componentSource).toContain('selected_quality_criterion_keys: this.selectedQualityCriterionKeys()')
+        expect(componentSource).toContain('selected_quality_criteria_required: this.qualityCriteriaResultFilterActive')
         expect(componentSource).toContain('enabledEvaluationCriteriaFromSettings')
         expect(componentSource).toContain('qualityCriterionRows()')
         expect(componentSource).toContain('activeQualityCriterionRows()')
@@ -366,6 +368,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('allQualityCriteriaCountDetail()')
         expect(componentSource).toContain('qualityCounterCountLabel(counter)')
         expect(componentSource).toContain('qualityCounterFulfilledCountLabel(counter)')
+        expect(componentSource).toContain('qualityCounterSummaryLabel(counter)')
         expect(componentSource).toContain('qualityCounterDetail(counter)')
         expect(componentSource).toContain('resetQualityCounterSelection()')
         expect(componentSource).toContain('setEvaluationCriterionEnabled(counter, $event)')
@@ -376,7 +379,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('@update:model-value="setQualitySummaryCheckboxChecked(counter, $event)"')
         expect(componentSource).toContain('selectedQualityCriteriaCount')
         expect(componentSource).toContain('selectedQualityCriteriaCountFromResponse(responseData)')
-        expect(componentSource).toContain('{{ counter.label }}: {{ qualityCounterFulfilledCountLabel(counter) }}')
+        expect(componentSource).toContain('{{ qualityCounterSummaryLabel(counter) }}')
         expect(componentSource).toContain("selectedTimetableResultType: 'full_green'")
         expect(componentSource).toContain("timetableResultCardSelected('full_green')")
         expect(componentSource).toContain("timetableResultCardSelected('green')")
@@ -872,7 +875,10 @@ describe('Students timetable robot page', () => {
         methods.moveTimetableResultCounter.call(ctx, 'green', 1)
 
         expect(ctx.greenTimetableNumber).toBe(2)
-        expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({ preserveQualityCounters: true })
+        expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({
+            preserveGeneratedTimetable: true,
+            preserveQualityCounters: true,
+        })
         expect(loadQualityCountersForSelectedTimetableType).toHaveBeenCalledOnce()
     })
 
@@ -900,9 +906,16 @@ describe('Students timetable robot page', () => {
             selectedTimetableResultType: 'full_green',
             fullGreenTimetableCount: 1080,
             additionalCourseTimetableRequired: false,
+            qualityCriteriaResultFilterEnabled: true,
+            selectedQualityCriteriaCount: 2,
+            qualitySummaryCheckedKeys: ['saturday_free|', 'free_days|'],
             activeQualityCriterionRows: [
                 { key: 'saturday_free', enabled: true, selected_reached: true },
                 { key: 'free_days', enabled: true, selected_reached: true },
+            ],
+            qualityCriterionRows: [
+                { key: 'saturday_free', option: null },
+                { key: 'free_days', option: null },
             ],
             allQualityCriteriaCount: 2,
         }
@@ -1983,6 +1996,7 @@ describe('Students timetable robot page', () => {
             $router: {
                 push: routerPush,
             },
+            $emit: vi.fn(),
         }
 
         methods.overtakeSelectedTimetableToOverview.call(ctx)
@@ -2006,6 +2020,7 @@ describe('Students timetable robot page', () => {
                 2: false,
             },
             showSaturday: true,
+            manualPanelOpen: true,
             selection: {
                 semester: 6,
                 religion: 'ETH',
@@ -2059,6 +2074,49 @@ describe('Students timetable robot page', () => {
             },
         })
         expect(routerPush).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable/overview' })
+    })
+
+    it('emits an overtaken timetable without navigating when embedded in the overview', () => {
+        const methods = (RobotTimetable as any).methods
+        const storedItems = new Map<string, string>()
+        const routerPush = vi.fn()
+        const emit = vi.fn()
+        const ctx = {
+            ...methods,
+            embeddedCourseCardsOnly: true,
+            config: { selected_schoolyear: { id: 42 } },
+            selected_schoolyear: null,
+            selection: methods.defaultRobotState().selection,
+            selectedStudent: null,
+            selectedRobotTimetable: {
+                slots: {
+                    '2-4': {
+                        courseGroup: { key: 'bio-2', weekday: 2, hour: 4 },
+                    },
+                },
+            },
+            robotStorage() {
+                return {
+                    setItem(key: string, value: string) {
+                        storedItems.set(key, value)
+                    },
+                }
+            },
+            $emit: emit,
+            $router: {
+                push: routerPush,
+            },
+        }
+
+        methods.overtakeSelectedTimetableToOverview.call(ctx)
+
+        const storedState = JSON.parse(storedItems.get(
+            'students-timetables:overview:last-timetable:42',
+        ) || '{}')
+
+        expect(storedState.activeCourseGroupFilterKeys).toEqual(['bio-2'])
+        expect(emit).toHaveBeenCalledWith('timetable-overtaken', storedState)
+        expect(routerPush).not.toHaveBeenCalled()
     })
 
     it('restores selected courses by course code when saved keys changed', () => {
@@ -3759,13 +3817,13 @@ describe('Students timetable robot page', () => {
                         code: 'S4',
                         name: 'Spanisch 4',
                         sourceLabel: 'SPA4-KOR',
-                        dateRangeLabel: '20.02.',
+                        dateRangeLabel: '20.02.-6.3.',
                         courseGroup: {
                             key: 'spa4',
                             class_name: 'SPA4-KOR',
                             weekday: 5,
                             hour: 7,
-                            dates: ['2026-02-20'],
+                            dates: ['2026-02-20', '2026-03-06'],
                             dates_count: 4,
                         },
                         sameSlotEntries: [
@@ -3774,13 +3832,13 @@ describe('Students timetable robot page', () => {
                                 code: 'S5',
                                 name: 'Spanisch 5',
                                 sourceLabel: 'SPA5-PIB',
-                                dateRangeLabel: '8.5.',
+                                dateRangeLabel: '8.5.-22.5.',
                                 courseGroup: {
                                     key: 'spa5',
                                     class_name: 'SPA5-PIB',
                                     weekday: 5,
                                     hour: 7,
-                                    dates: ['2026-05-08'],
+                                    dates: ['2026-05-08', '2026-05-22'],
                                     dates_count: 4,
                                 },
                             },
@@ -3795,10 +3853,27 @@ describe('Students timetable robot page', () => {
         expect(methods.generatedSlotConflicts.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])).toEqual([])
         expect(methods.robotTimetableCellClasses.call(ctx, 5, 7)['robot-generated-cell--conflict']).toBe(false)
         expect(methods.generatedSlotTitle.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])).toBe('SPA4-KOR / S4')
-        expect(methods.generatedSlotDateLabel.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])).toBe('20.02.')
+        expect(methods.generatedSlotDateLabel.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])).toBe('20.02.-6.3.')
         expect(methods.generatedSlotTitle.call(ctx, sameSlotBlocks[0])).toBe('SPA5-PIB / S5')
-        expect(methods.generatedSlotDateLabel.call(ctx, sameSlotBlocks[0])).toBe('8.5.')
+        expect(methods.generatedSlotDateLabel.call(ctx, sameSlotBlocks[0])).toBe('8.5.-22.5.')
         expect(sameSlotBlocks.map(block => block.code)).toEqual(['S5'])
+        expect(methods.sameSlotDateOverviewGroups.call(ctx, ctx.selectedRobotTimetable)).toMatchObject([
+            {
+                title: 'Fr 7.',
+                courses: [
+                    {
+                        title: 'SPA4-KOR / S4',
+                        dateRangeLabel: '20.02.-6.3.',
+                        dateLabels: ['Fr, 20.02.2026', 'Fr, 06.03.2026'],
+                    },
+                    {
+                        title: 'SPA5-PIB / S5',
+                        dateRangeLabel: '8.5.-22.5.',
+                        dateLabels: ['Fr, 08.05.2026', 'Fr, 22.05.2026'],
+                    },
+                ],
+            },
+        ])
         expect(methods.selectedRobotTimetableCourseGroups.call(ctx).map(courseGroup => courseGroup.key)).toEqual([
             'spa4',
             'spa5',

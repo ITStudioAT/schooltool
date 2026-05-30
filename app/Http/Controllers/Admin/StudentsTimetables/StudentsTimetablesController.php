@@ -480,6 +480,7 @@ class StudentsTimetablesController extends Controller
             'include_quality_counters' => ['sometimes', 'boolean'],
             'selected_quality_criterion_keys' => ['sometimes', 'array'],
             'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
+            'selected_quality_criteria_required' => ['sometimes', 'boolean'],
             'evaluation_criteria' => ['sometimes', 'array'],
             'evaluation_criteria.*.key' => ['required_with:evaluation_criteria', 'string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
             'evaluation_criteria.*.enabled' => ['required_with:evaluation_criteria', 'boolean'],
@@ -487,7 +488,10 @@ class StudentsTimetablesController extends Controller
             'evaluation_criteria.*.option' => ['nullable', 'string', Rule::in($evaluationSettingsService->optionValues())],
         ]);
 
-        $evaluationCriteria = $request->boolean('include_quality_counters') && array_key_exists('evaluation_criteria', $validated)
+        $usesQualityCriteria = ($request->boolean('include_quality_counters') || $request->boolean('selected_quality_criteria_required'))
+            && array_key_exists('evaluation_criteria', $validated);
+
+        $evaluationCriteria = $usesQualityCriteria
             ? $evaluationSettingsService->activeCriteriaForRun($validated['evaluation_criteria'])
             : [];
 

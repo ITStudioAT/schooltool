@@ -265,10 +265,15 @@ describe('Students timetable overview', () => {
             isCourseMenuEntryFilterActive: methods.isCourseMenuEntryFilterActive,
             courseMenuEntryKeys: methods.courseMenuEntryKeys,
             courseMenuEntryHasOverlap: methods.courseMenuEntryHasOverlap,
+            courseMenuEntryHasBlockingOverlap: methods.courseMenuEntryHasBlockingOverlap,
+            courseMenuEntryHasRelatedOverlap: methods.courseMenuEntryHasRelatedOverlap,
             selectedCourseMenuEntries: methods.selectedCourseMenuEntries,
             buildSelectedCourseMenuEntries: methods.buildSelectedCourseMenuEntries,
+            courseMenuEntriesHaveBlockingOverlap: methods.courseMenuEntriesHaveBlockingOverlap,
             courseMenuEntriesOverlap: methods.courseMenuEntriesOverlap,
             courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupDates: methods.courseGroupDates,
+            courseGroupDatesOverlap: methods.courseGroupDatesOverlap,
             courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
             courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
         }
@@ -356,10 +361,11 @@ describe('Students timetable overview', () => {
             isCourseMenuEntryFilterActive: methods.isCourseMenuEntryFilterActive,
             courseMenuEntryKeys: methods.courseMenuEntryKeys,
             courseMenuEntryHasOverlap: methods.courseMenuEntryHasOverlap,
+            courseMenuEntryHasBlockingOverlap: methods.courseMenuEntryHasBlockingOverlap,
+            courseMenuEntryHasRelatedOverlap: methods.courseMenuEntryHasRelatedOverlap,
             courseGroupHasOverlap: methods.courseGroupHasOverlap,
             courseGroupHasBlockingOverlap: methods.courseGroupHasBlockingOverlap,
             courseGroupHasRelatedOverlap: methods.courseGroupHasRelatedOverlap,
-            courseGroupRelatedOverlapMarker: methods.courseGroupRelatedOverlapMarker,
             displayCourseGroupsForCell: methods.displayCourseGroupsForCell,
             courseGroupsForCell: methods.courseGroupsForCell,
             courseCellKey: methods.courseCellKey,
@@ -374,8 +380,11 @@ describe('Students timetable overview', () => {
             uniqueCourseGroupsByKey: methods.uniqueCourseGroupsByKey,
             uniqueDisplayCourseGroups: methods.uniqueDisplayCourseGroups,
             courseGroupDisplayIdentityKey: methods.courseGroupDisplayIdentityKey,
+            courseMenuEntriesHaveBlockingOverlap: methods.courseMenuEntriesHaveBlockingOverlap,
             courseMenuEntriesOverlap: methods.courseMenuEntriesOverlap,
             courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupDates: methods.courseGroupDates,
+            courseGroupDatesOverlap: methods.courseGroupDatesOverlap,
             courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
             courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
             courseGroupSortLabel: methods.courseGroupSortLabel,
@@ -389,13 +398,10 @@ describe('Students timetable overview', () => {
             .toEqual(['math-related'])
         expect(methods.courseGroupHasOverlap.call(ctx, mathCourseGroup)).toBe(true)
         expect(methods.courseGroupHasRelatedOverlap.call(ctx, mathCourseGroup)).toBe(false)
-        expect(methods.courseGroupRelatedOverlapMarker.call(ctx, mathCourseGroup)).toBe('')
         expect(methods.courseGroupHasOverlap.call(ctx, mathRelatedCourseGroup)).toBe(false)
         expect(methods.courseGroupHasRelatedOverlap.call(ctx, mathRelatedCourseGroup)).toBe(true)
-        expect(methods.courseGroupRelatedOverlapMarker.call(ctx, mathRelatedCourseGroup)).toBe('⚠ Mitbetroffen')
         expect(methods.courseGroupHasOverlap.call(ctx, bioCourseGroup)).toBe(true)
         expect(methods.courseGroupHasRelatedOverlap.call(ctx, bioCourseGroup)).toBe(false)
-        expect(methods.courseGroupRelatedOverlapMarker.call(ctx, bioCourseGroup)).toBe('')
     })
 
     it('does not render duplicate course blocks when overlapping entries share the same visible course identity', () => {
@@ -515,8 +521,13 @@ describe('Students timetable overview', () => {
             isCourseMenuEntryFilterActive: methods.isCourseMenuEntryFilterActive,
             courseMenuEntryKeys: methods.courseMenuEntryKeys,
             courseMenuEntryHasOverlap: methods.courseMenuEntryHasOverlap,
+            courseMenuEntryHasBlockingOverlap: methods.courseMenuEntryHasBlockingOverlap,
+            courseMenuEntryHasRelatedOverlap: methods.courseMenuEntryHasRelatedOverlap,
+            courseMenuEntriesHaveBlockingOverlap: methods.courseMenuEntriesHaveBlockingOverlap,
             courseMenuEntriesOverlap: methods.courseMenuEntriesOverlap,
             courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupDates: methods.courseGroupDates,
+            courseGroupDatesOverlap: methods.courseGroupDatesOverlap,
             courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
             courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
             courseGroupHasOverlap: methods.courseGroupHasOverlap,
@@ -555,6 +566,129 @@ describe('Students timetable overview', () => {
         expect(methods.cellHasOverlap.call(ctx, 1, 1, 11)).toBe(false)
         expect(methods.courseGroupHasOverlap.call(ctx, regularCourseGroup)).toBe(false)
         expect(methods.courseGroupSingleDateOverlapMarker.call(ctx, regularCourseGroup)).toBe('Auch Einzeltermine')
+    })
+
+    it('marks same-cell recurring courses with separate dates as orange and lists their dates', () => {
+        const methods = (Overview as any).methods
+        const deutschCourseGroup = {
+            key: 'd2',
+            semester: 1,
+            weekday: 5,
+            hour: 10,
+            course: 'D2',
+            title: 'D2',
+            display_label: 'D2 - 1U - HER',
+            subject: '17:05',
+            teacher: '17:50',
+            recurrence_interval: 2,
+            recurrence_label: '2-wöchig',
+            dates: ['2026-02-21', '2026-03-07', '2026-04-18'],
+        }
+        const englishCourseGroup = {
+            key: 'e2',
+            semester: 1,
+            weekday: 5,
+            hour: 10,
+            course: 'E2',
+            title: 'E2',
+            display_label: 'E2 - 1U - NIE',
+            subject: '17:05',
+            teacher: '17:50',
+            recurrence_interval: 2,
+            recurrence_label: '2-wöchig',
+            dates: ['2026-05-09', '2026-05-23', '2026-07-04'],
+        }
+        const ctx = {
+            activeCourseGroupFilterKeys: ['d2', 'e2'],
+            configuredCourseGroups: [deutschCourseGroup, englishCourseGroup],
+            configuredSchoolHours: [],
+            weekdays: [
+                { label: 'Mo', value: 1 },
+                { label: 'Di', value: 2 },
+                { label: 'Mi', value: 3 },
+                { label: 'Do', value: 4 },
+                { label: 'Fr', value: 5 },
+                { label: 'Sa', value: 6 },
+            ],
+            courseGroupsByCell: {
+                '1-5-10': [deutschCourseGroup, englishCourseGroup],
+            },
+            semesterCourseMenus: methods.semesterCourseMenus,
+            buildSemesterCourseMenus: methods.buildSemesterCourseMenus,
+            selectedCourseFilterChips: methods.selectedCourseFilterChips,
+            selectedCourseMenuEntries: methods.selectedCourseMenuEntries,
+            buildSelectedCourseMenuEntries: methods.buildSelectedCourseMenuEntries,
+            courseGroupMenuLabel: methods.courseGroupMenuLabel,
+            courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
+            courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
+            courseMenuEntryFrequencyLabel: methods.courseMenuEntryFrequencyLabel,
+            courseMenuEntrySingleDateCount: methods.courseMenuEntrySingleDateCount,
+            courseGroupScheduleLabel: methods.courseGroupScheduleLabel,
+            weekdayForCourseGroup: methods.weekdayForCourseGroup,
+            courseGroupTimeRangeLabel: methods.courseGroupTimeRangeLabel,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            formatTimeValue: methods.formatTimeValue,
+            courseGroupCourseSource: methods.courseGroupCourseSource,
+            mainCourseLabel: methods.mainCourseLabel,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+            isCourseMenuEntryFilterActive: methods.isCourseMenuEntryFilterActive,
+            courseMenuEntryKeys: methods.courseMenuEntryKeys,
+            courseMenuEntryHasOverlap: methods.courseMenuEntryHasOverlap,
+            courseMenuEntryHasBlockingOverlap: methods.courseMenuEntryHasBlockingOverlap,
+            courseMenuEntryHasRelatedOverlap: methods.courseMenuEntryHasRelatedOverlap,
+            courseMenuEntriesHaveBlockingOverlap: methods.courseMenuEntriesHaveBlockingOverlap,
+            courseMenuEntriesOverlap: methods.courseMenuEntriesOverlap,
+            courseGroupHasOverlap: methods.courseGroupHasOverlap,
+            courseGroupHasBlockingOverlap: methods.courseGroupHasBlockingOverlap,
+            courseGroupHasRelatedOverlap: methods.courseGroupHasRelatedOverlap,
+            courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupDates: methods.courseGroupDates,
+            courseGroupDatesOverlap: methods.courseGroupDatesOverlap,
+            courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
+            courseGroupSortLabel: methods.courseGroupSortLabel,
+            courseGroupsForCell: methods.courseGroupsForCell,
+            cellHasOverlap: methods.cellHasOverlap,
+            cellHasRelatedOverlap: methods.cellHasRelatedOverlap,
+            courseCellKey: methods.courseCellKey,
+            sameSlotDateOverviewGroupsForSemester: methods.sameSlotDateOverviewGroupsForSemester,
+            sameSlotDateOverviewGroup: methods.sameSlotDateOverviewGroup,
+            sameSlotDateOverviewCourse: methods.sameSlotDateOverviewCourse,
+            sameSlotDateOverviewCourseTitle: methods.sameSlotDateOverviewCourseTitle,
+            sameSlotDateOverviewSlotTitle: methods.sameSlotDateOverviewSlotTitle,
+            courseGroupDateRangeLabel: methods.courseGroupDateRangeLabel,
+            formatDateWithWeekdayLabel: methods.formatDateWithWeekdayLabel,
+            weekdayLabelForDate: methods.weekdayLabelForDate,
+            formatDateValue: methods.formatDateValue,
+            formatDate: methods.formatDate,
+            formatCompactDateValue: methods.formatCompactDateValue,
+            normalizeDate: methods.normalizeDate,
+            uniqueCourseGroupsByKey: methods.uniqueCourseGroupsByKey,
+            courseGroupMatchesSelectedRecurrenceWeek() {
+                return true
+            },
+        }
+
+        const filterChips = methods.selectedCourseFilterChips.call(ctx, 1)
+        const dateOverviewGroups = methods.sameSlotDateOverviewGroupsForSemester.call(ctx, 1)
+
+        expect(methods.courseGroupDatesOverlap.call(ctx, deutschCourseGroup, englishCourseGroup)).toBe(false)
+        expect(methods.courseGroupHasOverlap.call(ctx, deutschCourseGroup)).toBe(false)
+        expect(methods.courseGroupHasRelatedOverlap.call(ctx, deutschCourseGroup)).toBe(true)
+        expect(methods.cellHasOverlap.call(ctx, 1, 5, 10)).toBe(false)
+        expect(methods.cellHasRelatedOverlap.call(ctx, 1, 5, 10)).toBe(true)
+        expect(filterChips.map((filterChip: Record<string, boolean>) => filterChip.hasBlockingOverlap))
+            .toEqual([false, false])
+        expect(filterChips.map((filterChip: Record<string, boolean>) => filterChip.hasRelatedOverlap))
+            .toEqual([true, true])
+        expect(dateOverviewGroups).toHaveLength(1)
+        expect(dateOverviewGroups[0].title).toBe('Fr 17:05 - 17:50')
+        expect(dateOverviewGroups[0].courses.map((course: Record<string, string>) => course.title))
+            .toEqual(['D2 - 1U - HER', 'E2 - 1U - NIE'])
+        expect(dateOverviewGroups[0].courses[0].dateLabels)
+            .toEqual(['Sa, 21.02.2026', 'Sa, 07.03.2026', 'Sa, 18.04.2026'])
     })
 
     it('connects menu schedule times per weekday into one time area', () => {
@@ -1206,6 +1340,7 @@ describe('Students timetable overview', () => {
                 id: 42,
             },
             wizardPanelOpen: true,
+            wizardPanelMounted: true,
             manualPanelOpen: true,
             infoDialogOpen: true,
             settingsDialogOpen: true,
@@ -1281,6 +1416,7 @@ describe('Students timetable overview', () => {
             restoreLastTimetableState: methods.restoreLastTimetableState,
             removeSavedTimetableState: methods.removeSavedTimetableState,
             removeSavedRobotTimetableState: methods.removeSavedRobotTimetableState,
+            savedRobotTimetableStateAvailable: methods.savedRobotTimetableStateAvailable,
             runTimetableUpdate(action: () => void) {
                 action()
             },
@@ -1310,6 +1446,7 @@ describe('Students timetable overview', () => {
             2: false,
         }
         ctx.showSaturday = false
+        ctx.manualPanelOpen = false
         ctx.restrictCourseChoiceBySelection = false
         ctx.selection = methods.defaultSelection.call(ctx)
         ctx.selectionDraft = methods.defaultSelection.call(ctx)
@@ -1332,6 +1469,8 @@ describe('Students timetable overview', () => {
             2: false,
         })
         expect(ctx.showSaturday).toBe(true)
+        expect(ctx.manualPanelOpen).toBe(true)
+        expect(methods.savedRobotTimetableStateAvailable.call(ctx)).toBe(true)
         expect(ctx.restrictCourseChoiceBySelection).toBe(true)
         expect(ctx.selection).toEqual({
             semester: 6,
@@ -1358,10 +1497,12 @@ describe('Students timetable overview', () => {
         expect(window.localStorage.getItem(methods.timetableStorageKey.call(ctx))).toBeNull()
         expect(window.localStorage.getItem(methods.robotTimetableStorageKey.call(ctx))).toBeNull()
         expect(window.localStorage.getItem(methods.robotTimetableStorageKey.call(ctx, 'default'))).toBeNull()
+        expect(methods.savedRobotTimetableStateAvailable.call(ctx)).toBe(false)
         expect(resetCourseSelection).toHaveBeenCalled()
         expect(resetAdditionalCourseSelection).toHaveBeenCalled()
         expect(clearGeneratedTimetables).toHaveBeenCalled()
         expect(ctx.wizardPanelOpen).toBe(false)
+        expect(ctx.wizardPanelMounted).toBe(false)
         expect(ctx.manualPanelOpen).toBe(false)
         expect(ctx.infoDialogOpen).toBe(false)
         expect(ctx.settingsDialogOpen).toBe(false)
@@ -1464,6 +1605,9 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('course-choice-semester__dates')
         expect(componentSource).toContain('grid-template-columns: minmax(0, 1fr);')
         expect(componentSource).toContain('selectedCourseFilterChipsAll')
+        expect(componentSource).toContain("filterChip.hasBlockingOverlap ? 'error' : filterChip.hasRelatedOverlap ? 'warning' : 'success'")
+        expect(componentSource).toContain('courseMenuEntryHasBlockingOverlap(entry, selectedCourseMenu.semesterValue)')
+        expect(componentSource).toContain('courseMenuEntryHasRelatedOverlap(entry, selectedCourseMenu.semesterValue)')
         expect(componentSource).toContain('selectedCourseCount')
         expect(componentSource).toContain('v-model="studentDialogOpen"')
         expect(componentSource).toContain('ref="studentSearchField"')
@@ -1496,7 +1640,9 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('class="overview-wizard-active-label"')
         expect(componentSource).toContain('Automatischer Stundenplan')
         expect(componentSource).toContain('RobotTimetable')
-        expect(componentSource).toContain('v-if="wizardPanelOpen"')
+        expect(componentSource).toContain('v-if="wizardPanelMounted"')
+        expect(componentSource).toContain('v-show="wizardPanelOpen"')
+        expect(componentSource).toContain('class="overview-wizard-course-cards-panel"')
         expect(componentSource).toContain('ref="wizardCourseCards"')
         expect(componentSource).toContain('embedded-course-cards-only')
         expect(componentSource).toContain('class="overview-wizard-course-cards"')
@@ -1529,7 +1675,13 @@ describe('Students timetable overview', () => {
             componentSource.indexOf('class="overview-wizard-create-button"'),
         )
         expect(componentSource).toContain('<div v-if="manualPanelOpen" class="course-choice-panel">')
-        expect(componentSource).toContain('class="overview-wizard-settings-summary"')
+        expect(componentSource).toContain('v-if="canReturnToWizardPanel && !wizardPanelOpen"')
+        expect(componentSource).toContain('class="course-choice-panel__back-row"')
+        expect(componentSource).toContain('class="course-choice-panel__back-button"')
+        expect(componentSource).toContain('prepend-icon="mdi-arrow-left"')
+        expect(componentSource).toContain('Zurück zum automatischen Stundenplan')
+        expect(componentSource).toContain('v-if="wizardPanelOpen" class="overview-wizard-settings-summary"')
+        expect(componentSource).toContain('v-if="wizardPanelOpen" class="overview-wizard-actions"')
         expect(componentSource).toContain('activeEvaluationCriteria')
         expect(componentSource).toContain('Bewertungskriterien')
         expect(componentSource).toContain('Keine Bewertungskriterien aktiv')
@@ -1540,6 +1692,8 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('min-height: 48px;')
         expect(componentSource).toContain('border: 1px solid rgba(var(--v-theme-primary), 0.18);')
         expect(componentSource).toContain('background: rgba(255, 255, 255, 0.72);')
+        expect(componentSource).toContain('flex: 0 1 340px;')
+        expect(componentSource).toContain('white-space: normal;')
         expect(componentSource).toContain('icon="mdi-cog-outline"')
         expect(componentSource).toContain('@click="settingsDialogOpen = true"')
         expect(componentSource).toContain('icon="mdi-information-outline"')
@@ -1592,7 +1746,11 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('Zusätzliche Kurse')
         expect(componentSource).not.toContain('v-for="courseMenu in semesterCourseMenus(semester.value)"')
         expect(componentSource).toContain('class="semester-timetable"')
-        expect(componentSource).toContain('visibleTimetableSemesters')
+        expect(componentSource).toContain('v-if="!wizardPanelOpen && visibleTimetableSemesters.length"')
+        expect(componentSource).toContain('sameSlotDateOverviewGroupsForSemester(semester.value)')
+        expect(componentSource).toContain('class="timetable-date-overview"')
+        expect(componentSource).toContain('Termine in gleichen Zellen')
+        expect(componentSource).toContain('class="timetable-date-overview__date"')
         expect(componentSource).not.toContain('Wähle oben Kurse aus, um den Stundenplan anzuzeigen.')
         expect(componentSource).toContain("label: 'Semester'")
         expect(componentSource).not.toContain("label: 'Semester 1'")
@@ -2059,6 +2217,7 @@ describe('Students timetable overview', () => {
         const loadFullGreenTimetableCount = vi.fn()
         const ctx = {
             wizardPanelOpen: false,
+            wizardPanelMounted: false,
             manualPanelOpen: false,
             wizardTimetableCreating: false,
             $refs: {
@@ -2071,6 +2230,7 @@ describe('Students timetable overview', () => {
         methods.openWizardPanel.call(ctx)
 
         expect(ctx.wizardPanelOpen).toBe(true)
+        expect(ctx.wizardPanelMounted).toBe(true)
         expect(ctx.manualPanelOpen).toBe(false)
 
         await methods.createWizardTimetable.call(ctx)
@@ -2086,6 +2246,7 @@ describe('Students timetable overview', () => {
         methods.closeWizardPanel.call(ctx)
 
         expect(ctx.wizardPanelOpen).toBe(false)
+        expect(ctx.wizardPanelMounted).toBe(true)
 
         methods.toggleManualPanel.call(ctx)
 
@@ -2094,6 +2255,57 @@ describe('Students timetable overview', () => {
         methods.toggleManualPanel.call(ctx)
 
         expect(ctx.manualPanelOpen).toBe(false)
+    })
+
+    it('shows an overtaken Wizzard timetable as the manual overview timetable', () => {
+        const methods = (Overview as any).methods
+        const saveLastTimetableState = vi.fn()
+        const ctx = {
+            activeCourseGroupFilterKeys: [],
+            selectedRecurrenceWeeks: {
+                1: 'all_dates',
+                2: 'all_dates',
+            },
+            expandedRecurrenceWeeks: {
+                1: false,
+                2: false,
+            },
+            showExtraDatesInSelectedWeeks: {
+                1: false,
+                2: false,
+            },
+            showSaturday: false,
+            wizardPanelOpen: true,
+            wizardPanelMounted: true,
+            manualPanelOpen: false,
+            restrictCourseChoiceBySelection: false,
+            selection: methods.defaultSelection(),
+            selectionDraft: methods.defaultSelection(),
+            transferredStudentContext: null,
+            transferredStudentContextExpanded: false,
+            defaultTimetableState: methods.defaultTimetableState,
+            defaultSelection: methods.defaultSelection,
+            normalizedSelection: methods.normalizedSelection,
+            normalizedTransferredStudentContext: methods.normalizedTransferredStudentContext,
+            normalizedTransferredStudentCourses: methods.normalizedTransferredStudentCourses,
+            applyTimetableState: methods.applyTimetableState,
+            saveLastTimetableState,
+            runTimetableUpdate(action: () => void) {
+                action()
+            },
+        }
+
+        methods.showOvertakenManualTimetable.call(ctx, {
+            activeCourseGroupFilterKeys: ['bio-1', 'bio-2'],
+            showSaturday: true,
+        })
+
+        expect(ctx.activeCourseGroupFilterKeys).toEqual(['bio-1', 'bio-2'])
+        expect(ctx.showSaturday).toBe(true)
+        expect(ctx.manualPanelOpen).toBe(true)
+        expect(ctx.wizardPanelOpen).toBe(false)
+        expect(ctx.wizardPanelMounted).toBe(true)
+        expect(saveLastTimetableState).toHaveBeenCalled()
     })
 
     it('asks the embedded Wizzard to require additional courses when extending timetables', async () => {

@@ -247,6 +247,9 @@ class RobotTimetableBackendSetupService
             $input['additional_course_options'],
             $settings,
             $counts,
+            $evaluationCriteria,
+            $selectedQualityCriterionKeys,
+            $selectedQualitySubset,
         );
 
         return [
@@ -530,6 +533,15 @@ class RobotTimetableBackendSetupService
     }
 
     /**
+     * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
+     */
+    private function selectedAdditionalCoursesAvailable(array $additionalCourseOptions): bool
+    {
+        return $additionalCourseOptions !== []
+            && ! collect($additionalCourseOptions)->contains(fn (array $options): bool => $options === []);
+    }
+
+    /**
      * @param  list<list<array<string, mixed>>>  $courseOptions
      * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
      * @param  array<string, mixed>  $settings
@@ -553,9 +565,7 @@ class RobotTimetableBackendSetupService
             ];
         }
 
-        $additionalCoursesRequired = ($settings['selected_additional_courses_required'] ?? false) === true
-            && $additionalCourseOptions !== []
-            && ! collect($additionalCourseOptions)->contains(fn (array $options): bool => $options === []);
+        $additionalCoursesRequired = $this->selectedAdditionalCoursesAvailable($additionalCourseOptions);
 
         $this->recordQualityResultForSelectedTimetableType(
             $courseOptions,
@@ -1466,6 +1476,9 @@ class RobotTimetableBackendSetupService
      * @param  array<string, mixed>  $settings
      * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
      * @param  array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int}  $counts
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @param  array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}|null  $selectedQualitySubset
      * @return ?array<string, mixed>
      */
     private function selectedTimetable(
@@ -1473,6 +1486,9 @@ class RobotTimetableBackendSetupService
         array $additionalCourseOptions,
         array $settings,
         array $counts,
+        array $evaluationCriteria = [],
+        array $selectedQualityCriterionKeys = [],
+        ?array $selectedQualitySubset = null,
     ): ?array {
         if ($courseOptions === [] || collect($courseOptions)->contains(fn (array $options): bool => $options === [])) {
             return null;
@@ -1489,11 +1505,20 @@ class RobotTimetableBackendSetupService
             default => $counts['full_green_timetable_count'],
         };
         $additionalCoursesRequired = ($settings['selected_additional_courses_required'] ?? false) === true
-            && $additionalCourseOptions !== []
-            && ! collect($additionalCourseOptions)->contains(fn (array $options): bool => $options === []);
+            && $this->selectedAdditionalCoursesAvailable($additionalCourseOptions);
+        $additionalCoursesRequiredForQuality = $this->selectedAdditionalCoursesAvailable($additionalCourseOptions);
+        $qualitySignatureCounts = $this->selectedQualitySignatureCounts(
+            $settings,
+            $selectedQualityCriterionKeys,
+            $selectedQualitySubset,
+        );
 
         if ($additionalCoursesRequired) {
             $availableCount = $counts['additional_course_timetable_count'];
+        }
+
+        if ($qualitySignatureCounts !== []) {
+            $availableCount = (int) array_sum($qualitySignatureCounts);
         }
 
         if ($availableCount <= 0) {
@@ -1505,6 +1530,29 @@ class RobotTimetableBackendSetupService
             $availableCount,
         );
         $remainingNumber = $selectedNumber;
+
+        if ($qualitySignatureCounts !== []) {
+            $combination = $this->findSelectedCombinationMatchingQualityCriteria(
+                $courseOptions,
+                $additionalCourseOptions,
+                $selectedType,
+                $evaluationCriteria,
+                $qualitySignatureCounts,
+                $additionalCoursesRequiredForQuality,
+                $remainingNumber,
+            );
+
+            return $combination === null
+                ? null
+                : $this->timetableFromOptions(
+                    $combination['options'],
+                    $selectedType,
+                    $selectedNumber,
+                    $combination['additional_options'],
+                    $additionalCoursesRequiredForQuality,
+                    count($combination['additional_options']),
+                );
+        }
 
         if ($additionalCoursesRequired) {
             $combination = $this->findSelectedCombinationWithAdditionalCourses(
@@ -1540,12 +1588,155 @@ class RobotTimetableBackendSetupService
             );
     }
 
+    /**
+     * @param  array<string, mixed>  $settings
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @param  array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}|null  $selectedQualitySubset
+     * @return array<string, int>
+     */
+    private function selectedQualitySignatureCounts(
+        array $settings,
+        array $selectedQualityCriterionKeys,
+        ?array $selectedQualitySubset,
+    ): array {
+        if (($settings['selected_quality_criteria_required'] ?? false) !== true) {
+            return [];
+        }
+
+        if ($selectedQualityCriterionKeys === []) {
+            return [];
+        }
+
+        $counts = [];
+
+        foreach (($selectedQualitySubset['counts'] ?? []) as $signature => $count) {
+            if ((int) $count <= 0) {
+                continue;
+            }
+
+            $counts[(string) $signature] = (int) $count;
+        }
+
+        return $counts;
+    }
+
     private function selectedBackendTimetableType(mixed $value): ?string
     {
         return match ((string) $value) {
             'full_green', 'green', 'conflict' => (string) $value,
             default => null,
         };
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  array<string, int>  $qualitySignatureCounts
+     * @param  array<string, mixed>|null  $qualityState
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
+     * @param  list<array<string, mixed>>  $selectedOptions
+     * @return ?array{options: list<array<string, mixed>>, additional_options: list<array<string, mixed>>}
+     */
+    private function findSelectedCombinationMatchingQualityCriteria(
+        array $courseOptions,
+        array $additionalCourseOptions,
+        string $selectedType,
+        array $evaluationCriteria,
+        array $qualitySignatureCounts,
+        bool $additionalCoursesRequired,
+        int &$remainingNumber,
+        int $courseIndex = 0,
+        ?array $qualityState = null,
+        ?array $usedAllSummary = null,
+        ?array $usedRegularDateSummary = null,
+        ?array $usedRegularWeeklySlotSummary = null,
+        bool $isFullGreenCandidate = true,
+        bool $hasRegularConflict = false,
+        array $selectedOptions = [],
+    ): ?array {
+        if ($courseIndex >= count($courseOptions)) {
+            $combinationType = $hasRegularConflict
+                ? 'conflict'
+                : ($isFullGreenCandidate ? 'full_green' : 'green');
+
+            if ($combinationType !== $selectedType) {
+                return null;
+            }
+
+            $additionalOptions = [];
+
+            if ($additionalCoursesRequired) {
+                $additionalOptions = $this->additionalOptionsForTimetable(
+                    $additionalCourseOptions,
+                    $usedAllSummary ?? $this->emptyDateKeySummary(),
+                );
+
+                if (count($additionalOptions) !== count($additionalCourseOptions)) {
+                    return null;
+                }
+            }
+
+            $metrics = $this->qualityMetricsFromState($this->qualityStateWithOptions(
+                $qualityState ?? $this->emptyQualityState(),
+                $additionalOptions,
+            ));
+            $signature = $this->qualityMetricCombinationSignatureForMetrics($evaluationCriteria, $metrics);
+
+            if (! array_key_exists($signature, $qualitySignatureCounts)) {
+                return null;
+            }
+
+            $remainingNumber--;
+
+            return $remainingNumber === 0
+                ? [
+                    'options' => $selectedOptions,
+                    'additional_options' => $additionalOptions,
+                ]
+                : null;
+        }
+
+        $qualityState ??= $this->emptyQualityState();
+        $usedAllSummary ??= $this->emptyDateKeySummary();
+        $usedRegularDateSummary ??= $this->emptyDateKeySummary();
+        $usedRegularWeeklySlotSummary ??= $this->emptyDateKeySummary();
+
+        foreach ($courseOptions[$courseIndex] as $option) {
+            $nextState = $this->nextTimetableTypeState(
+                $option,
+                $usedAllSummary,
+                $usedRegularDateSummary,
+                $usedRegularWeeklySlotSummary,
+                $isFullGreenCandidate,
+                $hasRegularConflict,
+            );
+            $combination = $this->findSelectedCombinationMatchingQualityCriteria(
+                $courseOptions,
+                $additionalCourseOptions,
+                $selectedType,
+                $evaluationCriteria,
+                $qualitySignatureCounts,
+                $additionalCoursesRequired,
+                $remainingNumber,
+                $courseIndex + 1,
+                $this->mergeQualityStates($qualityState, $option['quality_state'] ?? $this->qualityStateForOption($option)),
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $nextState['is_full_green_candidate'],
+                $nextState['has_regular_conflict'],
+                [...$selectedOptions, $option],
+            );
+
+            if ($combination !== null) {
+                return $combination;
+            }
+        }
+
+        return null;
     }
 
     /**

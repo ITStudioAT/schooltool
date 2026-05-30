@@ -194,7 +194,7 @@
                             Schließen
                         </v-btn>
 
-                        <div class="overview-wizard-settings-summary">
+                        <div v-if="wizardPanelOpen" class="overview-wizard-settings-summary">
                             <div class="overview-wizard-settings-summary__title">
                                 <v-icon icon="mdi-tune-variant" size="14" />
                                 Bewertungskriterien
@@ -216,7 +216,7 @@
                             </div>
                         </div>
 
-                        <div class="overview-wizard-actions">
+                        <div v-if="wizardPanelOpen" class="overview-wizard-actions">
                             <v-btn
                                 icon="mdi-cog-outline"
                                 variant="text"
@@ -237,45 +237,62 @@
                     </div>
                 </div>
 
-                <RobotTimetable
-                    v-if="wizardPanelOpen"
-                    ref="wizardCourseCards"
-                    embedded-course-cards-only
-                    :evaluation-criteria-settings="evaluationCriteria"
-                    :student-code="transferredStudentContext?.student?.studentCode || null"
-                    class="overview-wizard-course-cards">
-                    <template #course-actions="{ ready, loading, extending, hasSelectedAdditionalCourses, extensionActionVisible }">
-                        <div
-                            v-if="ready && (!extending || (hasSelectedAdditionalCourses && extensionActionVisible))"
-                            class="overview-wizard-footer">
-                            <v-btn
-                                class="overview-wizard-create-button"
-                                variant="flat"
-                                color="success"
-                                size="large"
-                                prepend-icon="mdi-calendar-clock"
-                                :disabled="wizardTimetableCreating"
-                                :loading="wizardTimetableCreating"
-                                @click="createWizardTimetable(extending)">
-                                {{ extending ? 'Stundenplan erweitern' : 'Stundenplan erstellen' }}
-                            </v-btn>
-                        </div>
-                        <div
-                            v-else-if="loading"
-                            class="overview-wizard-footer">
-                            <div class="overview-wizard-loading">
-                                <v-progress-circular
-                                    indeterminate
-                                    size="18"
-                                    width="2"
-                                    color="primary" />
-                                <span>Kurse werden geladen</span>
+                <div
+                    v-if="wizardPanelMounted"
+                    v-show="wizardPanelOpen"
+                    class="overview-wizard-course-cards-panel">
+                    <RobotTimetable
+                        ref="wizardCourseCards"
+                        embedded-course-cards-only
+                        :evaluation-criteria-settings="evaluationCriteria"
+                        :student-code="transferredStudentContext?.student?.studentCode || null"
+                        class="overview-wizard-course-cards"
+                        @timetable-overtaken="showOvertakenManualTimetable">
+                        <template #course-actions="{ ready, loading, extending, hasSelectedAdditionalCourses, extensionActionVisible }">
+                            <div
+                                v-if="ready && (!extending || (hasSelectedAdditionalCourses && extensionActionVisible))"
+                                class="overview-wizard-footer">
+                                <v-btn
+                                    class="overview-wizard-create-button"
+                                    variant="flat"
+                                    color="success"
+                                    size="large"
+                                    prepend-icon="mdi-calendar-clock"
+                                    :disabled="wizardTimetableCreating"
+                                    :loading="wizardTimetableCreating"
+                                    @click="createWizardTimetable(extending)">
+                                    {{ extending ? 'Stundenplan erweitern' : 'Stundenplan erstellen' }}
+                                </v-btn>
                             </div>
-                        </div>
-                    </template>
-                </RobotTimetable>
+                            <div
+                                v-else-if="loading"
+                                class="overview-wizard-footer">
+                                <div class="overview-wizard-loading">
+                                    <v-progress-circular
+                                        indeterminate
+                                        size="18"
+                                        width="2"
+                                        color="primary" />
+                                    <span>Kurse werden geladen</span>
+                                </div>
+                            </div>
+                        </template>
+                    </RobotTimetable>
+                </div>
 
                 <div v-if="manualPanelOpen" class="course-choice-panel">
+                    <div v-if="canReturnToWizardPanel && !wizardPanelOpen" class="course-choice-panel__back-row">
+                        <v-btn
+                            class="course-choice-panel__back-button"
+                            size="small"
+                            variant="tonal"
+                            color="primary"
+                            prepend-icon="mdi-arrow-left"
+                            @click="openWizardPanel">
+                            Zurück zum automatischen Stundenplan
+                        </v-btn>
+                    </div>
+
                     <div class="course-choice-panel__header">
                         <div class="course-choice-panel__title">
                             <v-icon icon="mdi-format-list-checks" size="18" color="primary" />
@@ -323,7 +340,7 @@
                             v-for="filterChip in selectedCourseFilterChipsAll"
                             :key="filterChip.key"
                             size="small"
-                            :color="filterChip.hasOverlap ? 'error' : 'success'"
+                            :color="filterChip.hasBlockingOverlap ? 'error' : filterChip.hasRelatedOverlap ? 'warning' : 'success'"
                             variant="tonal"
                             closable
                             class="selected-course-filter-chip"
@@ -333,7 +350,7 @@
                     </div>
                 </div>
 
-                <div v-if="visibleTimetableSemesters.length" class="semester-grid">
+                <div v-if="!wizardPanelOpen && visibleTimetableSemesters.length" class="semester-grid">
                     <section v-for="semester in visibleTimetableSemesters" :key="semester.value" class="semester-timetable">
                         <div class="semester-timetable__header">
                             <div class="d-flex flex-wrap align-center ga-2">
@@ -423,9 +440,6 @@
                                             <div class="timetable-generated-cell__code">
                                                 {{ courseGroup.display_label || courseGroup.title }}
                                             </div>
-                                            <div v-if="courseGroupRelatedOverlapMarker(courseGroup)" class="timetable-generated-cell__details timetable-generated-cell__details--warning">
-                                                {{ courseGroupRelatedOverlapMarker(courseGroup) }}
-                                            </div>
                                             <div v-if="courseGroup.recurrence_label || courseGroup.is_block" class="timetable-generated-cell__details">
                                                 <span v-if="courseGroup.recurrence_label">{{ courseGroup.recurrence_label }}</span>
                                                 <span v-if="courseGroup.recurrence_label && courseGroup.is_block"> · </span>
@@ -464,6 +478,43 @@
                                     hide-details
                                     label="Im aktuellen Stundenplan anzeigen"
                                     @update:model-value="handleShowExtraDatesUpdate(semester.value, $event)" />
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="sameSlotDateOverviewGroupsForSemester(semester.value).length"
+                            class="timetable-date-overview">
+                            <div class="timetable-date-overview__title">Termine in gleichen Zellen</div>
+                            <div class="timetable-date-overview__groups">
+                                <div
+                                    v-for="dateOverviewGroup in sameSlotDateOverviewGroupsForSemester(semester.value)"
+                                    :key="dateOverviewGroup.key"
+                                    class="timetable-date-overview__group">
+                                    <div class="timetable-date-overview__slot">{{ dateOverviewGroup.title }}</div>
+                                    <div class="timetable-date-overview__courses">
+                                        <div
+                                            v-for="course in dateOverviewGroup.courses"
+                                            :key="course.key"
+                                            class="timetable-date-overview__course">
+                                            <div class="timetable-date-overview__course-title">
+                                                <span>{{ course.title }}</span>
+                                                <span
+                                                    v-if="course.dateRangeLabel"
+                                                    class="timetable-date-overview__range">
+                                                    {{ course.dateRangeLabel }}
+                                                </span>
+                                            </div>
+                                            <div class="timetable-date-overview__dates">
+                                                <span
+                                                    v-for="dateLabel in course.dateLabels"
+                                                    :key="dateLabel"
+                                                    class="timetable-date-overview__date">
+                                                    {{ dateLabel }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </section>
@@ -640,7 +691,7 @@
                                     v-for="entry in selectedCourseMenu.entries"
                                     :key="entry.key"
                                     size="small"
-                                    :color="courseMenuEntryHasOverlap(entry, selectedCourseMenu.semesterValue) ? 'error' : isCourseMenuEntryFilterActive(entry) ? 'success' : 'primary'"
+                                    :color="courseMenuEntryHasBlockingOverlap(entry, selectedCourseMenu.semesterValue) ? 'error' : courseMenuEntryHasRelatedOverlap(entry, selectedCourseMenu.semesterValue) ? 'warning' : isCourseMenuEntryFilterActive(entry) ? 'success' : 'primary'"
                                     :variant="isCourseMenuEntryFilterActive(entry) ? 'flat' : 'tonal'"
                                     class="course-item-chip"
                                     @click="handleCourseMenuEntryFilterClick(entry)">
@@ -799,6 +850,7 @@ export default {
             infoDialogOpen: false,
             settingsDialogOpen: false,
             wizardPanelOpen: false,
+            wizardPanelMounted: false,
             manualPanelOpen: false,
             wizardTimetableCreating: false,
             timetableUpdatePending: false,
@@ -1117,6 +1169,9 @@ export default {
         visibleTimetableSemesters() {
             return this.semesters.filter((semester) => this.selectedCourseMenuEntries(semester.value).length > 0)
         },
+        canReturnToWizardPanel() {
+            return this.wizardPanelMounted || this.savedRobotTimetableStateAvailable()
+        },
         recurrenceWeekOptionsBySemester() {
             return {
                 1: this.buildRecurrenceWeekOptions(1),
@@ -1249,6 +1304,7 @@ export default {
             this.$nextTick(scheduleActionAfterPaint)
         },
         openWizardPanel() {
+            this.wizardPanelMounted = true
             this.wizardPanelOpen = true
             this.manualPanelOpen = false
         },
@@ -1279,6 +1335,17 @@ export default {
             if (this.manualPanelOpen) {
                 this.wizardPanelOpen = false
             }
+        },
+        showOvertakenManualTimetable(timetableState) {
+            this.runTimetableUpdate(() => {
+                this.applyTimetableState({
+                    ...(timetableState || {}),
+                    manualPanelOpen: true,
+                })
+                this.wizardPanelOpen = false
+                this.manualPanelOpen = true
+                this.saveLastTimetableState()
+            })
         },
         onSettingsChanged(criteria) {
             this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(criteria || [])
@@ -1486,6 +1553,7 @@ export default {
             wizardCourseCards?.resetAdditionalCourseSelection?.()
             wizardCourseCards?.clearGeneratedTimetables?.()
             this.wizardPanelOpen = false
+            this.wizardPanelMounted = false
             this.manualPanelOpen = false
             this.infoDialogOpen = false
             this.settingsDialogOpen = false
@@ -1512,6 +1580,7 @@ export default {
                     2: false,
                 },
                 showSaturday: false,
+                manualPanelOpen: false,
                 restrictCourseChoiceBySelection: false,
                 selection: this.defaultSelection(),
                 transferredStudentContext: null,
@@ -1545,6 +1614,7 @@ export default {
                     ...(this.showExtraDatesInSelectedWeeks || {}),
                 },
                 showSaturday: Boolean(this.showSaturday),
+                manualPanelOpen: Boolean(this.manualPanelOpen),
                 restrictCourseChoiceBySelection: Boolean(this.restrictCourseChoiceBySelection),
                 selection: this.normalizedSelection(this.selection || defaults.selection),
                 transferredStudentContext: this.normalizedTransferredStudentContext(this.transferredStudentContext),
@@ -1570,6 +1640,10 @@ export default {
                 ...(state?.showExtraDatesInSelectedWeeks || {}),
             }
             this.showSaturday = Boolean(state?.showSaturday ?? defaults.showSaturday)
+            this.manualPanelOpen = Boolean(state?.manualPanelOpen ?? defaults.manualPanelOpen)
+            if (this.manualPanelOpen) {
+                this.wizardPanelOpen = false
+            }
             this.restrictCourseChoiceBySelection = Boolean(
                 state?.restrictCourseChoiceBySelection ?? defaults.restrictCourseChoiceBySelection,
             )
@@ -2294,6 +2368,15 @@ export default {
                 // Ignore unavailable browser storage.
             }
         },
+        savedRobotTimetableStateAvailable() {
+            try {
+                const storage = this.timetableStorage()
+
+                return this.robotTimetableStorageKeys().some(key => Boolean(storage?.getItem(key)))
+            } catch {
+                return false
+            }
+        },
         persistTimetableState() {
             this.saveLastTimetableState()
         },
@@ -2402,6 +2485,79 @@ export default {
             ]
                 .map(value => String(value || '').trim())
                 .find(Boolean) || 'Einzeltermin'
+        },
+        sameSlotDateOverviewGroupsForSemester(semester) {
+            const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
+                ? this.activeCourseGroupFilterKeySet
+                : new Set(this.activeCourseGroupFilterKeys || [])
+            const courseGroupsBySlot = this.selectedCourseMenuEntries(semester)
+                .flatMap(entry => entry?.courseGroups || [])
+                .filter(courseGroup => activeCourseGroupFilterKeySet.has(courseGroup?.key))
+                .filter(courseGroup => !this.courseGroupIsSingleDate(courseGroup))
+                .filter(courseGroup => this.courseGroupDates(courseGroup).length > 0)
+                .reduce((groups, courseGroup) => {
+                    const key = this.courseCellKey(semester, courseGroup?.weekday, courseGroup?.hour)
+                    groups[key] ??= []
+                    groups[key].push(courseGroup)
+
+                    return groups
+                }, {})
+
+            return Object.entries(courseGroupsBySlot)
+                .map(([key, courseGroups]) => this.sameSlotDateOverviewGroup(key, courseGroups))
+                .filter(Boolean)
+                .sort((left, right) => left.sortValue.localeCompare(right.sortValue, 'de-AT', {
+                    numeric: true,
+                    sensitivity: 'base',
+                }))
+        },
+        sameSlotDateOverviewGroup(key, courseGroups) {
+            const uniqueCourseGroups = this.uniqueCourseGroupsByKey(courseGroups)
+
+            if (uniqueCourseGroups.length < 2) return null
+
+            const firstCourseGroup = uniqueCourseGroups[0] || {}
+            const weekday = String(firstCourseGroup?.weekday || '').padStart(2, '0')
+            const hour = String(firstCourseGroup?.hour || '').padStart(2, '0')
+
+            return {
+                key,
+                title: this.sameSlotDateOverviewSlotTitle(firstCourseGroup),
+                courses: uniqueCourseGroups
+                    .map(courseGroup => this.sameSlotDateOverviewCourse(courseGroup))
+                    .sort((left, right) => left.title.localeCompare(right.title, 'de-AT', {
+                        numeric: true,
+                        sensitivity: 'base',
+                    })),
+                sortValue: `${weekday}-${hour}`,
+            }
+        },
+        sameSlotDateOverviewCourse(courseGroup) {
+            const dates = this.courseGroupDates(courseGroup)
+            const title = this.sameSlotDateOverviewCourseTitle(courseGroup)
+
+            return {
+                key: courseGroup?.key || title,
+                title,
+                dateRangeLabel: this.courseGroupDateRangeLabel(courseGroup),
+                dateLabels: dates.map(date => this.formatDateWithWeekdayLabel(date)),
+            }
+        },
+        sameSlotDateOverviewCourseTitle(courseGroup) {
+            return [
+                courseGroup?.display_label,
+                courseGroup?.title,
+                courseGroup?.course,
+            ]
+                .map(value => String(value || '').trim())
+                .find(Boolean) || 'Ohne Bezeichnung'
+        },
+        sameSlotDateOverviewSlotTitle(courseGroup) {
+            const weekday = this.weekdayForCourseGroup(courseGroup).label
+            const timeRange = this.courseGroupTimeRangeLabel(courseGroup)
+            const hour = courseGroup?.hour ? `${courseGroup.hour}.` : ''
+
+            return [weekday, timeRange || hour].filter(Boolean).join(' ')
         },
         uniqueCourseGroupsByKey(courseGroups) {
             return Object.values((Array.isArray(courseGroups) ? courseGroups : []).reduce((groups, courseGroup) => {
@@ -2719,6 +2875,8 @@ export default {
                 .map((entry) => ({
                     key: `selected-${entry.key}`,
                     label: entry.scheduleLabel ? `${entry.label} · ${entry.scheduleLabel}` : entry.label,
+                    hasBlockingOverlap: this.courseMenuEntryHasBlockingOverlap(entry, semester),
+                    hasRelatedOverlap: this.courseMenuEntryHasRelatedOverlap(entry, semester),
                     hasOverlap: this.courseMenuEntryHasOverlap(entry, semester),
                     entry,
                 }))
@@ -3148,6 +3306,21 @@ export default {
                 .join(' ')
         },
         courseMenuEntryHasOverlap(entry, semester) {
+            return this.courseMenuEntryHasBlockingOverlap(entry, semester)
+                || this.courseMenuEntryHasRelatedOverlap(entry, semester)
+        },
+        courseMenuEntryHasBlockingOverlap(entry, semester) {
+            return this.selectedCourseMenuEntries(semester)
+                .some((selectedEntry) => (
+                    selectedEntry.key !== entry?.key
+                    && this.courseMenuEntriesHaveBlockingOverlap(entry, selectedEntry)
+                ))
+        },
+        courseMenuEntryHasRelatedOverlap(entry, semester) {
+            if (this.courseMenuEntryHasBlockingOverlap(entry, semester)) {
+                return false
+            }
+
             return this.selectedCourseMenuEntries(semester)
                 .some((selectedEntry) => (
                     selectedEntry.key !== entry?.key
@@ -3175,6 +3348,7 @@ export default {
                 .some((selectedEntry) => (
                     (selectedEntry?.courseGroups || []).some((selectedCourseGroup) => (
                         this.courseGroupsOverlap(courseGroup, selectedCourseGroup)
+                            && this.courseGroupDatesOverlap(courseGroup, selectedCourseGroup)
                             && !this.courseGroupOverlapIsSingleDateOnly(courseGroup, selectedCourseGroup)
                     ))
                 ))
@@ -3228,14 +3402,24 @@ export default {
                 .some((courseGroup) => this.courseGroupHasOverlap(courseGroup))
         },
         cellHasRelatedOverlap(semester, weekday, hour, recurrenceWeek = null) {
+            if (this.cellHasOverlap(semester, weekday, hour, recurrenceWeek)) {
+                return false
+            }
+
             return this.courseGroupsForCell(semester, weekday, hour, recurrenceWeek)
                 .some((courseGroup) => this.courseGroupHasRelatedOverlap(courseGroup))
         },
-        courseGroupRelatedOverlapMarker(courseGroup) {
-            return this.courseGroupHasRelatedOverlap(courseGroup) ? '⚠ Mitbetroffen' : ''
-        },
         courseGroupSingleDateOverlapMarker(courseGroup) {
             return this.courseGroupHasSingleDateOverlap(courseGroup) ? 'Auch Einzeltermine' : ''
+        },
+        courseMenuEntriesHaveBlockingOverlap(leftEntry, rightEntry) {
+            return (leftEntry?.courseGroups || []).some((leftCourseGroup) => (
+                (rightEntry?.courseGroups || []).some((rightCourseGroup) => (
+                    this.courseGroupsOverlap(leftCourseGroup, rightCourseGroup)
+                        && this.courseGroupDatesOverlap(leftCourseGroup, rightCourseGroup)
+                        && !this.courseGroupOverlapIsSingleDateOnly(leftCourseGroup, rightCourseGroup)
+                ))
+            ))
         },
         courseMenuEntriesOverlap(leftEntry, rightEntry) {
             return (leftEntry?.courseGroups || []).some((leftCourseGroup) => (
@@ -3264,6 +3448,27 @@ export default {
             }
 
             return Number(leftCourseGroup?.hour) === Number(rightCourseGroup?.hour)
+        },
+        courseGroupDates(courseGroup) {
+            const explicitDates = Array.isArray(courseGroup?.dates) ? courseGroup.dates : []
+
+            return [
+                ...explicitDates,
+                courseGroup?.first_date,
+                courseGroup?.date,
+            ]
+                .map(date => String(date || '').trim())
+                .filter(Boolean)
+                .filter((date, index, dates) => dates.indexOf(date) === index)
+                .sort()
+        },
+        courseGroupDatesOverlap(leftCourseGroup, rightCourseGroup) {
+            const leftDates = this.courseGroupDates(leftCourseGroup)
+            const rightDates = this.courseGroupDates(rightCourseGroup)
+
+            if (!leftDates.length || !rightDates.length) return true
+
+            return leftDates.some(date => rightDates.includes(date))
         },
         weekdayForCourseGroup(courseGroup) {
             const weekday = (this.weekdays || [])
@@ -3494,6 +3699,23 @@ export default {
             if (!date) return value || ''
 
             return this.formatDate(date)
+        },
+        formatDateWithWeekdayLabel(value) {
+            const weekdayLabel = this.weekdayLabelForDate(value)
+            const dateLabel = this.formatDateValue(value)
+
+            return [weekdayLabel, dateLabel].filter(Boolean).join(', ')
+        },
+        weekdayLabelForDate(value) {
+            const date = this.normalizeDate(value)
+            if (!date) return ''
+
+            const weekday = date.getDay()
+            const isoWeekday = weekday === 0 ? 7 : weekday
+
+            return (this.weekdays || [])
+                .find(configuredWeekday => Number(configuredWeekday.value) === isoWeekday)
+                ?.label || ''
         },
         formatCompactDateValue(value) {
             const date = this.normalizeDate(value)
@@ -3820,6 +4042,22 @@ export default {
     gap: 8px;
 }
 
+.course-choice-panel__back-row {
+    display: flex;
+    justify-content: flex-start;
+    margin-bottom: 10px;
+}
+
+.course-choice-panel__back-button {
+    flex: 0 1 340px;
+    min-width: 0;
+}
+
+.course-choice-panel__back-button :deep(.v-btn__content) {
+    white-space: normal;
+    line-height: 1.15;
+}
+
 .course-choice-restriction-switch {
     flex: 0 0 auto;
 }
@@ -4103,6 +4341,80 @@ export default {
     color: rgba(0, 0, 0, 0.68);
 }
 
+.timetable-date-overview {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f172a;
+}
+
+.timetable-date-overview__title {
+    margin-bottom: 5px;
+    font-size: 0.78rem;
+    font-weight: 750;
+}
+
+.timetable-date-overview__groups,
+.timetable-date-overview__group,
+.timetable-date-overview__courses,
+.timetable-date-overview__course {
+    display: grid;
+}
+
+.timetable-date-overview__groups {
+    gap: 8px;
+}
+
+.timetable-date-overview__group {
+    gap: 5px;
+}
+
+.timetable-date-overview__slot {
+    color: #475569;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.timetable-date-overview__courses {
+    gap: 6px;
+}
+
+.timetable-date-overview__course {
+    gap: 3px;
+}
+
+.timetable-date-overview__course-title {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.timetable-date-overview__range {
+    color: #64748b;
+    font-weight: 650;
+}
+
+.timetable-date-overview__dates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+
+.timetable-date-overview__date {
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 0.69rem;
+    line-height: 1.45;
+    white-space: nowrap;
+}
+
 .timetable-saturday-switch {
     flex: 0 0 auto;
 }
@@ -4222,12 +4534,6 @@ export default {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.timetable-generated-cell__details--warning {
-    color: #7c2d12;
-    font-weight: 750;
-    opacity: 1;
 }
 
 .timetable-generated-cell__single-date-markers {

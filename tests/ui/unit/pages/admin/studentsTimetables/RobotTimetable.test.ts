@@ -21,6 +21,8 @@ function robotContext(overrides = {}) {
         selectedQualityMetricValue: RobotTimetable.methods.selectedQualityMetricValue,
         selectedQualityMetricLabel: RobotTimetable.methods.selectedQualityMetricLabel,
         selectedQualityMetricReachedBest: RobotTimetable.methods.selectedQualityMetricReachedBest,
+        qualityCounterFulfilledCountLabel: RobotTimetable.methods.qualityCounterFulfilledCountLabel,
+        qualityCounterBestValueLabel: RobotTimetable.methods.qualityCounterBestValueLabel,
         qualitySummaryCheckedKeys: [],
         selectedQualityCriteriaCount: null,
         qualityCriteriaResultFilterEnabled: false,
@@ -54,6 +56,7 @@ describe('RobotTimetable', () => {
         const payload = RobotTimetable.methods.backendTimetableRequestPayload.call(context)
 
         expect(payload.include_quality_counters).toBe(false)
+        expect(payload.selected_quality_criteria_required).toBe(false)
         expect(payload.selected_quality_criterion_keys).toEqual([])
         expect(payload.evaluation_criteria).toEqual([
             { key: 'saturday_free', enabled: true, priority: 1, option: null },
@@ -82,6 +85,20 @@ describe('RobotTimetable', () => {
         expect(payload.selected_quality_criterion_keys).toEqual(['saturday_free', 'free_days'])
     })
 
+    it('requires checked criteria only when the criteria timetable filter is active', () => {
+        const payload = RobotTimetable.methods.backendTimetableRequestPayload.call(robotContext({
+            qualityCriteriaResultFilterActive: true,
+            qualitySummaryCheckedKeys: ['saturday_free|', 'free_days|'],
+            qualityCriterionRows: [
+                { key: 'saturday_free', option: null },
+                { key: 'free_days', option: null },
+            ],
+        }))
+
+        expect(payload.selected_quality_criteria_required).toBe(true)
+        expect(payload.selected_quality_criterion_keys).toEqual(['saturday_free', 'free_days'])
+    })
+
     it('shows fulfilled criteria as count over total', () => {
         const label = RobotTimetable.methods.qualityCounterFulfilledCountLabel.call(robotContext(), {
             enabled: true,
@@ -90,6 +107,19 @@ describe('RobotTimetable', () => {
         })
 
         expect(label).toBe('12 / 40')
+    })
+
+    it('explains criteria counts with their best value', () => {
+        const label = RobotTimetable.methods.qualityCounterSummaryLabel.call(robotContext(), {
+            enabled: true,
+            key: 'free_days',
+            label: 'Anzahl freie Tage',
+            count: 4,
+            total: 1296,
+            best_label: '3 freie Tage',
+        })
+
+        expect(label.replace(/\u00a0/gu, ' ')).toBe('Anzahl freie Tage: 4 / 1 296 (3 freie Tage)')
     })
 
     it('marks selected quality counters from the rendered timetable metrics', () => {
@@ -133,6 +163,31 @@ describe('RobotTimetable', () => {
 
         expect(context.selectedQualityCriteriaCount).toBeNull()
         expect(loadQualityCountersForSelectedTimetableType).toHaveBeenCalledOnce()
+    })
+
+    it('reloads the first criteria timetable when a summary checkbox changes while criteria filtering is active', () => {
+        const loadFullGreenTimetableCount = vi.fn()
+        const loadQualityCountersForSelectedTimetableType = vi.fn()
+        const setTimetableResultCounter = vi.fn()
+        const context = robotContext({
+            qualityCriteriaResultFilterActive: true,
+            qualityCriteriaResultFilterEnabled: true,
+            selectedQualityCriteriaCount: 12,
+            timetableCalculationReady: () => true,
+            loadFullGreenTimetableCount,
+            loadQualityCountersForSelectedTimetableType,
+            setTimetableResultCounter,
+        })
+
+        RobotTimetable.methods.setQualitySummaryCheckboxChecked.call(context, { key: 'free_days', option: null }, true)
+
+        expect(context.selectedQualityCriteriaCount).toBeNull()
+        expect(setTimetableResultCounter).toHaveBeenCalledWith('full_green', 1)
+        expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({
+            calculateQualityCounters: true,
+            preserveGeneratedTimetable: true,
+        })
+        expect(loadQualityCountersForSelectedTimetableType).not.toHaveBeenCalled()
     })
 
     it('shows the latest checked criteria count on the criteria timetable card', () => {
