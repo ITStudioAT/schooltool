@@ -469,11 +469,170 @@ it('counts quality criteria inside the selected quality criteria subset', functi
             fn ($counter) => $counter
                 ->key->toBe('saturday_free')
                 ->count->toBe(2)
-                ->total->toBe(2),
+                ->total->toBe(4),
             fn ($counter) => $counter
                 ->key->toBe('starts_from_period_10')
                 ->count->toBe(1)
                 ->total->toBe(2),
+        );
+});
+
+it('recalculates the next quality criterion best value inside the selected criteria subset', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $subjectRows = [
+        [
+            'id' => 1,
+            'semester' => 1,
+            'branch' => 'common',
+            'json_code' => 'D1',
+            'json_subject' => 'D',
+            'name' => 'Deutsch 1',
+            'tt_subject' => 'D1',
+            'hours_per_week' => 1,
+            'is_active' => true,
+        ],
+        [
+            'id' => 2,
+            'semester' => 1,
+            'branch' => 'common',
+            'json_code' => 'M1',
+            'json_subject' => 'M',
+            'name' => 'Mathematik 1',
+            'tt_subject' => 'M1',
+            'hours_per_week' => 1,
+            'is_active' => true,
+        ],
+    ];
+    $courseGroups = [
+        [
+            'weekday' => 6,
+            'hour' => 1,
+            'class_name' => 'D1-S',
+            'display_label' => 'D1-S',
+            'title' => 'D1-S',
+            'course' => 'D1',
+            'subject' => 'Deutsch',
+            'dates' => [],
+            'dates_count' => 0,
+        ],
+        [
+            'weekday' => 1,
+            'hour' => 1,
+            'class_name' => 'D1-M',
+            'display_label' => 'D1-M',
+            'title' => 'D1-M',
+            'course' => 'D1',
+            'subject' => 'Deutsch',
+            'dates' => [],
+            'dates_count' => 0,
+        ],
+        [
+            'weekday' => 6,
+            'hour' => 2,
+            'class_name' => 'M1-S',
+            'display_label' => 'M1-S',
+            'title' => 'M1-S',
+            'course' => 'M1',
+            'subject' => 'Mathematik',
+            'dates' => [],
+            'dates_count' => 0,
+        ],
+        [
+            'weekday' => 2,
+            'hour' => 1,
+            'class_name' => 'M1-T',
+            'display_label' => 'M1-T',
+            'title' => 'M1-T',
+            'course' => 'M1',
+            'subject' => 'Mathematik',
+            'dates' => [],
+            'dates_count' => 0,
+        ],
+    ];
+    $settings = [
+        'selection' => [
+            'semester' => 1,
+            'branch' => '',
+            'artsSubject' => 'ME',
+            'language' => 'L',
+            'religion' => 'ETH',
+        ],
+        'constraints' => [
+            'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+            'availableTimes' => [1, 2],
+            'excludedWeekdayTimes' => [],
+        ],
+        'selected_course_keys' => [
+            '1|1|common|D1|D|Deutsch 1|D1',
+            '2|1|common|M1|M|Mathematik 1|M1',
+        ],
+        'deselected_course_keys' => [],
+        'deselected_course_group_keys' => [],
+        'selected_timetable_type' => 'full_green',
+        'selected_timetable_number' => 1,
+    ];
+    $evaluationCriteria = [
+        [
+            'key' => 'saturday_free',
+            'label' => 'Samstag kein Unterricht',
+            'enabled' => true,
+            'priority' => 1,
+        ],
+        [
+            'key' => 'free_days',
+            'label' => 'Anzahl freie Tage',
+            'enabled' => true,
+            'priority' => 2,
+        ],
+    ];
+
+    $result = $service->qualityCountersForTimetableVariations(
+        subjectRows: $subjectRows,
+        subjectMappings: [],
+        courseGroups: $courseGroups,
+        settings: $settings,
+        evaluationCriteria: $evaluationCriteria,
+        selectedQualityCriterionKeys: ['saturday_free'],
+    );
+
+    expect($result['selected_quality_criteria_count'])->toBe(1)
+        ->and($result['quality_counters'])
+        ->sequence(
+            fn ($counter) => $counter
+                ->key->toBe('saturday_free')
+                ->count->toBe(1)
+                ->total->toBe(4),
+            fn ($counter) => $counter
+                ->key->toBe('free_days')
+                ->best_value->toBe(4)
+                ->best_label->toBe('4 freie Tage')
+                ->count->toBe(1)
+                ->total->toBe(1),
+        );
+
+    $result = $service->qualityCountersForTimetableVariations(
+        subjectRows: $subjectRows,
+        subjectMappings: [],
+        courseGroups: $courseGroups,
+        settings: $settings,
+        evaluationCriteria: $evaluationCriteria,
+        selectedQualityCriterionKeys: ['saturday_free', 'free_days'],
+    );
+
+    expect($result['selected_quality_criteria_count'])->toBe(1)
+        ->and($result['quality_counters'])
+        ->sequence(
+            fn ($counter) => $counter
+                ->key->toBe('saturday_free')
+                ->count->toBe(1)
+                ->total->toBe(4),
+            fn ($counter) => $counter
+                ->key->toBe('free_days')
+                ->best_value->toBe(4)
+                ->best_label->toBe('4 freie Tage')
+                ->count->toBe(1)
+                ->total->toBe(1),
         );
 });
 

@@ -1,24 +1,11 @@
-{
-	"folders": [
-		{
-			"name": "schooltool",
-			"path": "../../schooltool"
-		}
-	],
-	"settings": {
-		"files.exclude": {
-			"vendor/**": false
-		},
-		"intelephense.files.exclude": [
-			"**/.git/**",
-			"**/.svn/**",
-			"**/.hg/**",
-			"**/node_modules/**",
-			"**/bower_components/**"
-		],
-		"intelephense.environment.includePaths": [
-			"vendor/",
-			"vendor/laravel/framework/src"
-		]
-	}
+[200~{
+  "folders": [
+    {
+      "name": "schooltool",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "terminal.integrated.cwd": "${workspaceFolder}"
+  }
 }

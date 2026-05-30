@@ -151,6 +151,105 @@ it('returns a backend ready setup for the new robot timetable logic', function (
         ->assertJsonPath('data.selected_timetable', null);
 });
 
+it('uses selected quality criteria when refreshing robot quality counters', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-01',
+        'until' => '2027-07-01',
+    ]);
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $subjectRows = collect([
+        ['json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1'],
+        ['json_code' => 'M1', 'json_subject' => 'M', 'name' => 'Mathematik 1'],
+    ])->map(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 1,
+        'branch' => 'common',
+        'json_code' => $subjectRow['json_code'],
+        'json_subject' => $subjectRow['json_subject'],
+        'name' => $subjectRow['name'],
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        'source' => 'test',
+    ]));
+
+    collect([
+        ['date' => '2026-09-07', 'period' => '1', 'course' => 'D1', 'subject' => 'Deutsch', 'class_name' => 'D1-M'],
+        ['date' => '2026-09-12', 'period' => '1', 'course' => 'D1', 'subject' => 'Deutsch', 'class_name' => 'D1-S'],
+        ['date' => '2026-09-08', 'period' => '1', 'course' => 'M1', 'subject' => 'Mathematik', 'class_name' => 'M1-T'],
+        ['date' => '2026-09-12', 'period' => '2', 'course' => 'M1', 'subject' => 'Mathematik', 'class_name' => 'M1-S'],
+    ])->each(fn (array $entry, int $index): StudentTimetableEntry => StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'line_number' => $index + 1,
+        'date' => $entry['date'],
+        'semester' => 1,
+        'period' => $entry['period'],
+        'subject' => $entry['subject'],
+        'course' => $entry['course'],
+        'class_name' => $entry['class_name'],
+        'is_active' => true,
+    ]));
+
+    $selectedCourseKeys = $subjectRows
+        ->map(fn (StudentTimetableSubjectRow $row): string => implode('|', [
+            $row->id,
+            $row->semester,
+            $row->branch,
+            $row->json_code,
+            $row->json_subject,
+            $row->name,
+            $row->json_code,
+        ]))
+        ->values()
+        ->all();
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/quality-counters', [
+            'selection' => [
+                'semester' => 1,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => $selectedCourseKeys,
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+            'selected_quality_criterion_keys' => ['saturday_free'],
+            'evaluation_criteria' => [
+                ['key' => 'saturday_free', 'enabled' => true, 'priority' => 1, 'option' => null],
+                ['key' => 'free_days', 'enabled' => true, 'priority' => 2, 'option' => null],
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.selected_quality_criteria_count', 1)
+        ->assertJsonPath('data.quality_counters.0.key', 'saturday_free')
+        ->assertJsonPath('data.quality_counters.0.count', 1)
+        ->assertJsonPath('data.quality_counters.0.total', 4)
+        ->assertJsonPath('data.quality_counters.1.key', 'free_days')
+        ->assertJsonPath('data.quality_counters.1.count', 1)
+        ->assertJsonPath('data.quality_counters.1.total', 1);
+});
+
 it('denies students timetables moderators access to admin-only import and subject editing endpoints', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_moderator');
 

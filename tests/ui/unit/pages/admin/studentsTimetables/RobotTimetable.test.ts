@@ -23,11 +23,20 @@ function robotContext(overrides = {}) {
         selectedQualityMetricReachedBest: RobotTimetable.methods.selectedQualityMetricReachedBest,
         qualitySummaryCheckedKeys: [],
         selectedQualityCriteriaCount: null,
+        qualityCriteriaResultFilterEnabled: false,
+        qualityCriteriaResultFilterActive: false,
         qualityCriterionRows: [],
         qualitySummaryCheckboxKey: RobotTimetable.methods.qualitySummaryCheckboxKey,
         selectedQualityCriterionKeys: RobotTimetable.methods.selectedQualityCriterionKeys,
         selectedQualitySummaryCriterion: RobotTimetable.methods.selectedQualitySummaryCriterion,
+        selectedCriteriaTimetableCount: RobotTimetable.methods.selectedCriteriaTimetableCount,
+        qualityCriteriaResultFilterAvailable: RobotTimetable.methods.qualityCriteriaResultFilterAvailable,
+        setQualityCriteriaResultFilterEnabled: RobotTimetable.methods.setQualityCriteriaResultFilterEnabled,
         timetableCalculationReady: () => false,
+        timetableResultCounterLimit: () => 2160,
+        setTimetableResultCounter: () => {},
+        normalizeTimetableResultCounters: () => {},
+        loadFullGreenTimetableCount: () => {},
         loadQualityCountersForSelectedTimetableType: () => {},
         ...overrides,
     }
@@ -152,5 +161,80 @@ describe('RobotTimetable', () => {
         const label = RobotTimetable.computed.selectedCriteriaTimetableCountLabel.call(context)
 
         expect(label.replace(/\u00a0/gu, ' ')).toBe('1 296')
+    })
+
+    it('does not activate the criteria timetable view until the criteria card checkbox is checked', () => {
+        const context = robotContext({
+            selectedQualityCriteriaCount: 1296,
+            qualitySummaryCheckedKeys: ['saturday_free|'],
+            qualityCriterionRows: [
+                { key: 'saturday_free', option: null, count: 1296 },
+            ],
+        })
+
+        expect(RobotTimetable.computed.qualityCriteriaResultFilterActive.call(context)).toBe(false)
+        expect(RobotTimetable.computed.selectedTimetableResultCount.call(context)).toBe(2160)
+    })
+
+    it('uses the selected criteria count when the criteria card checkbox is active', () => {
+        const context = robotContext({
+            qualityCriteriaResultFilterActive: true,
+            qualityCriteriaResultFilterEnabled: true,
+            selectedQualityCriteriaCount: 1296,
+            qualitySummaryCheckedKeys: ['saturday_free|'],
+            qualityCriterionRows: [
+                { key: 'saturday_free', option: null, count: 1296 },
+            ],
+        })
+
+        expect(RobotTimetable.computed.qualityCriteriaResultFilterActive.call(context)).toBe(true)
+        expect(RobotTimetable.computed.selectedTimetableResultCount.call(context)).toBe(1296)
+    })
+
+    it('toggles the criteria timetable view from the criteria card', () => {
+        const loadFullGreenTimetableCount = vi.fn()
+        const setTimetableResultCounter = vi.fn()
+        const context = robotContext({
+            selectedQualityCriteriaCount: 1296,
+            qualitySummaryCheckedKeys: ['saturday_free|'],
+            qualityCriterionRows: [
+                { key: 'saturday_free', option: null, count: 1296 },
+            ],
+            timetableCalculationReady: () => true,
+            loadFullGreenTimetableCount,
+            setTimetableResultCounter,
+        })
+
+        RobotTimetable.methods.setQualityCriteriaResultFilterEnabled.call(context, true)
+
+        expect(context.qualityCriteriaResultFilterEnabled).toBe(true)
+        expect(setTimetableResultCounter).toHaveBeenCalledWith('full_green', 1)
+        expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({ preserveQualityCounters: true })
+    })
+
+    it('toggles the criteria timetable view when the card is clicked', () => {
+        const context = robotContext({
+            selectedQualityCriteriaCount: 1296,
+            qualitySummaryCheckedKeys: ['saturday_free|'],
+            qualityCriterionRows: [
+                { key: 'saturday_free', option: null, count: 1296 },
+            ],
+        })
+
+        RobotTimetable.methods.toggleQualityCriteriaResultFilter.call(context)
+
+        expect(context.qualityCriteriaResultFilterEnabled).toBe(true)
+    })
+
+    it('does not toggle the criteria timetable view when no criteria are selected', () => {
+        const setTimetableResultCounter = vi.fn()
+        const context = robotContext({
+            setTimetableResultCounter,
+        })
+
+        RobotTimetable.methods.toggleQualityCriteriaResultFilter.call(context)
+
+        expect(context.qualityCriteriaResultFilterEnabled).toBe(false)
+        expect(setTimetableResultCounter).not.toHaveBeenCalled()
     })
 })

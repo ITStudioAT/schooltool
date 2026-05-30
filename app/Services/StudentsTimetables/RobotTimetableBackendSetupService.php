@@ -11,6 +11,8 @@ class RobotTimetableBackendSetupService
 {
     /**
      * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
      * @return array<string, mixed>
      */
     public function createInitialBackendTimetable(
@@ -18,6 +20,7 @@ class RobotTimetableBackendSetupService
         array $settings,
         StudentTimetableOverviewService $overviewService,
         array $evaluationCriteria = [],
+        array $selectedQualityCriterionKeys = [],
     ): array {
         $subjectRows = StudentTimetableSubjectRow::query()
             ->where('school_id', $authUser->school_id)
@@ -43,6 +46,7 @@ class RobotTimetableBackendSetupService
             courseGroups: $overviewService->courseGroupsForUser($authUser),
             settings: $settings,
             evaluationCriteria: $evaluationCriteria,
+            selectedQualityCriterionKeys: $selectedQualityCriterionKeys,
         );
 
         return [
@@ -65,6 +69,7 @@ class RobotTimetableBackendSetupService
             'selected_timetable' => $variationResult['selected_timetable'],
             'quality_counters' => $variationResult['quality_counters'],
             'all_quality_criteria_count' => $variationResult['all_quality_criteria_count'],
+            'selected_quality_criteria_count' => $variationResult['selected_quality_criteria_count'],
         ];
     }
 
@@ -114,6 +119,7 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $subjectMappings
      * @param  list<array<string, mixed>>  $courseGroups
      * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
      * @return array{quality_counters: array<int, array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
      */
@@ -144,14 +150,15 @@ class RobotTimetableBackendSetupService
             $selectedQualityCriterionKeys,
             $evaluationCriteria,
         );
+        $selectedQualitySubset = $this->selectedQualityCriteriaSubset(
+            $qualityResult['combination_counts'],
+            $qualityResult['summary'],
+            $evaluationCriteria,
+            $selectedQualityCriterionKeys,
+        );
         $selectedQualityCriteriaCount = $selectedQualityCriterionKeys === []
             ? 0
-            : $this->qualityMetricCombinationCountForCriteria(
-                $qualityResult['combination_counts'],
-                $qualityResult['summary'],
-                $evaluationCriteria,
-                $selectedQualityCriterionKeys,
-            );
+            : $selectedQualitySubset['total'];
 
         return [
             'quality_counters' => $this->qualityCountersFromSummary(
@@ -160,6 +167,7 @@ class RobotTimetableBackendSetupService
                 $qualityResult['combination_counts'],
                 $evaluationCriteria,
                 $selectedQualityCriterionKeys,
+                $selectedQualitySubset,
             ),
             'all_quality_criteria_count' => $this->allQualityCriteriaCount(
                 $qualityResult['combination_counts'],
@@ -198,7 +206,9 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $subjectMappings
      * @param  list<array<string, mixed>>  $courseGroups
      * @param  array<string, mixed>  $settings
-     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, selected_timetable: ?array<string, mixed>}
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
      */
     public function calculateTimetableVariations(
         array $subjectRows,
@@ -206,6 +216,7 @@ class RobotTimetableBackendSetupService
         array $courseGroups,
         array $settings,
         array $evaluationCriteria = [],
+        array $selectedQualityCriterionKeys = [],
     ): array {
         $input = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
         $counts = $this->timetableVariationCounts(
@@ -221,6 +232,16 @@ class RobotTimetableBackendSetupService
             $settings,
             $evaluationCriteria,
         );
+        $selectedQualityCriterionKeys = $this->selectedQualityCriterionKeys(
+            $selectedQualityCriterionKeys,
+            $evaluationCriteria,
+        );
+        $selectedQualitySubset = $this->selectedQualityCriteriaSubset(
+            $qualityResult['combination_counts'],
+            $qualityResult['summary'],
+            $evaluationCriteria,
+            $selectedQualityCriterionKeys,
+        );
         $selectedTimetable = $this->selectedTimetable(
             $input['course_options'],
             $input['additional_course_options'],
@@ -234,11 +255,18 @@ class RobotTimetableBackendSetupService
             'quality_counters' => $this->qualityCountersFromSummary(
                 $qualityResult['summary'],
                 $selectedTimetable['metrics'] ?? null,
+                $qualityResult['combination_counts'],
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
+                $selectedQualitySubset,
             ),
             'all_quality_criteria_count' => $this->allQualityCriteriaCount(
                 $qualityResult['combination_counts'],
                 $qualityResult['summary'],
             ),
+            'selected_quality_criteria_count' => $selectedQualityCriterionKeys === []
+                ? 0
+                : $selectedQualitySubset['total'],
         ];
     }
 
@@ -698,6 +726,7 @@ class RobotTimetableBackendSetupService
      * @param  array<string, int>  $qualityMetricCombinationCounts
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
+     * @param  array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}|null  $selectedQualitySubset
      * @return list<array<string, mixed>>
      */
     private function qualityCountersFromSummary(
@@ -706,6 +735,7 @@ class RobotTimetableBackendSetupService
         array $qualityMetricCombinationCounts = [],
         array $evaluationCriteria = [],
         array $selectedQualityCriterionKeys = [],
+        ?array $selectedQualitySubset = null,
     ): array {
         if ($selectedQualityCriterionKeys === [] || $qualityMetricCombinationCounts === [] || $evaluationCriteria === []) {
             return collect($qualitySummary)
@@ -717,7 +747,7 @@ class RobotTimetableBackendSetupService
                 ->all();
         }
 
-        $selectedTotal = $this->qualityMetricCombinationCountForCriteria(
+        $selectedQualitySubset ??= $this->selectedQualityCriteriaSubset(
             $qualityMetricCombinationCounts,
             $qualitySummary,
             $evaluationCriteria,
@@ -726,18 +756,15 @@ class RobotTimetableBackendSetupService
 
         return collect($qualitySummary)
             ->values()
-            ->map(function (array $summary) use ($selectedMetrics, $qualityMetricCombinationCounts, $qualitySummary, $evaluationCriteria, $selectedQualityCriterionKeys, $selectedTotal): array {
-                $counterPayload = $this->qualityCounterPayload($summary);
-                $counterPayload['count'] = $this->qualityMetricCombinationCountForCriteria(
-                    $qualityMetricCombinationCounts,
-                    $qualitySummary,
-                    $evaluationCriteria,
-                    $this->selectedQualityCriterionKeys([
-                        ...$selectedQualityCriterionKeys,
-                        (string) ($summary['key'] ?? ''),
-                    ], $evaluationCriteria),
-                );
-                $counterPayload['total'] = $selectedTotal;
+            ->map(function (array $summary) use ($selectedMetrics, $evaluationCriteria, $selectedQualityCriterionKeys, $selectedQualitySubset): array {
+                $key = (string) ($summary['key'] ?? '');
+                $counterPayload = in_array($key, $selectedQualityCriterionKeys, true)
+                    ? ($selectedQualitySubset['steps'][$key] ?? $this->qualityCounterPayload($summary))
+                    : $this->qualityCounterPayloadForCombinationSubset(
+                        $summary,
+                        $selectedQualitySubset['counts'],
+                        $evaluationCriteria,
+                    );
 
                 return [
                     ...$counterPayload,
@@ -745,6 +772,125 @@ class RobotTimetableBackendSetupService
                 ];
             })
             ->all();
+    }
+
+    /**
+     * @param  array<string, int>  $qualityMetricCombinationCounts
+     * @param  array<string, array<string, mixed>>  $qualitySummary
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @return array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}
+     */
+    private function selectedQualityCriteriaSubset(
+        array $qualityMetricCombinationCounts,
+        array $qualitySummary,
+        array $evaluationCriteria,
+        array $selectedQualityCriterionKeys,
+    ): array {
+        $subsetCounts = $qualityMetricCombinationCounts;
+        $steps = [];
+
+        foreach ($selectedQualityCriterionKeys as $criterionKey) {
+            if (! array_key_exists($criterionKey, $qualitySummary)) {
+                $subsetCounts = [];
+
+                continue;
+            }
+
+            $stepPayload = $this->qualityCounterPayloadForCombinationSubset(
+                $qualitySummary[$criterionKey],
+                $subsetCounts,
+                $evaluationCriteria,
+            );
+            $steps[$criterionKey] = $stepPayload;
+            $bestValue = $stepPayload['best_value'] ?? null;
+
+            if ($bestValue === null) {
+                $subsetCounts = [];
+
+                continue;
+            }
+
+            $subsetCounts = $this->qualityMetricCombinationCountsMatchingCriterion(
+                $subsetCounts,
+                $evaluationCriteria,
+                $criterionKey,
+                $bestValue,
+            );
+        }
+
+        return [
+            'steps' => $steps,
+            'counts' => $subsetCounts,
+            'total' => (int) array_sum($subsetCounts),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $summary
+     * @param  array<string, int>  $qualityMetricCombinationCounts
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @return array<string, mixed>
+     */
+    private function qualityCounterPayloadForCombinationSubset(
+        array $summary,
+        array $qualityMetricCombinationCounts,
+        array $evaluationCriteria,
+    ): array {
+        $payload = $this->qualityCounterPayload($summary);
+        $key = (string) ($summary['key'] ?? '');
+        $criterionIndex = $this->qualityCriterionIndex($evaluationCriteria, $key);
+        $total = (int) array_sum($qualityMetricCombinationCounts);
+
+        $payload['total'] = $total;
+        $payload['count'] = 0;
+
+        if ($criterionIndex === null || $total === 0) {
+            $payload['best_value'] = null;
+            $payload['best_label'] = '-';
+
+            return $payload;
+        }
+
+        if (is_bool($summary['best_value'] ?? null)) {
+            $payload['best_value'] = true;
+            $payload['best_label'] = 'erfüllt';
+            $payload['count'] = $this->qualityMetricCombinationCountMatchingPart(
+                $qualityMetricCombinationCounts,
+                $criterionIndex,
+                $this->qualityMetricSignaturePart(true),
+            );
+
+            return $payload;
+        }
+
+        $bestValue = null;
+        $bestCount = 0;
+
+        foreach ($qualityMetricCombinationCounts as $signature => $count) {
+            $value = $this->qualityMetricSignaturePartValue(explode('|', $signature)[$criterionIndex] ?? null);
+
+            if (! is_int($value)) {
+                continue;
+            }
+
+            if ($bestValue === null || $this->qualityMetricIsBetter($key, $value, $bestValue)) {
+                $bestValue = $value;
+                $bestCount = (int) $count;
+
+                continue;
+            }
+
+            if ($value === $bestValue) {
+                $bestCount += (int) $count;
+            }
+        }
+
+        $payload['best_value'] = $bestValue;
+        $payload['best_label'] = $bestValue === null ? '-' : $this->qualityMetricLabel($key, $bestValue);
+        $payload['count'] = $bestCount;
+
+        return $payload;
     }
 
     /**
@@ -830,49 +976,57 @@ class RobotTimetableBackendSetupService
     }
 
     /**
-     * @param  array<string, int>  $qualityMetricCombinationCounts
-     * @param  array<string, array<string, mixed>>  $qualitySummary
      * @param  list<array<string, mixed>>  $evaluationCriteria
-     * @param  list<string>  $criterionKeys
      */
-    private function qualityMetricCombinationCountForCriteria(
+    private function qualityCriterionIndex(array $evaluationCriteria, string $criterionKey): ?int
+    {
+        foreach (array_values($evaluationCriteria) as $index => $criterion) {
+            if ((string) ($criterion['key'] ?? '') === $criterionKey) {
+                return $index;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, int>  $qualityMetricCombinationCounts
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @return array<string, int>
+     */
+    private function qualityMetricCombinationCountsMatchingCriterion(
         array $qualityMetricCombinationCounts,
-        array $qualitySummary,
         array $evaluationCriteria,
-        array $criterionKeys,
-    ): int {
-        if ($criterionKeys === []) {
-            return (int) array_sum($qualityMetricCombinationCounts);
+        string $criterionKey,
+        int|bool $value,
+    ): array {
+        $criterionIndex = $this->qualityCriterionIndex($evaluationCriteria, $criterionKey);
+
+        if ($criterionIndex === null) {
+            return [];
         }
 
-        $criteriaIndexesByKey = collect($evaluationCriteria)
-            ->values()
-            ->mapWithKeys(fn (array $criterion, int $index): array => [(string) ($criterion['key'] ?? '') => $index])
-            ->all();
-        $requiredParts = [];
-
-        foreach ($criterionKeys as $criterionKey) {
-            if (! array_key_exists($criterionKey, $criteriaIndexesByKey) || ! array_key_exists($criterionKey, $qualitySummary)) {
-                return 0;
-            }
-
-            $bestValue = $qualitySummary[$criterionKey]['best_value'] ?? null;
-
-            if ($bestValue === null) {
-                return 0;
-            }
-
-            $requiredParts[(int) $criteriaIndexesByKey[$criterionKey]] = $this->qualityMetricSignaturePart($bestValue);
-        }
+        $requiredPart = $this->qualityMetricSignaturePart($value);
 
         return collect($qualityMetricCombinationCounts)
-            ->reduce(function (int $total, int $count, string $signature) use ($requiredParts): int {
-                $signatureParts = explode('|', $signature);
+            ->filter(function (int $count, string $signature) use ($criterionIndex, $requiredPart): bool {
+                return (explode('|', $signature)[$criterionIndex] ?? null) === $requiredPart;
+            })
+            ->all();
+    }
 
-                foreach ($requiredParts as $index => $requiredPart) {
-                    if (($signatureParts[$index] ?? null) !== $requiredPart) {
-                        return $total;
-                    }
+    /**
+     * @param  array<string, int>  $qualityMetricCombinationCounts
+     */
+    private function qualityMetricCombinationCountMatchingPart(
+        array $qualityMetricCombinationCounts,
+        int $criterionIndex,
+        string $requiredPart,
+    ): int {
+        return collect($qualityMetricCombinationCounts)
+            ->reduce(function (int $total, int $count, string $signature) use ($criterionIndex, $requiredPart): int {
+                if ((explode('|', $signature)[$criterionIndex] ?? null) !== $requiredPart) {
+                    return $total;
                 }
 
                 return $total + $count;
@@ -931,6 +1085,23 @@ class RobotTimetableBackendSetupService
         }
 
         return 'int:'.(int) $value;
+    }
+
+    private function qualityMetricSignaturePartValue(?string $value): int|bool|null
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (str_starts_with($value, 'bool:')) {
+            return (bool) (int) substr($value, 5);
+        }
+
+        if (str_starts_with($value, 'int:')) {
+            return (int) substr($value, 4);
+        }
+
+        return null;
     }
 
     /**

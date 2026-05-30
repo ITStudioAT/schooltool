@@ -1195,11 +1195,30 @@
                         </div>
 
                         <div class="robot-generated-criteria-count">
-                            <div class="robot-count-card robot-count-card--green robot-count-card--criteria">
+                            <div
+                                class="robot-count-card robot-count-card--green robot-count-card--criteria"
+                                :class="{
+                                    'robot-count-card--selected': qualityCriteriaResultFilterActive,
+                                    'robot-count-card--clickable': qualityCriteriaResultFilterAvailable(),
+                                }"
+                                :role="qualityCriteriaResultFilterAvailable() ? 'button' : null"
+                                :tabindex="qualityCriteriaResultFilterAvailable() ? 0 : null"
+                                @click="toggleQualityCriteriaResultFilter"
+                                @keydown.enter.prevent="toggleQualityCriteriaResultFilter"
+                                @keydown.space.prevent="toggleQualityCriteriaResultFilter">
                                 <div class="robot-count-card__content">
                                     <div class="robot-count-card__label">Stundenpläne mit Kriterien</div>
                                     <div class="robot-count-card__value">{{ selectedCriteriaTimetableCountLabel }}</div>
                                 </div>
+                                <v-checkbox-btn
+                                    :model-value="qualityCriteriaResultFilterActive"
+                                    color="primary"
+                                    density="compact"
+                                    :disabled="!qualityCriteriaResultFilterAvailable() || fullGreenTimetableCountLoading || timetableGenerationLoading"
+                                    readonly
+                                    tabindex="-1"
+                                    :aria-label="qualityCriteriaResultFilterActive ? 'Stundenpläne mit Kriterien ausgewählt' : 'Stundenpläne mit Kriterien auswählbar'"
+                                    class="robot-count-card__check" />
                             </div>
                         </div>
 
@@ -2071,11 +2090,30 @@
             </div>
 
             <div class="robot-generated-criteria-count">
-                <div class="robot-count-card robot-count-card--green robot-count-card--criteria">
+                <div
+                    class="robot-count-card robot-count-card--green robot-count-card--criteria"
+                    :class="{
+                        'robot-count-card--selected': qualityCriteriaResultFilterActive,
+                        'robot-count-card--clickable': qualityCriteriaResultFilterAvailable(),
+                    }"
+                    :role="qualityCriteriaResultFilterAvailable() ? 'button' : null"
+                    :tabindex="qualityCriteriaResultFilterAvailable() ? 0 : null"
+                    @click="toggleQualityCriteriaResultFilter"
+                    @keydown.enter.prevent="toggleQualityCriteriaResultFilter"
+                    @keydown.space.prevent="toggleQualityCriteriaResultFilter">
                     <div class="robot-count-card__content">
                         <div class="robot-count-card__label">Stundenpläne mit Kriterien</div>
                         <div class="robot-count-card__value">{{ selectedCriteriaTimetableCountLabel }}</div>
                     </div>
+                    <v-checkbox-btn
+                        :model-value="qualityCriteriaResultFilterActive"
+                        color="primary"
+                        density="compact"
+                        :disabled="!qualityCriteriaResultFilterAvailable() || fullGreenTimetableCountLoading || timetableGenerationLoading"
+                        readonly
+                        tabindex="-1"
+                        :aria-label="qualityCriteriaResultFilterActive ? 'Stundenpläne mit Kriterien ausgewählt' : 'Stundenpläne mit Kriterien auswählbar'"
+                        class="robot-count-card__check" />
                 </div>
             </div>
 
@@ -2349,6 +2387,7 @@ export default {
             qualitySummaryCheckedKeys: [],
             allQualityCriteriaCount: null,
             selectedQualityCriteriaCount: null,
+            qualityCriteriaResultFilterEnabled: false,
             evaluationCriteria: [],
             evaluationCriteriaLoaded: false,
             fullGreenTimetableNumber: 1,
@@ -2812,12 +2851,7 @@ export default {
             return this.qualityCriterionRows.filter(criterion => criterion.enabled === true)
         },
         selectedCriteriaTimetableCountLabel() {
-            if (!this.qualitySummaryCheckedKeys.length) return '0'
-            if (this.selectedQualityCriteriaCount !== null) return this.formatNumber(this.selectedQualityCriteriaCount)
-
-            const selectedCriterion = this.selectedQualitySummaryCriterion()
-
-            return selectedCriterion ? this.formatNumber(selectedCriterion.count || 0) : '0'
+            return this.formatNumber(this.selectedCriteriaTimetableCount())
         },
         unavailableWeekdays() {
             return this.weekdayOptions
@@ -2969,15 +3003,14 @@ export default {
         },
         selectedTimetableResultCount() {
             if (this.qualityCriteriaResultFilterActive) {
-                return Math.max(0, Number(this.allQualityCriteriaCount || 0))
+                return this.selectedCriteriaTimetableCount()
             }
 
             return this.timetableResultCounterLimit(this.selectedTimetableResultType)
         },
         qualityCriteriaResultFilterActive() {
-            return this.activeQualityCriterionRows.length > 0
-                && this.allQualityCriteriaCount !== null
-                && Number(this.allQualityCriteriaCount || 0) > 0
+            return this.qualityCriteriaResultFilterEnabled === true
+                && this.qualityCriteriaResultFilterAvailable()
         },
         selectedOptionsNoResultAlertVisible() {
             return this.timetableCountResultsAvailable
@@ -3580,6 +3613,7 @@ export default {
                 this.qualityCounters = []
                 this.allQualityCriteriaCount = 0
                 this.selectedQualityCriteriaCount = 0
+                this.qualityCriteriaResultFilterEnabled = false
                 this.generatedTimetables = []
                 this.additionalCourseTimetableRequired = false
                 this.normalizeTimetableResultCounters()
@@ -4693,6 +4727,7 @@ export default {
             this.qualityCounters = []
             this.allQualityCriteriaCount = null
             this.selectedQualityCriteriaCount = null
+            this.qualityCriteriaResultFilterEnabled = false
             this.normalizeTimetableResultCounters()
             this.fullGreenTimetableCountError = ''
         },
@@ -4710,6 +4745,33 @@ export default {
             }
 
             return Number(responseData.selected_quality_criteria_count || 0)
+        },
+        selectedCriteriaTimetableCount() {
+            if (!this.qualitySummaryCheckedKeys.length) return 0
+            if (this.selectedQualityCriteriaCount !== null) {
+                return Math.max(0, Number(this.selectedQualityCriteriaCount || 0))
+            }
+
+            const selectedCriterion = this.selectedQualitySummaryCriterion()
+
+            return Math.max(0, Number(selectedCriterion?.count || 0))
+        },
+        qualityCriteriaResultFilterAvailable() {
+            return this.selectedCriteriaTimetableCount() > 0
+        },
+        toggleQualityCriteriaResultFilter() {
+            if (!this.qualityCriteriaResultFilterAvailable()) return
+
+            this.setQualityCriteriaResultFilterEnabled(!this.qualityCriteriaResultFilterEnabled)
+        },
+        setQualityCriteriaResultFilterEnabled(enabled) {
+            this.qualityCriteriaResultFilterEnabled = enabled === true && this.qualityCriteriaResultFilterAvailable()
+            this.setTimetableResultCounter(this.selectedTimetableResultType, 1)
+            this.normalizeTimetableResultCounters()
+
+            if (this.timetableCalculationReady()) {
+                this.loadFullGreenTimetableCount({ preserveQualityCounters: true })
+            }
         },
         allQualityCriteriaCountDetail() {
             if (!this.activeQualityCriterionRows.length) {
@@ -5012,6 +5074,10 @@ export default {
 
             this.qualitySummaryCheckedKeys = Array.from(checkedKeys)
             this.selectedQualityCriteriaCount = null
+            if (!this.qualitySummaryCheckedKeys.length) {
+                this.qualityCriteriaResultFilterEnabled = false
+            }
+            this.setTimetableResultCounter(this.selectedTimetableResultType, 1)
 
             if (typeof this.timetableCalculationReady === 'function' && this.timetableCalculationReady()) {
                 this.loadQualityCountersForSelectedTimetableType()
@@ -9097,6 +9163,10 @@ export default {
 
 .robot-count-card--criteria {
     width: min(100%, 286px);
+}
+
+.robot-count-card__check {
+    flex: 0 0 auto;
 }
 
 .robot-count-card--conflict {
