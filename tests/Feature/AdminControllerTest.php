@@ -122,6 +122,7 @@ test('config returns user data when authenticated', function () {
 test('authenticated config includes environment versions', function () {
     Cache::forget('admin.environment_versions');
     Cache::forget('admin.environment_versions.v2');
+    Cache::forget('admin.environment_versions.v3');
     Process::fake([
         '*' => Process::sequence()
             ->push(Process::result(output: 'Composer version 2.8.12 2025-09-19 13:41:59'))
@@ -152,6 +153,26 @@ test('authenticated config includes environment versions', function () {
                 'vite',
             ],
         ]);
+
+    if (PHP_OS_FAMILY === 'Windows') {
+        Process::assertRan(function ($process): bool {
+            $command = is_array($process->command)
+                ? implode(' ', $process->command)
+                : $process->command;
+
+            return str_contains($command, 'composer --version')
+                && str_contains($process->environment['PATH'] ?? '', 'C:\\ProgramData\\ComposerSetup\\bin');
+        });
+
+        Process::assertRan(function ($process): bool {
+            $command = is_array($process->command)
+                ? implode(' ', $process->command)
+                : $process->command;
+
+            return str_contains($command, 'npm --version')
+                && str_contains($process->environment['PATH'] ?? '', 'C:\\Program Files\\nodejs');
+        });
+    }
 });
 
 test('config can include selected school infos for admin home screen', function () {

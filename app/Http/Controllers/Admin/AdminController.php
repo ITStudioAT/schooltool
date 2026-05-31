@@ -44,7 +44,14 @@ class AdminController extends Controller
 {
     use HasRoleTrait;
 
-    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v2';
+    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v3';
+
+    private const array PROCESS_PATH_DIRECTORIES = [
+        'C:\\ProgramData\\ComposerSetup\\bin',
+        'C:\\Program Files\\nodejs',
+        'C:\\laragon\\bin\\composer',
+        'C:\\laragon\\bin\\nodejs',
+    ];
 
     private const array STUDENTS_TIMETABLES_ROLES = [
         'super_admin',
@@ -165,8 +172,8 @@ class AdminController extends Controller
             'laravel' => app()->version(),
             'php' => PHP_VERSION,
             'composer' => $this->composerVersion(),
-            'npm' => $this->commandVersion(['npm', '--version']),
-            'node' => $this->commandVersion(['node', '--version']),
+            'npm' => $this->nodeToolVersion('npm', ['C:\\Program Files\\nodejs\\npm.cmd']),
+            'node' => $this->nodeToolVersion('node', ['C:\\Program Files\\nodejs\\node.exe']),
             'vue' => $this->packageLockVersion('vue'),
             'vuetify' => $this->packageLockVersion('vuetify'),
             'vite' => $this->packageLockVersion('vite'),
@@ -177,8 +184,44 @@ class AdminController extends Controller
     {
         $pattern = '/Composer(?: version)?\s+(?<version>\d+(?:\.\d+)+)/';
 
-        return $this->commandVersion(['composer', '--version', '--no-ansi'], $pattern)
-            ?? $this->commandVersion('composer --version --no-ansi', $pattern);
+        return $this->firstCommandVersion([
+            ['composer', '--version', '--no-ansi'],
+            'composer --version --no-ansi',
+            ...$this->windowsCommandCandidates('C:\\ProgramData\\ComposerSetup\\bin\\composer.bat', ['--version', '--no-ansi']),
+        ], $pattern);
+    }
+
+    /**
+     * @param  array<int, string>  $windowsBinaries
+     */
+    private function nodeToolVersion(string $binary, array $windowsBinaries): ?string
+    {
+        $commands = [
+            [$binary, '--version'],
+            "{$binary} --version",
+        ];
+
+        foreach ($windowsBinaries as $windowsBinary) {
+            array_push($commands, ...$this->windowsCommandCandidates($windowsBinary, ['--version']));
+        }
+
+        return $this->firstCommandVersion($commands);
+    }
+
+    /**
+     * @param  array<int, array<int, string>|string>  $commands
+     */
+    private function firstCommandVersion(array $commands, ?string $pattern = null): ?string
+    {
+        foreach ($commands as $command) {
+            $version = $this->commandVersion($command, $pattern);
+
+            if ($version !== null) {
+                return $version;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -189,6 +232,7 @@ class AdminController extends Controller
         try {
             $result = Process::timeout(2)
                 ->path(base_path())
+                ->env($this->processEnvironment())
                 ->run($command);
 
             if (! $result->successful()) {
@@ -209,6 +253,32 @@ class AdminController extends Controller
         } catch (Throwable) {
             return null;
         }
+    }
+
+    /**
+     * @param  array<int, string>  $arguments
+     * @return array<int, array<int, string>|string>
+     */
+    private function windowsCommandCandidates(string $binary, array $arguments): array
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return [];
+        }
+
+        return [
+            [$binary, ...$arguments],
+            $this->windowsShellCommand($binary, $arguments),
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $arguments
+     */
+    private function windowsShellCommand(string $binary, array $arguments): string
+    {
+        return collect([$binary, ...$arguments])
+            ->map(fn (string $argument): string => str_contains($argument, ' ') ? "\"{$argument}\"" : $argument)
+            ->implode(' ');
     }
 
     private function packageLockVersion(string $package): ?string
@@ -233,6 +303,44 @@ class AdminController extends Controller
         return is_array($packageData) && isset($packageData['version'])
             ? (string) $packageData['version']
             : null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function processEnvironment(): array
+    {
+        $path = collect([
+            getenv('PATH') ?: '',
+            getenv('Path') ?: '',
+            ...$this->processPathDirectories(),
+        ])
+            ->flatMap(fn (string $path): array => explode(PATH_SEPARATOR, $path))
+            ->map(fn (string $path): string => trim($path))
+            ->filter()
+            ->unique(fn (string $path): string => strtolower($path))
+            ->implode(PATH_SEPARATOR);
+
+        if ($path === '') {
+            return [];
+        }
+
+        return [
+            'PATH' => $path,
+            'Path' => $path,
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function processPathDirectories(): array
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return [];
+        }
+
+        return self::PROCESS_PATH_DIRECTORIES;
     }
 
     private function canLoadSchoolInfos(User $user): bool

@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'version' => '3.36.10',
+    'version' => '3.37.0',
     'copyright' => '(c) 2025 – 2026 ITStudio.at by Günther Kron',
     'logo' => 'schooltool_white.png',
     'pagination' => 30,
@@ -12,11 +12,7 @@ return [
     'sa_first_name' => env('SA_FIRST_NAME', ''),
     'sa_email' => env('SA_EMAIL', ''),
     'email_aliases' => [
-        'a@a.at' => 'angelika.mussnig14@gmail.com',
-        'b@b.at' => 'angelika.mussnig14@gmail.com',
-        'c@c.at' => 'angelika.mussnig14@gmail.com',
-        'paul.ahlgrimm@cdgym.at' => 'angelika.mussnig14@gmail.com',
-        'felix.algran@cdgym.at' => 'angelika.mussnig14@gmail.com',
+
     ],
     'licence_renewal_days' => env('LICENCE_RENEWAL_DAYS', 30),
     'licence_free_activation_date' => '2026-07-10',
