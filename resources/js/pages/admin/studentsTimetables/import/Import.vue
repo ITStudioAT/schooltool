@@ -592,7 +592,7 @@ export default {
         },
         handleImportNavigation(key) {
             this.import_action = this.normalizedImportAction(key)
-            this.$router.replace({ path: `/admin/students-timetables/import/${this.import_action}` })
+            this.$router.push({ path: `/admin/students-timetables/import/${this.import_action}` })
         },
         async loadImport() {
             this.loading = true

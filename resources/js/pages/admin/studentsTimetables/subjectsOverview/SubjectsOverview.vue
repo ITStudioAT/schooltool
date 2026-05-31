@@ -707,7 +707,7 @@ export default {
                 return
             }
 
-            this.$router.replace({ path: `/admin/students-timetables/subjects-overview/${this.subject_action}` })
+            this.$router.push({ path: `/admin/students-timetables/subjects-overview/${this.subject_action}` })
         },
         redirectUnauthorizedSubjectRoute() {
             if (this.embedded || this.canManageSubjectSettings) return

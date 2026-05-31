@@ -1,27 +1,5 @@
 <template>
-    <v-col v-if="showTimetableSubnav" cols="12" class="pb-0">
-        <v-sheet rounded="xl" class="st-subnav mb-2">
-            <div class="st-subnav__inner">
-                <div class="st-subnav__items">
-                    <v-btn
-                        v-for="item in subnavItems"
-                        :key="item.key"
-                        size="small"
-                        rounded="xl"
-                        :variant="subAction === item.key ? 'flat' : 'tonal'"
-                        :class="subAction === item.key ? 'st-subnav__item--active' : 'st-subnav__item--idle'"
-                        @click="handleSubnavigation(item.key)">
-                        {{ item.label }}
-                    </v-btn>
-                </div>
-            </div>
-        </v-sheet>
-
-    </v-col>
-
     <Overview v-if="subAction === 'overview'" />
-
-    <RobotTimetable v-else-if="subAction === 'robot'" />
 
     <v-col v-else cols="12" md="6" lg="7" xl="4">
         <v-card v-if="subAction === 'imports' && !activeImportPage" rounded="xl" class="st-dummy-card">
@@ -1158,7 +1136,6 @@ import { useValidationRulesSetup } from '@/helpers/rules'
 import FileUpload from '@/pages/components/FileUpload.vue'
 import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
 import Overview from '../overview/Overview.vue'
-import RobotTimetable from '../robot/RobotTimetable.vue'
 
 const SECTION_LABELS = {
     VV: 'Kopfdaten / Version',
@@ -1176,7 +1153,7 @@ export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { FileUpload, LoadingAnimation, Overview, RobotTimetable },
+    components: { FileUpload, LoadingAnimation, Overview },
     data() {
         return {
             subAction: this.normalizedSubAction(this.$route.params.subsection),
@@ -1223,15 +1200,6 @@ export default {
         },
         canManageTimetableImports() {
             return ['super_admin', 'admin', 'studentstimetables_admin'].some(roleName => this.configuredRoleNames.includes(roleName))
-        },
-        subnavItems() {
-            return [
-                { key: 'overview', label: 'Übersicht' },
-                { key: 'robot', label: 'Wizzard' },
-            ]
-        },
-        showTimetableSubnav() {
-            return this.subAction !== 'imports'
         },
         importButtons() {
             return [
@@ -1595,6 +1563,11 @@ export default {
         },
         '$route.params.subsection'(subsection) {
             this.subAction = this.normalizedSubAction(subsection)
+            if (this.redirectLegacyOverviewRoute()) {
+                return
+            }
+
+            this.redirectLegacyRobotRoute()
             this.redirectUnauthorizedImportRoute()
             this.loadImportButtonInfo()
         },
@@ -1602,6 +1575,7 @@ export default {
             this.importPage = this.normalizedImportPage(detail)
             this.uploadedFilename = ''
             this.uploadError = ''
+            this.redirectLegacyOverviewRoute()
             this.loadImportButtonInfo()
         },
         '$route.params.action'(action) {
@@ -1609,6 +1583,8 @@ export default {
         },
     },
     mounted() {
+        this.redirectLegacyOverviewRoute()
+        this.redirectLegacyRobotRoute()
         this.redirectUnauthorizedImportRoute()
         this.loadImportButtonInfo()
     },
@@ -1619,8 +1595,8 @@ export default {
     methods: {
         normalizedSubAction(subsection) {
             const allowed = this.canManageTimetableImports
-                ? ['overview', 'robot', 'imports']
-                : ['overview', 'robot']
+                ? ['overview', 'imports']
+                : ['overview']
 
             return allowed.includes(subsection) ? subsection : 'overview'
         },
@@ -1644,33 +1620,48 @@ export default {
             this.subAction = 'overview'
             this.importPage = ''
             this.importSubPage = ''
-            this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
+            this.$router.replace({ path: '/admin/students-timetables' })
         },
-        handleSubnavigation(key) {
-            if (key === 'imports' && !this.canManageTimetableImports) return
+        redirectLegacyOverviewRoute() {
+            if (
+                this.$route.params.section !== 'timetable'
+                || this.$route.params.subsection !== 'overview'
+                || this.$route.params.detail
+            ) {
+                return false
+            }
 
-            this.subAction = key
+            this.subAction = 'overview'
             this.importPage = ''
             this.importSubPage = ''
-            this.$router.replace({ path: `/admin/students-timetables/timetable/${key}` })
-            this.loadImportButtonInfo()
+            this.$router.replace({ path: '/admin/students-timetables' })
+
+            return true
+        },
+        redirectLegacyRobotRoute() {
+            if (this.$route.params.subsection !== 'robot') return
+
+            this.subAction = 'overview'
+            this.importPage = ''
+            this.importSubPage = ''
+            this.$router.replace({ path: '/admin/students-timetables/timetable/overview/automatic' })
         },
         openImportPage(key) {
             this.importPage = this.normalizedImportPage(key)
             this.importSubPage = ''
             this.uploadedFilename = ''
             this.uploadError = ''
-            this.$router.replace({ path: `/admin/students-timetables/timetable/imports/${this.importPage}` })
+            this.$router.push({ path: `/admin/students-timetables/timetable/imports/${this.importPage}` })
             this.loadImportButtonInfo()
         },
         closeImportPage() {
             this.importPage = ''
             this.importSubPage = ''
-            this.$router.replace({ path: '/admin/students-timetables/timetable/imports' })
+            this.$router.push({ path: '/admin/students-timetables/timetable/imports' })
         },
         closeImportUploadPage() {
             this.importSubPage = ''
-            this.$router.replace({ path: `/admin/students-timetables/timetable/imports/${this.activeImportPage || 'stundenplan'}` })
+            this.$router.push({ path: `/admin/students-timetables/timetable/imports/${this.activeImportPage || 'stundenplan'}` })
         },
         onImportUploadStart() {
             this.uploadError = ''
@@ -2284,55 +2275,6 @@ export default {
 </script>
 
 <style scoped>
-.st-subnav {
-    border: 1px solid rgba(37, 99, 235, 0.18);
-    background: rgba(255, 255, 255, 0.84);
-    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
-    padding: 8px 12px;
-}
-
-.st-subnav__inner {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    width: 100%;
-}
-
-.st-subnav__items {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    flex: 1;
-}
-
-.st-subnav__item--idle {
-    text-transform: none;
-    letter-spacing: 0;
-    font-weight: 600;
-    height: 30px !important;
-    font-size: 0.82rem;
-    background: rgba(219, 234, 254, 0.72) !important;
-    color: #1e40af !important;
-    border: 1px solid rgba(59, 130, 246, 0.28) !important;
-}
-
-.st-subnav__item--idle:hover {
-    background: rgba(191, 219, 254, 0.78) !important;
-    color: #1e3a8a !important;
-}
-
-.st-subnav__item--active {
-    text-transform: none;
-    letter-spacing: 0;
-    font-weight: 600;
-    height: 30px !important;
-    font-size: 0.82rem;
-    background: linear-gradient(135deg, #4f46e5, #6366f1) !important;
-    color: #fff !important;
-    box-shadow: 0 0 12px rgba(99, 102, 241, 0.45) !important;
-}
-
 .st-dummy-card {
     border: 1px solid rgba(37, 99, 235, 0.12);
     background: rgba(255, 255, 255, 0.92);

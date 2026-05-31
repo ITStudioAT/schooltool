@@ -17,7 +17,8 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('name="course-actions"')
         expect(componentSource).toContain(':loading="courseCardsLoading"')
         expect(componentSource).toContain(':ready="courseCardsReady"')
-        expect(componentSource).toContain(':extending="additionalCoursePanelVisible"')
+        expect(componentSource).toContain(':extending="additionalCourseExtensionMode"')
+        expect(componentSource).toContain(':create-action-visible="courseActionVisible"')
         expect(componentSource).toContain(':has-selected-additional-courses="selectedAdditionalCourses.length > 0"')
         expect(componentSource).toContain(':extension-action-visible="additionalCourseExtensionActionVisible"')
         expect(componentSource).toContain("'robot-timetable-embedded-course-cards--with-additional': additionalCoursePanelVisible")
@@ -76,6 +77,13 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain("students-timetables:overview:last-timetable")
         expect(componentSource).toContain("const OVERVIEW_TIMETABLE_PATH = '/admin/students-timetables/timetable/overview'")
         expect(componentSource).toContain('Übernehmen')
+        expect(componentSource).toContain('class="robot-generated-overtake-button"')
+        expect(componentSource).toContain('variant="flat"')
+        expect(componentSource).toContain('size="large"')
+        expect(componentSource).toContain('prepend-icon="mdi-calendar-clock"')
+        expect(componentSource).toContain('.robot-generated-overtake-button')
+        expect(componentSource).toContain('min-height: 48px;')
+        expect(componentSource).toContain('font-weight: 850;')
         expect(componentSource).not.toContain('In Übersicht übernehmen')
         expect(componentSource).toContain('overtakeSelectedTimetableToOverview')
         expect(componentSource).toContain('selectedRobotTimetableCourseGroupKeys()')
@@ -174,6 +182,8 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('border-color: #15803d')
         expect(componentSource).toContain('v-if="additionalCoursePanelVisible"')
         expect(componentSource).toContain('additionalCoursePanelVisible()')
+        expect(componentSource).toContain('additionalCoursePanelRetained')
+        expect(componentSource).toContain('additionalCourseExtensionMode()')
         expect(componentSource).toContain('additionalCourseColumns')
         expect(componentSource).toContain('robot-course-item-panels')
         expect(componentSource).not.toContain('robot-additional-course-panel-row')
@@ -263,6 +273,9 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('availableCourseColumns()')
         expect(componentSource).toContain('courseCardsReady()')
         expect(componentSource).toContain('courseCardsLoading()')
+        expect(componentSource).toContain('plannedCourseSelectionChanged()')
+        expect(componentSource).toContain('courseActionVisible()')
+        expect(componentSource).toContain('availablePlannedCourses()')
         expect(componentSource).toContain('selectedCourses()')
         expect(componentSource).toContain('selectedCoursesHours()')
         expect(componentSource).toContain('courseSelected(course)')
@@ -279,8 +292,11 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('courseUsedInSelectedTimetable(course)')
         expect(componentSource).toContain('selectedTimetableScheduledCourses()')
         expect(componentSource).toContain('robot-course-item-panel--used')
+        expect(componentSource).toContain('.robot-course-item-panel--used :deep(.v-expansion-panel-title)')
+        expect(componentSource).toContain('background: rgba(var(--v-theme-success), 0.16);')
         expect(componentSource).toContain('selectedTimetableConflictCourses()')
         expect(componentSource).toContain('robot-course-item-panel--conflict')
+        expect(componentSource).toContain('background: rgba(var(--v-theme-error), 0.12);')
         expect(componentSource).toContain('courseGroupUsedInSelectedTimetable(course, group)')
         expect(componentSource).toContain('courseGroupNoLongerFitsSelectedTimetable(course, group)')
         expect(componentSource).toContain('robot-course-item-detail--used')
@@ -882,6 +898,31 @@ describe('Students timetable robot page', () => {
         expect(loadQualityCountersForSelectedTimetableType).toHaveBeenCalledOnce()
     })
 
+    it('keeps the selected timetable rendered while applying the quality criteria filter', () => {
+        const methods = (RobotTimetable as any).methods
+        const loadFullGreenTimetableCount = vi.fn()
+        const ctx = {
+            ...methods,
+            selectedTimetableResultType: 'green',
+            qualityCriteriaResultFilterEnabled: false,
+            greenTimetableNumber: 3,
+            qualityCriteriaResultFilterAvailable: vi.fn(() => true),
+            timetableCalculationReady: vi.fn(() => true),
+            setTimetableResultCounter: vi.fn(),
+            normalizeTimetableResultCounters: vi.fn(),
+            loadFullGreenTimetableCount,
+        }
+
+        methods.setQualityCriteriaResultFilterEnabled.call(ctx, true)
+
+        expect(ctx.qualityCriteriaResultFilterEnabled).toBe(true)
+        expect(ctx.setTimetableResultCounter).toHaveBeenCalledWith('green', 1)
+        expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({
+            preserveGeneratedTimetable: true,
+            preserveQualityCounters: true,
+        })
+    })
+
     it('shows the all quality criteria count against the active filtered timetable result count', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {
@@ -1064,25 +1105,48 @@ describe('Students timetable robot page', () => {
         expect(ctx.timetableCreateLoading).toBe(false)
     })
 
-    it('shows the extend timetable action again when additional course selection changes', () => {
+    it('hides stale generated timetable results when additional course selection changes', () => {
         const computed = (RobotTimetable as any).computed
         const methods = (RobotTimetable as any).methods
         const ctx = {
             ...methods,
             selectedRobotTimetable: { slots: {} },
+            studentAdditionalCourses: [{ key: 'D2' }],
             selectedAdditionalCourses: [{ key: 'D2' }],
+            additionalCoursePanelRetained: false,
             additionalCourseExtensionActionHidden: true,
-            clearGeneratedTimetables: vi.fn(),
+            generationError: 'old',
+            generationProblems: ['old'],
+            generatedTimetables: [{ key: 'old' }],
+            totalTimetableVariationCount: 3,
+            fullGreenTimetableCount: 2,
+            greenTimetableCount: 1,
+            conflictTimetableCount: 0,
+            additionalCourseTimetableCount: 1,
+            additionalCourseSelectedKeys: ['D2'],
+            qualityCounters: [{ key: 'free_days' }],
+            allQualityCriteriaCount: 4,
+            selectedQualityCriteriaCount: 2,
+            qualityCriteriaResultFilterEnabled: true,
+            fullGreenTimetableCountError: 'old',
+            normalizeTimetableResultCounters: vi.fn(),
             saveLastRobotState: vi.fn(),
+            get additionalCoursePanelVisible() {
+                return computed.additionalCoursePanelVisible.call(this)
+            },
         }
 
         expect(computed.additionalCourseExtensionActionVisible.call(ctx)).toBe(false)
+        expect(computed.additionalCoursePanelVisible.call(ctx)).toBe(true)
 
         methods.commitAdditionalCourseSelectionChange.call(ctx)
 
         expect(ctx.additionalCourseExtensionActionHidden).toBe(false)
         expect(computed.additionalCourseExtensionActionVisible.call(ctx)).toBe(true)
-        expect(ctx.clearGeneratedTimetables).not.toHaveBeenCalled()
+        expect(ctx.generatedTimetables).toEqual([])
+        expect(ctx.totalTimetableVariationCount).toBeNull()
+        expect(ctx.additionalCoursePanelRetained).toBe(true)
+        expect(computed.additionalCoursePanelVisible.call(ctx)).toBe(true)
         expect(ctx.saveLastRobotState).toHaveBeenCalled()
     })
 
@@ -3789,6 +3853,7 @@ describe('Students timetable robot page', () => {
             'robot-generated-cell--conflict': false,
             'robot-generated-cell--has-occasional': true,
         })
+        expect(methods.courseUsedInSelectedTimetable.call(ctx, { key: 'M1', code: 'M1' })).toBe(true)
         expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'M1', code: 'M1' })).toBe(false)
         expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'LPT', code: 'LPT' })).toBe(false)
         expect(methods.displayedOccasionalAppointmentGroups.call(ctx, ctx.selectedRobotTimetable)).toMatchObject([
@@ -3880,6 +3945,60 @@ describe('Students timetable robot page', () => {
         ])
         expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'S4', code: 'S4' })).toBe(false)
         expect(methods.courseOverlapsInSelectedTimetable.call(ctx, { key: 'S5', code: 'S5' })).toBe(false)
+    })
+
+    it('collects consecutive same-slot date overview rows with identical courses', () => {
+        const methods = (RobotTimetable as any).methods
+        const e2Dates = ['2026-05-09', '2026-05-16', '2026-05-30']
+        const m2Dates = ['2026-02-21', '2026-02-28', '2026-03-07']
+        const ctx = {
+            ...methods,
+            schoolHours: [
+                { hour: 1, from: '09:00:00', until: '09:45:00' },
+                { hour: 2, from: '09:45:00', until: '10:30:00' },
+                { hour: 3, from: '10:40:00', until: '11:25:00' },
+            ],
+            selectedRobotTimetable: {
+                slots: Object.fromEntries([1, 2, 3].map(hour => [
+                    `6-${hour}`,
+                    {
+                        key: 'E2',
+                        code: 'E2',
+                        sourceLabel: 'E2-1U-NIE',
+                        dateRangeLabel: '9.5.-30.5.',
+                        courseGroup: {
+                            key: `e2-${hour}`,
+                            class_name: 'E2-1U-NIE',
+                            weekday: 6,
+                            hour,
+                            dates: e2Dates,
+                        },
+                        sameSlotEntries: [
+                            {
+                                key: 'M2',
+                                code: 'M2',
+                                sourceLabel: 'M2-2S-ALT',
+                                dateRangeLabel: '21.02.-7.3.',
+                                courseGroup: {
+                                    key: `m2-${hour}`,
+                                    class_name: 'M2-2S-ALT',
+                                    weekday: 6,
+                                    hour,
+                                    dates: m2Dates,
+                                },
+                            },
+                        ],
+                    },
+                ])),
+            },
+        }
+
+        const groups = methods.sameSlotDateOverviewGroups.call(ctx, ctx.selectedRobotTimetable)
+
+        expect(groups).toHaveLength(1)
+        expect(groups[0].title).toBe('Sa 1.-3. 09:00 - 11:25')
+        expect(groups[0].courses.map((course: Record<string, string>) => course.title))
+            .toEqual(['E2-1U-NIE / E2', 'M2-2S-ALT / M2'])
     })
 
     it('hides generated date ranges for plain single-course cells', () => {
@@ -4007,6 +4126,7 @@ describe('Students timetable robot page', () => {
         expect(ctx.generatedTimetables[0].slots['5-7'].sameSlotEntries[0].dateRangeLabel).toBe('8.5.')
         ctx.selectedRobotTimetable = ctx.generatedTimetables[0]
         expect(methods.robotTimetableCellClasses.call(ctx, 5, 7)['robot-generated-cell--conflict']).toBe(false)
+        expect(methods.courseUsedInSelectedTimetable.call(ctx, { key: 'S5', code: 'S5' })).toBe(true)
     })
 
     it('marks exact course group details as used or no longer fitting in the selected timetable', () => {
@@ -4052,6 +4172,82 @@ describe('Students timetable robot page', () => {
         expect(methods.courseGroupUsedInSelectedTimetable.call(ctx, course, conflictingGroup)).toBe(false)
         expect(methods.courseGroupNoLongerFitsSelectedTimetable.call(ctx, course, conflictingGroup)).toBe(true)
         expect(methods.courseGroupNoLongerFitsSelectedTimetable.call(ctx, course, freeGroup)).toBe(false)
+    })
+
+    it('marks same-slot course group details as used in the selected timetable', () => {
+        const methods = (RobotTimetable as any).methods
+        const course = { key: 'M1', code: 'M1', ttCodes: ['M1'], name: 'Mathematik 1', hours: 4 }
+        const sameSlotGroup = {
+            key: 'M1|M1-1U-KÖCK',
+            title: 'M1-1U-KÖCK',
+            courseGroups: [
+                { key: 'm1-1u-koeck', class_name: 'M1-1U-KÖCK', course: 'M1', subject: 'M', weekday: 6, hour: 7 },
+            ],
+        }
+        const ctx = {
+            ...methods,
+            selectedRobotTimetable: {
+                slots: {
+                    '6-7': {
+                        key: 'E2',
+                        code: 'E2',
+                        sourceLabel: 'E2-1U-NIE',
+                        courseGroup: { key: 'e2-1u-nie', class_name: 'E2-1U-NIE', course: 'E2', subject: 'E', weekday: 6, hour: 7 },
+                        sameSlotEntries: [
+                            {
+                                key: 'M1',
+                                code: 'M1',
+                                sourceLabel: 'M1-1U-KÖCK',
+                                courseGroup: sameSlotGroup.courseGroups[0],
+                            },
+                        ],
+                    },
+                },
+            },
+        }
+
+        expect(methods.courseUsedInSelectedTimetable.call(ctx, course)).toBe(true)
+        expect(methods.courseGroupUsedInSelectedTimetable.call(ctx, course, sameSlotGroup)).toBe(true)
+    })
+
+    it('marks visible regular conflict course groups as used when an occasional slot is stored first', () => {
+        const methods = (RobotTimetable as any).methods
+        const course = { key: 'M1', code: 'M1', ttCodes: ['M1'], name: 'Mathematik 1', hours: 4 }
+        const visibleRegularGroup = {
+            key: 'M1|M1-1K-MAY',
+            title: 'M1-1K-MAY',
+            courseGroups: [
+                { class_name: 'M1-1K-MAY', course: 'M1', subject: 'M', weekday: 5, hour: 10 },
+            ],
+        }
+        const ctx = {
+            ...methods,
+            selectedRobotTimetable: {
+                slots: {
+                    '5-10': {
+                        key: 'LPT',
+                        code: 'LPT',
+                        isOccasional: true,
+                        courseGroup: { class_name: 'LPT-1CK-DREI', course: 'LPT', subject: 'LPT', weekday: 5, hour: 10 },
+                        conflicts: [
+                            {
+                                key: 'M1',
+                                code: 'M1',
+                                sourceLabel: 'M1-1K-MAY',
+                                courseGroup: visibleRegularGroup.courseGroups[0],
+                            },
+                        ],
+                    },
+                },
+            },
+        }
+
+        expect(methods.robotTimetableDisplaySlot.call(ctx, 5, 10)).toMatchObject({
+            code: 'M1',
+            sourceLabel: 'M1-1K-MAY',
+        })
+        expect(methods.courseUsedInSelectedTimetable.call(ctx, course)).toBe(true)
+        expect(methods.courseGroupUsedInSelectedTimetable.call(ctx, course, visibleRegularGroup)).toBe(true)
     })
 
     it('marks a course red when all visible detail groups no longer fit', () => {
@@ -4279,6 +4475,68 @@ describe('Students timetable robot page', () => {
 
         expect(ctx.deselectedCourseKeys).toEqual(['INF2'])
         expect(computed.selectedCourses.call(ctx).map(course => course.code)).toEqual(['D2', 'GW2'])
+    })
+
+    it('shows the create action only after a planned student course selection changes', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: {
+                student_code: '100',
+            },
+            studentPlannedCourses: [
+                { key: 'planned-m1', code: 'M1', ttCodes: ['M1'] },
+            ],
+            availableCourses: [
+                { key: 'M1', code: 'M1', ttCodes: ['M1'], name: 'Mathematik 1', hours: 4 },
+                { key: 'D1', code: 'D1', ttCodes: ['D1'], name: 'Deutsch 1', hours: 3 },
+            ],
+            selectedRobotTimetable: null,
+            deselectedCourseKeys: [],
+            deselectedCourseGroupKeys: [],
+            courseGroupItems(course) {
+                return [{ title: `${course.code}-A` }]
+            },
+        }
+
+        Object.defineProperty(ctx, 'plannedCourseSelectionChanged', {
+            get() {
+                return computed.plannedCourseSelectionChanged.call(this)
+            },
+        })
+
+        expect(methods.availablePlannedCourses.call(ctx).map(course => course.code)).toEqual(['M1'])
+        expect(computed.plannedCourseSelectionChanged.call(ctx)).toBe(false)
+        expect(computed.courseActionVisible.call(ctx)).toBe(true)
+
+        ctx.selectedRobotTimetable = { slots: {} }
+        expect(computed.courseActionVisible.call(ctx)).toBe(false)
+
+        ctx.deselectedCourseKeys = ['D1']
+        expect(computed.plannedCourseSelectionChanged.call(ctx)).toBe(false)
+        expect(computed.courseActionVisible.call(ctx)).toBe(false)
+
+        ctx.deselectedCourseKeys = ['M1']
+        expect(computed.plannedCourseSelectionChanged.call(ctx)).toBe(true)
+        expect(computed.courseActionVisible.call(ctx)).toBe(true)
+    })
+
+    it('keeps the create action visible when no planned student courses gate it', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+
+        expect(computed.courseActionVisible.call({
+            ...methods,
+            selectedStudent: null,
+            studentPlannedCourses: [],
+        })).toBe(true)
+
+        expect(computed.courseActionVisible.call({
+            ...methods,
+            selectedStudent: { student_code: '100' },
+            studentPlannedCourses: [],
+        })).toBe(true)
     })
 
     it('resets changed course selections to the selected student defaults', () => {
@@ -4652,7 +4910,7 @@ describe('Students timetable robot page', () => {
         expect(ctx.deselectedCourseGroupKeys).toEqual([])
     })
 
-    it('keeps the selected timetable visible when additional courses change', () => {
+    it('hides the selected timetable when additional courses change', () => {
         const methods = (RobotTimetable as any).methods
         const course = { key: 'E7', code: 'E7', ttCodes: ['E7'], name: 'Englisch 7', hours: 1 }
         const ctx = {
@@ -4676,7 +4934,7 @@ describe('Students timetable robot page', () => {
 
         expect(ctx.additionalCourseSelectedKeys).toEqual(['E7'])
         expect(ctx.selectedRobotTimetable).toEqual({ key: 'generated-1', slots: {} })
-        expect(ctx.cleared).toBeUndefined()
+        expect(ctx.cleared).toBe(true)
         expect(ctx.saved).toBe(true)
     })
 

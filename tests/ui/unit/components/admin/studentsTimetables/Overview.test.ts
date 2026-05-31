@@ -658,6 +658,11 @@ describe('Students timetable overview', () => {
             sameSlotDateOverviewCourse: methods.sameSlotDateOverviewCourse,
             sameSlotDateOverviewCourseTitle: methods.sameSlotDateOverviewCourseTitle,
             sameSlotDateOverviewSlotTitle: methods.sameSlotDateOverviewSlotTitle,
+            sameSlotDateOverviewSlotRangeTitle: methods.sameSlotDateOverviewSlotRangeTitle,
+            compactSameSlotDateOverviewGroups: methods.compactSameSlotDateOverviewGroups,
+            sameSlotDateOverviewGroupsCanMerge: methods.sameSlotDateOverviewGroupsCanMerge,
+            mergedSameSlotDateOverviewGroup: methods.mergedSameSlotDateOverviewGroup,
+            sameSlotDateOverviewCourseSignature: methods.sameSlotDateOverviewCourseSignature,
             courseGroupDateRangeLabel: methods.courseGroupDateRangeLabel,
             formatDateWithWeekdayLabel: methods.formatDateWithWeekdayLabel,
             weekdayLabelForDate: methods.weekdayLabelForDate,
@@ -684,11 +689,101 @@ describe('Students timetable overview', () => {
         expect(filterChips.map((filterChip: Record<string, boolean>) => filterChip.hasRelatedOverlap))
             .toEqual([true, true])
         expect(dateOverviewGroups).toHaveLength(1)
-        expect(dateOverviewGroups[0].title).toBe('Fr 17:05 - 17:50')
+        expect(dateOverviewGroups[0].title).toBe('Fr 10. 17:05 - 17:50')
         expect(dateOverviewGroups[0].courses.map((course: Record<string, string>) => course.title))
             .toEqual(['D2 - 1U - HER', 'E2 - 1U - NIE'])
         expect(dateOverviewGroups[0].courses[0].dateLabels)
             .toEqual(['Sa, 21.02.2026', 'Sa, 07.03.2026', 'Sa, 18.04.2026'])
+
+        const manualDateOverviewGroups = methods.sameSlotDateOverviewGroupsForSemester.call({
+            ...ctx,
+            selectedCourseMenuEntries() {
+                throw new Error('Manual date overview should use active timetable course groups directly.')
+            },
+        }, 1)
+
+        expect(manualDateOverviewGroups[0].courses.map((course: Record<string, string>) => course.title))
+            .toEqual(['D2 - 1U - HER', 'E2 - 1U - NIE'])
+    })
+
+    it('collects consecutive manual same-slot date overview rows with identical courses', () => {
+        const methods = (Overview as any).methods
+        const e2Dates = ['2026-05-09', '2026-05-16', '2026-05-30']
+        const m2Dates = ['2026-02-21', '2026-02-28', '2026-03-07']
+        const courseGroups = [1, 2, 3].flatMap(hour => [
+            {
+                key: `e2-${hour}`,
+                semester: 1,
+                weekday: 6,
+                hour,
+                course: 'E2',
+                title: 'E2',
+                display_label: 'E2-1U-NIE',
+                recurrence_interval: 1,
+                dates: e2Dates,
+            },
+            {
+                key: `m2-${hour}`,
+                semester: 1,
+                weekday: 6,
+                hour,
+                course: 'M2',
+                title: 'M2',
+                display_label: 'M2-2S-ALT',
+                recurrence_interval: 1,
+                dates: m2Dates,
+            },
+        ])
+        const ctx = {
+            activeCourseGroupFilterKeys: courseGroups.map(courseGroup => courseGroup.key),
+            configuredCourseGroups: courseGroups,
+            configuredSchoolHours: [
+                { hour: 1, from: '09:00:00', until: '09:45:00' },
+                { hour: 2, from: '09:45:00', until: '10:30:00' },
+                { hour: 3, from: '10:40:00', until: '11:25:00' },
+            ],
+            weekdays: [
+                { label: 'Mo', value: 1 },
+                { label: 'Di', value: 2 },
+                { label: 'Mi', value: 3 },
+                { label: 'Do', value: 4 },
+                { label: 'Fr', value: 5 },
+                { label: 'Sa', value: 6 },
+            ],
+            sameSlotDateOverviewGroupsForSemester: methods.sameSlotDateOverviewGroupsForSemester,
+            sameSlotDateOverviewGroup: methods.sameSlotDateOverviewGroup,
+            sameSlotDateOverviewCourse: methods.sameSlotDateOverviewCourse,
+            sameSlotDateOverviewCourseTitle: methods.sameSlotDateOverviewCourseTitle,
+            sameSlotDateOverviewSlotTitle: methods.sameSlotDateOverviewSlotTitle,
+            sameSlotDateOverviewSlotRangeTitle: methods.sameSlotDateOverviewSlotRangeTitle,
+            compactSameSlotDateOverviewGroups: methods.compactSameSlotDateOverviewGroups,
+            sameSlotDateOverviewGroupsCanMerge: methods.sameSlotDateOverviewGroupsCanMerge,
+            mergedSameSlotDateOverviewGroup: methods.mergedSameSlotDateOverviewGroup,
+            sameSlotDateOverviewCourseSignature: methods.sameSlotDateOverviewCourseSignature,
+            courseGroupDateRangeLabel: methods.courseGroupDateRangeLabel,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+            formatTimeValue: methods.formatTimeValue,
+            formatDateWithWeekdayLabel: methods.formatDateWithWeekdayLabel,
+            weekdayLabelForDate: methods.weekdayLabelForDate,
+            formatDateValue: methods.formatDateValue,
+            formatCompactDateValue: methods.formatCompactDateValue,
+            formatDate: methods.formatDate,
+            normalizeDate: methods.normalizeDate,
+            uniqueCourseGroupsByKey: methods.uniqueCourseGroupsByKey,
+            courseCellKey: methods.courseCellKey,
+            courseGroupDates: methods.courseGroupDates,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
+        }
+
+        const groups = methods.sameSlotDateOverviewGroupsForSemester.call(ctx, 1)
+
+        expect(groups).toHaveLength(1)
+        expect(groups[0].title).toBe('Sa 1.-3. 09:00 - 11:25')
+        expect(groups[0].courses.map((course: Record<string, string>) => course.title))
+            .toEqual(['E2-1U-NIE', 'M2-2S-ALT'])
     })
 
     it('connects menu schedule times per weekday into one time area', () => {
@@ -1385,6 +1480,7 @@ describe('Students timetable overview', () => {
             wizardPanelOpen: true,
             wizardPanelMounted: true,
             manualPanelOpen: true,
+            manualPanelSource: 'wizard',
             infoDialogOpen: true,
             settingsDialogOpen: true,
             courseMenuDialog: true,
@@ -1488,6 +1584,7 @@ describe('Students timetable overview', () => {
             2: false,
         }
         ctx.manualPanelOpen = false
+        ctx.manualPanelSource = null
         ctx.restrictCourseChoiceBySelection = false
         ctx.selection = methods.defaultSelection.call(ctx)
         ctx.selectionDraft = methods.defaultSelection.call(ctx)
@@ -1510,6 +1607,7 @@ describe('Students timetable overview', () => {
             2: false,
         })
         expect(ctx.manualPanelOpen).toBe(true)
+        expect(ctx.manualPanelSource).toBe('wizard')
         expect(methods.savedRobotTimetableStateAvailable.call(ctx)).toBe(true)
         expect(ctx.restrictCourseChoiceBySelection).toBe(true)
         expect(ctx.selection).toEqual({
@@ -1544,6 +1642,7 @@ describe('Students timetable overview', () => {
         expect(ctx.wizardPanelOpen).toBe(false)
         expect(ctx.wizardPanelMounted).toBe(false)
         expect(ctx.manualPanelOpen).toBe(false)
+        expect(ctx.manualPanelSource).toBeNull()
         expect(ctx.infoDialogOpen).toBe(false)
         expect(ctx.settingsDialogOpen).toBe(false)
         expect(ctx.courseMenuDialog).toBe(false)
@@ -1575,6 +1674,7 @@ describe('Students timetable overview', () => {
         })
         expect(ctx.transferredStudentContext).toBeNull()
         expect(ctx.transferredStudentContextExpanded).toBe(false)
+        expect(ctx.manualPanelSource).toBeNull()
     })
 
     it('shows the date range for block course labels', () => {
@@ -1679,9 +1779,15 @@ describe('Students timetable overview', () => {
         expect(wizardButtonSource).not.toContain('append-icon')
         expect(componentSource).toContain(':active="wizardPanelOpen"')
         expect(componentSource).toContain('@click="openWizardPanel"')
+        expect(componentSource).toContain("const TIMETABLE_OVERVIEW_BASE_PATH = '/admin/students-timetables/timetable/overview'")
+        expect(componentSource).toContain("const TIMETABLE_OVERVIEW_LANDING_PATH = '/admin/students-timetables'")
+        expect(componentSource).toContain("const TIMETABLE_OVERVIEW_ROUTE_MODES = ['automatic', 'manual', 'adopted']")
+        expect(componentSource).toContain("'$route.params.detail'(detail)")
+        expect(componentSource).toContain('applyTimetableOverviewModeFromRoute(detail)')
+        expect(componentSource).toContain('applyTimetableOverviewLandingState()')
         expect(componentSource).toContain('<span>Automatischer</span>')
         expect(componentSource).toContain('<span>Stundenplan</span>')
-        expect(componentSource).toContain('class="overview-wizard-active-label"')
+        expect(componentSource).toContain('class="overview-active-label overview-active-label--auto"')
         expect(componentSource).toContain('Automatischer Stundenplan')
         expect(componentSource).toContain('RobotTimetable')
         expect(componentSource).toContain('v-if="wizardPanelMounted"')
@@ -1690,23 +1796,29 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('ref="wizardCourseCards"')
         expect(componentSource).toContain('embedded-course-cards-only')
         expect(componentSource).toContain('class="overview-wizard-course-cards"')
-        expect(componentSource).toContain('<template #course-actions="{ ready, loading, extending, hasSelectedAdditionalCourses, extensionActionVisible }">')
-        expect(componentSource).toContain('v-if="!wizardPanelOpen"')
+        expect(componentSource).toContain('<template #course-actions="{ ready, loading, extending, createActionVisible, hasSelectedAdditionalCourses, extensionActionVisible }">')
+        expect(componentSource).toContain('v-if="!wizardPanelOpen && !manualPanelOpen"')
         expect(componentSource).toContain('class="overview-manual-button"')
-        expect(componentSource).toContain(':active="manualPanelOpen"')
-        expect(componentSource).toContain('@click="toggleManualPanel"')
+        expect(componentSource).toContain(':active="directManualPanelOpen"')
+        expect(componentSource).toContain('@click="openManualPanel"')
         expect(componentSource).toContain('prepend-icon="mdi-calendar-edit"')
         expect(componentSource).toContain('class="overview-manual-button__label"')
         expect(componentSource).toContain('<span>Manueller</span>')
         expect(componentSource).toContain('<span>Stundenplan</span>')
+        expect(componentSource).toContain('Manueller Stundenplan')
+        expect(componentSource).toContain('class="overview-active-label overview-active-label--manual"')
+        expect(componentSource).toContain('directManualPanelOpen')
         expect(componentSource).toContain('class="overview-wizard-close-button"')
-        expect(componentSource).toContain('@click="closeWizardPanel"')
+        expect(componentSource).toContain('v-if="manualPanelBackToWizardVisible"')
+        expect(componentSource).toContain('Zurück')
+        expect(componentSource).toContain('v-if="wizardPanelOpen || directManualPanelOpen"')
+        expect(componentSource).toContain('@click="closeActiveTimetablePanel"')
         expect(componentSource).toContain('Schließen')
         expect(componentSource).toContain('class="overview-wizard-create-button"')
         expect(componentSource).toContain('class="overview-wizard-footer"')
         expect(componentSource).toContain('class="overview-wizard-loading"')
         expect(componentSource).toContain('@click="createWizardTimetable(extending)"')
-        expect(componentSource).toContain('v-if="ready && (!extending || (hasSelectedAdditionalCourses && extensionActionVisible))"')
+        expect(componentSource).toContain('v-if="ready && createActionVisible && (!extending || (hasSelectedAdditionalCourses && extensionActionVisible))"')
         expect(componentSource).toContain('v-else-if="loading"')
         expect(componentSource).toContain(':disabled="wizardTimetableCreating"')
         expect(componentSource).toContain(':loading="wizardTimetableCreating"')
@@ -1719,11 +1831,11 @@ describe('Students timetable overview', () => {
             componentSource.indexOf('class="overview-wizard-create-button"'),
         )
         expect(componentSource).toContain('<div v-if="manualPanelOpen" class="course-choice-panel">')
-        expect(componentSource).toContain('v-if="canReturnToWizardPanel && !wizardPanelOpen"')
-        expect(componentSource).toContain('class="course-choice-panel__back-row"')
-        expect(componentSource).toContain('class="course-choice-panel__back-button"')
+        expect(componentSource).toContain('manualPanelSource === \'wizard\'')
         expect(componentSource).toContain('prepend-icon="mdi-arrow-left"')
-        expect(componentSource).toContain('Zurück zum automatischen Stundenplan')
+        expect(componentSource).not.toContain('class="course-choice-panel__back-row"')
+        expect(componentSource).not.toContain('class="course-choice-panel__back-button"')
+        expect(componentSource).not.toContain('Zurück zum automatischen Stundenplan')
         expect(componentSource).toContain('v-if="wizardPanelOpen" class="overview-wizard-settings-summary"')
         expect(componentSource).toContain('v-if="wizardPanelOpen" class="overview-wizard-actions"')
         expect(componentSource).toContain('activeEvaluationCriteria')
@@ -1736,8 +1848,6 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('min-height: 48px;')
         expect(componentSource).toContain('border: 1px solid rgba(var(--v-theme-primary), 0.18);')
         expect(componentSource).toContain('background: rgba(255, 255, 255, 0.72);')
-        expect(componentSource).toContain('flex: 0 1 340px;')
-        expect(componentSource).toContain('white-space: normal;')
         expect(componentSource).toContain('icon="mdi-cog-outline"')
         expect(componentSource).toContain('@click="settingsDialogOpen = true"')
         expect(componentSource).toContain('icon="mdi-information-outline"')
@@ -2263,7 +2373,11 @@ describe('Students timetable overview', () => {
             wizardPanelOpen: false,
             wizardPanelMounted: false,
             manualPanelOpen: false,
+            manualPanelSource: null,
             wizardTimetableCreating: false,
+            closeWizardPanel: methods.closeWizardPanel,
+            openManualPanel: methods.openManualPanel,
+            closeManualPanel: methods.closeManualPanel,
             $refs: {
                 wizardCourseCards: {
                     loadFullGreenTimetableCount,
@@ -2276,6 +2390,7 @@ describe('Students timetable overview', () => {
         expect(ctx.wizardPanelOpen).toBe(true)
         expect(ctx.wizardPanelMounted).toBe(true)
         expect(ctx.manualPanelOpen).toBe(false)
+        expect(ctx.manualPanelSource).toBeNull()
 
         await methods.createWizardTimetable.call(ctx)
 
@@ -2285,20 +2400,148 @@ describe('Students timetable overview', () => {
 
         expect(ctx.wizardPanelOpen).toBe(false)
         expect(ctx.manualPanelOpen).toBe(true)
+        expect(ctx.manualPanelSource).toBe('direct')
 
         methods.openWizardPanel.call(ctx)
         methods.closeWizardPanel.call(ctx)
 
         expect(ctx.wizardPanelOpen).toBe(false)
         expect(ctx.wizardPanelMounted).toBe(true)
+        expect(ctx.manualPanelSource).toBeNull()
 
         methods.toggleManualPanel.call(ctx)
 
         expect(ctx.manualPanelOpen).toBe(true)
+        expect(ctx.manualPanelSource).toBe('direct')
 
-        methods.toggleManualPanel.call(ctx)
+        methods.closeActiveTimetablePanel.call(ctx)
 
         expect(ctx.manualPanelOpen).toBe(false)
+        expect(ctx.manualPanelSource).toBeNull()
+    })
+
+    it('syncs overview timetable panel clicks with route URLs', () => {
+        const methods = (Overview as any).methods
+        const pushedPaths: string[] = []
+        const ctx = {
+            wizardPanelOpen: false,
+            wizardPanelMounted: false,
+            manualPanelOpen: false,
+            manualPanelSource: null,
+            normalizedTimetableOverviewRouteMode: methods.normalizedTimetableOverviewRouteMode,
+            timetableOverviewModePath: methods.timetableOverviewModePath,
+            navigateToTimetableOverviewMode: methods.navigateToTimetableOverviewMode,
+            openWizardPanel: methods.openWizardPanel,
+            openManualPanel: methods.openManualPanel,
+            closeManualPanel: methods.closeManualPanel,
+            $route: {
+                path: '/admin/students-timetables',
+                params: {},
+            },
+            $router: {
+                push({ path }: { path: string }) {
+                    pushedPaths.push(path)
+                    ctx.$route.path = path
+                },
+            },
+        }
+
+        methods.openWizardPanel.call(ctx)
+        methods.openManualPanel.call(ctx)
+        methods.closeManualPanel.call(ctx)
+
+        expect(pushedPaths).toEqual([
+            '/admin/students-timetables/timetable/overview/automatic',
+            '/admin/students-timetables/timetable/overview/manual',
+            '/admin/students-timetables',
+        ])
+    })
+
+    it('restores overview timetable panel state from route URLs', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            wizardPanelOpen: false,
+            wizardPanelMounted: false,
+            manualPanelOpen: false,
+            manualPanelSource: null,
+            activeCourseGroupFilterKeys: [],
+            selectedRecurrenceWeeks: {
+                1: 'all_dates',
+                2: 'all_dates',
+            },
+            expandedRecurrenceWeeks: {
+                1: false,
+                2: false,
+            },
+            showExtraDatesInSelectedWeeks: {
+                1: false,
+                2: false,
+            },
+            restrictCourseChoiceBySelection: false,
+            selection: {
+                semester: 2,
+                religion: 'RK',
+                language: 'F',
+                branch: 'gymnasial',
+                artsSubject: 'BE',
+            },
+            transferredStudentContext: {
+                student: {
+                    studentCode: 'S1',
+                    label: 'Student 1',
+                    semesterLabel: 'Semester 2',
+                },
+                courses: {},
+            },
+            transferredStudentContextExpanded: true,
+            normalizedTimetableOverviewRouteMode: methods.normalizedTimetableOverviewRouteMode,
+            applyTimetableOverviewLandingState: methods.applyTimetableOverviewLandingState,
+            applyTimetableState: methods.applyTimetableState,
+            currentTimetableState: methods.currentTimetableState,
+            defaultTimetableState: methods.defaultTimetableState,
+            defaultSelection: methods.defaultSelection,
+            normalizedSelection: methods.normalizedSelection,
+            normalizedTransferredStudentContext: methods.normalizedTransferredStudentContext,
+            normalizedTransferredStudentCourses: methods.normalizedTransferredStudentCourses,
+            openWizardPanel: methods.openWizardPanel,
+            openManualPanel: methods.openManualPanel,
+        }
+
+        methods.applyTimetableOverviewModeFromRoute.call(ctx, 'automatic')
+
+        expect(ctx.wizardPanelOpen).toBe(true)
+        expect(ctx.wizardPanelMounted).toBe(true)
+        expect(ctx.manualPanelOpen).toBe(false)
+
+        methods.applyTimetableOverviewModeFromRoute.call(ctx, 'manual')
+
+        expect(ctx.wizardPanelOpen).toBe(false)
+        expect(ctx.manualPanelOpen).toBe(true)
+        expect(ctx.manualPanelSource).toBe('direct')
+
+        methods.applyTimetableOverviewModeFromRoute.call(ctx, 'adopted')
+
+        expect(ctx.wizardPanelOpen).toBe(false)
+        expect(ctx.wizardPanelMounted).toBe(true)
+        expect(ctx.manualPanelOpen).toBe(true)
+        expect(ctx.manualPanelSource).toBe('wizard')
+
+        ctx.activeCourseGroupFilterKeys = ['old-course']
+        methods.applyTimetableOverviewModeFromRoute.call(ctx, undefined)
+
+        expect(ctx.activeCourseGroupFilterKeys).toEqual([])
+        expect(ctx.selection).toEqual({
+            semester: 2,
+            religion: 'RK',
+            language: 'F',
+            branch: 'gymnasial',
+            artsSubject: 'BE',
+        })
+        expect(ctx.transferredStudentContext?.student?.studentCode).toBe('S1')
+        expect(ctx.wizardPanelOpen).toBe(false)
+        expect(ctx.wizardPanelMounted).toBe(false)
+        expect(ctx.manualPanelOpen).toBe(false)
+        expect(ctx.manualPanelSource).toBeNull()
     })
 
     it('shows an overtaken Wizzard timetable as the manual overview timetable', () => {
@@ -2321,6 +2564,7 @@ describe('Students timetable overview', () => {
             wizardPanelOpen: true,
             wizardPanelMounted: true,
             manualPanelOpen: false,
+            manualPanelSource: null,
             restrictCourseChoiceBySelection: false,
             selection: methods.defaultSelection(),
             selectionDraft: methods.defaultSelection(),
@@ -2344,6 +2588,7 @@ describe('Students timetable overview', () => {
 
         expect(ctx.activeCourseGroupFilterKeys).toEqual(['bio-1', 'bio-2'])
         expect(ctx.manualPanelOpen).toBe(true)
+        expect(ctx.manualPanelSource).toBe('wizard')
         expect(ctx.wizardPanelOpen).toBe(false)
         expect(ctx.wizardPanelMounted).toBe(true)
         expect(saveLastTimetableState).toHaveBeenCalled()
@@ -2714,7 +2959,22 @@ describe('Students timetable overview', () => {
             studentSelectionDraft: {
                 studentCode: '100',
             },
+            selection: {
+                semester: 4,
+                religion: 'RK',
+                language: 'F',
+                branch: 'gymnasial',
+                artsSubject: 'BE',
+            },
+            selectionDraft: {
+                semester: 4,
+                religion: 'RK',
+                language: 'F',
+                branch: 'gymnasial',
+                artsSubject: 'BE',
+            },
             appliedStudentCode: '100',
+            defaultSelection: methods.defaultSelection,
             applyTransferredStudentSelection(studentCode: string | null) {
                 this.appliedStudentCode = studentCode
                 this.transferredStudentContext = null
@@ -2724,6 +2984,8 @@ describe('Students timetable overview', () => {
         methods.clearTransferredStudentSelection.call(ctx)
 
         expect(ctx.studentSelectionDraft).toEqual({ studentCode: null })
+        expect(ctx.selection).toEqual(methods.defaultSelection.call(ctx))
+        expect(ctx.selectionDraft).toEqual(methods.defaultSelection.call(ctx))
         expect(ctx.appliedStudentCode).toBeNull()
         expect(ctx.transferredStudentContext).toBeNull()
     })

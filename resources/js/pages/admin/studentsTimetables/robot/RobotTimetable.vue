@@ -264,7 +264,8 @@
         name="course-actions"
         :loading="courseCardsLoading"
         :ready="courseCardsReady"
-        :extending="additionalCoursePanelVisible"
+        :extending="additionalCourseExtensionMode"
+        :create-action-visible="courseActionVisible"
         :has-selected-additional-courses="selectedAdditionalCourses.length > 0"
         :extension-action-visible="additionalCourseExtensionActionVisible" />
 
@@ -1160,9 +1161,11 @@
                             <div class="robot-course-list__title">Stundenplan</div>
                             <div class="robot-generated-header__actions">
                                 <v-btn
+                                    class="robot-generated-overtake-button"
                                     color="success"
-                                    variant="tonal"
-                                    prepend-icon="mdi-table-arrow-right"
+                                    variant="flat"
+                                    size="large"
+                                    prepend-icon="mdi-calendar-clock"
                                     :disabled="timetableGenerationLoading || !selectedRobotTimetableCourseGroupKeys().length"
                                     @click="overtakeSelectedTimetableToOverview">
                                     Übernehmen
@@ -2095,9 +2098,11 @@
                 <div class="robot-course-list__title">Stundenplan</div>
                 <div class="robot-generated-header__actions">
                     <v-btn
+                        class="robot-generated-overtake-button"
                         color="success"
-                        variant="tonal"
-                        prepend-icon="mdi-table-arrow-right"
+                        variant="flat"
+                        size="large"
+                        prepend-icon="mdi-calendar-clock"
                         :disabled="timetableGenerationLoading || !selectedRobotTimetableCourseGroupKeys().length"
                         @click="overtakeSelectedTimetableToOverview">
                         Übernehmen
@@ -2483,6 +2488,7 @@ export default {
             selectedTimetableResultType: 'full_green',
             additionalCourseTimetableRequired: false,
             additionalCourseExtensionActionHidden: false,
+            additionalCoursePanelRetained: false,
             courseItemPanels: [],
             schoolHours: [],
             courseGroups: [],
@@ -2822,7 +2828,11 @@ export default {
         },
         additionalCoursePanelVisible() {
             return this.studentAdditionalCourses.length > 0
-                && !!this.selectedRobotTimetable
+                && (Boolean(this.selectedRobotTimetable) || this.additionalCoursePanelRetained === true)
+        },
+        additionalCourseExtensionMode() {
+            return this.additionalCoursePanelVisible
+                && this.selectedAdditionalCourses.length > 0
         },
         additionalCourseExtensionActionVisible() {
             return this.selectedAdditionalCourses.length > 0
@@ -2897,6 +2907,23 @@ export default {
             return this.courseSelectionStateSnapshot(
                 this.currentCourseSelectionState(this.availableCourses),
             ) !== this.courseSelectionStateSnapshot(this.defaultCourseSelectionState())
+        },
+        plannedCourseSelectionChanged() {
+            const plannedCourses = this.availablePlannedCourses()
+            if (!plannedCourses.length) return false
+
+            return this.courseSelectionStateSnapshot(
+                this.currentCourseSelectionState(plannedCourses),
+            ) !== this.courseSelectionStateSnapshot({
+                deselectedCourseKeys: [],
+                deselectedCourseGroupKeys: [],
+            })
+        },
+        courseActionVisible() {
+            return !this.selectedStudent
+                || !this.studentPlannedCourses.length
+                || !this.selectedRobotTimetable
+                || this.plannedCourseSelectionChanged
         },
         additionalCourseSelectionResettable() {
             return this.additionalCourseSelectionStateSnapshot(
@@ -4803,10 +4830,12 @@ export default {
             })
             this.generationProblems = this.uniqueProblems(this.generatedTimetables.flatMap(timetable => timetable.problems))
         },
-        clearGeneratedTimetables() {
+        clearGeneratedTimetables(options = {}) {
             this.generationError = ''
             this.generationProblems = []
             this.generatedTimetables = []
+            this.additionalCoursePanelRetained = options?.keepAdditionalCoursePanelVisible === true
+                && this.studentAdditionalCourses.length > 0
             this.clearTimetableCountResults()
         },
         clearTimetableCountResults() {
@@ -4864,7 +4893,10 @@ export default {
             this.normalizeTimetableResultCounters()
 
             if (this.timetableCalculationReady()) {
-                this.loadFullGreenTimetableCount({ preserveQualityCounters: true })
+                this.loadFullGreenTimetableCount({
+                    preserveGeneratedTimetable: true,
+                    preserveQualityCounters: true,
+                })
             }
         },
         allQualityCriteriaCountDetail() {
@@ -4908,7 +4940,7 @@ export default {
             const timetable = this.selectedRobotTimetable
             if (!timetable) return []
 
-            const scheduledSlots = Object.values(timetable.slots || {})
+            const scheduledSlots = this.selectedTimetableScheduledSlotEntries(timetable)
                 .filter(slot => slot?.code || slot?.key)
 
             const selectedAppointments = (Array.isArray(timetable.occasionalAppointments)
@@ -4920,6 +4952,19 @@ export default {
                 ...scheduledSlots,
                 ...selectedAppointments,
             ]
+        },
+        selectedTimetableScheduledSlotEntries(timetable) {
+            return Object.values(timetable?.slots || {})
+                .flatMap(slot => {
+                    const displaySlot = this.displaySlotForGeneratedSlot(slot)
+
+                    return [
+                        slot,
+                        displaySlot && displaySlot !== slot ? displaySlot : null,
+                        ...(Array.isArray(slot?.sameSlotEntries) ? slot.sameSlotEntries : []),
+                    ]
+                })
+                .filter(Boolean)
         },
         courseGroupUsedInSelectedTimetable(course, group) {
             const courseGroups = this.courseGroupsForCourseGroupItem(course, group)
@@ -4943,7 +4988,7 @@ export default {
             const timetable = this.selectedRobotTimetable
             if (!timetable) return []
 
-            const slotCourseGroups = Object.values(timetable.slots || {})
+            const slotCourseGroups = this.selectedTimetableScheduledSlotEntries(timetable)
                 .map(slot => slot?.courseGroup)
                 .filter(Boolean)
 
@@ -4953,10 +4998,10 @@ export default {
                 .filter(appointment => this.occasionalAppointmentSelectedForTimetable(timetable, appointment))
                 .flatMap(appointment => this.courseGroupsForRobotAppointment(appointment))
 
-            return this.uniqueCourseGroupsByKey([
+            return [
                 ...slotCourseGroups,
                 ...appointmentCourseGroups,
-            ])
+            ].filter(Boolean)
         },
         courseGroupsForCourseGroupItem(course, group) {
             if (Array.isArray(group?.courseGroups) && group.courseGroups.length) return group.courseGroups
@@ -6111,6 +6156,13 @@ export default {
                     .toSorted(),
             }
         },
+        availablePlannedCourses() {
+            const plannedCourseCodes = new Set((Array.isArray(this.studentPlannedCourses) ? this.studentPlannedCourses : [])
+                .flatMap(course => this.courseCodeAliases(course)))
+            const courses = Array.isArray(this.availableCourses) ? this.availableCourses : []
+
+            return courses.filter(course => this.courseMatchesStudentPlannedCourse(course, plannedCourseCodes))
+        },
         courseSelectionStateSnapshot(state) {
             const deselectedCourseKeys = this.uniqueValues(state?.deselectedCourseKeys)
                 .toSorted()
@@ -6182,12 +6234,10 @@ export default {
                 || this.courseAllGroupsNoLongerFitSelectedTimetable(course)
         },
         commitAdditionalCourseSelectionChange() {
+            const keepAdditionalCoursePanelVisible = this.additionalCoursePanelVisible
+
             this.additionalCourseExtensionActionHidden = false
-
-            if (!this.selectedRobotTimetable) {
-                this.clearGeneratedTimetables()
-            }
-
+            this.clearGeneratedTimetables({ keepAdditionalCoursePanelVisible })
             this.saveLastRobotState()
         },
         setAdditionalCourseSelected(course, selected) {
@@ -6479,7 +6529,7 @@ export default {
                 .filter(block => !this.generatedSlotBlockIsOccasional(block))
         },
         sameSlotDateOverviewGroups(timetable) {
-            return Object.values(timetable?.slots || {})
+            const groups = Object.values(timetable?.slots || {})
                 .map(slot => this.sameSlotDateOverviewGroup(timetable, slot))
                 .filter(Boolean)
                 .toSorted((firstGroup, secondGroup) =>
@@ -6488,6 +6538,8 @@ export default {
                         sensitivity: 'base',
                     }),
                 )
+
+            return this.compactSameSlotDateOverviewGroups(groups)
         },
         sameSlotDateOverviewGroup(timetable, slot) {
             const courses = this.sameSlotDateOverviewCourses(timetable, slot)
@@ -6495,15 +6547,69 @@ export default {
             if (courses.length < 2) return null
 
             const courseGroup = slot?.courseGroup || {}
-            const weekday = String(courseGroup?.weekday || '').padStart(2, '0')
-            const hour = String(courseGroup?.hour || '').padStart(2, '0')
+            const weekday = Number(courseGroup?.weekday)
+            const hour = Number(courseGroup?.hour)
+            const timeRange = this.sameSlotDateOverviewGroupTimeRange(courseGroup)
 
             return {
                 key: this.slotKey(courseGroup?.weekday, courseGroup?.hour),
                 title: this.sameSlotDateOverviewSlotTitle(courseGroup),
                 courses,
-                sortValue: `${weekday}-${hour}`,
+                weekday,
+                startHour: hour,
+                endHour: hour,
+                from: timeRange.from,
+                until: timeRange.until,
+                courseSignature: this.sameSlotDateOverviewCourseSignature(courses),
+                sortValue: `${String(weekday || '').padStart(2, '0')}-${String(hour || '').padStart(2, '0')}`,
             }
+        },
+        compactSameSlotDateOverviewGroups(groups) {
+            return (Array.isArray(groups) ? groups : []).reduce((compactedGroups, group) => {
+                const previousGroup = compactedGroups.at(-1)
+
+                if (this.sameSlotDateOverviewGroupsCanMerge(previousGroup, group)) {
+                    compactedGroups[compactedGroups.length - 1] = this.mergedSameSlotDateOverviewGroup(previousGroup, group)
+
+                    return compactedGroups
+                }
+
+                compactedGroups.push(group)
+
+                return compactedGroups
+            }, [])
+        },
+        sameSlotDateOverviewGroupsCanMerge(previousGroup, group) {
+            return previousGroup
+                && group
+                && previousGroup.courseSignature === group.courseSignature
+                && Number(previousGroup.weekday) === Number(group.weekday)
+                && Number(previousGroup.endHour) + 1 === Number(group.startHour)
+        },
+        mergedSameSlotDateOverviewGroup(previousGroup, group) {
+            const mergedGroup = {
+                ...previousGroup,
+                key: `${previousGroup.key}|${group.key}`,
+                endHour: group.endHour,
+                until: group.until || previousGroup.until,
+            }
+
+            return {
+                ...mergedGroup,
+                title: this.sameSlotDateOverviewSlotRangeTitle(mergedGroup),
+            }
+        },
+        sameSlotDateOverviewCourseSignature(courses) {
+            return (Array.isArray(courses) ? courses : [])
+                .map(course => [
+                    course?.title,
+                    course?.dateRangeLabel,
+                    (course?.dateLabels || []).join(','),
+                    course?.isDistanceLearningCourse === true ? 'fu' : '',
+                    course?.weekMarker || '',
+                ].join('::'))
+                .sort((left, right) => left.localeCompare(right, 'de-AT', { numeric: true, sensitivity: 'base' }))
+                .join('||')
         },
         sameSlotDateOverviewCourses(timetable, slot) {
             if (!slot) return []
@@ -6543,12 +6649,37 @@ export default {
             return [sourceLabel, code].filter(Boolean).join(' / ')
         },
         sameSlotDateOverviewSlotTitle(courseGroup) {
-            const weekday = this.courseGroupWeekdayLabel(courseGroup?.weekday)
-            const timeOptions = Array.isArray(this.timeOptions) ? this.timeOptions : []
-            const time = timeOptions.find(option => Number(option.value) === Number(courseGroup?.hour))
-            const timeLabel = time?.shortTitle || `${courseGroup?.hour}.`
+            const timeRange = this.sameSlotDateOverviewGroupTimeRange(courseGroup)
 
-            return [weekday, timeLabel].filter(Boolean).join(' ')
+            return this.sameSlotDateOverviewSlotRangeTitle({
+                weekday: Number(courseGroup?.weekday),
+                startHour: Number(courseGroup?.hour),
+                endHour: Number(courseGroup?.hour),
+                from: timeRange.from,
+                until: timeRange.until,
+            })
+        },
+        sameSlotDateOverviewSlotRangeTitle(group) {
+            const weekday = this.courseGroupWeekdayLabel(group?.weekday)
+            const startHour = Number(group?.startHour)
+            const endHour = Number(group?.endHour)
+            const hourLabel = Number.isFinite(startHour) && Number.isFinite(endHour)
+                ? (startHour === endHour ? `${startHour}.` : `${startHour}.-${endHour}.`)
+                : ''
+            const timeRange = group?.from && group?.until ? `${group.from} - ${group.until}` : ''
+
+            return [weekday, hourLabel, timeRange].filter(Boolean).join(' ')
+        },
+        sameSlotDateOverviewGroupTimeRange(courseGroup) {
+            const schoolHours = Array.isArray(this.schoolHours) ? this.schoolHours : []
+            const schoolHour = schoolHours.find(configuredSchoolHour =>
+                Number(configuredSchoolHour?.hour) === Number(courseGroup?.hour),
+            )
+
+            return {
+                from: this.formatTimeValue(schoolHour?.from),
+                until: this.formatTimeValue(schoolHour?.until),
+            }
         },
         appointmentMetaLabel(appointment) {
             return [appointment?.details, appointment?.conflictLabel]
@@ -10031,6 +10162,15 @@ export default {
     justify-content: flex-end;
 }
 
+.robot-generated-overtake-button {
+    flex: 0 0 auto;
+    min-height: 48px;
+    border-radius: 8px;
+    font-weight: 850;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
 .robot-timetable-selector {
     display: inline-grid;
     grid-template-columns: 34px minmax(104px, auto) 34px;
@@ -10157,6 +10297,7 @@ export default {
 }
 
 .robot-course-item-panel--used :deep(.v-expansion-panel-title) {
+    background: rgba(var(--v-theme-success), 0.16);
     color: rgb(var(--v-theme-success));
 }
 
@@ -10172,6 +10313,7 @@ export default {
 
 .robot-course-item-panel--conflict :deep(.v-expansion-panel-title),
 .robot-course-item-panel--missing-additional :deep(.v-expansion-panel-title) {
+    background: rgba(var(--v-theme-error), 0.12);
     color: rgb(var(--v-theme-error));
 }
 

@@ -130,7 +130,7 @@
                 <div class="overview-context-card">
                     <div class="overview-wizard-row">
                         <v-btn
-                            v-if="!wizardPanelOpen"
+                            v-if="!wizardPanelOpen && !manualPanelOpen"
                             class="overview-wizard-button"
                             variant="tonal"
                             color="primary"
@@ -142,32 +142,57 @@
                                 <span>Automatischer</span>
                                 <span>Stundenplan</span>
                             </span>
+                            <span class="overview-wizard-button__stars">
+                                <v-icon icon="mdi-star-four-points" size="10" class="overview-star overview-star--1" />
+                                <v-icon icon="mdi-star-four-points" size="14" class="overview-star overview-star--2" />
+                                <v-icon icon="mdi-star-four-points" size="8" class="overview-star overview-star--3" />
+                            </span>
                         </v-btn>
-                        <div v-else class="overview-wizard-active-label">
-                            Automatischer Stundenplan
+                        <div v-else-if="wizardPanelOpen" class="overview-active-label overview-active-label--auto">
+                            <v-icon icon="mdi-calendar-clock" size="20" />
+                            <span class="overview-active-label__title">Automatischer Stundenplan</span>
+                            <span class="overview-active-label__stars">
+                                <v-icon icon="mdi-star-four-points" size="10" class="overview-star overview-star--1" />
+                                <v-icon icon="mdi-star-four-points" size="14" class="overview-star overview-star--2" />
+                                <v-icon icon="mdi-star-four-points" size="8" class="overview-star overview-star--3" />
+                            </span>
                         </div>
                         <v-btn
-                            v-if="!wizardPanelOpen"
+                            v-if="!wizardPanelOpen && !manualPanelOpen"
                             class="overview-manual-button"
                             variant="tonal"
                             color="primary"
                             size="large"
                             prepend-icon="mdi-calendar-edit"
-                            :active="manualPanelOpen"
-                            @click="toggleManualPanel">
+                            :active="directManualPanelOpen"
+                            @click="openManualPanel">
                             <span class="overview-manual-button__label">
                                 <span>Manueller</span>
                                 <span>Stundenplan</span>
                             </span>
                         </v-btn>
+                        <div v-if="directManualPanelOpen" class="overview-active-label overview-active-label--manual">
+                            <v-icon icon="mdi-calendar-edit" size="20" />
+                            <span class="overview-active-label__title">Manueller Stundenplan</span>
+                        </div>
                         <v-btn
-                            v-if="wizardPanelOpen"
+                            v-if="manualPanelBackToWizardVisible"
+                            class="overview-wizard-close-button"
+                            variant="tonal"
+                            color="primary"
+                            size="large"
+                            prepend-icon="mdi-arrow-left"
+                            @click="openWizardPanel">
+                            Zurück
+                        </v-btn>
+                        <v-btn
+                            v-if="wizardPanelOpen || directManualPanelOpen"
                             class="overview-wizard-close-button"
                             variant="tonal"
                             color="primary"
                             size="large"
                             prepend-icon="mdi-close"
-                            @click="closeWizardPanel">
+                            @click="closeActiveTimetablePanel">
                             Schließen
                         </v-btn>
 
@@ -225,9 +250,9 @@
                         :student-code="transferredStudentContext?.student?.studentCode || null"
                         class="overview-wizard-course-cards"
                         @timetable-overtaken="showOvertakenManualTimetable">
-                        <template #course-actions="{ ready, loading, extending, hasSelectedAdditionalCourses, extensionActionVisible }">
+                        <template #course-actions="{ ready, loading, extending, createActionVisible, hasSelectedAdditionalCourses, extensionActionVisible }">
                             <div
-                                v-if="ready && (!extending || (hasSelectedAdditionalCourses && extensionActionVisible))"
+                                v-if="ready && createActionVisible && (!extending || (hasSelectedAdditionalCourses && extensionActionVisible))"
                                 class="overview-wizard-footer">
                                 <v-btn
                                     class="overview-wizard-create-button"
@@ -258,18 +283,6 @@
                 </div>
 
                 <div v-if="manualPanelOpen" class="course-choice-panel">
-                    <div v-if="canReturnToWizardPanel && !wizardPanelOpen" class="course-choice-panel__back-row">
-                        <v-btn
-                            class="course-choice-panel__back-button"
-                            size="small"
-                            variant="tonal"
-                            color="primary"
-                            prepend-icon="mdi-arrow-left"
-                            @click="openWizardPanel">
-                            Zurück zum automatischen Stundenplan
-                        </v-btn>
-                    </div>
-
                     <div class="course-choice-panel__header">
                         <div class="course-choice-panel__title">
                             <v-icon icon="mdi-format-list-checks" size="18" color="primary" />
@@ -806,6 +819,9 @@ const FALLBACK_HOUR_COUNT = 10
 const ALL_DATES_OPTION_VALUE = 'all_dates'
 const TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:overview:last-timetable'
 const ROBOT_TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:robot:last-settings'
+const TIMETABLE_OVERVIEW_BASE_PATH = '/admin/students-timetables/timetable/overview'
+const TIMETABLE_OVERVIEW_LANDING_PATH = '/admin/students-timetables'
+const TIMETABLE_OVERVIEW_ROUTE_MODES = ['automatic', 'manual', 'adopted']
 
 export default {
     name: 'StudentsTimetablesOverview',
@@ -829,6 +845,7 @@ export default {
             wizardPanelOpen: false,
             wizardPanelMounted: false,
             manualPanelOpen: false,
+            manualPanelSource: null,
             wizardTimetableCreating: false,
             timetableUpdatePending: false,
             studentDialogOpen: false,
@@ -1152,6 +1169,15 @@ export default {
         canReturnToWizardPanel() {
             return this.wizardPanelMounted || this.savedRobotTimetableStateAvailable()
         },
+        directManualPanelOpen() {
+            return this.manualPanelOpen && this.manualPanelSource === 'direct'
+        },
+        manualPanelBackToWizardVisible() {
+            return this.manualPanelOpen
+                && this.manualPanelSource === 'wizard'
+                && this.canReturnToWizardPanel
+                && !this.wizardPanelOpen
+        },
         recurrenceWeekOptionsBySemester() {
             return {
                 1: this.buildRecurrenceWeekOptions(1),
@@ -1184,12 +1210,17 @@ export default {
     watch: {
         'config.selected_schoolyear.id'() {
             this.restoreLastTimetableState()
+            this.applyTimetableOverviewModeFromRoute()
             this.loadData()
+        },
+        '$route.params.detail'(detail) {
+            this.applyTimetableOverviewModeFromRoute(detail)
         },
     },
 
     mounted() {
         this.restoreLastTimetableState()
+        this.applyTimetableOverviewModeFromRoute()
         this.loadData()
     },
 
@@ -1283,13 +1314,87 @@ export default {
 
             this.$nextTick(scheduleActionAfterPaint)
         },
-        openWizardPanel() {
+        normalizedTimetableOverviewRouteMode(mode = this.$route?.params?.detail) {
+            const normalizedMode = String(mode || '').trim()
+
+            return TIMETABLE_OVERVIEW_ROUTE_MODES.includes(normalizedMode) ? normalizedMode : ''
+        },
+        timetableOverviewModePath(mode = '') {
+            const normalizedMode = this.normalizedTimetableOverviewRouteMode(mode)
+
+            return normalizedMode ? `${TIMETABLE_OVERVIEW_BASE_PATH}/${normalizedMode}` : TIMETABLE_OVERVIEW_LANDING_PATH
+        },
+        navigateToTimetableOverviewMode(mode = '') {
+            const path = this.timetableOverviewModePath(mode)
+            if (this.$route?.path === path) return
+
+            const navigation = this.$router?.push?.({ path })
+            navigation?.catch?.(() => {})
+        },
+        applyTimetableOverviewModeFromRoute(mode = this.$route?.params?.detail) {
+            const normalizedMode = this.normalizedTimetableOverviewRouteMode(mode)
+            if (!normalizedMode) {
+                this.applyTimetableOverviewLandingState()
+
+                return
+            }
+
+            if (normalizedMode === 'automatic') {
+                this.openWizardPanel({ syncRoute: false })
+
+                return
+            }
+
+            if (normalizedMode === 'manual') {
+                this.openManualPanel({ syncRoute: false })
+
+                return
+            }
+
+            this.wizardPanelMounted = true
+            this.wizardPanelOpen = false
+            this.manualPanelOpen = true
+            this.manualPanelSource = 'wizard'
+        },
+        applyTimetableOverviewLandingState() {
+            const defaults = this.defaultTimetableState()
+            const currentState = this.currentTimetableState()
+
+            this.applyTimetableState({
+                ...currentState,
+                activeCourseGroupFilterKeys: defaults.activeCourseGroupFilterKeys,
+                selectedRecurrenceWeeks: defaults.selectedRecurrenceWeeks,
+                expandedRecurrenceWeeks: defaults.expandedRecurrenceWeeks,
+                showExtraDatesInSelectedWeeks: defaults.showExtraDatesInSelectedWeeks,
+                manualPanelOpen: false,
+                manualPanelSource: null,
+            })
+            this.wizardPanelOpen = false
+            this.wizardPanelMounted = false
+            this.manualPanelOpen = false
+            this.manualPanelSource = null
+        },
+        openWizardPanel(options = {}) {
             this.wizardPanelMounted = true
             this.wizardPanelOpen = true
             this.manualPanelOpen = false
+            this.manualPanelSource = null
+            if (options?.syncRoute !== false) {
+                this.navigateToTimetableOverviewMode?.('automatic')
+            }
         },
         closeWizardPanel() {
             this.wizardPanelOpen = false
+            this.navigateToTimetableOverviewMode?.()
+        },
+        closeActiveTimetablePanel() {
+            if (this.wizardPanelOpen) {
+                this.closeWizardPanel()
+
+                return
+            }
+
+            this.closeManualPanel()
         },
         async createWizardTimetable(requireAdditionalCourses = false) {
             if (this.wizardTimetableCreating) return
@@ -1309,21 +1414,39 @@ export default {
                 this.wizardTimetableCreating = false
             }
         },
-        toggleManualPanel() {
-            this.manualPanelOpen = !this.manualPanelOpen
-
-            if (this.manualPanelOpen) {
-                this.wizardPanelOpen = false
+        openManualPanel(options = {}) {
+            this.manualPanelOpen = true
+            this.manualPanelSource = 'direct'
+            this.wizardPanelOpen = false
+            if (options?.syncRoute !== false) {
+                this.navigateToTimetableOverviewMode?.('manual')
             }
+        },
+        closeManualPanel() {
+            this.manualPanelOpen = false
+            this.manualPanelSource = null
+            this.navigateToTimetableOverviewMode?.()
+        },
+        toggleManualPanel() {
+            if (this.manualPanelOpen && this.manualPanelSource === 'direct') {
+                this.closeManualPanel()
+
+                return
+            }
+
+            this.openManualPanel()
         },
         showOvertakenManualTimetable(timetableState) {
             this.runTimetableUpdate(() => {
                 this.applyTimetableState({
                     ...(timetableState || {}),
                     manualPanelOpen: true,
+                    manualPanelSource: 'wizard',
                 })
                 this.wizardPanelOpen = false
                 this.manualPanelOpen = true
+                this.manualPanelSource = 'wizard'
+                this.navigateToTimetableOverviewMode?.('adopted')
                 this.saveLastTimetableState()
             })
         },
@@ -1424,9 +1547,13 @@ export default {
         clearTransferredStudentSelection() {
             if (!this.transferredStudentContext) return
 
+            const defaultSelection = this.defaultSelection()
+
             this.studentSelectionDraft = {
                 studentCode: null,
             }
+            this.selection = defaultSelection
+            this.selectionDraft = { ...defaultSelection }
             this.applyTransferredStudentSelection(null)
         },
         applyTransferredStudentSelection(studentCode) {
@@ -1523,6 +1650,7 @@ export default {
             this.wizardPanelOpen = false
             this.wizardPanelMounted = false
             this.manualPanelOpen = false
+            this.manualPanelSource = null
             this.infoDialogOpen = false
             this.settingsDialogOpen = false
             this.courseMenuDialog = false
@@ -1548,6 +1676,7 @@ export default {
                     2: false,
                 },
                 manualPanelOpen: false,
+                manualPanelSource: null,
                 restrictCourseChoiceBySelection: false,
                 selection: this.defaultSelection(),
                 transferredStudentContext: null,
@@ -1581,6 +1710,7 @@ export default {
                     ...(this.showExtraDatesInSelectedWeeks || {}),
                 },
                 manualPanelOpen: Boolean(this.manualPanelOpen),
+                manualPanelSource: this.manualPanelOpen ? (this.manualPanelSource || 'direct') : null,
                 restrictCourseChoiceBySelection: Boolean(this.restrictCourseChoiceBySelection),
                 selection: this.normalizedSelection(this.selection || defaults.selection),
                 transferredStudentContext: this.normalizedTransferredStudentContext(this.transferredStudentContext),
@@ -1606,6 +1736,9 @@ export default {
                 ...(state?.showExtraDatesInSelectedWeeks || {}),
             }
             this.manualPanelOpen = Boolean(state?.manualPanelOpen ?? defaults.manualPanelOpen)
+            this.manualPanelSource = this.manualPanelOpen
+                ? (state?.manualPanelSource || defaults.manualPanelSource || 'direct')
+                : null
             if (this.manualPanelOpen) {
                 this.wizardPanelOpen = false
             }
@@ -2455,9 +2588,10 @@ export default {
             const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
                 ? this.activeCourseGroupFilterKeySet
                 : new Set(this.activeCourseGroupFilterKeys || [])
-            const courseGroupsBySlot = this.selectedCourseMenuEntries(semester)
-                .flatMap(entry => entry?.courseGroups || [])
+
+            const courseGroupsBySlot = (Array.isArray(this.configuredCourseGroups) ? this.configuredCourseGroups : [])
                 .filter(courseGroup => activeCourseGroupFilterKeySet.has(courseGroup?.key))
+                .filter(courseGroup => Number(courseGroup?.semester) === Number(semester))
                 .filter(courseGroup => !this.courseGroupIsSingleDate(courseGroup))
                 .filter(courseGroup => this.courseGroupDates(courseGroup).length > 0)
                 .reduce((groups, courseGroup) => {
@@ -2468,13 +2602,15 @@ export default {
                     return groups
                 }, {})
 
-            return Object.entries(courseGroupsBySlot)
+            const groups = Object.entries(courseGroupsBySlot)
                 .map(([key, courseGroups]) => this.sameSlotDateOverviewGroup(key, courseGroups))
                 .filter(Boolean)
                 .sort((left, right) => left.sortValue.localeCompare(right.sortValue, 'de-AT', {
                     numeric: true,
                     sensitivity: 'base',
                 }))
+
+            return this.compactSameSlotDateOverviewGroups(groups)
         },
         sameSlotDateOverviewGroup(key, courseGroups) {
             const uniqueCourseGroups = this.uniqueCourseGroupsByKey(courseGroups)
@@ -2482,20 +2618,73 @@ export default {
             if (uniqueCourseGroups.length < 2) return null
 
             const firstCourseGroup = uniqueCourseGroups[0] || {}
-            const weekday = String(firstCourseGroup?.weekday || '').padStart(2, '0')
-            const hour = String(firstCourseGroup?.hour || '').padStart(2, '0')
+            const weekday = Number(firstCourseGroup?.weekday)
+            const hour = Number(firstCourseGroup?.hour)
+            const timeRange = this.courseGroupTimeRangeParts(firstCourseGroup)
+            const courses = uniqueCourseGroups
+                .map(courseGroup => this.sameSlotDateOverviewCourse(courseGroup))
+                .sort((left, right) => left.title.localeCompare(right.title, 'de-AT', {
+                    numeric: true,
+                    sensitivity: 'base',
+                }))
 
             return {
                 key,
                 title: this.sameSlotDateOverviewSlotTitle(firstCourseGroup),
-                courses: uniqueCourseGroups
-                    .map(courseGroup => this.sameSlotDateOverviewCourse(courseGroup))
-                    .sort((left, right) => left.title.localeCompare(right.title, 'de-AT', {
-                        numeric: true,
-                        sensitivity: 'base',
-                    })),
-                sortValue: `${weekday}-${hour}`,
+                courses,
+                weekday,
+                startHour: hour,
+                endHour: hour,
+                from: timeRange.from,
+                until: timeRange.until,
+                courseSignature: this.sameSlotDateOverviewCourseSignature(courses),
+                sortValue: `${String(weekday || '').padStart(2, '0')}-${String(hour || '').padStart(2, '0')}`,
             }
+        },
+        compactSameSlotDateOverviewGroups(groups) {
+            return (Array.isArray(groups) ? groups : []).reduce((compactedGroups, group) => {
+                const previousGroup = compactedGroups.at(-1)
+
+                if (this.sameSlotDateOverviewGroupsCanMerge(previousGroup, group)) {
+                    compactedGroups[compactedGroups.length - 1] = this.mergedSameSlotDateOverviewGroup(previousGroup, group)
+
+                    return compactedGroups
+                }
+
+                compactedGroups.push(group)
+
+                return compactedGroups
+            }, [])
+        },
+        sameSlotDateOverviewGroupsCanMerge(previousGroup, group) {
+            return previousGroup
+                && group
+                && previousGroup.courseSignature === group.courseSignature
+                && Number(previousGroup.weekday) === Number(group.weekday)
+                && Number(previousGroup.endHour) + 1 === Number(group.startHour)
+        },
+        mergedSameSlotDateOverviewGroup(previousGroup, group) {
+            const mergedGroup = {
+                ...previousGroup,
+                key: `${previousGroup.key}|${group.key}`,
+                endHour: group.endHour,
+                until: group.until || previousGroup.until,
+            }
+
+            return {
+                ...mergedGroup,
+                title: this.sameSlotDateOverviewSlotRangeTitle(mergedGroup),
+            }
+        },
+        sameSlotDateOverviewCourseSignature(courses) {
+            return (Array.isArray(courses) ? courses : [])
+                .map(course => [
+                    course?.title,
+                    course?.dateRangeLabel,
+                    (course?.dateLabels || []).join(','),
+                ].join('::'))
+                .sort((left, right) => left.localeCompare(right, 'de-AT', { numeric: true, sensitivity: 'base' }))
+                .join('||')
         },
         sameSlotDateOverviewCourse(courseGroup) {
             const dates = this.courseGroupDates(courseGroup)
@@ -2518,11 +2707,26 @@ export default {
                 .find(Boolean) || 'Ohne Bezeichnung'
         },
         sameSlotDateOverviewSlotTitle(courseGroup) {
-            const weekday = this.weekdayForCourseGroup(courseGroup).label
-            const timeRange = this.courseGroupTimeRangeLabel(courseGroup)
-            const hour = courseGroup?.hour ? `${courseGroup.hour}.` : ''
+            const timeRange = this.courseGroupTimeRangeParts(courseGroup)
 
-            return [weekday, timeRange || hour].filter(Boolean).join(' ')
+            return this.sameSlotDateOverviewSlotRangeTitle({
+                weekday: Number(courseGroup?.weekday),
+                startHour: Number(courseGroup?.hour),
+                endHour: Number(courseGroup?.hour),
+                from: timeRange.from,
+                until: timeRange.until,
+            })
+        },
+        sameSlotDateOverviewSlotRangeTitle(group) {
+            const weekday = this.weekdays.find(weekdayItem => Number(weekdayItem.value) === Number(group?.weekday))?.label || ''
+            const startHour = Number(group?.startHour)
+            const endHour = Number(group?.endHour)
+            const hourLabel = Number.isFinite(startHour) && Number.isFinite(endHour)
+                ? (startHour === endHour ? `${startHour}.` : `${startHour}.-${endHour}.`)
+                : ''
+            const timeRange = group?.from && group?.until ? `${group.from} - ${group.until}` : ''
+
+            return [weekday, hourLabel, timeRange].filter(Boolean).join(' ')
         },
         uniqueCourseGroupsByKey(courseGroups) {
             return Object.values((Array.isArray(courseGroups) ? courseGroups : []).reduce((groups, courseGroup) => {
@@ -3825,6 +4029,25 @@ export default {
     text-transform: none;
 }
 
+.overview-wizard-button {
+    animation: wizard-glow 2s ease-in-out infinite;
+    box-shadow: 0 0 8px rgba(37, 99, 235, 0.4), 0 0 20px rgba(37, 99, 235, 0.2);
+}
+
+.overview-wizard-button:hover {
+    animation: none;
+    box-shadow: 0 0 12px rgba(37, 99, 235, 0.6), 0 0 28px rgba(37, 99, 235, 0.35);
+}
+
+@keyframes wizard-glow {
+    0%, 100% {
+        box-shadow: 0 0 8px rgba(37, 99, 235, 0.4), 0 0 20px rgba(37, 99, 235, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 16px rgba(37, 99, 235, 0.7), 0 0 36px rgba(37, 99, 235, 0.35);
+    }
+}
+
 .overview-manual-button__label {
     display: grid;
     gap: 1px;
@@ -3832,12 +4055,59 @@ export default {
     text-align: left;
 }
 
-.overview-wizard-active-label {
+.overview-active-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
     flex: 0 0 auto;
-    color: #1f2937;
-    font-size: 0.92rem;
-    font-weight: 850;
+    padding: 8px 18px 8px 14px;
+    border-radius: 10px;
     letter-spacing: 0;
+}
+
+.overview-active-label--auto {
+    background: linear-gradient(135deg, #1d4ed8 0%, #6366f1 100%);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35), 0 0 24px rgba(99, 102, 241, 0.15);
+}
+
+.overview-active-label--manual {
+    background: linear-gradient(135deg, #0d9488 0%, #2563eb 100%);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(13, 148, 136, 0.35), 0 0 24px rgba(37, 99, 235, 0.15);
+}
+
+.overview-active-label__title {
+    font-size: 0.88rem;
+    font-weight: 800;
+}
+
+.overview-wizard-button__stars {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 2px;
+}
+
+.overview-active-label__stars {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: -4px;
+}
+
+.overview-star {
+    color: rgba(255, 255, 255, 0.9);
+    animation: star-twinkle 1.8s ease-in-out infinite;
+}
+
+.overview-star--1 { animation-delay: 0s; }
+.overview-star--2 { animation-delay: 0.5s; }
+.overview-star--3 { animation-delay: 1.1s; }
+
+@keyframes star-twinkle {
+    0%, 100% { opacity: 0.35; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
 }
 
 .overview-wizard-close-button,
@@ -3999,22 +4269,6 @@ export default {
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
-}
-
-.course-choice-panel__back-row {
-    display: flex;
-    justify-content: flex-start;
-    margin-bottom: 10px;
-}
-
-.course-choice-panel__back-button {
-    flex: 0 1 340px;
-    min-width: 0;
-}
-
-.course-choice-panel__back-button :deep(.v-btn__content) {
-    white-space: normal;
-    line-height: 1.15;
 }
 
 .course-choice-restriction-switch {

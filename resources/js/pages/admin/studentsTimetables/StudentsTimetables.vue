@@ -217,20 +217,20 @@ export default {
         redirectUnauthorizedSection() {
             if (this.$route.params.section === 'timetable' && this.$route.params.subsection === 'imports' && !this.canManageStudentsTimetables) {
                 this.main_action = 'timetable'
-                this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
+                this.$router.replace({ path: '/admin/students-timetables' })
             }
         },
         redirectLegacySection(section) {
             if (section === 'overview') {
                 this.main_action = 'timetable'
-                this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
+                this.$router.replace({ path: '/admin/students-timetables' })
 
                 return true
             }
 
             if (section === 'robot') {
                 this.main_action = 'timetable'
-                this.$router.replace({ path: '/admin/students-timetables/timetable/robot' })
+                this.$router.replace({ path: '/admin/students-timetables/timetable/overview/automatic' })
 
                 return true
             }
@@ -240,14 +240,14 @@ export default {
         handleNavigation(key) {
             this.main_action = key === 'imports' ? 'timetable' : key
             const paths = {
-                timetable: '/admin/students-timetables/timetable/overview',
+                timetable: '/admin/students-timetables',
                 imports: '/admin/students-timetables/timetable/imports',
                 import: '/admin/students-timetables/import/overview',
                 'subjects-overview': '/admin/students-timetables/subjects-overview/subject-plan',
             }
             const path = paths[key] || `/admin/students-timetables/${key}`
 
-            this.$router.replace({ path })
+            this.$router.push({ path })
         },
         async switchSchoolyear(id) {
             await this.schoolyearStore.setActiveSchoolyear(id)
