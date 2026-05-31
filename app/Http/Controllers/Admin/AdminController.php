@@ -44,13 +44,19 @@ class AdminController extends Controller
 {
     use HasRoleTrait;
 
-    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v3';
+    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v4';
 
-    private const array PROCESS_PATH_DIRECTORIES = [
+    private const array WINDOWS_PROCESS_PATH_DIRECTORIES = [
         'C:\\ProgramData\\ComposerSetup\\bin',
         'C:\\Program Files\\nodejs',
         'C:\\laragon\\bin\\composer',
         'C:\\laragon\\bin\\nodejs',
+    ];
+
+    private const array UNIX_PROCESS_PATH_DIRECTORIES = [
+        '/usr/local/bin',
+        '/usr/bin',
+        '/bin',
     ];
 
     private const array STUDENTS_TIMETABLES_ROLES = [
@@ -337,10 +343,10 @@ class AdminController extends Controller
     private function processPathDirectories(): array
     {
         if (PHP_OS_FAMILY !== 'Windows') {
-            return [];
+            return self::UNIX_PROCESS_PATH_DIRECTORIES;
         }
 
-        return self::PROCESS_PATH_DIRECTORIES;
+        return self::WINDOWS_PROCESS_PATH_DIRECTORIES;
     }
 
     private function canLoadSchoolInfos(User $user): bool
