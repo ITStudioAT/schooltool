@@ -8,20 +8,6 @@
                     {{ schoolyearName }}
                 </v-chip>
                 <v-spacer />
-                <v-tooltip v-if="hasHiddenSaturdayCourses" text="Es gibt Einträge am Samstag. Sa aktivieren, um sie zu sehen.">
-                    <template #activator="{ props }">
-                        <v-btn
-                            v-bind="props"
-                            color="error"
-                            variant="flat"
-                            size="large"
-                            class="hidden-saturday-warning"
-                            aria-label="Samstag hat ausgeblendete Einträge"
-                            @click="handleShowSaturdayClick">
-                            !
-                        </v-btn>
-                    </template>
-                </v-tooltip>
                 <v-btn
                     color="grey-darken-1"
                     variant="outlined"
@@ -31,15 +17,6 @@
                     @click="resetSavedTimetable">
                     Zurücksetzen
                 </v-btn>
-                <v-switch
-                    :model-value="showSaturday"
-                    color="primary"
-                    density="compact"
-                    hide-details
-                    inset
-                    label="Sa"
-                    class="timetable-saturday-switch"
-                    @update:model-value="handleShowSaturdayUpdate" />
             </v-card-title>
             <v-card-text class="timetable-card-body">
                 <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-3" />
@@ -401,7 +378,7 @@
 
                             <div
                                 class="timetable-generated-grid"
-                                :style="{ '--overview-timetable-weekdays': displayedWeekdays.length }">
+                                :style="timetableGridStyle">
                                 <div class="timetable-generated-cell timetable-generated-cell--header">Std.</div>
                                 <div
                                     v-for="weekday in displayedWeekdays"
@@ -877,7 +854,6 @@ export default {
                 1: false,
                 2: false,
             },
-            showSaturday: false,
             restrictCourseChoiceBySelection: false,
             transferredStudentContext: null,
             transferredStudentContextExpanded: false,
@@ -947,21 +923,25 @@ export default {
             return Array.isArray(this.courseGroups) ? this.courseGroups : []
         },
         displayedWeekdays() {
-            if (this.showSaturday) {
+            if (this.hasVisibleSaturdayCourses) {
                 return this.weekdays
             }
 
             return this.weekdays.filter((weekday) => weekday.value !== 6)
         },
-        weekdayRangeLabel() {
-            return this.showSaturday ? 'Mo-Sa' : 'Mo-Fr'
+        timetableGridStyle() {
+            return {
+                '--overview-timetable-weekdays': this.displayedWeekdays.length,
+            }
         },
-        hasHiddenSaturdayCourses() {
-            return !this.showSaturday
-                && this.configuredCourseGroups.some((courseGroup) => (
-                    Number(courseGroup?.weekday) === 6
-                    && this.activeCourseGroupFilterKeys.includes(courseGroup?.key)
-                ))
+        weekdayRangeLabel() {
+            return this.hasVisibleSaturdayCourses ? 'Mo-Sa' : 'Mo-Fr'
+        },
+        hasVisibleSaturdayCourses() {
+            return this.configuredCourseGroups.some((courseGroup) => (
+                Number(courseGroup?.weekday) === 6
+                && this.activeCourseGroupFilterKeys.includes(courseGroup?.key)
+            ))
         },
         timetableHours() {
             const courseHours = this.configuredCourseGroups
@@ -1383,18 +1363,6 @@ export default {
             return this.normalizedEvaluationCriteria(criteria)
                 .filter(criterion => criterion.enabled === true)
         },
-        handleShowSaturdayClick() {
-            this.runTimetableUpdate(() => {
-                this.showSaturday = true
-                this.saveLastTimetableState()
-            })
-        },
-        handleShowSaturdayUpdate(value) {
-            this.runTimetableUpdate(() => {
-                this.showSaturday = Boolean(value)
-                this.saveLastTimetableState()
-            })
-        },
         handleCourseMenuEntryFilterClick(entry) {
             this.runTimetableUpdate(() => {
                 this.toggleCourseMenuEntryFilter(entry)
@@ -1579,7 +1547,6 @@ export default {
                     1: false,
                     2: false,
                 },
-                showSaturday: false,
                 manualPanelOpen: false,
                 restrictCourseChoiceBySelection: false,
                 selection: this.defaultSelection(),
@@ -1613,7 +1580,6 @@ export default {
                     ...defaults.showExtraDatesInSelectedWeeks,
                     ...(this.showExtraDatesInSelectedWeeks || {}),
                 },
-                showSaturday: Boolean(this.showSaturday),
                 manualPanelOpen: Boolean(this.manualPanelOpen),
                 restrictCourseChoiceBySelection: Boolean(this.restrictCourseChoiceBySelection),
                 selection: this.normalizedSelection(this.selection || defaults.selection),
@@ -1639,7 +1605,6 @@ export default {
                 ...defaults.showExtraDatesInSelectedWeeks,
                 ...(state?.showExtraDatesInSelectedWeeks || {}),
             }
-            this.showSaturday = Boolean(state?.showSaturday ?? defaults.showSaturday)
             this.manualPanelOpen = Boolean(state?.manualPanelOpen ?? defaults.manualPanelOpen)
             if (this.manualPanelOpen) {
                 this.wizardPanelOpen = false
@@ -3585,9 +3550,6 @@ export default {
                 ]),
             ]
 
-            if ((entry?.courseGroups || []).some((courseGroup) => Number(courseGroup?.weekday) === 6)) {
-                this.showSaturday = true
-            }
             this.persistTimetableState?.()
         },
         isCourseMenuEntryFilterActive(entry) {
@@ -3624,9 +3586,6 @@ export default {
                 ...this.activeCourseGroupFilterKeys,
                 courseGroupKey,
             ]
-            if (Number(courseGroup?.weekday) === 6) {
-                this.showSaturday = true
-            }
             this.persistTimetableState?.()
         },
         isCourseGroupFilterActive(courseGroup) {
@@ -4413,18 +4372,6 @@ export default {
     font-size: 0.69rem;
     line-height: 1.45;
     white-space: nowrap;
-}
-
-.timetable-saturday-switch {
-    flex: 0 0 auto;
-}
-
-.hidden-saturday-warning {
-    min-width: 44px;
-    height: 44px;
-    font-size: 1.7rem;
-    font-weight: 900;
-    line-height: 1;
 }
 
 .timetable-hour-num {

@@ -805,11 +805,19 @@ describe('Students timetable overview', () => {
             .toEqual(['F', 'GWB'])
     })
 
-    it('warns when Saturday courses are hidden by the Saturday switch', () => {
+    it('shows Saturday when selected timetable courses contain Saturday values', () => {
         const computed = (Overview as any).computed
         const ctx = {
-            showSaturday: false,
             activeCourseGroupFilterKeys: ['saturday-course'],
+            hasVisibleSaturdayCourses: true,
+            weekdays: [
+                { label: 'Mo', value: 1 },
+                { label: 'Di', value: 2 },
+                { label: 'Mi', value: 3 },
+                { label: 'Do', value: 4 },
+                { label: 'Fr', value: 5 },
+                { label: 'Sa', value: 6 },
+            ],
             configuredCourseGroups: [
                 {
                     key: 'weekday-course',
@@ -822,18 +830,25 @@ describe('Students timetable overview', () => {
             ],
         }
 
-        expect(computed.hasHiddenSaturdayCourses.call(ctx)).toBe(true)
-
-        ctx.showSaturday = true
-
-        expect(computed.hasHiddenSaturdayCourses.call(ctx)).toBe(false)
+        expect(computed.hasVisibleSaturdayCourses.call(ctx)).toBe(true)
+        expect(computed.displayedWeekdays.call(ctx).map((weekday: Record<string, string>) => weekday.label))
+            .toEqual(['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'])
+        expect(computed.weekdayRangeLabel.call(ctx)).toBe('Mo-Sa')
     })
 
-    it('does not warn for unselected Saturday courses', () => {
+    it('hides Saturday when there are no selected Saturday values', () => {
         const computed = (Overview as any).computed
         const ctx = {
-            showSaturday: false,
             activeCourseGroupFilterKeys: [],
+            hasVisibleSaturdayCourses: false,
+            weekdays: [
+                { label: 'Mo', value: 1 },
+                { label: 'Di', value: 2 },
+                { label: 'Mi', value: 3 },
+                { label: 'Do', value: 4 },
+                { label: 'Fr', value: 5 },
+                { label: 'Sa', value: 6 },
+            ],
             configuredCourseGroups: [
                 {
                     key: 'saturday-course',
@@ -842,7 +857,36 @@ describe('Students timetable overview', () => {
             ],
         }
 
-        expect(computed.hasHiddenSaturdayCourses.call(ctx)).toBe(false)
+        expect(computed.hasVisibleSaturdayCourses.call(ctx)).toBe(false)
+        expect(computed.displayedWeekdays.call(ctx).map((weekday: Record<string, string>) => weekday.label))
+            .toEqual(['Mo', 'Di', 'Mi', 'Do', 'Fr'])
+        expect(computed.weekdayRangeLabel.call(ctx)).toBe('Mo-Fr')
+    })
+
+    it('sizes the timetable grid to the displayed weekday count', () => {
+        const computed = (Overview as any).computed
+        const ctx = {
+            displayedWeekdays: [
+                { label: 'Mo', value: 1 },
+                { label: 'Di', value: 2 },
+                { label: 'Mi', value: 3 },
+                { label: 'Do', value: 4 },
+                { label: 'Fr', value: 5 },
+            ],
+        }
+
+        expect(computed.timetableGridStyle.call(ctx)).toEqual({
+            '--overview-timetable-weekdays': 5,
+        })
+
+        ctx.displayedWeekdays = [
+            ...ctx.displayedWeekdays,
+            { label: 'Sa', value: 6 },
+        ]
+
+        expect(computed.timetableGridStyle.call(ctx)).toEqual({
+            '--overview-timetable-weekdays': 6,
+        })
     })
 
     it('shows no timetable courses by default and filters cells to selected menu items', () => {
@@ -870,7 +914,6 @@ describe('Students timetable overview', () => {
         }
         const ctx = {
             activeCourseGroupFilterKeys: [],
-            showSaturday: false,
             courseGroupsByCell: {
                 '1-1-1': [ethCourseGroup, ethDuplicateCourseGroup, gwbCourseGroup],
             },
@@ -1370,7 +1413,6 @@ describe('Students timetable overview', () => {
                 1: true,
                 2: false,
             },
-            showSaturday: true,
             restrictCourseChoiceBySelection: true,
             selection: {
                 semester: 6,
@@ -1445,7 +1487,6 @@ describe('Students timetable overview', () => {
             1: false,
             2: false,
         }
-        ctx.showSaturday = false
         ctx.manualPanelOpen = false
         ctx.restrictCourseChoiceBySelection = false
         ctx.selection = methods.defaultSelection.call(ctx)
@@ -1468,7 +1509,6 @@ describe('Students timetable overview', () => {
             1: true,
             2: false,
         })
-        expect(ctx.showSaturday).toBe(true)
         expect(ctx.manualPanelOpen).toBe(true)
         expect(methods.savedRobotTimetableStateAvailable.call(ctx)).toBe(true)
         expect(ctx.restrictCourseChoiceBySelection).toBe(true)
@@ -1525,7 +1565,6 @@ describe('Students timetable overview', () => {
             1: false,
             2: false,
         })
-        expect(ctx.showSaturday).toBe(false)
         expect(ctx.restrictCourseChoiceBySelection).toBe(false)
         expect(ctx.selection).toEqual({
             semester: 1,
@@ -1572,6 +1611,11 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('courseGroupSingleDateOverlapMarkersForCell(semester.value, weekday.value, hour.hour, timetableWeek)')
         expect(componentSource).toContain(':title="marker.title"')
         expect(componentSource).toContain('timetable-generated-cell__single-date-marker')
+        expect(componentSource).toContain(':style="timetableGridStyle"')
+        expect(componentSource).toContain('hasVisibleSaturdayCourses')
+        expect(componentSource).not.toContain('class="timetable-saturday-toggle"')
+        expect(componentSource).not.toContain('aria-label="Samstag anzeigen"')
+        expect(componentSource).not.toContain('timetable-generated-cell--saturday-placeholder')
         expect(componentSource).toContain('grid-template-columns: 88px repeat(var(--overview-timetable-weekdays, 5), minmax(72px, 1fr));')
         expect(componentSource).toContain('grid-template-rows: 34px;')
         expect(componentSource).toContain('grid-auto-rows: minmax(58px, auto);')
@@ -2274,7 +2318,6 @@ describe('Students timetable overview', () => {
                 1: false,
                 2: false,
             },
-            showSaturday: false,
             wizardPanelOpen: true,
             wizardPanelMounted: true,
             manualPanelOpen: false,
@@ -2297,11 +2340,9 @@ describe('Students timetable overview', () => {
 
         methods.showOvertakenManualTimetable.call(ctx, {
             activeCourseGroupFilterKeys: ['bio-1', 'bio-2'],
-            showSaturday: true,
         })
 
         expect(ctx.activeCourseGroupFilterKeys).toEqual(['bio-1', 'bio-2'])
-        expect(ctx.showSaturday).toBe(true)
         expect(ctx.manualPanelOpen).toBe(true)
         expect(ctx.wizardPanelOpen).toBe(false)
         expect(ctx.wizardPanelMounted).toBe(true)

@@ -5,3 +5,9 @@ cwd = "C:\\laravel\\schooltool"
 
 [mcp_servers.laravel-boost.tools.search-docs]
 approval_mode = "approve"
+
+[mcp_servers.vue-docs-mcp]
+url = "https://mcp.vue-mcp.org/mcp"
+
+[mcp_servers.vuetify-mcp]
+url = "https://mcp.vuetifyjs.com/mcp"
