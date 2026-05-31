@@ -124,6 +124,8 @@ test('authenticated config includes environment versions', function () {
     Cache::forget('admin.environment_versions.v2');
     Cache::forget('admin.environment_versions.v3');
     Cache::forget('admin.environment_versions.v4');
+    Cache::forget('admin.environment_versions.v5');
+    Cache::forget('admin.environment_versions.v6');
     Process::fake([
         '*' => Process::sequence()
             ->push(Process::result(output: 'Composer version 2.8.12 2025-09-19 13:41:59'))
@@ -194,6 +196,37 @@ test('authenticated config includes environment versions', function () {
                 && str_contains($process->environment['PATH'] ?? '', '/usr/bin');
         });
     }
+});
+
+test('authenticated config checks common linux aliases and paths automatically', function () {
+    Cache::forget('admin.environment_versions.v6');
+    Process::fake(function ($process) {
+        $command = is_array($process->command)
+            ? implode(' ', $process->command)
+            : $process->command;
+
+        if (str_contains($command, 'composer2 --version')) {
+            return Process::result(output: 'Composer version 2.8.12 2025-09-19 13:41:59');
+        }
+
+        if (str_contains($command, 'npm --version') || str_contains($command, 'npm.cmd --version') || str_contains($command, '/home/master/bin/npm --version')) {
+            return Process::result(output: '10.9.2');
+        }
+
+        if (str_contains($command, 'nodejs --version')) {
+            return Process::result(output: 'v22.16.0');
+        }
+
+        return Process::result('', 'Command not found', 1);
+    });
+
+    $this->actingAs($this->user);
+
+    $this->getJson('/api/admin/config')
+        ->assertSuccessful()
+        ->assertJsonPath('environment_versions.composer', '2.8.12')
+        ->assertJsonPath('environment_versions.npm', '10.9.2')
+        ->assertJsonPath('environment_versions.node', 'v22.16.0');
 });
 
 test('config can include selected school infos for admin home screen', function () {

@@ -44,7 +44,7 @@ class AdminController extends Controller
 {
     use HasRoleTrait;
 
-    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v4';
+    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v6';
 
     private const array WINDOWS_PROCESS_PATH_DIRECTORIES = [
         'C:\\ProgramData\\ComposerSetup\\bin',
@@ -55,8 +55,12 @@ class AdminController extends Controller
 
     private const array UNIX_PROCESS_PATH_DIRECTORIES = [
         '/usr/local/bin',
+        '/usr/local/sbin',
         '/usr/bin',
+        '/usr/sbin',
         '/bin',
+        '/sbin',
+        '/home/master/bin',
     ];
 
     private const array STUDENTS_TIMETABLES_ROLES = [
@@ -179,7 +183,7 @@ class AdminController extends Controller
             'php' => PHP_VERSION,
             'composer' => $this->composerVersion(),
             'npm' => $this->nodeToolVersion('npm', ['C:\\Program Files\\nodejs\\npm.cmd']),
-            'node' => $this->nodeToolVersion('node', ['C:\\Program Files\\nodejs\\node.exe']),
+            'node' => $this->nodeToolVersion('node', ['C:\\Program Files\\nodejs\\node.exe'], ['nodejs']),
             'vue' => $this->packageLockVersion('vue'),
             'vuetify' => $this->packageLockVersion('vuetify'),
             'vite' => $this->packageLockVersion('vite'),
@@ -191,27 +195,52 @@ class AdminController extends Controller
         $pattern = '/Composer(?: version)?\s+(?<version>\d+(?:\.\d+)+)/';
 
         return $this->firstCommandVersion([
-            ['composer', '--version', '--no-ansi'],
-            'composer --version --no-ansi',
-            ...$this->windowsCommandCandidates('C:\\ProgramData\\ComposerSetup\\bin\\composer.bat', ['--version', '--no-ansi']),
+            ...$this->binaryCommandCandidates(['composer', 'composer2'], ['--version', '--no-ansi'], [
+                'C:\\ProgramData\\ComposerSetup\\bin\\composer.bat',
+            ]),
         ], $pattern);
     }
 
     /**
      * @param  array<int, string>  $windowsBinaries
+     * @param  array<int, string>  $aliases
      */
-    private function nodeToolVersion(string $binary, array $windowsBinaries): ?string
+    private function nodeToolVersion(string $binary, array $windowsBinaries, array $aliases = []): ?string
     {
-        $commands = [
-            [$binary, '--version'],
-            "{$binary} --version",
-        ];
+        return $this->firstCommandVersion($this->binaryCommandCandidates([$binary, ...$aliases], ['--version'], $windowsBinaries));
+    }
 
-        foreach ($windowsBinaries as $windowsBinary) {
-            array_push($commands, ...$this->windowsCommandCandidates($windowsBinary, ['--version']));
+    /**
+     * @param  array<int, string>  $binaryNames
+     * @param  array<int, string>  $arguments
+     * @param  array<int, string>  $windowsBinaries
+     * @return array<int, array<int, string>|string>
+     */
+    private function binaryCommandCandidates(array $binaryNames, array $arguments, array $windowsBinaries = []): array
+    {
+        $commands = [];
+
+        foreach ($binaryNames as $binaryName) {
+            $commands[] = [$binaryName, ...$arguments];
+            $commands[] = $this->shellCommand($binaryName, $arguments);
         }
 
-        return $this->firstCommandVersion($commands);
+        if (PHP_OS_FAMILY !== 'Windows') {
+            foreach ($binaryNames as $binaryName) {
+                foreach ($this->processPathDirectories() as $directory) {
+                    $commands[] = [rtrim($directory, '/').'/'.$binaryName, ...$arguments];
+                }
+            }
+        }
+
+        foreach ($windowsBinaries as $windowsBinary) {
+            array_push($commands, ...$this->windowsCommandCandidates($windowsBinary, $arguments));
+        }
+
+        return collect($commands)
+            ->unique(fn (array|string $command): string => is_array($command) ? implode("\0", $command) : $command)
+            ->values()
+            ->all();
     }
 
     /**
@@ -280,6 +309,20 @@ class AdminController extends Controller
     /**
      * @param  array<int, string>  $arguments
      */
+    private function shellCommand(string $binary, array $arguments): string
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            return $this->windowsShellCommand($binary, $arguments);
+        }
+
+        return collect([$binary, ...$arguments])
+            ->map(fn (string $argument): string => preg_match('/^[A-Za-z0-9_@%+=:,./-]+$/', $argument) ? $argument : escapeshellarg($argument))
+            ->implode(' ');
+    }
+
+    /**
+     * @param  array<int, string>  $arguments
+     */
     private function windowsShellCommand(string $binary, array $arguments): string
     {
         return collect([$binary, ...$arguments])
@@ -342,11 +385,27 @@ class AdminController extends Controller
      */
     private function processPathDirectories(): array
     {
-        if (PHP_OS_FAMILY !== 'Windows') {
-            return self::UNIX_PROCESS_PATH_DIRECTORIES;
+        if (PHP_OS_FAMILY === 'Windows') {
+            return self::WINDOWS_PROCESS_PATH_DIRECTORIES;
         }
 
-        return self::WINDOWS_PROCESS_PATH_DIRECTORIES;
+        $home = trim((string) (getenv('HOME') ?: ($_SERVER['HOME'] ?? '')));
+        $homeDirectories = $home !== '' ? [
+            "{$home}/bin",
+            "{$home}/.local/bin",
+            "{$home}/.composer/vendor/bin",
+            "{$home}/.config/composer/vendor/bin",
+            "{$home}/.nvm/current/bin",
+        ] : [];
+
+        return collect([
+            ...self::UNIX_PROCESS_PATH_DIRECTORIES,
+            ...$homeDirectories,
+        ])
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function canLoadSchoolInfos(User $user): bool
