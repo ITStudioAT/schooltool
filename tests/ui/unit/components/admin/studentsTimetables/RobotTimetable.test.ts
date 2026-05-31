@@ -1105,7 +1105,7 @@ describe('Students timetable robot page', () => {
         expect(ctx.timetableCreateLoading).toBe(false)
     })
 
-    it('hides stale generated timetable results when additional course selection changes', () => {
+    it('keeps generated timetable colors when additional course selection changes', () => {
         const computed = (RobotTimetable as any).computed
         const methods = (RobotTimetable as any).methods
         const ctx = {
@@ -1143,9 +1143,12 @@ describe('Students timetable robot page', () => {
 
         expect(ctx.additionalCourseExtensionActionHidden).toBe(false)
         expect(computed.additionalCourseExtensionActionVisible.call(ctx)).toBe(true)
-        expect(ctx.generatedTimetables).toEqual([])
+        expect(ctx.generationError).toBe('')
+        expect(ctx.generationProblems).toEqual([])
+        expect(ctx.generatedTimetables).toEqual([{ key: 'old' }])
         expect(ctx.totalTimetableVariationCount).toBeNull()
         expect(ctx.additionalCoursePanelRetained).toBe(true)
+        expect(ctx.additionalCourseSelectionChangedAfterTimetable).toBe(true)
         expect(computed.additionalCoursePanelVisible.call(ctx)).toBe(true)
         expect(ctx.saveLastRobotState).toHaveBeenCalled()
     })
@@ -4495,6 +4498,7 @@ describe('Students timetable robot page', () => {
             selectedRobotTimetable: null,
             deselectedCourseKeys: [],
             deselectedCourseGroupKeys: [],
+            additionalCourseSelectionChangedAfterTimetable: false,
             courseGroupItems(course) {
                 return [{ title: `${course.code}-A` }]
             },
@@ -4517,6 +4521,10 @@ describe('Students timetable robot page', () => {
         expect(computed.plannedCourseSelectionChanged.call(ctx)).toBe(false)
         expect(computed.courseActionVisible.call(ctx)).toBe(false)
 
+        ctx.additionalCourseSelectionChangedAfterTimetable = true
+        expect(computed.courseActionVisible.call(ctx)).toBe(true)
+
+        ctx.additionalCourseSelectionChangedAfterTimetable = false
         ctx.deselectedCourseKeys = ['M1']
         expect(computed.plannedCourseSelectionChanged.call(ctx)).toBe(true)
         expect(computed.courseActionVisible.call(ctx)).toBe(true)
@@ -4895,7 +4903,7 @@ describe('Students timetable robot page', () => {
         expect(methods.additionalCourseGroupSelected.call(ctx, course, courseGroups[1])).toBe(true)
         expect(methods.additionalCoursePartiallySelected.call(ctx, course)).toBe(true)
         expect(methods.additionalCourseFullySelected.call(ctx, course)).toBe(false)
-        expect(ctx.cleared).toBe(true)
+        expect(ctx.cleared).toBeUndefined()
         expect(ctx.saved).toBe(true)
 
         methods.setAdditionalCourseGroupSelected.call(ctx, course, courseGroups[0], true)
@@ -4910,13 +4918,19 @@ describe('Students timetable robot page', () => {
         expect(ctx.deselectedCourseGroupKeys).toEqual([])
     })
 
-    it('hides the selected timetable when additional courses change', () => {
+    it('keeps the selected timetable coloring when additional courses change', () => {
+        const computed = (RobotTimetable as any).computed
         const methods = (RobotTimetable as any).methods
         const course = { key: 'E7', code: 'E7', ttCodes: ['E7'], name: 'Englisch 7', hours: 1 }
         const ctx = {
             ...methods,
+            selectedStudent: { student_code: '100' },
+            studentPlannedCourses: [{ key: 'D1' }],
+            plannedCourseSelectionChanged: false,
             additionalCourseSelectedKeys: [],
             deselectedCourseGroupKeys: [],
+            additionalCoursePanelVisible: true,
+            additionalCoursePanelRetained: false,
             selectedRobotTimetable: { key: 'generated-1', slots: {} },
             studentAdditionalCourses: [course],
             courseGroupItems() {
@@ -4924,6 +4938,9 @@ describe('Students timetable robot page', () => {
             },
             clearGeneratedTimetables() {
                 this.cleared = true
+            },
+            clearTimetableCountResults() {
+                this.countsCleared = true
             },
             saveLastRobotState() {
                 this.saved = true
@@ -4934,8 +4951,18 @@ describe('Students timetable robot page', () => {
 
         expect(ctx.additionalCourseSelectedKeys).toEqual(['E7'])
         expect(ctx.selectedRobotTimetable).toEqual({ key: 'generated-1', slots: {} })
-        expect(ctx.cleared).toBe(true)
+        expect(ctx.additionalCoursePanelRetained).toBe(true)
+        expect(ctx.additionalCourseSelectionChangedAfterTimetable).toBe(true)
+        expect(ctx.cleared).toBeUndefined()
+        expect(ctx.countsCleared).toBe(true)
         expect(ctx.saved).toBe(true)
+        expect(computed.courseActionVisible.call(ctx)).toBe(true)
+
+        methods.setAdditionalCourseSelected.call(ctx, course, false)
+
+        expect(ctx.additionalCourseSelectedKeys).toEqual([])
+        expect(ctx.additionalCourseSelectionChangedAfterTimetable).toBe(true)
+        expect(computed.courseActionVisible.call(ctx)).toBe(true)
     })
 
     it('blocks red additional course rows from changing selection', () => {
@@ -5007,7 +5034,7 @@ describe('Students timetable robot page', () => {
         expect(ctx.additionalCourseTimetableRequired).toBe(false)
         expect(ctx.deselectedCourseGroupKeys).toEqual(['D1|D1-1C-GOS'])
         expect(computed.additionalCourseSelectionResettable.call(ctx)).toBe(false)
-        expect(ctx.cleared).toBe(true)
+        expect(ctx.cleared).toBeUndefined()
         expect(ctx.saved).toBe(true)
     })
 

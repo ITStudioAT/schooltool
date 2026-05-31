@@ -2489,6 +2489,7 @@ export default {
             additionalCourseTimetableRequired: false,
             additionalCourseExtensionActionHidden: false,
             additionalCoursePanelRetained: false,
+            additionalCourseSelectionChangedAfterTimetable: false,
             courseItemPanels: [],
             schoolHours: [],
             courseGroups: [],
@@ -2924,6 +2925,7 @@ export default {
                 || !this.studentPlannedCourses.length
                 || !this.selectedRobotTimetable
                 || this.plannedCourseSelectionChanged
+                || this.additionalCourseSelectionChangedAfterTimetable === true
         },
         additionalCourseSelectionResettable() {
             return this.additionalCourseSelectionStateSnapshot(
@@ -3683,7 +3685,7 @@ export default {
 
             if (!hasSelectedAdditionalCourses && this.additionalCourseTimetableRequired !== true) return
 
-            this.resetAdditionalCourseSelection()
+            this.resetAdditionalCourseSelection({ clearGeneratedTimetables: true })
         },
         backendTimetableRequestPayload(options = {}) {
             const evaluationCriteria = this.storageEvaluationCriteria(this.evaluationCriteria)
@@ -3725,6 +3727,7 @@ export default {
                 this.qualityCriteriaResultFilterEnabled = false
                 this.generatedTimetables = []
                 this.additionalCourseTimetableRequired = false
+                this.additionalCourseSelectionChangedAfterTimetable = false
                 this.normalizeTimetableResultCounters()
                 this.fullGreenTimetableCountLoading = false
 
@@ -3804,6 +3807,7 @@ export default {
                 }
 
                 this.generatedTimetables = selectedTimetable ? [selectedTimetable] : []
+                this.additionalCourseSelectionChangedAfterTimetable = false
                 this.applySelectedQualityMetricsToCounters()
                 this.refreshQualityCountersAfterTimetableLoad(options)
             } catch {
@@ -4834,6 +4838,7 @@ export default {
             this.generationError = ''
             this.generationProblems = []
             this.generatedTimetables = []
+            this.additionalCourseSelectionChangedAfterTimetable = false
             this.additionalCoursePanelRetained = options?.keepAdditionalCoursePanelVisible === true
                 && this.studentAdditionalCourses.length > 0
             this.clearTimetableCountResults()
@@ -6233,11 +6238,24 @@ export default {
             return this.additionalCourseMissingInSelectedTimetable(course)
                 || this.courseAllGroupsNoLongerFitSelectedTimetable(course)
         },
-        commitAdditionalCourseSelectionChange() {
+        commitAdditionalCourseSelectionChange(options = {}) {
             const keepAdditionalCoursePanelVisible = this.additionalCoursePanelVisible
 
             this.additionalCourseExtensionActionHidden = false
-            this.clearGeneratedTimetables({ keepAdditionalCoursePanelVisible })
+            this.generationError = ''
+            this.generationProblems = []
+
+            if (options?.clearGeneratedTimetables === true) {
+                this.clearGeneratedTimetables({ keepAdditionalCoursePanelVisible })
+                this.saveLastRobotState()
+
+                return
+            }
+
+            this.additionalCoursePanelRetained = keepAdditionalCoursePanelVisible
+                && this.studentAdditionalCourses.length > 0
+            this.additionalCourseSelectionChangedAfterTimetable = true
+            this.clearTimetableCountResults()
             this.saveLastRobotState()
         },
         setAdditionalCourseSelected(course, selected) {
@@ -6357,7 +6375,7 @@ export default {
 
             return `${selectedKeys}::${deselectedGroupKeys}`
         },
-        resetAdditionalCourseSelection() {
+        resetAdditionalCourseSelection(options = {}) {
             const previousSnapshot = this.additionalCourseSelectionStateSnapshot(
                 this.currentAdditionalCourseSelectionState(),
             )
@@ -6374,7 +6392,7 @@ export default {
             )
 
             if (previousSnapshot !== nextSnapshot) {
-                this.commitAdditionalCourseSelectionChange()
+                this.commitAdditionalCourseSelectionChange(options)
             }
         },
         currentAdditionalCourseSelectionState() {

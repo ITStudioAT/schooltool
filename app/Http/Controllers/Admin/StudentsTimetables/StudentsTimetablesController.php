@@ -15,10 +15,14 @@ use App\Services\StudentsTimetables\RobotTimetableGeneratorService;
 use App\Services\StudentsTimetables\StudentsTimetablesService;
 use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
+use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
+use Spatie\LaravelPdf\Enums\Format;
+
+use function Spatie\LaravelPdf\Support\pdf;
 
 class StudentsTimetablesController extends Controller
 {
@@ -598,6 +602,45 @@ class StudentsTimetablesController extends Controller
                 $validated['course_group_keys'] ?? [],
             ),
         ]);
+    }
+
+    public function overviewPdf(Request $request): Responsable
+    {
+        $this->studentsTimetablesUser();
+
+        $validated = $request->validate([
+            'title' => ['nullable', 'string', 'max:120'],
+            'subtitle' => ['nullable', 'string', 'max:255'],
+            'student' => ['nullable', 'string', 'max:255'],
+            'schoolyear' => ['nullable', 'string', 'max:120'],
+            'generated_at' => ['nullable', 'string', 'max:120'],
+            'weekdays' => ['required', 'array', 'min:1', 'max:6'],
+            'weekdays.*.label' => ['required', 'string', 'max:12'],
+            'semesters' => ['required', 'array', 'min:1', 'max:2'],
+            'semesters.*.label' => ['required', 'string', 'max:80'],
+            'semesters.*.date_range' => ['nullable', 'string', 'max:80'],
+            'semesters.*.weeks' => ['required', 'array', 'min:1', 'max:8'],
+            'semesters.*.weeks.*.label' => ['nullable', 'string', 'max:80'],
+            'semesters.*.weeks.*.hours' => ['required', 'array', 'max:20'],
+            'semesters.*.weeks.*.hours.*.hour' => ['required', 'integer', 'min:1', 'max:30'],
+            'semesters.*.weeks.*.hours.*.from' => ['nullable', 'string', 'max:20'],
+            'semesters.*.weeks.*.hours.*.until' => ['nullable', 'string', 'max:20'],
+            'semesters.*.weeks.*.hours.*.cells' => ['required', 'array', 'min:1', 'max:6'],
+            'semesters.*.weeks.*.hours.*.cells.*.status' => ['nullable', 'string', Rule::in(['empty', 'filled', 'conflict', 'related'])],
+            'semesters.*.weeks.*.hours.*.cells.*.courses' => ['array', 'max:10'],
+            'semesters.*.weeks.*.hours.*.cells.*.courses.*.label' => ['required', 'string', 'max:160'],
+            'semesters.*.weeks.*.hours.*.cells.*.courses.*.details' => ['nullable', 'string', 'max:160'],
+            'semesters.*.weeks.*.hours.*.cells.*.markers' => ['array', 'max:10'],
+            'semesters.*.weeks.*.hours.*.cells.*.markers.*.label' => ['required', 'string', 'max:40'],
+            'semesters.*.weeks.*.hours.*.cells.*.markers.*.title' => ['nullable', 'string', 'max:160'],
+        ]);
+
+        return pdf()
+            ->view('pdfs.students-timetable-overview', ['data' => $validated])
+            ->format(Format::A4)
+            ->landscape()
+            ->name('stundenplan.pdf')
+            ->download();
     }
 
     public function evaluationSettings(StudentTimetableEvaluationSettingsService $service): JsonResponse
