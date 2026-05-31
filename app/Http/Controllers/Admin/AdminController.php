@@ -44,7 +44,7 @@ class AdminController extends Controller
 {
     use HasRoleTrait;
 
-    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v7';
+    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v8';
 
     private const int VERSION_COMMAND_TIMEOUT_SECONDS = 1;
 
@@ -224,6 +224,12 @@ class AdminController extends Controller
 
         foreach ($binaryNames as $binaryName) {
             $commands[] = [$binaryName, ...$arguments];
+
+            if (PHP_OS_FAMILY === 'Windows') {
+                $commands[] = $this->windowsShellCommand($binaryName, $arguments);
+                $commands[] = ["{$binaryName}.cmd", ...$arguments];
+                $commands[] = $this->windowsShellCommand("{$binaryName}.cmd", $arguments);
+            }
         }
 
         if (PHP_OS_FAMILY !== 'Windows') {
@@ -376,7 +382,7 @@ class AdminController extends Controller
     private function processPathDirectories(): array
     {
         if (PHP_OS_FAMILY === 'Windows') {
-            return self::WINDOWS_PROCESS_PATH_DIRECTORIES;
+            return $this->windowsProcessPathDirectories();
         }
 
         $home = trim((string) (getenv('HOME') ?: ($_SERVER['HOME'] ?? '')));
@@ -391,11 +397,51 @@ class AdminController extends Controller
         return collect([
             ...self::UNIX_PROCESS_PATH_DIRECTORIES,
             ...$homeDirectories,
+            ...$this->nvmVersionDirectories($home),
         ])
             ->filter()
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function windowsProcessPathDirectories(): array
+    {
+        $appData = trim((string) (getenv('APPDATA') ?: ($_SERVER['APPDATA'] ?? '')));
+        $localAppData = trim((string) (getenv('LOCALAPPDATA') ?: ($_SERVER['LOCALAPPDATA'] ?? '')));
+
+        $userDirectories = [
+            $appData !== '' ? "{$appData}\\npm" : null,
+            $localAppData !== '' ? "{$localAppData}\\Programs\\nodejs" : null,
+            $localAppData !== '' ? "{$localAppData}\\nvm" : null,
+            $localAppData !== '' ? "{$localAppData}\\fnm_multishells" : null,
+        ];
+
+        return collect([
+            ...self::WINDOWS_PROCESS_PATH_DIRECTORIES,
+            ...$userDirectories,
+        ])
+            ->filter()
+            ->unique(fn (string $path): string => strtolower($path))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function nvmVersionDirectories(string $home): array
+    {
+        if ($home === '') {
+            return [];
+        }
+
+        $directories = glob("{$home}/.nvm/versions/node/*/bin");
+
+        return is_array($directories) ? $directories : [];
     }
 
     private function canLoadSchoolInfos(User $user): bool

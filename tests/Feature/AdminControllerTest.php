@@ -127,6 +127,7 @@ test('authenticated config includes environment versions', function () {
     Cache::forget('admin.environment_versions.v5');
     Cache::forget('admin.environment_versions.v6');
     Cache::forget('admin.environment_versions.v7');
+    Cache::forget('admin.environment_versions.v8');
     Process::fake([
         '*' => Process::sequence()
             ->push(Process::result(output: 'Composer version 2.8.12 2025-09-19 13:41:59'))
@@ -200,7 +201,7 @@ test('authenticated config includes environment versions', function () {
 });
 
 test('authenticated config checks common linux aliases and paths automatically', function () {
-    Cache::forget('admin.environment_versions.v7');
+    Cache::forget('admin.environment_versions.v8');
     Process::fake(function ($process) {
         $command = is_array($process->command)
             ? implode(' ', $process->command)
