@@ -44,7 +44,9 @@ class AdminController extends Controller
 {
     use HasRoleTrait;
 
-    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v6';
+    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v7';
+
+    private const int VERSION_COMMAND_TIMEOUT_SECONDS = 1;
 
     private const array WINDOWS_PROCESS_PATH_DIRECTORIES = [
         'C:\\ProgramData\\ComposerSetup\\bin',
@@ -222,13 +224,15 @@ class AdminController extends Controller
 
         foreach ($binaryNames as $binaryName) {
             $commands[] = [$binaryName, ...$arguments];
-            $commands[] = $this->shellCommand($binaryName, $arguments);
         }
 
         if (PHP_OS_FAMILY !== 'Windows') {
             foreach ($binaryNames as $binaryName) {
                 foreach ($this->processPathDirectories() as $directory) {
-                    $commands[] = [rtrim($directory, '/').'/'.$binaryName, ...$arguments];
+                    $path = rtrim($directory, '/').'/'.$binaryName;
+                    if (is_file($path) && is_executable($path)) {
+                        $commands[] = [$path, ...$arguments];
+                    }
                 }
             }
         }
@@ -265,7 +269,7 @@ class AdminController extends Controller
     private function commandVersion(array|string $command, ?string $pattern = null): ?string
     {
         try {
-            $result = Process::timeout(2)
+            $result = Process::timeout(self::VERSION_COMMAND_TIMEOUT_SECONDS)
                 ->path(base_path())
                 ->env($this->processEnvironment())
                 ->run($command);
@@ -304,20 +308,6 @@ class AdminController extends Controller
             [$binary, ...$arguments],
             $this->windowsShellCommand($binary, $arguments),
         ];
-    }
-
-    /**
-     * @param  array<int, string>  $arguments
-     */
-    private function shellCommand(string $binary, array $arguments): string
-    {
-        if (PHP_OS_FAMILY === 'Windows') {
-            return $this->windowsShellCommand($binary, $arguments);
-        }
-
-        return collect([$binary, ...$arguments])
-            ->map(fn (string $argument): string => preg_match('/^[A-Za-z0-9_@%+=:,./-]+$/', $argument) ? $argument : escapeshellarg($argument))
-            ->implode(' ');
     }
 
     /**
