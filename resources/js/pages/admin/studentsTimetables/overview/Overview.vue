@@ -4857,6 +4857,7 @@ export default {
 
 .semester-timetable {
     overflow: hidden;
+    min-width: 0;
 }
 
 .semester-timetable__header {
@@ -5346,6 +5347,81 @@ export default {
 
     .transferred-student-course-section__title {
         flex: initial;
+    }
+
+    .timetable-generated-grid {
+        grid-template-columns: 52px repeat(var(--overview-timetable-weekdays, 5), minmax(56px, 1fr));
+        grid-template-rows: 28px;
+        grid-auto-rows: minmax(44px, auto);
+    }
+
+    .timetable-generated-cell {
+        padding: 3px;
+        font-size: 0.68rem;
+    }
+
+    .timetable-generated-cell--has-single-date-markers {
+        padding-top: 18px;
+    }
+
+    .timetable-generated-cell__content {
+        min-height: 36px;
+    }
+
+    .timetable-generated-cell__code {
+        font-size: 0.68rem;
+    }
+
+    .timetable-generated-cell__details {
+        font-size: 0.58rem;
+    }
+
+    .timetable-hour-num {
+        font-size: 0.68rem;
+    }
+
+    .timetable-hour-time {
+        font-size: 0.56rem;
+    }
+
+    .semester-timetable__header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .overview-active-label {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .overview-wizard-settings-summary {
+        flex: 0 0 auto;
+        max-width: 100%;
+        margin-left: 0;
+        justify-items: start;
+        text-align: left;
+    }
+
+    .overview-wizard-settings-summary__list {
+        justify-content: flex-start;
+    }
+
+    .recurrence-week-selector__pdf-btn {
+        margin-left: 0;
+    }
+
+    .overview-wizard-button,
+    .overview-manual-button {
+        width: 100%;
+    }
+
+    .course-choice-panel__header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .course-menu-dialog-options {
+        justify-content: flex-start;
     }
 }
 </style>

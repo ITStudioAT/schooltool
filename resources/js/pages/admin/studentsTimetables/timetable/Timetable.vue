@@ -2915,4 +2915,59 @@ export default {
     color: rgba(30, 64, 175, 0.72);
     font-size: 0.72rem;
 }
+
+@media (max-width: 640px) {
+    .st-import-page-title {
+        flex-wrap: wrap;
+    }
+
+    .st-import-back-button {
+        margin-left: 0;
+    }
+
+    .st-import-file-info-card__title {
+        flex-wrap: wrap;
+    }
+
+    .st-import-file-info-card__button {
+        margin-left: 0;
+    }
+
+    .st-import-file-info-card__actions {
+        margin-left: 0;
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .st-import-history-title {
+        flex-wrap: wrap;
+    }
+
+    .st-import-history-delete-button {
+        flex-basis: 100%;
+    }
+
+    .st-main-dataset-summary__header {
+        flex-wrap: wrap;
+    }
+
+    .st-import-history-subject-table :deep(table),
+    .st-import-history-teacher-table :deep(table) {
+        table-layout: auto;
+    }
+
+    .st-import-history-subject-table :deep(th:first-child),
+    .st-import-history-subject-table :deep(td:first-child),
+    .st-import-history-teacher-table :deep(th:first-child),
+    .st-import-history-teacher-table :deep(td:first-child) {
+        width: auto;
+        min-width: 80px;
+        max-width: none;
+    }
+
+    .st-single-date-select-col {
+        width: 56px;
+        min-width: 56px;
+    }
+}
 </style>

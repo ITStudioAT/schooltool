@@ -10523,6 +10523,45 @@ export default {
         grid-template-columns: 44px minmax(46px, 0.8fr) minmax(92px, 1.5fr) minmax(52px, 0.7fr) minmax(34px, 0.4fr);
         gap: 6px;
     }
+
+    .robot-generated-grid {
+        grid-template-columns: 52px repeat(var(--robot-generated-weekdays, 6), minmax(56px, 1fr));
+    }
+
+    .robot-generated-cell {
+        padding: 3px;
+        font-size: 0.68rem;
+    }
+
+    .robot-generated-cell--has-occasional {
+        padding-top: 14px;
+    }
+
+    .robot-generated-cell__code {
+        font-size: 0.68rem;
+    }
+
+    .robot-generated-cell__details {
+        font-size: 0.58rem;
+    }
+
+    .robot-generated-cell__date {
+        font-size: 0.6rem;
+    }
+
+    .robot-generated-timetable__header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .robot-generated-header__actions {
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .robot-generated-overtake-button {
+        width: 100%;
+    }
 }
 
 .robot-eval-criteria-summary {

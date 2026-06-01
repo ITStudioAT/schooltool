@@ -2,6 +2,12 @@
 
 For any Laravel/project questions, DO NOT guess. Always inspect the real project state first using Laravel Boost MCP tools and/or local project commands.
 
+## File editing behavior
+
+Prefer Claude Code's built-in Read/Edit/Write/MultiEdit tools for file changes.
+Do not create or rewrite project files with Bash heredocs such as `cat > file <<'SCRIPT'` unless the user explicitly asks for a shell-only workflow.
+For temporary scripts, prefer a proper file-write tool first, then execute the script separately.
+
 Use Boost tools by default for:
 
 - routing (route definitions, middleware stacks, route groups)

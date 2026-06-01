@@ -1089,4 +1089,23 @@ export default {
     color: rgba(0, 0, 0, 0.46);
     text-decoration: line-through;
 }
+
+@media (max-width: 640px) {
+    .main-import-meta-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .single-date-select-col {
+        width: 56px;
+        min-width: 56px;
+    }
+
+    .import-history-title {
+        flex-wrap: wrap;
+    }
+
+    .import-history-unimport-button {
+        flex-basis: 100%;
+    }
+}
 </style>
