@@ -24,6 +24,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
+use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -2030,6 +2031,70 @@ it('saves selected timetable overview courses in the database', function () {
     expect(StudentTimetableOverviewSelection::query()->count())->toBe(0);
 });
 
+it('creates a timetable overview pdf from posted timetable data', function () {
+    Pdf::fake();
+
+    $user = createStudentsTimetablesUserWithLicence();
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/overview/pdf', [
+            'title' => 'Stundenplan',
+            'schoolyear' => '2025/26',
+            'student' => '1C · PABINGER Elena',
+            'generated_at' => '31.05.2026, 20:00',
+            'weekdays' => [
+                ['label' => 'Mo'],
+                ['label' => 'Di'],
+            ],
+            'semesters' => [
+                [
+                    'label' => 'Semester',
+                    'date_range' => '16.02.2026 - 10.07.2026',
+                    'weeks' => [
+                        [
+                            'label' => 'Stundenplan',
+                            'hours' => [
+                                [
+                                    'hour' => 1,
+                                    'from' => '08:00',
+                                    'until' => '08:45',
+                                    'cells' => [
+                                        [
+                                            'status' => 'filled',
+                                            'courses' => [
+                                                ['label' => 'M2 - 2S - ALT', 'details' => '1w'],
+                                                ['label' => 'E2 - 1U - NIE', 'details' => '1-wöchig · 09.05. - 11.07.'],
+                                                ['label' => 'D2 - 1U - HER', 'details' => '1-wöchig · 21.02. - 25.04.'],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                        [
+                                            'status' => 'empty',
+                                            'courses' => [],
+                                            'markers' => [],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ])
+        ->assertSuccessful();
+
+    Pdf::assertRespondedWithPdf(function ($pdf): bool {
+        return $pdf->viewName === 'pdfs.students-timetable-overview'
+            && $pdf->downloadName === 'stundenplan.pdf'
+            && $pdf->isDownload()
+            && $pdf->contains('M2 - 2S - ALT')
+            && $pdf->contains('+2 weitere Termine')
+            && $pdf->contains('class="pdf-page"')
+            && $pdf->contains('--pdf-scale:')
+            && $pdf->contains('1C · PABINGER Elena');
+    });
+});
+
 it('unimports a timetable import run and removes its associated entries', function () {
     Queue::fake();
 
@@ -2211,6 +2276,7 @@ it('does not duplicate the course prefix in timetable display labels', function 
         'semester' => 1,
         'period' => '1',
         'course' => 'ETH',
+        'module_code' => 'ETH3',
         'subject' => 'ETH',
         'teacher' => 'RU-HER',
         'room' => '14:305R~5U',
@@ -2223,7 +2289,8 @@ it('does not duplicate the course prefix in timetable display labels', function 
         ->json('data'));
 
     expect($groups->firstWhere('title', 'ETH')['display_label'])
-        ->toBe('ETH3 - 5RU - HER');
+        ->toBe('ETH3 - 5RU - HER')
+        ->and($groups->firstWhere('title', 'ETH')['module_code'])->toBe('ETH3');
 });
 
 it('removes embedded end times from timetable display labels', function () {

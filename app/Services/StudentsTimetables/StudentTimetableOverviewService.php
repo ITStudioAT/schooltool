@@ -19,6 +19,8 @@ class StudentTimetableOverviewService
 
     private const CACHE_TTL_MINUTES = 30;
 
+    private const CACHE_VERSION = 2;
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -131,7 +133,7 @@ class StudentTimetableOverviewService
 
     private static function cacheKey(int $schoolId, int $schoolyearId): string
     {
-        return "students-timetables:overview:course-groups:{$schoolId}:{$schoolyearId}";
+        return 'students-timetables:overview:course-groups:v'.self::CACHE_VERSION.":{$schoolId}:{$schoolyearId}";
     }
 
     /**
@@ -153,6 +155,7 @@ class StudentTimetableOverviewService
                 'semester',
                 'period',
                 'subject',
+                'module_code',
                 'teacher',
                 'room',
                 'class_name',
@@ -198,6 +201,7 @@ class StudentTimetableOverviewService
             'weekday' => $weekday,
             'hour' => $hour,
             'subject' => $this->cleanText($entry->subject),
+            'module_code' => $this->cleanText($entry->module_code),
             'teacher' => $this->cleanText($entry->teacher),
             'room' => $this->cleanText($entry->room),
             'class_name' => $this->cleanText($entry->class_name),
@@ -253,6 +257,7 @@ class StudentTimetableOverviewService
             'display_label' => $this->displayLabel($firstEntry, $entries),
             'subject' => $firstEntry['subject'],
             'course' => $firstEntry['course'],
+            'module_code' => $firstEntry['module_code'],
             'teacher' => $firstEntry['teacher'],
             'rooms' => $entries->pluck('room')->filter()->unique()->values()->all(),
             'class_name' => $firstEntry['class_name'],

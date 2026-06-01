@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" xl="10">
+    <v-col cols="12" xl="10" class="students-timetable-overview">
         <v-card rounded="lg" border>
             <v-card-title class="d-flex flex-wrap align-center ga-2">
                 <v-icon icon="mdi-calendar-clock" />
@@ -9,6 +9,7 @@
                 </v-chip>
                 <v-spacer />
                 <v-btn
+                    class="overview-print-hidden"
                     color="grey-darken-1"
                     variant="outlined"
                     size="small"
@@ -301,15 +302,6 @@
                             </v-tooltip>
                         </div>
                         <div class="course-choice-panel__actions">
-                            <v-switch
-                                :model-value="restrictCourseChoiceBySelection"
-                                color="primary"
-                                density="compact"
-                                hide-details
-                                inset
-                                label="Nach Auswahl einschränken"
-                                class="course-choice-restriction-switch"
-                                @update:model-value="handleCourseChoiceRestrictionUpdate" />
                             <v-chip size="x-small" color="primary" variant="tonal">
                                 {{ selectedCourseCount }} ausgewählt
                             </v-chip>
@@ -353,7 +345,6 @@
 
                         <div v-if="recurrenceWeekOptions(semester.value).length > 1" class="recurrence-week-selector">
                             <v-btn-toggle
-                                v-if="!areRecurrenceWeeksExpanded(semester.value)"
                                 :model-value="selectedTimetableOptionValue(semester.value)"
                                 mandatory
                                 density="compact"
@@ -371,13 +362,18 @@
                                 </v-btn>
                             </v-btn-toggle>
                             <v-btn
-                                size="small"
-                                color="grey-darken-1"
-                                variant="outlined"
-                                prepend-icon="mdi-table-multiple"
-                                class="recurrence-week-selector__action-btn"
-                                @click="handleToggleRecurrenceWeeksClick(semester.value)">
-                                {{ areRecurrenceWeeksExpanded(semester.value) ? 'Eine Woche anzeigen' : 'Wochen anzeigen' }}
+                                class="recurrence-week-selector__btn recurrence-week-selector__pdf-btn overview-print-hidden"
+                                color="error"
+                                density="compact"
+                                variant="flat"
+                                size="large"
+                                prepend-icon="mdi-file-pdf-box"
+                                title="Stundenplan als PDF speichern"
+                                aria-label="Stundenplan als PDF speichern"
+                                :disabled="loading || timetableUpdatePending"
+                                :loading="pdfExporting"
+                                @click="downloadTimetablePdf">
+                                PDF
                             </v-btn>
                         </div>
 
@@ -461,13 +457,6 @@
 
                             <div v-if="shouldShowExtraDatesNotice(semester.value, timetableWeek)" class="extra-dates-notice">
                                 <span class="extra-dates-notice__text">Zusatzwochen vorhanden</span>
-                                <v-checkbox
-                                    :model-value="showExtraDatesInSelectedWeek(semester.value)"
-                                    color="primary"
-                                    density="compact"
-                                    hide-details
-                                    label="Im aktuellen Stundenplan anzeigen"
-                                    @update:model-value="handleShowExtraDatesUpdate(semester.value, $event)" />
                             </div>
                         </div>
 
@@ -652,6 +641,18 @@
                 </v-card-title>
                 <v-divider />
                 <v-card-text>
+                    <div class="course-menu-dialog-options">
+                        <v-switch
+                            :model-value="restrictCourseChoiceBySelection"
+                            color="primary"
+                            density="compact"
+                            hide-details
+                            inset
+                            label="Nur Vorgesehene anzeigen"
+                            class="course-choice-restriction-switch"
+                            @update:model-value="handleCourseChoiceRestrictionUpdate" />
+                    </div>
+
                     <div class="course-menu-dialog-chips">
                         <v-chip
                             v-for="courseMenu in allCourseChoiceMenus"
@@ -817,6 +818,7 @@ import RobotTimetable from '../robot/RobotTimetable.vue'
 
 const FALLBACK_HOUR_COUNT = 10
 const ALL_DATES_OPTION_VALUE = 'all_dates'
+const ALL_WEEKS_OPTION_VALUE = 'all_weeks'
 const TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:overview:last-timetable'
 const ROBOT_TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:robot:last-settings'
 const TIMETABLE_OVERVIEW_BASE_PATH = '/admin/students-timetables/timetable/overview'
@@ -848,6 +850,7 @@ export default {
             manualPanelSource: null,
             wizardTimetableCreating: false,
             timetableUpdatePending: false,
+            pdfExporting: false,
             studentDialogOpen: false,
             studentOptionsLoading: false,
             studentSearch: '',
@@ -1032,17 +1035,14 @@ export default {
                 ])))
         },
         restrictedStudentCourseCodes() {
-            const courses = this.transferredStudentContext?.courses || {}
+            const studentCourses = Array.isArray(this.transferredStudentCourseRestrictionItems)
+                ? this.transferredStudentCourseRestrictionItems
+                : this.transferredStudentCourseRestrictionItemsFromCourses(this.transferredStudentContext?.courses)
             const selectionCourseChoiceCodes = this.selectionCourseChoiceCodes instanceof Set
                 ? this.selectionCourseChoiceCodes
                 : new Set()
 
-            return new Set([
-                ...selectionCourseChoiceCodes,
-                ...(courses.missing || []),
-                ...(courses.planned || []),
-                ...(courses.additional || []),
-            ]
+            return new Set((studentCourses.length ? studentCourses : [...selectionCourseChoiceCodes])
                 .flatMap(course => (
                     typeof course === 'string'
                         ? [course]
@@ -1053,6 +1053,9 @@ export default {
                         ])
                 ))
                 .filter(Boolean))
+        },
+        transferredStudentCourseRestrictionItems() {
+            return this.transferredStudentCourseRestrictionItemsFromCourses(this.transferredStudentContext?.courses)
         },
         selectedCourseMenuEntriesBySemester() {
             return {
@@ -1496,22 +1499,136 @@ export default {
                 this.setSelectedTimetableOptionValue(semester, value)
             })
         },
-        handleToggleRecurrenceWeeksClick(semester) {
-            this.runTimetableUpdate(() => {
-                this.toggleRecurrenceWeeks(semester)
-            })
-        },
-        handleShowExtraDatesUpdate(semester, value) {
-            this.runTimetableUpdate(() => {
-                this.setShowExtraDatesInSelectedWeek(semester, value)
-            })
-        },
         handleCourseChoiceRestrictionUpdate(value) {
             this.runTimetableUpdate(() => {
                 this.restrictCourseChoiceBySelection = Boolean(value)
                 this.selectedCourseMenuKey = ''
                 this.persistTimetableState()
             })
+        },
+        async downloadTimetablePdf() {
+            if (this.pdfExporting) return
+
+            this.pdfExporting = true
+
+            try {
+                const response = await axios.post(
+                    '/api/admin/students-timetables/overview/pdf',
+                    this.timetablePdfPayload(),
+                    { responseType: 'blob' },
+                )
+                const fileName = this.fileNameFromContentDisposition(response?.headers?.['content-disposition'])
+                    || 'stundenplan.pdf'
+                const blob = response?.data instanceof Blob
+                    ? response.data
+                    : new Blob([response?.data], { type: 'application/pdf' })
+
+                this.downloadBlob(blob, fileName)
+            } catch (error) {
+                console.error(error)
+                window.alert?.('PDF konnte nicht erstellt werden.')
+            } finally {
+                this.pdfExporting = false
+            }
+        },
+        timetablePdfPayload() {
+            return {
+                title: 'Stundenplan',
+                schoolyear: this.schoolyearName || '',
+                student: this.transferredStudentContext?.student?.label || '',
+                generated_at: new Intl.DateTimeFormat('de-AT', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                }).format(new Date()),
+                weekdays: this.displayedWeekdays.map(weekday => ({
+                    label: weekday.label,
+                })),
+                semesters: this.visibleTimetableSemesters.map(semester => this.timetablePdfSemesterPayload(semester)),
+            }
+        },
+        timetablePdfSemesterPayload(semester) {
+            return {
+                label: semester.label,
+                date_range: semester.dateRangeLabel,
+                weeks: this.visibleTimetableWeeks(semester.value)
+                    .map(timetableWeek => this.timetablePdfWeekPayload(semester, timetableWeek)),
+            }
+        },
+        timetablePdfWeekPayload(semester, timetableWeek) {
+            return {
+                label: timetableWeek.showLabel ? timetableWeek.label : '',
+                hours: this.timetableHoursForSemester(semester.value, timetableWeek)
+                    .map(hour => this.timetablePdfHourPayload(semester, timetableWeek, hour)),
+            }
+        },
+        timetablePdfHourPayload(semester, timetableWeek, hour) {
+            return {
+                hour: Number(hour.hour),
+                from: hour.from || '',
+                until: hour.until || '',
+                cells: this.displayedWeekdays.map(weekday => (
+                    this.timetablePdfCellPayload(semester.value, weekday.value, hour.hour, timetableWeek)
+                )),
+            }
+        },
+        timetablePdfCellPayload(semester, weekday, hour, timetableWeek) {
+            const courses = this.displayCourseGroupsForCell(semester, weekday, hour, timetableWeek)
+                .map(courseGroup => this.timetablePdfCoursePayload(courseGroup))
+            const markers = this.courseGroupSingleDateOverlapMarkersForCell(semester, weekday, hour, timetableWeek)
+                .map(marker => ({
+                    label: marker.label || '',
+                    title: marker.title || '',
+                }))
+
+            return {
+                status: this.timetablePdfCellStatus(semester, weekday, hour, timetableWeek, courses, markers),
+                courses,
+                markers,
+            }
+        },
+        timetablePdfCellStatus(semester, weekday, hour, timetableWeek, courses, markers) {
+            if (this.cellHasOverlap(semester, weekday, hour, timetableWeek)) return 'conflict'
+            if (this.cellHasRelatedOverlap(semester, weekday, hour, timetableWeek)) return 'related'
+            if (courses.length || markers.length) return 'filled'
+
+            return 'empty'
+        },
+        timetablePdfCoursePayload(courseGroup) {
+            return {
+                label: (courseGroup?.display_label || courseGroup?.title || courseGroup?.course || '').toString(),
+                details: [
+                    courseGroup?.recurrence_label,
+                    courseGroup?.is_block ? this.courseGroupBlockLabel(courseGroup) : '',
+                ].filter(Boolean).join(' · '),
+            }
+        },
+        downloadBlob(blob, filename) {
+            const objectUrl = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+
+            link.href = objectUrl
+            link.download = filename
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            URL.revokeObjectURL(objectUrl)
+        },
+        fileNameFromContentDisposition(headerValue) {
+            const normalizedHeader = String(headerValue || '').trim()
+            if (!normalizedHeader) return ''
+
+            const utf8Match = normalizedHeader.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
+            if (utf8Match?.[1]) {
+                try {
+                    return decodeURIComponent(utf8Match[1]).replace(/["']/g, '').trim()
+                } catch {
+                    return utf8Match[1].replace(/["']/g, '').trim()
+                }
+            }
+
+            const plainMatch = normalizedHeader.match(/filename\s*=\s*"?(?<file>[^";]+)"?/i)
+
+            return plainMatch?.groups?.file?.trim() || ''
         },
         openStudentDialog() {
             this.studentSelectionDraft = {
@@ -2840,19 +2957,114 @@ export default {
                 .sort((left, right) => left.label.localeCompare(right.label, 'de', { sensitivity: 'base' }))
         },
         courseGroupMatchesCourseChoiceRestriction(courseGroup) {
+            const courseGroupCodes = this.courseGroupCodes(courseGroup)
+            const studentCourseCodes = this.restrictedStudentCourseCodes instanceof Set
+                ? this.restrictedStudentCourseCodes
+                : new Set()
+            const transferredStudentCourseRestrictionItems = Array.isArray(this.transferredStudentCourseRestrictionItems)
+                ? this.transferredStudentCourseRestrictionItems
+                : this.transferredStudentCourseRestrictionItemsFromCourses(this.transferredStudentContext?.courses)
+            const hasTransferredStudentCourseRestrictions = transferredStudentCourseRestrictionItems.length > 0
+
+            if (hasTransferredStudentCourseRestrictions && studentCourseCodes.size) {
+                return this.courseGroupMatchesRestrictedCourseCodes(courseGroupCodes, studentCourseCodes, courseGroup)
+            }
+
             if (
                 this.shouldRestrictCourseChoiceByTimetableSemester()
                 && !this.courseGroupMatchesSelectedTimetableSemester(courseGroup)
             ) return false
             if (!this.courseGroupMatchesSelectedChoiceOptions(courseGroup)) return false
 
-            const studentCourseCodes = this.restrictedStudentCourseCodes instanceof Set
-                ? this.restrictedStudentCourseCodes
-                : new Set()
             if (!studentCourseCodes.size) return true
 
-            return this.courseGroupCodes(courseGroup)
-                .some(courseCode => studentCourseCodes.has(courseCode))
+            return this.courseGroupMatchesRestrictedCourseCodes(courseGroupCodes, studentCourseCodes)
+        },
+        transferredStudentCourseRestrictionItemsFromCourses(courses = {}) {
+            return [
+                ...(Array.isArray(courses?.missing) ? courses.missing : []),
+                ...(Array.isArray(courses?.planned) ? courses.planned : []),
+                ...(Array.isArray(courses?.additional) ? courses.additional : []),
+            ]
+        },
+        courseGroupMatchesRestrictedCourseCodes(courseGroupCodes, restrictedCourseCodes, courseGroup = null) {
+            if (!(restrictedCourseCodes instanceof Set) || !restrictedCourseCodes.size) return false
+
+            const normalizedCourseGroupCodes = this.uniqueValues(courseGroupCodes)
+            if (normalizedCourseGroupCodes.some(courseCode => (
+                restrictedCourseCodes.has(courseCode)
+                && this.courseGroupCodeMatchesTimetableSemester(courseCode, courseGroup)
+            ))) return true
+
+            return normalizedCourseGroupCodes.some(courseGroupCode => {
+                const courseGroupParts = this.courseCodeModuleParts(courseGroupCode)
+                if (courseGroupParts.module) return false
+
+                const courseGroupBaseAliases = this.courseBaseAliasesForCourseChoiceRestriction(courseGroupParts.base)
+                if (this.courseGroupHasDifferentModuleForRestrictedBase(
+                    normalizedCourseGroupCodes,
+                    courseGroupBaseAliases,
+                    restrictedCourseCodes,
+                )) return false
+
+                return [...restrictedCourseCodes].some(restrictedCourseCode => {
+                    const restrictedCourseParts = this.courseCodeModuleParts(restrictedCourseCode)
+                    if (!restrictedCourseParts.module) return false
+
+                    const restrictedTimetableSemester = this.courseCodeTimetableSemester(restrictedCourseParts.module)
+                    if (
+                        restrictedTimetableSemester
+                        && !this.courseGroupMatchesTimetableSemester(courseGroup, restrictedTimetableSemester)
+                    ) return false
+
+                    return this.courseBaseAliasesForCourseChoiceRestriction(restrictedCourseParts.base)
+                        .some(baseAlias => courseGroupBaseAliases.includes(baseAlias))
+                })
+            })
+        },
+        courseGroupHasDifferentModuleForRestrictedBase(courseGroupCodes, courseGroupBaseAliases, restrictedCourseCodes) {
+            const restrictedModules = [...restrictedCourseCodes]
+                .map(courseCode => this.courseCodeModuleParts(courseCode))
+                .filter(parts => parts.module)
+                .filter(parts => this.courseBaseAliasesForCourseChoiceRestriction(parts.base)
+                    .some(baseAlias => courseGroupBaseAliases.includes(baseAlias)))
+
+            if (!restrictedModules.length) return false
+
+            return courseGroupCodes
+                .map(courseCode => this.courseCodeModuleParts(courseCode))
+                .filter(parts => parts.module)
+                .some(parts => (
+                    this.courseBaseAliasesForCourseChoiceRestriction(parts.base)
+                        .some(baseAlias => courseGroupBaseAliases.includes(baseAlias))
+                    && !restrictedModules.some(restrictedParts => restrictedParts.module === parts.module)
+                ))
+        },
+        courseBaseAliasesForCourseChoiceRestriction(base) {
+            const normalizedBase = this.courseCodeWithoutModule(base)
+
+            return this.uniqueValues([
+                normalizedBase,
+                this.courseCodeWithoutModule(this.defaultTimetableCodeAlias(normalizedBase)),
+            ].filter(Boolean))
+        },
+        courseGroupCodeMatchesTimetableSemester(courseCode, courseGroup) {
+            const courseGroupParts = this.courseCodeModuleParts(courseCode)
+            const timetableSemester = this.courseCodeTimetableSemester(courseGroupParts.module)
+            if (!timetableSemester) return true
+
+            return this.courseGroupMatchesTimetableSemester(courseGroup, timetableSemester)
+        },
+        courseGroupMatchesTimetableSemester(courseGroup, timetableSemester) {
+            if (!courseGroup) return true
+
+            return Number(courseGroup?.semester) === Number(timetableSemester)
+        },
+        courseCodeTimetableSemester(module) {
+            const moduleNumber = Number(module)
+            if (!Number.isInteger(moduleNumber) || moduleNumber <= 0) return null
+
+            return moduleNumber % 2 === 0 ? 2 : 1
         },
         shouldRestrictCourseChoiceByTimetableSemester() {
             const selectedTimetableSemester = this.selectedTimetableSemesterForSelection()
@@ -2937,6 +3149,8 @@ export default {
         courseGroupCodes(courseGroup) {
             return this.courseAliasesFromValues([
                 courseGroup?.course,
+                courseGroup?.module_code,
+                courseGroup?.moduleCode,
                 courseGroup?.title,
                 courseGroup?.display_label,
                 courseGroup?.subject,
@@ -3215,6 +3429,7 @@ export default {
                 this.allDatesOption(semester),
                 ...this.recurrenceWeekOptions(semester),
                 ...this.extraDatesOptions(semester),
+                this.allWeeksOption(semester),
             ]
         },
         allDatesOption(semester) {
@@ -3222,7 +3437,16 @@ export default {
                 key: `semester-${semester}-all-dates`,
                 type: 'all_dates',
                 value: ALL_DATES_OPTION_VALUE,
-                label: 'Alle Termine',
+                label: 'Stundenplan',
+                showLabel: false,
+            }
+        },
+        allWeeksOption(semester) {
+            return {
+                key: `semester-${semester}-all-weeks`,
+                type: 'all_weeks',
+                value: ALL_WEEKS_OPTION_VALUE,
+                label: 'Alle Wochen',
                 showLabel: false,
             }
         },
@@ -3237,6 +3461,10 @@ export default {
             return selectedWeek
         },
         selectedTimetableOptionValue(semester) {
+            if (this.areRecurrenceWeeksExpanded(semester)) {
+                return ALL_WEEKS_OPTION_VALUE
+            }
+
             const selectedValue = this.selectedRecurrenceWeeks?.[Number(semester)]
             if (selectedValue === ALL_DATES_OPTION_VALUE) {
                 return selectedValue
@@ -3253,10 +3481,27 @@ export default {
             return ALL_DATES_OPTION_VALUE
         },
         setSelectedTimetableOptionValue(semester, value) {
+            const semesterNumber = Number(semester)
+
+            if (value === ALL_WEEKS_OPTION_VALUE) {
+                this.expandedRecurrenceWeeks = {
+                    ...this.expandedRecurrenceWeeks,
+                    [semesterNumber]: true,
+                }
+                this.saveLastTimetableState?.()
+
+                return
+            }
+
+            this.expandedRecurrenceWeeks = {
+                ...this.expandedRecurrenceWeeks,
+                [semesterNumber]: false,
+            }
+
             if ([ALL_DATES_OPTION_VALUE, 'extra_dates'].includes(value)) {
                 this.selectedRecurrenceWeeks = {
                     ...this.selectedRecurrenceWeeks,
-                    [Number(semester)]: value,
+                    [semesterNumber]: value,
                 }
                 this.saveLastTimetableState?.()
 
@@ -3363,21 +3608,10 @@ export default {
                 && !this.areRecurrenceWeeksExpanded(semester)
                 && this.extraDatesOptions(semester).length > 0
         },
-        showExtraDatesInSelectedWeek(semester) {
-            return Boolean(this.showExtraDatesInSelectedWeeks?.[Number(semester)])
-        },
-        setShowExtraDatesInSelectedWeek(semester, value) {
-            this.showExtraDatesInSelectedWeeks = {
-                ...this.showExtraDatesInSelectedWeeks,
-                [Number(semester)]: Boolean(value),
-            }
-            this.saveLastTimetableState?.()
-        },
         shouldIncludeExtraDatesInRegularWeek(semester) {
             return this.selectedTimetableOptionValue(semester) !== 'extra_dates'
                 && !this.areRecurrenceWeeksExpanded(semester)
                 && this.extraDatesOptions(semester).length > 0
-                && this.showExtraDatesInSelectedWeek(semester)
         },
         courseGroupHasRegularRecurrence(courseGroup) {
             return [1, 2, 3, 4].includes(Number(courseGroup?.recurrence_interval))
@@ -4275,6 +4509,12 @@ export default {
     flex: 0 0 auto;
 }
 
+.course-menu-dialog-options {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+}
+
 .course-choice-panel__title {
     color: #172554;
     font-size: 0.86rem;
@@ -4523,8 +4763,10 @@ export default {
     min-width: 76px;
 }
 
-.recurrence-week-selector__action-btn {
-    background: #ffffff;
+.recurrence-week-selector__pdf-btn {
+    align-self: stretch;
+    margin-left: auto;
+    min-width: 96px;
 }
 
 .timetable-week + .timetable-week {
@@ -4791,6 +5033,10 @@ export default {
 
 .course-date-chip__time {
     font-weight: 700;
+}
+
+.overview-print-hidden {
+    flex: 0 0 auto;
 }
 
 @media (max-width: 900px) {

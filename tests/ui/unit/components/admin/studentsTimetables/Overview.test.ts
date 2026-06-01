@@ -3,6 +3,36 @@ import { describe, expect, it, vi } from 'vitest'
 import Overview from '@/pages/admin/studentsTimetables/overview/Overview.vue'
 
 describe('Students timetable overview', () => {
+    it('downloads a generated timetable pdf', async () => {
+        const methods = (Overview as any).methods
+        const originalAxios = globalThis.axios
+        const post = vi.fn().mockResolvedValue({
+            data: new Blob(['pdf'], { type: 'application/pdf' }),
+            headers: {
+                'content-disposition': 'attachment; filename="stundenplan-test.pdf"',
+            },
+        })
+        const payload = { title: 'Stundenplan' }
+        const ctx = {
+            pdfExporting: false,
+            timetablePdfPayload: () => payload,
+            fileNameFromContentDisposition: methods.fileNameFromContentDisposition,
+            downloadBlob: vi.fn(),
+        }
+
+        globalThis.axios = { post } as never
+
+        await methods.downloadTimetablePdf.call(ctx)
+
+        expect(post).toHaveBeenCalledWith('/api/admin/students-timetables/overview/pdf', payload, {
+            responseType: 'blob',
+        })
+        expect(ctx.downloadBlob).toHaveBeenCalledWith(expect.any(Blob), 'stundenplan-test.pdf')
+        expect(ctx.pdfExporting).toBe(false)
+
+        globalThis.axios = originalAxios
+    })
+
     it('shows a pending state while queued timetable updates run', () => {
         vi.useFakeTimers()
         const methods = (Overview as any).methods
@@ -1170,6 +1200,7 @@ describe('Students timetable overview', () => {
             buildRecurrenceWeekOptions: methods.buildRecurrenceWeekOptions,
             timetableSelectorOptions: methods.timetableSelectorOptions,
             allDatesOption: methods.allDatesOption,
+            allWeeksOption: methods.allWeeksOption,
             selectedRecurrenceWeek: methods.selectedRecurrenceWeek,
             selectedTimetableOptionValue: methods.selectedTimetableOptionValue,
             setSelectedTimetableOptionValue: methods.setSelectedTimetableOptionValue,
@@ -1180,8 +1211,6 @@ describe('Students timetable overview', () => {
             extraDatesOptions: methods.extraDatesOptions,
             buildExtraDatesOptions: methods.buildExtraDatesOptions,
             shouldShowExtraDatesNotice: methods.shouldShowExtraDatesNotice,
-            showExtraDatesInSelectedWeek: methods.showExtraDatesInSelectedWeek,
-            setShowExtraDatesInSelectedWeek: methods.setShowExtraDatesInSelectedWeek,
             shouldIncludeExtraDatesInRegularWeek: methods.shouldIncludeExtraDatesInRegularWeek,
             courseGroupHasRegularRecurrence: methods.courseGroupHasRegularRecurrence,
             courseGroupHasExtraDateWeek: methods.courseGroupHasExtraDateWeek,
@@ -1213,20 +1242,14 @@ describe('Students timetable overview', () => {
         expect(methods.recurrenceWeekOptions.call(ctx, 1).map((option: Record<string, string>) => option.label))
             .toEqual(['Woche 1', 'Woche 2', 'Woche 3', 'Woche 4'])
         expect(methods.timetableSelectorOptions.call(ctx, 1).map((option: Record<string, string>) => option.label))
-            .toEqual(['Alle Termine', 'Woche 1', 'Woche 2', 'Woche 3', 'Woche 4', 'Zusatzwochen'])
+            .toEqual(['Stundenplan', 'Woche 1', 'Woche 2', 'Woche 3', 'Woche 4', 'Zusatzwochen', 'Alle Wochen'])
         expect(methods.selectedTimetableOptionValue.call(ctx, 1)).toBe('all_dates')
         expect(methods.visibleTimetableWeeks.call(ctx, 1).map((option: Record<string, string>) => option.label))
-            .toEqual(['Alle Termine'])
+            .toEqual(['Stundenplan'])
         expect(methods.courseGroupsForCell.call(ctx, 1, 2, 2)).toEqual([weekOneCourseGroup, weekTwoCourseGroup])
         expect(methods.courseGroupsForCell.call(ctx, 1, 4, 4)).toEqual([weeklyCourseGroup])
-        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3)).toEqual([])
-        expect(methods.shouldShowExtraDatesNotice.call(ctx, 1, methods.visibleTimetableWeeks.call(ctx, 1)[0])).toBe(true)
-
-        methods.setShowExtraDatesInSelectedWeek.call(ctx, 1, true)
-
-        expect(methods.showExtraDatesInSelectedWeek.call(ctx, 1)).toBe(true)
         expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3)).toEqual([blockCourseGroup])
-        methods.setShowExtraDatesInSelectedWeek.call(ctx, 1, false)
+        expect(methods.shouldShowExtraDatesNotice.call(ctx, 1, methods.visibleTimetableWeeks.call(ctx, 1)[0])).toBe(true)
 
         methods.setSelectedTimetableOptionValue.call(ctx, 1, 'extra_dates')
 
@@ -1241,17 +1264,12 @@ describe('Students timetable overview', () => {
         expect(ctx.selectedRecurrenceWeeks[1]).toBe(2)
         expect(methods.courseGroupsForCell.call(ctx, 1, 2, 2)).toEqual([weekTwoCourseGroup])
         expect(methods.courseGroupsForCell.call(ctx, 1, 4, 4)).toEqual([weeklyCourseGroup])
-        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3)).toEqual([])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3)).toEqual([blockCourseGroup])
         expect(methods.shouldShowExtraDatesNotice.call(ctx, 1, methods.visibleTimetableWeeks.call(ctx, 1)[0])).toBe(true)
 
-        methods.setShowExtraDatesInSelectedWeek.call(ctx, 1, true)
+        methods.setSelectedTimetableOptionValue.call(ctx, 1, 'all_weeks')
 
-        expect(methods.showExtraDatesInSelectedWeek.call(ctx, 1)).toBe(true)
-        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3)).toEqual([blockCourseGroup])
-
-        methods.setSelectedTimetableOptionValue.call(ctx, 1, 'extra_dates')
-        methods.toggleRecurrenceWeeks.call(ctx, 1)
-
+        expect(methods.selectedTimetableOptionValue.call(ctx, 1)).toBe('all_weeks')
         expect(methods.visibleTimetableWeeks.call(ctx, 1).map((option: Record<string, string>) => option.label))
             .toEqual(['Woche 1', 'Woche 2', 'Woche 3', 'Woche 4', 'Zusatzwochen'])
         const expandedWeeks = methods.visibleTimetableWeeks.call(ctx, 1)
@@ -1334,7 +1352,6 @@ describe('Students timetable overview', () => {
                 showLabel: true,
             }],
             areRecurrenceWeeksExpanded: methods.areRecurrenceWeeksExpanded,
-            showExtraDatesInSelectedWeek: methods.showExtraDatesInSelectedWeek,
             shouldIncludeExtraDatesInRegularWeek: methods.shouldIncludeExtraDatesInRegularWeek,
             courseGroupHasRegularRecurrence: methods.courseGroupHasRegularRecurrence,
             courseGroupHasExtraDateWeek: methods.courseGroupHasExtraDateWeek,
@@ -1343,13 +1360,9 @@ describe('Students timetable overview', () => {
             normalizeDate: methods.normalizeDate,
         }
 
-        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 11)).toEqual([recurringBlockCourseGroup])
-        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 11, ctx.extraDatesOptions()[0])).toEqual([extraDateCourseGroup])
-
-        ctx.showExtraDatesInSelectedWeeks[1] = true
-
         expect(methods.courseGroupsForCell.call(ctx, 1, 3, 11))
             .toEqual([recurringBlockCourseGroup, extraDateCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 11, ctx.extraDatesOptions()[0])).toEqual([extraDateCourseGroup])
     })
 
     it('builds recurrence week selector options from the largest selected interval', () => {
@@ -1709,6 +1722,26 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain("'timetable-generated-cell--related-overlap'")
         expect(componentSource).toContain("'timetable-generated-cell--has-single-date-markers'")
         expect(componentSource).toContain('courseGroupSingleDateOverlapMarkersForCell(semester.value, weekday.value, hour.hour, timetableWeek)')
+        expect(componentSource).toContain('prepend-icon="mdi-file-pdf-box"')
+        expect(componentSource).toContain('class="recurrence-week-selector__btn recurrence-week-selector__pdf-btn overview-print-hidden"')
+        expect(componentSource.indexOf('class="recurrence-week-selector__btn recurrence-week-selector__pdf-btn overview-print-hidden"'))
+            .toBeGreaterThan(componentSource.indexOf('class="recurrence-week-selector"'))
+        expect(componentSource).toContain('@click="downloadTimetablePdf"')
+        expect(componentSource).toContain("axios.post(\n                    '/api/admin/students-timetables/overview/pdf'")
+        expect(componentSource).toContain("responseType: 'blob'")
+        expect(componentSource).toContain(':loading="pdfExporting"')
+        expect(componentSource).toContain('size="large"')
+        expect(componentSource).toContain('margin-left: auto;')
+        expect(componentSource).toContain('downloadBlob(blob, fileName)')
+        expect(componentSource).not.toContain('window.print()')
+        expect(componentSource).not.toContain('overview-pdf-printing')
+        expect(componentSource).toContain('Zusatzwochen vorhanden')
+        expect(componentSource).not.toContain('label="Im aktuellen Stundenplan anzeigen"')
+        expect(componentSource).not.toContain('handleShowExtraDatesUpdate')
+        expect(componentSource).toContain('Alle Wochen')
+        expect(componentSource).not.toContain('Wochen anzeigen')
+        expect(componentSource).not.toContain('Eine Woche anzeigen')
+        expect(componentSource).not.toContain('recurrence-week-selector__action-btn')
         expect(componentSource).toContain(':title="marker.title"')
         expect(componentSource).toContain('timetable-generated-cell__single-date-marker')
         expect(componentSource).toContain(':style="timetableGridStyle"')
@@ -1740,7 +1773,10 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('grid-template-columns: minmax(0, 1fr);')
         expect(componentSource).toContain('visibleCourseChoiceSemesters')
         expect(componentSource).toContain('restrictCourseChoiceBySelection')
-        expect(componentSource).toContain('label="Nach Auswahl einschränken"')
+        expect(componentSource).toContain('label="Nur Vorgesehene anzeigen"')
+        expect(componentSource).toContain('class="course-menu-dialog-options"')
+        expect(componentSource.indexOf('class="course-menu-dialog-options"'))
+            .toBeGreaterThan(componentSource.indexOf('<v-dialog v-model="courseMenuDialog" persistent'))
         expect(componentSource).toContain('@update:model-value="handleCourseChoiceRestrictionUpdate"')
         expect(componentSource).toContain('courseGroupMatchesCourseChoiceRestriction(courseGroup)')
         expect(componentSource).toContain('selectionCourseChoiceCodes')
@@ -2080,12 +2116,143 @@ describe('Students timetable overview', () => {
                 return computed.restrictedStudentCourseCodes.call(this)
             },
         })
-
         const restrictedMenus = methods.buildSemesterCourseMenus.call(ctx, 2)
 
         expect(restrictedMenus.map((courseMenu: Record<string, string>) => courseMenu.label))
             .toEqual(['CH', 'ETH', 'S'])
         expect(methods.buildSemesterCourseMenus.call(ctx, 1)).toEqual([])
+    })
+
+    it('keeps additional student courses visible when restricting course choices', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            restrictCourseChoiceBySelection: true,
+            selection: {
+                semester: 1,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            configuredSchoolHours: [],
+            weekdays: [
+                { label: 'Mo', value: 1 },
+                { label: 'Di', value: 2 },
+                { label: 'Mi', value: 3 },
+                { label: 'Do', value: 4 },
+                { label: 'Fr', value: 5 },
+                { label: 'Sa', value: 6 },
+            ],
+            subjectRows: [
+                { id: 1, is_active: true, semester: 1, json_subject: 'D', json_code: 'D1', name: 'Deutsch 1', branch: 'common', hours_per_week: 3 },
+                { id: 2, is_active: true, semester: 2, json_subject: 'M', json_code: 'M2', name: 'Mathematik 2', branch: 'common', hours_per_week: 4 },
+                { id: 3, is_active: true, semester: 1, json_subject: 'E', json_code: 'E1', name: 'Englisch 1', branch: 'common', hours_per_week: 4 },
+            ],
+            configuredCourseGroups: [
+                { key: 'd-1', semester: 1, weekday: 1, hour: 1, course: 'D1', display_label: 'D1 - ABC', subject: 'D' },
+                { key: 'e-1', semester: 1, weekday: 1, hour: 2, course: 'E1', display_label: 'E1 - NIE', subject: 'E' },
+                { key: 'm-2', semester: 2, weekday: 2, hour: 1, course: 'M', module_code: 'M2', display_label: 'M - ALT', subject: 'M' },
+                { key: 'm-1', semester: 1, weekday: 2, hour: 1, course: 'M', module_code: 'M1', display_label: 'M - HER', subject: 'M' },
+                { key: 'm-3', semester: 1, weekday: 2, hour: 3, course: 'M', display_label: 'M3 - FUCH', subject: 'M' },
+                { key: 'm-4', semester: 2, weekday: 2, hour: 4, course: 'M', display_label: 'M4 - SCHM', subject: 'M' },
+                { key: 'e-2', semester: 2, weekday: 2, hour: 2, course: 'E2', display_label: 'E2 - NIE', subject: 'E' },
+            ],
+            transferredStudentContext: {
+                courses: {
+                    missing: [],
+                    planned: [{ code: 'D1', label: 'D1' }],
+                    additional: [{ code: 'M2', label: 'M2' }],
+                },
+            },
+        }
+
+        Object.defineProperty(ctx, 'courseChoiceCourseGroups', {
+            get() {
+                return computed.courseChoiceCourseGroups.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'restrictedStudentCourseCodes', {
+            get() {
+                return computed.restrictedStudentCourseCodes.call(this)
+            },
+        })
+        expect(methods.buildSemesterCourseMenus.call(ctx, 1).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['D'])
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['M'])
+    })
+
+    it('restricts course choices to the transferred student card courses', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const studentCourses = {
+            missing: [],
+            planned: ['D1', 'E1', 'ETH1', 'GW1', 'INF1', 'LPT', 'M1'].map(code => ({ code, label: code })),
+            additional: ['D2', 'E2', 'ETH2', 'GS1', 'GW2', 'L1', 'M2', 'BU1', 'CH1', 'PH1', 'PP1', 'INF2', 'ÖKO1']
+                .map(code => ({ code, label: code })),
+        }
+        const courseGroup = (code: string, semester: number) => ({
+            key: `${code}-${semester}`,
+            semester,
+            weekday: 1,
+            hour: 1,
+            course: code,
+            display_label: `${code} - TEST`,
+            subject: code.replace(/[0-9]/gu, ''),
+        })
+        const ctx = {
+            ...methods,
+            restrictCourseChoiceBySelection: true,
+            selection: {
+                semester: 1,
+                religion: 'ETH',
+                language: 'LPT',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            configuredSchoolHours: [],
+            weekdays: [{ label: 'Mo', value: 1 }],
+            configuredCourseGroups: [
+                ...['D1', 'E1', 'ETH1', 'GW1', 'INF1', 'LPT', 'M1', 'GS1', 'L1', 'BU1', 'CH1', 'PH1', 'PP1', 'ÖKO1']
+                    .map(code => courseGroup(code, 1)),
+                ...['D2', 'E2', 'ETH2', 'GW2', 'INF2'].map(code => courseGroup(code, 2)),
+                { ...courseGroup('M', 2), key: 'M2-2', module_code: 'M2', display_label: 'M2 - TEST' },
+                { ...courseGroup('M', 1), key: 'M3-1', display_label: 'M3 - TEST' },
+                { ...courseGroup('M', 2), key: 'M4-2', display_label: 'M4 - TEST' },
+                courseGroup('Rk1', 1),
+                courseGroup('BIO1', 1),
+                courseGroup('ME1', 1),
+            ],
+            transferredStudentContext: {
+                courses: studentCourses,
+            },
+        }
+
+        Object.defineProperty(ctx, 'courseChoiceCourseGroups', {
+            get() {
+                return computed.courseChoiceCourseGroups.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'restrictedStudentCourseCodes', {
+            get() {
+                return computed.restrictedStudentCourseCodes.call(this)
+            },
+        })
+
+        expect(new Set(methods.buildSemesterCourseMenus.call(ctx, 1).map((courseMenu: Record<string, string>) => courseMenu.label)))
+            .toEqual(new Set(['BU', 'CH', 'D', 'E', 'ETH', 'GS', 'GW', 'INF', 'L', 'LPT', 'M', 'PH', 'PP', 'ÖKO']))
+        expect(new Set(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label)))
+            .toEqual(new Set(['D', 'E', 'ETH', 'GW', 'INF', 'M']))
     })
 
     it('restricts course choice menus by selected options when no student is selected', () => {
