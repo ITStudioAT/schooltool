@@ -32,7 +32,7 @@
 
         $semesterTitleHeight = $isTwoColumns ? 3.5 : ($semesterCount * 3.5);
         $labelHeight = $semesterTitleHeight + ($labeledWeekCount * 2.5) + ($weekCount * 4);
-        $pageHeight = 202;
+        $pageHeight = 194;
         $headerHeight = 9;
         $availableRowHeight = max(24, $pageHeight - $headerHeight - $labelHeight);
         $rowHeight = max(4.2, min(8.5, $availableRowHeight / $hourRowCount));
@@ -70,6 +70,7 @@
                             $allCourseSlots->push([
                                 'label' => $crsLabel,
                                 'details' => trim((string) ($crs['details'] ?? '')),
+                                'dates' => array_filter(array_map('trim', (array) ($crs['dates'] ?? []))),
                                 'semester' => $semLabel,
                                 'semester_range' => $semRange,
                                 'weekday' => $weekdayLabels[$cellIdx] ?? '',
@@ -77,6 +78,7 @@
                                 'hour' => (int) ($hr['hour'] ?? 0),
                                 'time' => $timeRange,
                                 'status' => $cellStatus,
+                                'is_fu' => !empty($crs['is_fu']),
                             ]);
                         }
                     }
@@ -93,38 +95,56 @@
                 ->groupBy('weekday')
                 ->map(function ($weekdaySlots, string $weekday): string {
                     $hours = $weekdaySlots
-                        ->pluck('hour')
-                        ->filter(fn (int $hour): bool => $hour > 0)
-                        ->unique()
-                        ->sort()
+                        ->filter(fn (array $slot): bool => (int) ($slot['hour'] ?? 0) > 0)
+                        ->sortBy('hour')
+                        ->unique('hour')
                         ->values();
 
                     $ranges = collect();
                     $rangeStart = null;
                     $previousHour = null;
+                    $rangeStartTime = '';
+                    $rangeEndTime = '';
 
-                    foreach ($hours as $hour) {
+                    $pushRange = function () use (&$ranges, &$rangeStart, &$previousHour, &$rangeStartTime, &$rangeEndTime): void {
+                        if ($rangeStart === null) {
+                            return;
+                        }
+
+                        $hourRange = $rangeStart === $previousHour ? "{$rangeStart}." : "{$rangeStart}.-{$previousHour}.";
+                        $ranges->push(collect([$hourRange, $rangeStartTime && $rangeEndTime ? "{$rangeStartTime} - {$rangeEndTime}" : ''])
+                            ->filter()
+                            ->implode(' '));
+                    };
+
+                    foreach ($hours as $slot) {
+                        $hour = (int) ($slot['hour'] ?? 0);
+                        [$from, $until] = array_pad(preg_split('/\s*[–-]\s*/u', (string) ($slot['time'] ?? ''), 2) ?: [], 2, '');
+
                         if ($rangeStart === null) {
                             $rangeStart = $hour;
                             $previousHour = $hour;
+                            $rangeStartTime = trim((string) $from);
+                            $rangeEndTime = trim((string) $until);
 
                             continue;
                         }
 
                         if ($hour === $previousHour + 1) {
                             $previousHour = $hour;
+                            $rangeEndTime = trim((string) $until) ?: $rangeEndTime;
 
                             continue;
                         }
 
-                        $ranges->push($rangeStart === $previousHour ? "{$rangeStart}." : "{$rangeStart}.-{$previousHour}.");
+                        $pushRange();
                         $rangeStart = $hour;
                         $previousHour = $hour;
+                        $rangeStartTime = trim((string) $from);
+                        $rangeEndTime = trim((string) $until);
                     }
 
-                    if ($rangeStart !== null) {
-                        $ranges->push($rangeStart === $previousHour ? "{$rangeStart}." : "{$rangeStart}.-{$previousHour}.");
-                    }
+                    $pushRange();
 
                     return $ranges
                         ->map(fn (string $range): string => trim("{$weekday} {$range}"))
@@ -144,22 +164,21 @@
                 ->unique()
                 ->values();
 
-            $recurrence = '';
-            foreach ($segments as $segment) {
-                if (preg_match('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', $segment, $match)) {
-                    $recurrence = "{$match[1]}-w";
-
-                    break;
-                }
-            }
+            $recurrences = $segments
+                ->filter(fn (string $segment): bool => preg_match('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', $segment) === 1)
+                ->map(fn (string $segment): string => preg_replace('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', '$1-w', $segment))
+                ->unique()
+                ->sort()
+                ->values();
 
             $remainingSegments = $segments
                 ->reject(fn (string $segment): bool => preg_match('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', $segment) === 1)
+                ->reject(fn (string $segment): bool => preg_match('/^\d{1,2}\.\d{1,2}\.(\d{2,4})?$/u', $segment) === 1)
                 ->values();
 
-            if ($recurrence === '') {
-                $recurrence = 'Einzeltermine';
-            }
+            $recurrence = $recurrences->isNotEmpty()
+                ? $recurrences->implode(', ')
+                : 'Einzeltermine';
 
             return collect([$recurrence, ...$remainingSegments])
                 ->filter()
@@ -167,15 +186,33 @@
                 ->implode(' ');
         };
 
+        $formatCourseDates = fn ($slots) => $slots
+            ->flatMap(fn (array $slot): array => $slot['dates'] ?? [])
+            ->map(fn (string $date): string => trim($date))
+            ->filter()
+            ->unique()
+            ->sort()
+            ->map(function (string $date): string {
+                try {
+                    return \Carbon\Carbon::parse($date)->format('d.m.');
+                } catch (\Throwable) {
+                    return $date;
+                }
+            })
+            ->values()
+            ->all();
+
         $courseDirectory = $allCourseSlots
             ->groupBy('label')
-            ->map(function ($slots, string $label) use ($directorySlotSummary, $directoryDetails) {
+            ->map(function ($slots, string $label) use ($directorySlotSummary, $directoryDetails, $formatCourseDates) {
                 return [
                     'label' => $label,
                     'details' => $directoryDetails($slots),
                     'slots' => $directorySlotSummary($slots),
+                    'dates' => $formatCourseDates($slots),
                     'status' => $slots->contains('status', 'conflict') ? 'conflict'
                         : ($slots->contains('status', 'related') ? 'related' : 'filled'),
+                    'is_fu' => $slots->contains('is_fu', true),
                 ];
             })
             ->sortBy('label', SORT_NATURAL | SORT_FLAG_CASE)
@@ -184,7 +221,7 @@
     <style>
         @page {
             size: A4 landscape;
-            margin: 4mm;
+            margin: 0;
         }
 
         html {
@@ -202,8 +239,8 @@
 
         .pdf-page {
             position: relative;
-            width: 289mm;
-            height: 202mm;
+            width: 257mm;
+            height: 194mm;
             overflow: hidden;
             page-break-after: avoid;
             break-after: avoid;
@@ -411,64 +448,10 @@
             white-space: nowrap;
         }
 
-        .pdf-page-directory {
-            page-break-before: always;
-            break-before: page;
-            padding: 16mm;
-            font-family: Arial, Helvetica, sans-serif;
-        }
-
-        .directory-list {
-            columns: 2;
-            column-gap: 8mm;
-            margin-top: 3mm;
-        }
-
-        .directory-entry {
-            break-inside: avoid;
-            display: flex;
-            align-items: baseline;
-            gap: 1.5mm;
-            padding: 1.15mm 0;
-            border-bottom: 0.15mm solid #e2e8f0;
-            font-size: 9.25pt;
-            line-height: 1.4;
-        }
-
-        .directory-entry-status {
-            flex-shrink: 0;
-            width: 2mm;
-            height: 2mm;
-            border-radius: 50%;
-            position: relative;
-            top: -0.3mm;
-        }
-
-        .directory-entry-label {
-            font-weight: 700;
-            color: #0f172a;
-            white-space: nowrap;
-        }
-
-        .directory-entry-slots {
-            color: #1e3a8a;
-            font-weight: 600;
-            font-size: 8.25pt;
-            white-space: nowrap;
-        }
-
-        .directory-entry-details {
-            color: #64748b;
-            font-size: 8.25pt;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
         .pdf-page-courses {
             page-break-before: always;
             break-before: page;
-            padding: 16mm;
+            padding: 0;
             font-family: Arial, Helvetica, sans-serif;
         }
 
@@ -556,9 +539,30 @@
         .courses-table .col-details { width: 34%; }
         .courses-table .col-status { width: 8%; text-align: center; }
 
+        .courses-table .col-directory-status { width: 6%; text-align: center; }
+        .courses-table .col-directory-label { width: 22%; }
+        .courses-table .col-directory-details { width: 18%; }
+        .courses-table .col-directory-slots { width: 54%; }
+
+        .directory-dates-row td {
+            border-top: none;
+            padding-top: 0;
+        }
+
+        .directory-dates-cell {
+            color: #64748b;
+            font-size: 7pt;
+            line-height: 1.4;
+        }
+
+        .directory-date {
+            display: inline-block;
+            margin-right: 3mm;
+        }
+
         .courses-table .cell-weekday {
-            font-weight: 700;
-            color: #1e3a8a;
+            font-weight: 400;
+            color: #0f172a;
         }
 
         .courses-table .cell-hour {
@@ -588,6 +592,19 @@
         .status-dot--filled { background: #22c55e; }
         .status-dot--conflict { background: #ef4444; }
         .status-dot--related { background: #f97316; }
+
+        .fu-badge {
+            display: inline-block;
+            padding: 0 0.5mm;
+            margin-left: 0.3mm;
+            background: #dbeafe;
+            color: #1e40af;
+            font-size: 0.7em;
+            font-weight: 700;
+            line-height: 1.2;
+            border-radius: 0.5mm;
+            vertical-align: super;
+        }
     </style>
 </head>
 <body
@@ -660,7 +677,7 @@
 
                                                         @foreach($shownCourses as $course)
                                                             <div class="course @if($hasDenseCourses) course--compact @endif">
-                                                                <div class="course-label">{{ $course['label'] ?? '' }}</div>
+                                                                <div class="course-label">{{ $course['label'] ?? '' }}@if(! empty($course['is_fu']))<span class="fu-badge">FU</span>@endif</div>
                                                                 @if(! $hasDenseCourses && ! empty($course['details']))
                                                                     <div class="course-details">{{ $course['details'] }}</div>
                                                                 @endif
@@ -696,28 +713,47 @@
     </main>
 
     @if($courseDirectory->isNotEmpty())
-        <div class="pdf-page-directory">
+        <div class="pdf-page-courses">
             <div class="courses-header">
                 <h1 class="courses-title">Kursliste</h1>
                 <div class="courses-meta">
-                    {{ $courseDirectory->count() }} {{ $courseDirectory->count() === 1 ? 'Kurs' : 'Kurse' }}
-                    @if($data['student'] ?? '')
-                        <span> &middot; {{ $data['student'] }}</span>
-                    @endif
+                    @foreach(array_filter([$data['schoolyear'] ?? null, $data['student'] ?? null, $courseDirectory->count() . ' ' . ($courseDirectory->count() === 1 ? 'Kurs' : 'Kurse'), $data['generated_at'] ?? null]) as $meta)
+                        <span>{{ $meta }}</span>@if(! $loop->last)<span> &middot; </span>@endif
+                    @endforeach
                 </div>
             </div>
-            <div class="directory-list">
-                @foreach($courseDirectory as $entry)
-                    <div class="directory-entry">
-                        <span class="directory-entry-status status-dot--{{ $entry['status'] }}" style="display:inline-block"></span>
-                        <span class="directory-entry-label">{{ $entry['label'] }}</span>
-                        <span class="directory-entry-slots">{{ $entry['slots'] }}</span>
-                        @if($entry['details'] !== '')
-                            <span class="directory-entry-details">{{ $entry['details'] }}</span>
+            <table class="courses-table">
+                <thead>
+                    <tr>
+                        <th class="col-directory-label">Kurs</th>
+                        <th class="col-directory-details">Details</th>
+                        <th class="col-directory-slots">Termine</th>
+                        <th class="col-directory-status">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($courseDirectory as $entry)
+                        <tr>
+                            <td class="cell-label">{{ $entry['label'] }}@if(! empty($entry['is_fu']))<span class="fu-badge">FU</span>@endif</td>
+                            <td class="cell-details">{{ $entry['details'] }}</td>
+                            <td>{{ $entry['slots'] }}</td>
+                            <td style="text-align: center">
+                                <span class="status-dot status-dot--{{ $entry['status'] }}"></span>
+                            </td>
+                        </tr>
+                        @if(!empty($entry['dates']))
+                            <tr class="directory-dates-row">
+                                <td></td>
+                                <td colspan="3" class="directory-dates-cell">
+                                    @foreach($entry['dates'] as $date)
+                                        <span class="directory-date">{{ $date }}</span>
+                                    @endforeach
+                                </td>
+                            </tr>
                         @endif
-                    </div>
-                @endforeach
-            </div>
+                    @endforeach
+                </tbody>
+            </table>
         </div>
     @endif
 
@@ -756,7 +792,7 @@
                                 <td class="cell-weekday">{{ $slot['weekday'] }}</td>
                                 <td class="cell-hour">{{ $slot['hour'] }}.</td>
                                 <td class="cell-time">{{ $slot['time'] }}</td>
-                                <td class="cell-label">{{ $slot['label'] }}</td>
+                                <td class="cell-label">{{ $slot['label'] }}@if(! empty($slot['is_fu']))<span class="fu-badge">FU</span>@endif</td>
                                 <td class="cell-details">{{ $slot['details'] }}</td>
                                 <td>
                                     @if($slot['status'] !== 'empty')

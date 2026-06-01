@@ -2491,6 +2491,9 @@ export default {
             fullGreenTimetableCountRequestId: 0,
             qualityCountersRequestId: 0,
             selectedTimetableResultType: 'full_green',
+            restoredTimetableResultType: null,
+            restoredQualityCriteriaFilterEnabled: false,
+            restoredQualitySummaryCheckedKeys: [],
             additionalCourseTimetableRequired: false,
             additionalCourseExtensionActionHidden: false,
             courseActionHiddenUntilCourseInteraction: false,
@@ -3288,6 +3291,7 @@ export default {
                 this.syncExternalStudentSelection()
                 this.syncAvailableTimes()
                 this.loadStudentCompletedCourses()
+                this.autoRegenerateAfterRestore()
             } catch {
                 this.schoolHours = []
                 this.courseGroups = []
@@ -3729,7 +3733,7 @@ export default {
                 selected_timetable_type: this.selectedTimetableResultType,
                 selected_timetable_number: this.timetableResultCounter(this.selectedTimetableResultType),
                 selected_quality_criterion_keys: this.selectedQualityCriterionKeys(),
-                selected_quality_criteria_required: this.qualityCriteriaResultFilterActive,
+                selected_quality_criteria_required: options?.forceQualityCriteriaRequired === true || this.qualityCriteriaResultFilterActive,
                 include_quality_counters: options?.calculateQualityCounters === true,
                 evaluation_criteria: evaluationCriteria,
             }
@@ -4258,6 +4262,9 @@ export default {
                 additionalCourseTimetableRequired: this.additionalCourseTimetableRequired === true,
                 selectedCourseKeys: this.selectedCourseKeysForState(),
                 selectedCourseCodes: this.selectedCourseCodesForState(),
+                selectedTimetableResultType: this.selectedTimetableResultType,
+                qualityCriteriaResultFilterEnabled: this.qualityCriteriaResultFilterEnabled === true,
+                qualitySummaryCheckedKeys: [...this.qualitySummaryCheckedKeys],
             }
         },
         applyRobotState(state) {
@@ -4295,6 +4302,9 @@ export default {
                 this.additionalCourseSelectedKeys = this.uniqueValues(state?.selectedAdditionalCourseKeys)
                 this.additionalCourseTimetableRequired = state?.additionalCourseTimetableRequired === true
                 this.studentSelectionDefaultsPendingCode = selectedStudent ? studentCode : null
+                this.restoredTimetableResultType = state?.selectedTimetableResultType || null
+                this.restoredQualityCriteriaFilterEnabled = state?.qualityCriteriaResultFilterEnabled === true
+                this.restoredQualitySummaryCheckedKeys = Array.isArray(state?.qualitySummaryCheckedKeys) ? [...state.qualitySummaryCheckedKeys] : []
             } finally {
                 this.robotStateRestoring = false
             }
@@ -4578,6 +4588,29 @@ export default {
             } catch {
                 this.applyRobotState(this.defaultRobotState())
             }
+        },
+        async autoRegenerateAfterRestore() {
+            if (!this.selectedStudent || !(this.selectedCourses || []).length) return
+
+            const savedResultType = this.restoredTimetableResultType
+            const savedFilterEnabled = this.restoredQualityCriteriaFilterEnabled
+            const savedCheckedKeys = this.restoredQualitySummaryCheckedKeys
+
+            if (Array.isArray(savedCheckedKeys) && savedCheckedKeys.length) {
+                this.qualitySummaryCheckedKeys = savedCheckedKeys
+            }
+            if (savedFilterEnabled) {
+                this.qualityCriteriaResultFilterEnabled = true
+            }
+            if (savedResultType) {
+                this.selectedTimetableResultType = savedResultType
+            }
+
+            await this.$nextTick()
+            await this.loadFullGreenTimetableCount({
+                calculateQualityCounters: true,
+                forceQualityCriteriaRequired: savedFilterEnabled && savedCheckedKeys.length > 0,
+            })
         },
         studentByCode(studentCode) {
             const normalizedStudentCode = this.normalizedStudentCode(studentCode)
@@ -10423,6 +10456,13 @@ export default {
     font-weight: 900;
     line-height: 1;
     vertical-align: super;
+}
+
+@media (min-width: 701px) {
+    .robot-course-week-marker {
+        font-size: 0.72em;
+        font-weight: 400;
+    }
 }
 
 .robot-course-item-details {

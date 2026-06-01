@@ -2096,8 +2096,80 @@ class RobotTimetableBackendSetupService
             'conflicts' => [],
             'isOccasional' => $this->isOccasionalCourseGroup($courseGroup),
             'isAdditionalCourse' => ($option['isAdditionalCourse'] ?? false) === true,
-            'isDistanceLearningCourse' => false,
+            'isDistanceLearningCourse' => $this->optionIsDistanceLearningCourse($course, $option),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  array<string, mixed>  $option
+     */
+    private function optionIsDistanceLearningCourse(array $course, array $option): bool
+    {
+        $requiredSlotCount = $this->requiredSlotCountForCourse($course);
+        $scheduledWeeklyLoad = $this->courseGroupsScheduledWeeklyLoad($option['course_groups'] ?? []);
+
+        return $requiredSlotCount >= 2
+            && $scheduledWeeklyLoad > 0
+            && abs(($scheduledWeeklyLoad * 2) - $requiredSlotCount) < 0.001;
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     */
+    private function requiredSlotCountForCourse(array $course): int
+    {
+        return max(1, (int) round((float) ($course['hours'] ?? 0)));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     */
+    private function courseGroupsScheduledWeeklyLoad(array $courseGroups): float
+    {
+        return collect($this->uniqueCourseGroupsBySlot($courseGroups))
+            ->sum(fn (array $courseGroup): float => $this->courseGroupWeeklySlotLoad($courseGroup));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @return list<array<string, mixed>>
+     */
+    private function uniqueCourseGroupsBySlot(array $courseGroups): array
+    {
+        return collect($courseGroups)
+            ->unique(fn (array $courseGroup): string => $this->slotKey(
+                $courseGroup['weekday'] ?? '',
+                $courseGroup['hour'] ?? '',
+            ))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function courseGroupWeeklySlotLoad(array $courseGroup): float
+    {
+        $interval = $this->courseGroupWeekInterval($courseGroup);
+
+        return $interval > 0 ? 1 / $interval : 1.0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function courseGroupWeekInterval(array $courseGroup): int
+    {
+        if (is_numeric($courseGroup['recurrence_interval'] ?? null) && (int) $courseGroup['recurrence_interval'] > 0) {
+            return (int) $courseGroup['recurrence_interval'];
+        }
+
+        if (preg_match('/(\d+)\s*-\s*w/iu', (string) ($courseGroup['recurrence_label'] ?? ''), $matches) === 1) {
+            return (int) $matches[1];
+        }
+
+        return 0;
     }
 
     /**
@@ -2167,7 +2239,7 @@ class RobotTimetableBackendSetupService
             'dateRangeLabel' => $conflictSlot['dateRangeLabel'] ?? '',
             'isOccasional' => $this->timetableSlotIsOccasional($conflictSlot),
             'isAdditionalCourse' => ($conflictSlot['isAdditionalCourse'] ?? false) === true,
-            'isDistanceLearningCourse' => false,
+            'isDistanceLearningCourse' => ($conflictSlot['isDistanceLearningCourse'] ?? false) === true,
         ];
     }
 
@@ -2537,6 +2609,7 @@ class RobotTimetableBackendSetupService
             'code' => $courseCode,
             'name' => $subject['name'] ?? $subject['json_subject'] ?? $subject['json_code'] ?? '',
             'ttCodes' => $this->selectedCourseTimetableCodes($subject, $subjectMappings, $courseGroups, $settings),
+            'hours' => (float) ($subject['hours_per_week'] ?? 0),
         ];
     }
 

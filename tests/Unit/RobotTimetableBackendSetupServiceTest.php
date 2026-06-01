@@ -106,6 +106,86 @@ it('counts all selected course variations and the overlap free full green variat
         ->and($result['red_timetable_count'])->toBe(1);
 });
 
+it('marks backend selected half-load timetable slots as distance learning', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'INF1',
+                'json_subject' => 'INF',
+                'name' => 'Informatik 1',
+                'tt_subject' => 'INF',
+                'hours_per_week' => 2,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 1,
+                'hour' => 11,
+                'class_name' => 'INF1-Grp1-KRO',
+                'display_label' => 'INF1-Grp1-KRO',
+                'title' => 'INF1-Grp1-KRO',
+                'course' => 'INF1',
+                'subject' => 'INF',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 12,
+                'class_name' => 'INF1-Grp1-KRO',
+                'display_label' => 'INF1-Grp1-KRO',
+                'title' => 'INF1-Grp1-KRO',
+                'course' => 'INF1',
+                'subject' => 'INF',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 13,
+                'class_name' => 'INF1-Grp2-KRO',
+                'display_label' => 'INF1-Grp2-KRO',
+                'title' => 'INF1-Grp2-KRO',
+                'course' => 'INF1',
+                'subject' => 'INF',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '1|1|common|INF1|INF|Informatik 1|INF1',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 2,
+        ],
+    );
+
+    expect($result['selected_timetable']['slots']['1-13']['sourceLabel'])->toBe('INF1-Grp2-KRO')
+        ->and($result['selected_timetable']['slots']['1-13']['isDistanceLearningCourse'])->toBeTrue();
+});
+
 it('counts quality criteria for the selected backend timetable type', function () {
     $service = app(RobotTimetableBackendSetupService::class);
 

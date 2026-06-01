@@ -2090,9 +2090,11 @@ it('creates a timetable overview pdf from posted timetable data', function () {
                                         [
                                             'status' => 'filled',
                                             'courses' => [
-                                                ['label' => 'LPT - 1U - HER', 'details' => '20.02.'],
+                                                ['label' => 'LET - 1U - HER', 'details' => '20.02.'],
                                             ],
-                                            'markers' => [],
+                                            'markers' => [
+                                                ['label' => 'LET', 'title' => 'LET - 1U - HER'],
+                                            ],
                                         ],
                                     ],
                                 ],
@@ -2112,11 +2114,29 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->contains('+2 weitere Termine')
             && $pdf->contains('class="pdf-page"')
             && $pdf->contains('--pdf-scale:')
+            && $pdf->contains('margin: 2cm;')
+            && $pdf->contains('.pdf-page-directory')
+            && $pdf->contains('.pdf-page-courses')
             && $pdf->contains('page-break-inside: auto;')
             && $pdf->contains('display: table-header-group;')
             && $pdf->contains('font-size: 9.25pt;')
+            && $pdf->contains('.courses-table .cell-weekday')
+            && $pdf->contains('font-weight: 400;')
             && $pdf->contains('Mo 1.-2.')
+            && $pdf->contains('Mo 1.-2. 08:00 - 09:35')
             && $pdf->contains('1-w')
+            && $pdf->contains('<span class="directory-entry-details">1-w</span>')
+            && $pdf->contains('<span class="directory-entry-details">1-w 09.05. - 11.07.</span>')
+            && $pdf->contains('<span class="directory-entry-label">M2 - 2S - ALT</span>')
+            && $pdf->contains('class="directory-entry-main"')
+            && $pdf->contains('class="directory-entry-header"')
+            && $pdf->contains('background: #f8fafc;')
+            && $pdf->contains('background: #dbeafe;')
+            && $pdf->contains('flex: 0 0 auto;')
+            && $pdf->contains('LPT - 1U - HER')
+            && $pdf->contains('title="LPT - 1U - HER"')
+            && $pdf->contains('>LPT</span>')
+            && ! $pdf->contains('LET - 1U - HER')
             && $pdf->contains('Einzeltermine 20.02.')
             && $pdf->contains('1C · PABINGER Elena');
     });

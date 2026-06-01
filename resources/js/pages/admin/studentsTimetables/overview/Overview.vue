@@ -205,6 +205,16 @@
                             @click="closeActiveTimetablePanel">
                             Schließen
                         </v-btn>
+                        <v-btn
+                            v-if="wizardPanelOpen"
+                            class="overview-wizard-close-button"
+                            variant="tonal"
+                            color="warning"
+                            size="large"
+                            prepend-icon="mdi-restore"
+                            @click="resetWizardPanel">
+                            Reset
+                        </v-btn>
 
                         <div v-if="wizardPanelOpen" class="overview-wizard-settings-summary">
                             <div class="overview-wizard-settings-summary__title">
@@ -433,12 +443,11 @@
                                             @click="openCourseGroupDialog(courseGroup)"
                                             @keydown.enter="openCourseGroupDialog(courseGroup)">
                                             <div class="timetable-generated-cell__code">
-                                                {{ courseGroup.display_label || courseGroup.title }}
+                                                <span>{{ courseGroupDisplayLabel(courseGroup) }}</span>
+                                                <sup v-if="courseGroupDistanceLearning(courseGroup)" class="timetable-course-fu">FU</sup>
                                             </div>
-                                            <div v-if="courseGroup.recurrence_label || courseGroup.is_block" class="timetable-generated-cell__details">
-                                                <span v-if="courseGroup.recurrence_label">{{ courseGroup.recurrence_label }}</span>
-                                                <span v-if="courseGroup.recurrence_label && courseGroup.is_block"> · </span>
-                                                <span v-if="courseGroup.is_block">{{ courseGroupBlockLabel(courseGroup) }}</span>
+                                            <div v-if="courseGroupDetailLabel(courseGroup)" class="timetable-generated-cell__details">
+                                                {{ courseGroupDetailLabel(courseGroup) }}
                                             </div>
                                         </div>
                                         <div
@@ -466,6 +475,44 @@
 
                             <div v-if="shouldShowExtraDatesNotice(semester.value, timetableWeek)" class="extra-dates-notice">
                                 <span class="extra-dates-notice__text">Zusatzwochen vorhanden</span>
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="singleDateOverviewGroupsForSemester(semester.value).length"
+                            class="timetable-date-overview timetable-single-date-overview">
+                            <div class="timetable-date-overview__title">Einzeltermine</div>
+                            <div class="timetable-single-date-overview__items">
+                                <div
+                                    v-for="singleDateGroup in singleDateOverviewGroupsForSemester(semester.value)"
+                                    :key="singleDateGroup.key"
+                                    class="timetable-single-date-overview__item"
+                                    role="button"
+                                    tabindex="0"
+                                    @click="openCourseGroupDialog(singleDateGroup.courseGroup)"
+                                    @keydown.enter="openCourseGroupDialog(singleDateGroup.courseGroup)">
+                                    <div
+                                        v-if="singleDateGroup.summary"
+                                        class="timetable-single-date-overview__summary">
+                                        {{ singleDateGroup.summary }}
+                                    </div>
+                                    <template v-else>
+                                        <div class="timetable-date-overview__slot">{{ singleDateGroup.slotTitle }}</div>
+                                        <div class="timetable-date-overview__course-title">
+                                            <span>{{ singleDateGroup.title }}</span>
+                                        </div>
+                                    </template>
+                                    <div
+                                        v-if="!singleDateGroup.summary"
+                                        class="timetable-date-overview__dates">
+                                        <span
+                                            v-for="dateLabel in singleDateGroup.dateLabels"
+                                            :key="dateLabel"
+                                            class="timetable-date-overview__date">
+                                            {{ dateLabel }}
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -850,6 +897,10 @@ const COURSE_CHOICE_RESTRICTION_MODES = [
     COURSE_CHOICE_RESTRICTION_PLANNED_ADDITIONAL,
     COURSE_CHOICE_RESTRICTION_ALL,
 ]
+
+function normalizedCourseDisplayLabel(label) {
+    return String(label || '').replace(/^LET(?=\d|\s|-|$)/iu, 'LPT')
+}
 
 export default {
     name: 'StudentsTimetablesOverview',
@@ -1273,7 +1324,7 @@ export default {
             }
         },
         selectedCourseGroupLabel() {
-            return this.selectedCourseGroup?.display_label || this.selectedCourseGroup?.title || 'Termine'
+            return this.courseGroupDisplayLabel(this.selectedCourseGroup) || 'Termine'
         },
         selectedCourseGroupDates() {
             return Array.isArray(this.selectedCourseGroup?.dates) ? this.selectedCourseGroup.dates : []
@@ -1672,11 +1723,10 @@ export default {
         },
         timetablePdfCoursePayload(courseGroup) {
             return {
-                label: (courseGroup?.display_label || courseGroup?.title || courseGroup?.course || '').toString(),
-                details: [
-                    courseGroup?.recurrence_label,
-                    courseGroup?.is_block ? this.courseGroupBlockLabel(courseGroup) : '',
-                ].filter(Boolean).join(' · '),
+                label: this.courseGroupDisplayLabel(courseGroup),
+                details: this.courseGroupDetailLabel(courseGroup),
+                dates: this.courseGroupDates(courseGroup),
+                is_fu: this.courseGroupDistanceLearning(courseGroup),
             }
         },
         downloadBlob(blob, filename) {
@@ -1824,6 +1874,14 @@ export default {
                 this.activeCourseGroupFilterKeys = []
                 this.persistTimetableState()
             })
+        },
+        resetWizardPanel() {
+            const wizardCourseCards = this.$refs.wizardCourseCards
+
+            wizardCourseCards?.resetStudentCourseSelection?.()
+            wizardCourseCards?.clearGeneratedTimetables?.()
+            this.activeCourseGroupFilterKeys = []
+            this.removeSavedRobotTimetableState()
         },
         resetSavedTimetable() {
             this.runTimetableUpdate(() => {
@@ -2803,13 +2861,15 @@ export default {
                 }))
         },
         courseGroupSingleDateMarkerLabel(courseGroup) {
-            return [
+            const label = [
                 courseGroup?.course,
                 courseGroup?.display_label,
                 courseGroup?.title,
             ]
                 .map(value => String(value || '').trim())
                 .find(Boolean) || 'Einzeltermin'
+
+            return normalizedCourseDisplayLabel(label)
         },
         courseGroupSingleDateMarkerTitle(courseGroup) {
             return [
@@ -2819,6 +2879,159 @@ export default {
             ]
                 .map(value => String(value || '').trim())
                 .find(Boolean) || 'Einzeltermin'
+        },
+        singleDateOverviewGroupsForSemester(semester) {
+            const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
+                ? this.activeCourseGroupFilterKeySet
+                : new Set(this.activeCourseGroupFilterKeys || [])
+
+            const singleDateCourseGroups = this.uniqueCourseGroupsByKey(this.configuredCourseGroups)
+                .filter(courseGroup => activeCourseGroupFilterKeySet.has(courseGroup?.key))
+                .filter(courseGroup => Number(courseGroup?.semester) === Number(semester))
+                .filter(courseGroup => this.courseGroupIsSingleDate(courseGroup))
+
+            return this.compactSingleDateOverviewCourseGroups(singleDateCourseGroups)
+                .map(courseGroup => this.singleDateOverviewGroup(courseGroup))
+                .sort((left, right) => left.sortValue.localeCompare(right.sortValue, 'de-AT', {
+                    numeric: true,
+                    sensitivity: 'base',
+                }))
+        },
+        compactSingleDateOverviewCourseGroups(courseGroups) {
+            return [...(Array.isArray(courseGroups) ? courseGroups : [])]
+                .sort((left, right) => this.singleDateOverviewCourseGroupSortValue(left).localeCompare(
+                    this.singleDateOverviewCourseGroupSortValue(right),
+                    'de-AT',
+                    { numeric: true, sensitivity: 'base' },
+                ))
+                .reduce((compactedCourseGroups, courseGroup) => {
+                    const previousCourseGroup = compactedCourseGroups.at(-1)
+
+                    if (this.singleDateOverviewCourseGroupsCanMerge(previousCourseGroup, courseGroup)) {
+                        compactedCourseGroups[compactedCourseGroups.length - 1] = this.mergedSingleDateOverviewCourseGroup(
+                            previousCourseGroup,
+                            courseGroup,
+                        )
+
+                        return compactedCourseGroups
+                    }
+
+                    compactedCourseGroups.push(courseGroup)
+
+                    return compactedCourseGroups
+                }, [])
+        },
+        singleDateOverviewCourseGroupSortValue(courseGroup) {
+            return [
+                this.singleDateOverviewMergeSignature(courseGroup),
+                String(Number(courseGroup?.hour) || '').padStart(2, '0'),
+            ].join('|')
+        },
+        singleDateOverviewCourseGroupsCanMerge(leftCourseGroup, rightCourseGroup) {
+            if (!leftCourseGroup || !rightCourseGroup) return false
+            if (this.singleDateOverviewMergeSignature(leftCourseGroup) !== this.singleDateOverviewMergeSignature(rightCourseGroup)) return false
+
+            return Number(this.singleDateOverviewEndHour(leftCourseGroup)) + 1 === Number(rightCourseGroup?.hour)
+        },
+        singleDateOverviewMergeSignature(courseGroup) {
+            const dates = this.courseGroupDates(courseGroup)
+
+            return [
+                Number(courseGroup?.semester) || '',
+                Number(courseGroup?.weekday) || '',
+                dates.length === 1 ? dates[0] : '',
+                this.sameSlotDateOverviewCourseTitle(courseGroup),
+            ].join('|')
+        },
+        mergedSingleDateOverviewCourseGroup(leftCourseGroup, rightCourseGroup) {
+            const rightTimeRange = this.courseGroupTimeRangeParts(rightCourseGroup)
+
+            return {
+                ...leftCourseGroup,
+                key: [
+                    leftCourseGroup?.key,
+                    rightCourseGroup?.key,
+                ].filter(Boolean).join('|'),
+                end_hour: this.singleDateOverviewEndHour(rightCourseGroup),
+                teacher: rightTimeRange.until || leftCourseGroup?.teacher,
+            }
+        },
+        singleDateOverviewEndHour(courseGroup) {
+            const startHour = Number(courseGroup?.hour)
+            if (!Number.isFinite(startHour)) return startHour
+
+            const explicitEndHour = [
+                courseGroup?.end_hour,
+                courseGroup?.last_hour,
+                courseGroup?.until_hour,
+            ]
+                .map(value => Number(value))
+                .find(value => Number.isFinite(value) && value >= startHour)
+            const duration = [
+                courseGroup?.hours_count,
+                courseGroup?.duration_hours,
+                courseGroup?.lessons_count,
+            ]
+                .map(value => Number(value))
+                .find(value => Number.isFinite(value) && value > 1)
+
+            return explicitEndHour || (duration ? startHour + duration - 1 : startHour)
+        },
+        singleDateOverviewGroup(courseGroup) {
+            const dates = this.courseGroupDates(courseGroup)
+            const title = this.sameSlotDateOverviewCourseTitle(courseGroup)
+
+            return {
+                key: courseGroup?.key || title,
+                title,
+                slotTitle: this.singleDateOverviewSlotTitle(courseGroup),
+                dateLabels: dates.map(date => this.formatDateWithWeekdayLabel(date)),
+                summary: dates.length === 1 ? this.singleDateOverviewSummary(courseGroup, dates[0], title) : '',
+                courseGroup,
+                sortValue: [
+                    dates[0] || courseGroup?.first_date || courseGroup?.date || '9999-99-99',
+                    String(Number(courseGroup?.weekday) || '').padStart(2, '0'),
+                    String(Number(courseGroup?.hour) || '').padStart(2, '0'),
+                    title,
+                ].join('|'),
+            }
+        },
+        singleDateOverviewSlotTitle(courseGroup) {
+            const timeRange = this.courseGroupTimeRangeParts(courseGroup)
+
+            return this.sameSlotDateOverviewSlotRangeTitle({
+                weekday: Number(courseGroup?.weekday),
+                startHour: Number(courseGroup?.hour),
+                endHour: this.singleDateOverviewEndHour(courseGroup),
+                from: timeRange.from,
+                until: timeRange.until,
+            })
+        },
+        singleDateOverviewSummary(courseGroup, date, title = null) {
+            const dateLabel = this.singleDateOverviewDateLabel(date)
+            const hourRangeLabel = this.singleDateOverviewHourRangeLabel(courseGroup)
+            const timeRangeLabel = this.courseGroupTimeRangeParts(courseGroup).label.replace(/\s+-\s+/u, '-')
+            const details = [
+                dateLabel,
+                hourRangeLabel,
+                timeRangeLabel,
+            ].filter(Boolean).join(', ')
+
+            return `${title || this.sameSlotDateOverviewCourseTitle(courseGroup)}: ${details}`
+        },
+        singleDateOverviewDateLabel(date) {
+            const weekdayLabel = this.weekdayLabelForDate(date)
+            const compactDateLabel = this.formatCompactDateValue(date)
+
+            return [weekdayLabel, compactDateLabel].filter(Boolean).join(', ')
+        },
+        singleDateOverviewHourRangeLabel(courseGroup) {
+            const startHour = Number(courseGroup?.hour)
+            if (!Number.isFinite(startHour)) return ''
+
+            const endHour = this.singleDateOverviewEndHour(courseGroup)
+
+            return startHour === endHour ? `${startHour}.` : `${startHour}.-${endHour}.`
         },
         sameSlotDateOverviewGroupsForSemester(semester) {
             const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
@@ -2934,13 +3147,15 @@ export default {
             }
         },
         sameSlotDateOverviewCourseTitle(courseGroup) {
-            return [
+            const label = [
                 courseGroup?.display_label,
                 courseGroup?.title,
                 courseGroup?.course,
             ]
                 .map(value => String(value || '').trim())
                 .find(Boolean) || 'Ohne Bezeichnung'
+
+            return normalizedCourseDisplayLabel(label)
         },
         sameSlotDateOverviewSlotTitle(courseGroup) {
             const timeRange = this.courseGroupTimeRangeParts(courseGroup)
@@ -2998,7 +3213,13 @@ export default {
                 .join('|')
         },
         courseGroupSortLabel(courseGroup) {
-            return (courseGroup?.display_label || courseGroup?.title || '').toString()
+            return normalizedCourseDisplayLabel((
+                courseGroup?.display_label
+                || courseGroup?.title
+                || courseGroup?.course
+                || courseGroup?.subject
+                || ''
+            ).toString())
         },
         semesterCourseMenus(semester) {
             if (this.semesterCourseMenusBySemester) {
@@ -3462,13 +3683,13 @@ export default {
                 .filter((entry) => this.isCourseMenuEntryFilterActive(entry))
         },
         courseGroupMenuLabel(courseGroup) {
-            return (
+            return normalizedCourseDisplayLabel((
                 courseGroup?.display_label
                 || courseGroup?.title
                 || courseGroup?.course
                 || courseGroup?.subject
                 || 'Ohne Bezeichnung'
-            ).toString()
+            ).toString())
         },
         courseMenuEntryScheduleLabel(entry) {
             const mergeGapMinutes = 15
@@ -4076,7 +4297,190 @@ export default {
 
             const match = firstSegment.match(/^([^\d\s-]+)\d*/u)
 
-            return (match?.[1] || firstSegment).trim()
+            return normalizedCourseDisplayLabel((match?.[1] || firstSegment).trim())
+        },
+        courseGroupDisplayLabel(courseGroup) {
+            const label = (
+                courseGroup?.display_label
+                || courseGroup?.title
+                || courseGroup?.course
+                || courseGroup?.subject
+                || ''
+            ).toString()
+
+            return normalizedCourseDisplayLabel(label)
+        },
+        courseGroupDetailLabel(courseGroup) {
+            return [
+                this.courseGroupDistanceLearning(courseGroup) ? 'FU' : '',
+                courseGroup?.recurrence_label,
+                courseGroup?.is_block ? this.courseGroupBlockLabel(courseGroup) : '',
+            ].filter(Boolean).join(' · ')
+        },
+        courseGroupDistanceLearning(courseGroup) {
+            const course = this.courseForCourseGroup(courseGroup)
+            const optionLabel = this.courseGroupOptionLabel(courseGroup)
+            const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
+                ? this.activeCourseGroupFilterKeySet
+                : new Set(this.activeCourseGroupFilterKeys || [])
+            const matchingCourseGroups = this.configuredCourseGroups
+                .filter(candidate => this.courseGroupMatchesCourse(candidate, course, courseGroup))
+                .filter(candidate => this.courseGroupOptionLabel(candidate) === optionLabel)
+                .filter(candidate => activeCourseGroupFilterKeySet.has(candidate?.key))
+
+            return this.courseGroupsAreDistanceLearningCourse(course, matchingCourseGroups, courseGroup)
+        },
+        courseForCourseGroup(courseGroup) {
+            return this.courseCandidatesForCourseGroup(courseGroup)
+                .find(course => this.courseGroupMatchesCourse(courseGroup, course)) || null
+        },
+        courseCandidatesForCourseGroup(courseGroup) {
+            const selectedSemester = Number(this.selection?.semester || 0)
+            const selectedSemesterCourses = Number.isFinite(selectedSemester) && selectedSemester > 0
+                ? this.coursesForSemester(selectedSemester)
+                : []
+            const transferredCourses = this.transferredStudentCourseRestrictionItems
+                .map(course => this.courseFromTransferredCourseItem(course))
+                .filter(Boolean)
+
+            return [
+                ...selectedSemesterCourses,
+                ...transferredCourses,
+            ].filter((course, index, courses) =>
+                courses.findIndex(candidate => candidate.key === course.key) === index,
+            )
+        },
+        courseFromTransferredCourseItem(course) {
+            const code = String(course?.code || course?.label || '').trim()
+            if (!code) return null
+
+            const hoursMatch = String(course?.meta || '').match(/(\d+(?:[,.]\d+)?)\s*Std/iu)
+            const hours = hoursMatch ? Number(hoursMatch[1].replace(',', '.')) : 0
+
+            return {
+                key: course?.key || code,
+                code,
+                name: course?.name || course?.label || '',
+                hours,
+            }
+        },
+        courseGroupMatchesCourse(courseGroup, course, fallbackCourseGroup = null) {
+            const courseAliases = this.courseCodeAliases(course)
+            const courseGroupAliases = this.courseGroupChoiceOptionCodes(courseGroup)
+
+            if (courseAliases.length && courseGroupAliases.some(alias => courseAliases.includes(alias))) {
+                return true
+            }
+
+            if (!fallbackCourseGroup) return false
+
+            const fallbackAliases = this.courseGroupChoiceOptionCodes(fallbackCourseGroup)
+
+            return fallbackAliases.length
+                && courseGroupAliases.some(alias => fallbackAliases.includes(alias))
+        },
+        courseGroupsAreDistanceLearningCourse(course, courseGroups, courseGroup = null) {
+            const requiredSlotCount = this.requiredSlotCountForCourse(course, courseGroup)
+            const scheduledWeeklyLoad = this.courseGroupsScheduledWeeklyLoad(
+                (Array.isArray(courseGroups) ? courseGroups : [])
+                    .filter(candidate => !this.courseGroupIsSingleDate(candidate)),
+            )
+
+            return requiredSlotCount >= 2
+                && scheduledWeeklyLoad > 0
+                && Math.abs((scheduledWeeklyLoad * 2) - requiredSlotCount) < 0.001
+        },
+        requiredSlotCountForCourse(course, courseGroup = null) {
+            const courseHours = Math.round(Number(course?.hours || 0) || 0)
+            if (courseHours > 0) return courseHours
+
+            return this.maximumWeeklyLoadForCourseGroup(courseGroup)
+        },
+        maximumWeeklyLoadForCourseGroup(courseGroup) {
+            if (!courseGroup) return 1
+
+            const optionLoads = this.configuredCourseGroups
+                .filter(candidate => this.courseGroupMatchesCourse(candidate, courseGroup))
+                .reduce((loads, candidate) => {
+                    const optionLabel = this.courseGroupOptionLabel(candidate)
+
+                    loads[optionLabel] ??= []
+                    loads[optionLabel].push(candidate)
+
+                    return loads
+                }, {})
+
+            return Math.max(
+                1,
+                ...Object.values(optionLoads)
+                    .map(courseGroups => Math.round(this.courseGroupsScheduledWeeklyLoad(courseGroups))),
+            )
+        },
+        courseGroupsScheduledWeeklyLoad(courseGroups) {
+            return this.uniqueCourseGroupsBySlot(courseGroups)
+                .reduce((total, courseGroup) => total + this.courseGroupWeeklySlotLoad(courseGroup), 0)
+        },
+        uniqueCourseGroupsBySlot(courseGroups) {
+            return Object.values((Array.isArray(courseGroups) ? courseGroups : []).reduce((groups, courseGroup) => {
+                const key = this.courseCellKey(courseGroup?.semester, courseGroup?.weekday, courseGroup?.hour)
+
+                groups[key] ??= courseGroup
+
+                return groups
+            }, {}))
+        },
+        courseGroupWeeklySlotLoad(courseGroup) {
+            const interval = this.courseGroupWeekInterval(courseGroup)
+
+            return interval && interval > 0 ? 1 / interval : 1
+        },
+        courseGroupWeekInterval(courseGroup) {
+            const explicitInterval = Number(courseGroup?.recurrence_interval)
+            if (Number.isInteger(explicitInterval) && explicitInterval > 0) return explicitInterval
+
+            const labelMatch = String(courseGroup?.recurrence_label || '').match(/(\d+)\s*-\s*w/iu)
+            if (labelMatch) return Number(labelMatch[1])
+
+            return this.weekIntervalFromDates(this.courseGroupDates(courseGroup))
+        },
+        weekIntervalFromDates(dates) {
+            if (!Array.isArray(dates) || dates.length < 2) return null
+
+            const parsedDates = dates
+                .map(date => this.dateFromIsoValue(date))
+                .filter(Boolean)
+                .sort((firstDate, secondDate) => firstDate.getTime() - secondDate.getTime())
+
+            if (parsedDates.length < 2) return null
+
+            const weekGaps = parsedDates
+                .slice(1)
+                .map((date, index) => Math.round((date.getTime() - parsedDates[index].getTime()) / (7 * 24 * 60 * 60 * 1000)))
+                .filter(gap => gap > 0)
+            const uniqueGaps = weekGaps.filter((gap, index, gaps) => gaps.indexOf(gap) === index)
+
+            return uniqueGaps.length === 1 ? uniqueGaps[0] : null
+        },
+        dateFromIsoValue(value) {
+            const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/u)
+            if (!match) return null
+
+            const [, year, month, day] = match
+
+            return new Date(Number(year), Number(month) - 1, Number(day))
+        },
+        courseGroupOptionLabel(courseGroup) {
+            return String(
+                courseGroup?.class_name
+                || courseGroup?.display_label
+                || courseGroup?.title
+                || courseGroup?.course
+                || courseGroup?.subject
+                || 'Ohne Bezeichnung',
+            )
+        },
+        normalizedCourseDisplayLabel(label) {
+            return normalizedCourseDisplayLabel(label)
         },
         courseGroupCourseSource(courseGroup) {
             const normalizedCourseCode = value => String(value || '')
@@ -5022,8 +5426,25 @@ export default {
 .recurrence-week-selector {
     display: flex;
     flex-wrap: wrap;
+    align-items: flex-start;
     gap: 6px;
     padding: 0 0 8px;
+}
+
+.recurrence-week-selector :deep(.v-btn-toggle) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    max-width: 100%;
+    height: auto;
+    row-gap: 6px;
+    overflow: visible;
+}
+
+.recurrence-week-selector :deep(.v-btn-toggle .v-btn) {
+    flex: 0 0 auto;
+    min-height: 32px;
+    white-space: nowrap;
 }
 
 .recurrence-week-selector__btn {
@@ -5137,6 +5558,43 @@ export default {
     white-space: nowrap;
 }
 
+.timetable-single-date-overview__items {
+    display: grid;
+    gap: 5px;
+}
+
+.timetable-single-date-overview__item {
+    display: grid;
+    gap: 2px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    cursor: pointer;
+    outline: none;
+}
+
+.timetable-single-date-overview__item:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.timetable-single-date-overview__item:hover,
+.timetable-single-date-overview__item:focus-visible {
+    color: #1d4ed8;
+}
+
+.timetable-single-date-overview__summary {
+    font-size: 0.72rem;
+    font-weight: 650;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.timetable-single-date-overview .timetable-date-overview__date {
+    padding: 0 4px;
+    font-size: 0.67rem;
+    line-height: 1.35;
+}
+
 .timetable-hour-num {
     font-weight: 750;
     font-size: 0.76rem;
@@ -5232,6 +5690,12 @@ export default {
     gap: 2px;
     font-weight: 750;
     overflow-wrap: anywhere;
+}
+
+.timetable-course-fu {
+    font-size: 0.58em;
+    font-weight: 850;
+    line-height: 1;
 }
 
 .timetable-generated-cell__details {
@@ -5423,16 +5887,18 @@ export default {
     }
 
     .recurrence-week-selector {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        margin-inline: -4px;
-        padding-inline: 4px;
+        overflow-x: visible;
+        margin-inline: 0;
+        padding-inline: 0;
+    }
+
+    .recurrence-week-selector :deep(.v-btn-toggle) {
+        width: 100%;
     }
 
     .recurrence-week-selector :deep(.v-btn-toggle .v-btn) {
         font-size: 0.68rem;
         padding: 0 8px;
-        min-width: 0;
     }
 
     .recurrence-week-selector__pdf-btn {

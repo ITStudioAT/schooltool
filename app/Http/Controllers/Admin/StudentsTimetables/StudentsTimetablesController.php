@@ -630,17 +630,53 @@ class StudentsTimetablesController extends Controller
             'semesters.*.weeks.*.hours.*.cells.*.courses' => ['array', 'max:10'],
             'semesters.*.weeks.*.hours.*.cells.*.courses.*.label' => ['required', 'string', 'max:160'],
             'semesters.*.weeks.*.hours.*.cells.*.courses.*.details' => ['nullable', 'string', 'max:160'],
+            'semesters.*.weeks.*.hours.*.cells.*.courses.*.dates' => ['nullable', 'array', 'max:120'],
+            'semesters.*.weeks.*.hours.*.cells.*.courses.*.dates.*' => ['string', 'max:20'],
             'semesters.*.weeks.*.hours.*.cells.*.markers' => ['array', 'max:10'],
             'semesters.*.weeks.*.hours.*.cells.*.markers.*.label' => ['required', 'string', 'max:40'],
             'semesters.*.weeks.*.hours.*.cells.*.markers.*.title' => ['nullable', 'string', 'max:160'],
         ]);
 
+        $validated = $this->normalizeTimetableOverviewPdfLabels($validated);
+
         return pdf()
             ->view('pdfs.students-timetable-overview', ['data' => $validated])
             ->format(Format::A4)
             ->landscape()
+            ->margins(top: 8, right: 20, bottom: 8, left: 20, unit: 'mm')
             ->name('stundenplan.pdf')
             ->download();
+    }
+
+    private function normalizeTimetableOverviewPdfLabels(array $data): array
+    {
+        foreach ($data['semesters'] as $semesterIndex => $semester) {
+            foreach ($semester['weeks'] as $weekIndex => $week) {
+                foreach ($week['hours'] as $hourIndex => $hour) {
+                    foreach ($hour['cells'] as $cellIndex => $cell) {
+                        $cellData = &$data['semesters'][$semesterIndex]['weeks'][$weekIndex]['hours'][$hourIndex]['cells'][$cellIndex];
+
+                        foreach ($cell['courses'] ?? [] as $courseIndex => $course) {
+                            $cellData['courses'][$courseIndex]['label'] = $this->normalizedTimetableCourseDisplayLabel($course['label'] ?? '');
+                        }
+
+                        foreach ($cell['markers'] ?? [] as $markerIndex => $marker) {
+                            $cellData['markers'][$markerIndex]['label'] = $this->normalizedTimetableCourseDisplayLabel($marker['label'] ?? '');
+                            $cellData['markers'][$markerIndex]['title'] = $this->normalizedTimetableCourseDisplayLabel($marker['title'] ?? '');
+                        }
+
+                        unset($cellData);
+                    }
+                }
+            }
+        }
+
+        return $data;
+    }
+
+    private function normalizedTimetableCourseDisplayLabel(string $label): string
+    {
+        return preg_replace('/^LET(?=\d|\s|-|$)/iu', 'LPT', $label) ?? $label;
     }
 
     public function evaluationSettings(StudentTimetableEvaluationSettingsService $service): JsonResponse

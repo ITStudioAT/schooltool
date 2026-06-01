@@ -2446,6 +2446,8 @@ class RobotTimetableGeneratorService
             })
             ->all();
 
+        $this->applyDistanceLearningDetectionToSlots($slots, $displayOptions);
+
         $appointmentItems = [];
 
         foreach ($displayOptions as $option) {
@@ -2741,6 +2743,52 @@ class RobotTimetableGeneratorService
         return $requiredSlotCount >= 2
             && $scheduledWeeklyLoad > 0
             && abs(($scheduledWeeklyLoad * 2) - $requiredSlotCount) < 0.001;
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $slots
+     * @param  list<array<string, mixed>>  $options
+     */
+    private function applyDistanceLearningDetectionToSlots(array &$slots, array $options): void
+    {
+        $courseSlotLoads = [];
+
+        foreach ($slots as $slot) {
+            $courseKey = $slot['key'] ?? '';
+            if ($courseKey === '') {
+                continue;
+            }
+
+            $courseGroup = $slot['courseGroup'] ?? [];
+            $load = $this->courseGroupWeeklySlotLoad($courseGroup);
+            $courseSlotLoads[$courseKey] = ($courseSlotLoads[$courseKey] ?? 0) + $load;
+        }
+
+        $courseHours = [];
+        foreach ($options as $option) {
+            $course = $this->optionSelectedCourse($option);
+            $courseKey = $course['key'] ?? $course['code'] ?? '';
+            if ($courseKey !== '' && ! isset($courseHours[$courseKey])) {
+                $courseHours[$courseKey] = $this->requiredSlotCountForCourse($course);
+            }
+        }
+
+        $fuCourseKeys = [];
+        foreach ($courseHours as $courseKey => $requiredSlotCount) {
+            $actualLoad = $courseSlotLoads[$courseKey] ?? 0;
+            if ($requiredSlotCount >= 2 && $actualLoad > 0 && abs(($actualLoad * 2) - $requiredSlotCount) < 0.001) {
+                $fuCourseKeys[$courseKey] = true;
+            }
+        }
+
+        foreach ($slots as $slotKey => &$slot) {
+            $courseKey = $slot['key'] ?? '';
+            if (isset($fuCourseKeys[$courseKey])) {
+                $slot['isDistanceLearningCourse'] = true;
+            }
+        }
+
+        unset($slot);
     }
 
     /**

@@ -502,27 +502,29 @@ describe('Students timetable overview', () => {
         const regularCourseGroup = {
             key: 'd1-regular',
             semester: 1,
-            weekday: 1,
-            hour: 11,
+            weekday: 5,
+            hour: 7,
             course: 'D1',
             title: 'D1',
             display_label: 'D1 - 1C - GOS',
-            subject: '17:50',
-            teacher: '18:35',
+            subject: '14:45',
+            teacher: '21:10',
             recurrence_interval: 1,
         }
         const singleAppointmentGroup = {
             key: 'lpt-single',
             semester: 1,
-            weekday: 1,
-            hour: 11,
+            weekday: 5,
+            hour: 7,
+            end_hour: 14,
             course: 'LPT',
             title: 'LPT',
-            display_label: 'LPT - Einzeltermin',
-            subject: '17:55',
-            teacher: '18:20',
+            display_label: 'LPT - 1U - HER',
+            subject: '14:45',
+            teacher: '21:10',
             recurrence_interval: null,
             dates_count: 1,
+            date: '2026-02-20',
         }
         const ctx = {
             activeCourseGroupFilterKeys: ['d1-regular', 'lpt-single'],
@@ -539,7 +541,7 @@ describe('Students timetable overview', () => {
             courseMenuEntrySingleDateCount: methods.courseMenuEntrySingleDateCount,
             courseGroupScheduleLabel: methods.courseGroupScheduleLabel,
             weekdayForCourseGroup: methods.weekdayForCourseGroup,
-            weekdays: [{ label: 'Mo', value: 1 }],
+            weekdays: [{ label: 'Fr', value: 5 }],
             courseGroupTimeRangeLabel: methods.courseGroupTimeRangeLabel,
             courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
             importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
@@ -568,15 +570,36 @@ describe('Students timetable overview', () => {
             courseGroupSingleDateOverlapMarkersForCell: methods.courseGroupSingleDateOverlapMarkersForCell,
             courseGroupSingleDateMarkerLabel: methods.courseGroupSingleDateMarkerLabel,
             courseGroupSingleDateMarkerTitle: methods.courseGroupSingleDateMarkerTitle,
+            singleDateOverviewGroupsForSemester: methods.singleDateOverviewGroupsForSemester,
+            compactSingleDateOverviewCourseGroups: methods.compactSingleDateOverviewCourseGroups,
+            singleDateOverviewCourseGroupSortValue: methods.singleDateOverviewCourseGroupSortValue,
+            singleDateOverviewCourseGroupsCanMerge: methods.singleDateOverviewCourseGroupsCanMerge,
+            singleDateOverviewMergeSignature: methods.singleDateOverviewMergeSignature,
+            mergedSingleDateOverviewCourseGroup: methods.mergedSingleDateOverviewCourseGroup,
+            singleDateOverviewEndHour: methods.singleDateOverviewEndHour,
+            singleDateOverviewGroup: methods.singleDateOverviewGroup,
+            singleDateOverviewSlotTitle: methods.singleDateOverviewSlotTitle,
+            singleDateOverviewSummary: methods.singleDateOverviewSummary,
+            singleDateOverviewDateLabel: methods.singleDateOverviewDateLabel,
+            singleDateOverviewHourRangeLabel: methods.singleDateOverviewHourRangeLabel,
+            sameSlotDateOverviewCourseTitle: methods.sameSlotDateOverviewCourseTitle,
+            sameSlotDateOverviewSlotTitle: methods.sameSlotDateOverviewSlotTitle,
+            sameSlotDateOverviewSlotRangeTitle: methods.sameSlotDateOverviewSlotRangeTitle,
             displayCourseGroupsForCell: methods.displayCourseGroupsForCell,
             courseGroupsForCell: methods.courseGroupsForCell,
             cellHasOverlap: methods.cellHasOverlap,
             courseCellKey: methods.courseCellKey,
+            formatDateWithWeekdayLabel: methods.formatDateWithWeekdayLabel,
+            weekdayLabelForDate: methods.weekdayLabelForDate,
+            formatDateValue: methods.formatDateValue,
+            formatCompactDateValue: methods.formatCompactDateValue,
+            formatDate: methods.formatDate,
+            normalizeDate: methods.normalizeDate,
             courseGroupMatchesSelectedRecurrenceWeek() {
                 return true
             },
             courseGroupsByCell: {
-                '1-1-11': [regularCourseGroup],
+                '1-5-7': [regularCourseGroup],
             },
             uniqueCourseGroupsByKey: methods.uniqueCourseGroupsByKey,
             uniqueDisplayCourseGroups: methods.uniqueDisplayCourseGroups,
@@ -584,18 +607,104 @@ describe('Students timetable overview', () => {
             courseGroupSortLabel: methods.courseGroupSortLabel,
         }
 
-        expect(methods.displayCourseGroupsForCell.call(ctx, 1, 1, 11).map((courseGroup: Record<string, string>) => courseGroup.key))
+        expect(methods.displayCourseGroupsForCell.call(ctx, 1, 5, 7).map((courseGroup: Record<string, string>) => courseGroup.key))
             .toEqual(['d1-regular'])
-        expect(methods.courseGroupSingleDateOverlapMarkersForCell.call(ctx, 1, 1, 11))
+        expect(methods.courseGroupSingleDateOverlapMarkersForCell.call(ctx, 1, 5, 7))
             .toEqual([{
                 key: 'lpt-single',
                 label: 'LPT',
-                title: 'LPT - Einzeltermin',
+                title: 'LPT - 1U - HER',
                 courseGroup: singleAppointmentGroup,
             }])
-        expect(methods.cellHasOverlap.call(ctx, 1, 1, 11)).toBe(false)
+        expect(methods.cellHasOverlap.call(ctx, 1, 5, 7)).toBe(false)
         expect(methods.courseGroupHasOverlap.call(ctx, regularCourseGroup)).toBe(false)
         expect(methods.courseGroupSingleDateOverlapMarker.call(ctx, regularCourseGroup)).toBe('Auch Einzeltermine')
+        expect(methods.singleDateOverviewGroupsForSemester.call(ctx, 1)).toEqual([{
+            key: 'lpt-single',
+            title: 'LPT - 1U - HER',
+            slotTitle: 'Fr 7.-14. 14:45 - 21:10',
+            dateLabels: ['Fr, 20.02.2026'],
+            summary: 'LPT - 1U - HER: Fr, 20.02., 7.-14., 14:45-21:10',
+            courseGroup: singleAppointmentGroup,
+            sortValue: '2026-02-20|05|07|LPT - 1U - HER',
+        }])
+    })
+
+    it('compacts continued single-date lesson rows into one overview line', () => {
+        const methods = (Overview as any).methods
+        const lessonTimes = [
+            ['14:45', '15:30'],
+            ['15:30', '16:15'],
+            ['16:15', '17:00'],
+            ['17:05', '17:50'],
+            ['17:50', '18:35'],
+            ['18:45', '19:30'],
+            ['19:30', '20:15'],
+            ['20:25', '21:10'],
+        ]
+        const singleDateCourseGroups = lessonTimes.map(([subject, teacher], index) => ({
+            key: `lpt-${index + 7}`,
+            semester: 1,
+            weekday: 5,
+            hour: index + 7,
+            course: 'LPT',
+            title: 'LPT',
+            display_label: 'LPT - 1U - HER',
+            subject,
+            teacher,
+            recurrence_interval: null,
+            date: '2026-02-20',
+        }))
+        const ctx = {
+            activeCourseGroupFilterKeys: singleDateCourseGroups.map(courseGroup => courseGroup.key),
+            configuredCourseGroups: singleDateCourseGroups,
+            configuredSchoolHours: [],
+            weekdays: [{ label: 'Fr', value: 5 }],
+            singleDateOverviewGroupsForSemester: methods.singleDateOverviewGroupsForSemester,
+            compactSingleDateOverviewCourseGroups: methods.compactSingleDateOverviewCourseGroups,
+            singleDateOverviewCourseGroupSortValue: methods.singleDateOverviewCourseGroupSortValue,
+            singleDateOverviewCourseGroupsCanMerge: methods.singleDateOverviewCourseGroupsCanMerge,
+            singleDateOverviewMergeSignature: methods.singleDateOverviewMergeSignature,
+            mergedSingleDateOverviewCourseGroup: methods.mergedSingleDateOverviewCourseGroup,
+            singleDateOverviewEndHour: methods.singleDateOverviewEndHour,
+            singleDateOverviewGroup: methods.singleDateOverviewGroup,
+            singleDateOverviewSlotTitle: methods.singleDateOverviewSlotTitle,
+            singleDateOverviewSummary: methods.singleDateOverviewSummary,
+            singleDateOverviewDateLabel: methods.singleDateOverviewDateLabel,
+            singleDateOverviewHourRangeLabel: methods.singleDateOverviewHourRangeLabel,
+            sameSlotDateOverviewCourseTitle: methods.sameSlotDateOverviewCourseTitle,
+            sameSlotDateOverviewSlotTitle: methods.sameSlotDateOverviewSlotTitle,
+            sameSlotDateOverviewSlotRangeTitle: methods.sameSlotDateOverviewSlotRangeTitle,
+            courseGroupDates: methods.courseGroupDates,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+            formatTimeValue: methods.formatTimeValue,
+            formatDateWithWeekdayLabel: methods.formatDateWithWeekdayLabel,
+            weekdayLabelForDate: methods.weekdayLabelForDate,
+            formatDateValue: methods.formatDateValue,
+            formatCompactDateValue: methods.formatCompactDateValue,
+            formatDate: methods.formatDate,
+            normalizeDate: methods.normalizeDate,
+            uniqueCourseGroupsByKey: methods.uniqueCourseGroupsByKey,
+        }
+
+        expect(methods.singleDateOverviewGroupsForSemester.call(ctx, 1)).toEqual([{
+            key: 'lpt-7|lpt-8|lpt-9|lpt-10|lpt-11|lpt-12|lpt-13|lpt-14',
+            title: 'LPT - 1U - HER',
+            slotTitle: 'Fr 7.-14. 14:45 - 21:10',
+            dateLabels: ['Fr, 20.02.2026'],
+            summary: 'LPT - 1U - HER: Fr, 20.02., 7.-14., 14:45-21:10',
+            courseGroup: {
+                ...singleDateCourseGroups[0],
+                key: 'lpt-7|lpt-8|lpt-9|lpt-10|lpt-11|lpt-12|lpt-13|lpt-14',
+                end_hour: 14,
+                teacher: '21:10',
+            },
+            sortValue: '2026-02-20|05|07|LPT - 1U - HER',
+        }])
     })
 
     it('marks same-cell recurring courses with separate dates as orange and lists their dates', () => {
@@ -1405,6 +1514,111 @@ describe('Students timetable overview', () => {
         })).toBe('ETH')
     })
 
+    it('normalizes LET timetable course labels to LPT', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            courseGroupBlockLabel: methods.courseGroupBlockLabel,
+            courseGroupCourseSource: methods.courseGroupCourseSource,
+            courseGroupDetailLabel: methods.courseGroupDetailLabel,
+            courseGroupDisplayLabel: methods.courseGroupDisplayLabel,
+            courseGroupDistanceLearning: () => false,
+            courseGroupDates: methods.courseGroupDates,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+        }
+        const courseGroup = {
+            course: 'LET',
+            display_label: 'LET - 1U - HER',
+            recurrence_label: '1-wöchig',
+            title: 'LET',
+        }
+
+        expect(methods.courseGroupDisplayLabel.call(ctx, courseGroup)).toBe('LPT - 1U - HER')
+        expect(methods.courseGroupSingleDateMarkerLabel.call(ctx, courseGroup)).toBe('LPT')
+        expect(methods.mainCourseLabel.call(ctx, courseGroup)).toBe('LPT')
+        expect(methods.timetablePdfCoursePayload.call(ctx, courseGroup)).toEqual({
+            label: 'LPT - 1U - HER',
+            details: '1-wöchig',
+            dates: [],
+        })
+    })
+
+    it('marks half-load timetable groups as FU in timetable details and pdf payloads', () => {
+        const methods = (Overview as any).methods
+        const selectedCourseGroup = {
+            key: 'inf1-fu',
+            semester: 1,
+            weekday: 5,
+            hour: 12,
+            course: 'INF1',
+            class_name: 'INF1-Grp2-KRO',
+            display_label: 'INF1-Grp2-KRO',
+            recurrence_label: '1-wöchig',
+            dates: ['2026-03-13', '2026-03-20'],
+        }
+        const ctx = {
+            activeCourseGroupFilterKeySet: new Set(['inf1-fu']),
+            configuredCourseGroups: [
+                selectedCourseGroup,
+                {
+                    key: 'inf1-full-1',
+                    semester: 1,
+                    weekday: 1,
+                    hour: 13,
+                    course: 'INF1',
+                    class_name: 'INF1-Grp1-KRO',
+                    display_label: 'INF1-Grp1-KRO',
+                    recurrence_label: '1-wöchig',
+                },
+                {
+                    key: 'inf1-full-2',
+                    semester: 1,
+                    weekday: 1,
+                    hour: 14,
+                    course: 'INF1',
+                    class_name: 'INF1-Grp1-KRO',
+                    display_label: 'INF1-Grp1-KRO',
+                    recurrence_label: '1-wöchig',
+                },
+            ],
+            courseAliasesFromValues: methods.courseAliasesFromValues,
+            courseCellKey: methods.courseCellKey,
+            courseCodeAliases: methods.courseCodeAliases,
+            courseCodeAliasParts: methods.courseCodeAliasParts,
+            courseCodeTokensFromValue: methods.courseCodeTokensFromValue,
+            courseCandidatesForCourseGroup: () => [{ key: 'inf1', code: 'INF1', hours: 2 }],
+            courseForCourseGroup: methods.courseForCourseGroup,
+            courseGroupChoiceOptionCodes: methods.courseGroupChoiceOptionCodes,
+            courseGroupDetailLabel: methods.courseGroupDetailLabel,
+            courseGroupDisplayLabel: methods.courseGroupDisplayLabel,
+            courseGroupDistanceLearning: methods.courseGroupDistanceLearning,
+            courseGroupIsSingleDate: () => false,
+            courseGroupMatchesCourse: methods.courseGroupMatchesCourse,
+            courseGroupOptionLabel: methods.courseGroupOptionLabel,
+            courseGroupPrimaryLabelSegment: methods.courseGroupPrimaryLabelSegment,
+            courseGroupsAreDistanceLearningCourse: methods.courseGroupsAreDistanceLearningCourse,
+            courseGroupsScheduledWeeklyLoad: methods.courseGroupsScheduledWeeklyLoad,
+            courseGroupWeekInterval: methods.courseGroupWeekInterval,
+            courseGroupWeeklySlotLoad: methods.courseGroupWeeklySlotLoad,
+            courseGroupDates: methods.courseGroupDates,
+            dateFromIsoValue: methods.dateFromIsoValue,
+            defaultTimetableCodeAlias: methods.defaultTimetableCodeAlias,
+            normalizedCourseCode: methods.normalizedCourseCode,
+            requiredSlotCountForCourse: methods.requiredSlotCountForCourse,
+            timetablePdfCoursePayload: methods.timetablePdfCoursePayload,
+            uniqueCourseGroupsBySlot: methods.uniqueCourseGroupsBySlot,
+            uniqueValues: methods.uniqueValues,
+            weekIntervalFromDates: methods.weekIntervalFromDates,
+        }
+
+        expect(methods.courseGroupDistanceLearning.call(ctx, selectedCourseGroup)).toBe(true)
+        expect(methods.courseGroupDetailLabel.call(ctx, selectedCourseGroup)).toBe('FU · 1-wöchig')
+        expect(methods.timetablePdfCoursePayload.call(ctx, selectedCourseGroup)).toEqual({
+            label: 'INF1-Grp2-KRO',
+            details: 'FU · 1-wöchig',
+            dates: ['2026-03-13', '2026-03-20'],
+        })
+    })
+
     it('does not treat time-only labels as main courses', () => {
         const methods = (Overview as any).methods
         const ctx = {
@@ -1737,6 +1951,11 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain(':loading="pdfExporting"')
         expect(componentSource).toContain('size="large"')
         expect(componentSource).toContain('margin-left: auto;')
+        expect(componentSource).toContain('.recurrence-week-selector :deep(.v-btn-toggle) {')
+        expect(componentSource).toContain('height: auto;')
+        expect(componentSource).toContain('overflow: visible;')
+        expect(componentSource).toContain('min-height: 32px;')
+        expect(componentSource).toContain('white-space: nowrap;')
         expect(componentSource).toContain('downloadBlob(blob, fileName)')
         expect(componentSource).not.toContain('window.print()')
         expect(componentSource).not.toContain('overview-pdf-printing')
@@ -1749,12 +1968,16 @@ describe('Students timetable overview', () => {
         expect(componentSource).not.toContain('recurrence-week-selector__action-btn')
         expect(componentSource).toContain(':title="marker.title"')
         expect(componentSource).toContain('timetable-generated-cell__single-date-marker')
+        expect(componentSource).toContain('singleDateOverviewGroupsForSemester(semester.value)')
+        expect(componentSource).toContain('class="timetable-date-overview timetable-single-date-overview"')
+        expect(componentSource).toContain('Einzeltermine')
+        expect(componentSource).toContain('timetable-single-date-overview__item')
         expect(componentSource).toContain(':style="timetableGridStyle"')
         expect(componentSource).toContain('hasVisibleSaturdayCourses')
         expect(componentSource).not.toContain('class="timetable-saturday-toggle"')
         expect(componentSource).not.toContain('aria-label="Samstag anzeigen"')
         expect(componentSource).not.toContain('timetable-generated-cell--saturday-placeholder')
-        expect(componentSource).toContain('grid-template-columns: 88px repeat(var(--overview-timetable-weekdays, 5), minmax(72px, 1fr));')
+        expect(componentSource).toContain('grid-template-columns: 64px repeat(var(--overview-timetable-weekdays, 5), minmax(62px, 1fr));')
         expect(componentSource).toContain('grid-template-rows: 34px;')
         expect(componentSource).toContain('grid-auto-rows: minmax(58px, auto);')
         expect(componentSource).toContain('min-height: 48px;')
@@ -2703,6 +2926,7 @@ describe('Students timetable overview', () => {
             normalizedCourseChoiceRestrictionMode: methods.normalizedCourseChoiceRestrictionMode,
             normalizedTransferredStudentContext: methods.normalizedTransferredStudentContext,
             normalizedTransferredStudentCourses: methods.normalizedTransferredStudentCourses,
+            savedRobotTimetableStateAvailable: () => true,
             openWizardPanel: methods.openWizardPanel,
             openManualPanel: methods.openManualPanel,
         }
