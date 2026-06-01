@@ -10370,8 +10370,15 @@ export default {
 }
 
 .robot-course-item-row {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     font-size: 0.86rem;
+}
+
+.robot-course-item-panels :deep(.v-expansion-panel-title__icon) {
+    flex: 0 0 auto;
+    min-width: 24px;
+    color: rgba(var(--v-theme-primary), 0.72);
 }
 
 .robot-course-item-row > :nth-child(3),
