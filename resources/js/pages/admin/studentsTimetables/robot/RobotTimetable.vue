@@ -1304,7 +1304,9 @@
                                 v-for="time in robotTimetableTimes"
                                 :key="`robot-time-${time.value}`">
                                 <div class="robot-generated-cell robot-generated-cell--time">
-                                    {{ time.shortTitle }}
+                                    <span class="robot-generated-cell__hour">{{ time.hourLabel }}</span>
+                                    <span v-if="time.timeFrom" class="robot-generated-cell__time-range">{{ time.timeFrom }}</span>
+                                    <span v-if="time.timeUntil" class="robot-generated-cell__time-range">{{ time.timeUntil }}</span>
                                 </div>
                                 <div
                                     v-for="weekday in robotTimetableWeekdays"
@@ -2241,7 +2243,9 @@
                     v-for="time in robotTimetableTimes"
                     :key="`embedded-robot-time-${time.value}`">
                     <div class="robot-generated-cell robot-generated-cell--time">
-                        {{ time.shortTitle }}
+                        <span class="robot-generated-cell__hour">{{ time.hourLabel }}</span>
+                        <span v-if="time.timeFrom" class="robot-generated-cell__time-range">{{ time.timeFrom }}</span>
+                        <span v-if="time.timeUntil" class="robot-generated-cell__time-range">{{ time.timeUntil }}</span>
                     </div>
                     <div
                         v-for="weekday in robotTimetableWeekdays"
@@ -2629,6 +2633,9 @@ export default {
                 .map(schoolHour => ({
                     title: this.timeOptionTitle(schoolHour),
                     shortTitle: this.timeOptionShortTitle(schoolHour),
+                    hourLabel: `${Number(schoolHour.hour)}.`,
+                    timeFrom: this.formatTimeValue(schoolHour?.from),
+                    timeUntil: this.formatTimeValue(schoolHour?.until),
                     value: Number(schoolHour.hour),
                 }))
                 .filter(time => Number.isFinite(time.value))
@@ -9995,7 +10002,7 @@ export default {
 
 .robot-generated-grid {
     display: grid;
-    grid-template-columns: 88px repeat(var(--robot-generated-weekdays, 6), minmax(72px, 1fr));
+    grid-template-columns: 64px repeat(var(--robot-generated-weekdays, 6), minmax(62px, 1fr));
     gap: 2px;
     overflow-x: auto;
 }
@@ -10016,6 +10023,17 @@ export default {
     background: #dbeafe;
     color: #1e3a8a;
     font-weight: 750;
+}
+
+.robot-generated-cell--time {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.robot-generated-cell__time-range {
+    font-weight: 400;
 }
 
 .robot-generated-cell--filled {
@@ -10051,15 +10069,15 @@ export default {
 .robot-generated-cell__occasional-marker {
     display: inline-flex;
     align-items: flex-start;
-    gap: 2px;
+    gap: 1px;
     max-width: 100%;
-    min-height: 13px;
-    padding: 0 4px;
+    min-height: 11px;
+    padding: 0 3px;
     border: 1px solid rgba(30, 64, 175, 0.2);
-    border-radius: 4px;
+    border-radius: 3px;
     background: #bfdbfe;
     color: #1e3a8a;
-    font-size: 0.58rem;
+    font-size: 0.5rem;
     font-weight: 850;
     line-height: 1;
 }
@@ -10488,6 +10506,25 @@ export default {
 }
 
 @media (max-width: 700px) {
+    .robot-timetable-card {
+        border: none !important;
+        border-radius: 0 !important;
+    }
+
+    .robot-timetable-card__title {
+        padding-inline: 4px;
+    }
+
+    .robot-timetable-card__text {
+        padding-inline: 4px;
+    }
+
+    .robot-generator--embedded {
+        padding-inline: 4px;
+        border: none;
+        border-radius: 0;
+    }
+
     .robot-quality-card__items {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -10532,7 +10569,11 @@ export default {
     }
 
     .robot-generated-grid {
-        grid-template-columns: 52px repeat(var(--robot-generated-weekdays, 6), minmax(56px, 1fr));
+        grid-template-columns: 38px repeat(var(--robot-generated-weekdays, 6), minmax(48px, 1fr));
+    }
+
+    .robot-generated-cell__time-range {
+        font-size: 0.6rem;
     }
 
     .robot-generated-cell {

@@ -336,6 +336,20 @@ export default {
     color: rgba(255, 255, 255, 0.92);
 }
 
+@media (max-width: 700px) {
+    .students-timetables-page {
+        padding-inline: 0 !important;
+    }
+
+    .students-timetables-page > :deep(.v-row) {
+        margin-inline: 0 !important;
+    }
+
+    .students-timetables-page > :deep(.v-row > .v-col) {
+        padding-inline: 0 !important;
+    }
+}
+
 @media (max-width: 640px) {
     .st-nav {
         padding: 8px;

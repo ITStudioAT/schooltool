@@ -1433,10 +1433,10 @@ export default {
                 return
             }
 
-            this.wizardPanelMounted = true
+            this.wizardPanelMounted = this.savedRobotTimetableStateAvailable()
             this.wizardPanelOpen = false
             this.manualPanelOpen = true
-            this.manualPanelSource = 'wizard'
+            this.manualPanelSource = this.wizardPanelMounted ? 'wizard' : 'direct'
         },
         applyTimetableOverviewLandingState() {
             const defaults = this.defaultTimetableState()
@@ -5152,7 +5152,7 @@ export default {
 
 .timetable-generated-grid {
     display: grid;
-    grid-template-columns: 88px repeat(var(--overview-timetable-weekdays, 5), minmax(72px, 1fr));
+    grid-template-columns: 64px repeat(var(--overview-timetable-weekdays, 5), minmax(62px, 1fr));
     grid-template-rows: 34px;
     grid-auto-rows: minmax(58px, auto);
     gap: 2px;
@@ -5316,6 +5316,21 @@ export default {
     }
 }
 
+@media (max-width: 700px) {
+    .students-timetable-overview {
+        padding-inline: 0 !important;
+    }
+
+    .students-timetable-overview > :deep(.v-card) {
+        border: none !important;
+        border-radius: 0 !important;
+    }
+
+    .timetable-card-body {
+        padding-inline: 4px !important;
+    }
+}
+
 @media (max-width: 640px) {
     .overview-selection {
         flex-direction: column;
@@ -5329,6 +5344,7 @@ export default {
     .overview-wizard-cancel-button {
         align-self: flex-end;
         margin-left: 0;
+        width: 100%;
     }
 
     .overview-wizard-actions {
@@ -5350,7 +5366,7 @@ export default {
     }
 
     .timetable-generated-grid {
-        grid-template-columns: 52px repeat(var(--overview-timetable-weekdays, 5), minmax(56px, 1fr));
+        grid-template-columns: 38px repeat(var(--overview-timetable-weekdays, 5), minmax(48px, 1fr));
         grid-template-rows: 28px;
         grid-auto-rows: minmax(44px, auto);
     }
@@ -5381,7 +5397,7 @@ export default {
     }
 
     .timetable-hour-time {
-        font-size: 0.56rem;
+        font-size: 0.5rem;
     }
 
     .semester-timetable__header {
@@ -5404,6 +5420,19 @@ export default {
 
     .overview-wizard-settings-summary__list {
         justify-content: flex-start;
+    }
+
+    .recurrence-week-selector {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin-inline: -4px;
+        padding-inline: 4px;
+    }
+
+    .recurrence-week-selector :deep(.v-btn-toggle .v-btn) {
+        font-size: 0.68rem;
+        padding: 0 8px;
+        min-width: 0;
     }
 
     .recurrence-week-selector__pdf-btn {
