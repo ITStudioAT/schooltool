@@ -335,4 +335,28 @@ export default {
 .st-nav__button--active .st-nav__button-meta {
     color: rgba(255, 255, 255, 0.92);
 }
+
+@media (max-width: 640px) {
+    .st-nav {
+        padding: 8px;
+    }
+
+    .st-nav__buttons {
+        gap: 6px;
+    }
+
+    .st-nav__button {
+        flex: 1 1 100%;
+        height: 36px !important;
+        padding: 0 12px;
+    }
+
+    .st-nav__button-title {
+        font-size: 0.84rem;
+    }
+
+    .st-nav__button-meta {
+        font-size: 0.66rem;
+    }
+}
 </style>

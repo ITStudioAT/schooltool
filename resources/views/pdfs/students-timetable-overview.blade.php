@@ -88,22 +88,92 @@
             ->sortBy([['weekday_index', 'asc'], ['hour', 'asc'], ['label', 'asc']])
             ->values();
         $courseSemesters = $allCourseSlots->groupBy('semester');
+        $directorySlotSummary = function ($slots): string {
+            return $slots
+                ->groupBy('weekday')
+                ->map(function ($weekdaySlots, string $weekday): string {
+                    $hours = $weekdaySlots
+                        ->pluck('hour')
+                        ->filter(fn (int $hour): bool => $hour > 0)
+                        ->unique()
+                        ->sort()
+                        ->values();
+
+                    $ranges = collect();
+                    $rangeStart = null;
+                    $previousHour = null;
+
+                    foreach ($hours as $hour) {
+                        if ($rangeStart === null) {
+                            $rangeStart = $hour;
+                            $previousHour = $hour;
+
+                            continue;
+                        }
+
+                        if ($hour === $previousHour + 1) {
+                            $previousHour = $hour;
+
+                            continue;
+                        }
+
+                        $ranges->push($rangeStart === $previousHour ? "{$rangeStart}." : "{$rangeStart}.-{$previousHour}.");
+                        $rangeStart = $hour;
+                        $previousHour = $hour;
+                    }
+
+                    if ($rangeStart !== null) {
+                        $ranges->push($rangeStart === $previousHour ? "{$rangeStart}." : "{$rangeStart}.-{$previousHour}.");
+                    }
+
+                    return $ranges
+                        ->map(fn (string $range): string => trim("{$weekday} {$range}"))
+                        ->implode(', ');
+                })
+                ->filter()
+                ->values()
+                ->implode(', ');
+        };
+        $directoryDetails = function ($slots): string {
+            $segments = $slots
+                ->pluck('details')
+                ->filter()
+                ->flatMap(fn (string $details) => preg_split('/\s*·\s*/u', $details) ?: [])
+                ->map(fn (string $segment): string => trim($segment))
+                ->filter()
+                ->unique()
+                ->values();
+
+            $recurrence = '';
+            foreach ($segments as $segment) {
+                if (preg_match('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', $segment, $match)) {
+                    $recurrence = "{$match[1]}-w";
+
+                    break;
+                }
+            }
+
+            $remainingSegments = $segments
+                ->reject(fn (string $segment): bool => preg_match('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', $segment) === 1)
+                ->values();
+
+            if ($recurrence === '') {
+                $recurrence = 'Einzeltermine';
+            }
+
+            return collect([$recurrence, ...$remainingSegments])
+                ->filter()
+                ->unique()
+                ->implode(' ');
+        };
 
         $courseDirectory = $allCourseSlots
             ->groupBy('label')
-            ->map(function ($slots, string $label) {
-                $first = $slots->first();
-                $slotSummary = $slots
-                    ->sortBy([['weekday_index', 'asc'], ['hour', 'asc']])
-                    ->map(fn (array $s): string => "{$s['weekday']} {$s['hour']}.")
-                    ->unique()
-                    ->values()
-                    ->implode(', ');
-
+            ->map(function ($slots, string $label) use ($directorySlotSummary, $directoryDetails) {
                 return [
                     'label' => $label,
-                    'details' => $first['details'] ?? '',
-                    'slots' => $slotSummary,
+                    'details' => $directoryDetails($slots),
+                    'slots' => $directorySlotSummary($slots),
                     'status' => $slots->contains('status', 'conflict') ? 'conflict'
                         : ($slots->contains('status', 'related') ? 'related' : 'filled'),
                 ];
@@ -173,11 +243,13 @@
             display: grid;
             grid-template-columns: repeat(var(--pdf-semester-columns), minmax(0, 1fr));
             gap: 2.5mm;
+            break-inside: auto;
+            page-break-inside: auto;
         }
 
         .semester {
-            break-inside: avoid;
-            page-break-inside: avoid;
+            break-inside: auto;
+            page-break-inside: auto;
             margin-bottom: 0;
         }
 
@@ -200,6 +272,17 @@
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
+            break-inside: auto;
+            page-break-inside: auto;
+        }
+
+        thead {
+            display: table-header-group;
+        }
+
+        tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
         }
 
         th,
@@ -346,10 +429,10 @@
             display: flex;
             align-items: baseline;
             gap: 1.5mm;
-            padding: 1mm 0;
+            padding: 1.15mm 0;
             border-bottom: 0.15mm solid #e2e8f0;
-            font-size: 8pt;
-            line-height: 1.35;
+            font-size: 9.25pt;
+            line-height: 1.4;
         }
 
         .directory-entry-status {
@@ -370,13 +453,13 @@
         .directory-entry-slots {
             color: #1e3a8a;
             font-weight: 600;
-            font-size: 7pt;
+            font-size: 8.25pt;
             white-space: nowrap;
         }
 
         .directory-entry-details {
             color: #64748b;
-            font-size: 7pt;
+            font-size: 8.25pt;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;

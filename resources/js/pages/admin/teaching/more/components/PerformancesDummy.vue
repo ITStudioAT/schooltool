@@ -764,9 +764,22 @@ export default {
 }
 
 .performances-table th {
-    background: rgba(15, 23, 42, 0.06);
+    background: #f1f1f2;
     font-weight: 600;
     white-space: nowrap;
+}
+
+/* Freeze the first (student) column while the remaining columns scroll horizontally */
+.performances-table th:first-child,
+.student-cell {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    box-shadow: 1px 0 0 rgba(16, 38, 58, 0.1);
+}
+
+.performances-table th:first-child {
+    z-index: 3;
 }
 
 .student-cell {
@@ -774,6 +787,11 @@ export default {
     min-width: 260px;
     max-width: 260px;
     font-weight: 500;
+    background: #ffffff;
+}
+
+.performance-row--canceled .student-cell {
+    background: #ffffff;
 }
 
 .performance-items {

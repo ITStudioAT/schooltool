@@ -2,13 +2,14 @@
     <div
         v-if="embeddedCourseCardsOnly"
         class="robot-timetable-embedded-course-cards"
-        :class="{ 'robot-timetable-embedded-course-cards--with-additional': additionalCoursePanelVisible }">
+        :class="{ 'robot-timetable-embedded-course-cards--with-additional': additionalCoursePanelVisible }"
+        @click="showCourseActionAfterCourseInteraction">
         <div class="robot-course-list robot-course-panel">
             <div class="robot-course-panel__title">
                 <div class="robot-course-list__header robot-course-list__header--panel">
                     <div class="robot-course-list__title">{{ regularCourseListTitle }}</div>
                     <v-chip size="x-small" color="primary" variant="tonal">
-                        {{ selectedCourses.length }} / {{ availableCourses.length }}
+                        {{ regularCourseCountLabel }}
                     </v-chip>
                     <v-chip size="x-small" color="secondary" variant="tonal">
                         {{ formatHours(selectedCoursesHours) }} Std.
@@ -79,7 +80,7 @@
                                                 color="primary"
                                                 :disabled="!courseSelectable(course)"
                                                 hide-details
-                                                @click.stop
+                                                @click.stop="showCourseActionAfterCourseInteraction"
                                                 @update:model-value="setCourseSelected(course, $event)" />
                                         </div>
                                         <div class="robot-course-item-row__code">
@@ -114,7 +115,7 @@
                                                             color="primary"
                                                             hide-details
                                                             class="robot-course-item-detail__check"
-                                                            @click.stop
+                                                            @click.stop="showCourseActionAfterCourseInteraction"
                                                             @update:model-value="setCourseGroupSelected(course, group, $event)" />
                                                         <span>
                                                             {{ group.title }}<sup v-if="courseGroupDistanceLearning(course, group)" class="robot-course-fu">FU</sup>:
@@ -198,7 +199,7 @@
                                                 color="primary"
                                                 :disabled="!additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
                                                 hide-details
-                                                @click.stop
+                                                @click.stop="showCourseActionAfterCourseInteraction"
                                                 @update:model-value="setAdditionalCourseSelected(course, $event)" />
                                         </div>
                                         <div class="robot-course-item-row__code">
@@ -234,7 +235,7 @@
                                                             :disabled="!additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
                                                             hide-details
                                                             class="robot-course-item-detail__check"
-                                                            @click.stop
+                                                            @click.stop="showCourseActionAfterCourseInteraction"
                                                             @update:model-value="setAdditionalCourseGroupSelected(course, group, $event)" />
                                                         <span>
                                                             {{ group.title }}<sup v-if="courseGroupDistanceLearning(course, group)" class="robot-course-fu">FU</sup>:
@@ -556,7 +557,7 @@
                         <div class="robot-course-list__header robot-course-list__header--panel">
                             <div class="robot-course-list__title">{{ regularCourseListTitle }}</div>
                             <v-chip size="x-small" color="primary" variant="tonal">
-                                {{ selectedCourses.length }} / {{ availableCourses.length }}
+                                {{ regularCourseCountLabel }}
                             </v-chip>
                             <v-chip size="x-small" color="secondary" variant="tonal">
                                 {{ formatHours(selectedCoursesHours) }} Std.
@@ -2488,6 +2489,7 @@ export default {
             selectedTimetableResultType: 'full_green',
             additionalCourseTimetableRequired: false,
             additionalCourseExtensionActionHidden: false,
+            courseActionHiddenUntilCourseInteraction: false,
             additionalCoursePanelRetained: false,
             additionalCourseSelectionChangedAfterTimetable: false,
             courseItemPanels: [],
@@ -2744,7 +2746,12 @@ export default {
             }]
         },
         regularCourseListTitle() {
-            return this.selectedStudent ? 'Fehlende Kurse + Vorgesehene Kurse' : 'Kurse'
+            return this.selectedStudent ? 'Fehlende Kurse + Vorgesehene Kurse' : 'Vorgesehene Kurse'
+        },
+        regularCourseCountLabel() {
+            return this.selectedStudent
+                ? `${this.selectedCourses.length} / ${this.availableCourses.length}`
+                : this.availableCourses.length
         },
         availableCourses() {
             const semesterCourses = this.coursesForSemester(this.selection.semester)
@@ -2783,7 +2790,7 @@ export default {
             if (!this.selectedStudent) {
                 return this.availableCourseColumns.map((courses, index) => ({
                     key: `courses-${index}`,
-                    title: '',
+                    title: index === 0 ? 'Vorgesehene Kurse' : '',
                     courses,
                 }))
             }
@@ -2828,7 +2835,9 @@ export default {
             ].filter(courseColumn => courseColumn.length)
         },
         additionalCoursePanelVisible() {
-            return this.studentAdditionalCourses.length > 0
+            const additionalCourses = Array.isArray(this.studentAdditionalCourses) ? this.studentAdditionalCourses : []
+
+            return additionalCourses.length > 0
                 && (Boolean(this.selectedRobotTimetable) || this.additionalCoursePanelRetained === true)
         },
         additionalCourseExtensionMode() {
@@ -2921,6 +2930,8 @@ export default {
             })
         },
         courseActionVisible() {
+            if (!this.selectedStudent && this.courseActionHiddenUntilCourseInteraction === true) return false
+
             return !this.selectedStudent
                 || !this.studentPlannedCourses.length
                 || !this.selectedRobotTimetable
@@ -3320,7 +3331,7 @@ export default {
             return this.studentSemesterBySchoolLevel()[schoolLevel] || null
         },
         selectedStudentPlanningSemesterValue() {
-            if (!this.selectedStudent) return null
+            if (!this.selectedStudent) return Number(this.selection?.semester) || null
 
             return this.studentSemester(this.selectedStudent) || Number(this.selection?.semester) || null
         },
@@ -3650,6 +3661,7 @@ export default {
                 return
             }
 
+            this.hideCourseActionUntilCourseInteraction()
             this.timetableCreateLoading = true
 
             try {
@@ -3686,6 +3698,14 @@ export default {
             if (!hasSelectedAdditionalCourses && this.additionalCourseTimetableRequired !== true) return
 
             this.resetAdditionalCourseSelection({ clearGeneratedTimetables: true })
+        },
+        hideCourseActionUntilCourseInteraction() {
+            if (this.selectedStudent) return
+
+            this.courseActionHiddenUntilCourseInteraction = true
+        },
+        showCourseActionAfterCourseInteraction() {
+            this.courseActionHiddenUntilCourseInteraction = false
         },
         backendTimetableRequestPayload(options = {}) {
             const evaluationCriteria = this.storageEvaluationCriteria(this.evaluationCriteria)
@@ -5236,6 +5256,8 @@ export default {
             this.selectedQualityCriteriaCount = null
             if (!this.qualitySummaryCheckedKeys.length) {
                 this.qualityCriteriaResultFilterEnabled = false
+            } else if (checked === true && this.qualityCriteriaResultFilterAvailable()) {
+                this.qualityCriteriaResultFilterEnabled = true
             }
             this.setTimetableResultCounter(this.selectedTimetableResultType, 1)
 
@@ -10348,8 +10370,15 @@ export default {
 }
 
 .robot-course-item-row {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     font-size: 0.86rem;
+}
+
+.robot-course-item-panels :deep(.v-expansion-panel-title__icon) {
+    flex: 0 0 auto;
+    min-width: 24px;
+    color: rgba(var(--v-theme-primary), 0.72);
 }
 
 .robot-course-item-row > :nth-child(3),
@@ -10500,6 +10529,45 @@ export default {
     .robot-course-item-row {
         grid-template-columns: 44px minmax(46px, 0.8fr) minmax(92px, 1.5fr) minmax(52px, 0.7fr) minmax(34px, 0.4fr);
         gap: 6px;
+    }
+
+    .robot-generated-grid {
+        grid-template-columns: 52px repeat(var(--robot-generated-weekdays, 6), minmax(56px, 1fr));
+    }
+
+    .robot-generated-cell {
+        padding: 3px;
+        font-size: 0.68rem;
+    }
+
+    .robot-generated-cell--has-occasional {
+        padding-top: 14px;
+    }
+
+    .robot-generated-cell__code {
+        font-size: 0.68rem;
+    }
+
+    .robot-generated-cell__details {
+        font-size: 0.58rem;
+    }
+
+    .robot-generated-cell__date {
+        font-size: 0.6rem;
+    }
+
+    .robot-generated-timetable__header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .robot-generated-header__actions {
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .robot-generated-overtake-button {
+        width: 100%;
     }
 }
 

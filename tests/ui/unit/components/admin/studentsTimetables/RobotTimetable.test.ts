@@ -4538,13 +4538,45 @@ describe('Students timetable robot page', () => {
             ...methods,
             selectedStudent: null,
             studentPlannedCourses: [],
+            courseActionHiddenUntilCourseInteraction: false,
         })).toBe(true)
+
+        expect(computed.courseActionVisible.call({
+            ...methods,
+            selectedStudent: null,
+            studentPlannedCourses: [],
+            courseActionHiddenUntilCourseInteraction: true,
+        })).toBe(false)
 
         expect(computed.courseActionVisible.call({
             ...methods,
             selectedStudent: { student_code: '100' },
             studentPlannedCourses: [],
+            courseActionHiddenUntilCourseInteraction: true,
         })).toBe(true)
+    })
+
+    it('hides the no-student create action until a course card interaction', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: null,
+            studentPlannedCourses: [],
+            courseActionHiddenUntilCourseInteraction: false,
+        }
+
+        methods.hideCourseActionUntilCourseInteraction.call(ctx)
+        expect(ctx.courseActionHiddenUntilCourseInteraction).toBe(true)
+        expect(computed.courseActionVisible.call(ctx)).toBe(false)
+
+        methods.showCourseActionAfterCourseInteraction.call(ctx)
+        expect(ctx.courseActionHiddenUntilCourseInteraction).toBe(false)
+        expect(computed.courseActionVisible.call(ctx)).toBe(true)
+
+        ctx.selectedStudent = { student_code: '100' }
+        methods.hideCourseActionUntilCourseInteraction.call(ctx)
+        expect(ctx.courseActionHiddenUntilCourseInteraction).toBe(false)
     })
 
     it('resets changed course selections to the selected student defaults', () => {
@@ -4828,6 +4860,22 @@ describe('Students timetable robot page', () => {
     it('hides additional course cards until a timetable has been created', () => {
         const computed = (RobotTimetable as any).computed
         const ctx = {
+            selectedStudent: { student_code: '100' },
+            studentAdditionalCourses: [{ key: 'INF3' }],
+            selectedRobotTimetable: null,
+        }
+
+        expect(computed.additionalCoursePanelVisible.call(ctx)).toBe(false)
+
+        ctx.selectedRobotTimetable = { key: 'generated-1' }
+
+        expect(computed.additionalCoursePanelVisible.call(ctx)).toBe(true)
+    })
+
+    it('shows additional course cards for no-student mode only after timetable creation', () => {
+        const computed = (RobotTimetable as any).computed
+        const ctx = {
+            selectedStudent: null,
             studentAdditionalCourses: [{ key: 'INF3' }],
             selectedRobotTimetable: null,
         }
@@ -6817,6 +6865,97 @@ describe('Students timetable robot page', () => {
 
         expect(computed.studentPlannedCourses.call(ctx).map(course => course.code)).toEqual(['D1'])
         expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual(['D2', 'GS1'])
+    })
+
+    it('offers selected semester courses and matching additional courses without a selected student', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedStudent: null,
+            selection: {
+                semester: 1,
+                religion: 'ETH',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+                language: 'L',
+            },
+            subjectMappings: [],
+            studentCompletedCourses: [],
+            subjectRows: [
+                {
+                    id: 1,
+                    semester: 1,
+                    branch: 'common',
+                    json_code: 'D1',
+                    json_subject: 'D',
+                    name: 'Deutsch 1',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 2,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'D2',
+                    json_subject: 'D',
+                    name: 'Deutsch 2',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 3,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'GS1',
+                    json_subject: 'GS',
+                    name: 'Geschichte 1',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 4,
+                    semester: 3,
+                    branch: 'common',
+                    json_code: 'GS2',
+                    json_subject: 'GS',
+                    name: 'Geschichte 2',
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+            ],
+        }
+
+        Object.defineProperty(ctx, 'availableCourses', {
+            get() {
+                return computed.availableCourses.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'availableCourseColumns', {
+            get() {
+                return computed.availableCourseColumns.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'studentAdditionalCourses', {
+            get() {
+                return computed.studentAdditionalCourses.call(this)
+            },
+        })
+
+        expect(computed.selectedStudentPlanningSemester.call(ctx)).toBe(1)
+        expect(computed.studentPlannedCourses.call(ctx).map(course => course.code)).toEqual(['D1'])
+        expect(computed.availableCourses.call(ctx).map(course => course.code)).toEqual(['D1'])
+        expect(computed.regularCourseListTitle.call(ctx)).toBe('Vorgesehene Kurse')
+        expect(computed.regularCourseCountLabel.call(ctx)).toBe(1)
+        expect(computed.regularCourseColumns.call(ctx)).toMatchObject([
+            { title: 'Vorgesehene Kurse', courses: [{ code: 'D1' }] },
+        ])
+        expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual(['D2', 'GS1'])
+        expect(computed.additionalCoursePanelVisible.call(ctx)).toBe(false)
+
+        ctx.selectedRobotTimetable = { key: 'generated-1' }
+
+        expect(computed.additionalCoursePanelVisible.call(ctx)).toBe(true)
     })
 
     it('does not show courses already listed in regular courses as additional courses', () => {
