@@ -32,8 +32,8 @@
                         :class="{ 'transferred-student-context--collapsed': !transferredStudentContextExpanded }">
                         <div
                             class="transferred-student-context__header"
-                            :role="transferredStudentContext ? 'button' : undefined"
-                            :tabindex="transferredStudentContext ? 0 : undefined"
+                            role="button"
+                            tabindex="0"
                             @click="toggleTransferredStudentContext"
                             @keydown.enter.prevent="toggleTransferredStudentContext"
                             @keydown.space.prevent="toggleTransferredStudentContext">
@@ -64,7 +64,6 @@
                             </div>
                             <div class="transferred-student-context__header-actions">
                                 <v-btn
-                                    v-if="transferredStudentContext"
                                     :icon="transferredStudentContextExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
                                     variant="text"
                                     density="comfortable"
@@ -75,7 +74,7 @@
                         </div>
                         <v-expand-transition>
                             <div
-                                v-if="transferredStudentContext && transferredStudentContextExpanded"
+                                v-if="transferredStudentContextExpanded"
                                 class="transferred-student-context__sections">
                                 <section
                                     v-for="section in visibleTransferredStudentCourseSections"
@@ -185,6 +184,16 @@
                             prepend-icon="mdi-arrow-left"
                             @click="openWizardPanel">
                             Zurück
+                        </v-btn>
+                        <v-btn
+                            v-if="manualPanelBackToWizardVisible"
+                            class="overview-wizard-close-button overview-wizard-cancel-button"
+                            variant="tonal"
+                            color="error"
+                            size="large"
+                            prepend-icon="mdi-close-circle-outline"
+                            @click="resetSavedTimetable">
+                            Abbruch
                         </v-btn>
                         <v-btn
                             v-if="wizardPanelOpen || directManualPanelOpen"
@@ -642,15 +651,24 @@
                 <v-divider />
                 <v-card-text>
                     <div class="course-menu-dialog-options">
-                        <v-switch
-                            :model-value="restrictCourseChoiceBySelection"
-                            color="primary"
+                        <v-btn-toggle
+                            :model-value="courseChoiceRestrictionMode"
                             density="compact"
-                            hide-details
-                            inset
-                            label="Nur Vorgesehene anzeigen"
+                            variant="text"
+                            rounded="lg"
+                            selected-class="course-choice-restriction-option--active"
+                            mandatory
                             class="course-choice-restriction-switch"
-                            @update:model-value="handleCourseChoiceRestrictionUpdate" />
+                            @update:model-value="handleCourseChoiceRestrictionUpdate">
+                            <v-btn
+                                v-for="option in courseChoiceRestrictionOptions"
+                                :key="option.value"
+                                :value="option.value"
+                                class="course-choice-restriction-option"
+                                size="small">
+                                {{ option.label }}
+                            </v-btn>
+                        </v-btn-toggle>
                     </div>
 
                     <div class="course-menu-dialog-chips">
@@ -679,20 +697,20 @@
                             </div>
                             <div class="course-item-chips">
                                 <v-chip
-                                    v-for="entry in selectedCourseMenu.entries"
-                                    :key="entry.key"
+                                    v-for="entryOption in selectedCourseMenuEntryOptions"
+                                    :key="entryOption.key"
                                     size="small"
-                                    :color="courseMenuEntryHasBlockingOverlap(entry, selectedCourseMenu.semesterValue) ? 'error' : courseMenuEntryHasRelatedOverlap(entry, selectedCourseMenu.semesterValue) ? 'warning' : isCourseMenuEntryFilterActive(entry) ? 'success' : 'primary'"
-                                    :variant="isCourseMenuEntryFilterActive(entry) ? 'flat' : 'tonal'"
+                                    :color="entryOption.color"
+                                    :variant="entryOption.isActive ? 'flat' : 'tonal'"
                                     class="course-item-chip"
-                                    @click="handleCourseMenuEntryFilterClick(entry)">
+                                    @click="handleCourseMenuEntryFilterClick(entryOption.entry)">
                                     <v-icon
-                                        :icon="isCourseMenuEntryFilterActive(entry) ? 'mdi-check' : 'mdi-calendar-blank'"
+                                        :icon="entryOption.isActive ? 'mdi-check' : 'mdi-calendar-blank'"
                                         size="16"
                                         start />
-                                    <span>{{ entry.label }}</span>
-                                    <span v-if="entry.scheduleLabel" class="course-item-chip__schedule">
-                                        {{ entry.scheduleLabel }}
+                                    <span>{{ entryOption.label }}</span>
+                                    <span v-if="entryOption.scheduleLabel" class="course-item-chip__schedule">
+                                        {{ entryOption.scheduleLabel }}
                                     </span>
                                 </v-chip>
                             </div>
@@ -824,6 +842,14 @@ const ROBOT_TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:robot:last-setti
 const TIMETABLE_OVERVIEW_BASE_PATH = '/admin/students-timetables/timetable/overview'
 const TIMETABLE_OVERVIEW_LANDING_PATH = '/admin/students-timetables'
 const TIMETABLE_OVERVIEW_ROUTE_MODES = ['automatic', 'manual', 'adopted']
+const COURSE_CHOICE_RESTRICTION_PLANNED = 'planned'
+const COURSE_CHOICE_RESTRICTION_PLANNED_ADDITIONAL = 'planned_additional'
+const COURSE_CHOICE_RESTRICTION_ALL = 'all'
+const COURSE_CHOICE_RESTRICTION_MODES = [
+    COURSE_CHOICE_RESTRICTION_PLANNED,
+    COURSE_CHOICE_RESTRICTION_PLANNED_ADDITIONAL,
+    COURSE_CHOICE_RESTRICTION_ALL,
+]
 
 export default {
     name: 'StudentsTimetablesOverview',
@@ -875,8 +901,9 @@ export default {
                 2: false,
             },
             restrictCourseChoiceBySelection: false,
+            courseChoiceRestrictionMode: COURSE_CHOICE_RESTRICTION_ALL,
             transferredStudentContext: null,
-            transferredStudentContextExpanded: false,
+            transferredStudentContextExpanded: true,
             selectionDialogOpen: false,
             selection: {
                 semester: 1,
@@ -1016,10 +1043,23 @@ export default {
             }
         },
         courseChoiceCourseGroups() {
-            if (!this.restrictCourseChoiceBySelection) return this.configuredCourseGroups
+            const courseRestrictionContext = this.courseChoiceRestrictionContext || this.buildCourseChoiceRestrictionContext()
+            const courseRestrictionMode = courseRestrictionContext.mode
+
+            if (courseRestrictionMode === COURSE_CHOICE_RESTRICTION_ALL) return this.configuredCourseGroups
 
             return this.configuredCourseGroups
-                .filter(courseGroup => this.courseGroupMatchesCourseChoiceRestriction(courseGroup))
+                .filter(courseGroup => this.courseGroupMatchesCourseChoiceRestriction(courseGroup, courseRestrictionContext))
+        },
+        courseChoiceRestrictionContext() {
+            return this.buildCourseChoiceRestrictionContext()
+        },
+        courseChoiceRestrictionOptions() {
+            return [
+                { value: COURSE_CHOICE_RESTRICTION_PLANNED, label: 'Vorgesehene Kurse' },
+                { value: COURSE_CHOICE_RESTRICTION_PLANNED_ADDITIONAL, label: 'Zusätzliche Kurse' },
+                { value: COURSE_CHOICE_RESTRICTION_ALL, label: 'Alle' },
+            ]
         },
         selectionCourseChoiceCodes() {
             const semester = Number(this.selection?.semester || 0)
@@ -1035,9 +1075,15 @@ export default {
                 ])))
         },
         restrictedStudentCourseCodes() {
-            const studentCourses = Array.isArray(this.transferredStudentCourseRestrictionItems)
-                ? this.transferredStudentCourseRestrictionItems
-                : this.transferredStudentCourseRestrictionItemsFromCourses(this.transferredStudentContext?.courses)
+            const courseRestrictionMode = this.normalizedCourseChoiceRestrictionMode(this.courseChoiceRestrictionMode, {
+                restrictCourseChoiceBySelection: this.restrictCourseChoiceBySelection,
+            })
+            const studentCourses = Array.isArray(this.courseChoiceRestrictionCourses)
+                ? this.courseChoiceRestrictionCourses
+                : this.courseChoiceRestrictionItemsFromCourses(
+                    this.transferredStudentContext?.courses || this.noStudentCourseHistory,
+                    courseRestrictionMode,
+                )
             const selectionCourseChoiceCodes = this.selectionCourseChoiceCodes instanceof Set
                 ? this.selectionCourseChoiceCodes
                 : new Set()
@@ -1054,17 +1100,26 @@ export default {
                 ))
                 .filter(Boolean))
         },
+        courseChoiceRestrictionCourses() {
+            const courses = this.transferredStudentContext?.courses || this.noStudentCourseHistory
+
+            return this.courseChoiceRestrictionItemsFromCourses(
+                courses,
+                this.normalizedCourseChoiceRestrictionMode(this.courseChoiceRestrictionMode, {
+                    restrictCourseChoiceBySelection: this.restrictCourseChoiceBySelection,
+                }),
+            )
+        },
         transferredStudentCourseRestrictionItems() {
-            return this.transferredStudentCourseRestrictionItemsFromCourses(this.transferredStudentContext?.courses)
+            return this.courseChoiceRestrictionItemsFromCourses(
+                this.transferredStudentContext?.courses,
+                COURSE_CHOICE_RESTRICTION_PLANNED_ADDITIONAL,
+            )
         },
         selectedCourseMenuEntriesBySemester() {
             return {
-                1: this.semesterCourseMenus(1)
-                    .flatMap((courseMenu) => courseMenu.entries)
-                    .filter((entry) => this.isCourseMenuEntryFilterActive(entry)),
-                2: this.semesterCourseMenus(2)
-                    .flatMap((courseMenu) => courseMenu.entries)
-                    .filter((entry) => this.isCourseMenuEntryFilterActive(entry)),
+                1: this.buildSelectedCourseMenuEntries(1),
+                2: this.buildSelectedCourseMenuEntries(2),
             }
         },
         selectedCourseFilterChipsAll() {
@@ -1138,7 +1193,7 @@ export default {
             return this.transferredStudentContext?.student?.label || 'Kein Student'
         },
         transferredStudentCourseSections() {
-            const courses = this.transferredStudentContext?.courses || {}
+            const courses = this.transferredStudentContext?.courses || this.noStudentCourseHistory
 
             return [
                 { key: 'completed', title: 'Abgeschlossene Kurse', color: 'primary', items: courses.completed || [] },
@@ -1149,6 +1204,9 @@ export default {
         },
         visibleTransferredStudentCourseSections() {
             return this.transferredStudentCourseSections
+        },
+        noStudentCourseHistory() {
+            return this.overviewStudentCourseHistory([])
         },
         visibleCourseChoiceSemesters() {
             return this.semesters.filter((semester) => this.semesterCourseMenus(semester.value).length > 0)
@@ -1165,6 +1223,27 @@ export default {
         },
         selectedCourseMenu() {
             return this.allCourseChoiceMenus.find((courseMenu) => courseMenu.key === this.selectedCourseMenuKey) || null
+        },
+        selectedCourseMenuEntryOptions() {
+            const selectedCourseMenu = this.selectedCourseMenu
+            if (!selectedCourseMenu) return []
+
+            const semester = selectedCourseMenu.semesterValue
+
+            return (selectedCourseMenu.entries || []).map((entry) => {
+                const hasBlockingOverlap = this.courseMenuEntryHasBlockingOverlap(entry, semester)
+                const hasRelatedOverlap = this.courseMenuEntryHasRelatedOverlap(entry, semester, { hasBlockingOverlap })
+                const isActive = this.isCourseMenuEntryFilterActive(entry)
+
+                return {
+                    ...entry,
+                    entry,
+                    hasBlockingOverlap,
+                    hasRelatedOverlap,
+                    isActive,
+                    color: hasBlockingOverlap ? 'error' : hasRelatedOverlap ? 'warning' : isActive ? 'success' : 'primary',
+                }
+            })
         },
         visibleTimetableSemesters() {
             return this.semesters.filter((semester) => this.selectedCourseMenuEntries(semester.value).length > 0)
@@ -1490,9 +1569,7 @@ export default {
                 .filter(criterion => criterion.enabled === true)
         },
         handleCourseMenuEntryFilterClick(entry) {
-            this.runTimetableUpdate(() => {
-                this.toggleCourseMenuEntryFilter(entry)
-            })
+            this.toggleCourseMenuEntryFilter(entry)
         },
         handleSelectedTimetableOptionValueUpdate(semester, value) {
             this.runTimetableUpdate(() => {
@@ -1500,11 +1577,11 @@ export default {
             })
         },
         handleCourseChoiceRestrictionUpdate(value) {
-            this.runTimetableUpdate(() => {
-                this.restrictCourseChoiceBySelection = Boolean(value)
-                this.selectedCourseMenuKey = ''
-                this.persistTimetableState()
-            })
+            const courseChoiceRestrictionMode = this.normalizedCourseChoiceRestrictionMode(value)
+            if (courseChoiceRestrictionMode === this.courseChoiceRestrictionMode) return
+
+            this.courseChoiceRestrictionMode = courseChoiceRestrictionMode
+            this.restrictCourseChoiceBySelection = this.courseChoiceRestrictionMode !== COURSE_CHOICE_RESTRICTION_ALL
         },
         async downloadTimetablePdf() {
             if (this.pdfExporting) return
@@ -1682,7 +1759,7 @@ export default {
             this.runTimetableUpdate(() => {
                 if (!selectedStudent) {
                     this.transferredStudentContext = null
-                    this.transferredStudentContextExpanded = false
+                    this.transferredStudentContextExpanded = true
                     this.studentDialogOpen = false
                     this.studentSearch = ''
                     this.persistTimetableState()
@@ -1739,8 +1816,6 @@ export default {
             this.selectionDialogOpen = false
         },
         toggleTransferredStudentContext() {
-            if (!this.transferredStudentContext) return
-
             this.transferredStudentContextExpanded = !this.transferredStudentContextExpanded
             this.persistTimetableState()
         },
@@ -1795,9 +1870,10 @@ export default {
                 manualPanelOpen: false,
                 manualPanelSource: null,
                 restrictCourseChoiceBySelection: false,
+                courseChoiceRestrictionMode: COURSE_CHOICE_RESTRICTION_ALL,
                 selection: this.defaultSelection(),
                 transferredStudentContext: null,
-                transferredStudentContextExpanded: false,
+                transferredStudentContextExpanded: true,
             }
         },
         defaultSelection() {
@@ -1807,6 +1883,39 @@ export default {
                 language: 'L',
                 branch: 'wirtschaftskundlich',
                 artsSubject: 'ME',
+            }
+        },
+        normalizedCourseChoiceRestrictionMode(value, options = {}) {
+            const normalizedMode = String(value || '').trim()
+            if (COURSE_CHOICE_RESTRICTION_MODES.includes(normalizedMode)) return normalizedMode
+
+            return options?.restrictCourseChoiceBySelection === true
+                ? COURSE_CHOICE_RESTRICTION_PLANNED
+                : COURSE_CHOICE_RESTRICTION_ALL
+        },
+        buildCourseChoiceRestrictionContext(mode = null) {
+            const courseRestrictionMode = this.normalizedCourseChoiceRestrictionMode(mode || this.courseChoiceRestrictionMode, {
+                restrictCourseChoiceBySelection: this.restrictCourseChoiceBySelection,
+            })
+            const courseChoiceRestrictionCourses = Array.isArray(this.courseChoiceRestrictionCourses)
+                ? this.courseChoiceRestrictionCourses
+                : this.courseChoiceRestrictionItemsFromCourses(
+                    this.transferredStudentContext?.courses || this.noStudentCourseHistory,
+                    courseRestrictionMode,
+                )
+            const studentCourseCodes = this.restrictedStudentCourseCodes instanceof Set
+                ? this.restrictedStudentCourseCodes
+                : new Set()
+
+            return {
+                mode: courseRestrictionMode,
+                courseChoiceRestrictionCourses,
+                hasCourseChoiceRestrictions: courseChoiceRestrictionCourses.length > 0,
+                studentCourseCodes,
+                shouldRestrictByTimetableSemester: this.shouldRestrictCourseChoiceByTimetableSemester(),
+                religionCourseBases: this.religionCourseBases(),
+                languageCourseBases: this.languageCourseBases(),
+                artsCourseBases: this.artsCourseBases(),
             }
         },
         currentTimetableState() {
@@ -1829,6 +1938,9 @@ export default {
                 manualPanelOpen: Boolean(this.manualPanelOpen),
                 manualPanelSource: this.manualPanelOpen ? (this.manualPanelSource || 'direct') : null,
                 restrictCourseChoiceBySelection: Boolean(this.restrictCourseChoiceBySelection),
+                courseChoiceRestrictionMode: this.normalizedCourseChoiceRestrictionMode(this.courseChoiceRestrictionMode, {
+                    restrictCourseChoiceBySelection: this.restrictCourseChoiceBySelection,
+                }),
                 selection: this.normalizedSelection(this.selection || defaults.selection),
                 transferredStudentContext: this.normalizedTransferredStudentContext(this.transferredStudentContext),
                 transferredStudentContextExpanded: Boolean(this.transferredStudentContextExpanded),
@@ -1862,14 +1974,21 @@ export default {
             this.restrictCourseChoiceBySelection = Boolean(
                 state?.restrictCourseChoiceBySelection ?? defaults.restrictCourseChoiceBySelection,
             )
+            this.courseChoiceRestrictionMode = this.normalizedCourseChoiceRestrictionMode(state?.courseChoiceRestrictionMode, {
+                restrictCourseChoiceBySelection: this.restrictCourseChoiceBySelection,
+            })
+            this.restrictCourseChoiceBySelection = this.courseChoiceRestrictionMode !== COURSE_CHOICE_RESTRICTION_ALL
             this.selection = this.normalizedSelection(state?.selection || defaults.selection)
             this.selectionDraft = { ...this.selection }
             this.transferredStudentContext = this.normalizedTransferredStudentContext(
                 state?.transferredStudentContext ?? defaults.transferredStudentContext,
             )
-            this.transferredStudentContextExpanded = Boolean(
+            const transferredStudentContextExpanded = Boolean(
                 state?.transferredStudentContextExpanded ?? defaults.transferredStudentContextExpanded,
             )
+            this.transferredStudentContextExpanded = this.transferredStudentContext
+                ? transferredStudentContextExpanded
+                : true
         },
         async loadTransferredStudentCompletedCourses(studentCode, options = {}) {
             const normalizedStudentCode = this.normalizedStudentCode(studentCode)
@@ -2898,11 +3017,15 @@ export default {
         courseMenuHasActiveSelection(courseMenu) {
             return (courseMenu?.entries || []).some((entry) => this.isCourseMenuEntryFilterActive(entry))
         },
-        buildSemesterCourseMenus(semester) {
-            const sourceCourseGroups = Array.isArray(this.courseChoiceCourseGroups)
-                ? this.courseChoiceCourseGroups
-                : this.configuredCourseGroups
-            const courseMenusByLabel = sourceCourseGroups
+        buildSemesterCourseMenus(semester, sourceCourseGroups = null) {
+            const courseGroups = Array.isArray(sourceCourseGroups)
+                ? sourceCourseGroups
+                : Array.isArray(this.courseChoiceCourseGroups)
+                    ? this.courseChoiceCourseGroups
+                    : Array.isArray(this.configuredCourseGroups)
+                        ? this.configuredCourseGroups
+                        : []
+            const courseMenusByLabel = courseGroups
                 .filter((courseGroup) => Number(courseGroup?.semester) === Number(semester))
                 .reduce((courseMenus, courseGroup) => {
                     const label = this.mainCourseLabel(courseGroup)
@@ -2956,44 +3079,76 @@ export default {
                 }))
                 .sort((left, right) => left.label.localeCompare(right.label, 'de', { sensitivity: 'base' }))
         },
-        courseGroupMatchesCourseChoiceRestriction(courseGroup) {
+        courseGroupMatchesCourseChoiceRestriction(courseGroup, context = null) {
+            const courseRestrictionContext = context || this.courseChoiceRestrictionContext || {}
             const courseGroupCodes = this.courseGroupCodes(courseGroup)
-            const studentCourseCodes = this.restrictedStudentCourseCodes instanceof Set
-                ? this.restrictedStudentCourseCodes
-                : new Set()
-            const transferredStudentCourseRestrictionItems = Array.isArray(this.transferredStudentCourseRestrictionItems)
-                ? this.transferredStudentCourseRestrictionItems
-                : this.transferredStudentCourseRestrictionItemsFromCourses(this.transferredStudentContext?.courses)
-            const hasTransferredStudentCourseRestrictions = transferredStudentCourseRestrictionItems.length > 0
+            const studentCourseCodes = courseRestrictionContext.studentCourseCodes instanceof Set
+                ? courseRestrictionContext.studentCourseCodes
+                : this.restrictedStudentCourseCodes instanceof Set
+                    ? this.restrictedStudentCourseCodes
+                    : new Set()
+            const courseChoiceRestrictionCourses = Array.isArray(courseRestrictionContext.courseChoiceRestrictionCourses)
+                ? courseRestrictionContext.courseChoiceRestrictionCourses
+                : Array.isArray(this.courseChoiceRestrictionCourses)
+                    ? this.courseChoiceRestrictionCourses
+                    : []
+            const hasCourseChoiceRestrictions = Boolean(
+                courseRestrictionContext.hasCourseChoiceRestrictions ?? courseChoiceRestrictionCourses.length > 0,
+            )
+            const shouldRestrictByTimetableSemester = Boolean(
+                courseRestrictionContext.shouldRestrictByTimetableSemester ?? this.shouldRestrictCourseChoiceByTimetableSemester(),
+            )
 
-            if (hasTransferredStudentCourseRestrictions && studentCourseCodes.size) {
-                return this.courseGroupMatchesRestrictedCourseCodes(courseGroupCodes, studentCourseCodes, courseGroup)
+            if (hasCourseChoiceRestrictions && studentCourseCodes.size) {
+                return this.courseGroupMatchesRestrictedCourseCodes(courseGroupCodes, studentCourseCodes, courseGroup, {
+                    shouldRestrictByTimetableSemester,
+                })
             }
 
             if (
-                this.shouldRestrictCourseChoiceByTimetableSemester()
+                shouldRestrictByTimetableSemester
                 && !this.courseGroupMatchesSelectedTimetableSemester(courseGroup)
             ) return false
-            if (!this.courseGroupMatchesSelectedChoiceOptions(courseGroup)) return false
+            if (!this.courseGroupMatchesSelectedChoiceOptions(courseGroup, courseRestrictionContext)) return false
 
             if (!studentCourseCodes.size) return true
 
             return this.courseGroupMatchesRestrictedCourseCodes(courseGroupCodes, studentCourseCodes)
         },
-        transferredStudentCourseRestrictionItemsFromCourses(courses = {}) {
+        courseChoiceRestrictionItemsFromCourses(courses = {}, mode = COURSE_CHOICE_RESTRICTION_PLANNED) {
+            if (mode === COURSE_CHOICE_RESTRICTION_ALL) return []
+
+            const plannedCourses = Array.isArray(courses?.planned) ? courses.planned : []
+            if (mode === COURSE_CHOICE_RESTRICTION_PLANNED) return plannedCourses
+
             return [
-                ...(Array.isArray(courses?.missing) ? courses.missing : []),
-                ...(Array.isArray(courses?.planned) ? courses.planned : []),
+                ...plannedCourses,
                 ...(Array.isArray(courses?.additional) ? courses.additional : []),
             ]
         },
-        courseGroupMatchesRestrictedCourseCodes(courseGroupCodes, restrictedCourseCodes, courseGroup = null) {
+        transferredStudentCourseRestrictionItemsFromCourses(courses = {}) {
+            return [
+                ...(Array.isArray(courses?.missing) ? courses.missing : []),
+                ...this.courseChoiceRestrictionItemsFromCourses(courses, COURSE_CHOICE_RESTRICTION_PLANNED_ADDITIONAL),
+            ]
+        },
+        courseGroupMatchesRestrictedCourseCodes(
+            courseGroupCodes,
+            restrictedCourseCodes,
+            courseGroup = null,
+            options = {},
+        ) {
             if (!(restrictedCourseCodes instanceof Set) || !restrictedCourseCodes.size) return false
 
+            const shouldRestrictByTimetableSemester = Boolean(
+                options?.shouldRestrictByTimetableSemester ?? this.shouldRestrictCourseChoiceByTimetableSemester(),
+            )
             const normalizedCourseGroupCodes = this.uniqueValues(courseGroupCodes)
             if (normalizedCourseGroupCodes.some(courseCode => (
                 restrictedCourseCodes.has(courseCode)
-                && this.courseGroupCodeMatchesTimetableSemester(courseCode, courseGroup)
+                && this.courseGroupCodeMatchesTimetableSemester(courseCode, courseGroup, {
+                    shouldRestrictByTimetableSemester,
+                })
             ))) return true
 
             return normalizedCourseGroupCodes.some(courseGroupCode => {
@@ -3013,7 +3168,8 @@ export default {
 
                     const restrictedTimetableSemester = this.courseCodeTimetableSemester(restrictedCourseParts.module)
                     if (
-                        restrictedTimetableSemester
+                        shouldRestrictByTimetableSemester
+                        && restrictedTimetableSemester
                         && !this.courseGroupMatchesTimetableSemester(courseGroup, restrictedTimetableSemester)
                     ) return false
 
@@ -3048,7 +3204,12 @@ export default {
                 this.courseCodeWithoutModule(this.defaultTimetableCodeAlias(normalizedBase)),
             ].filter(Boolean))
         },
-        courseGroupCodeMatchesTimetableSemester(courseCode, courseGroup) {
+        courseGroupCodeMatchesTimetableSemester(courseCode, courseGroup, options = {}) {
+            const shouldRestrictByTimetableSemester = Boolean(
+                options?.shouldRestrictByTimetableSemester ?? this.shouldRestrictCourseChoiceByTimetableSemester(),
+            )
+            if (!shouldRestrictByTimetableSemester) return true
+
             const courseGroupParts = this.courseCodeModuleParts(courseCode)
             const timetableSemester = this.courseCodeTimetableSemester(courseGroupParts.module)
             if (!timetableSemester) return true
@@ -3085,14 +3246,27 @@ export default {
 
             return Number(courseGroup?.semester) === timetableSemester
         },
-        courseGroupMatchesSelectedChoiceOptions(courseGroup) {
-            const courseBases = this.courseGroupCodes(courseGroup)
+        courseGroupMatchesSelectedChoiceOptions(courseGroup, context = null) {
+            const courseBases = this.courseGroupChoiceOptionCodes(courseGroup)
                 .map(courseCode => this.courseCodeWithoutModule(courseCode))
                 .filter(Boolean)
+            const courseRestrictionContext = context || {}
 
-            return this.courseBasesMatchSelectedOption(courseBases, this.religionCourseBases(), this.selection?.religion)
-                && this.courseBasesMatchSelectedOption(courseBases, this.languageCourseBases(), this.selection?.language)
-                && this.courseBasesMatchSelectedOption(courseBases, this.artsCourseBases(), this.selection?.artsSubject)
+            return this.courseBasesMatchSelectedOption(
+                courseBases,
+                courseRestrictionContext.religionCourseBases || this.religionCourseBases(),
+                this.selection?.religion,
+            )
+                && this.courseBasesMatchSelectedOption(
+                    courseBases,
+                    courseRestrictionContext.languageCourseBases || this.languageCourseBases(),
+                    this.selection?.language,
+                )
+                && this.courseBasesMatchSelectedOption(
+                    courseBases,
+                    courseRestrictionContext.artsCourseBases || this.artsCourseBases(),
+                    this.selection?.artsSubject,
+                )
         },
         courseBasesMatchSelectedOption(courseBases, optionBases, selectedOption) {
             const matchingOptionBases = courseBases
@@ -3145,6 +3319,19 @@ export default {
                 ...(aliases[normalizedValue] || []),
                 this.defaultTimetableCodeAlias(normalizedValue),
             ].filter(Boolean))
+        },
+        courseGroupChoiceOptionCodes(courseGroup) {
+            return this.courseAliasesFromValues([
+                courseGroup?.course,
+                courseGroup?.module_code,
+                courseGroup?.moduleCode,
+                this.courseGroupPrimaryLabelSegment(courseGroup?.title),
+                this.courseGroupPrimaryLabelSegment(courseGroup?.display_label),
+                courseGroup?.subject,
+            ])
+        },
+        courseGroupPrimaryLabelSegment(value) {
+            return String(value || '').split(/\s+-\s+/u)[0]?.trim() || ''
         },
         courseGroupCodes(courseGroup) {
             return this.courseAliasesFromValues([
@@ -3252,9 +3439,7 @@ export default {
             }))
         },
         selectedCourseFilterChips(semester) {
-            return this.semesterCourseMenus(semester)
-                .flatMap((courseMenu) => courseMenu.entries)
-                .filter((entry) => this.isCourseMenuEntryFilterActive(entry))
+            return this.selectedCourseMenuEntries(semester)
                 .map((entry) => ({
                     key: `selected-${entry.key}`,
                     label: entry.scheduleLabel ? `${entry.label} · ${entry.scheduleLabel}` : entry.label,
@@ -3272,7 +3457,7 @@ export default {
             return this.buildSelectedCourseMenuEntries(semester)
         },
         buildSelectedCourseMenuEntries(semester) {
-            return this.semesterCourseMenus(semester)
+            return this.buildSemesterCourseMenus(semester, this.configuredCourseGroups)
                 .flatMap((courseMenu) => courseMenu.entries)
                 .filter((entry) => this.isCourseMenuEntryFilterActive(entry))
         },
@@ -3719,8 +3904,8 @@ export default {
                     && this.courseMenuEntriesHaveBlockingOverlap(entry, selectedEntry)
                 ))
         },
-        courseMenuEntryHasRelatedOverlap(entry, semester) {
-            if (this.courseMenuEntryHasBlockingOverlap(entry, semester)) {
+        courseMenuEntryHasRelatedOverlap(entry, semester, options = {}) {
+            if (options?.hasBlockingOverlap ?? this.courseMenuEntryHasBlockingOverlap(entry, semester)) {
                 return false
             }
 
@@ -4354,6 +4539,10 @@ export default {
     text-transform: none;
 }
 
+.overview-wizard-cancel-button {
+    margin-left: auto;
+}
+
 .overview-wizard-settings-summary {
     display: grid;
     gap: 5px;
@@ -4506,13 +4695,49 @@ export default {
 }
 
 .course-choice-restriction-switch {
-    flex: 0 0 auto;
+    display: inline-flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    height: auto;
+    max-width: 100%;
+    padding: 3px;
+    background: #eef2f7;
+    border: 1px solid #dbe4f0;
+    border-radius: 10px;
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
+    gap: 2px;
+}
+
+.course-choice-restriction-switch :deep(.v-btn) {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.course-choice-restriction-option {
+    min-height: 28px;
+    padding: 0 14px;
+    border-radius: 7px !important;
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.course-choice-restriction-option :deep(.v-btn__content) {
+    white-space: nowrap;
+}
+
+.course-choice-restriction-option--active {
+    background: #ffffff;
+    color: #1d4ed8;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.16);
 }
 
 .course-menu-dialog-options {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 10px;
+    margin-bottom: 14px;
 }
 
 .course-choice-panel__title {
@@ -5057,6 +5282,11 @@ export default {
     .overview-wizard-row {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .overview-wizard-cancel-button {
+        align-self: flex-end;
+        margin-left: 0;
     }
 
     .overview-wizard-actions {
