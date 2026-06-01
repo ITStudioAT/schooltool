@@ -5256,6 +5256,8 @@ export default {
             this.selectedQualityCriteriaCount = null
             if (!this.qualitySummaryCheckedKeys.length) {
                 this.qualityCriteriaResultFilterEnabled = false
+            } else if (checked === true && this.qualityCriteriaResultFilterAvailable()) {
+                this.qualityCriteriaResultFilterEnabled = true
             }
             this.setTimetableResultCounter(this.selectedTimetableResultType, 1)
 

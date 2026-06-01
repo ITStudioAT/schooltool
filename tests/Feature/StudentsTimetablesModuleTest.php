@@ -2075,6 +2075,27 @@ it('creates a timetable overview pdf from posted timetable data', function () {
                                         ],
                                     ],
                                 ],
+                                [
+                                    'hour' => 2,
+                                    'from' => '08:50',
+                                    'until' => '09:35',
+                                    'cells' => [
+                                        [
+                                            'status' => 'filled',
+                                            'courses' => [
+                                                ['label' => 'M2 - 2S - ALT', 'details' => '1-wöchig'],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                        [
+                                            'status' => 'filled',
+                                            'courses' => [
+                                                ['label' => 'LPT - 1U - HER', 'details' => '20.02.'],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                    ],
+                                ],
                             ],
                         ],
                     ],
@@ -2091,6 +2112,12 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->contains('+2 weitere Termine')
             && $pdf->contains('class="pdf-page"')
             && $pdf->contains('--pdf-scale:')
+            && $pdf->contains('page-break-inside: auto;')
+            && $pdf->contains('display: table-header-group;')
+            && $pdf->contains('font-size: 9.25pt;')
+            && $pdf->contains('Mo 1.-2.')
+            && $pdf->contains('1-w')
+            && $pdf->contains('Einzeltermine 20.02.')
             && $pdf->contains('1C · PABINGER Elena');
     });
 });
@@ -2291,6 +2318,48 @@ it('does not duplicate the course prefix in timetable display labels', function 
     expect($groups->firstWhere('title', 'ETH')['display_label'])
         ->toBe('ETH3 - 5RU - HER')
         ->and($groups->firstWhere('title', 'ETH')['module_code'])->toBe('ETH3');
+});
+
+it('uses the mapped subject name for timetable display labels', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-07',
+        'sem_2_start' => '2026-10-20',
+        'until' => '2027-02-14',
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    StudentTimetableSubjectMapping::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'json_subject' => 'LPT',
+        'tt_subject' => 'LET',
+        'is_active' => true,
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2026-09-07',
+        'semester' => 1,
+        'period' => '1',
+        'course' => 'LET',
+        'subject' => 'LET',
+        'teacher' => null,
+        'room' => null,
+        'class_name' => 'LPT-1CK-DREI',
+        'student_group' => null,
+    ]);
+
+    $groups = collect($this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/course-groups')
+        ->assertSuccessful()
+        ->json('data'));
+
+    expect($groups->firstWhere('title', 'LPT')['display_label'])
+        ->toBe('LPT - 1CK - DREI')
+        ->and($groups->firstWhere('title', 'LET'))->toBeNull();
 });
 
 it('removes embedded end times from timetable display labels', function () {

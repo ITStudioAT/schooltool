@@ -4079,6 +4079,47 @@ export default {
             return (match?.[1] || firstSegment).trim()
         },
         courseGroupCourseSource(courseGroup) {
+            const normalizedCourseCode = value => String(value || '')
+                .trim()
+                .toLocaleUpperCase('de-AT')
+                .replace(/\s+/gu, '')
+            const defaultTimetableCodeAlias = value => {
+                const normalizedValue = normalizedCourseCode(value)
+                const match = normalizedValue.match(/^([A-ZÄÖÜ]+)(\d*)$/u)
+                if (!match) return ''
+
+                const aliases = {
+                    ET: 'ETH',
+                    ETH: 'ET',
+                    GS: 'GPB',
+                    GW: 'GWB',
+                    LPT: 'LET',
+                    LET: 'LPT',
+                    ME: 'MU',
+                    MU: 'ME',
+                    R: 'RK',
+                    RK: 'R',
+                    S: 'SPA',
+                    SPA: 'S',
+                }
+                const mappedBase = aliases[match[1]]
+
+                return mappedBase ? `${mappedBase}${match[2] || ''}` : ''
+            }
+            const course = (courseGroup?.course || '').toString().trim()
+            const title = (courseGroup?.title || '').toString().trim()
+            const titleMatchesCourseAlias = title
+                && course
+                && normalizedCourseCode(title) !== normalizedCourseCode(course)
+                && (
+                    defaultTimetableCodeAlias(title) === normalizedCourseCode(course)
+                    || defaultTimetableCodeAlias(course) === normalizedCourseCode(title)
+                )
+
+            if (titleMatchesCourseAlias) {
+                return title
+            }
+
             return [
                 courseGroup?.course,
                 courseGroup?.title,

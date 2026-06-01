@@ -2445,7 +2445,7 @@ describe('Students timetable overview', () => {
             configuredCourseGroups: [
                 { key: 'd-1', semester: 2, weekday: 1, hour: 1, course: 'D', display_label: 'D1 - 1C - GOS', subject: 'D' },
                 { key: 'eth-1', semester: 2, weekday: 1, hour: 2, course: 'ETH', display_label: 'ETH1 - 1CK - PLOE', subject: 'ETH' },
-                { key: 'lpt', semester: 2, weekday: 2, hour: 1, course: 'LET', display_label: 'LET - 1A - APP', subject: 'LET' },
+                { key: 'lpt', semester: 2, weekday: 2, hour: 1, course: 'LET', title: 'LPT', display_label: 'LPT - 1A - APP', subject: 'LET' },
                 { key: 'm-1', semester: 2, weekday: 2, hour: 2, course: 'M', module_code: 'M1', display_label: 'M1 - 1R - FUCH', subject: 'M' },
                 { key: 'd-2', semester: 2, weekday: 3, hour: 1, course: 'D', display_label: 'D2 - 2A - ENNS', subject: 'D' },
             ],
@@ -2471,7 +2471,7 @@ describe('Students timetable overview', () => {
         expect(methods.shouldRestrictCourseChoiceByTimetableSemester.call(ctx)).toBe(false)
         expect(methods.buildSemesterCourseMenus.call(ctx, 1)).toEqual([])
         expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
-            .toEqual(['D', 'ETH', 'LET', 'M'])
+            .toEqual(['D', 'ETH', 'LPT', 'M'])
     })
 
     it('edits and persists the overview selection summary', () => {

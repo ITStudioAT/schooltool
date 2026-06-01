@@ -5,6 +5,7 @@ namespace App\Services\StudentsTimetables;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableOverviewSelection;
+use App\Models\StudentTimetableSubjectMapping;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -19,7 +20,7 @@ class StudentTimetableOverviewService
 
     private const CACHE_TTL_MINUTES = 30;
 
-    private const CACHE_VERSION = 2;
+    private const CACHE_VERSION = 3;
 
     /**
      * @return list<array<string, mixed>>
@@ -141,6 +142,8 @@ class StudentTimetableOverviewService
      */
     private function buildCourseGroups(int $schoolId, int $schoolyearId, Schoolyear $schoolyear): array
     {
+        $subjectMappings = $this->activeSubjectMappings($schoolId, $schoolyearId);
+
         return DB::table('student_timetable_entries')
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
@@ -166,7 +169,7 @@ class StudentTimetableOverviewService
             ->filter()
             ->reject(fn (array $entry): bool => $this->isHiddenCourse($entry))
             ->groupBy(fn (array $entry): string => $this->groupKey($entry))
-            ->map(fn (Collection $entries): array => $this->groupPayload($entries, $schoolyear))
+            ->map(fn (Collection $entries): array => $this->groupPayload($entries, $schoolyear, $subjectMappings))
             ->values()
             ->sortBy([
                 ['semester', 'asc'],
@@ -174,6 +177,27 @@ class StudentTimetableOverviewService
                 ['hour', 'asc'],
                 ['title', 'asc'],
             ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array{json_subject: string, tt_subject: string}>
+     */
+    private function activeSubjectMappings(int $schoolId, int $schoolyearId): array
+    {
+        return StudentTimetableSubjectMapping::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('is_active', true)
+            ->orderBy('json_subject')
+            ->orderBy('tt_subject')
+            ->get(['json_subject', 'tt_subject'])
+            ->map(fn (StudentTimetableSubjectMapping $mapping): array => [
+                'json_subject' => $this->cleanText($mapping->json_subject),
+                'tt_subject' => $this->cleanText($mapping->tt_subject),
+            ])
+            ->filter(fn (array $mapping): bool => $mapping['json_subject'] !== '' && $mapping['tt_subject'] !== '')
             ->values()
             ->all();
     }
@@ -231,7 +255,7 @@ class StudentTimetableOverviewService
      * @param  Collection<int, array<string, mixed>>  $entries
      * @return array<string, mixed>
      */
-    private function groupPayload(Collection $entries, Schoolyear $schoolyear): array
+    private function groupPayload(Collection $entries, Schoolyear $schoolyear, array $subjectMappings): array
     {
         $firstEntry = $entries->first();
         $dates = $entries
@@ -253,8 +277,8 @@ class StudentTimetableOverviewService
             'semester' => (int) $firstEntry['semester'],
             'weekday' => (int) $firstEntry['weekday'],
             'hour' => (int) $firstEntry['hour'],
-            'title' => $this->courseTitle($firstEntry),
-            'display_label' => $this->displayLabel($firstEntry, $entries),
+            'title' => $this->courseTitle($firstEntry, $subjectMappings),
+            'display_label' => $this->displayLabel($firstEntry, $entries, $subjectMappings),
             'subject' => $firstEntry['subject'],
             'course' => $firstEntry['course'],
             'module_code' => $firstEntry['module_code'],
@@ -371,16 +395,19 @@ class StudentTimetableOverviewService
     /**
      * @param  array<string, mixed>  $entry
      */
-    private function courseTitle(array $entry): string
+    private function courseTitle(array $entry, array $subjectMappings): string
     {
-        return (string) ($entry['course'] ?: $entry['subject'] ?: 'Ohne Bezeichnung');
+        return $this->mappedDisplayCourseCode(
+            (string) ($entry['course'] ?: $entry['subject']),
+            $subjectMappings,
+        ) ?: 'Ohne Bezeichnung';
     }
 
     /**
      * @param  array<string, mixed>  $entry
      * @param  Collection<int, array<string, mixed>>  $entries
      */
-    private function displayLabel(array $entry, Collection $entries): string
+    private function displayLabel(array $entry, Collection $entries, array $subjectMappings): string
     {
         $rooms = $entries
             ->pluck('room')
@@ -391,7 +418,10 @@ class StudentTimetableOverviewService
             ->values()
             ->implode(',');
 
-        $primary = (string) ($entry['course'] ?: $entry['subject']);
+        $primary = $this->mappedDisplayCourseCode(
+            (string) ($entry['course'] ?: $entry['subject']),
+            $subjectMappings,
+        );
         $details = collect([
             $entry['class_name'],
             $entry['student_group'],
@@ -411,6 +441,53 @@ class StudentTimetableOverviewService
             : $this->stripRoomSuffix($label);
 
         return $this->formatDisplayLabel($label);
+    }
+
+    private function mappedDisplayCourseCode(string $value, array $subjectMappings): string
+    {
+        $courseCode = $this->cleanText($value);
+        if ($courseCode === '') {
+            return '';
+        }
+
+        $parts = $this->courseCodeParts($courseCode);
+        foreach ($subjectMappings as $mapping) {
+            if ($this->normalizedCourseCode($mapping['tt_subject']) !== $this->normalizedCourseCode($parts['base'])) {
+                continue;
+            }
+
+            return $mapping['json_subject'].$parts['module'];
+        }
+
+        return $courseCode;
+    }
+
+    /**
+     * @return array{base: string, module: string}
+     */
+    private function courseCodeParts(string $value): array
+    {
+        $courseCode = $this->cleanText($value);
+        if (preg_match('/^([A-Za-zÄÖÜäöüß]+)(\d*)$/u', $courseCode, $match)) {
+            return [
+                'base' => $match[1],
+                'module' => $match[2] ?? '',
+            ];
+        }
+
+        return [
+            'base' => $courseCode,
+            'module' => '',
+        ];
+    }
+
+    private function normalizedCourseCode(string $value): string
+    {
+        return Str::of($value)
+            ->trim()
+            ->upper()
+            ->replaceMatches('/\s+/u', '')
+            ->toString();
     }
 
     private function withoutTimeFragments(string $value): string

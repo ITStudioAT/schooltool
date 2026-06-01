@@ -218,17 +218,22 @@ describe('RobotTimetable', () => {
         expect(label.replace(/\u00a0/gu, ' ')).toBe('1 296')
     })
 
-    it('does not activate the criteria timetable view until the criteria card checkbox is checked', () => {
+    it('activates the criteria timetable view when a counted summary checkbox is checked', () => {
         const context = robotContext({
-            selectedQualityCriteriaCount: 1296,
-            qualitySummaryCheckedKeys: ['saturday_free|'],
             qualityCriterionRows: [
                 { key: 'saturday_free', option: null, count: 1296 },
             ],
         })
 
-        expect(RobotTimetable.computed.qualityCriteriaResultFilterActive.call(context)).toBe(false)
-        expect(RobotTimetable.computed.selectedTimetableResultCount.call(context)).toBe(2160)
+        RobotTimetable.methods.setQualitySummaryCheckboxChecked.call(
+            context,
+            { key: 'saturday_free', option: null, count: 1296 },
+            true,
+        )
+
+        expect(context.qualityCriteriaResultFilterEnabled).toBe(true)
+        expect(RobotTimetable.computed.qualityCriteriaResultFilterActive.call(context)).toBe(true)
+        expect(RobotTimetable.methods.selectedCriteriaTimetableCount.call(context)).toBe(1296)
     })
 
     it('uses the selected criteria count when the criteria card checkbox is active', () => {
@@ -264,7 +269,10 @@ describe('RobotTimetable', () => {
 
         expect(context.qualityCriteriaResultFilterEnabled).toBe(true)
         expect(setTimetableResultCounter).toHaveBeenCalledWith('full_green', 1)
-        expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({ preserveQualityCounters: true })
+        expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({
+            preserveGeneratedTimetable: true,
+            preserveQualityCounters: true,
+        })
     })
 
     it('toggles the criteria timetable view when the card is clicked', () => {
