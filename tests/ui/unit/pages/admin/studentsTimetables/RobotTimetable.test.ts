@@ -34,6 +34,8 @@ function robotContext(overrides = {}) {
         selectedCriteriaTimetableCount: RobotTimetable.methods.selectedCriteriaTimetableCount,
         qualityCriteriaResultFilterAvailable: RobotTimetable.methods.qualityCriteriaResultFilterAvailable,
         setQualityCriteriaResultFilterEnabled: RobotTimetable.methods.setQualityCriteriaResultFilterEnabled,
+        withExclusiveDistanceLearningPreference: RobotTimetable.methods.withExclusiveDistanceLearningPreference,
+        oppositeDistanceLearningPreferenceKey: RobotTimetable.methods.oppositeDistanceLearningPreferenceKey,
         timetableCalculationReady: () => false,
         timetableResultCounterLimit: () => 2160,
         setTimetableResultCounter: () => {},
@@ -133,6 +135,28 @@ describe('RobotTimetable', () => {
 
         expect(counter.selected_label).toBe('4 freie Tage')
         expect(counter.selected_reached).toBe(true)
+
+        const distanceLearningCounter = RobotTimetable.methods.qualityCounterWithSelectedTimetableMetrics.call(robotContext(), {
+            key: 'prefer_distance_learning',
+            enabled: true,
+            best_value: 1,
+        }, {
+            distance_learning_count: 1,
+        })
+
+        expect(distanceLearningCounter.selected_label).toBe('1 FU-Kurse')
+        expect(distanceLearningCounter.selected_reached).toBe(true)
+
+        const avoidDistanceLearningCounter = RobotTimetable.methods.qualityCounterWithSelectedTimetableMetrics.call(robotContext(), {
+            key: 'avoid_distance_learning',
+            enabled: true,
+            best_value: 0,
+        }, {
+            distance_learning_count: 0,
+        })
+
+        expect(avoidDistanceLearningCounter.selected_label).toBe('0 FU-Kurse')
+        expect(avoidDistanceLearningCounter.selected_reached).toBe(true)
     })
 
     it('toggles summary checkboxes without changing criteria data', () => {

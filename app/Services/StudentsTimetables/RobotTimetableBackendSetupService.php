@@ -1129,8 +1129,14 @@ class RobotTimetableBackendSetupService
         $regularUsesSaturday = false;
         $startsFromPeriod10 = true;
         $endsByPeriod13 = true;
+        $distanceLearningCount = 0;
 
         foreach ([...$options, ...$additionalOptions] as $option) {
+            $course = is_array($option['course'] ?? null) ? $option['course'] : [];
+            if ($course !== [] && $this->optionIsDistanceLearningCourse($course, $option)) {
+                $distanceLearningCount++;
+            }
+
             foreach ($option['course_groups'] ?? [] as $courseGroup) {
                 $isOccasional = $this->isOccasionalCourseGroup($courseGroup);
                 $weekday = (int) ($courseGroup['weekday'] ?? 0);
@@ -1176,6 +1182,7 @@ class RobotTimetableBackendSetupService
             'starts_from_period_10' => $startsFromPeriod10,
             'ends_by_period_13' => $endsByPeriod13,
             'regular_conflict_count' => $this->regularConflictCountForCourseGroups($regularCourseGroups),
+            'distance_learning_count' => $distanceLearningCount,
         ];
     }
 
@@ -1187,7 +1194,8 @@ class RobotTimetableBackendSetupService
      *     all_uses_saturday: bool,
      *     regular_uses_saturday: bool,
      *     starts_from_period_10: bool,
-     *     ends_by_period_13: bool
+     *     ends_by_period_13: bool,
+     *     distance_learning_count: int
      * }
      */
     private function emptyQualityState(): array
@@ -1200,6 +1208,7 @@ class RobotTimetableBackendSetupService
             'regular_uses_saturday' => false,
             'starts_from_period_10' => true,
             'ends_by_period_13' => true,
+            'distance_learning_count' => 0,
         ];
     }
 
@@ -1255,7 +1264,14 @@ class RobotTimetableBackendSetupService
      */
     private function qualityStateForOption(array $option): array
     {
-        return $this->qualityStateForCourseGroups($option['course_groups'] ?? []);
+        $state = $this->qualityStateForCourseGroups($option['course_groups'] ?? []);
+        $course = is_array($option['course'] ?? null) ? $option['course'] : [];
+
+        if ($course !== [] && $this->optionIsDistanceLearningCourse($course, $option)) {
+            $state['distance_learning_count'] = 1;
+        }
+
+        return $state;
     }
 
     /**
@@ -1296,6 +1312,8 @@ class RobotTimetableBackendSetupService
             'regular_uses_saturday' => ($firstState['regular_uses_saturday'] ?? false) || ($secondState['regular_uses_saturday'] ?? false),
             'starts_from_period_10' => ($firstState['starts_from_period_10'] ?? true) && ($secondState['starts_from_period_10'] ?? true),
             'ends_by_period_13' => ($firstState['ends_by_period_13'] ?? true) && ($secondState['ends_by_period_13'] ?? true),
+            'distance_learning_count' => (int) ($firstState['distance_learning_count'] ?? 0)
+                + (int) ($secondState['distance_learning_count'] ?? 0),
         ];
     }
 
@@ -1330,6 +1348,7 @@ class RobotTimetableBackendSetupService
             'starts_from_period_10' => (bool) ($state['starts_from_period_10'] ?? true),
             'ends_by_period_13' => (bool) ($state['ends_by_period_13'] ?? true),
             'regular_conflict_count' => 0,
+            'distance_learning_count' => (int) ($state['distance_learning_count'] ?? 0),
         ];
     }
 
@@ -1399,6 +1418,8 @@ class RobotTimetableBackendSetupService
             'few_gaps' => (int) ($metrics['gap_count'] ?? 0),
             'starts_from_period_10' => (bool) ($metrics['starts_from_period_10'] ?? false),
             'ends_by_period_13' => (bool) ($metrics['ends_by_period_13'] ?? false),
+            'prefer_distance_learning' => (int) ($metrics['distance_learning_count'] ?? 0),
+            'avoid_distance_learning' => (int) ($metrics['distance_learning_count'] ?? 0),
             default => false,
         };
     }
@@ -1406,7 +1427,7 @@ class RobotTimetableBackendSetupService
     private function qualityMetricIsBetter(string $key, int $value, int $currentBest): bool
     {
         return match ($key) {
-            'few_gaps' => $value < $currentBest,
+            'few_gaps', 'avoid_distance_learning' => $value < $currentBest,
             default => $value > $currentBest,
         };
     }
@@ -1416,6 +1437,8 @@ class RobotTimetableBackendSetupService
         return match ($key) {
             'free_days' => "{$value} freie Tage",
             'few_gaps' => "{$value} Lücken",
+            'prefer_distance_learning' => "{$value} FU-Kurse",
+            'avoid_distance_learning' => "{$value} FU-Kurse",
             default => (string) $value,
         };
     }
@@ -2107,7 +2130,12 @@ class RobotTimetableBackendSetupService
     private function optionIsDistanceLearningCourse(array $course, array $option): bool
     {
         $requiredSlotCount = $this->requiredSlotCountForCourse($course);
-        $scheduledWeeklyLoad = $this->courseGroupsScheduledWeeklyLoad($option['course_groups'] ?? []);
+        $scheduledWeeklyLoad = $this->courseGroupsScheduledWeeklyLoad(
+            collect($option['course_groups'] ?? [])
+                ->reject(fn (array $courseGroup): bool => $this->isOccasionalCourseGroup($courseGroup))
+                ->values()
+                ->all(),
+        );
 
         return $requiredSlotCount >= 2
             && $scheduledWeeklyLoad > 0
@@ -2490,7 +2518,7 @@ class RobotTimetableBackendSetupService
                 $regularDateKeys = $this->courseGroupDateSlotKeys($regularCourseGroups);
                 $regularWeeklySlotKeys = $this->weeklyCourseGroupSlotKeys($regularCourseGroups);
 
-                return [
+                $option = [
                     'label' => $label,
                     'course' => $course,
                     'course_groups' => $courseGroups,
@@ -2500,7 +2528,11 @@ class RobotTimetableBackendSetupService
                     'all_date_summary' => $this->dateKeySummary($dateKeys),
                     'regular_date_summary' => $this->dateKeySummary($regularDateKeys),
                     'regular_weekly_slot_summary' => $this->dateKeySummary($regularWeeklySlotKeys),
-                    'quality_state' => $this->qualityStateForCourseGroups($courseGroups),
+                ];
+
+                return [
+                    ...$option,
+                    'quality_state' => $this->qualityStateForOption($option),
                 ];
             })
             ->sortBy(fn (array $option): string => $this->optionSortValue($option))

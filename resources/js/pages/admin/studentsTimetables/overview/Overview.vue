@@ -939,6 +939,7 @@ export default {
             },
             studentCompletedCoursesRequestId: 0,
             activeCourseGroupFilterKeys: [],
+            activeDistanceLearningCourseGroupKeys: [],
             selectedRecurrenceWeeks: {
                 1: ALL_DATES_OPTION_VALUE,
                 2: ALL_DATES_OPTION_VALUE,
@@ -1086,6 +1087,9 @@ export default {
         },
         activeCourseGroupFilterKeySet() {
             return new Set(this.activeCourseGroupFilterKeys.filter(Boolean))
+        },
+        activeDistanceLearningCourseGroupKeySet() {
+            return new Set(this.activeDistanceLearningCourseGroupKeys.filter(Boolean))
         },
         semesterCourseMenusBySemester() {
             return {
@@ -1584,7 +1588,13 @@ export default {
             })
         },
         onSettingsChanged(criteria) {
+            const previousEvaluationCriteriaSignature = this.evaluationCriteriaSignature(this.evaluationCriteria)
+
             this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(criteria || [])
+
+            if (previousEvaluationCriteriaSignature !== this.evaluationCriteriaSignature(this.evaluationCriteria)) {
+                this.resetWizardPanel()
+            }
         },
         async onSettingsSaved(criteria = []) {
             this.settingsDialogOpen = false
@@ -1606,7 +1616,7 @@ export default {
             return JSON.parse(JSON.stringify(criteria || []))
         },
         normalizedEvaluationCriteria(criteria) {
-            return this.cloneCriteria(criteria)
+            const normalizedCriteria = this.cloneCriteria(criteria)
                 .map((criterion, index) => ({
                     ...criterion,
                     enabled: criterion.enabled === true,
@@ -1614,10 +1624,37 @@ export default {
                     option: criterion.option || null,
                     options: Array.isArray(criterion.options) ? criterion.options : [],
                 }))
+
+            return this.withExclusiveDistanceLearningPreference(normalizedCriteria)
         },
         enabledEvaluationCriteriaFromSettings(criteria) {
             return this.normalizedEvaluationCriteria(criteria)
                 .filter(criterion => criterion.enabled === true)
+        },
+        evaluationCriteriaSignature(criteria) {
+            return JSON.stringify(this.enabledEvaluationCriteriaFromSettings(criteria || [])
+                .map((criterion, index) => ({
+                    key: criterion.key,
+                    priority: index + 1,
+                    option: criterion.option || null,
+                })))
+        },
+        withExclusiveDistanceLearningPreference(criteria) {
+            const preferenceKeys = ['prefer_distance_learning', 'avoid_distance_learning']
+            const enabledPreferenceKey = (criteria || [])
+                .filter(criterion => preferenceKeys.includes(criterion.key) && criterion.enabled === true)
+                .sort((firstCriterion, secondCriterion) => firstCriterion.priority - secondCriterion.priority)
+                .map(criterion => criterion.key)
+                .shift()
+
+            if (!enabledPreferenceKey) return criteria
+
+            return (criteria || []).map(criterion => preferenceKeys.includes(criterion.key)
+                ? {
+                    ...criterion,
+                    enabled: criterion.key === enabledPreferenceKey,
+                }
+                : criterion)
         },
         handleCourseMenuEntryFilterClick(entry) {
             this.toggleCourseMenuEntryFilter(entry)
@@ -1880,7 +1917,9 @@ export default {
 
             wizardCourseCards?.resetStudentCourseSelection?.()
             wizardCourseCards?.clearGeneratedTimetables?.()
+            wizardCourseCards?.showCourseActionAfterCourseInteraction?.()
             this.activeCourseGroupFilterKeys = []
+            this.activeDistanceLearningCourseGroupKeys = []
             this.removeSavedRobotTimetableState()
         },
         resetSavedTimetable() {
@@ -1909,10 +1948,12 @@ export default {
             this.selectionDialogOpen = false
             this.selectedCourseMenuKey = ''
             this.selectedCourseGroup = null
+            this.activeDistanceLearningCourseGroupKeys = []
         },
         defaultTimetableState() {
             return {
                 activeCourseGroupFilterKeys: [],
+                activeDistanceLearningCourseGroupKeys: [],
                 selectedRecurrenceWeeks: {
                     1: ALL_DATES_OPTION_VALUE,
                     2: ALL_DATES_OPTION_VALUE,
@@ -1981,6 +2022,7 @@ export default {
 
             return {
                 activeCourseGroupFilterKeys: [...new Set(this.activeCourseGroupFilterKeys || [])],
+                activeDistanceLearningCourseGroupKeys: [...new Set(this.activeDistanceLearningCourseGroupKeys || [])],
                 selectedRecurrenceWeeks: {
                     ...defaults.selectedRecurrenceWeeks,
                     ...(this.selectedRecurrenceWeeks || {}),
@@ -2010,6 +2052,9 @@ export default {
             this.activeCourseGroupFilterKeys = Array.isArray(state?.activeCourseGroupFilterKeys)
                 ? [...new Set(state.activeCourseGroupFilterKeys.filter(Boolean))]
                 : defaults.activeCourseGroupFilterKeys
+            this.activeDistanceLearningCourseGroupKeys = Array.isArray(state?.activeDistanceLearningCourseGroupKeys)
+                ? [...new Set(state.activeDistanceLearningCourseGroupKeys.filter(Boolean))]
+                : defaults.activeDistanceLearningCourseGroupKeys
             this.selectedRecurrenceWeeks = {
                 ...defaults.selectedRecurrenceWeeks,
                 ...(state?.selectedRecurrenceWeeks || {}),
@@ -4318,6 +4363,18 @@ export default {
             ].filter(Boolean).join(' · ')
         },
         courseGroupDistanceLearning(courseGroup) {
+            if (
+                courseGroup?.is_fu === true
+                || courseGroup?.is_distance_learning === true
+                || courseGroup?.distance_learning === true
+            ) return true
+
+            const activeDistanceLearningCourseGroupKeySet = this.activeDistanceLearningCourseGroupKeySet instanceof Set
+                ? this.activeDistanceLearningCourseGroupKeySet
+                : new Set(this.activeDistanceLearningCourseGroupKeys || [])
+
+            if (activeDistanceLearningCourseGroupKeySet.has(courseGroup?.key)) return true
+
             const course = this.courseForCourseGroup(courseGroup)
             const optionLabel = this.courseGroupOptionLabel(courseGroup)
             const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set

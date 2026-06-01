@@ -12,11 +12,26 @@ class StudentTimetableEvaluationSettingsService
 {
     private const SETTINGS_VERSION = 1;
 
+    private const DISTANCE_LEARNING_PREFERENCE_KEYS = [
+        'prefer_distance_learning',
+        'avoid_distance_learning',
+    ];
+
     private const CRITERIA = [
         [
             'key' => 'saturday_free',
             'label' => 'Samstag kein Unterricht',
             'description' => 'Samstagstermine werden bei der späteren Bewertung vermieden.',
+        ],
+        [
+            'key' => 'prefer_distance_learning',
+            'label' => 'Fernunterricht bevorzugt',
+            'description' => 'Stundenpläne mit mehr Fernunterricht-Kursen werden höher gereiht.',
+        ],
+        [
+            'key' => 'avoid_distance_learning',
+            'label' => 'Kein Fernunterricht bevorzugt',
+            'description' => 'Stundenpläne mit weniger Fernunterricht-Kursen werden höher gereiht.',
         ],
         [
             'key' => 'free_days',
@@ -179,6 +194,7 @@ class StudentTimetableEvaluationSettingsService
                         $storedCriterion['option'] ?? null,
                     );
                 })
+                ->pipe(fn (Collection $criteria): Collection => $this->withExclusiveDistanceLearningPreference($criteria))
                 ->sortBy('priority')
                 ->values()
                 ->all(),
@@ -208,6 +224,7 @@ class StudentTimetableEvaluationSettingsService
                     $submittedCriterion['option'] ?? null,
                 );
             })
+            ->pipe(fn (Collection $criteria): Collection => $this->withExclusiveDistanceLearningPreference($criteria))
             ->sortBy('priority')
             ->values()
             ->map(function (array $criterion, int $index): array {
@@ -266,6 +283,34 @@ class StudentTimetableEvaluationSettingsService
             'priority' => $priority,
             'option' => $this->normalizedOption($definition, $option),
         ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $criteria
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function withExclusiveDistanceLearningPreference(Collection $criteria): Collection
+    {
+        $enabledPreferenceKeys = $criteria
+            ->filter(fn (array $criterion): bool => in_array($criterion['key'] ?? '', self::DISTANCE_LEARNING_PREFERENCE_KEYS, true)
+                && ($criterion['enabled'] ?? false) === true)
+            ->sortBy('priority')
+            ->pluck('key')
+            ->values();
+
+        if ($enabledPreferenceKeys->count() <= 1) {
+            return $criteria;
+        }
+
+        $enabledPreferenceKey = $enabledPreferenceKeys->first();
+
+        return $criteria->map(function (array $criterion) use ($enabledPreferenceKey): array {
+            if (in_array($criterion['key'] ?? '', self::DISTANCE_LEARNING_PREFERENCE_KEYS, true)) {
+                $criterion['enabled'] = ($criterion['key'] ?? '') === $enabledPreferenceKey;
+            }
+
+            return $criterion;
+        });
     }
 
     /**

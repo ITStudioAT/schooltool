@@ -367,7 +367,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('const evaluationCriteria = this.storageEvaluationCriteria(this.evaluationCriteria)')
         expect(componentSource).toContain('evaluation_criteria: evaluationCriteria')
         expect(componentSource).toContain('selected_quality_criterion_keys: this.selectedQualityCriterionKeys()')
-        expect(componentSource).toContain('selected_quality_criteria_required: this.qualityCriteriaResultFilterActive')
+        expect(componentSource).toContain('selected_quality_criteria_required: options?.forceQualityCriteriaRequired === true || this.qualityCriteriaResultFilterActive')
         expect(componentSource).toContain('enabledEvaluationCriteriaFromSettings')
         expect(componentSource).toContain('qualityCriterionRows()')
         expect(componentSource).toContain('activeQualityCriterionRows()')
@@ -694,6 +694,9 @@ describe('Students timetable robot page', () => {
                 { key: 'free_days', label: 'Anzahl freie Tage', enabled: true, priority: 1 },
             ],
             evaluationCriteriaLoaded: false,
+            clearGeneratedTimetables: vi.fn(),
+            courseActionHiddenUntilCourseInteraction: true,
+            saveLastRobotState: vi.fn(),
         }
 
         methods.onSettingsChanged.call(ctx, [
@@ -712,6 +715,31 @@ describe('Students timetable robot page', () => {
                 options: [],
             },
         ])
+        expect(ctx.clearGeneratedTimetables).toHaveBeenCalled()
+        expect(ctx.courseActionHiddenUntilCourseInteraction).toBe(false)
+        expect(ctx.saveLastRobotState).toHaveBeenCalled()
+    })
+
+    it('keeps generated robot results when settings emit unchanged criteria', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            evaluationCriteria: [
+                { key: 'free_days', label: 'Anzahl freie Tage', enabled: true, priority: 1 },
+            ],
+            evaluationCriteriaLoaded: false,
+            clearGeneratedTimetables: vi.fn(),
+            saveLastRobotState: vi.fn(),
+        }
+
+        methods.onSettingsChanged.call(ctx, [
+            { key: 'free_days', label: 'Anzahl freie Tage', enabled: true, priority: 1 },
+            { key: 'few_gaps', label: 'Wenig Lücken', enabled: false, priority: 2 },
+        ])
+
+        expect(ctx.evaluationCriteriaLoaded).toBe(true)
+        expect(ctx.clearGeneratedTimetables).not.toHaveBeenCalled()
+        expect(ctx.saveLastRobotState).not.toHaveBeenCalled()
     })
 
     it('applies parent-provided quality criteria to embedded robot summaries', () => {
@@ -1924,6 +1952,10 @@ describe('Students timetable robot page', () => {
             ],
             deselectedCourseKeys: ['GW1'],
             deselectedCourseGroupKeys: ['D1|D1-1C-GOS'],
+            additionalCourseSelectedKeys: [],
+            selectedTimetableResultType: null,
+            qualityCriteriaResultFilterEnabled: false,
+            qualitySummaryCheckedKeys: [],
             robotStateRestoring: false,
             courseGroupItems(course) {
                 if (course.key === 'D1') {
@@ -1954,6 +1986,10 @@ describe('Students timetable robot page', () => {
             ],
             deselectedCourseKeys: [],
             deselectedCourseGroupKeys: [],
+            additionalCourseSelectedKeys: [],
+            selectedTimetableResultType: null,
+            qualityCriteriaResultFilterEnabled: false,
+            qualitySummaryCheckedKeys: [],
             robotStateRestoring: false,
             courseGroupItems(course) {
                 if (course.key === 'D1') {
@@ -2012,7 +2048,21 @@ describe('Students timetable robot page', () => {
             studentAdditionalCourses: [
                 { key: 'PP2', code: 'PP2', name: 'Philosophie/Psychologie 2', hours: 2 },
             ],
+            selectedCourses: [
+                { key: 'D2', code: 'D2', name: 'Deutsch 2', hours: 2 },
+            ],
+            selectedAdditionalCourses: [],
             configuredCourseGroups: [
+                {
+                    key: 'd2-fu',
+                    class_name: 'D2-2F-ENNS',
+                    display_label: 'D2-2F-ENNS',
+                    course: 'D2',
+                    subject: 'D',
+                    weekday: 2,
+                    hour: 2,
+                    recurrence_label: '1-wöchig',
+                },
                 {
                     key: 'spa5-single',
                     class_name: 'SPA5-4A-APP',
@@ -2024,6 +2074,18 @@ describe('Students timetable robot page', () => {
             ],
             selectedRobotTimetable: {
                 slots: {
+                    '2-2': {
+                        courseGroup: {
+                            key: 'd2-fu',
+                            class_name: 'D2-2F-ENNS',
+                            display_label: 'D2-2F-ENNS',
+                            course: 'D2',
+                            subject: 'D',
+                            weekday: 2,
+                            hour: 2,
+                            recurrence_label: '1-wöchig',
+                        },
+                    },
                     '1-1': {
                         courseGroup: { key: 'ch2-regular', weekday: 1, hour: 1 },
                         conflicts: [
@@ -2073,7 +2135,8 @@ describe('Students timetable robot page', () => {
         ) || '{}')
 
         expect(storedState).toEqual({
-            activeCourseGroupFilterKeys: ['ch2-regular', 'pp2-conflict', 'spa5-single'],
+            activeCourseGroupFilterKeys: ['d2-fu', 'ch2-regular', 'pp2-conflict', 'spa5-single'],
+            activeDistanceLearningCourseGroupKeys: ['d2-fu'],
             selectedRecurrenceWeeks: {
                 1: 'all_dates',
                 2: 'all_dates',
@@ -2182,6 +2245,7 @@ describe('Students timetable robot page', () => {
         ) || '{}')
 
         expect(storedState.activeCourseGroupFilterKeys).toEqual(['bio-2'])
+        expect(storedState.activeDistanceLearningCourseGroupKeys).toEqual([])
         expect(emit).toHaveBeenCalledWith('timetable-overtaken', storedState)
         expect(routerPush).not.toHaveBeenCalled()
     })

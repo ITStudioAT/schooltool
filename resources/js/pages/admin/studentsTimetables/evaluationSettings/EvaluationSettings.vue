@@ -54,12 +54,13 @@
                         </div>
 
                         <v-switch
-                            v-model="criterion.enabled"
+                            :model-value="criterion.enabled"
                             color="primary"
                             density="compact"
                             hide-details
                             inset
-                            class="st-evaluation-settings-item__switch" />
+                            class="st-evaluation-settings-item__switch"
+                            @update:model-value="setCriterionEnabled(criterion, $event)" />
 
                         <div class="st-evaluation-settings-item__content">
                             <div class="st-evaluation-settings-item__header">
@@ -210,6 +211,25 @@ export default {
                 this.saving = false
             }
         },
+        setCriterionEnabled(criterion, enabled) {
+            this.criteria = this.criteria.map((currentCriterion) => {
+                if (currentCriterion.key === criterion.key) {
+                    return {
+                        ...currentCriterion,
+                        enabled: enabled === true,
+                    }
+                }
+
+                if (enabled === true && this.oppositeDistanceLearningPreferenceKey(criterion.key) === currentCriterion.key) {
+                    return {
+                        ...currentCriterion,
+                        enabled: false,
+                    }
+                }
+
+                return currentCriterion
+            })
+        },
         moveCriterion(index, direction) {
             const targetIndex = index + direction
 
@@ -241,7 +261,7 @@ export default {
             }))
         },
         normalizedCriteria(criteria) {
-            return this.cloneCriteria(criteria)
+            const normalizedCriteria = this.cloneCriteria(criteria)
                 .sort((firstCriterion, secondCriterion) => firstCriterion.priority - secondCriterion.priority)
                 .map((criterion, index) => ({
                     ...criterion,
@@ -250,14 +270,41 @@ export default {
                     options: Array.isArray(criterion.options) ? criterion.options : [],
                     option: criterion.option || null,
                 }))
+
+            return this.withExclusiveDistanceLearningPreference(normalizedCriteria)
         },
         storageCriteria(criteria) {
-            return criteria.map((criterion, index) => ({
+            return this.withExclusiveDistanceLearningPreference(criteria).map((criterion, index) => ({
                 key: criterion.key,
                 enabled: criterion.enabled === true,
                 priority: index + 1,
                 option: criterion.option || null,
             }))
+        },
+        withExclusiveDistanceLearningPreference(criteria) {
+            const preferenceKeys = ['prefer_distance_learning', 'avoid_distance_learning']
+            const enabledPreferenceKey = (criteria || [])
+                .filter(criterion => preferenceKeys.includes(criterion.key) && criterion.enabled === true)
+                .sort((firstCriterion, secondCriterion) => firstCriterion.priority - secondCriterion.priority)
+                .map(criterion => criterion.key)
+                .shift()
+
+            if (!enabledPreferenceKey) {
+                return criteria
+            }
+
+            return (criteria || []).map(criterion => preferenceKeys.includes(criterion.key)
+                ? {
+                    ...criterion,
+                    enabled: criterion.key === enabledPreferenceKey,
+                }
+                : criterion)
+        },
+        oppositeDistanceLearningPreferenceKey(key) {
+            if (key === 'prefer_distance_learning') return 'avoid_distance_learning'
+            if (key === 'avoid_distance_learning') return 'prefer_distance_learning'
+
+            return ''
         },
         cloneCriteria(criteria) {
             return JSON.parse(JSON.stringify(criteria || []))

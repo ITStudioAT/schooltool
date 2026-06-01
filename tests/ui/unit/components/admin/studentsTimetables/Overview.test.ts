@@ -1539,6 +1539,7 @@ describe('Students timetable overview', () => {
             label: 'LPT - 1U - HER',
             details: '1-wöchig',
             dates: [],
+            is_fu: false,
         })
     })
 
@@ -1616,6 +1617,34 @@ describe('Students timetable overview', () => {
             label: 'INF1-Grp2-KRO',
             details: 'FU · 1-wöchig',
             dates: ['2026-03-13', '2026-03-20'],
+            is_fu: true,
+        })
+    })
+
+    it('uses adopted robot FU course group keys in timetable details and pdf payloads', () => {
+        const methods = (Overview as any).methods
+        const courseGroup = {
+            key: 'd2-fu',
+            display_label: 'D2 - 2F - ENNS',
+            recurrence_label: '2-wöchig',
+        }
+        const ctx = {
+            activeDistanceLearningCourseGroupKeys: ['d2-fu'],
+            courseGroupDetailLabel: methods.courseGroupDetailLabel,
+            courseGroupDisplayLabel: methods.courseGroupDisplayLabel,
+            courseGroupDistanceLearning: methods.courseGroupDistanceLearning,
+            courseGroupDates: methods.courseGroupDates,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+            timetablePdfCoursePayload: methods.timetablePdfCoursePayload,
+        }
+
+        expect(methods.courseGroupDistanceLearning.call(ctx, courseGroup)).toBe(true)
+        expect(methods.courseGroupDetailLabel.call(ctx, courseGroup)).toBe('FU · 2-wöchig')
+        expect(methods.timetablePdfCoursePayload.call(ctx, courseGroup)).toEqual({
+            label: 'D2 - 2F - ENNS',
+            details: 'FU · 2-wöchig',
+            dates: [],
+            is_fu: true,
         })
     })
 
@@ -1721,9 +1750,11 @@ describe('Students timetable overview', () => {
                     clearGeneratedTimetables,
                     resetAdditionalCourseSelection,
                     resetCourseSelection,
+                    showCourseActionAfterCourseInteraction: vi.fn(),
                 },
             },
             activeCourseGroupFilterKeys: ['bio-1', 'bio-1', 'inf-1'],
+            activeDistanceLearningCourseGroupKeys: ['inf-1', 'inf-1'],
             selectedRecurrenceWeeks: {
                 1: 2,
                 2: 'extra_dates',
@@ -1824,6 +1855,7 @@ describe('Students timetable overview', () => {
         methods.restoreLastTimetableState.call(ctx)
 
         expect(ctx.activeCourseGroupFilterKeys).toEqual(['bio-1', 'inf-1'])
+        expect(ctx.activeDistanceLearningCourseGroupKeys).toEqual(['inf-1'])
         expect(ctx.selectedRecurrenceWeeks).toEqual({
             1: 2,
             2: 'extra_dates',
@@ -1883,6 +1915,7 @@ describe('Students timetable overview', () => {
         expect(ctx.selectedCourseMenuKey).toBe('')
         expect(ctx.selectedCourseGroup).toBeNull()
         expect(ctx.activeCourseGroupFilterKeys).toEqual([])
+        expect(ctx.activeDistanceLearningCourseGroupKeys).toEqual([])
         expect(ctx.selectedRecurrenceWeeks).toEqual({
             1: 'all_dates',
             2: 'all_dates',
@@ -2786,6 +2819,63 @@ describe('Students timetable overview', () => {
             { key: 'full-green', label: 'Voller grüner Stundenplan', optionLabel: null },
             { key: 'compact-days', label: 'Kompakte Tage', optionLabel: 'streng' },
         ])
+    })
+
+    it('resets the Wizzard panel when evaluation settings change', () => {
+        const methods = (Overview as any).methods
+        const showCourseActionAfterCourseInteraction = vi.fn()
+        const ctx = {
+            ...methods,
+            evaluationCriteria: [
+                { key: 'free_days', label: 'Anzahl freie Tage', enabled: true, priority: 1 },
+            ],
+            $refs: {
+                wizardCourseCards: {
+                    resetStudentCourseSelection: vi.fn(),
+                    clearGeneratedTimetables: vi.fn(),
+                    showCourseActionAfterCourseInteraction,
+                },
+            },
+            activeCourseGroupFilterKeys: ['INF1'],
+            removeSavedRobotTimetableState: vi.fn(),
+        }
+
+        methods.onSettingsChanged.call(ctx, [
+            { key: 'few_gaps', label: 'Wenig Lücken', enabled: true, priority: 1 },
+            { key: 'free_days', label: 'Anzahl freie Tage', enabled: false, priority: 2 },
+        ])
+
+        expect(ctx.evaluationCriteria).toEqual([
+            {
+                key: 'few_gaps',
+                label: 'Wenig Lücken',
+                enabled: true,
+                priority: 1,
+                option: null,
+                options: [],
+            },
+        ])
+        expect(showCourseActionAfterCourseInteraction).toHaveBeenCalled()
+        expect(ctx.activeCourseGroupFilterKeys).toEqual([])
+        expect(ctx.removeSavedRobotTimetableState).toHaveBeenCalled()
+    })
+
+    it('keeps the Wizzard panel when evaluation settings emit unchanged criteria', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            evaluationCriteria: [
+                { key: 'free_days', label: 'Anzahl freie Tage', enabled: true, priority: 1 },
+            ],
+            resetWizardPanel: vi.fn(),
+        }
+
+        methods.onSettingsChanged.call(ctx, [
+            { key: 'free_days', label: 'Anzahl freie Tage', enabled: true, priority: 1 },
+            { key: 'few_gaps', label: 'Wenig Lücken', enabled: false, priority: 2 },
+        ])
+
+        expect(ctx.resetWizardPanel).not.toHaveBeenCalled()
     })
 
     it('switches the embedded Wizzard and manual course panels on the overview page', async () => {

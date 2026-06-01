@@ -16,7 +16,8 @@ describe('Students timetable evaluation settings', () => {
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/evaluation-settings')")
         expect(componentSource).toContain("axios.put('/api/admin/students-timetables/evaluation-settings'")
         expect(componentSource).toContain('Einzeltermine werden nicht berücksichtigt.')
-        expect(componentSource).toContain('v-model="criterion.enabled"')
+        expect(componentSource).toContain(':model-value="criterion.enabled"')
+        expect(componentSource).toContain('@update:model-value="setCriterionEnabled(criterion, $event)"')
         expect(componentSource).toContain('v-model="criterion.option"')
         expect(componentSource).toContain("emits: ['changed', 'close', 'saved']")
         expect(componentSource).toContain('this.emitChangedCriteria()')
@@ -26,8 +27,9 @@ describe('Students timetable evaluation settings', () => {
         expect(componentSource).toContain('mdi-arrow-down')
         expect(componentSource).toContain('moveCriterion(index, -1)')
         expect(componentSource).toContain('moveCriterion(index, 1)')
+        expect(componentSource).toContain('oppositeDistanceLearningPreferenceKey')
         expect(componentSource).toContain('storageCriteria(criteria)')
-        expect(timetableSource).toContain('components: { FileUpload, LoadingAnimation, Overview, RobotTimetable }')
+        expect(timetableSource).toContain('components: { FileUpload, LoadingAnimation, Overview }')
     })
 
     it('normalizes priorities and builds the storage payload', () => {
@@ -52,6 +54,7 @@ describe('Students timetable evaluation settings', () => {
             cloneCriteria: methods.cloneCriteria,
             normalizePriorities: methods.normalizePriorities,
             storageCriteria: methods.storageCriteria,
+            withExclusiveDistanceLearningPreference: methods.withExclusiveDistanceLearningPreference,
         }
 
         expect(methods.normalizedCriteria.call(ctx, criteria).map((criterion: Record<string, unknown>) => criterion.key))
@@ -73,6 +76,26 @@ describe('Students timetable evaluation settings', () => {
                 priority: 2,
                 option: null,
             },
+        ])
+    })
+
+    it('keeps the distance learning preference switches mutually exclusive', () => {
+        const methods = (EvaluationSettings as any).methods
+        const ctx = {
+            criteria: [
+                { key: 'prefer_distance_learning', enabled: true, priority: 1 },
+                { key: 'avoid_distance_learning', enabled: false, priority: 2 },
+                { key: 'free_days', enabled: true, priority: 3 },
+            ],
+            oppositeDistanceLearningPreferenceKey: methods.oppositeDistanceLearningPreferenceKey,
+        }
+
+        methods.setCriterionEnabled.call(ctx, ctx.criteria[1], true)
+
+        expect(ctx.criteria).toEqual([
+            { key: 'prefer_distance_learning', enabled: false, priority: 1 },
+            { key: 'avoid_distance_learning', enabled: true, priority: 2 },
+            { key: 'free_days', enabled: true, priority: 3 },
         ])
     })
 

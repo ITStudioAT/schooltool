@@ -3628,7 +3628,15 @@ export default {
             this.constraintsDialogOpen = false
         },
         onSettingsChanged(criteria) {
+            const previousEvaluationCriteriaSignature = this.evaluationCriteriaSignature(this.evaluationCriteria)
+
             this.applyEvaluationCriteriaSettings(criteria || [])
+
+            if (previousEvaluationCriteriaSignature !== this.evaluationCriteriaSignature(this.evaluationCriteria)) {
+                this.clearGeneratedTimetables()
+                this.showCourseActionAfterCourseInteraction()
+                this.saveLastRobotState()
+            }
         },
         async onSettingsSaved(criteria = []) {
             this.settingsDialogOpen = false
@@ -4364,9 +4372,11 @@ export default {
         },
         overviewTimetableStateForSelectedRobotTimetable() {
             const courseGroupKeys = this.selectedRobotTimetableCourseGroupKeys()
+            const distanceLearningCourseGroupKeys = this.selectedRobotTimetableDistanceLearningCourseGroupKeys()
 
             return {
                 activeCourseGroupFilterKeys: courseGroupKeys,
+                activeDistanceLearningCourseGroupKeys: distanceLearningCourseGroupKeys,
                 selectedRecurrenceWeeks: {
                     1: ALL_DATES_OPTION_VALUE,
                     2: ALL_DATES_OPTION_VALUE,
@@ -4480,6 +4490,26 @@ export default {
         },
         selectedRobotTimetableCourseGroupKeys() {
             return this.selectedRobotTimetableCourseGroups()
+                .map(courseGroup => courseGroup?.key)
+                .filter(Boolean)
+        },
+        selectedRobotTimetableDistanceLearningCourseGroupKeys() {
+            const courses = [
+                ...(Array.isArray(this.selectedCourses) ? this.selectedCourses : []),
+                ...(Array.isArray(this.selectedAdditionalCourses) ? this.selectedAdditionalCourses : []),
+            ].filter((course, index, courses) =>
+                course?.key && courses.findIndex(candidate => candidate?.key === course.key) === index,
+            )
+
+            return this.selectedRobotTimetableCourseGroups()
+                .filter((courseGroup) => {
+                    const course = courses.find(candidate => this.courseGroupMatchesCourse(courseGroup, candidate))
+                    if (!course) return false
+
+                    return this.courseGroupDistanceLearning(course, {
+                        title: this.courseGroupOptionLabel(courseGroup),
+                    })
+                })
                 .map(courseGroup => courseGroup?.key)
                 .filter(Boolean)
         },
@@ -5243,6 +5273,8 @@ export default {
             if (counter.key === 'few_gaps') return Number(metrics.gap_count || 0)
             if (counter.key === 'starts_from_period_10') return metrics.starts_from_period_10 === true
             if (counter.key === 'ends_by_period_13') return metrics.ends_by_period_13 === true
+            if (counter.key === 'prefer_distance_learning') return Number(metrics.distance_learning_count || 0)
+            if (counter.key === 'avoid_distance_learning') return Number(metrics.distance_learning_count || 0)
 
             return null
         },
@@ -5252,6 +5284,8 @@ export default {
 
             if (counter?.key === 'free_days') return `${Number(value)} freie Tage`
             if (counter?.key === 'few_gaps') return `${Number(value)} Lücken`
+            if (counter?.key === 'prefer_distance_learning') return `${Number(value)} FU-Kurse`
+            if (counter?.key === 'avoid_distance_learning') return `${Number(value)} FU-Kurse`
 
             return String(value)
         },
@@ -5325,7 +5359,7 @@ export default {
             }))
         },
         normalizedEvaluationCriteria(criteria) {
-            return this.cloneCriteria(criteria)
+            const normalizedCriteria = this.cloneCriteria(criteria)
                 .map((criterion, index) => ({
                     ...criterion,
                     enabled: criterion.enabled === true,
@@ -5333,6 +5367,8 @@ export default {
                     option: criterion.option || null,
                     options: Array.isArray(criterion.options) ? criterion.options : [],
                 }))
+
+            return this.withExclusiveDistanceLearningPreference(normalizedCriteria)
         },
         enabledEvaluationCriteriaFromSettings(criteria) {
             return this.normalizedEvaluationCriteria(criteria)
@@ -5347,15 +5383,51 @@ export default {
                     option: criterion.option || null,
                 }))
         },
+        evaluationCriteriaSignature(criteria) {
+            return JSON.stringify(this.storageEvaluationCriteria(this.enabledEvaluationCriteriaFromSettings(criteria || [])))
+        },
+        withExclusiveDistanceLearningPreference(criteria) {
+            const preferenceKeys = ['prefer_distance_learning', 'avoid_distance_learning']
+            const enabledPreferenceKey = (criteria || [])
+                .filter(criterion => preferenceKeys.includes(criterion.key) && criterion.enabled === true)
+                .sort((firstCriterion, secondCriterion) => firstCriterion.priority - secondCriterion.priority)
+                .map(criterion => criterion.key)
+                .shift()
+
+            if (!enabledPreferenceKey) return criteria
+
+            return (criteria || []).map(criterion => preferenceKeys.includes(criterion.key)
+                ? {
+                    ...criterion,
+                    enabled: criterion.key === enabledPreferenceKey,
+                }
+                : criterion)
+        },
         setEvaluationCriterionEnabled(criterion, enabled) {
             this.evaluationCriteria = this.normalizedEvaluationCriteria(this.evaluationCriteria)
-                .map(item => item.key === criterion.key ? { ...item, enabled: enabled === true } : item)
+                .map((item) => {
+                    if (item.key === criterion.key) {
+                        return { ...item, enabled: enabled === true }
+                    }
+
+                    if (enabled === true && this.oppositeDistanceLearningPreferenceKey(criterion.key) === item.key) {
+                        return { ...item, enabled: false }
+                    }
+
+                    return item
+                })
 
             this.clearTimetableCountResults()
 
             if (this.timetableCalculationReady()) {
                 this.loadFullGreenTimetableCount()
             }
+        },
+        oppositeDistanceLearningPreferenceKey(key) {
+            if (key === 'prefer_distance_learning') return 'avoid_distance_learning'
+            if (key === 'avoid_distance_learning') return 'prefer_distance_learning'
+
+            return ''
         },
         timetableCalculationReady() {
             return !this.loading

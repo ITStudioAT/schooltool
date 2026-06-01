@@ -1817,7 +1817,8 @@ class RobotTimetableGeneratorService
      *     regular_uses_saturday: bool,
      *     starts_from_period_10: bool,
      *     ends_by_period_13: bool,
-     *     regular_conflict_count: int
+     *     regular_conflict_count: int,
+     *     distance_learning_count: int
      * }
      */
     private function qualityStateForOption(array $option): array
@@ -1835,6 +1836,11 @@ class RobotTimetableGeneratorService
 
         $state['regular_conflict_count'] = $this->regularConflictCountForDateSummaries($state['regular_group_date_summaries']);
 
+        $course = $option['course'] ?? [];
+        if ($course !== [] && $this->optionIsDistanceLearningCourse($course, $option)) {
+            $state['distance_learning_count'] = 1;
+        }
+
         return $state;
     }
 
@@ -1848,7 +1854,8 @@ class RobotTimetableGeneratorService
      *     regular_uses_saturday: bool,
      *     starts_from_period_10: bool,
      *     ends_by_period_13: bool,
-     *     regular_conflict_count: int
+     *     regular_conflict_count: int,
+     *     distance_learning_count: int
      * }
      */
     private function emptyQualityState(): array
@@ -1863,6 +1870,7 @@ class RobotTimetableGeneratorService
             'starts_from_period_10' => true,
             'ends_by_period_13' => true,
             'regular_conflict_count' => 0,
+            'distance_learning_count' => 0,
         ];
     }
 
@@ -1927,6 +1935,8 @@ class RobotTimetableGeneratorService
                     $state['regular_group_date_summaries'],
                     $optionState['regular_group_date_summaries'],
                 ),
+            'distance_learning_count' => (int) ($state['distance_learning_count'] ?? 0)
+                + (int) ($optionState['distance_learning_count'] ?? 0),
         ];
     }
 
@@ -1972,6 +1982,7 @@ class RobotTimetableGeneratorService
             'starts_from_period_10' => (bool) $state['starts_from_period_10'],
             'ends_by_period_13' => (bool) $state['ends_by_period_13'],
             'regular_conflict_count' => (int) $state['regular_conflict_count'],
+            'distance_learning_count' => (int) ($state['distance_learning_count'] ?? 0),
         ];
     }
 
@@ -2306,6 +2317,8 @@ class RobotTimetableGeneratorService
             'few_gaps' => (int) ($metrics['gap_count'] ?? 0),
             'starts_from_period_10' => (bool) ($metrics['starts_from_period_10'] ?? false),
             'ends_by_period_13' => (bool) ($metrics['ends_by_period_13'] ?? false),
+            'prefer_distance_learning' => (int) ($metrics['distance_learning_count'] ?? 0),
+            'avoid_distance_learning' => (int) ($metrics['distance_learning_count'] ?? 0),
             default => false,
         };
     }
@@ -2313,7 +2326,7 @@ class RobotTimetableGeneratorService
     private function qualityMetricIsBetter(string $key, int $value, int $currentBest): bool
     {
         return match ($key) {
-            'few_gaps' => $value < $currentBest,
+            'few_gaps', 'avoid_distance_learning' => $value < $currentBest,
             default => $value > $currentBest,
         };
     }
@@ -2323,6 +2336,8 @@ class RobotTimetableGeneratorService
         return match ($key) {
             'free_days' => "{$value} freie Tage",
             'few_gaps' => "{$value} Lücken",
+            'prefer_distance_learning' => "{$value} FU-Kurse",
+            'avoid_distance_learning' => "{$value} FU-Kurse",
             default => (string) $value,
         };
     }

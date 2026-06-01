@@ -405,6 +405,212 @@ it('counts quality criteria without building the selected timetable payload', fu
         ->and($result['all_quality_criteria_count'])->toBe(1);
 });
 
+it('excludes single date only options from distance learning quality counters', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->qualityCountersForTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D1',
+                'hours_per_week' => 2,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'D1-VOLL',
+                'display_label' => 'D1-VOLL',
+                'title' => 'D1-VOLL',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 2,
+                'class_name' => 'D1-VOLL',
+                'display_label' => 'D1-VOLL',
+                'title' => 'D1-VOLL',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 1,
+                'class_name' => 'D1-FU',
+                'display_label' => 'D1-FU',
+                'title' => 'D1-FU',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 3,
+                'hour' => 1,
+                'class_name' => 'D1-EINZEL',
+                'display_label' => 'D1-EINZEL',
+                'title' => 'D1-EINZEL',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => ['2026-09-09'],
+                'dates_count' => 1,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '1|1|common|D1|D|Deutsch 1|D1',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        evaluationCriteria: [
+            [
+                'key' => 'prefer_distance_learning',
+                'label' => 'Fernunterricht bevorzugt',
+                'enabled' => true,
+                'priority' => 1,
+            ],
+        ],
+    );
+
+    expect($result['quality_counters'][0])
+        ->key->toBe('prefer_distance_learning')
+        ->count->toBe(1)
+        ->total->toBe(3)
+        ->best_value->toBe(1)
+        ->best_label->toBe('1 FU-Kurse');
+});
+
+it('prefers timetables without distance learning while ignoring single date only options', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->qualityCountersForTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D1',
+                'hours_per_week' => 2,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'D1-VOLL',
+                'display_label' => 'D1-VOLL',
+                'title' => 'D1-VOLL',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 2,
+                'class_name' => 'D1-VOLL',
+                'display_label' => 'D1-VOLL',
+                'title' => 'D1-VOLL',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 1,
+                'class_name' => 'D1-FU',
+                'display_label' => 'D1-FU',
+                'title' => 'D1-FU',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 3,
+                'hour' => 1,
+                'class_name' => 'D1-EINZEL',
+                'display_label' => 'D1-EINZEL',
+                'title' => 'D1-EINZEL',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => ['2026-09-09'],
+                'dates_count' => 1,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '1|1|common|D1|D|Deutsch 1|D1',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        evaluationCriteria: [
+            [
+                'key' => 'avoid_distance_learning',
+                'label' => 'Kein Fernunterricht bevorzugt',
+                'enabled' => true,
+                'priority' => 1,
+            ],
+        ],
+    );
+
+    expect($result['quality_counters'][0])
+        ->key->toBe('avoid_distance_learning')
+        ->count->toBe(2)
+        ->total->toBe(3)
+        ->best_value->toBe(0)
+        ->best_label->toBe('0 FU-Kurse');
+});
+
 it('counts quality criteria inside the selected quality criteria subset', function () {
     $service = app(RobotTimetableBackendSetupService::class);
 
