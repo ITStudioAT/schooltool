@@ -1,5 +1,9 @@
 ## Laravel Boost (MCP) default behavior
 
+Work independently by default. If the user request is clear enough to implement safely, inspect the project, choose a reasonable approach, make the change, and verify it without asking for confirmation.
+
+Only ask the user when local context cannot answer the question and a wrong assumption would be risky, destructive, expensive, or a meaningful product decision. For routine reversible development work, proceed and mention any assumptions in the final response.
+
 For any Laravel/project questions, DO NOT guess. Always inspect the real project state first using Laravel Boost MCP tools and/or local project commands.
 
 ## File editing behavior

@@ -25,6 +25,14 @@ SchoolTool is a German-language Laravel application providing administrative too
 
 Claude Code must use the available MCP servers and project skills intentionally.
 
+### Autonomy and Clarification Policy
+
+Claude Code should work independently by default. When a request is clear enough to act on, inspect the project, choose the safest reasonable implementation, make the change, and verify it without stopping for confirmation.
+
+Ask the user only when the decision cannot be recovered from local context and a wrong choice would be risky, destructive, expensive, or would meaningfully change product direction. Prefer stating the assumption you used in the final response over interrupting the work for low-risk details.
+
+Do not ask permission for routine, reversible development actions such as reading files, searching the codebase, editing scoped project files, running formatters, or running targeted tests. Still ask before changing dependencies, deleting user work, making broad architecture changes, touching production data, or performing destructive git operations.
+
 ### Tool Priority
 
 Use the following tool priority:
