@@ -1068,6 +1068,7 @@ describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
             effectiveGradeKeyForEntry: methods.effectiveGradeKeyForEntry,
             defaultGradeForWork: methods.defaultGradeForWork,
             numericValueFromGradeKey: methods.numericValueFromGradeKey,
+            numericGradeValuesForEntries: methods.numericGradeValuesForEntries,
             workConfigForType: () => null,
             gradeValueForWork: methods.gradeValueForWork,
             pointsGradeForWork: methods.pointsGradeForWork,
@@ -1120,6 +1121,43 @@ describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
         const groups = methods.buildCategoryGroups.call(ctx, entries)
 
         expect(groups[0].isNa).toBe(false)
+    })
+
+    it('uses numeric entry grades directly for points work in category calculation', () => {
+        const work = {
+            short_name: 'TE-E',
+            calculation: 'points',
+            grades: [
+                { grade: '1', value: '1' },
+                { grade: '2', value: '2' },
+                { grade: '5', value: '5' },
+            ],
+            semester_points_table: [
+                { grade: '1', min_points: 5 },
+                { grade: '2', min_points: 4 },
+                { grade: '3', min_points: 3 },
+                { grade: '4', min_points: 2.5 },
+            ],
+            semester_points_sonst_grade: '5',
+            default_grade: '',
+        }
+        const ctx = makeCtx({
+            teachingWorks: [work],
+            selectedSchema: {
+                grading: {
+                    categories: [
+                        { name: 'Test - Excel', weight: 30, works: [{ short_name: 'TE-E', factor: 100 }] },
+                    ],
+                },
+            },
+        })
+
+        const groups = methods.buildCategoryGroups.call(ctx, [
+            { id: 1, type: 'TE-E', grade: '2', effective_grade: '', date: '2026-05-01' },
+        ])
+
+        expect(groups[0].value).toBe(2)
+        expect(groups[0].rows[0].value).toBe(2)
     })
 
     it('uses NA as display value when a work entry has no grade', () => {

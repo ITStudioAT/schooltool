@@ -417,6 +417,19 @@ export default {
             const found = sorted.find((row) => points >= (row.min_points ?? 0))
             return found?.grade || fallback || null
         },
+        numericGradeValuesForEntries(workEntries, work) {
+            const gradeKeys = (workEntries || [])
+                .map((entry) => this.effectiveGradeKeyForEntry(entry, work))
+                .filter((gradeKey) => String(gradeKey || '').trim() !== '')
+
+            if (!gradeKeys.length) return []
+
+            const numericValues = gradeKeys
+                .map((gradeKey) => this.numericValueFromGradeKey(gradeKey))
+                .filter((value) => value !== null)
+
+            return numericValues.length === gradeKeys.length ? numericValues : []
+        },
         isTypeInRequireAllCategory(type) {
             if (!type) return false
             const categories = this.grading?.categories || []
@@ -488,6 +501,13 @@ export default {
                     })
 
                     if (work.calculation === 'points') {
+                        const numericGradeValues = this.numericGradeValuesForEntries(workEntries, work)
+                        if (numericGradeValues.length) {
+                            const avg = numericGradeValues.reduce((s, v) => s + v, 0) / numericGradeValues.length
+                            workAverages.push({ value: avg, weight })
+                            return
+                        }
+
                         const values = workEntries
                             .map((e) => this.gradeValueForWork(work, this.effectiveGradeKeyForEntry(e, work)))
                             .filter((v) => v !== null)

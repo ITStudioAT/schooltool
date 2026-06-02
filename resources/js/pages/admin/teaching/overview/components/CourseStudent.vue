@@ -2400,6 +2400,19 @@ export default {
             const found = sorted.find((row) => points >= (row.min_points ?? 0))
             return found?.grade || fallbackGrade || null
         },
+        numericGradeValuesForEntries(workEntries, work) {
+            const gradeKeys = (workEntries || [])
+                .map((entry) => this.effectiveGradeKeyForEntry(entry, work))
+                .filter((gradeKey) => String(gradeKey || '').trim() !== '')
+
+            if (!gradeKeys.length) return []
+
+            const numericValues = gradeKeys
+                .map((gradeKey) => this.numericValueFromGradeKey(gradeKey))
+                .filter((value) => value !== null)
+
+            return numericValues.length === gradeKeys.length ? numericValues : []
+        },
         formatTwoDecimals(value) {
             if (value == null || value === '') return ''
             const num = typeof value === 'number' ? value : parseFloat(String(value).replace(',', '.'))
@@ -2636,6 +2649,28 @@ export default {
                     const weight = factorPercent / 100
 
                     if (work.calculation === 'points') {
+                        const numericGradeValues = this.numericGradeValuesForEntries(workEntries, work)
+                        if (numericGradeValues.length) {
+                            const avg = numericGradeValues.reduce((s, v) => s + v, 0) / numericGradeValues.length
+                            workAverages.push({ value: avg, weight })
+                            workEntries.forEach((entry) => {
+                                const effectiveGrade = this.effectiveGradeKeyForEntry(entry, work)
+                                const value = this.gradeValueForWork(work, effectiveGrade)
+                                rows.push({
+                                    key: `entry-${entry.id}`,
+                                    type,
+                                    workTitle: this.entryWorkTitle(entry),
+                                    workComment: this.entryGroupComment?.(entry) || '',
+                                    workIndividualComment: this.entryComment?.(entry) || '',
+                                    value: value !== null ? value : (effectiveGrade || 'NA'),
+                                    date: entry.date || null,
+                                    requireAllEntries,
+                                    requireAllEntriesIncomplete,
+                                })
+                            })
+                            return
+                        }
+
                         const values = workEntries
                             .map((entry) => this.gradeValueForWork(work, this.effectiveGradeKeyForEntry(entry, work)))
                             .filter((val) => val !== null)

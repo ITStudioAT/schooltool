@@ -84,6 +84,20 @@ function pointsGradeForWork(work, points) {
     return found?.grade || fallback || null
 }
 
+function numericGradeValuesForWorkEntries(workEntries, work, teachingWorks) {
+    const gradeKeys = (workEntries || [])
+        .map((entry) => effectiveGradeKeyForEntry(entry, work, teachingWorks))
+        .filter((gradeKey) => String(gradeKey || '').trim() !== '')
+
+    if (!gradeKeys.length) return []
+
+    const numericValues = gradeKeys
+        .map((gradeKey) => numericValueFromGradeKey(gradeKey))
+        .filter((value) => value !== null)
+
+    return numericValues.length === gradeKeys.length ? numericValues : []
+}
+
 function isTypeInRequireAllCategory(type, grading) {
     if (!type) return false
     const categories = grading?.categories || []
@@ -152,6 +166,13 @@ export function buildCategoryGroups(entries, teachingWorks, grading) {
             const weight = (Number.isNaN(factorPercent) ? 0 : factorPercent) / 100
 
             if (work.calculation === 'points') {
+                const numericGradeValues = numericGradeValuesForWorkEntries(workEntries, work, teachingWorks)
+                if (numericGradeValues.length) {
+                    const avg = numericGradeValues.reduce((s, v) => s + v, 0) / numericGradeValues.length
+                    workAverages.push({ value: avg, weight })
+                    return
+                }
+
                 const values = workEntries
                     .map((e) => gradeValueForWork(work, effectiveGradeKeyForEntry(e, work, teachingWorks)))
                     .filter((v) => v !== null)
