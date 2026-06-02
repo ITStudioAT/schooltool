@@ -78,6 +78,7 @@ use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\Homepage\NoteController;
 use App\Http\Controllers\Homepage\RegisterController;
 use App\Http\Controllers\Homepage\RestaurantBookingController;
+use App\Http\Controllers\Homepage\StudentsTimetablesStudentController;
 use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\Student\CourseStudentEntryController;
 use App\Http\Controllers\Student\StudentController;
@@ -140,6 +141,17 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/homepage/student/courses/{courseId}/entries', [CourseStudentEntryController::class, 'index'])->middleware('tool-licensed:Lehrertool');
     Route::get('/homepage/student/course-date-materials/attachments/{attachment}/preview', [CourseController::class, 'previewAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
     Route::get('/homepage/student/course-date-materials/attachments/{attachment}/download', [CourseController::class, 'downloadAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
+
+    /***** STUDENTS TIMETABLES STUDENT ROUTES *****/
+    Route::get('/homepage/students-timetables/config', [StudentsTimetablesStudentController::class, 'config']);
+    Route::post('/homepage/students-timetables/login_step_email', [StudentsTimetablesStudentController::class, 'loginStepEmail'])->middleware('tool-licensed:StudentsTimetables');
+    Route::post('/homepage/students-timetables/login_step_code', [StudentsTimetablesStudentController::class, 'loginStepCode'])->middleware('tool-licensed:StudentsTimetables');
+    Route::post('/homepage/students-timetables/login_step_password', [StudentsTimetablesStudentController::class, 'loginStepPassword'])->middleware('tool-licensed:StudentsTimetables');
+    Route::get('/homepage/students-timetables/user', [StudentsTimetablesStudentController::class, 'user'])->middleware('tool-licensed:StudentsTimetables');
+    Route::get('/homepage/students-timetables/overview', [StudentsTimetablesStudentController::class, 'overview'])->middleware('tool-licensed:StudentsTimetables');
+    Route::get('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'evaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
+    Route::put('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'updateEvaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
+    Route::post('/homepage/students-timetables/change_password', [StudentsTimetablesStudentController::class, 'changePassword'])->middleware('tool-licensed:StudentsTimetables');
 
     /***** ADMIN ROUTES *****/
     Route::get('/admin/config', [AdminController::class, 'config']);

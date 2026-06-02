@@ -195,6 +195,7 @@ describe('config', function () {
                     'teaching',
                     'materials',
                     'restaurant',
+                    'students_timetables',
                 ],
                 'tool_module_visibility' => [
                     'register',
@@ -202,9 +203,11 @@ describe('config', function () {
                     'teaching',
                     'materials',
                     'restaurant',
+                    'students_timetables',
                 ],
                 'tutoring_active',
                 'teaching_active',
+                'students_timetables_active',
                 'restaurant' => [
                     'user_information_intro_html',
                     'new_users_must_confirm_email',
@@ -301,6 +304,12 @@ describe('config', function () {
             'materials_user_test_mode' => false,
             'materials_user_comming_soon' => false,
             'restaurant_visible_user' => true,
+            'students_timetables_visible_user' => true,
+        ]);
+
+        $studentsTimetablesLicence = Licence::create(['name' => 'StudentsTimetables']);
+        $this->school->licences()->attach($studentsTimetablesLicence->id, [
+            'valid_until' => now()->addYear()->toDateString(),
         ]);
 
         $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
@@ -311,15 +320,19 @@ describe('config', function () {
                 'tutoring_active' => false,
                 'teaching_active' => true,
                 'restaurant_active' => true,
+                'students_timetables_active' => true,
             ])
             ->assertJsonPath('tool_module_statuses.tutoring', 'comming_soon')
             ->assertJsonPath('tool_module_statuses.teaching', 'test_modus')
             ->assertJsonPath('tool_module_statuses.materials', 'inactive')
+            ->assertJsonPath('tool_module_statuses.students_timetables', 'active')
             ->assertJsonPath('tool_module_visibility.register', true)
             ->assertJsonPath('tool_module_visibility.tutoring', false)
             ->assertJsonPath('tool_module_visibility.teaching', false)
             ->assertJsonPath('tool_module_visibility.materials', false)
-            ->assertJsonPath('tool_module_visibility.restaurant', true);
+            ->assertJsonPath('tool_module_visibility.restaurant', true)
+            ->assertJsonPath('tool_module_visibility.students_timetables', true)
+            ->assertJsonPath('tool_licence_statuses.StudentsTimetables', 'active');
     });
 
     test('config resolves module statuses from the selected school instead of the first school tool record', function () {

@@ -1033,6 +1033,25 @@ describe('CourseStudent auswertung sum card', () => {
     })
 })
 
+describe('CourseStudent grade calculation', () => {
+    it('uses numeric grade keys as their own numeric value', () => {
+        const methods = (CourseStudent as any).methods
+        const ctx = {
+            normalizeGradeKey: methods.normalizeGradeKey,
+            numericValueFromGradeKey: methods.numericValueFromGradeKey,
+        }
+
+        const value = methods.gradeValueForWork.call(ctx, {
+            grades: [
+                { grade: '1', value: '1' },
+                { grade: '2', value: '5' },
+            ],
+        }, '2')
+
+        expect(value).toBe(2)
+    })
+})
+
 describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
     const methods = (CourseStudent as any).methods
 
@@ -1048,6 +1067,7 @@ describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
             isGradedEntry: methods.isGradedEntry,
             effectiveGradeKeyForEntry: methods.effectiveGradeKeyForEntry,
             defaultGradeForWork: methods.defaultGradeForWork,
+            numericValueFromGradeKey: methods.numericValueFromGradeKey,
             workConfigForType: () => null,
             gradeValueForWork: methods.gradeValueForWork,
             pointsGradeForWork: methods.pointsGradeForWork,

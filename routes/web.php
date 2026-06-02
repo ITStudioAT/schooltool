@@ -136,6 +136,14 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('homepage');
     })->where('any', '.*');
 
+    Route::get('/students-timetables/{any?}', function () {
+        return view('homepage');
+    })->where('any', '.*');
+
+    Route::get('/homepage/students-timetables/{any?}', function () {
+        return view('homepage');
+    })->where('any', '.*');
+
     Route::get('/homepage/{any?}', [HomepageController::class, 'routing']);
 
     /*

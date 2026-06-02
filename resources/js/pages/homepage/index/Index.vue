@@ -201,6 +201,30 @@
                             </div>
                         </div>
 
+                        <!-- Schülerstundenpläne Card -->
+                        <div
+                            class="tool-card card-students-timetables"
+                            :class="{ 'card-disabled': isStudentsTimetablesDisabled }"
+                            @click="openToolForSchool('StudentsTimetables')"
+                            v-if="canShowStudentsTimetables">
+                            <div class="card-glow"></div>
+                            <div class="card-content">
+                                <div class="card-icon">
+                                    <v-icon size="40">mdi-calendar-clock-outline</v-icon>
+                                </div>
+                                <h3 class="card-title">Schülerstundenpläne</h3>
+                                <p class="card-description">Login zu deinen Schülerstundenplänen.</p>
+                                <div class="card-action">
+                                    <span class="action-text">Starten</span>
+                                    <v-icon size="20">mdi-arrow-right</v-icon>
+                                </div>
+                                <div class="card-badge" v-if="studentsTimetablesBadge">
+                                    <v-icon size="16">{{ studentsTimetablesBadge.icon }}</v-icon>
+                                    <span>{{ studentsTimetablesBadge.label }}</span>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Restaurant Card -->
                         <div
                             class="tool-card card-lunch"
@@ -424,6 +448,12 @@ export default {
         teachingStatus() {
             return this.toolStatuses['Lehrertool'] || 'missing'
         },
+        studentsTimetablesModuleStatus() {
+            return this.moduleStatuses.students_timetables || 'inactive'
+        },
+        studentsTimetablesStatus() {
+            return this.toolStatuses.StudentsTimetables || 'missing'
+        },
         restaurantModuleStatus() {
             return this.moduleStatuses.restaurant || 'inactive'
         },
@@ -438,6 +468,7 @@ export default {
                 Anmeldetool: 'Anmeldetool',
                 Nachhilfetool: this.tutoringDisplayName,
                 Lehrertool: 'Unterricht',
+                StudentsTimetables: 'Schülerstundenpläne',
                 Restaurant: 'Restaurant',
             }
             return labels[this.selected_tool] || this.selected_tool || ''
@@ -447,6 +478,7 @@ export default {
                 Anmeldetool: 'mdi-calendar-check',
                 Nachhilfetool: 'mdi-account-group',
                 Lehrertool: 'mdi-rocket-launch-outline',
+                StudentsTimetables: 'mdi-calendar-clock-outline',
                 Restaurant: 'mdi-food',
             }
             return icons[this.selected_tool] || 'mdi-tools'
@@ -460,6 +492,9 @@ export default {
         canShowTeaching() {
             return this.isModuleVisible(this.teachingModuleStatus) && this.schoolLicenceNames.includes('Lehrertool')
         },
+        canShowStudentsTimetables() {
+            return this.isModuleVisible(this.studentsTimetablesModuleStatus) && this.schoolLicenceNames.includes('StudentsTimetables')
+        },
         canShowRestaurant() {
             return this.isModuleVisible(this.restaurantModuleStatus) && this.schoolLicenceNames.includes('Restaurant')
         },
@@ -472,6 +507,9 @@ export default {
         isTeachingDisabled() {
             return this.teachingStatus !== 'active' || !this.moduleAllowsAccess(this.teachingModuleStatus)
         },
+        isStudentsTimetablesDisabled() {
+            return this.studentsTimetablesStatus !== 'active' || !this.moduleAllowsAccess(this.studentsTimetablesModuleStatus)
+        },
         isRestaurantDisabled() {
             return !this.hasRestaurantHomepageAccess
         },
@@ -483,6 +521,9 @@ export default {
         },
         teachingBadge() {
             return this.buildBadge(this.teachingStatus, this.teachingModuleStatus)
+        },
+        studentsTimetablesBadge() {
+            return this.buildBadge(this.studentsTimetablesStatus, this.studentsTimetablesModuleStatus)
         },
         restaurantBadge() {
             return this.buildBadge('active', this.restaurantModuleStatus)
@@ -539,6 +580,7 @@ export default {
                 Anmeldetool: this.registerModuleStatus,
                 Nachhilfetool: this.tutoringModuleStatus,
                 Lehrertool: this.teachingModuleStatus,
+                StudentsTimetables: this.studentsTimetablesModuleStatus,
                 Restaurant: this.restaurantModuleStatus,
             }[tool] || 'inactive'
 
@@ -566,6 +608,7 @@ export default {
                 Anmeldetool: '/homepage/register',
                 Nachhilfetool: '/homepage/tutoring_overview/',
                 Lehrertool: '/homepage/student',
+                StudentsTimetables: '/homepage/students-timetables',
                 Restaurant: '/homepage/restaurant',
             }
             const path = toolRoutes[this.selected_tool]
@@ -579,6 +622,7 @@ export default {
                 Anmeldetool: '/homepage/register',
                 Nachhilfetool: '/homepage/tutoring_overview',
                 Lehrertool: '/homepage/student',
+                StudentsTimetables: '/homepage/students-timetables',
                 Restaurant: '/homepage/restaurant',
             }
             const path = toolRoutes[tool]
@@ -702,6 +746,7 @@ export default {
                 Anmeldetool: 'Anmeldetool',
                 Nachhilfetool: this.tutoringDisplayName,
                 Lehrertool: 'Unterricht',
+                StudentsTimetables: 'Schülerstundenpläne',
                 Restaurant: 'Restaurant',
             }[tool] || tool
 
@@ -725,6 +770,7 @@ export default {
                 Anmeldetool: this.registerModuleStatus,
                 Nachhilfetool: this.tutoringModuleStatus,
                 Lehrertool: this.teachingModuleStatus,
+                StudentsTimetables: this.studentsTimetablesModuleStatus,
             }[tool] || 'inactive'
 
             if (!this.moduleAllowsAccess(moduleStatus) || status !== 'active') {
@@ -738,7 +784,7 @@ export default {
         },
         moveTo(licence, school) {
             console.log('moveTo')
-            var path = '/homepage/'
+            let path = '/homepage/'
             switch (licence.name) {
                 case 'Anmeldetool':
                     path += 'register'

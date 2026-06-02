@@ -12,6 +12,10 @@ import StudentOverview from '@/pages/homepage/student/overview/Overview.vue'
 import StudentPassword from '@/pages/homepage/student/password/Password.vue'
 import StudentProfile from '@/pages/homepage/student/profile/Profile.vue'
 import StudentCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
+import StudentTimetables from '@/pages/homepage/studentsTimetables/StudentTimetables.vue'
+import StudentTimetablesOverview from '@/pages/homepage/studentsTimetables/overview/Overview.vue'
+import StudentTimetablesPassword from '@/pages/homepage/studentsTimetables/password/Password.vue'
+import StudentTimetablesProfile from '@/pages/homepage/studentsTimetables/profile/Profile.vue'
 import Cashier from '@/pages/homepage/cashier/Cashier.vue'
 import Restaurant from '@/pages/homepage/index/Restaurant.vue'
 import Products from '@/pages/homepage/index/Products.vue'
@@ -33,6 +37,11 @@ const routes = [
     { path: '/student/password', component: StudentPassword },
     { path: '/student/profile', component: StudentProfile },
     { path: '/student/course/:id', component: StudentCourse },
+    { path: '/homepage/students-timetables', component: StudentTimetables },
+    { path: '/students-timetables', component: StudentTimetables },
+    { path: '/students-timetables/overview', component: StudentTimetablesOverview },
+    { path: '/students-timetables/password', component: StudentTimetablesPassword },
+    { path: '/students-timetables/profile', component: StudentTimetablesProfile },
     { path: '/homepage/cashier', component: Cashier },
     { path: '/homepage/restaurant', component: Restaurant },
     { path: '/homepage/notes-demo', component: NotesDemo },

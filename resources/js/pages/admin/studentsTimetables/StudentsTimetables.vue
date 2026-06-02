@@ -51,6 +51,16 @@
                     </span>
                 </v-btn>
             </div>
+
+            <v-btn
+                class="st-nav__settings-button"
+                icon="mdi-cog"
+                size="small"
+                variant="tonal"
+                color="primary"
+                title="Einstellungen"
+                aria-label="Einstellungen"
+                to="/admin/settings?tab=students_timetables" />
         </v-sheet>
 
         <v-row class="w-100" dense>
@@ -281,6 +291,10 @@ export default {
     flex: 1;
 }
 
+.st-nav__settings-button {
+    flex: 0 0 auto;
+}
+
 .st-nav__button {
     height: 40px !important;
     padding: 0 14px;
@@ -363,6 +377,10 @@ export default {
         flex: 1 1 100%;
         height: 36px !important;
         padding: 0 12px;
+    }
+
+    .st-nav__settings-button {
+        align-self: flex-start;
     }
 
     .st-nav__button-title {

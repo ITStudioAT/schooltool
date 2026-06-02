@@ -56,11 +56,22 @@ function workConfigForType(type, teachingWorks) {
 
 function gradeValueForWork(work, gradeKey) {
     if (!work || !gradeKey) return null
+    const numericGradeKey = numericValueFromGradeKey(gradeKey)
+    if (numericGradeKey !== null) return numericGradeKey
+
     const lookup = normalizeGradeKey(gradeKey)
     const grade = (work.grades || []).find((g) => normalizeGradeKey(g.grade) === lookup)
     if (!grade || grade.value == null) return null
     const num = parseFloat(String(grade.value).replace(',', '.'))
     return Number.isNaN(num) ? null : num
+}
+
+function numericValueFromGradeKey(gradeKey) {
+    const normalized = String(gradeKey || '').trim().replace(',', '.')
+    if (!/^[+-]?\d+(?:\.\d+)?$/.test(normalized)) return null
+
+    const value = parseFloat(normalized)
+    return Number.isNaN(value) ? null : value
 }
 
 function pointsGradeForWork(work, points) {
