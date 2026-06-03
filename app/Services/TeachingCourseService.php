@@ -21,6 +21,11 @@ class TeachingCourseService
 {
     private static ?bool $supportsCourseWorkGroupStudentIndexCache = null;
 
+    /**
+     * @var array<int, int|null>
+     */
+    private array $importUserIdCache = [];
+
     public function normalizeStudentIds($value): array
     {
         if (is_array($value)) {
@@ -202,11 +207,9 @@ class TeachingCourseService
         $existing = $course->teachingCourseStudents()->withTrashed()->get();
         $existingByKey = [];
         foreach ($existing as $courseStudent) {
-            $key = $this->courseStudentModelKey($courseStudent);
-            if (! $key) {
-                continue;
+            foreach ($this->courseStudentModelKeys($courseStudent) as $key) {
+                $existingByKey[$key] ??= $courseStudent;
             }
-            $existingByKey[$key] = $courseStudent;
         }
 
         $protectedRemovalReasons = $this->collectProtectedRemovalReasons($course, $existingByKey, $activeByKey);
@@ -289,12 +292,9 @@ class TeachingCourseService
 
         $existingByKey = [];
         foreach ($rows as $courseStudent) {
-            $key = $this->courseStudentModelKey($courseStudent);
-            if (! $key) {
-                continue;
+            foreach ($this->courseStudentModelKeys($courseStudent) as $key) {
+                $existingByKey[$key] ??= $courseStudent;
             }
-
-            $existingByKey[$key] = $courseStudent;
         }
 
         return $this->collectProtectedRemovalReasons($course, $existingByKey, []);
@@ -320,12 +320,14 @@ class TeachingCourseService
                     continue;
                 }
 
-                $key = $this->courseStudentModelKey($courseStudent);
-                if (! $key) {
+                $keys = $this->courseStudentModelKeys($courseStudent);
+                if (empty($keys)) {
                     continue;
                 }
 
-                $candidatesByCourse[$courseId][$key] = $courseStudent;
+                foreach ($keys as $key) {
+                    $candidatesByCourse[$courseId][$key] ??= $courseStudent;
+                }
 
                 if ($courseStudent->user_id) {
                     $candidateUserIdsByCourse[$courseId][] = (int) $courseStudent->user_id;
@@ -499,8 +501,22 @@ class TeachingCourseService
 
     public function findOrCreateUserIdFromImport(Import116 $import, int $schoolId): ?int
     {
-        if (! $import->email) {
+        if ((int) $import->school_id !== $schoolId) {
             return null;
+        }
+
+        if ($import->user_id) {
+            $linkedUser = User::query()
+                ->where('school_id', $schoolId)
+                ->find((int) $import->user_id);
+
+            if ($linkedUser) {
+                return $linkedUser->id;
+            }
+        }
+
+        if (! $import->email) {
+            return $this->findOrCreatePlaceholderUserIdFromImport($import, $schoolId);
         }
 
         $userQuery = User::where('school_id', $schoolId)
@@ -513,10 +529,12 @@ class TeachingCourseService
         $user = $userQuery->first();
 
         if ($user) {
+            $this->linkImportToUser($import, $user);
+
             return $user->id;
         }
 
-        return $this->createStudentUser([
+        $userId = $this->createStudentUser([
             'schoolyear_id' => $import->schoolyear_id,
             'email' => $import->email,
             'first_name' => $import->first_name,
@@ -525,6 +543,32 @@ class TeachingCourseService
             'sex' => $import->sex,
             'schoolclass' => $import->class,
         ], $schoolId);
+
+        if ($userId) {
+            $user = User::find($userId);
+            if ($user) {
+                $this->linkImportToUser($import, $user);
+            }
+        }
+
+        return $userId;
+    }
+
+    public function resolveCourseStudentUserId(TeachingCourseStudent $courseStudent, int $schoolId): ?int
+    {
+        $user = $courseStudent->user_id
+            ? User::query()->where('school_id', $schoolId)->find((int) $courseStudent->user_id)
+            : null;
+
+        $import = $courseStudent->import116_id
+            ? Import116::query()->where('school_id', $schoolId)->find((int) $courseStudent->import116_id)
+            : null;
+
+        if ($import && (! $user || ! $this->studentUserMatchesImport($user, $import))) {
+            return $this->findOrCreateUserIdFromImport($import, $schoolId);
+        }
+
+        return $user?->id;
     }
 
     public function createStudentUser(array $data, int $schoolId): ?int
@@ -568,25 +612,25 @@ class TeachingCourseService
         if (is_array($item) || is_object($item)) {
             $data = (array) $item;
 
-            if (isset($data['user_id']) && is_numeric($data['user_id'])) {
-                $user = User::find((int) $data['user_id']);
-                if ($user && (int) $user->school_id === $schoolId) {
-                    return ['user_id' => $user->id, 'import116_id' => null];
-                }
-            }
-
             if (isset($data['import116_id']) && is_numeric($data['import116_id'])) {
                 $importId = $this->findImportIdInSchool((int) $data['import116_id'], $schoolId);
                 if ($importId) {
                     $import = Import116::find($importId);
-                    if ($import && $import->email) {
+                    if ($import) {
                         $userId = $this->findOrCreateUserIdFromImport($import, $schoolId);
                         if ($userId) {
-                            return ['user_id' => $userId, 'import116_id' => null];
+                            return ['user_id' => $userId, 'import116_id' => $importId];
                         }
                     }
 
                     return ['user_id' => null, 'import116_id' => $importId];
+                }
+            }
+
+            if (isset($data['user_id']) && is_numeric($data['user_id'])) {
+                $user = User::find((int) $data['user_id']);
+                if ($user && (int) $user->school_id === $schoolId) {
+                    return ['user_id' => $user->id, 'import116_id' => null];
                 }
             }
 
@@ -641,11 +685,9 @@ class TeachingCourseService
             return null;
         }
 
-        if ($import->email) {
-            $userId = $this->findOrCreateUserIdFromImport($import, $schoolId);
-            if ($userId) {
-                return ['user_id' => $userId, 'import116_id' => null];
-            }
+        $userId = $this->findOrCreateUserIdFromImport($import, $schoolId);
+        if ($userId) {
+            return ['user_id' => $userId, 'import116_id' => $importId];
         }
 
         return ['user_id' => null, 'import116_id' => $importId];
@@ -697,10 +739,10 @@ class TeachingCourseService
         $fallbackImportId = $this->findImportIdInSchool($id, $schoolId);
         if ($fallbackImportId) {
             $import = Import116::find($fallbackImportId);
-            if ($import && $import->email) {
+            if ($import) {
                 $fallbackUserId = $this->findOrCreateUserIdFromImport($import, $schoolId);
                 if ($fallbackUserId) {
-                    return ['user_id' => $fallbackUserId, 'import116_id' => null];
+                    return ['user_id' => $fallbackUserId, 'import116_id' => $fallbackImportId];
                 }
             }
 
@@ -733,7 +775,7 @@ class TeachingCourseService
 
         $fallbackUserId = $this->findOrCreateUserIdFromImport($import, $schoolId);
         if ($fallbackUserId) {
-            return ['user_id' => $fallbackUserId, 'import116_id' => null];
+            return ['user_id' => $fallbackUserId, 'import116_id' => (int) $import->id];
         }
 
         return ['user_id' => null, 'import116_id' => (int) $import->id];
@@ -754,17 +796,133 @@ class TeachingCourseService
         return null;
     }
 
-    private function courseStudentModelKey(TeachingCourseStudent $courseStudent): ?string
+    /**
+     * @return array<int, string>
+     */
+    private function courseStudentModelKeys(TeachingCourseStudent $courseStudent): array
     {
+        $keys = [];
+
         if ($courseStudent->user_id) {
-            return 'u:'.$courseStudent->user_id;
+            $keys[] = 'u:'.$courseStudent->user_id;
         }
 
         if ($courseStudent->import116_id) {
-            return 'i:'.$courseStudent->import116_id;
+            $keys[] = 'i:'.$courseStudent->import116_id;
+
+            $importUserId = $this->userIdForImport((int) $courseStudent->import116_id);
+            if ($importUserId) {
+                $keys[] = 'u:'.$importUserId;
+            }
         }
 
-        return null;
+        return array_values(array_unique($keys));
+    }
+
+    private function findOrCreatePlaceholderUserIdFromImport(Import116 $import, int $schoolId): ?int
+    {
+        $placeholderEmail = $this->placeholderEmailForImport($import, $schoolId);
+
+        $user = User::query()
+            ->where('school_id', $schoolId)
+            ->where('email', $placeholderEmail)
+            ->first();
+
+        if (! $user) {
+            $user = User::create([
+                'school_id' => $schoolId,
+                'schoolyear_id' => $import->schoolyear_id,
+                'email' => $placeholderEmail,
+                'first_name' => $import->first_name,
+                'last_name' => $import->last_name,
+                'phone' => $import->phone_1,
+                'sex' => $import->sex,
+                'schoolclass' => $import->class,
+                'password' => Hash::make(str()->random(32)),
+                'import116_id' => $import->id,
+            ]);
+
+            $user->email_verified_at = now();
+            $user->confirmed_at = now();
+            $user->is_active = 0;
+            $user->save();
+        }
+
+        $this->linkImportToUser($import, $user);
+
+        return $user->id;
+    }
+
+    private function linkImportToUser(Import116 $import, User $user): void
+    {
+        if ((int) ($import->user_id ?? 0) !== (int) $user->id) {
+            $import->user_id = $user->id;
+            $import->save();
+            $this->importUserIdCache[(int) $import->id] = $user->id;
+        }
+
+        if ((int) ($user->import116_id ?? 0) !== (int) $import->id) {
+            $user->import116_id = $import->id;
+            $user->save();
+        }
+    }
+
+    private function studentUserMatchesImport(User $user, Import116 $import): bool
+    {
+        if ((int) ($import->user_id ?? 0) === (int) $user->id) {
+            return true;
+        }
+
+        $userEmail = $this->normalizedStudentReferenceValue($user->email ?? null);
+        $importEmail = $this->normalizedStudentReferenceValue($import->email ?? null);
+
+        if ($userEmail !== '' && $importEmail !== '') {
+            return $userEmail === $importEmail;
+        }
+
+        $userFirstName = $this->normalizedStudentReferenceValue($user->first_name ?? null);
+        $userLastName = $this->normalizedStudentReferenceValue($user->last_name ?? null);
+        $importFirstName = $this->normalizedStudentReferenceValue($import->first_name ?? null);
+        $importLastName = $this->normalizedStudentReferenceValue($import->last_name ?? null);
+
+        if ($userFirstName === '' || $userLastName === '' || $importFirstName === '' || $importLastName === '') {
+            return false;
+        }
+
+        if ($userFirstName !== $importFirstName || $userLastName !== $importLastName) {
+            return false;
+        }
+
+        $userClass = $this->normalizedStudentReferenceValue($user->schoolclass ?? null);
+        $importClass = $this->normalizedStudentReferenceValue($import->class ?? null);
+
+        return $userClass === '' || $importClass === '' || $userClass === $importClass;
+    }
+
+    private function placeholderEmailForImport(Import116 $import, int $schoolId): string
+    {
+        $identifier = trim((string) ($import->student_code ?: 'import-'.$import->id.'-'.$schoolId));
+        $slug = preg_replace('/[^a-z0-9_]/', '_', Str::lower($identifier));
+
+        return 'noemail.'.$slug.'@schooltool.noemail';
+    }
+
+    private function normalizedStudentReferenceValue(mixed $value): string
+    {
+        return Str::lower(trim((string) $value));
+    }
+
+    private function userIdForImport(int $importId): ?int
+    {
+        if (! array_key_exists($importId, $this->importUserIdCache)) {
+            $value = Import116::query()
+                ->whereKey($importId)
+                ->value('user_id');
+
+            $this->importUserIdCache[$importId] = $value ? (int) $value : null;
+        }
+
+        return $this->importUserIdCache[$importId];
     }
 
     private function studentEntryId(array $entry): ?int

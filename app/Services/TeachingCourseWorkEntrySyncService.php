@@ -412,29 +412,41 @@ class TeachingCourseWorkEntrySyncService
         $byUserId = [];
 
         foreach ($course->teachingCourseStudents()->get() as $courseStudent) {
-            $studentId = (int) ($courseStudent->user_id ?: 0);
-
-            if (! $studentId && $courseStudent->import116_id) {
-                $studentId = $this->courseService->resolveStudentIdFromNumeric(
-                    (int) $courseStudent->import116_id,
-                    (int) $course->school_id
-                ) ?? 0;
-
-                // Normalize the course student record so that future serializations
-                // use the resolved user_id and the student ID matches entry user_ids.
-                if ($studentId) {
-                    $courseStudent->update(['user_id' => $studentId]);
-                }
-            }
+            $previousUserId = (int) ($courseStudent->user_id ?: 0);
+            $importAliasId = (int) ($courseStudent->import116_id ?: 0);
+            $studentId = $this->courseService->resolveCourseStudentUserId(
+                $courseStudent,
+                (int) $course->school_id
+            ) ?? 0;
 
             if (! $studentId) {
                 continue;
             }
 
-            $grade = $gradesByStudentId[$studentId] ?? null;
-            $comment = $commentsByStudentId[$studentId] ?? null;
-            $entryDate = $dateByStudentId[$studentId] ?? $defaultDate;
+            if ($previousUserId !== $studentId) {
+                $courseStudent->update(['user_id' => $studentId]);
+            }
+
+            $studentAliases = array_values(array_unique(array_filter([
+                $studentId,
+                $previousUserId,
+                $importAliasId,
+            ], fn (int $id): bool => $id > 0)));
+
+            $grade = $this->firstMappedValue($gradesByStudentId, $studentAliases);
+            $comment = $this->firstMappedValue($commentsByStudentId, $studentAliases);
+            $points = $this->firstMappedValue($pointsByStudentId, $studentAliases);
+            $entryDate = $this->firstMappedValue($dateByStudentId, $studentAliases) ?? $defaultDate;
             $description = $comment ?: $this->toNullableString($work->description);
+
+            $gradesByStudentId[$studentId] = $grade;
+            $commentsByStudentId[$studentId] = $comment;
+            if ($points !== null) {
+                $pointsByStudentId[$studentId] = $points;
+            }
+            if ($entryDate !== null) {
+                $dateByStudentId[$studentId] = $entryDate;
+            }
 
             $byUserId[$studentId] = [
                 'teaching_course_id' => $work->teaching_course_id,
@@ -461,6 +473,21 @@ class TeachingCourseWorkEntrySyncService
         );
 
         return array_values($byUserId);
+    }
+
+    /**
+     * @param  array<int, mixed>  $valuesByStudentId
+     * @param  array<int, int>  $studentIds
+     */
+    private function firstMappedValue(array $valuesByStudentId, array $studentIds): mixed
+    {
+        foreach ($studentIds as $studentId) {
+            if (array_key_exists($studentId, $valuesByStudentId)) {
+                return $valuesByStudentId[$studentId];
+            }
+        }
+
+        return null;
     }
 
     /**

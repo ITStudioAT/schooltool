@@ -12,10 +12,12 @@
  * - createStudentUser
  */
 
+use App\Jobs\Teaching\Import116Job;
 use App\Models\Import116;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use App\Services\TeachingCourseService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -328,9 +330,11 @@ describe('resolveCourseStudentEntries', function () {
         ]];
 
         $entries = $this->service->resolveCourseStudentEntries($payload, $this->school->id);
+        $placeholderUserId = $import->fresh()->user_id;
 
         expect($entries)->toHaveCount(1)
-            ->and($entries[0]['user_id'])->toBeNull()
+            ->and($placeholderUserId)->not->toBeNull()
+            ->and($entries[0]['user_id'])->toBe($placeholderUserId)
             ->and($entries[0]['import116_id'])->toBe($import->id);
 
         $course = TeachingCourse::factory()->create([
@@ -345,8 +349,72 @@ describe('resolveCourseStudentEntries', function () {
 
         $courseStudent = $course->teachingCourseStudents()->first();
         expect($courseStudent)->not->toBeNull()
-            ->and($courseStudent->user_id)->toBeNull()
+            ->and($courseStudent->user_id)->toBe($placeholderUserId)
             ->and($courseStudent->import116_id)->toBe($import->id);
+    });
+
+    test('cleans existing course student rows that contain both collided user and import ids', function () {
+        $collisionId = 990002;
+
+        $teacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'teacher-cleanup@test.com',
+        ]);
+
+        $collidingUser = User::factory()->create([
+            'id' => $collisionId,
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'clara.foetschl-cleanup@test.com',
+            'first_name' => 'Clara',
+            'last_name' => 'Foetschl',
+            'schoolclass' => '4T',
+        ]);
+
+        $import = Import116::factory()->create([
+            'id' => $collisionId,
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import_user_id' => $teacher->id,
+            'first_name' => 'Alina',
+            'last_name' => 'Husic',
+            'class' => '5A',
+            'email' => null,
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $teacher->id,
+            'title' => 'Informatik - 5A1',
+            'classes' => ['5A'],
+        ]);
+
+        $courseStudent = TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $collidingUser->id,
+            'import116_id' => $import->id,
+            'sem_1_grade' => 'NB',
+        ]);
+
+        $this->service->syncCourseStudents($course, [[
+            'id' => $import->id,
+            'first_name' => 'Alina',
+            'last_name' => 'Husic',
+            'class' => '5A',
+            'email' => null,
+            'sem_1_grade' => '2',
+        ]], []);
+
+        $placeholderUserId = $import->fresh()->user_id;
+
+        expect($course->teachingCourseStudents()->count())->toBe(1)
+            ->and($placeholderUserId)->not->toBeNull()
+            ->and($placeholderUserId)->not->toBe($collidingUser->id)
+            ->and($courseStudent->fresh()->user_id)->toBe($placeholderUserId)
+            ->and($courseStudent->fresh()->import116_id)->toBe($import->id)
+            ->and($courseStudent->fresh()->sem_1_grade)->toBe('2');
     });
 });
 
@@ -514,16 +582,30 @@ describe('findOrCreateUserIdByEmail', function () {
 // ============================================================================
 
 describe('findOrCreateUserIdFromImport', function () {
-    test('returns null when import has no email', function () {
+    test('creates placeholder user when import has no email', function () {
         $import = Import116::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'NOEMAIL-123',
+            'first_name' => 'No',
+            'last_name' => 'Email',
+            'class' => '5A',
             'email' => null,
             'import_user_id' => User::factory()->create(['school_id' => $this->school->id])->id,
         ]);
 
         $result = $this->service->findOrCreateUserIdFromImport($import, $this->school->id);
 
-        expect($result)->toBeNull();
+        $user = User::find($result);
+
+        expect($result)->not->toBeNull()
+            ->and($import->fresh()->user_id)->toBe($result)
+            ->and($user)->not->toBeNull()
+            ->and($user->first_name)->toBe('No')
+            ->and($user->last_name)->toBe('Email')
+            ->and($user->schoolclass)->toBe('5A')
+            ->and($user->import116_id)->toBe($import->id)
+            ->and(Import116Job::isPlaceholderEmail($user->email))->toBeTrue();
     });
 
     test('returns existing user id when user with same email exists', function () {

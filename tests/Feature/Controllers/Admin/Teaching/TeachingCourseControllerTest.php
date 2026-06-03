@@ -254,6 +254,58 @@ describe('index', function () {
             ->assertJsonPath('data.0.title', 'Mathematik');
     });
 
+    test('prefers import student data when a course student row contains a collided user id', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $collisionId = 9301;
+
+        User::factory()->create([
+            'id' => $collisionId,
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'clara.foetschl@test.invalid',
+            'first_name' => 'Clara',
+            'last_name' => 'Foetschl',
+            'schoolclass' => '4T',
+        ]);
+
+        $import = Import116::factory()->create([
+            'id' => $collisionId,
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import_user_id' => $this->teacher->id,
+            'first_name' => 'Alina',
+            'last_name' => 'Husic',
+            'class' => '5A',
+            'email' => null,
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Informatik - 5A1',
+            'classes' => ['5A'],
+        ]);
+
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $collisionId,
+            'import116_id' => $import->id,
+            'sem_1_grade' => 'NB',
+        ]);
+
+        $this->getJson('/api/admin/teaching/courses')
+            ->assertOk()
+            ->assertJsonPath('data.0.students.0.id', $import->id)
+            ->assertJsonPath('data.0.students.0.user_id', null)
+            ->assertJsonPath('data.0.students.0.import116_id', $import->id)
+            ->assertJsonPath('data.0.students.0.first_name', 'Alina')
+            ->assertJsonPath('data.0.students.0.last_name', 'Husic')
+            ->assertJsonPath('data.0.students.0.schoolclass', '5A')
+            ->assertJsonPath('data.0.students.0.sem_1_grade', 'NB');
+    });
+
     test('includes the course owners schoolyear scoped teaching definitions in the course payload', function () {
         $this->actingAs($this->admin, 'sanctum');
 

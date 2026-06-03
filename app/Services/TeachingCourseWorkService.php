@@ -19,15 +19,11 @@ class TeachingCourseWorkService
     {
         $students = $course->relationLoaded('teachingCourseStudents')
             ? $course->teachingCourseStudents
-            : $course->teachingCourseStudents()->get(['user_id', 'import116_id']);
-
-        $entries = $students->map(function ($student) {
-            return ['id' => $student->user_id ?: $student->import116_id];
-        })->all();
+            : $course->teachingCourseStudents()->get(['id', 'user_id', 'import116_id']);
 
         $studentIds = [];
-        foreach ($entries as $entry) {
-            $resolvedId = $this->courseService->resolveStudentIdFromNumeric((int) ($entry['id'] ?? 0), (int) $course->school_id);
+        foreach ($students as $student) {
+            $resolvedId = $this->courseService->resolveCourseStudentUserId($student, (int) $course->school_id);
             if ($resolvedId) {
                 $studentIds[] = $resolvedId;
             }

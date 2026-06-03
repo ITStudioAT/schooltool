@@ -20,6 +20,7 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class TeachingCourseController extends Controller
@@ -463,7 +464,9 @@ class TeachingCourseController extends Controller
         Request $request,
         array $removalReasons = []
     ): ?array {
-        if ($courseStudent->user_id) {
+        $source = $this->courseStudentPayloadSource($courseStudent, $studentsById, $importsById);
+
+        if ($source === 'user') {
             $student = $studentsById->get((int) $courseStudent->user_id);
             if (! $student) {
                 return null;
@@ -487,14 +490,16 @@ class TeachingCourseController extends Controller
             ];
         }
 
-        $resolvedId = $courseStudent->studentId();
+        $resolvedId = $source === 'user'
+            ? (int) $courseStudent->user_id
+            : (int) $courseStudent->import116_id;
         if (! $resolvedId) {
             return null;
         }
 
         $payload['id'] = $resolvedId;
         $payload['course_student_id'] = $courseStudent->id;
-        $payload['user_id'] = $courseStudent->user_id;
+        $payload['user_id'] = $source === 'user' ? $courseStudent->user_id : null;
         $payload['import116_id'] = $courseStudent->import116_id;
         $payload['comment'] = $courseStudent->comment;
         $payload['sem_1_grade'] = $courseStudent->sem_1_grade;
@@ -506,15 +511,71 @@ class TeachingCourseController extends Controller
         $payload['stars'] = $courseStudent->stars ?? [];
         $payload['canceled_at'] = $courseStudent->canceled_at?->toDateTimeString();
 
-        $studentKey = $courseStudent->user_id
-            ? 'u:'.$courseStudent->user_id
-            : ($courseStudent->import116_id ? 'i:'.$courseStudent->import116_id : null);
+        $studentKey = $payload['user_id']
+            ? 'u:'.$payload['user_id']
+            : ($payload['import116_id'] ? 'i:'.$payload['import116_id'] : null);
         $removalReasonCode = $studentKey ? ($removalReasons[$studentKey] ?? null) : null;
 
         $payload['is_removable'] = $removalReasonCode === null;
         $payload['remove_block_reason'] = $this->translateRemovalReasonCode($removalReasonCode);
 
         return $payload;
+    }
+
+    private function courseStudentPayloadSource(
+        TeachingCourseStudent $courseStudent,
+        Collection $studentsById,
+        Collection $importsById
+    ): string {
+        if (! $courseStudent->user_id) {
+            return 'import';
+        }
+
+        if (! $courseStudent->import116_id) {
+            return 'user';
+        }
+
+        $student = $studentsById->get((int) $courseStudent->user_id);
+        $import = $importsById->get((int) $courseStudent->import116_id);
+
+        if ($student && $import && ! $this->studentReferencesMatch($student, $import)) {
+            return 'import';
+        }
+
+        return 'user';
+    }
+
+    private function studentReferencesMatch(User $student, Import116 $import): bool
+    {
+        $studentEmail = $this->normalizedStudentReferenceValue($student->email ?? null);
+        $importEmail = $this->normalizedStudentReferenceValue($import->email ?? null);
+
+        if ($studentEmail !== '' && $importEmail !== '') {
+            return $studentEmail === $importEmail;
+        }
+
+        $studentFirstName = $this->normalizedStudentReferenceValue($student->first_name ?? null);
+        $studentLastName = $this->normalizedStudentReferenceValue($student->last_name ?? null);
+        $importFirstName = $this->normalizedStudentReferenceValue($import->first_name ?? null);
+        $importLastName = $this->normalizedStudentReferenceValue($import->last_name ?? null);
+
+        if ($studentFirstName === '' || $studentLastName === '' || $importFirstName === '' || $importLastName === '') {
+            return false;
+        }
+
+        if ($studentFirstName !== $importFirstName || $studentLastName !== $importLastName) {
+            return false;
+        }
+
+        $studentClass = $this->normalizedStudentReferenceValue($student->schoolclass ?? null);
+        $importClass = $this->normalizedStudentReferenceValue($import->class ?? null);
+
+        return $studentClass === '' || $importClass === '' || $studentClass === $importClass;
+    }
+
+    private function normalizedStudentReferenceValue(mixed $value): string
+    {
+        return Str::lower(trim((string) $value));
     }
 
     private function translateRemovalReasonCode(?string $reasonCode): ?string

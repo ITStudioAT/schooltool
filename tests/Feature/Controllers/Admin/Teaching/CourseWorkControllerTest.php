@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
@@ -519,6 +520,91 @@ describe('show update destroy', function () {
         $this->assertDatabaseMissing('teaching_course_work_group_students', [
             'teaching_course_work_id' => $work->id,
             'user_id' => $staleStudent->id,
+        ]);
+    });
+
+    test('syncWork resolves collided import course students to placeholder users', function () {
+        $collisionId = 880001;
+
+        $collidingUser = User::factory()->create([
+            'id' => $collisionId,
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'clara.work-collision@test.invalid',
+            'first_name' => 'Clara',
+            'last_name' => 'Foetschl',
+            'schoolclass' => '4T',
+        ]);
+
+        $import = Import116::factory()->create([
+            'id' => $collisionId,
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'WORK-COLLISION-001',
+            'import_user_id' => $this->admin->id,
+            'first_name' => 'Alina',
+            'last_name' => 'Husic',
+            'class' => '5A',
+            'email' => null,
+        ]);
+
+        $courseStudent = $this->course->teachingCourseStudents()->create([
+            'user_id' => $collidingUser->id,
+            'import116_id' => $import->id,
+        ]);
+
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'type' => 'MA',
+            'title' => 'Import collision work',
+            'is_group_work' => false,
+            'date_for_all_groups' => '2026-06-03',
+            'groups' => [[
+                'student_ids' => [$import->id],
+                'date' => '2026-06-03',
+                'grade' => null,
+                'comment' => null,
+                'grades' => [[
+                    'student_id' => $import->id,
+                    'grade' => '0',
+                ]],
+                'comments' => [[
+                    'student_id' => $import->id,
+                    'comment' => 'Preserve me',
+                ]],
+            ]],
+        ]);
+
+        app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+
+        $placeholderUserId = $import->fresh()->user_id;
+
+        expect($placeholderUserId)->not->toBeNull()
+            ->and($placeholderUserId)->not->toBe($collidingUser->id)
+            ->and($courseStudent->fresh()->user_id)->toBe($placeholderUserId)
+            ->and($courseStudent->fresh()->import116_id)->toBe($import->id);
+
+        $work->refresh();
+        $group = collect($work->groups)->first();
+
+        expect($group['student_ids'] ?? [])->toBe([$placeholderUserId])
+            ->and($group['grades'][0]['student_id'] ?? null)->toBe($placeholderUserId)
+            ->and($group['grades'][0]['grade'] ?? null)->toBe('0')
+            ->and($group['comments'][0]['comment'] ?? null)->toBe('Preserve me');
+
+        $this->assertDatabaseHas('teaching_course_student_entries', [
+            'teaching_course_id' => $this->course->id,
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $placeholderUserId,
+            'grade' => '0',
+            'source' => 'course_work',
+        ]);
+
+        $this->assertDatabaseMissing('teaching_course_student_entries', [
+            'teaching_course_id' => $this->course->id,
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $collidingUser->id,
+            'source' => 'course_work',
         ]);
     });
 
