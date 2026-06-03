@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildCategoryGroups } from '@/helpers/gradeCalculation'
 
 describe('grade calculation helper', () => {
-    it('uses a numeric grade key as its numeric value even when the configured grade value is wrong', () => {
+    it('uses the configured grade value before falling back to a numeric grade key', () => {
         const groups = buildCategoryGroups(
             [
                 {
@@ -34,7 +34,45 @@ describe('grade calculation helper', () => {
             },
         )
 
-        expect(groups[0].value).toBe(2)
+        expect(groups[0].value).toBe(5)
+    })
+
+    it('calculates a practical exercise grade key of zero as grade value five', () => {
+        const groups = buildCategoryGroups(
+            [
+                {
+                    id: 1,
+                    type: 'PÜ',
+                    grade: '0',
+                    effective_grade: '0',
+                },
+            ],
+            [
+                {
+                    short_name: 'PÜ',
+                    calculation: 'average',
+                    grades: [
+                        { grade: '++++', value: '1' },
+                        { grade: '+++', value: '2' },
+                        { grade: '++', value: '3' },
+                        { grade: '+', value: '4' },
+                        { grade: '0', value: '5' },
+                    ],
+                    default_grade: '',
+                },
+            ],
+            {
+                categories: [
+                    {
+                        name: 'Praktische Übungen',
+                        weight: 33,
+                        works: [{ short_name: 'PÜ', factor: 100 }],
+                    },
+                ],
+            },
+        )
+
+        expect(groups[0].value).toBe(5)
     })
 
     it('uses numeric entry grades directly for points work in category calculation', () => {

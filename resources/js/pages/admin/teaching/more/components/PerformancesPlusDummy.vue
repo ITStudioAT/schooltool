@@ -392,12 +392,13 @@ export default {
         },
         gradeValueForWork(work, gradeKey) {
             if (!work || !gradeKey) return null
-            const numericGradeKey = this.numericValueFromGradeKey(gradeKey)
-            if (numericGradeKey !== null) return numericGradeKey
 
             const lookup = this.normalizeGradeKey(gradeKey)
             const grade = (work.grades || []).find((g) => this.normalizeGradeKey(g.grade) === lookup)
-            if (!grade || grade.value == null) return null
+            if (!grade || grade.value == null) {
+                return this.numericValueFromGradeKey(gradeKey)
+            }
+
             const num = parseFloat(String(grade.value).replace(',', '.'))
             return Number.isNaN(num) ? null : num
         },
