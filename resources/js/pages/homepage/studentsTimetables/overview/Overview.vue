@@ -49,7 +49,7 @@
                         variant="flat"
                         prepend-icon="mdi-auto-fix"
                         rounded="pill"
-                        @click="showEvaluationSettings = true">
+                        @click="openAutomaticTimetable">
                         <span>Automatischer Stundenplan</span>
                         <span class="timetable-actions__stars" aria-hidden="true">
                             <v-icon icon="mdi-star-four-points" size="10" class="timetable-star timetable-star--1" />
@@ -64,7 +64,16 @@
 
                 <StudentTimetableEvaluationSettings
                     v-if="showEvaluationSettings"
-                    @close="showEvaluationSettings = false" />
+                    :initial-step="automaticTimetableStep"
+                    :initial-selected-course-keys="automaticTimetableCourseKeys"
+                    :initial-selected-quality-criterion-keys="automaticTimetableQualityCriterionKeys"
+                    :default-quality-criterion-selection="!automaticTimetableQualityCriteriaSelectionExplicit"
+                    :proposed-courses="overview?.proposed_courses || []"
+                    @close="closeAutomaticTimetable"
+                    @course-selection-change="setAutomaticTimetableCourseKeys"
+                    @courses-selected="finishAutomaticTimetable"
+                    @quality-criteria-selection-change="setAutomaticTimetableQualityCriterionKeys"
+                    @step-change="setAutomaticTimetableStep" />
 
                 <v-expansion-panels v-model="expandedCourseSections" class="summary-grid summary-panels" multiple flat>
                     <v-expansion-panel v-for="section in courseSections" :key="section.key" :value="section.key" class="summary-panel">
@@ -111,6 +120,8 @@ import StudentTimetableEvaluationSettings from '../components/StudentTimetableEv
 import StudentTimetablesNavigationDrawer from '../components/StudentTimetablesNavigationDrawer.vue'
 import '../../../../../css/student.css'
 
+const noAutomaticTimetableQualityCriteriaValue = '__none'
+
 export default {
     components: {
         StudentTimetableEvaluationSettings,
@@ -141,6 +152,34 @@ export default {
     computed: {
         ...mapWritableState(useStudentTimetablesUserStore, ['user', 'overview']),
 
+        automaticTimetableStep() {
+            const step = String(this.$route.query.automatic_timetable || '')
+
+            return this.isAutomaticTimetableStep(step) ? step : 'criteria'
+        },
+        automaticTimetableCourseKeys() {
+            const courseKeys = this.$route.query.automatic_timetable_courses
+
+            return (Array.isArray(courseKeys) ? courseKeys : [courseKeys])
+                .map(courseKey => String(courseKey || ''))
+                .filter(Boolean)
+        },
+        automaticTimetableQualityCriterionKeys() {
+            const criterionKeys = this.$route.query.automatic_timetable_criteria
+            const criterionKeyList = Array.isArray(criterionKeys) ? criterionKeys : [criterionKeys]
+
+            if (criterionKeyList.includes(noAutomaticTimetableQualityCriteriaValue)) {
+                return []
+            }
+
+            return criterionKeyList
+                .map(criterionKey => String(criterionKey || ''))
+                .filter(criterionKey => criterionKey !== noAutomaticTimetableQualityCriteriaValue)
+                .filter(Boolean)
+        },
+        automaticTimetableQualityCriteriaSelectionExplicit() {
+            return Object.prototype.hasOwnProperty.call(this.$route.query, 'automatic_timetable_criteria')
+        },
         weekdayLabel() {
             return new Intl.DateTimeFormat('de-AT', { weekday: 'long' }).format(new Date())
         },
@@ -196,11 +235,120 @@ export default {
         },
     },
 
+    watch: {
+        '$route.query.automatic_timetable': {
+            immediate: true,
+            handler(step) {
+                this.showEvaluationSettings = this.isAutomaticTimetableStep(step)
+            },
+        },
+    },
+
     methods: {
         async handleLogout() {
             this.showDrawer = false
             await this.studentTimetablesStore.logout()
             this.$router.push('/homepage/students-timetables')
+        },
+        openAutomaticTimetable() {
+            this.showEvaluationSettings = true
+            this.setAutomaticTimetableStep('criteria')
+        },
+        closeAutomaticTimetable() {
+            this.showEvaluationSettings = false
+            this.clearAutomaticTimetableStep()
+        },
+        finishAutomaticTimetable() {
+            this.showEvaluationSettings = false
+            this.clearAutomaticTimetableStep()
+        },
+        setAutomaticTimetableStep(step) {
+            if (!this.isAutomaticTimetableStep(step)) {
+                return
+            }
+
+            if (this.$route.query.automatic_timetable === step) {
+                return
+            }
+
+            this.$router.push({
+                path: this.$route.path,
+                query: {
+                    ...this.$route.query,
+                    automatic_timetable: step,
+                },
+            })
+        },
+        setAutomaticTimetableCourseKeys(courseKeys) {
+            const selectedCourseKeys = Array.isArray(courseKeys)
+                ? courseKeys.map(courseKey => String(courseKey || '')).filter(Boolean)
+                : []
+
+            const currentCourseKeys = this.automaticTimetableCourseKeys
+            if (JSON.stringify(currentCourseKeys) === JSON.stringify(selectedCourseKeys)) {
+                return
+            }
+
+            const query = { ...this.$route.query }
+
+            if (selectedCourseKeys.length) {
+                query.automatic_timetable_courses = selectedCourseKeys
+            } else {
+                delete query.automatic_timetable_courses
+            }
+
+            this.$router.push({
+                path: this.$route.path,
+                query,
+            })
+        },
+        setAutomaticTimetableQualityCriterionKeys(criterionKeys) {
+            const selectedCriterionKeys = Array.isArray(criterionKeys)
+                ? criterionKeys.map(criterionKey => String(criterionKey || '')).filter(Boolean)
+                : []
+
+            const currentCriterionKeys = this.automaticTimetableQualityCriterionKeys
+            if (
+                JSON.stringify(currentCriterionKeys) === JSON.stringify(selectedCriterionKeys)
+                && (selectedCriterionKeys.length || this.automaticTimetableQualityCriteriaSelectionExplicit)
+            ) {
+                return
+            }
+
+            const query = { ...this.$route.query }
+
+            if (selectedCriterionKeys.length) {
+                query.automatic_timetable_criteria = selectedCriterionKeys
+            } else {
+                query.automatic_timetable_criteria = noAutomaticTimetableQualityCriteriaValue
+            }
+
+            this.$router.push({
+                path: this.$route.path,
+                query,
+            })
+        },
+        clearAutomaticTimetableStep() {
+            if (
+                !this.$route.query.automatic_timetable
+                && !this.$route.query.automatic_timetable_courses
+                && !this.$route.query.automatic_timetable_criteria
+            ) {
+                return
+            }
+
+            const query = { ...this.$route.query }
+            delete query.automatic_timetable
+            delete query.automatic_timetable_courses
+            delete query.automatic_timetable_criteria
+
+            this.$router.push({
+                path: this.$route.path,
+                query,
+            })
+        },
+        isAutomaticTimetableStep(step) {
+            return ['criteria', 'courses', 'result'].includes(String(step || ''))
         },
         courseKey(sectionKey, course) {
             return [sectionKey, course.code || '', course.name || '', course.semester || '', course.grade || ''].join('|')

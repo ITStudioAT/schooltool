@@ -151,6 +151,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/homepage/students-timetables/overview', [StudentsTimetablesStudentController::class, 'overview'])->middleware('tool-licensed:StudentsTimetables');
     Route::get('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'evaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
     Route::put('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'updateEvaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
+    Route::post('/homepage/students-timetables/automatic-timetable', [StudentsTimetablesStudentController::class, 'automaticTimetable'])->middleware('tool-licensed:StudentsTimetables');
     Route::post('/homepage/students-timetables/change_password', [StudentsTimetablesStudentController::class, 'changePassword'])->middleware('tool-licensed:StudentsTimetables');
 
     /***** ADMIN ROUTES *****/

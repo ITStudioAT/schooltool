@@ -180,16 +180,17 @@ class StudentTimetableEvaluationSettingsService
         $storedCriteria = collect($storedSettings['criteria'] ?? [])
             ->filter(fn (mixed $criterion): bool => is_array($criterion))
             ->keyBy(fn (array $criterion): string => (string) ($criterion['key'] ?? ''));
+        $hasStoredCriteria = $storedCriteria->isNotEmpty();
 
         return [
             'version' => self::SETTINGS_VERSION,
             'criteria' => $this->criteriaDefinitions()
-                ->map(function (array $definition) use ($storedCriteria): array {
+                ->map(function (array $definition) use ($hasStoredCriteria, $storedCriteria): array {
                     $storedCriterion = $storedCriteria->get($definition['key'], []);
 
                     return $this->criterionPayload(
                         $definition,
-                        (bool) ($storedCriterion['enabled'] ?? false),
+                        (bool) ($storedCriterion['enabled'] ?? (! $hasStoredCriteria && (int) $definition['priority'] === 1)),
                         (int) ($storedCriterion['priority'] ?? $definition['priority']),
                         $storedCriterion['option'] ?? null,
                     );

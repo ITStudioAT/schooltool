@@ -8,11 +8,14 @@ use App\Http\Resources\Homepage\StudentsTimetablesUserResource;
 use App\Models\SchoolTool;
 use App\Models\User;
 use App\Services\LicenceService;
+use App\Services\StudentsTimetables\RobotTimetableBackendSetupService;
 use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
+use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
 use App\Services\StudentsTimetablesStudentService;
 use App\Services\UserService;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -193,6 +196,62 @@ class StudentsTimetablesStudentController extends Controller
         ]);
     }
 
+    public function automaticTimetable(
+        Request $request,
+        StudentTimetablesStudentOverviewService $studentOverviewService,
+        StudentTimetableOverviewService $overviewService,
+        RobotTimetableBackendSetupService $backendSetupService,
+        StudentTimetableEvaluationSettingsService $evaluationSettingsService,
+    ): JsonResponse {
+        if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'selected_course_keys' => ['required', 'array', 'min:1'],
+            'selected_course_keys.*' => ['required', 'string', 'max:255'],
+            'selected_quality_criterion_keys' => ['sometimes', 'array'],
+            'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
+            'selected_timetable_type' => ['nullable', 'string', Rule::in(['full_green', 'green', 'conflict'])],
+            'selected_timetable_number' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $this->ensureSchoolyearForUser($authUser);
+
+        $summary = $studentOverviewService->summaryForUser($authUser);
+        $selectedCourseKeys = $this->selectedProposedCourseKeys(
+            $validated['selected_course_keys'],
+            $summary['proposed_courses'] ?? [],
+        );
+
+        if ($selectedCourseKeys === []) {
+            abort(422, 'Bitte wählen Sie mindestens einen vorgesehenen Kurs aus.');
+        }
+
+        $evaluationCriteria = $evaluationSettingsService->activeCriteriaForUser($authUser);
+        $settings = $this->automaticTimetableSettings(
+            $summary,
+            $selectedCourseKeys,
+            $this->availableTimesForAutomaticTimetable($overviewService->courseGroupsForUser($authUser)),
+            $validated['selected_quality_criterion_keys'] ?? [],
+            $validated['selected_timetable_type'] ?? null,
+            (int) ($validated['selected_timetable_number'] ?? 1),
+        );
+        $result = $this->firstAutomaticTimetableResult(
+            $authUser,
+            $settings,
+            $overviewService,
+            $backendSetupService,
+            $evaluationCriteria,
+            $validated['selected_quality_criterion_keys'] ?? [],
+            $validated['selected_timetable_type'] ?? null,
+        );
+
+        return response()->json([
+            'data' => $result,
+        ]);
+    }
+
     public function changePassword(Request $request)
     {
         if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
@@ -222,6 +281,154 @@ class StudentsTimetablesStudentController extends Controller
         }
 
         return $user;
+    }
+
+    private function ensureSchoolyearForUser(User $user): void
+    {
+        if ($user->schoolyear_id) {
+            return;
+        }
+
+        $schoolyearId = SchoolTool::query()
+            ->where('school_id', $user->school_id)
+            ->value('active_schoolyear_id');
+
+        if (! $schoolyearId) {
+            abort(422, 'Kein aktives Schuljahr gefunden.');
+        }
+
+        $user->schoolyear_id = (int) $schoolyearId;
+    }
+
+    /**
+     * @param  list<string>  $selectedCourseKeys
+     * @param  list<array<string, mixed>>  $proposedCourses
+     * @return list<string>
+     */
+    private function selectedProposedCourseKeys(array $selectedCourseKeys, array $proposedCourses): array
+    {
+        $allowedCourseKeys = collect($proposedCourses)
+            ->pluck('key')
+            ->map(fn (mixed $courseKey): string => (string) $courseKey)
+            ->filter()
+            ->flip();
+
+        return collect($selectedCourseKeys)
+            ->map(fn (mixed $courseKey): string => (string) $courseKey)
+            ->filter(fn (string $courseKey): bool => $allowedCourseKeys->has($courseKey))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $summary
+     * @param  list<string>  $selectedCourseKeys
+     * @param  list<int>  $availableTimes
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @return array<string, mixed>
+     */
+    private function automaticTimetableSettings(
+        array $summary,
+        array $selectedCourseKeys,
+        array $availableTimes,
+        array $selectedQualityCriterionKeys,
+        ?string $selectedTimetableType,
+        int $selectedTimetableNumber,
+    ): array {
+        $selection = $summary['selection'] ?? [];
+
+        return [
+            'selection' => [
+                'semester' => (int) ($selection['semester'] ?? 1),
+                'religion' => $selection['religion'] ?? 'ETH',
+                'branch' => $selection['branch'] ?? null,
+                'artsSubject' => $selection['arts_subject'] ?? 'ME',
+                'language' => $selection['language'] ?? 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => $availableTimes,
+                'excludedWeekdayTimes' => [],
+            ],
+            'student' => [
+                'studentCode' => $summary['student']['student_code'] ?? null,
+            ],
+            'selected_course_keys' => $selectedCourseKeys,
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => $selectedTimetableType ?? 'full_green',
+            'selected_timetable_number' => $selectedTimetableNumber,
+            'include_quality_counters' => true,
+            'selected_quality_criteria_required' => $selectedQualityCriterionKeys !== [],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @return list<int>
+     */
+    private function availableTimesForAutomaticTimetable(array $courseGroups): array
+    {
+        $availableTimes = collect($courseGroups)
+            ->pluck('hour')
+            ->map(fn (mixed $hour): int => (int) $hour)
+            ->filter(fn (int $hour): bool => $hour > 0)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        return $availableTimes === []
+            ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            : $availableTimes;
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @return array<string, mixed>
+     */
+    private function firstAutomaticTimetableResult(
+        User $authUser,
+        array $settings,
+        StudentTimetableOverviewService $overviewService,
+        RobotTimetableBackendSetupService $backendSetupService,
+        array $evaluationCriteria,
+        array $selectedQualityCriterionKeys = [],
+        ?string $selectedTimetableType = null,
+    ): array {
+        if ($selectedTimetableType) {
+            return $backendSetupService->createInitialBackendTimetable(
+                $authUser,
+                $settings,
+                $overviewService,
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
+            );
+        }
+
+        $result = [];
+
+        foreach (['full_green', 'green', 'conflict'] as $timetableType) {
+            $settings['selected_timetable_type'] = $timetableType;
+            $result = $backendSetupService->createInitialBackendTimetable(
+                $authUser,
+                $settings,
+                $overviewService,
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
+            );
+
+            if ($result['selected_timetable'] !== null) {
+                break;
+            }
+        }
+
+        return $result;
     }
 
     private function isQueueWorking(): bool

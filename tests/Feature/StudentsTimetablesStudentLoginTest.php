@@ -6,6 +6,7 @@ use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\StudentTimetableEntry;
 use App\Models\StudentTimetableEvaluationSetting;
 use App\Models\StudentTimetableRecognitionImport;
 use App\Models\StudentTimetableRecognitionRow;
@@ -85,6 +86,18 @@ it('logs in an existing students timetables user with a password', function () {
     ]);
     $user->assignRole('studentstimetables_user');
 
+    $this->actingAs($user)->putJson('/api/homepage/students-timetables/evaluation-settings', [
+        'criteria' => [
+            ['key' => 'saturday_free', 'enabled' => true, 'priority' => 1],
+            ['key' => 'prefer_distance_learning', 'enabled' => false, 'priority' => 2],
+            ['key' => 'avoid_distance_learning', 'enabled' => false, 'priority' => 3],
+            ['key' => 'free_days', 'enabled' => false, 'priority' => 4],
+            ['key' => 'few_gaps', 'enabled' => false, 'priority' => 5],
+            ['key' => 'starts_from_period_10', 'enabled' => false, 'priority' => 6],
+            ['key' => 'ends_by_period_13', 'enabled' => false, 'priority' => 7],
+        ],
+    ])->assertSuccessful();
+
     $import116->forceFill(['user_id' => $user->id])->save();
 
     $this->postJson('/api/homepage/students-timetables/login_step_email', [
@@ -154,7 +167,7 @@ it('lets an authenticated students timetables user persist evaluation criteria',
         ->assertSuccessful()
         ->assertJsonCount(7, 'data.criteria')
         ->assertJsonPath('data.criteria.0.key', 'saturday_free')
-        ->assertJsonPath('data.criteria.0.enabled', false);
+        ->assertJsonPath('data.criteria.0.enabled', true);
 
     $payload = [
         'criteria' => [
@@ -305,6 +318,70 @@ it('returns the student timetable overview summary for the authenticated import1
         ->assertJsonPath('data.missing_courses', [])
         ->assertJsonPath('data.proposed_courses.0.code', 'D1')
         ->assertJsonPath('data.additional_courses.0.code', 'D2');
+});
+
+it('creates the first automatic timetable for the authenticated student', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $import116->forceFill([
+        'school_level' => '09_1',
+        'attendance_year' => null,
+    ])->save();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 1,
+        'branch' => 'common',
+        'json_code' => 'D1',
+        'json_subject' => 'D',
+        'name' => 'Deutsch',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => 1,
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2025-09-08',
+        'semester' => 1,
+        'period' => '11',
+        'subject' => 'D1',
+        'course' => 'D1',
+        'teacher' => 'MUE',
+        'room' => '101',
+        'class_name' => 'D1 - 4A - MUE',
+        'is_active' => true,
+    ]);
+
+    $overviewResponse = $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful();
+
+    $selectedCourseKey = $overviewResponse->json('data.proposed_courses.0.key');
+
+    $this->actingAs($user)
+        ->postJson('/api/homepage/students-timetables/automatic-timetable', [
+            'selected_course_keys' => [$selectedCourseKey],
+            'selected_quality_criterion_keys' => ['saturday_free'],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.algorithm.key', 'backend-v2')
+        ->assertJsonPath('data.selected_course_count', 1)
+        ->assertJsonPath('data.selected_timetable.type', 'full_green')
+        ->assertJsonPath('data.selected_timetable.slots.1-11.code', 'D1')
+        ->assertJsonPath('data.selected_timetable.slots.1-11.courseGroup.teacher', 'MUE');
 });
 
 function studentsTimetablesStudentLoginSetup(): array
