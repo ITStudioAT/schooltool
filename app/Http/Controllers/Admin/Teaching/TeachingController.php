@@ -48,6 +48,7 @@ class TeachingController extends Controller
                         ->orWhere('mother_email', 'like', $like)
                         ->orWhere('father_name', 'like', $like)
                         ->orWhere('father_email', 'like', $like)
+                        ->orWhere('religion', 'like', $like)
                         ->orWhere('class', 'like', $like);
                 });
             })

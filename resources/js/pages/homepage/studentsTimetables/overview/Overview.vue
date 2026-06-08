@@ -35,45 +35,63 @@
                     <h2>Ihre Daten</h2>
                 </div>
 
-                <div class="selection-grid">
-                    <div v-for="item in selectionItems" :key="item.key" class="selection-item">
-                        <span>{{ item.label }}</span>
-                        <strong>{{ item.value || '-' }}</strong>
+                <div class="overview-selection">
+                    <div class="overview-selected-cards">
+                        <div
+                            v-for="item in selectionItems"
+                            :key="item.key"
+                            class="overview-selected-card"
+                            :class="{ 'overview-selected-card--overridden': selectionItemOverridden(item) }">
+                            <div v-if="item.meta" class="overview-selected-card__meta">{{ item.meta }}</div>
+                            <div class="overview-selected-card__top">
+                                <div class="overview-selected-card__label">{{ item.label }}</div>
+                                <v-btn
+                                    v-if="selectionItemEditable(item)"
+                                    icon="mdi-pencil"
+                                    variant="text"
+                                    color="primary"
+                                    density="comfortable"
+                                    size="x-small"
+                                    :title="`${item.label} bearbeiten`"
+                                    :aria-label="`${item.label} bearbeiten`"
+                                    @click="openSelectionDialog(item)" />
+                            </div>
+                            <div class="overview-selected-card__value">{{ item.value || '-' }}</div>
+                        </div>
                     </div>
-                </div>
-
-                <div v-if="!showEvaluationSettings" class="timetable-actions">
                     <v-btn
-                        class="timetable-actions__automatic"
+                        v-if="hasSelectionOverride"
+                        class="overview-selection__restore"
+                        icon="mdi-restore"
+                        variant="tonal"
                         color="primary"
-                        variant="flat"
-                        prepend-icon="mdi-auto-fix"
-                        rounded="pill"
-                        @click="openAutomaticTimetable">
-                        <span>Automatischer Stundenplan</span>
-                        <span class="timetable-actions__stars" aria-hidden="true">
-                            <v-icon icon="mdi-star-four-points" size="10" class="timetable-star timetable-star--1" />
-                            <v-icon icon="mdi-star-four-points" size="14" class="timetable-star timetable-star--2" />
-                            <v-icon icon="mdi-star-four-points" size="8" class="timetable-star timetable-star--3" />
-                        </span>
-                    </v-btn>
-                    <v-btn color="secondary" variant="outlined" prepend-icon="mdi-calendar-edit" rounded="pill">
-                        Manueller Stundenplan
-                    </v-btn>
+                        density="comfortable"
+                        title="Auswahl wiederherstellen"
+                        aria-label="Auswahl wiederherstellen"
+                        @click="restoreSelectionDefaults" />
                 </div>
 
-                <StudentTimetableEvaluationSettings
-                    v-if="showEvaluationSettings"
-                    :initial-step="automaticTimetableStep"
-                    :initial-selected-course-keys="automaticTimetableCourseKeys"
-                    :initial-selected-quality-criterion-keys="automaticTimetableQualityCriterionKeys"
-                    :default-quality-criterion-selection="!automaticTimetableQualityCriteriaSelectionExplicit"
-                    :proposed-courses="overview?.proposed_courses || []"
-                    @close="closeAutomaticTimetable"
-                    @course-selection-change="setAutomaticTimetableCourseKeys"
-                    @courses-selected="finishAutomaticTimetable"
-                    @quality-criteria-selection-change="setAutomaticTimetableQualityCriterionKeys"
-                    @step-change="setAutomaticTimetableStep" />
+                <v-dialog v-model="selectionDialogOpen" max-width="420">
+                    <v-card>
+                        <v-card-title>{{ selectionDraftLabel }} bearbeiten</v-card-title>
+                        <v-card-text>
+                            <v-select
+                                v-model="selectionDraftValue"
+                                :items="selectionDraftOptions"
+                                item-title="title"
+                                item-value="value"
+                                :label="selectionDraftLabel"
+                                variant="outlined"
+                                density="comfortable"
+                                hide-details />
+                        </v-card-text>
+                        <v-card-actions>
+                            <v-spacer />
+                            <v-btn variant="text" @click="closeSelectionDialog">Abbrechen</v-btn>
+                            <v-btn color="primary" variant="flat" @click="saveSelectionDialog">Speichern</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
 
                 <v-expansion-panels v-model="expandedCourseSections" class="summary-grid summary-panels" multiple flat>
                     <v-expansion-panel v-for="section in courseSections" :key="section.key" :value="section.key" class="summary-panel">
@@ -108,6 +126,41 @@
                         </v-expansion-panel-text>
                     </v-expansion-panel>
                 </v-expansion-panels>
+
+                <div v-if="!showEvaluationSettings" class="timetable-actions">
+                    <v-btn
+                        class="timetable-actions__button timetable-actions__automatic"
+                        variant="flat"
+                        prepend-icon="mdi-auto-fix"
+                        @click="openAutomaticTimetable">
+                        <span>Automatischer Stundenplan</span>
+                        <span class="timetable-actions__stars" aria-hidden="true">
+                            <v-icon icon="mdi-star-four-points" size="10" class="timetable-star timetable-star--1" />
+                            <v-icon icon="mdi-star-four-points" size="14" class="timetable-star timetable-star--2" />
+                            <v-icon icon="mdi-star-four-points" size="8" class="timetable-star timetable-star--3" />
+                        </span>
+                    </v-btn>
+                    <v-btn
+                        class="timetable-actions__button timetable-actions__manual"
+                        variant="flat"
+                        prepend-icon="mdi-calendar-edit">
+                        Manueller Stundenplan
+                    </v-btn>
+                </div>
+
+                <StudentTimetableEvaluationSettings
+                    v-if="showEvaluationSettings"
+                    :initial-step="automaticTimetableStep"
+                    :initial-selected-course-keys="automaticTimetableCourseKeys"
+                    :initial-selected-quality-criterion-keys="automaticTimetableQualityCriterionKeys"
+                    :default-quality-criterion-selection="!automaticTimetableQualityCriteriaSelectionExplicit"
+                    :proposed-courses="overview?.proposed_courses || []"
+                    :selection-override="selectionOverridePayload() || {}"
+                    @close="closeAutomaticTimetable"
+                    @course-selection-change="setAutomaticTimetableCourseKeys"
+                    @courses-selected="finishAutomaticTimetable"
+                    @quality-criteria-selection-change="setAutomaticTimetableQualityCriterionKeys"
+                    @step-change="setAutomaticTimetableStep" />
             </div>
         </section>
     </div>
@@ -121,6 +174,13 @@ import StudentTimetablesNavigationDrawer from '../components/StudentTimetablesNa
 import '../../../../../css/student.css'
 
 const noAutomaticTimetableQualityCriteriaValue = '__none'
+const studentOverviewEditableSelectionKeys = ['religion', 'language', 'branch', 'arts_subject']
+const studentOverviewSelectionOptionValues = {
+    religion: ['ETH', 'Rev', 'Ris', 'Rk', 'Ror'],
+    language: ['L', 'F', 'S'],
+    branch: ['wirtschaftskundlich', 'gymnasial'],
+    arts_subject: ['ME', 'BE'],
+}
 
 export default {
     components: {
@@ -137,7 +197,7 @@ export default {
             return
         }
 
-        await this.studentTimetablesStore.loadOverview()
+        await this.loadOverview()
     },
 
     data() {
@@ -146,6 +206,11 @@ export default {
             showDrawer: false,
             showEvaluationSettings: false,
             expandedCourseSections: [],
+            selectionOverride: {},
+            selectionDialogOpen: false,
+            selectionDraftKey: '',
+            selectionDraftLabel: '',
+            selectionDraftValue: null,
         }
     },
 
@@ -187,51 +252,16 @@ export default {
             return new Intl.DateTimeFormat('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
         },
         selectionItems() {
-            const selection = this.overview?.selection || {}
-
-            return [
-                { key: 'semester', label: 'Semester', value: selection.semester },
-                { key: 'religion', label: 'ETH/Religion', value: selection.religion },
-                { key: 'language', label: 'Sprache', value: selection.language },
-                { key: 'branch', label: 'Zweig', value: selection.branch },
-                { key: 'arts', label: 'ME/BE', value: selection.arts_subject },
-            ]
+            return Array.isArray(this.overview?.selection_items) ? this.overview.selection_items : []
+        },
+        selectionDraftOptions() {
+            return this.selectionOptionsForKey(this.selectionDraftKey)
+        },
+        hasSelectionOverride() {
+            return Object.keys(this.selectionOverride || {}).length > 0
         },
         courseSections() {
-            return [
-                {
-                    key: 'completed',
-                    title: 'Abgeschlossene Kurse',
-                    icon: 'mdi-check-circle-outline',
-                    color: 'success',
-                    items: this.overview?.completed_courses || [],
-                    empty: 'Keine abgeschlossenen Kurse gefunden.',
-                },
-                {
-                    key: 'missing',
-                    title: 'Fehlende Kurse',
-                    icon: 'mdi-alert-circle-outline',
-                    color: 'warning',
-                    items: this.overview?.missing_courses || [],
-                    empty: 'Keine fehlenden Kurse erkannt.',
-                },
-                {
-                    key: 'proposed',
-                    title: 'Vorgesehene Kurse',
-                    icon: 'mdi-format-list-checks',
-                    color: 'primary',
-                    items: this.overview?.proposed_courses || [],
-                    empty: 'Keine vorgesehenen Kurse importiert.',
-                },
-                {
-                    key: 'additional',
-                    title: 'Zusätzliche Kurse',
-                    icon: 'mdi-plus-circle-outline',
-                    color: 'info',
-                    items: this.overview?.additional_courses || [],
-                    empty: 'Keine zusätzlichen Kurse erkannt.',
-                },
-            ]
+            return Array.isArray(this.overview?.course_sections) ? this.overview.course_sections : []
         },
     },
 
@@ -245,6 +275,10 @@ export default {
     },
 
     methods: {
+        async loadOverview() {
+            await this.studentTimetablesStore.loadOverview()
+            this.syncSelectionOverrideFromOverview()
+        },
         async handleLogout() {
             this.showDrawer = false
             await this.studentTimetablesStore.logout()
@@ -350,6 +384,97 @@ export default {
         isAutomaticTimetableStep(step) {
             return ['criteria', 'courses', 'result'].includes(String(step || ''))
         },
+        selectionItemEditable(item) {
+            return studentOverviewEditableSelectionKeys.includes(String(item?.key || ''))
+        },
+        selectionItemOverridden(item) {
+            const key = String(item?.key || '')
+
+            return Object.prototype.hasOwnProperty.call(this.selectionOverride || {}, key)
+        },
+        selectionOptionsForKey(key) {
+            const optionKey = String(key || '')
+            const options = this.overview?.selection_options?.[optionKey]
+
+            return Array.isArray(options) ? options : []
+        },
+        openSelectionDialog(item) {
+            if (!this.selectionItemEditable(item)) {
+                return
+            }
+
+            this.selectionDraftKey = item.key
+            this.selectionDraftLabel = item.label
+            this.selectionDraftValue = this.currentSelectionValue(item.key)
+            this.selectionDialogOpen = true
+        },
+        closeSelectionDialog() {
+            this.selectionDialogOpen = false
+            this.selectionDraftKey = ''
+            this.selectionDraftLabel = ''
+            this.selectionDraftValue = null
+        },
+        async saveSelectionDialog() {
+            const key = String(this.selectionDraftKey || '')
+
+            if (!studentOverviewEditableSelectionKeys.includes(key)) {
+                this.closeSelectionDialog()
+
+                return
+            }
+
+            const value = String(this.selectionDraftValue || '')
+            const allowedValues = studentOverviewSelectionOptionValues[key] || []
+
+            if (!allowedValues.includes(value)) {
+                return
+            }
+
+            this.selectionOverride = {
+                ...this.selectionOverride,
+                [key]: value,
+            }
+            this.closeSelectionDialog()
+
+            if (!await this.studentTimetablesStore.updateProfileSelection(this.selectionOverridePayload() || {})) {
+                return
+            }
+
+            this.syncSelectionOverrideFromOverview()
+        },
+        async restoreSelectionDefaults() {
+            if (!await this.studentTimetablesStore.restoreProfileSelection()) {
+                return
+            }
+
+            this.syncSelectionOverrideFromOverview()
+        },
+        currentSelectionValue(key) {
+            const selectionKey = String(key || '')
+
+            return this.selectionOverride?.[selectionKey] || this.overview?.selection?.[selectionKey] || null
+        },
+        syncSelectionOverrideFromOverview() {
+            this.selectionOverride = this.normalizedSelectionOverride(this.overview?.selection_override || {})
+        },
+        selectionOverridePayload() {
+            const selection = this.normalizedSelectionOverride(this.selectionOverride)
+
+            return Object.keys(selection).length ? selection : null
+        },
+        normalizedSelectionOverride(selection) {
+            const normalizedSelection = {}
+
+            studentOverviewEditableSelectionKeys.forEach((key) => {
+                const value = String(selection?.[key] || '').trim()
+
+                if ((studentOverviewSelectionOptionValues[key] || []).includes(value)) {
+                    normalizedSelection[key] = value
+                }
+            })
+
+            return normalizedSelection
+        },
         courseKey(sectionKey, course) {
             return [sectionKey, course.code || '', course.name || '', course.semester || '', course.grade || ''].join('|')
         },
@@ -379,38 +504,84 @@ export default {
     border-radius: 999px;
 }
 
+.hero-badge {
+    background: rgba(219, 234, 254, 0.82);
+    border-color: rgba(37, 99, 235, 0.28);
+    color: #1e3a8a;
+}
+
+.hero-badge.dark {
+    color: #1d4ed8;
+    background: rgba(37, 99, 235, 0.2);
+    border-color: rgba(37, 99, 235, 0.5);
+}
+
 .hero-logout-row {
     margin-top: 12px;
     display: flex;
     justify-content: flex-end;
 }
 
-.selection-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 10px;
+.overview-selection {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
     margin-bottom: 20px;
 }
 
-.selection-item {
+.overview-selected-cards {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(128px, 1fr));
+    gap: 8px;
+    min-width: 0;
+}
+
+.overview-selected-card {
+    min-width: 0;
+    padding: 9px 11px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.26);
+    border-radius: 6px;
+    background: #f8fafc;
+}
+
+.overview-selected-card--overridden {
+    border-color: rgba(var(--v-theme-primary), 0.52);
+    background: #eef6ff;
+}
+
+.overview-selected-card__top {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 12px 14px;
-    border-radius: 8px;
-    background: rgba(16, 38, 58, 0.05);
-    color: #243748;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-height: 24px;
 }
 
-.selection-item span {
+.overview-selected-card__label {
+    color: #172554;
+    font-size: 0.7rem;
+    font-weight: 850;
+}
+
+.overview-selected-card__meta {
+    margin-bottom: 3px;
+    color: #64748b;
+    font-size: 0.64rem;
+    font-weight: 850;
+    line-height: 1.1;
+}
+
+.overview-selected-card__value {
+    margin-top: 4px;
+    color: #020617;
     font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: rgba(36, 55, 72, 0.68);
+    font-weight: 800;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
 }
 
-.selection-item strong {
-    font-size: 1.05rem;
+.overview-selection__restore {
+    flex: 0 0 auto;
 }
 
 .timetable-actions {
@@ -425,8 +596,33 @@ export default {
     flex: 1 1 240px;
 }
 
-.timetable-actions__automatic {
+.timetable-actions__button {
     overflow: hidden;
+    border-radius: 8px;
+    color: #ffffff;
+    font-weight: 850;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.timetable-actions__automatic {
+    background: linear-gradient(135deg, #1d4ed8 0%, #6366f1 100%);
+    box-shadow: 0 0 8px rgba(37, 99, 235, 0.4), 0 0 20px rgba(37, 99, 235, 0.2);
+    animation: timetable-automatic-glow 2s ease-in-out infinite;
+}
+
+.timetable-actions__automatic:hover {
+    animation: none;
+    box-shadow: 0 0 12px rgba(37, 99, 235, 0.6), 0 0 28px rgba(37, 99, 235, 0.35);
+}
+
+.timetable-actions__manual {
+    background: linear-gradient(135deg, #0f766e 0%, #16a34a 100%);
+    box-shadow: 0 0 8px rgba(15, 118, 110, 0.28), 0 0 18px rgba(22, 163, 74, 0.16);
+}
+
+.timetable-actions__manual:hover {
+    box-shadow: 0 0 12px rgba(15, 118, 110, 0.42), 0 0 24px rgba(22, 163, 74, 0.25);
 }
 
 .timetable-actions__stars {
@@ -466,11 +662,23 @@ export default {
     }
 }
 
+@keyframes timetable-automatic-glow {
+    0%,
+    100% {
+        box-shadow: 0 0 8px rgba(37, 99, 235, 0.4), 0 0 20px rgba(37, 99, 235, 0.2);
+    }
+
+    50% {
+        box-shadow: 0 0 16px rgba(37, 99, 235, 0.7), 0 0 36px rgba(37, 99, 235, 0.35);
+    }
+}
+
 .summary-grid {
     display: grid;
     grid-template-columns: 1fr;
     gap: 14px;
     align-items: start;
+    margin-bottom: 20px;
 }
 
 @media (min-width: 900px) {
@@ -482,6 +690,20 @@ export default {
 @media (max-width: 520px) {
     .timetable-actions .v-btn {
         width: 100%;
+    }
+
+    .overview-selected-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .overview-selection {
+        flex-direction: column;
+    }
+}
+
+@media (min-width: 521px) and (max-width: 900px) {
+    .overview-selected-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 

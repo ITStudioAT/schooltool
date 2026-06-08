@@ -149,6 +149,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/students-timetables/login_step_password', [StudentsTimetablesStudentController::class, 'loginStepPassword'])->middleware('tool-licensed:StudentsTimetables');
     Route::get('/homepage/students-timetables/user', [StudentsTimetablesStudentController::class, 'user'])->middleware('tool-licensed:StudentsTimetables');
     Route::get('/homepage/students-timetables/overview', [StudentsTimetablesStudentController::class, 'overview'])->middleware('tool-licensed:StudentsTimetables');
+    Route::put('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'updateProfileSelection'])->middleware('tool-licensed:StudentsTimetables');
+    Route::delete('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'restoreProfileSelection'])->middleware('tool-licensed:StudentsTimetables');
     Route::get('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'evaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
     Route::put('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'updateEvaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
     Route::post('/homepage/students-timetables/automatic-timetable', [StudentsTimetablesStudentController::class, 'automaticTimetable'])->middleware('tool-licensed:StudentsTimetables');
@@ -179,6 +181,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables/course-groups', [StudentsTimetablesController::class, 'courseGroups']);
         Route::get('/admin/students-timetables/robot/students', [StudentsTimetablesController::class, 'robotStudents']);
         Route::get('/admin/students-timetables/robot/student-completed-courses', [StudentsTimetablesController::class, 'robotStudentCompletedCourses']);
+        Route::get('/admin/students-timetables/robot/student-overview', [StudentsTimetablesController::class, 'robotStudentOverview']);
         Route::post('/admin/students-timetables/robot/backend-timetable', [StudentsTimetablesController::class, 'robotBackendTimetable']);
         Route::post('/admin/students-timetables/robot/quality-counters', [StudentsTimetablesController::class, 'robotQualityCounters']);
         Route::post('/admin/students-timetables/robot/full-green-count', [StudentsTimetablesController::class, 'robotFullGreenCount']);

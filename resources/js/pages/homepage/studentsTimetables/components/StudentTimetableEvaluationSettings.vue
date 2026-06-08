@@ -313,6 +313,10 @@ export default {
             type: Array,
             default: () => [],
         },
+        selectionOverride: {
+            type: Object,
+            default: () => ({}),
+        },
     },
 
     emits: [
@@ -720,6 +724,7 @@ export default {
                     selected_quality_criterion_keys: this.selectedQualityCriterionKeys,
                     selected_timetable_type: this.selectedTimetableType,
                     selected_timetable_number: this.selectedTimetableNumber,
+                    selection: this.selectionOverride,
                 })
 
                 this.generatedTimetable = response.data?.data?.selected_timetable || null

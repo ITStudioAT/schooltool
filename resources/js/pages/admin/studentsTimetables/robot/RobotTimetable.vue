@@ -1750,14 +1750,8 @@
     </v-col>
 
     <div
-        v-if="embeddedCourseCardsOnly && (fullGreenTimetableCountLoading || fullGreenTimetableCountError || timetableCountResultsAvailable || selectedRobotTimetable)"
+        v-if="embeddedCourseCardsOnly && (fullGreenTimetableCountError || timetableCountResultsAvailable || selectedRobotTimetable)"
         class="robot-generator robot-generator--embedded">
-        <v-progress-linear
-            v-if="fullGreenTimetableCountLoading"
-            indeterminate
-            color="primary"
-            class="mb-3" />
-
         <v-alert
             v-if="fullGreenTimetableCountError"
             type="error"
@@ -3291,8 +3285,8 @@ export default {
                 this.syncExternalStudentSelection()
                 this.syncAvailableTimes()
                 this.loadStudentCompletedCourses()
-                this.autoRegenerateAfterRestore()
-            } catch {
+                this.restoreTimetablePreferencesAfterRestore()
+            } catch (error) {
                 this.schoolHours = []
                 this.courseGroups = []
                 this.subjectMappings = []
@@ -3370,6 +3364,7 @@ export default {
                 ['language', this.inferredSelectionOptionFromCourseCodes(this.languageOptions, visitedCourseCodes, {
                     S: ['S', 'SPA'],
                 })],
+                ['branch', this.inferredBranchFromCourseCodes(visitedCourseCodes)],
                 ['artsSubject', this.inferredSelectionOptionFromCourseCodes(this.artsSubjectOptions, visitedCourseCodes)],
             ].filter(([, value]) => Boolean(value)))
         },
@@ -3394,6 +3389,11 @@ export default {
             const mappedAliases = {
                 ET: ['ETH', 'ET'],
                 ETH: ['ETH', 'ET'],
+                L: ['L', 'LET', 'LPT'],
+                LET: ['L', 'LET', 'LPT'],
+                LPT: ['L', 'LET', 'LPT'],
+                ME: ['ME', 'MU'],
+                MU: ['ME', 'MU'],
                 R: ['RK', 'R'],
                 RK: ['RK', 'R'],
                 S: ['S', 'SPA'],
@@ -3428,6 +3428,77 @@ export default {
                     secondMatch.module - firstMatch.module
                     || secondMatch.courseIndex - firstMatch.courseIndex,
                 )[0] || null
+        },
+        inferredBranchFromCourseCodes(courseCodes) {
+            const branchOptionValues = (Array.isArray(this.branchOptions) ? this.branchOptions : [])
+                .map(option => option?.value)
+                .filter(Boolean)
+
+            if (!(courseCodes instanceof Set) || !courseCodes.size || !branchOptionValues.length) return ''
+
+            return (Array.isArray(this.subjectRows) ? this.subjectRows : [])
+                .filter(subject => subject?.is_active !== false)
+                .filter(subject => branchOptionValues.includes(subject?.branch))
+                .map((subject, subjectIndex) => ({
+                    subject,
+                    subjectIndex,
+                    match: this.bestSubjectRowCourseCodeMatch(subject, courseCodes),
+                }))
+                .filter(({ match }) => match)
+                .sort((firstSubject, secondSubject) =>
+                    secondSubject.match.module - firstSubject.match.module
+                    || secondSubject.match.semester - firstSubject.match.semester
+                    || secondSubject.match.courseIndex - firstSubject.match.courseIndex
+                    || firstSubject.subjectIndex - secondSubject.subjectIndex,
+                )[0]?.subject?.branch || ''
+        },
+        bestSubjectRowCourseCodeMatch(subject, courseCodes) {
+            const subjectParts = this.subjectCourseCodesForBranchInference(subject)
+                .flatMap(courseCode => this.courseCodeAliasParts(courseCode))
+                .flatMap(courseCode => [
+                    courseCode,
+                    this.defaultTimetableCodeAlias(courseCode),
+                ])
+                .map(courseCode => this.courseCodeModuleParts(courseCode))
+                .filter(parts => parts.base)
+                .filter((parts, index, allParts) =>
+                    allParts.findIndex(candidate => candidate.base === parts.base && candidate.module === parts.module) === index,
+                )
+
+            if (!subjectParts.length) return null
+
+            return [...courseCodes]
+                .map((courseCode, courseIndex) => ({
+                    ...this.courseCodeModuleParts(courseCode),
+                    courseIndex,
+                }))
+                .flatMap(courseParts => subjectParts
+                    .filter(subjectPart => this.subjectCoursePartMatchesCompletedCoursePart(subjectPart, courseParts))
+                    .map(() => ({
+                        module: Number(courseParts.module || 0),
+                        semester: Number(subject?.semester || 0),
+                        courseIndex: courseParts.courseIndex,
+                    })))
+                .sort((firstMatch, secondMatch) =>
+                    secondMatch.module - firstMatch.module
+                    || secondMatch.semester - firstMatch.semester
+                    || secondMatch.courseIndex - firstMatch.courseIndex,
+                )[0] || null
+        },
+        subjectCourseCodesForBranchInference(subject) {
+            return [
+                subject?.json_code,
+                subject?.json_subject,
+                subject?.name,
+            ].filter(Boolean)
+        },
+        subjectCoursePartMatchesCompletedCoursePart(subjectPart, completedPart) {
+            if (!this.studentCourseBaseAliases(subjectPart.base).includes(completedPart.base)) return false
+
+            const subjectModule = String(subjectPart.module || '')
+            const completedModule = String(completedPart.module || '')
+
+            return !subjectModule || !completedModule || subjectModule === completedModule
         },
         selectionStateSnapshot(selection) {
             return [
@@ -3862,12 +3933,21 @@ export default {
                 this.selectedQualityCriteriaCount = null
                 this.generatedTimetables = []
                 this.normalizeTimetableResultCounters()
-                this.fullGreenTimetableCountError = 'Die Anzahl der Stundenpläne konnte nicht berechnet werden.'
+                this.fullGreenTimetableCountError = this.timetableCalculationErrorMessage(error)
             } finally {
                 if (requestId === this.fullGreenTimetableCountRequestId) {
                     this.fullGreenTimetableCountLoading = false
                 }
             }
+        },
+        timetableCalculationErrorMessage(error) {
+            const errors = error?.response?.data?.errors || {}
+            const firstError = Object.values(errors)
+                .flat()
+                .find(message => String(message || '').trim())
+            const responseMessage = error?.response?.data?.message
+
+            return firstError || responseMessage || 'Die Anzahl der Stundenpläne konnte nicht berechnet werden.'
         },
         async loadQualityCountersForSelectedTimetableType() {
             if (!this.timetableCalculationReady() || !this.activeQualityCriterionRows.length) {
@@ -4619,7 +4699,7 @@ export default {
                 this.applyRobotState(this.defaultRobotState())
             }
         },
-        async autoRegenerateAfterRestore() {
+        restoreTimetablePreferencesAfterRestore() {
             if (!this.selectedStudent || !(this.selectedCourses || []).length) return
 
             const savedResultType = this.restoredTimetableResultType
@@ -4636,11 +4716,6 @@ export default {
                 this.selectedTimetableResultType = savedResultType
             }
 
-            await this.$nextTick()
-            await this.loadFullGreenTimetableCount({
-                calculateQualityCounters: true,
-                forceQualityCriteriaRequired: savedFilterEnabled && savedCheckedKeys.length > 0,
-            })
         },
         studentByCode(studentCode) {
             const normalizedStudentCode = this.normalizedStudentCode(studentCode)

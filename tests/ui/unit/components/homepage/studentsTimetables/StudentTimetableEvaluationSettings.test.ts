@@ -28,6 +28,28 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain("'criteria', 'courses', 'result'")
     })
 
+    it('shows the imported student religion on the religion card', () => {
+        const overviewPath = resolve(
+            process.cwd(),
+            'resources/js/pages/homepage/studentsTimetables/overview/Overview.vue',
+        )
+        const source = readFileSync(overviewPath, 'utf8')
+
+        expect(source).toContain('class="overview-selected-card__meta"')
+        expect(source).toContain('this.overview?.selection_items')
+        expect(source).toContain('this.overview?.course_sections')
+        expect(source).toContain('this.overview?.selection_options?.[optionKey]')
+        expect(source).toContain('icon="mdi-pencil"')
+        expect(source).toContain('@click="openSelectionDialog(item)"')
+        expect(source).toContain('restoreSelectionDefaults')
+        expect(source).toContain('selectionOverridePayload()')
+        expect(source).toContain('this.studentTimetablesStore.updateProfileSelection')
+        expect(source).toContain('this.studentTimetablesStore.restoreProfileSelection')
+        expect(source).toContain('this.overview?.selection_override')
+        expect(source).not.toContain('localStorage')
+        expect(source).not.toContain('studentReligionMeta(religion)')
+    })
+
     it('uses a back action instead of a reset action', () => {
         const componentPath = resolve(
             process.cwd(),
@@ -156,6 +178,8 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('selected_quality_criterion_keys: this.selectedQualityCriterionKeys')
         expect(source).toContain('selected_timetable_type: this.selectedTimetableType')
         expect(source).toContain('selected_timetable_number: this.selectedTimetableNumber')
+        expect(source).toContain('selection: this.selectionOverride')
+        expect(source).toContain('selectionOverride')
         expect(source).toContain("this.moveToStep('result')")
         expect(source).toContain('ensureAutomaticTimetableForResultStep()')
         expect(source).toContain('canMoveGeneratedTimetable(-1)')

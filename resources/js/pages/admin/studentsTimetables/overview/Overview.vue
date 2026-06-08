@@ -27,16 +27,8 @@
                 </v-alert>
 
                 <div class="overview-student-selection">
-                    <div
-                        class="transferred-student-context"
-                        :class="{ 'transferred-student-context--collapsed': !transferredStudentContextExpanded }">
-                        <div
-                            class="transferred-student-context__header"
-                            role="button"
-                            tabindex="0"
-                            @click="toggleTransferredStudentContext"
-                            @keydown.enter.prevent="toggleTransferredStudentContext"
-                            @keydown.space.prevent="toggleTransferredStudentContext">
+                    <div class="transferred-student-context">
+                        <div class="transferred-student-context__header">
                             <div class="transferred-student-context__title">
                                 <v-icon icon="mdi-account-school-outline" size="18" color="primary" />
                                 <span>{{ transferredStudentLabel }}</span>
@@ -62,50 +54,7 @@
                                         @click.stop="clearTransferredStudentSelection" />
                                 </span>
                             </div>
-                            <div class="transferred-student-context__header-actions">
-                                <v-btn
-                                    :icon="transferredStudentContextExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-                                    variant="text"
-                                    density="comfortable"
-                                    color="primary"
-                                    :aria-label="transferredStudentContextExpanded ? 'Studentenkurse einklappen' : 'Studentenkurse ausklappen'"
-                                    @click.stop="toggleTransferredStudentContext" />
-                            </div>
                         </div>
-                        <v-expand-transition>
-                            <div
-                                v-if="transferredStudentContextExpanded"
-                                class="transferred-student-context__sections">
-                                <section
-                                    v-for="section in visibleTransferredStudentCourseSections"
-                                    :key="section.key"
-                                    class="transferred-student-course-section">
-                                    <div class="transferred-student-course-section__title">
-                                        <span>{{ section.title }}</span>
-                                        <v-chip size="x-small" :color="section.color" variant="tonal">
-                                            {{ section.items.length }}
-                                        </v-chip>
-                                    </div>
-                                    <div
-                                        v-if="section.items.length"
-                                        class="transferred-student-course-section__chips">
-                                        <v-chip
-                                            v-for="course in section.items"
-                                            :key="course.key"
-                                            size="x-small"
-                                            :color="section.color"
-                                            variant="tonal"
-                                            class="transferred-student-course-chip">
-                                            <span>{{ course.label }}</span>
-                                            <span v-if="course.meta" class="transferred-student-course-chip__meta">
-                                                {{ course.meta }}
-                                            </span>
-                                        </v-chip>
-                                    </div>
-                                    <div v-else class="transferred-student-course-section__empty">Keine</div>
-                                </section>
-                            </div>
-                        </v-expand-transition>
                     </div>
                 </div>
 
@@ -115,6 +64,7 @@
                             v-for="item in selectedSummary"
                             :key="item.key"
                             class="overview-selected-card">
+                            <div v-if="item.meta" class="overview-selected-card__meta">{{ item.meta }}</div>
                             <div class="overview-selected-card__label">{{ item.label }}</div>
                             <div class="overview-selected-card__value">{{ item.value }}</div>
                         </div>
@@ -127,13 +77,146 @@
                         @click="openSelectionDialog" />
                 </div>
 
+                <div v-if="transferredStudentContext" class="transferred-student-course-overview">
+                    <v-expansion-panels
+                        v-model="expandedTransferredStudentCourseSections"
+                        class="transferred-student-course-panels"
+                        multiple
+                        flat>
+                        <v-expansion-panel
+                            v-for="section in visibleTransferredStudentCourseSections"
+                            :key="section.key"
+                            :value="section.key"
+                            class="transferred-student-course-panel">
+                            <v-expansion-panel-title class="transferred-student-course-panel__title">
+                                <v-icon size="22">{{ section.icon }}</v-icon>
+                                <h3>{{ section.title }}</h3>
+                                <v-chip size="small" variant="flat" :color="section.color">
+                                    {{ section.items.length }}
+                                </v-chip>
+                            </v-expansion-panel-title>
+
+                            <v-expansion-panel-text>
+                                <div
+                                    v-if="section.items.length"
+                                    class="transferred-student-course-section__chips">
+                                    <v-chip
+                                        v-for="course in section.items"
+                                        :key="course.key"
+                                        size="x-small"
+                                        :color="section.color"
+                                        variant="tonal"
+                                        class="transferred-student-course-chip">
+                                        <span>{{ course.label }}</span>
+                                        <span v-if="course.meta" class="transferred-student-course-chip__meta">
+                                            {{ course.meta }}
+                                        </span>
+                                    </v-chip>
+                                </div>
+                                <div v-else class="transferred-student-course-section__empty">Keine</div>
+                            </v-expansion-panel-text>
+                        </v-expansion-panel>
+                    </v-expansion-panels>
+                </div>
+
+                <div
+                    v-if="wizardPanelMounted"
+                    v-show="wizardPanelOpen"
+                    class="overview-wizard-course-cards-panel">
+                    <RobotTimetable
+                        ref="wizardCourseCards"
+                        embedded-course-cards-only
+                        :evaluation-criteria-settings="evaluationCriteria"
+                        :student-code="transferredStudentContext?.student?.studentCode || null"
+                        class="overview-wizard-course-cards"
+                        @timetable-overtaken="showOvertakenManualTimetable">
+                        <template #course-actions="{ ready, loading, extending, createActionVisible, hasSelectedAdditionalCourses, extensionActionVisible }">
+                            <div
+                                v-if="ready && createActionVisible && (!extending || (hasSelectedAdditionalCourses && extensionActionVisible))"
+                                class="overview-wizard-footer">
+                                <v-btn
+                                    class="overview-wizard-create-button"
+                                    variant="flat"
+                                    color="success"
+                                    size="large"
+                                    prepend-icon="mdi-calendar-clock"
+                                    :disabled="wizardTimetableCreating"
+                                    :loading="wizardTimetableCreating"
+                                    @click="createWizardTimetable(extending)">
+                                    {{ extending ? 'Stundenplan erweitern' : 'Stundenplan erstellen' }}
+                                </v-btn>
+                            </div>
+                            <div
+                                v-else-if="loading"
+                                class="overview-wizard-footer">
+                                <div class="overview-wizard-loading">
+                                    <v-progress-circular
+                                        indeterminate
+                                        size="18"
+                                        width="2"
+                                        color="primary" />
+                                    <span>Kurse werden geladen</span>
+                                </div>
+                            </div>
+                        </template>
+                    </RobotTimetable>
+                </div>
+
+                <div v-if="manualPanelOpen" class="course-choice-panel">
+                    <div class="course-choice-panel__header">
+                        <div class="course-choice-panel__title">
+                            <v-icon icon="mdi-format-list-checks" size="18" color="primary" />
+                            <span>Kursauswahl</span>
+                            <v-tooltip text="Kurs wählen">
+                                <template #activator="{ props }">
+                                    <v-btn
+                                        v-bind="props"
+                                        icon="mdi-plus"
+                                        color="primary"
+                                        variant="flat"
+                                        size="small"
+                                        aria-label="Kurs wählen"
+                                        @click="openCourseMenuDialog" />
+                                </template>
+                            </v-tooltip>
+                        </div>
+                        <div class="course-choice-panel__actions">
+                            <v-chip size="x-small" color="primary" variant="tonal">
+                                {{ selectedCourseCount }} ausgewählt
+                            </v-chip>
+                            <v-btn
+                                v-if="selectedCourseCount > 0"
+                                size="x-small"
+                                variant="tonal"
+                                color="error"
+                                prepend-icon="mdi-close-circle-outline"
+                                @click="deselectAllCourses">
+                                Alle abwählen
+                            </v-btn>
+                        </div>
+                    </div>
+
+                    <div v-if="selectedCourseFilterChipsAll.length" class="selected-course-filter-chips">
+                        <v-chip
+                            v-for="filterChip in selectedCourseFilterChipsAll"
+                            :key="filterChip.key"
+                            size="small"
+                            :color="filterChip.hasBlockingOverlap ? 'error' : filterChip.hasRelatedOverlap ? 'warning' : 'success'"
+                            variant="tonal"
+                            closable
+                            class="selected-course-filter-chip"
+                            @click:close="handleCourseMenuEntryFilterClick(filterChip.entry)">
+                            {{ filterChip.label }}
+                        </v-chip>
+                    </div>
+                </div>
+
                 <div class="overview-context-card">
                     <div class="overview-wizard-row">
                         <v-btn
                             v-if="!wizardPanelOpen && !manualPanelOpen"
                             class="overview-wizard-button"
-                            variant="tonal"
-                            color="primary"
+                            variant="flat"
                             size="large"
                             prepend-icon="mdi-calendar-clock"
                             :active="wizardPanelOpen"
@@ -160,8 +243,7 @@
                         <v-btn
                             v-if="!wizardPanelOpen && !manualPanelOpen"
                             class="overview-manual-button"
-                            variant="tonal"
-                            color="primary"
+                            variant="flat"
                             size="large"
                             prepend-icon="mdi-calendar-edit"
                             :active="directManualPanelOpen"
@@ -256,98 +338,6 @@
                                 aria-label="Hinweise zum Stundenplan Wizzard"
                                 @click="infoDialogOpen = true" />
                         </div>
-                    </div>
-                </div>
-
-                <div
-                    v-if="wizardPanelMounted"
-                    v-show="wizardPanelOpen"
-                    class="overview-wizard-course-cards-panel">
-                    <RobotTimetable
-                        ref="wizardCourseCards"
-                        embedded-course-cards-only
-                        :evaluation-criteria-settings="evaluationCriteria"
-                        :student-code="transferredStudentContext?.student?.studentCode || null"
-                        class="overview-wizard-course-cards"
-                        @timetable-overtaken="showOvertakenManualTimetable">
-                        <template #course-actions="{ ready, loading, extending, createActionVisible, hasSelectedAdditionalCourses, extensionActionVisible }">
-                            <div
-                                v-if="ready && createActionVisible && (!extending || (hasSelectedAdditionalCourses && extensionActionVisible))"
-                                class="overview-wizard-footer">
-                                <v-btn
-                                    class="overview-wizard-create-button"
-                                    variant="flat"
-                                    color="success"
-                                    size="large"
-                                    prepend-icon="mdi-calendar-clock"
-                                    :disabled="wizardTimetableCreating"
-                                    :loading="wizardTimetableCreating"
-                                    @click="createWizardTimetable(extending)">
-                                    {{ extending ? 'Stundenplan erweitern' : 'Stundenplan erstellen' }}
-                                </v-btn>
-                            </div>
-                            <div
-                                v-else-if="loading"
-                                class="overview-wizard-footer">
-                                <div class="overview-wizard-loading">
-                                    <v-progress-circular
-                                        indeterminate
-                                        size="18"
-                                        width="2"
-                                        color="primary" />
-                                    <span>Kurse werden geladen</span>
-                                </div>
-                            </div>
-                        </template>
-                    </RobotTimetable>
-                </div>
-
-                <div v-if="manualPanelOpen" class="course-choice-panel">
-                    <div class="course-choice-panel__header">
-                        <div class="course-choice-panel__title">
-                            <v-icon icon="mdi-format-list-checks" size="18" color="primary" />
-                            <span>Kursauswahl</span>
-                            <v-tooltip text="Kurs wählen">
-                                <template #activator="{ props }">
-                                    <v-btn
-                                        v-bind="props"
-                                        icon="mdi-plus"
-                                        color="primary"
-                                        variant="flat"
-                                        size="small"
-                                        aria-label="Kurs wählen"
-                                        @click="openCourseMenuDialog" />
-                                </template>
-                            </v-tooltip>
-                        </div>
-                        <div class="course-choice-panel__actions">
-                            <v-chip size="x-small" color="primary" variant="tonal">
-                                {{ selectedCourseCount }} ausgewählt
-                            </v-chip>
-                            <v-btn
-                                v-if="selectedCourseCount > 0"
-                                size="x-small"
-                                variant="tonal"
-                                color="error"
-                                prepend-icon="mdi-close-circle-outline"
-                                @click="deselectAllCourses">
-                                Alle abwählen
-                            </v-btn>
-                        </div>
-                    </div>
-
-                    <div v-if="selectedCourseFilterChipsAll.length" class="selected-course-filter-chips">
-                        <v-chip
-                            v-for="filterChip in selectedCourseFilterChipsAll"
-                            :key="filterChip.key"
-                            size="small"
-                            :color="filterChip.hasBlockingOverlap ? 'error' : filterChip.hasRelatedOverlap ? 'warning' : 'success'"
-                            variant="tonal"
-                            closable
-                            class="selected-course-filter-chip"
-                            @click:close="handleCourseMenuEntryFilterClick(filterChip.entry)">
-                            {{ filterChip.label }}
-                        </v-chip>
                     </div>
                 </div>
 
@@ -897,6 +887,12 @@ const COURSE_CHOICE_RESTRICTION_MODES = [
     COURSE_CHOICE_RESTRICTION_PLANNED_ADDITIONAL,
     COURSE_CHOICE_RESTRICTION_ALL,
 ]
+const OVERVIEW_SECTION_COLORS = {
+    completed: '#00897B',
+    missing: '#FB8C00',
+    planned: '#3949AB',
+    additional: '#0288D1',
+}
 
 function normalizedCourseDisplayLabel(label) {
     return String(label || '').replace(/^LET(?=\d|\s|-|$)/iu, 'LPT')
@@ -937,6 +933,7 @@ export default {
             studentSelectionDraft: {
                 studentCode: null,
             },
+            expandedTransferredStudentCourseSections: [],
             studentCompletedCoursesRequestId: 0,
             activeCourseGroupFilterKeys: [],
             activeDistanceLearningCourseGroupKeys: [],
@@ -955,7 +952,6 @@ export default {
             restrictCourseChoiceBySelection: false,
             courseChoiceRestrictionMode: COURSE_CHOICE_RESTRICTION_ALL,
             transferredStudentContext: null,
-            transferredStudentContextExpanded: true,
             selectionDialogOpen: false,
             selection: {
                 semester: 1,
@@ -1221,7 +1217,12 @@ export default {
         selectedSummary() {
             return [
                 { key: 'semester', label: 'Semester', value: this.selectedOptionTitle(this.semesterOptions, this.selection.semester) },
-                { key: 'religion', label: 'Ethik / Religion', value: this.selectedOptionTitle(this.religionOptions, this.selection.religion) },
+                {
+                    key: 'religion',
+                    label: 'Ethik / Religion',
+                    value: this.selectedOptionTitle(this.religionOptions, this.selection.religion),
+                    meta: this.transferredStudentReligionMeta,
+                },
                 { key: 'language', label: 'Sprache', value: this.selectedOptionTitle(this.languageOptions, this.selection.language) },
                 { key: 'branch', label: 'Zweig', value: this.selectedOptionTitle(this.branchOptions, this.selection.branch) },
                 { key: 'artsSubject', label: 'ME / BE', value: this.selectedOptionTitle(this.artsSubjectOptions, this.selection.artsSubject) },
@@ -1247,14 +1248,53 @@ export default {
         transferredStudentLabel() {
             return this.transferredStudentContext?.student?.label || 'Kein Student'
         },
+        transferredStudentReligion() {
+            const contextReligion = String(this.transferredStudentContext?.student?.religion || '').trim()
+            if (contextReligion) return contextReligion
+
+            const studentCode = this.normalizedStudentCode(this.transferredStudentContext?.student?.studentCode)
+            if (!studentCode) return ''
+
+            const selectedStudent = this.robotStudents
+                .find(student => this.normalizedStudentCode(student?.student_code) === studentCode)
+
+            return String(selectedStudent?.religion || '').trim()
+        },
+        transferredStudentReligionMeta() {
+            return this.studentReligionMeta(this.transferredStudentReligion)
+        },
         transferredStudentCourseSections() {
             const courses = this.transferredStudentContext?.courses || this.noStudentCourseHistory
 
             return [
-                { key: 'completed', title: 'Abgeschlossene Kurse', color: 'primary', items: courses.completed || [] },
-                { key: 'missing', title: 'Fehlende Kurse', color: 'error', items: courses.missing || [] },
-                { key: 'planned', title: 'Vorgesehene Kurse', color: 'info', items: courses.planned || [] },
-                { key: 'additional', title: 'Zusätzliche Kurse', color: 'success', items: courses.additional || [] },
+                {
+                    key: 'completed',
+                    title: 'Abgeschlossene Kurse',
+                    icon: 'mdi-check-circle-outline',
+                    color: OVERVIEW_SECTION_COLORS.completed,
+                    items: courses.completed || [],
+                },
+                {
+                    key: 'missing',
+                    title: 'Fehlende Kurse',
+                    icon: 'mdi-alert-circle-outline',
+                    color: OVERVIEW_SECTION_COLORS.missing,
+                    items: courses.missing || [],
+                },
+                {
+                    key: 'planned',
+                    title: 'Vorgesehene Kurse',
+                    icon: 'mdi-format-list-checks',
+                    color: OVERVIEW_SECTION_COLORS.planned,
+                    items: courses.planned || [],
+                },
+                {
+                    key: 'additional',
+                    title: 'Zusätzliche Kurse',
+                    icon: 'mdi-plus-circle-outline',
+                    color: OVERVIEW_SECTION_COLORS.additional,
+                    items: courses.additional || [],
+                },
             ]
         },
         visibleTransferredStudentCourseSections() {
@@ -1408,7 +1448,9 @@ export default {
             }
 
             if (this.transferredStudentContext?.student?.studentCode) {
-                await this.loadTransferredStudentCompletedCourses(this.transferredStudentContext.student.studentCode)
+                await this.loadTransferredStudentCompletedCourses(this.transferredStudentContext.student.studentCode, {
+                    includeSelection: true,
+                })
             } else {
                 this.refreshTransferredStudentCourseHistory()
             }
@@ -1846,7 +1888,6 @@ export default {
             this.runTimetableUpdate(() => {
                 if (!selectedStudent) {
                     this.transferredStudentContext = null
-                    this.transferredStudentContextExpanded = true
                     this.studentDialogOpen = false
                     this.studentSearch = ''
                     this.persistTimetableState()
@@ -1869,6 +1910,7 @@ export default {
                         studentCode: nextStudentCode,
                         label: this.studentOptionTitle(selectedStudent),
                         semesterLabel: this.studentSemesterLabel(selectedStudent),
+                        religion: selectedStudent.religion,
                     },
                     courses: {
                         completed: [],
@@ -1877,7 +1919,6 @@ export default {
                         additional: [],
                     },
                 })
-                this.transferredStudentContextExpanded = false
                 this.studentDialogOpen = false
                 this.studentSearch = ''
                 this.persistTimetableState()
@@ -1901,10 +1942,6 @@ export default {
                 }
             })
             this.selectionDialogOpen = false
-        },
-        toggleTransferredStudentContext() {
-            this.transferredStudentContextExpanded = !this.transferredStudentContextExpanded
-            this.persistTimetableState()
         },
         deselectAllCourses() {
             this.runTimetableUpdate(() => {
@@ -1972,7 +2009,6 @@ export default {
                 courseChoiceRestrictionMode: COURSE_CHOICE_RESTRICTION_ALL,
                 selection: this.defaultSelection(),
                 transferredStudentContext: null,
-                transferredStudentContextExpanded: true,
             }
         },
         defaultSelection() {
@@ -2043,7 +2079,6 @@ export default {
                 }),
                 selection: this.normalizedSelection(this.selection || defaults.selection),
                 transferredStudentContext: this.normalizedTransferredStudentContext(this.transferredStudentContext),
-                transferredStudentContextExpanded: Boolean(this.transferredStudentContextExpanded),
             }
         },
         applyTimetableState(state) {
@@ -2086,12 +2121,6 @@ export default {
             this.transferredStudentContext = this.normalizedTransferredStudentContext(
                 state?.transferredStudentContext ?? defaults.transferredStudentContext,
             )
-            const transferredStudentContextExpanded = Boolean(
-                state?.transferredStudentContextExpanded ?? defaults.transferredStudentContextExpanded,
-            )
-            this.transferredStudentContextExpanded = this.transferredStudentContext
-                ? transferredStudentContextExpanded
-                : true
         },
         async loadTransferredStudentCompletedCourses(studentCode, options = {}) {
             const normalizedStudentCode = this.normalizedStudentCode(studentCode)
@@ -2101,28 +2130,67 @@ export default {
             if (!normalizedStudentCode) return
 
             try {
-                const response = await axios.get('/api/admin/students-timetables/robot/student-completed-courses', {
+                const response = await axios.get('/api/admin/students-timetables/robot/student-overview', {
                     params: {
                         student_code: normalizedStudentCode,
+                        ...(options?.includeSelection ? { selection: this.studentOverviewSelectionPayload() } : {}),
                     },
                 })
 
                 if (requestId !== this.studentCompletedCoursesRequestId) return
                 if (this.normalizedStudentCode(this.transferredStudentContext?.student?.studentCode) !== normalizedStudentCode) return
 
-                const completedCourses = response.data?.data || []
+                const overviewSummary = response.data?.data || {}
 
                 if (options?.applySelectionDefaults) {
-                    this.applyTransferredStudentSelectionDefaultsFromCourses(completedCourses)
+                    this.applyTransferredStudentSelectionDefaultsFromOverview(overviewSummary)
                 }
 
                 this.transferredStudentContext = this.normalizedTransferredStudentContext({
                     ...this.transferredStudentContext,
-                    courses: this.overviewStudentCourseHistory(completedCourses),
+                    student: {
+                        ...this.transferredStudentContext?.student,
+                        religion: overviewSummary?.student?.religion ?? this.transferredStudentContext?.student?.religion,
+                    },
+                    courses: this.overviewStudentCourseHistoryFromSummary(overviewSummary),
                 })
                 this.persistTimetableState()
             } catch {
                 if (requestId !== this.studentCompletedCoursesRequestId) return
+            }
+        },
+        studentOverviewSelectionPayload() {
+            return {
+                semester: this.selection?.semester,
+                religion: this.selection?.religion,
+                language: this.selection?.language,
+                branch: this.selection?.branch,
+                artsSubject: this.selection?.artsSubject,
+            }
+        },
+        applyTransferredStudentSelectionDefaultsFromOverview(overviewSummary) {
+            const selection = overviewSummary?.selection || {}
+            const selectionDefaults = this.normalizedSelection({
+                semester: selection.semester,
+                religion: selection.religion,
+                language: selection.language,
+                branch: selection.branch,
+                artsSubject: selection.arts_subject,
+            })
+
+            if (JSON.stringify(selectionDefaults) === JSON.stringify(this.selection)) return
+
+            this.selection = selectionDefaults
+            this.selectionDraft = { ...selectionDefaults }
+            this.selectedCourseMenuKey = ''
+            this.selectedCourseGroup = null
+        },
+        overviewStudentCourseHistoryFromSummary(overviewSummary) {
+            return {
+                completed: this.overviewCompletedCourseItems(overviewSummary?.completed_courses || []),
+                missing: this.overviewCourseItems(overviewSummary?.missing_courses || []),
+                planned: this.overviewCourseItems(overviewSummary?.proposed_courses || []),
+                additional: this.overviewCourseItems(overviewSummary?.additional_courses || []),
             }
         },
         normalizedSelection(selection) {
@@ -2162,6 +2230,7 @@ export default {
             return Object.fromEntries([
                 ['religion', this.inferredSelectionOptionFromCourseCodes(this.religionOptions, visitedCourseCodes)],
                 ['language', this.inferredSelectionOptionFromCourseCodes(this.languageOptions, visitedCourseCodes)],
+                ['branch', this.inferredBranchFromCourseCodes(visitedCourseCodes)],
                 ['artsSubject', this.inferredSelectionOptionFromCourseCodes(this.artsSubjectOptions, visitedCourseCodes)],
             ].filter(([, value]) => Boolean(value)))
         },
@@ -2212,10 +2281,86 @@ export default {
                     || secondMatch.courseIndex - firstMatch.courseIndex,
                 )[0] || null
         },
+        inferredBranchFromCourseCodes(courseCodes) {
+            const branchOptionValues = (Array.isArray(this.branchOptions) ? this.branchOptions : [])
+                .map(option => option?.value)
+                .filter(Boolean)
+
+            if (!(courseCodes instanceof Set) || !courseCodes.size || !branchOptionValues.length) return ''
+
+            return (Array.isArray(this.subjectRows) ? this.subjectRows : [])
+                .filter(subject => subject?.is_active !== false)
+                .filter(subject => branchOptionValues.includes(subject?.branch))
+                .map((subject, subjectIndex) => ({
+                    subject,
+                    subjectIndex,
+                    match: this.bestSubjectRowCourseCodeMatch(subject, courseCodes),
+                }))
+                .filter(({ match }) => match)
+                .sort((firstSubject, secondSubject) =>
+                    secondSubject.match.module - firstSubject.match.module
+                    || secondSubject.match.semester - firstSubject.match.semester
+                    || secondSubject.match.courseIndex - firstSubject.match.courseIndex
+                    || firstSubject.subjectIndex - secondSubject.subjectIndex,
+                )[0]?.subject?.branch || ''
+        },
+        bestSubjectRowCourseCodeMatch(subject, courseCodes) {
+            const subjectParts = this.subjectCourseCodesForBranchInference(subject)
+                .flatMap(courseCode => this.courseCodeAliasParts(courseCode))
+                .flatMap(courseCode => [
+                    courseCode,
+                    this.defaultTimetableCodeAlias(courseCode),
+                ])
+                .map(courseCode => this.courseCodeModuleParts(courseCode))
+                .filter(parts => parts.base)
+                .filter((parts, index, allParts) =>
+                    allParts.findIndex(candidate => candidate.base === parts.base && candidate.module === parts.module) === index,
+                )
+
+            if (!subjectParts.length) return null
+
+            return [...courseCodes]
+                .map((courseCode, courseIndex) => ({
+                    ...this.courseCodeModuleParts(courseCode),
+                    courseIndex,
+                }))
+                .flatMap(courseParts => subjectParts
+                    .filter(subjectPart => this.subjectCoursePartMatchesCompletedCoursePart(subjectPart, courseParts))
+                    .map(() => ({
+                        module: Number(courseParts.module || 0),
+                        semester: Number(subject?.semester || 0),
+                        courseIndex: courseParts.courseIndex,
+                    })))
+                .sort((firstMatch, secondMatch) =>
+                    secondMatch.module - firstMatch.module
+                    || secondMatch.semester - firstMatch.semester
+                    || secondMatch.courseIndex - firstMatch.courseIndex,
+                )[0] || null
+        },
+        subjectCourseCodesForBranchInference(subject) {
+            return [
+                subject?.json_code,
+                subject?.json_subject,
+                subject?.name,
+            ].filter(Boolean)
+        },
+        subjectCoursePartMatchesCompletedCoursePart(subjectPart, completedPart) {
+            if (!this.studentCourseBaseAliases(subjectPart.base).includes(completedPart.base)) return false
+
+            const subjectModule = String(subjectPart.module || '')
+            const completedModule = String(completedPart.module || '')
+
+            return !subjectModule || !completedModule || subjectModule === completedModule
+        },
         normalizedStudentCode(value) {
             const studentCode = value === null || value === undefined ? '' : String(value).trim()
 
             return studentCode === '' ? null : studentCode
+        },
+        studentReligionMeta(religion) {
+            const value = String(religion || '').trim()
+
+            return value ? `Religion: ${value}` : ''
         },
         studentSemesterBySchoolLevel() {
             return {
@@ -2330,18 +2475,9 @@ export default {
         refreshTransferredStudentCourseHistory() {
             if (!this.transferredStudentContext) return
 
-            const completedCourses = (this.transferredStudentContext.courses?.completed || [])
-                .map(course => ({
-                    subject: course?.code || course?.label,
-                    code: course?.code || course?.label,
-                    grade: course?.grade || course?.meta,
-                }))
-
-            this.transferredStudentContext = this.normalizedTransferredStudentContext({
-                ...this.transferredStudentContext,
-                courses: this.overviewStudentCourseHistory(completedCourses),
+            this.loadTransferredStudentCompletedCourses(this.transferredStudentContext.student.studentCode, {
+                includeSelection: true,
             })
-            this.persistTimetableState()
         },
         overviewCourseItems(courses) {
             return (Array.isArray(courses) ? courses : [])
@@ -2720,6 +2856,7 @@ export default {
                     studentCode: String(context.student?.studentCode || '').trim(),
                     label: String(context.student?.label || '').trim(),
                     semesterLabel: String(context.student?.semesterLabel || '').trim(),
+                    religion: String(context.student?.religion || '').trim(),
                 },
                 courses: {
                     completed: this.normalizedTransferredStudentCourses(context.courses?.completed),
@@ -4912,6 +5049,14 @@ export default {
     font-weight: 850;
 }
 
+.overview-selected-card__meta {
+    margin-bottom: 3px;
+    color: #64748b;
+    font-size: 0.64rem;
+    font-weight: 850;
+    line-height: 1.1;
+}
+
 .overview-selected-card__value {
     margin-top: 4px;
     color: #020617;
@@ -4944,6 +5089,7 @@ export default {
     flex: 0 0 auto;
     min-height: 48px;
     border-radius: 8px;
+    color: #ffffff;
     font-size: 0.78rem;
     font-weight: 850;
     letter-spacing: 0;
@@ -4951,6 +5097,7 @@ export default {
 }
 
 .overview-wizard-button {
+    background: linear-gradient(135deg, #1d4ed8 0%, #6366f1 100%);
     animation: wizard-glow 2s ease-in-out infinite;
     box-shadow: 0 0 8px rgba(37, 99, 235, 0.4), 0 0 20px rgba(37, 99, 235, 0.2);
 }
@@ -4958,6 +5105,15 @@ export default {
 .overview-wizard-button:hover {
     animation: none;
     box-shadow: 0 0 12px rgba(37, 99, 235, 0.6), 0 0 28px rgba(37, 99, 235, 0.35);
+}
+
+.overview-manual-button {
+    background: linear-gradient(135deg, #0f766e 0%, #16a34a 100%);
+    box-shadow: 0 0 8px rgba(15, 118, 110, 0.28), 0 0 18px rgba(22, 163, 74, 0.16);
+}
+
+.overview-manual-button:hover {
+    box-shadow: 0 0 12px rgba(15, 118, 110, 0.42), 0 0 24px rgba(22, 163, 74, 0.25);
 }
 
 @keyframes wizard-glow {
@@ -4993,9 +5149,9 @@ export default {
 }
 
 .overview-active-label--manual {
-    background: linear-gradient(135deg, #0d9488 0%, #2563eb 100%);
+    background: linear-gradient(135deg, #0f766e 0%, #16a34a 100%);
     color: #fff;
-    box-shadow: 0 4px 16px rgba(13, 148, 136, 0.35), 0 0 24px rgba(37, 99, 235, 0.15);
+    box-shadow: 0 4px 16px rgba(15, 118, 110, 0.32), 0 0 24px rgba(22, 163, 74, 0.16);
 }
 
 .overview-active-label__title {
@@ -5390,22 +5546,15 @@ export default {
 .transferred-student-context {
     display: grid;
     gap: 10px;
-    margin-bottom: 14px;
+    margin-bottom: 0;
     padding: 10px;
     border: 1px solid rgba(14, 165, 233, 0.22);
     border-radius: 8px;
     background: #f0f9ff;
 }
 
-.transferred-student-context--collapsed {
-    gap: 0;
-}
-
 .transferred-student-context__header,
-.transferred-student-context__title,
-.transferred-student-context__header-actions,
-.transferred-student-course-section,
-.transferred-student-course-section__title {
+.transferred-student-context__title {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -5414,13 +5563,6 @@ export default {
 .transferred-student-context__header {
     justify-content: space-between;
     flex-wrap: wrap;
-    cursor: pointer;
-    outline: none;
-}
-
-.transferred-student-context__header:focus-visible {
-    box-shadow: 0 0 0 2px rgba(var(--v-theme-primary), 0.22);
-    border-radius: 6px;
 }
 
 .transferred-student-context__title {
@@ -5430,31 +5572,51 @@ export default {
     font-weight: 800;
 }
 
-.transferred-student-context__header-actions {
-    flex: 0 0 auto;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-}
-
-.transferred-student-context__sections {
+.transferred-student-course-overview {
     display: grid;
-    gap: 7px;
-    padding-top: 2px;
+    margin-bottom: 14px;
 }
 
-.transferred-student-course-section {
-    align-items: flex-start;
-    min-width: 0;
-    padding-top: 7px;
-    border-top: 1px solid rgba(14, 165, 233, 0.18);
+.transferred-student-course-panels {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px 14px;
+    align-items: start;
 }
 
-.transferred-student-course-section__title {
-    flex: 0 0 164px;
-    justify-content: flex-start;
-    color: rgba(var(--v-theme-on-surface), 0.74);
-    font-size: 0.7rem;
+@media (min-width: 900px) {
+    .transferred-student-course-panels {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.transferred-student-course-panels :deep(.v-expansion-panel) {
+    margin-top: 0 !important;
+    overflow: hidden;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    border-radius: 8px !important;
+    background: rgba(255, 255, 255, 0.92) !important;
+}
+
+.transferred-student-course-panel__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 58px;
+    padding: 14px;
+    border-bottom: 1px solid rgba(16, 38, 58, 0.07);
+}
+
+.transferred-student-course-panel__title h3 {
+    flex: 1;
+    margin: 0;
+    color: #10263a;
+    font-size: 1rem;
     font-weight: 800;
+}
+
+.transferred-student-course-panels :deep(.v-expansion-panel-text__wrapper) {
+    padding: 0;
 }
 
 .transferred-student-course-section__chips {
@@ -5462,6 +5624,7 @@ export default {
     flex-wrap: wrap;
     gap: 5px;
     min-width: 0;
+    padding: 12px 14px;
 }
 
 .transferred-student-course-chip {
@@ -5475,8 +5638,9 @@ export default {
 }
 
 .transferred-student-course-section__empty {
+    padding: 14px;
     color: rgba(var(--v-theme-on-surface), 0.54);
-    font-size: 0.72rem;
+    font-size: 0.8rem;
     font-weight: 650;
 }
 

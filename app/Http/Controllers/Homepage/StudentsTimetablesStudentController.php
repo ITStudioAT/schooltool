@@ -154,14 +154,45 @@ class StudentsTimetablesStudentController extends Controller
         ]);
     }
 
-    public function overview(StudentTimetablesStudentOverviewService $overviewService)
+    public function overview(Request $request, StudentTimetablesStudentOverviewService $overviewService)
     {
         if (! Auth::check() || ! Auth::user()->hasRole(StudentsTimetablesStudentService::ROLE_NAME)) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        $validated = $request->validate($this->studentOverviewSelectionRules());
+
         return response()->json([
-            'data' => $overviewService->summaryForUser(Auth::user()),
+            'data' => $overviewService->summaryForUser(Auth::user(), $validated['selection'] ?? []),
+        ]);
+    }
+
+    public function updateProfileSelection(Request $request, StudentTimetablesStudentOverviewService $overviewService): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate($this->studentOverviewProfileSelectionRules());
+        $overviewService->updateProfileSelectionForUser($authUser, $validated['selection']);
+
+        return response()->json([
+            'message' => 'Auswahl wurde gespeichert.',
+            'data' => $overviewService->summaryForUser($authUser),
+        ]);
+    }
+
+    public function restoreProfileSelection(StudentTimetablesStudentOverviewService $overviewService): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $overviewService->restoreProfileSelectionForUser($authUser);
+
+        return response()->json([
+            'message' => 'Auswahl wurde wiederhergestellt.',
+            'data' => $overviewService->summaryForUser($authUser),
         ]);
     }
 
@@ -214,11 +245,12 @@ class StudentsTimetablesStudentController extends Controller
             'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
             'selected_timetable_type' => ['nullable', 'string', Rule::in(['full_green', 'green', 'conflict'])],
             'selected_timetable_number' => ['nullable', 'integer', 'min:1'],
+            ...$this->studentOverviewSelectionRules(),
         ]);
 
         $this->ensureSchoolyearForUser($authUser);
 
-        $summary = $studentOverviewService->summaryForUser($authUser);
+        $summary = $studentOverviewService->summaryForUser($authUser, $validated['selection'] ?? []);
         $selectedCourseKeys = $this->selectedProposedCourseKeys(
             $validated['selected_course_keys'],
             $summary['proposed_courses'] ?? [],
@@ -298,6 +330,34 @@ class StudentsTimetablesStudentController extends Controller
         }
 
         $user->schoolyear_id = (int) $schoolyearId;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function studentOverviewSelectionRules(): array
+    {
+        return [
+            'selection' => ['sometimes', 'array:semester,religion,language,branch,arts_subject,artsSubject'],
+            'selection.semester' => ['sometimes', 'nullable', 'integer', 'between:1,8'],
+            'selection.religion' => ['sometimes', 'nullable', 'string', Rule::in(['ETH', 'Rev', 'Ris', 'Rk', 'Ror'])],
+            'selection.language' => ['sometimes', 'nullable', 'string', Rule::in(['L', 'F', 'S'])],
+            'selection.branch' => ['sometimes', 'nullable', 'string', Rule::in(['wirtschaftskundlich', 'gymnasial'])],
+            'selection.arts_subject' => ['sometimes', 'nullable', 'string', Rule::in(['ME', 'BE'])],
+            'selection.artsSubject' => ['sometimes', 'nullable', 'string', Rule::in(['ME', 'BE'])],
+        ];
+    }
+
+    private function studentOverviewProfileSelectionRules(): array
+    {
+        return [
+            'selection' => ['required', 'array:religion,language,branch,arts_subject,artsSubject'],
+            'selection.religion' => ['sometimes', 'nullable', 'string', Rule::in(['ETH', 'Rev', 'Ris', 'Rk', 'Ror'])],
+            'selection.language' => ['sometimes', 'nullable', 'string', Rule::in(['L', 'F', 'S'])],
+            'selection.branch' => ['sometimes', 'nullable', 'string', Rule::in(['wirtschaftskundlich', 'gymnasial'])],
+            'selection.arts_subject' => ['sometimes', 'nullable', 'string', Rule::in(['ME', 'BE'])],
+            'selection.artsSubject' => ['sometimes', 'nullable', 'string', Rule::in(['ME', 'BE'])],
+        ];
     }
 
     /**

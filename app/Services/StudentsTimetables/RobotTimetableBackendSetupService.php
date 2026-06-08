@@ -6,9 +6,12 @@ use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 
 class RobotTimetableBackendSetupService
 {
+    private const MAX_BACKEND_TIMETABLE_VARIATIONS = 200000;
+
     /**
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
@@ -140,6 +143,16 @@ class RobotTimetableBackendSetupService
         }
 
         $input = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
+
+        if ($this->timetableVariationLimitExceeded($input['selected_courses'], $input['course_options'], $input['has_missing_options'])) {
+            throw ValidationException::withMessages([
+                'selected_course_keys' => sprintf(
+                    'Diese Auswahl erzeugt zu viele Stundenplan-Variationen. Bitte weniger Kurse auswählen oder die Auswahl einschränken. Maximum: %s Variationen.',
+                    number_format(self::MAX_BACKEND_TIMETABLE_VARIATIONS, 0, ',', '.'),
+                ),
+            ]);
+        }
+
         $qualityResult = $this->qualityResultForSelectedTimetableType(
             $input['course_options'],
             $input['additional_course_options'],
@@ -219,6 +232,16 @@ class RobotTimetableBackendSetupService
         array $selectedQualityCriterionKeys = [],
     ): array {
         $input = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
+
+        if ($this->timetableVariationLimitExceeded($input['selected_courses'], $input['course_options'], $input['has_missing_options'])) {
+            throw ValidationException::withMessages([
+                'selected_course_keys' => sprintf(
+                    'Diese Auswahl erzeugt zu viele Stundenplan-Variationen. Bitte weniger Kurse auswählen oder die Auswahl einschränken. Maximum: %s Variationen.',
+                    number_format(self::MAX_BACKEND_TIMETABLE_VARIATIONS, 0, ',', '.'),
+                ),
+            ]);
+        }
+
         $counts = $this->timetableVariationCounts(
             $input['selected_courses'],
             $input['course_options'],
@@ -271,6 +294,29 @@ class RobotTimetableBackendSetupService
                 ? 0
                 : $selectedQualitySubset['total'],
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $selectedCourses
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     */
+    private function timetableVariationLimitExceeded(array $selectedCourses, array $courseOptions, bool $hasMissingOptions): bool
+    {
+        if ($selectedCourses === [] || $hasMissingOptions) {
+            return false;
+        }
+
+        $variationCount = 1;
+
+        foreach ($courseOptions as $options) {
+            $variationCount *= count($options);
+
+            if ($variationCount > self::MAX_BACKEND_TIMETABLE_VARIATIONS) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

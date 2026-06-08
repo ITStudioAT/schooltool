@@ -4,28 +4,124 @@ namespace App\Services\StudentsTimetables;
 
 use App\Models\Import116;
 use App\Models\SchoolTool;
-use App\Models\StudentTimetableRecognitionRow;
+use App\Models\StudentTimetableProfileSelection;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class StudentTimetablesStudentOverviewService
 {
+    private const COURSE_SECTION_COLOR_MAP = [
+        'completed' => '#00897B',
+        'missing' => '#FB8C00',
+        'proposed' => '#3949AB',
+        'additional' => '#0288D1',
+    ];
+
+    public function __construct(
+        protected StudentTimetableCompletedCourseHistoryService $completedCourseHistoryService,
+    ) {}
+
     /**
      * @return array<string, mixed>
      */
-    public function summaryForUser(User $user): array
+    public function summaryForUser(User $user, array $selectionOverride = []): array
     {
         $schoolyearId = $this->schoolyearIdForUser($user);
         $student = $this->import116StudentForUser($user, $schoolyearId);
+
+        $savedSelectionOverride = $this->profileSelectionForUserAndSchoolyear($user, $schoolyearId);
+        $selectionOverride = $this->normalizedSelectionOverride([
+            ...$savedSelectionOverride,
+            ...$selectionOverride,
+        ]);
+
+        return $this->summaryForStudent($user, $schoolyearId, $student, $selectionOverride);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function updateProfileSelectionForUser(User $user, array $selection): array
+    {
+        $schoolyearId = $this->schoolyearIdForUser($user);
+        $selection = $this->normalizedSelectionOverride($selection);
+
+        DB::transaction(function () use ($user, $schoolyearId, $selection): void {
+            $query = StudentTimetableProfileSelection::query()
+                ->where('school_id', $user->school_id)
+                ->where('schoolyear_id', $schoolyearId)
+                ->where('user_id', $user->id);
+
+            if ($selection === []) {
+                $query->delete();
+
+                return;
+            }
+
+            StudentTimetableProfileSelection::query()->updateOrCreate(
+                [
+                    'school_id' => $user->school_id,
+                    'schoolyear_id' => $schoolyearId,
+                    'user_id' => $user->id,
+                ],
+                [
+                    'selection' => $selection,
+                ],
+            );
+        });
+
+        return $selection;
+    }
+
+    public function restoreProfileSelectionForUser(User $user): void
+    {
+        $schoolyearId = $this->schoolyearIdForUser($user);
+
+        StudentTimetableProfileSelection::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('user_id', $user->id)
+            ->delete();
+    }
+
+    /**
+     * @param  array<string, mixed>  $selectionOverride
+     * @return array<string, mixed>
+     */
+    public function summaryForStudentCode(User $user, string $studentCode, array $selectionOverride = []): array
+    {
+        $schoolyearId = $this->schoolyearIdForUser($user);
+        $student = Import116::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('student_code', $studentCode)
+            ->first();
+
+        if (! $student) {
+            abort(404, 'Student nicht gefunden.');
+        }
+
+        return $this->summaryForStudent($user, $schoolyearId, $student, $selectionOverride);
+    }
+
+    /**
+     * @param  array<string, mixed>  $selectionOverride
+     * @return array<string, mixed>
+     */
+    private function summaryForStudent(User $user, int $schoolyearId, ?Import116 $student, array $selectionOverride = []): array
+    {
         $completedCourses = $this->completedCourses($user, $schoolyearId, $student?->student_code);
-        $selection = $this->selectionForStudent($student, $completedCourses);
+        $selection = $this->selectionForStudent($user, $schoolyearId, $student, $completedCourses);
+        $selection = $this->selectionWithOverrides($selection, $selectionOverride);
         $subjectCourses = $this->subjectCourses($user, $schoolyearId, $selection);
         $completedCourseCodes = $this->studentCompletedCourseCodes($completedCourses);
         $visitedCourseCodes = $this->studentVisitedCourseCodes($completedCourses);
         $proposedCourses = $this->plannedCoursesForSemester($subjectCourses, $selection, $completedCourseCodes);
         $missingCourses = $this->pendingCoursesBeforeSemester($subjectCourses, $selection, $completedCourseCodes, $visitedCourseCodes);
         $additionalCourses = $this->additionalCourses($subjectCourses, $selection, $completedCourseCodes, $visitedCourseCodes, $missingCourses, $proposedCourses);
+        $courseSections = $this->courseSections($completedCourses, $missingCourses, $proposedCourses, $additionalCourses);
 
         return [
             'student' => [
@@ -33,12 +129,17 @@ class StudentTimetablesStudentOverviewService
                 'class' => $student?->class ?? $user->schoolclass,
                 'first_name' => $student?->first_name ?? $user->first_name,
                 'last_name' => $student?->last_name ?? $user->last_name,
+                'religion' => $student?->religion,
             ],
             'selection' => $selection,
+            'selection_override' => $selectionOverride,
+            'selection_options' => $this->selectionOptions(),
+            'selection_items' => $this->selectionItems($selection, $student?->religion),
             'completed_courses' => $completedCourses,
             'missing_courses' => $missingCourses,
             'proposed_courses' => $proposedCourses,
             'additional_courses' => $additionalCourses,
+            'course_sections' => $courseSections,
             'counts' => [
                 'completed_courses' => count($completedCourses),
                 'missing_courses' => count($missingCourses),
@@ -46,6 +147,254 @@ class StudentTimetablesStudentOverviewService
                 'additional_courses' => count($additionalCourses),
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $selection
+     * @param  array<string, mixed>  $selectionOverride
+     * @return array<string, mixed>
+     */
+    private function selectionWithOverrides(array $selection, array $selectionOverride): array
+    {
+        if ($selectionOverride === []) {
+            return $selection;
+        }
+
+        return [
+            'semester' => $this->integerOrNull($selectionOverride['semester'] ?? null) ?? $selection['semester'],
+            'religion' => $this->nonEmptyString($selectionOverride['religion'] ?? null) ?? $selection['religion'],
+            'language' => $this->nonEmptyString($selectionOverride['language'] ?? null) ?? $selection['language'],
+            'branch' => $this->nonEmptyString($selectionOverride['branch'] ?? null) ?? $selection['branch'],
+            'arts_subject' => $this->nonEmptyString($selectionOverride['arts_subject'] ?? $selectionOverride['artsSubject'] ?? null)
+                ?? $selection['arts_subject'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $selection
+     * @return array<string, string>
+     */
+    private function normalizedSelectionOverride(array $selection): array
+    {
+        return collect([
+            'religion' => $this->religionOptions(),
+            'language' => $this->languageOptions(),
+            'branch' => $this->branchOptions(),
+            'arts_subject' => $this->artsSubjectOptions(),
+        ])
+            ->mapWithKeys(function (array $options, string $key) use ($selection): array {
+                $value = $this->nonEmptyString($selection[$key] ?? ($key === 'arts_subject' ? $selection['artsSubject'] ?? null : null));
+
+                if (! $value) {
+                    return [];
+                }
+
+                $validValues = collect($options)
+                    ->pluck('value')
+                    ->map(fn (mixed $optionValue): string => (string) $optionValue)
+                    ->all();
+
+                return in_array($value, $validValues, true)
+                    ? [$key => $value]
+                    : [];
+            })
+            ->all();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function profileSelectionForUserAndSchoolyear(User $user, int $schoolyearId): array
+    {
+        $profileSelection = StudentTimetableProfileSelection::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('user_id', $user->id)
+            ->first();
+
+        return is_array($profileSelection?->selection) ? $this->normalizedSelectionOverride($profileSelection->selection) : [];
+    }
+
+    private function nonEmptyString(mixed $value): ?string
+    {
+        $stringValue = trim((string) $value);
+
+        return $stringValue !== '' ? $stringValue : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $selection
+     * @return list<array<string, mixed>>
+     */
+    private function selectionItems(array $selection, ?string $studentReligion): array
+    {
+        return [
+            [
+                'key' => 'semester',
+                'label' => 'Semester',
+                'value' => $this->selectionOptionTitle($this->semesterOptions(), $selection['semester'] ?? null),
+            ],
+            [
+                'key' => 'religion',
+                'label' => 'Ethik / Religion',
+                'value' => $this->selectionOptionTitle($this->religionOptions(), $selection['religion'] ?? null),
+                'meta' => $this->studentReligionMeta($studentReligion),
+            ],
+            [
+                'key' => 'language',
+                'label' => 'Sprache',
+                'value' => $this->selectionOptionTitle($this->languageOptions(), $selection['language'] ?? null),
+            ],
+            [
+                'key' => 'branch',
+                'label' => 'Zweig',
+                'value' => $this->selectionOptionTitle($this->branchOptions(), $selection['branch'] ?? null),
+            ],
+            [
+                'key' => 'arts_subject',
+                'label' => 'ME / BE',
+                'value' => $this->selectionOptionTitle($this->artsSubjectOptions(), $selection['arts_subject'] ?? null),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, list<array{title: string, value: mixed}>>
+     */
+    private function selectionOptions(): array
+    {
+        return [
+            'religion' => $this->religionOptions(),
+            'language' => $this->languageOptions(),
+            'branch' => $this->branchOptions(),
+            'arts_subject' => $this->artsSubjectOptions(),
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $completedCourses
+     * @param  list<array<string, mixed>>  $missingCourses
+     * @param  list<array<string, mixed>>  $proposedCourses
+     * @param  list<array<string, mixed>>  $additionalCourses
+     * @return list<array<string, mixed>>
+     */
+    private function courseSections(array $completedCourses, array $missingCourses, array $proposedCourses, array $additionalCourses): array
+    {
+        return [
+            [
+                'key' => 'completed',
+                'title' => 'Abgeschlossene Kurse',
+                'icon' => 'mdi-check-circle-outline',
+                'color' => self::COURSE_SECTION_COLOR_MAP['completed'],
+                'items' => $completedCourses,
+                'empty' => 'Keine abgeschlossenen Kurse gefunden.',
+            ],
+            [
+                'key' => 'missing',
+                'title' => 'Fehlende Kurse',
+                'icon' => 'mdi-alert-circle-outline',
+                'color' => self::COURSE_SECTION_COLOR_MAP['missing'],
+                'items' => $missingCourses,
+                'empty' => 'Keine fehlenden Kurse erkannt.',
+            ],
+            [
+                'key' => 'proposed',
+                'title' => 'Vorgesehene Kurse',
+                'icon' => 'mdi-format-list-checks',
+                'color' => self::COURSE_SECTION_COLOR_MAP['proposed'],
+                'items' => $proposedCourses,
+                'empty' => 'Keine vorgesehenen Kurse importiert.',
+            ],
+            [
+                'key' => 'additional',
+                'title' => 'Zusätzliche Kurse',
+                'icon' => 'mdi-plus-circle-outline',
+                'color' => self::COURSE_SECTION_COLOR_MAP['additional'],
+                'items' => $additionalCourses,
+                'empty' => 'Keine zusätzlichen Kurse erkannt.',
+            ],
+        ];
+    }
+
+    /**
+     * @return list<array{title: string, value: int}>
+     */
+    private function semesterOptions(): array
+    {
+        return collect(range(1, 8))
+            ->map(fn (int $semester): array => [
+                'title' => "Semester {$semester}",
+                'value' => $semester,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return list<array{title: string, value: string}>
+     */
+    private function religionOptions(): array
+    {
+        return [
+            ['title' => 'ETH - Ethik', 'value' => 'ETH'],
+            ['title' => 'Rev - Religion evangelisch', 'value' => 'Rev'],
+            ['title' => 'Ris - Religion Islam', 'value' => 'Ris'],
+            ['title' => 'Rk - Religion katholisch', 'value' => 'Rk'],
+            ['title' => 'Ror - Religion orthodox', 'value' => 'Ror'],
+        ];
+    }
+
+    /**
+     * @return list<array{title: string, value: string}>
+     */
+    private function languageOptions(): array
+    {
+        return [
+            ['title' => 'L - Latein', 'value' => 'L'],
+            ['title' => 'F - Französisch', 'value' => 'F'],
+            ['title' => 'S - Spanisch', 'value' => 'S'],
+        ];
+    }
+
+    /**
+     * @return list<array{title: string, value: string}>
+     */
+    private function branchOptions(): array
+    {
+        return [
+            ['title' => 'Wirtschaftskundlicher Zweig', 'value' => 'wirtschaftskundlich'],
+            ['title' => 'Gymnasialer Zweig', 'value' => 'gymnasial'],
+        ];
+    }
+
+    /**
+     * @return list<array{title: string, value: string}>
+     */
+    private function artsSubjectOptions(): array
+    {
+        return [
+            ['title' => 'ME - Musikerziehung', 'value' => 'ME'],
+            ['title' => 'BE - Bildnerische Erziehung', 'value' => 'BE'],
+        ];
+    }
+
+    /**
+     * @param  list<array{title: string, value: mixed}>  $options
+     */
+    private function selectionOptionTitle(array $options, mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return collect($options)
+            ->firstWhere('value', $value)['title'] ?? (string) $value;
+    }
+
+    private function studentReligionMeta(?string $religion): ?string
+    {
+        $value = trim((string) $religion);
+
+        return $value !== '' ? "Religion: {$value}" : null;
     }
 
     private function schoolyearIdForUser(User $user): int
@@ -88,34 +437,14 @@ class StudentTimetablesStudentOverviewService
      */
     private function completedCourses(User $user, int $schoolyearId, ?string $studentCode): array
     {
-        if (! $studentCode) {
-            return [];
-        }
-
-        return StudentTimetableRecognitionRow::query()
-            ->where('school_id', $user->school_id)
-            ->where('schoolyear_id', $schoolyearId)
-            ->where('student_code', $studentCode)
-            ->orderBy('subject')
-            ->orderBy('row_number')
-            ->get(['subject', 'grade', 'note', 'raw_data'])
-            ->map(fn (StudentTimetableRecognitionRow $row): array => [
-                'code' => $this->displayCourseCode((string) $row->subject),
-                'name' => $this->displayCourseCode((string) $row->subject),
-                'grade' => trim((string) ($row->note ?: $row->grade)),
-                'semester' => $this->integerOrNull(data_get($row->raw_data, 'semester')),
-            ])
-            ->filter(fn (array $course): bool => $course['code'] !== '')
-            ->unique(fn (array $course): string => $this->normalizedCourseCode((string) $course['code']))
-            ->values()
-            ->all();
+        return $this->completedCourseHistoryService->coursesForStudentCode($user, $schoolyearId, $studentCode);
     }
 
     /**
      * @param  list<array<string, mixed>>  $completedCourses
      * @return array<string, mixed>
      */
-    private function selectionForStudent(?Import116 $student, array $completedCourses): array
+    private function selectionForStudent(User $user, int $schoolyearId, ?Import116 $student, array $completedCourses): array
     {
         $completedCodes = collect($completedCourses)
             ->pluck('code')
@@ -124,12 +453,10 @@ class StudentTimetablesStudentOverviewService
 
         return [
             'semester' => $studentSemester ?? $this->currentSemesterFromCompletedCourses($completedCourses),
-            'religion' => $completedCodes->first(fn (string $code): bool => in_array($this->courseCodeWithoutModule($code), ['R', 'RK'], true)) ? 'R' : 'ETH',
-            'language' => $completedCodes->first(fn (string $code): bool => in_array($this->courseCodeWithoutModule($code), ['F', 'S', 'SPA'], true))
-                ? $this->languageFromCodes($completedCodes)
-                : 'L',
-            'branch' => $this->studentBranch($student),
-            'arts_subject' => $completedCodes->first(fn (string $code): bool => $this->courseCodeWithoutModule($code) === 'BE') ? 'BE' : 'ME',
+            'religion' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->religionSelectionCourseAliases()) ?? 'ETH',
+            'language' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->languageSelectionCourseAliases()) ?? 'L',
+            'branch' => $this->branchFromCompletedCourses($user, $schoolyearId, $completedCodes, $student),
+            'arts_subject' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->artsSelectionCourseAliases()) ?? 'ME',
         ];
     }
 
@@ -224,15 +551,204 @@ class StudentTimetablesStudentOverviewService
             ->max();
     }
 
-    private function languageFromCodes(Collection $completedCodes): string
+    /**
+     * @param  Collection<int, string>  $completedCodes
+     * @param  array<string, list<string>>  $optionAliases
+     */
+    private function selectionOptionFromCompletedCodes(Collection $completedCodes, array $optionAliases): ?string
     {
-        foreach (['L', 'F', 'S', 'SPA'] as $language) {
-            if ($completedCodes->contains(fn (string $code): bool => $this->courseCodeWithoutModule($code) === $language)) {
-                return $language === 'SPA' ? 'S' : $language;
+        $bestMatch = null;
+        $optionIndex = 0;
+
+        foreach ($optionAliases as $option => $aliases) {
+            $match = $this->bestCompletedCourseMatch($completedCodes, $aliases, $optionIndex, (string) $option);
+            $optionIndex++;
+
+            if (! $match) {
+                continue;
+            }
+
+            if (! $bestMatch || $this->courseMatchSortValue($match) > $this->courseMatchSortValue($bestMatch)) {
+                $bestMatch = $match;
             }
         }
 
-        return 'L';
+        return $bestMatch['option'] ?? null;
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private function religionSelectionCourseAliases(): array
+    {
+        return [
+            'ETH' => ['ETH', 'ET'],
+            'Rev' => ['REV'],
+            'Ris' => ['RIS'],
+            'Rk' => ['RK', 'R'],
+            'Ror' => ['ROR'],
+        ];
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private function languageSelectionCourseAliases(): array
+    {
+        return [
+            'L' => ['L', 'LET', 'LPT'],
+            'F' => ['F'],
+            'S' => ['S', 'SPA'],
+        ];
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private function artsSelectionCourseAliases(): array
+    {
+        return [
+            'ME' => ['ME', 'MU'],
+            'BE' => ['BE'],
+        ];
+    }
+
+    /**
+     * @param  Collection<int, string>  $completedCodes
+     * @param  list<string>  $aliases
+     * @return array{option: string, module: int, semester: int, course_index: int, option_index: int}|null
+     */
+    private function bestCompletedCourseMatch(Collection $completedCodes, array $aliases, int $optionIndex, string $option): ?array
+    {
+        $optionAliases = collect([$option, ...$aliases])
+            ->map(fn (?string $alias): string => $this->courseCodeWithoutModule((string) $alias))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($optionAliases === []) {
+            return null;
+        }
+
+        return $completedCodes
+            ->values()
+            ->map(fn (string $code, int $courseIndex): array => [
+                ...$this->courseCodeModuleParts($code),
+                'course_index' => $courseIndex,
+            ])
+            ->filter(fn (array $parts): bool => in_array((string) ($parts['base'] ?? ''), $optionAliases, true))
+            ->map(fn (array $parts): array => [
+                'option' => $option,
+                'module' => $this->integerOrNull($parts['module'] ?? null) ?? 0,
+                'semester' => 0,
+                'course_index' => (int) $parts['course_index'],
+                'option_index' => $optionIndex,
+            ])
+            ->sortByDesc(fn (array $match): int => $this->courseMatchSortValue($match))
+            ->first();
+    }
+
+    /**
+     * @param  Collection<int, string>  $completedCodes
+     */
+    private function branchFromCompletedCourses(User $user, int $schoolyearId, Collection $completedCodes, ?Import116 $student): ?string
+    {
+        $branchOptions = ['wirtschaftskundlich', 'gymnasial'];
+        $bestMatch = null;
+
+        StudentTimetableSubjectRow::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('is_active', true)
+            ->whereIn('branch', $branchOptions)
+            ->orderBy('semester')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->each(function (StudentTimetableSubjectRow $row, int $subjectIndex) use ($completedCodes, &$bestMatch): void {
+                $match = $this->bestSubjectRowCompletedCourseMatch($row, $completedCodes, $subjectIndex);
+
+                if (! $match) {
+                    return;
+                }
+
+                if (! $bestMatch || $this->courseMatchSortValue($match) > $this->courseMatchSortValue($bestMatch)) {
+                    $bestMatch = $match;
+                }
+            });
+
+        return $bestMatch['branch'] ?? $this->studentBranch($student);
+    }
+
+    /**
+     * @param  Collection<int, string>  $completedCodes
+     * @return array{branch: string, module: int, semester: int, course_index: int, option_index: int}|null
+     */
+    private function bestSubjectRowCompletedCourseMatch(StudentTimetableSubjectRow $row, Collection $completedCodes, int $subjectIndex): ?array
+    {
+        $subjectParts = collect($this->subjectRowCourseCodesForBranchInference($row))
+            ->flatMap(fn (string $code): array => $this->courseCodeAliasParts($code))
+            ->map(fn (string $code): array => $this->courseCodeModuleParts($code))
+            ->filter(fn (array $parts): bool => (string) ($parts['base'] ?? '') !== '')
+            ->unique(fn (array $parts): string => ($parts['base'] ?? '').'|'.($parts['module'] ?? ''))
+            ->values();
+
+        if ($subjectParts->isEmpty()) {
+            return null;
+        }
+
+        return $completedCodes
+            ->values()
+            ->flatMap(function (string $code, int $courseIndex) use ($row, $subjectParts, $subjectIndex): array {
+                $completedParts = $this->courseCodeModuleParts($code);
+
+                return $subjectParts
+                    ->filter(fn (array $subjectPart): bool => $this->subjectCoursePartMatchesCompletedCoursePart($subjectPart, $completedParts))
+                    ->map(fn (): array => [
+                        'branch' => (string) $row->branch,
+                        'module' => $this->integerOrNull($completedParts['module'] ?? null) ?? 0,
+                        'semester' => (int) $row->semester,
+                        'course_index' => $courseIndex,
+                        'option_index' => $subjectIndex,
+                    ])
+                    ->all();
+            })
+            ->sortByDesc(fn (array $match): int => $this->courseMatchSortValue($match))
+            ->first();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function subjectRowCourseCodesForBranchInference(StudentTimetableSubjectRow $row): array
+    {
+        return $this->courseCodeAliasParts((string) ($row->json_code ?: $row->json_subject ?: $row->name ?: ''));
+    }
+
+    private function subjectCoursePartMatchesCompletedCoursePart(array $subjectPart, array $completedPart): bool
+    {
+        $completedBase = (string) ($completedPart['base'] ?? '');
+
+        if (! in_array($completedBase, $this->studentCourseBaseAliases((string) ($subjectPart['base'] ?? '')), true)) {
+            return false;
+        }
+
+        $subjectModule = (string) ($subjectPart['module'] ?? '');
+        $completedModule = (string) ($completedPart['module'] ?? '');
+
+        return $subjectModule === '' || $completedModule === '' || $subjectModule === $completedModule;
+    }
+
+    /**
+     * @param  array<string, int|string>  $match
+     */
+    private function courseMatchSortValue(array $match): int
+    {
+        return ((int) ($match['module'] ?? 0) * 1_000_000_000)
+            + ((int) ($match['semester'] ?? 0) * 1_000_000)
+            + ((int) ($match['course_index'] ?? 0) * 1_000)
+            - (int) ($match['option_index'] ?? 0);
     }
 
     /**
@@ -783,17 +1299,6 @@ class StudentTimetablesStudentOverviewService
             ->filter()
             ->values()
             ->all();
-    }
-
-    private function displayCourseCode(string $code): string
-    {
-        $code = $this->normalizedCourseCode($code);
-
-        if (str_contains($code, '_')) {
-            $code = collect(explode('_', $code))->filter()->last() ?: $code;
-        }
-
-        return $code;
     }
 
     private function normalizedCourseCode(string $code): string

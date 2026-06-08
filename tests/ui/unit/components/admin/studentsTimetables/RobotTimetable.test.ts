@@ -4898,12 +4898,24 @@ describe('Students timetable robot page', () => {
             ...methods,
             religionOptions: computed.religionOptions.call({}),
             languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
             artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            subjectRows: [
+                {
+                    semester: 3,
+                    branch: 'gymnasial',
+                    json_code: 'GYM3',
+                    json_subject: 'GYM',
+                    name: 'Gymnasial 3',
+                    is_active: true,
+                },
+            ],
             studentCompletedCourses: [
                 { subject: 'R1', grade: '5' },
                 { subject: 'L1', grade: '5' },
                 { subject: 'L2', grade: '5' },
                 { subject: 'SPA3', grade: '5' },
+                { subject: 'GYM3', grade: '5' },
                 { subject: 'BE1', grade: 'B' },
             ],
         }
@@ -4915,7 +4927,7 @@ describe('Students timetable robot page', () => {
         )).toEqual({
             semester: 5,
             religion: 'Rk',
-            branch: 'wirtschaftskundlich',
+            branch: 'gymnasial',
             artsSubject: 'BE',
             language: 'S',
         })

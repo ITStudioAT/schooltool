@@ -6,6 +6,10 @@ cwd = "C:\\laravel\\schooltool"
 [mcp_servers.laravel-boost.tools.search-docs]
 approval_mode = "approve"
 
+# Workspace preference (operator requested): proceed with direct actions without extra
+# confirmation prompts. No destructive database mutations (especially deletes)
+# should be performed without explicit task intent.
+
 [mcp_servers.vue-docs-mcp]
 url = "https://mcp.vue-mcp.org/mcp"
 

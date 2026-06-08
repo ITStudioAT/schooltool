@@ -1534,6 +1534,7 @@ it('returns current schoolyear import116 students for the robot student selector
         'class' => '1A',
         'school_level' => '09',
         'attendance_year' => '1',
+        'religion' => 'Rk',
         'student_code' => '100',
         'last_name' => 'Alpha',
         'first_name' => 'Anna',
@@ -1556,6 +1557,7 @@ it('returns current schoolyear import116 students for the robot student selector
         ->assertJsonPath('data.0.title', '1A · Alpha Anna')
         ->assertJsonPath('data.0.school_level', '09')
         ->assertJsonPath('data.0.attendance_year', '1')
+        ->assertJsonPath('data.0.religion', 'Rk')
         ->assertJsonPath('data.1.student_code', '200');
 });
 
@@ -1644,6 +1646,79 @@ it('returns graded recognition courses for the selected robot student', function
         ->assertJsonPath('data.4.subject', 'ETH1')
         ->assertJsonPath('data.4.grade', '1')
         ->assertJsonPath('total', 5);
+});
+
+it('returns the shared student overview summary for a selected robot student', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '4S',
+        'school_level' => '09_1',
+        'attendance_year' => null,
+        'religion' => 'Rk',
+        'student_code' => '100',
+        'last_name' => 'Schroll',
+        'first_name' => 'Lukas',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    collect([
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'R/ET1', 'json_subject' => 'R/ET', 'name' => 'Religion/Ethik', 'hours_per_week' => 2],
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1', 'hours_per_week' => 3],
+        ['semester' => 2, 'branch' => 'common', 'json_code' => 'D2', 'json_subject' => 'D', 'name' => 'Deutsch 2', 'hours_per_week' => 3],
+    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        ...$subjectRow,
+    ]));
+
+    $import = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'noten.csv',
+        'stored_filename' => 'noten.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten.csv",
+        'total_rows' => 1,
+        'imported_rows' => 1,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+
+    StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $import->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => 2,
+        'student_code' => '100',
+        'subject' => 'ETH1',
+        'grade' => '1',
+        'note' => '1',
+        'raw_data' => ['semester' => '1'],
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/student-overview?student_code=100')
+        ->assertSuccessful()
+        ->assertJsonPath('data.student.student_code', '100')
+        ->assertJsonPath('data.student.religion', 'Rk')
+        ->assertJsonPath('data.selection.religion', 'ETH')
+        ->assertJsonPath('data.selection_items.1.meta', 'Religion: Rk')
+        ->assertJsonPath('data.completed_courses.0.code', 'ETH1')
+        ->assertJsonPath('data.proposed_courses.0.code', 'D1')
+        ->assertJsonPath('data.additional_courses.0.code', 'D2')
+        ->assertJsonPath('data.course_sections.0.items.0.code', 'ETH1')
+        ->assertJsonPath('data.course_sections.2.items.0.code', 'D1');
 });
 
 it('normalizes recognized completed course school semesters to subject plan modules', function () {

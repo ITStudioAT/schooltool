@@ -503,14 +503,17 @@ test('user with role resource formats date flags and role list', function () {
         ->and($data['roles']->values()->all())->toBe(['admin']);
 });
 
-test('admin teaching import116 resource exposes school level and attendance year', function () {
+test('admin teaching import116 resource exposes school level attendance year and religion', function () {
     $record = Import116::factory()->create([
         'school_level' => '5',
         'attendance_year' => '2',
+        'religion' => 'Rk',
     ]);
 
     $data = (new Import116Resource($record))->toArray(request());
 
     expect($data['school_level'])->toBe('5')
-        ->and($data['attendance_year'])->toBe('2');
+        ->and($data['attendance_year'])->toBe('2')
+        ->and($data['religion'])->toBe('Rk')
+        ->and($data['Religion'])->toBe('Rk');
 });

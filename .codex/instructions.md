@@ -58,6 +58,7 @@ When reporting findings, include:
 - Field errors: `:error-messages="errors.field ? [errors.field] : []"`.
 - Use `v-snackbar` for success/error notifications.
 - Show loading state (`:loading`, disable submit) during requests.
+- Prefer Vuetify components, props, and variants over custom styling or hand-built UI logic whenever they can satisfy the requirement.
 
 ### Router + auth
 

@@ -1788,6 +1788,7 @@ describe('Students timetable overview', () => {
                     studentCode: '100',
                     label: '4Q · GRASSL Tobias · Semester 6',
                     semesterLabel: 'Semester 6',
+                    religion: 'Rk',
                 },
                 courses: {
                     completed: [{ key: 'ETH1', label: 'ETH1', meta: '1' }],
@@ -1796,7 +1797,6 @@ describe('Students timetable overview', () => {
                     additional: [{ key: 'PP2', label: 'PP2', meta: '2 Std.' }],
                 },
             },
-            transferredStudentContextExpanded: false,
             defaultTimetableState: methods.defaultTimetableState,
             defaultSelection: methods.defaultSelection,
             currentTimetableState: methods.currentTimetableState,
@@ -1850,7 +1850,6 @@ describe('Students timetable overview', () => {
         ctx.selection = methods.defaultSelection.call(ctx)
         ctx.selectionDraft = methods.defaultSelection.call(ctx)
         ctx.transferredStudentContext = null
-        ctx.transferredStudentContextExpanded = false
 
         methods.restoreLastTimetableState.call(ctx)
 
@@ -1882,6 +1881,7 @@ describe('Students timetable overview', () => {
         })
         expect(ctx.selectionDraft).toEqual(ctx.selection)
         expect(ctx.transferredStudentContext?.student.label).toBe('4Q · GRASSL Tobias · Semester 6')
+        expect(ctx.transferredStudentContext?.student.religion).toBe('Rk')
         expect(ctx.transferredStudentContext?.courses.missing).toEqual([
             {
                 key: 'CH2',
@@ -1891,7 +1891,6 @@ describe('Students timetable overview', () => {
                 meta: '3 Std.',
             },
         ])
-        expect(ctx.transferredStudentContextExpanded).toBe(false)
 
         methods.resetSavedTimetable.call(ctx)
 
@@ -1938,7 +1937,6 @@ describe('Students timetable overview', () => {
             artsSubject: 'ME',
         })
         expect(ctx.transferredStudentContext).toBeNull()
-        expect(ctx.transferredStudentContextExpanded).toBe(true)
         expect(ctx.manualPanelSource).toBeNull()
     })
 
@@ -2063,11 +2061,15 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('@click.stop="clearTransferredStudentSelection"')
         expect(componentSource).toContain('class="overview-student-inline-actions"')
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/robot/students')")
-        expect(componentSource).toContain("axios.get('/api/admin/students-timetables/robot/student-completed-courses'")
+        expect(componentSource).toContain("axios.get('/api/admin/students-timetables/robot/student-overview'")
+        expect(componentSource).not.toContain("axios.get('/api/admin/students-timetables/robot/student-completed-courses'")
         expect(componentSource).toContain('transferredStudentLabel')
         expect(componentSource).toContain('Kein Student')
         expect(componentSource).toContain('class="overview-selection"')
         expect(componentSource).toContain('class="overview-selected-card"')
+        expect(componentSource).toContain('class="overview-selected-card__meta"')
+        expect(componentSource).toContain('transferredStudentReligionMeta')
+        expect(componentSource).toContain('Religion: ${value}')
         expect(componentSource).toContain('class="overview-context-card"')
         expect(componentSource).toContain('class="overview-wizard-button"')
         const wizardButtonSource = componentSource.slice(
@@ -2181,32 +2183,43 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('transferredStudentCourseSections')
         expect(componentSource).toContain('noStudentCourseHistory')
         expect(componentSource).toContain('visibleTransferredStudentCourseSections')
-        expect(componentSource).toContain('transferredStudentContextExpanded')
-        expect(componentSource).toContain('toggleTransferredStudentContext')
+        expect(componentSource).toContain('v-model="expandedTransferredStudentCourseSections"')
+        expect(componentSource).toContain('<div v-if="transferredStudentContext" class="transferred-student-course-overview">')
+        expect(componentSource).toContain('class="transferred-student-course-panels"')
+        expect(componentSource).toContain('class="transferred-student-course-panel"')
+        expect(componentSource).toContain('class="transferred-student-course-panel__title"')
+        expect(componentSource).not.toContain('transferredStudentContextExpanded')
+        expect(componentSource).not.toContain('toggleTransferredStudentContext')
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/subjects-overview-settings')")
-        expect(componentSource).toContain('this.loadTransferredStudentCompletedCourses(this.transferredStudentContext.student.studentCode)')
+        expect(componentSource).toContain('this.loadTransferredStudentCompletedCourses(this.transferredStudentContext.student.studentCode, {')
+        expect(componentSource).toContain('includeSelection: true')
         expect(componentSource).toContain('applySelectionDefaults: true')
-        expect(componentSource).toContain('selectedStudentCourseHistoryDefaults(completedCourses)')
-        expect(componentSource).toContain('inferredSelectionOptionFromCourseCodes(options, courseCodes')
-        expect(componentSource).toContain('overviewStudentCourseHistory(completedCourses)')
+        expect(componentSource).toContain('applyTransferredStudentSelectionDefaultsFromOverview(overviewSummary)')
+        expect(componentSource).toContain('studentOverviewSelectionPayload()')
+        expect(componentSource).toContain('overviewStudentCourseHistoryFromSummary(overviewSummary)')
         expect(componentSource).toContain('refreshTransferredStudentCourseHistory()')
-        expect(componentSource).toContain('pendingStudentCoursesBeforeSemester')
-        expect(componentSource).toContain('studentPlannedCoursesForSemester')
         expect(componentSource.indexOf('class="transferred-student-context"')).toBeLessThan(
             componentSource.indexOf('class="overview-selection"'),
         )
         expect(componentSource.indexOf('class="overview-selection"')).toBeLessThan(
-            componentSource.indexOf('class="overview-context-card"'),
+            componentSource.indexOf('class="transferred-student-course-overview"'),
         )
-        expect(componentSource.indexOf('class="overview-context-card"')).toBeLessThan(
+        expect(componentSource.indexOf('class="transferred-student-course-overview"')).toBeLessThan(
             componentSource.indexOf('class="course-choice-panel"'),
         )
-        expect(componentSource).toContain('<v-expand-transition>')
+        expect(componentSource.indexOf('class="course-choice-panel"')).toBeLessThan(
+            componentSource.indexOf('class="overview-context-card"'),
+        )
+        expect(componentSource).not.toContain('<v-expand-transition>')
         expect(componentSource).toContain('return this.transferredStudentCourseSections')
         expect(componentSource).toContain('Abgeschlossene Kurse')
+        expect(componentSource).toContain('mdi-check-circle-outline')
         expect(componentSource).toContain('Fehlende Kurse')
+        expect(componentSource).toContain('mdi-alert-circle-outline')
         expect(componentSource).toContain('Vorgesehene Kurse')
+        expect(componentSource).toContain('mdi-format-list-checks')
         expect(componentSource).toContain('Zusätzliche Kurse')
+        expect(componentSource).toContain('mdi-plus-circle-outline')
         expect(componentSource).not.toContain('v-for="courseMenu in semesterCourseMenus(semester.value)"')
         expect(componentSource).toContain('class="semester-timetable"')
         expect(componentSource).toContain('v-if="!wizardPanelOpen && visibleTimetableSemesters.length"')
@@ -3005,7 +3018,6 @@ describe('Students timetable overview', () => {
                 },
                 courses: {},
             },
-            transferredStudentContextExpanded: true,
             normalizedTimetableOverviewRouteMode: methods.normalizedTimetableOverviewRouteMode,
             applyTimetableOverviewLandingState: methods.applyTimetableOverviewLandingState,
             applyTimetableState: methods.applyTimetableState,
@@ -3083,7 +3095,6 @@ describe('Students timetable overview', () => {
             selection: methods.defaultSelection(),
             selectionDraft: methods.defaultSelection(),
             transferredStudentContext: null,
-            transferredStudentContextExpanded: false,
             defaultTimetableState: methods.defaultTimetableState,
             defaultSelection: methods.defaultSelection,
             normalizedSelection: methods.normalizedSelection,
@@ -3156,9 +3167,7 @@ describe('Students timetable overview', () => {
 
     it('shows all transferred student course rows even when some are empty', () => {
         const computed = (Overview as any).computed
-        const methods = (Overview as any).methods
         const ctx = {
-            transferredStudentContextExpanded: true,
             transferredStudentContext: {
                 student: {
                     label: '4Q · GRASSL Tobias · Semester 6',
@@ -3170,7 +3179,6 @@ describe('Students timetable overview', () => {
                     additional: [],
                 },
             },
-            persistTimetableState: vi.fn(),
         }
         Object.defineProperty(ctx, 'transferredStudentCourseSections', {
             get() {
@@ -3180,20 +3188,60 @@ describe('Students timetable overview', () => {
 
         expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.key))
             .toEqual(['completed', 'missing', 'planned', 'additional'])
-
-        methods.toggleTransferredStudentContext.call(ctx)
-
-        expect(ctx.transferredStudentContextExpanded).toBe(false)
-        expect(ctx.persistTimetableState).toHaveBeenCalled()
+        expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.icon))
+            .toEqual(['mdi-check-circle-outline', 'mdi-alert-circle-outline', 'mdi-format-list-checks', 'mdi-plus-circle-outline'])
+        expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.color))
+            .toEqual(['success', 'warning', 'primary', 'info'])
     })
 
-    it('shows possible selected-option courses in the collapsible student box without a selected student', () => {
+    it('shows imported religion from robot student data when restored student context is stale', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            normalizedStudentCode: methods.normalizedStudentCode,
+            studentReligionMeta: methods.studentReligionMeta,
+            transferredStudentContext: {
+                student: {
+                    studentCode: '100',
+                    label: '4Q · GRASSL Tobias · Semester 6',
+                    semesterLabel: 'Semester 6',
+                },
+                courses: {
+                    completed: [],
+                    missing: [],
+                    planned: [],
+                    additional: [],
+                },
+            },
+            robotStudents: [
+                { student_code: '100', religion: 'Rk' },
+            ],
+        }
+        Object.defineProperty(ctx, 'transferredStudentReligion', {
+            get() {
+                return computed.transferredStudentReligion.call(this)
+            },
+        })
+
+        expect(computed.transferredStudentReligion.call(ctx)).toBe('Rk')
+        expect(computed.transferredStudentReligionMeta.call(ctx)).toBe('Religion: Rk')
+    })
+
+    it('does not render student course cards without a selected student', () => {
+        const componentSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/overview/Overview.vue',
+            'utf8',
+        )
+
+        expect(componentSource).toContain('<div v-if="transferredStudentContext" class="transferred-student-course-overview">')
+    })
+
+    it('still derives possible selected-option courses for filtering without a selected student', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx = {
             ...methods,
             transferredStudentContext: null,
-            transferredStudentContextExpanded: true,
             selection: {
                 semester: 1,
                 religion: 'ETH',
@@ -3233,7 +3281,6 @@ describe('Students timetable overview', () => {
                     hours_per_week: 4,
                 },
             ],
-            persistTimetableState: vi.fn(),
         }
         Object.defineProperty(ctx, 'noStudentCourseHistory', {
             get() {
@@ -3256,11 +3303,6 @@ describe('Students timetable overview', () => {
             .toEqual(['D1 3 Std.'])
         expect(sections[3].items.map((course: Record<string, string>) => `${course.label} ${course.meta}`))
             .toEqual(['D2 3 Std.', 'GS1 4 Std.'])
-
-        methods.toggleTransferredStudentContext.call(ctx)
-
-        expect(ctx.transferredStudentContextExpanded).toBe(false)
-        expect(ctx.persistTimetableState).toHaveBeenCalled()
     })
 
     it('derives missing planned and additional rows for a selected overview student', () => {
@@ -3423,13 +3465,25 @@ describe('Students timetable overview', () => {
             selectedCourseGroup: { key: 'old-group' },
             religionOptions: computed.religionOptions.call({}),
             languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
             artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            subjectRows: [
+                {
+                    semester: 3,
+                    branch: 'gymnasial',
+                    json_code: 'GYM3',
+                    json_subject: 'GYM',
+                    name: 'Gymnasial 3',
+                    is_active: true,
+                },
+            ],
         }
 
         methods.applyTransferredStudentSelectionDefaultsFromCourses.call(ctx, [
             { subject: 'L1', grade: '2' },
             { subject: 'L2', grade: '3' },
             { subject: 'SPA3', grade: '3' },
+            { subject: 'GYM3', grade: '2' },
             { subject: 'MU1', grade: 'B' },
             { subject: 'R1', grade: '4' },
         ])
@@ -3438,7 +3492,7 @@ describe('Students timetable overview', () => {
             semester: 6,
             religion: 'Rk',
             language: 'S',
-            branch: 'wirtschaftskundlich',
+            branch: 'gymnasial',
             artsSubject: 'ME',
         })
         expect(ctx.selectionDraft).toEqual(ctx.selection)

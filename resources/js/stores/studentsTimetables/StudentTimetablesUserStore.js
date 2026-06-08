@@ -81,14 +81,66 @@ export const useStudentTimetablesUserStore = defineStore('StudentTimetablesUserS
             }
         },
 
-        async loadOverview() {
+        async loadOverview(selection = null) {
             const notification = useNotificationStore()
             const homepageStore = useHomepageStore()
             homepageStore.is_loading++
 
             try {
-                const response = await axios.get('/api/homepage/students-timetables/overview')
+                const response = await axios.get('/api/homepage/students-timetables/overview', {
+                    params: selection ? { selection } : {},
+                })
                 this.overview = response.data?.data ?? null
+
+                return true
+            } catch (error) {
+                this.notifyError(notification, error)
+
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async updateProfileSelection(selection) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+
+            try {
+                const response = await axios.put('/api/homepage/students-timetables/profile-selection', {
+                    selection,
+                })
+                this.overview = response.data?.data ?? null
+                notification.notify({
+                    message: response.data?.message || 'Auswahl wurde gespeichert.',
+                    type: 'success',
+                    timeout: 2500,
+                })
+
+                return true
+            } catch (error) {
+                this.notifyError(notification, error)
+
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async restoreProfileSelection() {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+
+            try {
+                const response = await axios.delete('/api/homepage/students-timetables/profile-selection')
+                this.overview = response.data?.data ?? null
+                notification.notify({
+                    message: response.data?.message || 'Auswahl wurde wiederhergestellt.',
+                    type: 'success',
+                    timeout: 2500,
+                })
 
                 return true
             } catch (error) {

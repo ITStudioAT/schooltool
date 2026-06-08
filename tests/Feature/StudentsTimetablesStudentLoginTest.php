@@ -8,6 +8,7 @@ use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableEntry;
 use App\Models\StudentTimetableEvaluationSetting;
+use App\Models\StudentTimetableProfileSelection;
 use App\Models\StudentTimetableRecognitionImport;
 use App\Models\StudentTimetableRecognitionRow;
 use App\Models\StudentTimetableSubjectRow;
@@ -224,6 +225,7 @@ it('returns the student timetable overview summary for the authenticated import1
     $import116->forceFill([
         'school_level' => '09_1',
         'attendance_year' => null,
+        'religion' => 'Rk',
     ])->save();
 
     $user = User::factory()->create([
@@ -312,12 +314,217 @@ it('returns the student timetable overview summary for the authenticated import1
         ->assertJsonPath('data.selection.semester', 1)
         ->assertJsonPath('data.selection.branch', null)
         ->assertJsonPath('data.selection.religion', 'ETH')
+        ->assertJsonPath('data.student.religion', 'Rk')
+        ->assertJsonPath('data.selection_items.0.value', 'Semester 1')
+        ->assertJsonPath('data.selection_items.1.label', 'Ethik / Religion')
+        ->assertJsonPath('data.selection_items.1.value', 'ETH - Ethik')
+        ->assertJsonPath('data.selection_items.1.meta', 'Religion: Rk')
         ->assertJsonPath('data.selection.language', 'L')
         ->assertJsonPath('data.selection.arts_subject', 'ME')
+        ->assertJsonPath('data.course_sections.0.key', 'completed')
+        ->assertJsonPath('data.course_sections.0.icon', 'mdi-check-circle-outline')
+        ->assertJsonPath('data.course_sections.2.title', 'Vorgesehene Kurse')
+        ->assertJsonPath('data.selection_options.religion.0.value', 'ETH')
+        ->assertJsonPath('data.selection_options.language.2.value', 'S')
         ->assertJsonPath('data.completed_courses.0.code', 'ETH1')
         ->assertJsonPath('data.missing_courses', [])
         ->assertJsonPath('data.proposed_courses.0.code', 'D1')
         ->assertJsonPath('data.additional_courses.0.code', 'D2');
+
+    $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/overview?'.http_build_query([
+            'selection' => [
+                'religion' => 'Rk',
+                'language' => 'S',
+                'branch' => 'gymnasial',
+                'arts_subject' => 'BE',
+            ],
+        ]))
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection.religion', 'Rk')
+        ->assertJsonPath('data.selection.language', 'S')
+        ->assertJsonPath('data.selection.branch', 'gymnasial')
+        ->assertJsonPath('data.selection.arts_subject', 'BE')
+        ->assertJsonPath('data.selection_items.1.value', 'Rk - Religion katholisch')
+        ->assertJsonPath('data.selection_items.2.value', 'S - Spanisch')
+        ->assertJsonPath('data.selection_items.3.value', 'Gymnasialer Zweig')
+        ->assertJsonPath('data.selection_items.4.value', 'BE - Bildnerische Erziehung');
+
+    $this->actingAs($user)
+        ->putJson('/api/homepage/students-timetables/profile-selection', [
+            'selection' => [
+                'religion' => 'Rk',
+                'language' => 'S',
+                'branch' => 'gymnasial',
+                'arts_subject' => 'BE',
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection.religion', 'Rk')
+        ->assertJsonPath('data.selection_override.religion', 'Rk')
+        ->assertJsonPath('data.selection_items.4.value', 'BE - Bildnerische Erziehung');
+
+    expect(StudentTimetableProfileSelection::query()->first()?->selection)->toMatchArray([
+        'religion' => 'Rk',
+        'language' => 'S',
+        'branch' => 'gymnasial',
+        'arts_subject' => 'BE',
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection.religion', 'Rk')
+        ->assertJsonPath('data.selection_override.language', 'S');
+
+    $this->actingAs($user)
+        ->deleteJson('/api/homepage/students-timetables/profile-selection')
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection.religion', 'ETH')
+        ->assertJsonPath('data.selection_override', []);
+
+    expect(StudentTimetableProfileSelection::query()->count())->toBe(0);
+});
+
+it('presets student overview selection from recognized finished course choices', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $import116->forceFill([
+        'school_level' => '09_1',
+        'attendance_year' => null,
+    ])->save();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    $recognitionImport = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'recognitions.csv',
+        'stored_filename' => 'recognitions.csv',
+        'file_path' => 'recognitions.csv',
+        'imported_at' => now(),
+    ]);
+
+    foreach (['Rk1', 'SPA1', 'BE1', 'GYM1'] as $index => $subject) {
+        StudentTimetableRecognitionRow::query()->create([
+            'student_timetable_recognition_import_id' => $recognitionImport->id,
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'row_number' => $index + 1,
+            'student_code' => $import116->student_code,
+            'student' => 'Mustermann Max',
+            'subject' => $subject,
+            'grade' => '2',
+            'raw_data' => [],
+        ]);
+    }
+
+    foreach ([
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'R/ET1', 'json_subject' => 'R/ET', 'name' => 'Religion/Ethik'],
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'L/F/S1', 'json_subject' => 'L/F/S', 'name' => 'Sprache'],
+        ['semester' => 1, 'branch' => 'gymnasial', 'json_code' => 'BE1', 'json_subject' => 'BE', 'name' => 'Bildnerische Erziehung'],
+        ['semester' => 1, 'branch' => 'gymnasial', 'json_code' => 'GYM1', 'json_subject' => 'GYM', 'name' => 'Gymnasial'],
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch'],
+    ] as $index => $subjectRow) {
+        StudentTimetableSubjectRow::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'is_active' => true,
+            'sort_order' => $index + 1,
+            ...$subjectRow,
+        ]);
+    }
+
+    $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection.religion', 'Rk')
+        ->assertJsonPath('data.selection.language', 'S')
+        ->assertJsonPath('data.selection.branch', 'gymnasial')
+        ->assertJsonPath('data.selection.arts_subject', 'BE')
+        ->assertJsonPath('data.selection_items.1.value', 'Rk - Religion katholisch')
+        ->assertJsonPath('data.selection_items.2.value', 'S - Spanisch')
+        ->assertJsonPath('data.selection_items.3.value', 'Gymnasialer Zweig')
+        ->assertJsonPath('data.selection_items.4.value', 'BE - Bildnerische Erziehung');
+});
+
+it('returns exact completed course modules sorted by course name in the student overview', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $import116->forceFill([
+        'school_level' => '09_1',
+        'attendance_year' => null,
+    ])->save();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    foreach ([1, 2, 3] as $index => $module) {
+        StudentTimetableSubjectRow::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'semester' => $module,
+            'branch' => 'common',
+            'json_code' => "E{$module}",
+            'json_subject' => 'E',
+            'name' => "Englisch {$module}",
+            'is_active' => true,
+            'sort_order' => $index + 1,
+        ]);
+    }
+
+    $recognitionImport = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'recognitions.csv',
+        'stored_filename' => 'recognitions.csv',
+        'file_path' => 'recognitions.csv',
+        'imported_at' => now(),
+    ]);
+
+    foreach ([
+        ['semester' => '3', 'grade' => '2'],
+        ['semester' => '1', 'grade' => '3'],
+        ['semester' => '2', 'grade' => '4'],
+    ] as $index => $course) {
+        StudentTimetableRecognitionRow::query()->create([
+            'student_timetable_recognition_import_id' => $recognitionImport->id,
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'row_number' => $index + 1,
+            'student_code' => $import116->student_code,
+            'student' => 'Mustermann Max',
+            'subject' => 'E',
+            'grade' => $course['grade'],
+            'raw_data' => ['semester' => $course['semester']],
+        ]);
+    }
+
+    $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful()
+        ->assertJsonPath('data.completed_courses.0.code', 'E1')
+        ->assertJsonPath('data.completed_courses.0.grade', '3')
+        ->assertJsonPath('data.completed_courses.1.code', 'E2')
+        ->assertJsonPath('data.completed_courses.1.grade', '4')
+        ->assertJsonPath('data.completed_courses.2.code', 'E3')
+        ->assertJsonPath('data.completed_courses.2.grade', '2')
+        ->assertJsonPath('data.course_sections.0.items.0.code', 'E1')
+        ->assertJsonPath('data.course_sections.0.items.1.code', 'E2')
+        ->assertJsonPath('data.course_sections.0.items.2.code', 'E3');
 });
 
 it('creates the first automatic timetable for the authenticated student', function () {
@@ -375,6 +582,12 @@ it('creates the first automatic timetable for the authenticated student', functi
             'selected_quality_criterion_keys' => ['saturday_free'],
             'selected_timetable_type' => 'full_green',
             'selected_timetable_number' => 1,
+            'selection' => [
+                'religion' => 'ETH',
+                'language' => 'L',
+                'branch' => 'wirtschaftskundlich',
+                'arts_subject' => 'ME',
+            ],
         ])
         ->assertSuccessful()
         ->assertJsonPath('data.algorithm.key', 'backend-v2')

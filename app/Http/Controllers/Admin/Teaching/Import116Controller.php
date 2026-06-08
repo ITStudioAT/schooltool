@@ -387,6 +387,7 @@ class Import116Controller extends Controller
             'class' => (string) ($snapshot['class'] ?? ''),
             'school_level' => $snapshot['school_level'] ?? null,
             'attendance_year' => $snapshot['attendance_year'] ?? null,
+            'religion' => $snapshot['religion'] ?? null,
             'student_code' => $studentCode,
             'last_name' => (string) ($snapshot['last_name'] ?? ''),
             'first_name' => (string) ($snapshot['first_name'] ?? ''),

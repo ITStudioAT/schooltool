@@ -257,6 +257,7 @@ describe('import record handling', function () {
             'class' => '5A',
             'school_level' => '5',
             'attendance_year' => '2',
+            'religion' => 'Rk',
         ]);
 
         expect($record)->toBeInstanceOf(Import116::class)
@@ -265,16 +266,18 @@ describe('import record handling', function () {
             ->and($record->first_name)->toBe('Max')
             ->and($record->class)->toBe('5A')
             ->and($record->school_level)->toBe('5')
-            ->and($record->attendance_year)->toBe('2');
+            ->and($record->attendance_year)->toBe('2')
+            ->and($record->religion)->toBe('Rk');
     });
 
-    test('imports Schulstufe and Besuchsjahr columns from spreadsheet', function () {
+    test('imports Schulstufe Besuchsjahr and Religionsbekenntnis columns from spreadsheet', function () {
         $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
         $writer = SimpleExcelWriter::create(storage_path($relativePath));
         $writer->addRow([
             'Klasse' => '5A',
             'Schulstufe' => '5',
             'Besuchsjahr' => '2',
+            'Religionsbekenntnis' => 'Rk',
             'Schülerkennzahl' => 'STU-116-001',
             'Familienname' => 'Mustermann',
             'Vorname' => 'Max',
@@ -294,6 +297,7 @@ describe('import record handling', function () {
             'class' => '5A',
             'school_level' => '5',
             'attendance_year' => '2',
+            'religion' => 'Rk',
             'last_name' => 'Mustermann',
             'first_name' => 'Max',
             'email' => 'max.mustermann@student.test',
