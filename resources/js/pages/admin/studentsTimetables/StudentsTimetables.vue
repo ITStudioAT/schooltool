@@ -7,7 +7,7 @@
             :active-section="activeSection"
             :chips="headerChips">
             <template #chips>
-                <v-menu>
+                <v-menu :disabled="automaticTimetableRouteActive">
                     <template #activator="{ props }">
                         <v-chip
                             v-bind="props"
@@ -16,7 +16,8 @@
                             color="light-blue-lighten-3"
                             prepend-icon="mdi-calendar-month-outline"
                             append-icon="mdi-menu-down"
-                            style="cursor: pointer">
+                            :disabled="automaticTimetableRouteActive"
+                            :style="{ cursor: automaticTimetableRouteActive ? 'default' : 'pointer' }">
                             {{ selectedSchoolyearLabel }}
                         </v-chip>
                     </template>
@@ -33,7 +34,7 @@
             </template>
         </AdminSectionHero>
 
-        <v-sheet rounded="xl" class="st-nav mb-2">
+        <v-sheet v-if="!automaticTimetableRouteActive" rounded="xl" class="st-nav mb-2">
             <div class="st-nav__buttons">
                 <v-btn
                     v-for="item in navigationItems"
@@ -100,6 +101,9 @@ export default {
         ...mapWritableState(useAdminStore, ['config']),
         selectedSchoolyearLabel() {
             return this.config?.selected_schoolyear?.name || 'Kein Schuljahr gewählt'
+        },
+        automaticTimetableRouteActive() {
+            return this.$route.path === '/admin/students-timetables/timetable/overview/automatic'
         },
         schoolyears() {
             return this.schoolyearStore?.schoolyears || []

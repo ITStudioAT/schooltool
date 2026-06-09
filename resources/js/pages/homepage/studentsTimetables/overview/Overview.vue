@@ -46,7 +46,7 @@
                             <div class="overview-selected-card__top">
                                 <div class="overview-selected-card__label">{{ item.label }}</div>
                                 <v-btn
-                                    v-if="selectionItemEditable(item)"
+                                    v-if="selectionItemEditable(item) && !showEvaluationSettings"
                                     icon="mdi-pencil"
                                     variant="text"
                                     color="primary"
@@ -60,7 +60,7 @@
                         </div>
                     </div>
                     <v-btn
-                        v-if="hasSelectionOverride"
+                        v-if="hasSelectionOverride && !showEvaluationSettings"
                         class="overview-selection__restore"
                         icon="mdi-restore"
                         variant="tonal"
@@ -93,7 +93,12 @@
                     </v-card>
                 </v-dialog>
 
-                <v-expansion-panels v-model="expandedCourseSections" class="summary-grid summary-panels" multiple flat>
+                <v-expansion-panels
+                    v-if="!showEvaluationSettings"
+                    v-model="expandedCourseSections"
+                    class="summary-grid summary-panels"
+                    multiple
+                    flat>
                     <v-expansion-panel v-for="section in courseSections" :key="section.key" :value="section.key" class="summary-panel">
                         <v-expansion-panel-title class="summary-head">
                             <v-icon size="22">{{ section.icon }}</v-icon>
@@ -154,7 +159,9 @@
                     :initial-selected-course-keys="automaticTimetableCourseKeys"
                     :initial-selected-quality-criterion-keys="automaticTimetableQualityCriterionKeys"
                     :default-quality-criterion-selection="!automaticTimetableQualityCriteriaSelectionExplicit"
-                    :proposed-courses="overview?.proposed_courses || []"
+                    :proposed-courses="automaticTimetableSelectableCourses"
+                    :course-summary="automaticTimetableCourseSummary"
+                    :course-sections="automaticTimetableCourseSections"
                     :selection-override="selectionOverridePayload() || {}"
                     @close="closeAutomaticTimetable"
                     @course-selection-change="setAutomaticTimetableCourseKeys"
@@ -262,6 +269,24 @@ export default {
         },
         courseSections() {
             return Array.isArray(this.overview?.course_sections) ? this.overview.course_sections : []
+        },
+        automaticTimetableCourseSections() {
+            return this.courseSections
+                .filter(section => ['Fehlende Kurse', 'Vorgesehene Kurse'].includes(section.title))
+        },
+        automaticTimetableSelectableCourses() {
+            return this.automaticTimetableCourseSections
+                .flatMap(section => Array.isArray(section.items) ? section.items : [])
+        },
+        automaticTimetableCourseSummary() {
+            const relevantSections = this.automaticTimetableCourseSections
+            const total = relevantSections
+                .reduce((courseCount, section) => courseCount + (Array.isArray(section.items) ? section.items.length : 0), 0)
+
+            return {
+                title: 'Fehlende Kurse + Vorgesehene Kurse',
+                total,
+            }
         },
     },
 

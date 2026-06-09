@@ -1,6 +1,10 @@
 <template>
-    <section class="student-evaluation-settings">
-        <div class="student-evaluation-settings__title">
+    <section
+        class="student-evaluation-settings"
+        :class="{ 'student-evaluation-settings--criteria': currentStep === 'criteria' }">
+        <div
+            v-if="currentStep !== 'criteria'"
+            class="student-evaluation-settings__title">
             <div class="student-evaluation-settings__title-label">
                 <v-icon icon="mdi-auto-fix" />
                 <div>
@@ -10,83 +14,217 @@
             </div>
         </div>
 
+        <template v-else>
+            <div class="student-evaluation-settings__automatic-card">
+                <v-icon icon="mdi-calendar-clock" size="22" />
+                <h2>Automatischer Stundenplan</h2>
+                <span class="student-evaluation-settings__automatic-stars" aria-hidden="true">
+                    <v-icon icon="mdi-star-four-points" size="10" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--1" />
+                    <v-icon icon="mdi-star-four-points" size="14" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--2" />
+                    <v-icon icon="mdi-star-four-points" size="8" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--3" />
+                </span>
+            </div>
+
+            <div class="student-evaluation-settings__summary-card">
+                <div class="student-evaluation-settings__summary-header">
+                    <div class="student-evaluation-settings__summary-title">
+                        <v-icon icon="mdi-tune-variant" size="18" />
+                        Bewertungskriterien
+                    </div>
+                    <v-btn
+                        class="student-evaluation-settings__summary-cog"
+                        icon="mdi-cog-outline"
+                        variant="text"
+                        density="comfortable"
+                        color="primary"
+                        title="Einstellungen"
+                        aria-label="Einstellungen"
+                        @click="criteriaEditorDialogOpen = true" />
+                </div>
+
+            <v-skeleton-loader v-if="loading" type="list-item-three-line" />
+            <div v-else-if="activeCriteria.length" class="student-evaluation-settings__summary-list">
+                <span
+                    v-for="(criterion, index) in activeCriteria"
+                    :key="criterion.key"
+                    class="student-evaluation-settings__summary-item">
+                    <span class="student-evaluation-settings__summary-rank">{{ index + 1 }}</span>
+                    <span class="student-evaluation-settings__summary-label">{{ criterion.label }}</span>
+                    <span v-if="criterionOptionLabel(criterion)" class="student-evaluation-settings__summary-option">
+                        {{ criterionOptionLabel(criterion) }}
+                    </span>
+                </span>
+            </div>
+            <div v-else class="student-evaluation-settings__summary-empty">
+                Keine Bewertungskriterien aktiv
+            </div>
+            </div>
+
+            <div class="student-evaluation-settings__course-panel">
+                <div class="student-evaluation-settings__course-panel-head">
+                    <div class="student-evaluation-settings__course-panel-title">
+                        {{ courseSummaryTitle }}
+                        <v-chip size="x-small" color="primary" variant="tonal">
+                            {{ effectiveSelectedCourseCount }} / {{ effectiveCourseSummaryTotal }}
+                        </v-chip>
+                        <v-chip v-if="selectedCourseHoursLabel" size="x-small" color="default" variant="tonal">
+                            {{ selectedCourseHoursLabel }}
+                        </v-chip>
+                    </div>
+                    <v-btn
+                        variant="text"
+                        color="primary"
+                        size="small"
+                        prepend-icon="mdi-restore"
+                        :disabled="allSelectableCoursesSelected"
+                        @click="resetCourseSelectionToDefault">
+                        Zurücksetzen
+                    </v-btn>
+                </div>
+
+                <div class="student-evaluation-settings__course-section-grid">
+                    <div
+                        v-for="section in displayedCourseSections"
+                        :key="section.key"
+                        class="student-evaluation-settings__course-section-card">
+                        <div class="student-evaluation-settings__course-section-title">
+                            {{ section.title }}
+                            <span class="student-evaluation-settings__course-section-count">
+                                {{ displayedCourseSectionSelectedCount(section) }}
+                            </span>
+                        </div>
+
+                        <div class="student-evaluation-settings__course-table">
+                            <div class="student-evaluation-settings__course-table-row student-evaluation-settings__course-table-row--head">
+                                <span>Aktiv</span>
+                                <span>Code</span>
+                                <span>Bezeichnung</span>
+                                <span>Zweig</span>
+                                <span>Std.</span>
+                            </div>
+                            <div
+                                v-for="course in section.items"
+                                :key="courseSelectionKey(course)"
+                                class="student-evaluation-settings__course-table-row">
+                                <span>
+                                    <v-checkbox
+                                        :model-value="courseSelectedByDefault(course)"
+                                        color="primary"
+                                        density="compact"
+                                        hide-details
+                                        @update:model-value="setCourseSelected(course, $event)" />
+                                </span>
+                                <strong>{{ course.code || '-' }}</strong>
+                                <span>{{ course.name || course.code || '-' }}</span>
+                                <span>{{ courseBranchLabel(course) }}</span>
+                                <span>{{ courseHoursValue(course) }}</span>
+                            </div>
+                            <div v-if="!section.items.length" class="student-evaluation-settings__course-empty">
+                                Keine Kurse gefunden.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+
         <v-alert v-if="error" type="error" variant="tonal" density="comfortable" class="mb-3">
             {{ error }}
         </v-alert>
 
-        <v-skeleton-loader v-if="currentStep === 'criteria' && loading" type="list-item-three-line@5" />
+        <v-dialog v-model="criteriaEditorDialogOpen" max-width="980" scrollable persistent>
+            <v-card rounded="lg">
+                <v-card-title class="student-evaluation-settings__editor-title">
+                    <v-icon icon="mdi-tune-variant" />
+                    Bewertungskriterien bearbeiten
+                </v-card-title>
+                <v-card-text>
+                    <v-skeleton-loader v-if="loading" type="list-item-three-line@5" />
+                    <div v-else class="student-evaluation-settings__list">
+                        <div
+                            v-for="(criterion, index) in criteria"
+                            :key="criterion.key"
+                            class="student-evaluation-settings__item"
+                            :class="{
+                                'student-evaluation-settings__item--active': criterion.enabled,
+                                'student-evaluation-settings__item--disabled': !criterion.enabled,
+                            }">
+                            <div class="student-evaluation-settings__priority">
+                                {{ index + 1 }}
+                            </div>
 
-        <div v-else-if="currentStep === 'criteria'" class="student-evaluation-settings__list">
-            <div
-                v-for="(criterion, index) in criteria"
-                :key="criterion.key"
-                class="student-evaluation-settings__item"
-                :class="{
-                    'student-evaluation-settings__item--active': criterion.enabled,
-                    'student-evaluation-settings__item--disabled': !criterion.enabled,
-                }">
-                <div class="student-evaluation-settings__priority">
-                    {{ index + 1 }}
-                </div>
+                            <v-switch
+                                :model-value="criterion.enabled"
+                                color="success"
+                                density="compact"
+                                hide-details
+                                inset
+                                class="student-evaluation-settings__switch"
+                                @update:model-value="setCriterionEnabled(criterion, $event)" />
 
-                <v-switch
-                    :model-value="criterion.enabled"
-                    color="success"
-                    density="compact"
-                    hide-details
-                    inset
-                    class="student-evaluation-settings__switch"
-                    @update:model-value="setCriterionEnabled(criterion, $event)" />
+                            <div class="student-evaluation-settings__content">
+                                <div class="student-evaluation-settings__header">
+                                    <div>
+                                        <div class="student-evaluation-settings__label">{{ criterion.label }}</div>
+                                        <div class="student-evaluation-settings__description">
+                                            {{ criterion.description }}
+                                        </div>
+                                    </div>
 
-                <div class="student-evaluation-settings__content">
-                    <div class="student-evaluation-settings__header">
-                        <div>
-                            <div class="student-evaluation-settings__label">{{ criterion.label }}</div>
-                            <div class="student-evaluation-settings__description">
-                                {{ criterion.description }}
+                                    <v-chip size="small" :color="criterion.enabled ? 'success' : 'default'" variant="tonal">
+                                        {{ criterion.enabled ? 'Aktiv' : 'Inaktiv' }}
+                                    </v-chip>
+                                </div>
+
+                                <v-select
+                                    v-if="criterion.options.length"
+                                    v-model="criterion.option"
+                                    :items="criterion.options"
+                                    item-title="label"
+                                    item-value="value"
+                                    label="Variante"
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                    class="student-evaluation-settings__option" />
+                            </div>
+
+                            <div class="student-evaluation-settings__actions">
+                                <v-btn
+                                    icon="mdi-arrow-up"
+                                    size="small"
+                                    variant="text"
+                                    color="primary"
+                                    :disabled="index === 0"
+                                    title="Nach oben"
+                                    @click="moveCriterion(index, -1)" />
+                                <v-btn
+                                    icon="mdi-arrow-down"
+                                    size="small"
+                                    variant="text"
+                                    color="primary"
+                                    :disabled="index === criteria.length - 1"
+                                    title="Nach unten"
+                                    @click="moveCriterion(index, 1)" />
                             </div>
                         </div>
-
-                        <v-chip size="small" :color="criterion.enabled ? 'success' : 'default'" variant="tonal">
-                            {{ criterion.enabled ? 'Aktiv' : 'Inaktiv' }}
-                        </v-chip>
                     </div>
-
-                    <v-select
-                        v-if="criterion.options.length"
-                        v-model="criterion.option"
-                        :items="criterion.options"
-                        item-title="label"
-                        item-value="value"
-                        label="Variante"
-                        density="compact"
-                        variant="outlined"
-                        hide-details
-                        class="student-evaluation-settings__option" />
-                </div>
-
-                <div class="student-evaluation-settings__actions">
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
                     <v-btn
-                        icon="mdi-arrow-up"
-                        size="small"
-                        variant="text"
                         color="primary"
-                        :disabled="index === 0"
-                        title="Nach oben"
-                        @click="moveCriterion(index, -1)" />
-                    <v-btn
-                        icon="mdi-arrow-down"
-                        size="small"
-                        variant="text"
-                        color="primary"
-                        :disabled="index === criteria.length - 1"
-                        title="Nach unten"
-                        @click="moveCriterion(index, 1)" />
-                </div>
-            </div>
-        </div>
+                        variant="flat"
+                        :loading="saving"
+                        :disabled="saving"
+                        @click="closeCriteriaEditorDialog">
+                        Schließen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
-        <div v-else-if="currentStep === 'courses'" class="student-course-selection">
+        <div v-if="currentStep === 'courses'" class="student-course-selection">
             <div class="student-course-selection__head">
                 <div>
                     <div class="student-course-selection__label">Vorgesehene Kurse</div>
@@ -133,7 +271,7 @@
             </div>
         </div>
 
-        <div v-else class="student-generated-timetable">
+        <div v-else-if="currentStep === 'result'" class="student-generated-timetable">
             <v-alert v-if="timetableError" type="error" variant="tonal" density="comfortable">
                 {{ timetableError }}
             </v-alert>
@@ -263,7 +401,33 @@
             </div>
         </div>
 
-        <div class="student-evaluation-settings__footer">
+        <div
+            v-if="currentStep === 'criteria'"
+            class="student-evaluation-settings__footer student-evaluation-settings__footer--automatic">
+            <v-btn
+                class="student-evaluation-settings__create-button"
+                variant="flat"
+                color="success"
+                size="large"
+                prepend-icon="mdi-calendar-clock"
+                :loading="saving || generatingTimetable"
+                :disabled="loading || saving || generatingTimetable"
+                @click="continueToNextStep">
+                Stundenplan erstellen
+            </v-btn>
+            <v-btn
+                class="student-evaluation-settings__close-button ms-3"
+                variant="tonal"
+                color="primary"
+                size="large"
+                prepend-icon="mdi-close"
+                :disabled="saving || generatingTimetable"
+                @click="$emit('close')">
+                Schließen
+            </v-btn>
+        </div>
+
+        <div v-else class="student-evaluation-settings__footer">
             <v-btn
                 variant="tonal"
                 color="secondary"
@@ -313,6 +477,14 @@ export default {
             type: Array,
             default: () => [],
         },
+        courseSummary: {
+            type: Object,
+            default: () => ({}),
+        },
+        courseSections: {
+            type: Array,
+            default: () => [],
+        },
         selectionOverride: {
             type: Object,
             default: () => ({}),
@@ -345,6 +517,7 @@ export default {
             generatingTimetable: false,
             timetableError: '',
             error: '',
+            criteriaEditorDialogOpen: false,
         }
     },
 
@@ -356,11 +529,46 @@ export default {
 
             return this.currentStep === 'courses' ? 'Vorgesehene Kurse' : 'Bewertungskriterien'
         },
+        activeCriteria() {
+            return this.criteria.filter(criterion => criterion.enabled === true)
+        },
         continueButtonLabel() {
             return this.currentStep === 'result' ? 'Schließen' : 'Weiter'
         },
         selectedCourseCount() {
             return this.selectedCourseKeys.length
+        },
+        allCoursesSelectedByDefault() {
+            return this.selectedCourseKeys.length === 0
+        },
+        allSelectableCoursesSelected() {
+            if (this.allCoursesSelectedByDefault) {
+                return true
+            }
+
+            return this.proposedCourses.every(course => this.selectedCourseKeys.includes(this.courseSelectionKey(course)))
+        },
+        effectiveSelectedCourseCount() {
+            return this.selectedCourseKeys.length || this.effectiveCourseSummaryTotal
+        },
+        effectiveCourseSummaryTotal() {
+            return Number(this.courseSummary?.total || this.proposedCourses.length || 0)
+        },
+        courseSummaryTitle() {
+            return this.courseSummary?.title || 'Fehlende Kurse + Vorgesehene Kurse'
+        },
+        displayedCourseSections() {
+            return Array.isArray(this.courseSections) ? this.courseSections : []
+        },
+        selectedCourseHoursLabel() {
+            const hours = this.selectedCoursesForSummary()
+                .reduce((totalHours, course) => totalHours + this.courseHoursNumber(course), 0)
+
+            if (!hours) {
+                return ''
+            }
+
+            return `${new Intl.NumberFormat('de-AT', { maximumFractionDigits: 2 }).format(hours)} Std.`
         },
         selectedCourses() {
             return this.proposedCourses.filter(course => this.courseSelected(course))
@@ -569,6 +777,12 @@ export default {
             this.$emit('close')
         },
 
+        async closeCriteriaEditorDialog() {
+            if (await this.saveSettings()) {
+                this.criteriaEditorDialogOpen = false
+            }
+        },
+
         setCriterionEnabled(criterion, enabled) {
             this.criteria = this.criteria.map((currentCriterion) => {
                 if (currentCriterion.key === criterion.key) {
@@ -678,6 +892,9 @@ export default {
         courseSelected(course) {
             return this.selectedCourseKeys.includes(this.courseSelectionKey(course))
         },
+        courseSelectedByDefault(course) {
+            return this.allCoursesSelectedByDefault || this.courseSelected(course)
+        },
 
         setCourseSelected(course, selected) {
             const courseKey = this.courseSelectionKey(course)
@@ -689,10 +906,53 @@ export default {
             }
 
             if (selected !== true) {
-                this.selectedCourseKeys = this.selectedCourseKeys.filter(selectedCourseKey => selectedCourseKey !== courseKey)
+                const selectedCourseKeys = this.selectedCourseKeys.length
+                    ? this.selectedCourseKeys
+                    : this.proposedCourses.map(proposedCourse => this.courseSelectionKey(proposedCourse))
+
+                this.selectedCourseKeys = selectedCourseKeys.filter(selectedCourseKey => selectedCourseKey !== courseKey)
             }
 
             this.emitCourseSelectionChange()
+        },
+        displayedCourseSectionSelectedCount(section) {
+            const courses = Array.isArray(section?.items) ? section.items : []
+
+            if (this.allCoursesSelectedByDefault) {
+                return courses.length
+            }
+
+            return courses.filter(course => this.courseSelected(course)).length
+        },
+        selectedCoursesForSummary() {
+            if (this.allCoursesSelectedByDefault) {
+                return this.proposedCourses
+            }
+
+            return this.proposedCourses.filter(course => this.courseSelected(course))
+        },
+        resetCourseSelectionToDefault() {
+            this.selectedCourseKeys = []
+            this.emitCourseSelectionChange()
+        },
+        courseHoursNumber(course) {
+            const hours = Number(course?.hours ?? course?.hours_per_week ?? 0)
+
+            return Number.isFinite(hours) ? hours : 0
+        },
+        courseHoursValue(course) {
+            const hours = this.courseHoursNumber(course)
+
+            if (!hours) {
+                return '-'
+            }
+
+            return new Intl.NumberFormat('de-AT', { maximumFractionDigits: 2 }).format(hours)
+        },
+        courseBranchLabel(course) {
+            const branch = String(course?.branch || '').trim()
+
+            return !branch || branch === 'common' ? 'alle' : branch
         },
 
         courseHoursLabel(course) {
@@ -1220,6 +1480,13 @@ export default {
                 : []
         },
 
+        criterionOptionLabel(criterion) {
+            const option = (criterion.options || [])
+                .find(criterionOption => criterionOption.value === criterion.option)
+
+            return option?.label || ''
+        },
+
         emitCourseSelectionChange() {
             this.$emit('course-selection-change', [...this.selectedCourseKeys])
         },
@@ -1239,6 +1506,12 @@ export default {
     border: 1px solid rgba(16, 38, 58, 0.1);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.76);
+}
+
+.student-evaluation-settings--criteria {
+    padding: 0;
+    border: 0;
+    background: transparent;
 }
 
 .student-evaluation-settings__title {
@@ -1267,6 +1540,273 @@ export default {
 .student-evaluation-settings__title-label h3 {
     margin: 0;
     font-size: 1.05rem;
+}
+
+.student-evaluation-settings__summary-card {
+    display: grid;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(59, 130, 246, 0.16);
+    border-radius: 8px;
+    background:
+        linear-gradient(135deg, rgba(239, 246, 255, 0.94), rgba(248, 250, 252, 0.9)),
+        radial-gradient(circle at top left, rgba(59, 130, 246, 0.14), transparent 34%);
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.student-evaluation-settings__automatic-card {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    max-width: 100%;
+    padding: 12px;
+    border: 0;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #1d4ed8 0%, #6366f1 100%);
+    color: #ffffff;
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.25);
+}
+
+.student-evaluation-settings__automatic-card h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 900;
+    letter-spacing: -0.01em;
+}
+
+.student-evaluation-settings__automatic-stars {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.student-evaluation-settings__automatic-star {
+    animation: student-automatic-star-twinkle 1.8s ease-in-out infinite;
+}
+
+.student-evaluation-settings__automatic-star--1 {
+    animation-delay: 0s;
+}
+
+.student-evaluation-settings__automatic-star--2 {
+    animation-delay: 0.5s;
+}
+
+.student-evaluation-settings__automatic-star--3 {
+    animation-delay: 1.1s;
+}
+
+.student-evaluation-settings__summary-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.student-evaluation-settings__summary-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #172554;
+    font-size: 0.82rem;
+    font-weight: 900;
+}
+
+.student-evaluation-settings__summary-cog {
+    color: #2563eb !important;
+}
+
+.student-evaluation-settings__summary-cog :deep(.v-icon) {
+    color: #2563eb !important;
+}
+
+.student-evaluation-settings__summary-list {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.student-evaluation-settings__summary-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 24px;
+    padding: 3px 8px 3px 4px;
+    border: 1px solid rgba(37, 99, 235, 0.2);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.86);
+    color: #0f172a;
+    font-size: 0.68rem;
+    font-weight: 850;
+    line-height: 1.1;
+}
+
+.student-evaluation-settings__summary-rank {
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 0.66rem;
+    font-weight: 900;
+}
+
+.student-evaluation-settings__summary-label,
+.student-evaluation-settings__summary-option {
+    overflow-wrap: anywhere;
+}
+
+.student-evaluation-settings__summary-option {
+    color: #475569;
+}
+
+.student-evaluation-settings__summary-option::before {
+    content: "· ";
+}
+
+.student-evaluation-settings__summary-empty {
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 750;
+}
+
+.student-evaluation-settings__course-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.84);
+}
+
+.student-evaluation-settings__course-summary-title {
+    color: #172d40;
+    font-size: 0.9rem;
+    font-weight: 850;
+}
+
+.student-evaluation-settings__course-panel {
+    display: grid;
+    gap: 10px;
+    border: 1px solid rgba(59, 130, 246, 0.34);
+    border-radius: 8px;
+    background: rgba(219, 234, 254, 0.58);
+    overflow: hidden;
+}
+
+.student-evaluation-settings__course-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(59, 130, 246, 0.22);
+}
+
+.student-evaluation-settings__course-panel-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: #0f172a;
+    font-size: 0.86rem;
+    font-weight: 900;
+}
+
+.student-evaluation-settings__course-section-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding: 0 8px 8px;
+}
+
+.student-evaluation-settings__course-section-card {
+    min-width: 0;
+    border: 1px solid rgba(16, 38, 58, 0.14);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.82);
+    overflow: hidden;
+}
+
+.student-evaluation-settings__course-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    color: #020617;
+    font-weight: 900;
+}
+
+.student-evaluation-settings__course-section-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #dbe4f5;
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 900;
+}
+
+.student-evaluation-settings__course-table {
+    display: grid;
+}
+
+.student-evaluation-settings__course-table-row {
+    display: grid;
+    grid-template-columns: 46px 88px minmax(130px, 1fr) 90px 54px;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 8px 10px;
+    border-top: 1px solid rgba(16, 38, 58, 0.1);
+    color: #0f172a;
+    font-size: 0.78rem;
+}
+
+.student-evaluation-settings__course-table-row--head {
+    color: #172554;
+    font-size: 0.7rem;
+    font-weight: 900;
+}
+
+.student-evaluation-settings__course-table-row :deep(.v-selection-control) {
+    min-height: 24px;
+}
+
+.student-evaluation-settings__course-empty {
+    padding: 12px 10px;
+    border-top: 1px solid rgba(16, 38, 58, 0.1);
+    color: #64748b;
+    font-size: 0.82rem;
+}
+
+.student-evaluation-settings__editor-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+@keyframes student-automatic-star-twinkle {
+    0%,
+    100% {
+        opacity: 0.35;
+        transform: scale(0.8);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
 }
 
 .student-evaluation-settings__list {
@@ -1354,6 +1894,20 @@ export default {
     flex-wrap: wrap;
     gap: 10px;
     justify-content: flex-end;
+}
+
+.student-evaluation-settings__footer--automatic {
+    justify-content: flex-end;
+}
+
+.student-evaluation-settings__create-button,
+.student-evaluation-settings__close-button {
+    flex: 0 0 auto;
+    min-height: 48px;
+    border-radius: 8px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
 }
 
 .student-course-selection {

@@ -9,6 +9,7 @@
                 </v-chip>
                 <v-spacer />
                 <v-btn
+                    v-if="!wizardPanelOpen"
                     class="overview-print-hidden"
                     color="grey-darken-1"
                     variant="outlined"
@@ -32,7 +33,7 @@
                             <div class="transferred-student-context__title">
                                 <v-icon icon="mdi-account-school-outline" size="18" color="primary" />
                                 <span>{{ transferredStudentLabel }}</span>
-                                <span class="overview-student-inline-actions">
+                                <span v-if="!wizardPanelOpen" class="overview-student-inline-actions">
                                     <v-btn
                                         icon="mdi-pencil"
                                         variant="tonal"
@@ -70,6 +71,7 @@
                         </div>
                     </div>
                     <v-btn
+                        v-if="!wizardPanelOpen"
                         icon="mdi-pencil"
                         variant="tonal"
                         color="primary"
@@ -77,7 +79,51 @@
                         @click="openSelectionDialog" />
                 </div>
 
-                <div v-if="transferredStudentContext" class="transferred-student-course-overview">
+                <div v-if="wizardPanelOpen" class="overview-automatic-heading">
+                    <v-icon icon="mdi-calendar-clock" size="22" />
+                    <h2>Automatischer Stundenplan</h2>
+                    <span class="overview-active-label__stars">
+                        <v-icon icon="mdi-star-four-points" size="10" class="overview-star overview-star--1" />
+                        <v-icon icon="mdi-star-four-points" size="14" class="overview-star overview-star--2" />
+                        <v-icon icon="mdi-star-four-points" size="8" class="overview-star overview-star--3" />
+                    </span>
+                </div>
+
+                <div v-if="wizardPanelOpen" class="overview-wizard-settings-summary">
+                    <div class="overview-wizard-settings-summary__header">
+                        <div class="overview-wizard-settings-summary__title">
+                            <v-icon icon="mdi-tune-variant" size="18" />
+                            Bewertungskriterien
+                        </div>
+                        <v-btn
+                            icon="mdi-cog-outline"
+                            variant="text"
+                            density="comfortable"
+                            color="primary"
+                            title="Einstellungen"
+                            aria-label="Einstellungen"
+                            @click="settingsDialogOpen = true" />
+                    </div>
+                    <div v-if="activeEvaluationCriteria.length" class="overview-wizard-settings-summary__list">
+                        <span
+                            v-for="(criterion, index) in activeEvaluationCriteria"
+                            :key="criterion.key"
+                            class="overview-wizard-settings-summary__item">
+                            <span class="overview-wizard-settings-summary__rank">{{ index + 1 }}</span>
+                            <span class="overview-wizard-settings-summary__label">{{ criterion.label }}</span>
+                            <span v-if="criterion.optionLabel" class="overview-wizard-settings-summary__option">
+                                {{ criterion.optionLabel }}
+                            </span>
+                        </span>
+                    </div>
+                    <div v-else class="overview-wizard-settings-summary__empty">
+                        Keine Bewertungskriterien aktiv
+                    </div>
+                </div>
+
+                <div
+                    v-if="transferredStudentContext && visibleTransferredStudentCourseSections.length"
+                    class="transferred-student-course-overview">
                     <v-expansion-panels
                         v-model="expandedTransferredStudentCourseSections"
                         class="transferred-student-course-panels"
@@ -139,11 +185,21 @@
                                     variant="flat"
                                     color="success"
                                     size="large"
+                                    style="font-weight: 400"
                                     prepend-icon="mdi-calendar-clock"
                                     :disabled="wizardTimetableCreating"
                                     :loading="wizardTimetableCreating"
                                     @click="createWizardTimetable(extending)">
                                     {{ extending ? 'Stundenplan erweitern' : 'Stundenplan erstellen' }}
+                                </v-btn>
+                                <v-btn
+                                    class="overview-wizard-close-button overview-wizard-close-button--calm ms-3"
+                                    variant="tonal"
+                                    color="grey-darken-1"
+                                    size="large"
+                                    prepend-icon="mdi-close"
+                                    @click="closeActiveTimetablePanel">
+                                    Schließen
                                 </v-btn>
                             </div>
                             <div
@@ -211,7 +267,7 @@
                     </div>
                 </div>
 
-                <div class="overview-context-card">
+                <div v-if="!wizardPanelOpen" class="overview-context-card">
                     <div class="overview-wizard-row">
                         <v-btn
                             v-if="!wizardPanelOpen && !manualPanelOpen"
@@ -231,15 +287,6 @@
                                 <v-icon icon="mdi-star-four-points" size="8" class="overview-star overview-star--3" />
                             </span>
                         </v-btn>
-                        <div v-else-if="wizardPanelOpen" class="overview-active-label overview-active-label--auto">
-                            <v-icon icon="mdi-calendar-clock" size="20" />
-                            <span class="overview-active-label__title">Automatischer Stundenplan</span>
-                            <span class="overview-active-label__stars">
-                                <v-icon icon="mdi-star-four-points" size="10" class="overview-star overview-star--1" />
-                                <v-icon icon="mdi-star-four-points" size="14" class="overview-star overview-star--2" />
-                                <v-icon icon="mdi-star-four-points" size="8" class="overview-star overview-star--3" />
-                            </span>
-                        </div>
                         <v-btn
                             v-if="!wizardPanelOpen && !manualPanelOpen"
                             class="overview-manual-button"
@@ -278,7 +325,7 @@
                             Abbruch
                         </v-btn>
                         <v-btn
-                            v-if="wizardPanelOpen || directManualPanelOpen"
+                            v-if="directManualPanelOpen"
                             class="overview-wizard-close-button"
                             variant="tonal"
                             color="primary"
@@ -287,57 +334,6 @@
                             @click="closeActiveTimetablePanel">
                             Schließen
                         </v-btn>
-                        <v-btn
-                            v-if="wizardPanelOpen"
-                            class="overview-wizard-close-button"
-                            variant="tonal"
-                            color="warning"
-                            size="large"
-                            prepend-icon="mdi-restore"
-                            @click="resetWizardPanel">
-                            Reset
-                        </v-btn>
-
-                        <div v-if="wizardPanelOpen" class="overview-wizard-settings-summary">
-                            <div class="overview-wizard-settings-summary__title">
-                                <v-icon icon="mdi-tune-variant" size="14" />
-                                Bewertungskriterien
-                            </div>
-                            <div v-if="activeEvaluationCriteria.length" class="overview-wizard-settings-summary__list">
-                                <span
-                                    v-for="(criterion, index) in activeEvaluationCriteria"
-                                    :key="criterion.key"
-                                    class="overview-wizard-settings-summary__item">
-                                    <span class="overview-wizard-settings-summary__rank">{{ index + 1 }}</span>
-                                    <span class="overview-wizard-settings-summary__label">{{ criterion.label }}</span>
-                                    <span v-if="criterion.optionLabel" class="overview-wizard-settings-summary__option">
-                                        {{ criterion.optionLabel }}
-                                    </span>
-                                </span>
-                            </div>
-                            <div v-else class="overview-wizard-settings-summary__empty">
-                                Keine Bewertungskriterien aktiv
-                            </div>
-                        </div>
-
-                        <div v-if="wizardPanelOpen" class="overview-wizard-actions">
-                            <v-btn
-                                icon="mdi-cog-outline"
-                                variant="text"
-                                density="comfortable"
-                                color="primary"
-                                title="Einstellungen"
-                                aria-label="Einstellungen"
-                                @click="settingsDialogOpen = true" />
-                            <v-btn
-                                icon="mdi-information-outline"
-                                variant="text"
-                                density="comfortable"
-                                color="primary"
-                                title="Hinweise zum Stundenplan Wizzard"
-                                aria-label="Hinweise zum Stundenplan Wizzard"
-                                @click="infoDialogOpen = true" />
-                        </div>
                     </div>
                 </div>
 
@@ -1298,6 +1294,10 @@ export default {
             ]
         },
         visibleTransferredStudentCourseSections() {
+            if (this.wizardPanelOpen) {
+                return []
+            }
+
             return this.transferredStudentCourseSections
         },
         noStudentCourseHistory() {
@@ -5197,24 +5197,53 @@ export default {
     text-transform: none;
 }
 
+.overview-wizard-close-button--calm {
+    font-weight: 400;
+}
+
 .overview-wizard-cancel-button {
     margin-left: auto;
 }
 
+.overview-automatic-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 2px 0 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #1d4ed8 0%, #6366f1 100%);
+    color: #ffffff;
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.25);
+}
+
+.overview-automatic-heading h2 {
+    flex: 0 1 auto;
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 850;
+    letter-spacing: 0;
+}
+
 .overview-wizard-settings-summary {
     display: grid;
-    gap: 5px;
-    flex: 0 1 720px;
-    justify-items: end;
-    margin-left: auto;
+    gap: 10px;
     min-width: 0;
-    max-width: 720px;
-    padding: 8px 10px;
+    margin-bottom: 14px;
+    padding: 12px 14px;
     border: 1px solid rgba(var(--v-theme-primary), 0.18);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.72);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(239, 246, 255, 0.86)),
+        radial-gradient(circle at 100% 0%, rgba(99, 102, 241, 0.14), transparent 34%);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
-    text-align: right;
+}
+
+.overview-wizard-settings-summary__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
 }
 
 .overview-wizard-settings-summary__title,
@@ -5227,13 +5256,12 @@ export default {
 .overview-wizard-settings-summary__title {
     gap: 6px;
     color: #172554;
-    font-size: 0.72rem;
+    font-size: 0.86rem;
     font-weight: 850;
 }
 
 .overview-wizard-settings-summary__list {
     gap: 6px;
-    justify-content: flex-end;
     flex-wrap: wrap;
 }
 
@@ -5284,6 +5312,7 @@ export default {
 .overview-wizard-actions {
     flex: 0 0 auto;
     gap: 2px;
+    margin-left: auto;
 }
 
 .overview-wizard-info-dialog {
