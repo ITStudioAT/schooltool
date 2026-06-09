@@ -2186,10 +2186,16 @@ export default {
             this.selectedCourseGroup = null
         },
         overviewStudentCourseHistoryFromSummary(overviewSummary) {
+            const automaticCourseSections = Array.isArray(overviewSummary?.automatic_course_selection?.sections)
+                ? overviewSummary.automatic_course_selection.sections
+                : []
+            const automaticMissingCourses = automaticCourseSections.find(section => section?.key === 'missing')?.items
+            const automaticPlannedCourses = automaticCourseSections.find(section => section?.key === 'proposed')?.items
+
             return {
                 completed: this.overviewCompletedCourseItems(overviewSummary?.completed_courses || []),
-                missing: this.overviewCourseItems(overviewSummary?.missing_courses || []),
-                planned: this.overviewCourseItems(overviewSummary?.proposed_courses || []),
+                missing: this.overviewCourseItems(automaticMissingCourses || overviewSummary?.missing_courses || []),
+                planned: this.overviewCourseItems(automaticPlannedCourses || overviewSummary?.proposed_courses || []),
                 additional: this.overviewCourseItems(overviewSummary?.additional_courses || []),
             }
         },

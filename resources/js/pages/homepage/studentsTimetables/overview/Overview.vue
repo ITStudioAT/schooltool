@@ -270,23 +270,23 @@ export default {
         courseSections() {
             return Array.isArray(this.overview?.course_sections) ? this.overview.course_sections : []
         },
+        automaticTimetableCourseSelection() {
+            const courseSelection = this.overview?.automatic_course_selection
+
+            return courseSelection && typeof courseSelection === 'object' ? courseSelection : {}
+        },
         automaticTimetableCourseSections() {
-            return this.courseSections
-                .filter(section => ['Fehlende Kurse', 'Vorgesehene Kurse'].includes(section.title))
+            return Array.isArray(this.automaticTimetableCourseSelection.sections)
+                ? this.automaticTimetableCourseSelection.sections
+                : []
         },
         automaticTimetableSelectableCourses() {
-            return this.automaticTimetableCourseSections
-                .flatMap(section => Array.isArray(section.items) ? section.items : [])
+            return Array.isArray(this.automaticTimetableCourseSelection.courses)
+                ? this.automaticTimetableCourseSelection.courses
+                : []
         },
         automaticTimetableCourseSummary() {
-            const relevantSections = this.automaticTimetableCourseSections
-            const total = relevantSections
-                .reduce((courseCount, section) => courseCount + (Array.isArray(section.items) ? section.items.length : 0), 0)
-
-            return {
-                title: 'Fehlende Kurse + Vorgesehene Kurse',
-                total,
-            }
+            return this.automaticTimetableCourseSelection
         },
     },
 

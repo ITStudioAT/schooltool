@@ -122,6 +122,7 @@ class StudentTimetablesStudentOverviewService
         $missingCourses = $this->pendingCoursesBeforeSemester($subjectCourses, $selection, $completedCourseCodes, $visitedCourseCodes);
         $additionalCourses = $this->additionalCourses($subjectCourses, $selection, $completedCourseCodes, $visitedCourseCodes, $missingCourses, $proposedCourses);
         $courseSections = $this->courseSections($completedCourses, $missingCourses, $proposedCourses, $additionalCourses);
+        $automaticCourseSelection = $this->automaticCourseSelection($courseSections);
 
         return [
             'student' => [
@@ -140,6 +141,7 @@ class StudentTimetablesStudentOverviewService
             'proposed_courses' => $proposedCourses,
             'additional_courses' => $additionalCourses,
             'course_sections' => $courseSections,
+            'automatic_course_selection' => $automaticCourseSelection,
             'counts' => [
                 'completed_courses' => count($completedCourses),
                 'missing_courses' => count($missingCourses),
@@ -313,6 +315,32 @@ class StudentTimetablesStudentOverviewService
                 'items' => $additionalCourses,
                 'empty' => 'Keine zusätzlichen Kurse erkannt.',
             ],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courseSections
+     * @return array<string, mixed>
+     */
+    private function automaticCourseSelection(array $courseSections): array
+    {
+        $sections = collect($courseSections)
+            ->filter(fn (array $section): bool => in_array((string) ($section['key'] ?? ''), ['missing', 'proposed'], true))
+            ->values()
+            ->all();
+
+        $courses = collect($sections)
+            ->flatMap(fn (array $section): array => is_array($section['items'] ?? null) ? $section['items'] : [])
+            ->values();
+        $hours = $this->courseHoursTotal($courses->all());
+
+        return [
+            'title' => 'Fehlende Kurse + Vorgesehene Kurse',
+            'sections' => $sections,
+            'courses' => $courses->all(),
+            'total' => $courses->count(),
+            'hours' => $hours,
+            'hours_label' => $this->courseHoursLabel($hours),
         ];
     }
 
@@ -806,26 +834,72 @@ class StudentTimetablesStudentOverviewService
             : $this->courseCodeAliasParts($code);
 
         return collect($codes)
-            ->map(fn (string $courseCode): array => [
-                'code' => $courseCode,
-                'name' => $row->name ?: $row->json_subject ?: $courseCode,
-                'semester' => $row->semester,
-                'branch' => $row->branch ?: 'common',
-                'hours_per_week' => $row->hours_per_week !== null ? (float) $row->hours_per_week : null,
-                'hours' => $row->hours_per_week !== null ? (float) $row->hours_per_week : null,
-                'key' => implode('|', [
-                    $row->id,
-                    $row->semester,
-                    $row->branch ?: 'common',
-                    $row->json_code,
-                    $row->json_subject,
-                    $row->name,
-                    $courseCode,
-                ]),
-            ])
+            ->map(function (string $courseCode) use ($row): array {
+                $branch = $row->branch ?: 'common';
+                $hours = $row->hours_per_week !== null ? (float) $row->hours_per_week : null;
+
+                return [
+                    'code' => $courseCode,
+                    'name' => $row->name ?: $row->json_subject ?: $courseCode,
+                    'semester' => $row->semester,
+                    'branch' => $branch,
+                    'branch_label' => $this->courseBranchLabel($branch),
+                    'hours_per_week' => $hours,
+                    'hours' => $hours,
+                    'hours_value' => $this->courseHoursValue($hours),
+                    'hours_label' => $this->courseHoursLabel($hours),
+                    'key' => implode('|', [
+                        $row->id,
+                        $row->semester,
+                        $branch,
+                        $row->json_code,
+                        $row->json_subject,
+                        $row->name,
+                        $courseCode,
+                    ]),
+                ];
+            })
             ->filter(fn (array $course): bool => trim((string) $course['code']) !== '')
             ->values()
             ->all();
+    }
+
+    private function courseBranchLabel(?string $branch): string
+    {
+        $branch = trim((string) $branch);
+
+        return $branch === '' || $branch === 'common' ? 'alle' : $branch;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courses
+     */
+    private function courseHoursTotal(array $courses): float
+    {
+        return (float) collect($courses)
+            ->sum(fn (array $course): float => is_numeric($course['hours'] ?? null) ? (float) $course['hours'] : 0.0);
+    }
+
+    private function courseHoursValue(mixed $hours): ?string
+    {
+        if (! is_numeric($hours)) {
+            return null;
+        }
+
+        $numericHours = (float) $hours;
+
+        if ($numericHours <= 0) {
+            return null;
+        }
+
+        return rtrim(rtrim(number_format($numericHours, 2, ',', ''), '0'), ',');
+    }
+
+    private function courseHoursLabel(mixed $hours): ?string
+    {
+        $hoursValue = $this->courseHoursValue($hours);
+
+        return $hoursValue ? "{$hoursValue} Std." : null;
     }
 
     /**

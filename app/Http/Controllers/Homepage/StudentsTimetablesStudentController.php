@@ -251,13 +251,13 @@ class StudentsTimetablesStudentController extends Controller
         $this->ensureSchoolyearForUser($authUser);
 
         $summary = $studentOverviewService->summaryForUser($authUser, $validated['selection'] ?? []);
-        $selectedCourseKeys = $this->selectedProposedCourseKeys(
+        $selectedCourseKeys = $this->selectedAutomaticCourseKeys(
             $validated['selected_course_keys'],
-            $summary['proposed_courses'] ?? [],
+            $summary['automatic_course_selection']['courses'] ?? [],
         );
 
         if ($selectedCourseKeys === []) {
-            abort(422, 'Bitte wählen Sie mindestens einen vorgesehenen Kurs aus.');
+            abort(422, 'Bitte wählen Sie mindestens einen Kurs aus.');
         }
 
         $evaluationCriteria = $evaluationSettingsService->activeCriteriaForUser($authUser);
@@ -362,12 +362,12 @@ class StudentsTimetablesStudentController extends Controller
 
     /**
      * @param  list<string>  $selectedCourseKeys
-     * @param  list<array<string, mixed>>  $proposedCourses
+     * @param  list<array<string, mixed>>  $automaticCourses
      * @return list<string>
      */
-    private function selectedProposedCourseKeys(array $selectedCourseKeys, array $proposedCourses): array
+    private function selectedAutomaticCourseKeys(array $selectedCourseKeys, array $automaticCourses): array
     {
-        $allowedCourseKeys = collect($proposedCourses)
+        $allowedCourseKeys = collect($automaticCourses)
             ->pluck('key')
             ->map(fn (mixed $courseKey): string => (string) $courseKey)
             ->filter()

@@ -561,6 +561,10 @@ export default {
             return Array.isArray(this.courseSections) ? this.courseSections : []
         },
         selectedCourseHoursLabel() {
+            if (this.allCoursesSelectedByDefault && this.courseSummary?.hours_label) {
+                return this.courseSummary.hours_label
+            }
+
             const hours = this.selectedCoursesForSummary()
                 .reduce((totalHours, course) => totalHours + this.courseHoursNumber(course), 0)
 
@@ -941,6 +945,10 @@ export default {
             return Number.isFinite(hours) ? hours : 0
         },
         courseHoursValue(course) {
+            if (course?.hours_value) {
+                return course.hours_value
+            }
+
             const hours = this.courseHoursNumber(course)
 
             if (!hours) {
@@ -950,12 +958,20 @@ export default {
             return new Intl.NumberFormat('de-AT', { maximumFractionDigits: 2 }).format(hours)
         },
         courseBranchLabel(course) {
+            if (course?.branch_label) {
+                return course.branch_label
+            }
+
             const branch = String(course?.branch || '').trim()
 
             return !branch || branch === 'common' ? 'alle' : branch
         },
 
         courseHoursLabel(course) {
+            if (course?.hours_label) {
+                return course.hours_label
+            }
+
             const hours = course.hours ?? course.hours_per_week
 
             if (hours === null || hours === undefined || hours === '') {
