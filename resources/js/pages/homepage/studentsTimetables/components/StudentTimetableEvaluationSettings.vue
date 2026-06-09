@@ -761,7 +761,8 @@ export default {
             if (await this.saveSettings()) {
                 this.ensureDefaultQualityCriterionSelection()
                 this.selectAllProposedCourses()
-                this.moveToStep('courses')
+                this.moveToStep('result')
+                this.ensureAutomaticTimetableForResultStep()
             }
         },
 
