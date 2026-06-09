@@ -2,7 +2,10 @@
     <div
         v-if="embeddedCourseCardsOnly"
         class="robot-timetable-embedded-course-cards"
-        :class="{ 'robot-timetable-embedded-course-cards--with-additional': additionalCoursePanelVisible }"
+        :class="{
+            'robot-timetable-embedded-course-cards--with-additional': additionalCoursePanelVisible,
+            'robot-timetable-embedded-course-cards--locked': embeddedCourseSelectionLocked,
+        }"
         @click="showCourseActionAfterCourseInteraction">
         <div class="robot-course-list robot-course-panel">
             <div class="robot-course-panel__title">
@@ -20,13 +23,25 @@
                         variant="text"
                         color="primary"
                         prepend-icon="mdi-restore"
-                        :disabled="!courseSelectionResettable"
+                        :disabled="embeddedCourseSelectionLocked || !courseSelectionResettable"
                         @click="resetCourseSelection">
                         Zurücksetzen
                     </v-btn>
+                    <v-btn
+                        v-if="embeddedCourseSelectionLocked"
+                        class="robot-course-list__toggle"
+                        size="small"
+                        variant="text"
+                        color="primary"
+                        :icon="embeddedCourseSelectionExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                        :title="embeddedCourseSelectionExpanded ? 'Kurse einklappen' : 'Kurse ausklappen'"
+                        :aria-label="embeddedCourseSelectionExpanded ? 'Kurse einklappen' : 'Kurse ausklappen'"
+                        @click.stop="toggleEmbeddedCourseSelection" />
                 </div>
             </div>
-            <div class="robot-course-panel__body">
+            <div
+                v-show="!embeddedCourseSelectionLocked || embeddedCourseSelectionExpanded"
+                class="robot-course-panel__body">
                 <v-alert v-if="!loading && !availableCourses.length" type="info" variant="tonal" class="mb-0">
                     Keine passenden Kurse gefunden.
                 </v-alert>
@@ -78,7 +93,7 @@
                                                 :aria-label="`${course.code} auswählen`"
                                                 density="compact"
                                                 color="primary"
-                                                :disabled="!courseSelectable(course)"
+                                                :disabled="embeddedCourseSelectionLocked || !courseSelectable(course)"
                                                 hide-details
                                                 @click.stop="showCourseActionAfterCourseInteraction"
                                                 @update:model-value="setCourseSelected(course, $event)" />
@@ -113,6 +128,7 @@
                                                             :aria-label="`${group.title} auswählen`"
                                                             density="compact"
                                                             color="primary"
+                                                            :disabled="embeddedCourseSelectionLocked"
                                                             hide-details
                                                             class="robot-course-item-detail__check"
                                                             @click.stop="showCourseActionAfterCourseInteraction"
@@ -141,7 +157,7 @@
 
         <div
             v-if="additionalCoursePanelVisible"
-            class="robot-course-list robot-course-panel">
+            class="robot-course-list robot-course-panel robot-course-panel--additional">
             <div class="robot-course-panel__title">
                 <div class="robot-course-list__header robot-course-list__header--panel">
                     <div class="robot-course-list__title">Zusätzliche Kurse</div>
@@ -154,13 +170,25 @@
                         variant="text"
                         color="primary"
                         prepend-icon="mdi-restore"
-                        :disabled="!additionalCourseSelectionResettable"
+                        :disabled="additionalCourseSelectionLocked || !additionalCourseSelectionResettable"
                         @click="resetAdditionalCourseSelection">
                         Zurücksetzen
                     </v-btn>
+                    <v-btn
+                        v-if="embeddedCourseSelectionLocked"
+                        class="robot-course-list__toggle"
+                        size="small"
+                        variant="text"
+                        color="primary"
+                        :icon="embeddedAdditionalCourseSelectionExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                        :title="embeddedAdditionalCourseSelectionExpanded ? 'Zusätzliche Kurse einklappen' : 'Zusätzliche Kurse ausklappen'"
+                        :aria-label="embeddedAdditionalCourseSelectionExpanded ? 'Zusätzliche Kurse einklappen' : 'Zusätzliche Kurse ausklappen'"
+                        @click.stop="toggleEmbeddedAdditionalCourseSelection" />
                 </div>
             </div>
-            <div class="robot-course-panel__body">
+            <div
+                v-show="!embeddedCourseSelectionLocked || embeddedAdditionalCourseSelectionExpanded"
+                class="robot-course-panel__body">
                 <div class="robot-course-columns">
                     <div
                         v-for="(courseColumn, columnIndex) in additionalCourseColumns"
@@ -197,7 +225,7 @@
                                                 :aria-label="`${course.code} auswählen`"
                                                 density="compact"
                                                 color="primary"
-                                                :disabled="!additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
+                                                :disabled="additionalCourseSelectionLocked || !additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
                                                 hide-details
                                                 @click.stop="showCourseActionAfterCourseInteraction"
                                                 @update:model-value="setAdditionalCourseSelected(course, $event)" />
@@ -232,7 +260,7 @@
                                                             :aria-label="`${group.title} auswählen`"
                                                             density="compact"
                                                             color="primary"
-                                                            :disabled="!additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
+                                                            :disabled="additionalCourseSelectionLocked || !additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
                                                             hide-details
                                                             class="robot-course-item-detail__check"
                                                             @click.stop="showCourseActionAfterCourseInteraction"
@@ -499,7 +527,7 @@
                     </div>
                 </div>
 
-                <div v-if="activeEvaluationCriteria.length" class="robot-eval-criteria-summary">
+                <div v-if="activeEvaluationCriteria.length && !selectedRobotTimetable" class="robot-eval-criteria-summary">
                     <div class="robot-eval-criteria-summary__title">
                         <v-icon icon="mdi-tune-variant" size="14" />
                         Bewertungskriterien
@@ -702,7 +730,7 @@
                                 variant="text"
                                 color="primary"
                                 prepend-icon="mdi-restore"
-                                :disabled="!additionalCourseSelectionResettable"
+                                :disabled="additionalCourseSelectionLocked || !additionalCourseSelectionResettable"
                                 @click="resetAdditionalCourseSelection">
                                 Zurücksetzen
                             </v-btn>
@@ -745,7 +773,7 @@
                                                         :aria-label="`${course.code} auswählen`"
                                                         density="compact"
                                                         color="primary"
-                                                        :disabled="!additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
+                                                        :disabled="additionalCourseSelectionLocked || !additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
                                                         hide-details
                                                         @click.stop
                                                         @update:model-value="setAdditionalCourseSelected(course, $event)" />
@@ -780,7 +808,7 @@
                                                                     :aria-label="`${group.title} auswählen`"
                                                                     density="compact"
                                                                     color="primary"
-                                                                    :disabled="!additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
+                                                                    :disabled="additionalCourseSelectionLocked || !additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"
                                                                     hide-details
                                                                     class="robot-course-item-detail__check"
                                                                     @click.stop
@@ -828,7 +856,7 @@
                     </v-alert>
 
                     <template v-if="timetableCountResultsAvailable">
-                        <div class="robot-count-cards">
+                        <div v-if="false" class="robot-count-cards">
                             <div
                                 class="robot-count-card"
                                 :class="{ 'robot-count-card--selected': !backendVariationCountsAvailable && timetableResultCardSelected('full_green') }">
@@ -1099,7 +1127,7 @@
                             </ul>
                         </v-alert>
 
-                        <div v-if="!backendVariationCountsAvailable" class="robot-quality-card">
+                        <div v-if="!backendVariationCountsAvailable && !selectedRobotTimetable" class="robot-quality-card">
                             <div class="robot-quality-card__header">
                                 <div>
                                     <div class="robot-quality-card__title">Qualitätskriterien</div>
@@ -1157,11 +1185,11 @@
                         </div>
                     </template>
 
-                    <div v-if="selectedRobotTimetable" class="robot-generated">
+                    <div v-if="generatedTimetableDisplayVisible" class="robot-generated">
                         <div class="robot-course-list__header robot-generated-header">
-                            <div class="robot-course-list__title">Stundenplan</div>
                             <div class="robot-generated-header__actions">
                                 <v-btn
+                                    v-if="generatedTimetableActionButtonsVisible"
                                     class="robot-generated-overtake-button"
                                     color="success"
                                     variant="flat"
@@ -1193,11 +1221,18 @@
                                         :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
                                         :aria-label="`Nächster ${selectedTimetableResultTitle}`"
                                         @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
+                                    <v-chip
+                                        size="small"
+                                        :color="selectedTimetableResultStatusColor"
+                                        variant="tonal"
+                                        class="robot-timetable-selector__status">
+                                        {{ selectedTimetableResultStatusLabel }}
+                                    </v-chip>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="robot-generated-criteria-count">
+                        <div v-if="false" class="robot-generated-criteria-count">
                             <div
                                 class="robot-count-card robot-count-card--green robot-count-card--criteria"
                                 :class="{
@@ -1228,43 +1263,62 @@
                         <div
                             v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length"
                             class="robot-quality-summary">
-                            <span
+                            <div
                                 v-for="counter in activeQualityCriterionRows"
                                 :key="`quality-summary-${counter.key}`"
-                                class="robot-quality-summary__item">
-                                <v-checkbox-btn
-                                    :model-value="qualitySummaryCheckboxChecked(counter)"
-                                    density="compact"
-                                    :aria-label="qualityCounterSummaryLabel(counter)"
-                                    class="robot-quality-summary__check"
-                                    @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
-                                <span class="robot-quality-summary__label">
-                                    {{ qualityCounterSummaryLabel(counter) }}
+                                class="robot-quality-summary__item"
+                                :class="{
+                                    'robot-quality-summary__item--selected': qualitySummaryCheckboxChecked(counter),
+                                    'robot-quality-summary__item--reached': qualitySummaryCheckboxChecked(counter) && qualityCounterReached(counter),
+                                    'robot-quality-summary__item--missed': !qualityCounterReached(counter),
+                                }">
+                                <span class="robot-quality-summary__content">
+                                    <span class="robot-quality-summary__label">{{ counter.label }}</span>
+                                    <span class="robot-quality-summary__meta-row">
+                                        <span class="robot-quality-summary__meta">
+                                            {{ qualityCounterCardMeta(counter) }}
+                                        </span>
+                                        <span class="robot-quality-summary__controls">
+                                            <v-icon
+                                                class="robot-quality-summary__status"
+                                                :class="{
+                                                    'robot-quality-summary__status--reached': qualityCounterReached(counter),
+                                                    'robot-quality-summary__status--missed': !qualityCounterReached(counter),
+                                                }"
+                                                :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
+                                                size="18" />
+                                            <v-checkbox-btn
+                                                :model-value="qualitySummaryCheckboxChecked(counter)"
+                                                density="compact"
+                                                :aria-label="qualityCounterSummaryLabel(counter)"
+                                                class="robot-quality-summary__check"
+                                                @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
+                                        </span>
+                                    </span>
                                 </span>
-                                <v-icon
-                                    :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
-                                    :color="qualityCounterReached(counter) ? 'success' : 'error'"
-                                    size="16" />
-                            </span>
-                            <span
+                            </div>
+                            <div
                                 v-if="selectedAdditionalCourses.length"
-                                class="robot-quality-summary__item">
-                                <span class="robot-quality-summary__label">Zusatzkurse: {{ additionalCourseAcceptanceLabel() }}</span>
-                                <v-icon
-                                    :icon="additionalCourseAcceptanceIcon()"
-                                    :color="additionalCourseAcceptanceColor()"
-                                    size="16" />
-                            </span>
+                                class="robot-quality-summary__item robot-quality-summary__item--static robot-quality-summary__item--additional"
+                                :class="{
+                                    'robot-quality-summary__item--reached': additionalCoursesAcceptedBySelectedTimetable(),
+                                    'robot-quality-summary__item--missed': !additionalCoursesAcceptedBySelectedTimetable(),
+                                }">
+                                <span class="robot-quality-summary__content">
+                                    <span class="robot-quality-summary__label">Zusatzkurse</span>
+                                    <span class="robot-quality-summary__meta-row">
+                                        <span class="robot-quality-summary__meta">{{ additionalCourseAcceptanceLabel() }}</span>
+                                        <span class="robot-quality-summary__controls">
+                                            <v-icon
+                                                class="robot-quality-summary__status"
+                                                :icon="additionalCourseAcceptanceIcon()"
+                                                :color="additionalCourseAcceptanceColor()"
+                                                size="18" />
+                                        </span>
+                                    </span>
+                                </span>
+                            </div>
                         </div>
-
-                        <v-alert
-                            v-if="selectedRobotTimetable.statusMessage"
-                            type="info"
-                            variant="tonal"
-                            density="compact"
-                            class="robot-no-result-alert">
-                            {{ selectedRobotTimetable.statusMessage }}
-                        </v-alert>
 
                         <v-alert
                             v-if="selectedTimetableMissingAdditionalCourses().length"
@@ -1750,7 +1804,7 @@
     </v-col>
 
     <div
-        v-if="embeddedCourseCardsOnly && (fullGreenTimetableCountError || timetableCountResultsAvailable || selectedRobotTimetable)"
+        v-if="embeddedGeneratorVisible"
         class="robot-generator robot-generator--embedded">
         <v-alert
             v-if="fullGreenTimetableCountError"
@@ -1761,7 +1815,7 @@
         </v-alert>
 
         <template v-if="timetableCountResultsAvailable">
-            <div class="robot-count-cards">
+            <div v-if="false" class="robot-count-cards">
                 <div
                     class="robot-count-card"
                     :class="{ 'robot-count-card--selected': !backendVariationCountsAvailable && timetableResultCardSelected('full_green') }">
@@ -2032,7 +2086,7 @@
                 </ul>
             </v-alert>
 
-            <div v-if="!backendVariationCountsAvailable" class="robot-quality-card">
+            <div v-if="!backendVariationCountsAvailable && !selectedRobotTimetable" class="robot-quality-card">
                 <div class="robot-quality-card__header">
                     <div>
                         <div class="robot-quality-card__title">Qualitätskriterien</div>
@@ -2090,11 +2144,11 @@
             </div>
         </template>
 
-        <div v-if="selectedRobotTimetable" class="robot-generated">
+        <div v-if="generatedTimetableDisplayVisible" class="robot-generated">
             <div class="robot-course-list__header robot-generated-header">
-                <div class="robot-course-list__title">Stundenplan</div>
                 <div class="robot-generated-header__actions">
                     <v-btn
+                        v-if="generatedTimetableActionButtonsVisible"
                         class="robot-generated-overtake-button"
                         color="success"
                         variant="flat"
@@ -2103,6 +2157,17 @@
                         :disabled="timetableGenerationLoading || !selectedRobotTimetableCourseGroupKeys().length"
                         @click="overtakeSelectedTimetableToOverview">
                         Übernehmen
+                    </v-btn>
+                    <v-btn
+                        v-if="generatedTimetableActionButtonsVisible"
+                        class="robot-generated-back-button"
+                        color="grey-darken-1"
+                        variant="tonal"
+                        size="large"
+                        prepend-icon="mdi-arrow-left"
+                        :disabled="timetableGenerationLoading"
+                        @click="returnToCourseSelectionFromGeneratedTimetable">
+                        Zurück
                     </v-btn>
                     <div
                         v-if="selectedTimetableResultCount > 0"
@@ -2126,11 +2191,18 @@
                             :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
                             :aria-label="`Nächster ${selectedTimetableResultTitle}`"
                             @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
+                        <v-chip
+                            size="small"
+                            :color="selectedTimetableResultStatusColor"
+                            variant="tonal"
+                            class="robot-timetable-selector__status">
+                            {{ selectedTimetableResultStatusLabel }}
+                        </v-chip>
                     </div>
                 </div>
             </div>
 
-            <div class="robot-generated-criteria-count">
+            <div v-if="false" class="robot-generated-criteria-count">
                 <div
                     class="robot-count-card robot-count-card--green robot-count-card--criteria"
                     :class="{
@@ -2161,43 +2233,62 @@
             <div
                 v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length"
                 class="robot-quality-summary">
-                <span
+                <div
                     v-for="counter in activeQualityCriterionRows"
                     :key="`embedded-quality-summary-${counter.key}`"
-                    class="robot-quality-summary__item">
-                    <v-checkbox-btn
-                        :model-value="qualitySummaryCheckboxChecked(counter)"
-                        density="compact"
-                        :aria-label="qualityCounterSummaryLabel(counter)"
-                        class="robot-quality-summary__check"
-                        @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
-                    <span class="robot-quality-summary__label">
-                        {{ qualityCounterSummaryLabel(counter) }}
+                    class="robot-quality-summary__item"
+                    :class="{
+                        'robot-quality-summary__item--selected': qualitySummaryCheckboxChecked(counter),
+                        'robot-quality-summary__item--reached': qualitySummaryCheckboxChecked(counter) && qualityCounterReached(counter),
+                        'robot-quality-summary__item--missed': !qualityCounterReached(counter),
+                    }">
+                    <span class="robot-quality-summary__content">
+                        <span class="robot-quality-summary__label">{{ counter.label }}</span>
+                        <span class="robot-quality-summary__meta-row">
+                            <span class="robot-quality-summary__meta">
+                                {{ qualityCounterCardMeta(counter) }}
+                            </span>
+                            <span class="robot-quality-summary__controls">
+                                <v-icon
+                                    class="robot-quality-summary__status"
+                                    :class="{
+                                        'robot-quality-summary__status--reached': qualityCounterReached(counter),
+                                        'robot-quality-summary__status--missed': !qualityCounterReached(counter),
+                                    }"
+                                    :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
+                                    size="18" />
+                                <v-checkbox-btn
+                                    :model-value="qualitySummaryCheckboxChecked(counter)"
+                                    density="compact"
+                                    :aria-label="qualityCounterSummaryLabel(counter)"
+                                    class="robot-quality-summary__check"
+                                    @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
+                            </span>
+                        </span>
                     </span>
-                    <v-icon
-                        :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
-                        :color="qualityCounterReached(counter) ? 'success' : 'error'"
-                        size="16" />
-                </span>
-                <span
+                </div>
+                <div
                     v-if="selectedAdditionalCourses.length"
-                    class="robot-quality-summary__item">
-                    <span class="robot-quality-summary__label">Zusatzkurse: {{ additionalCourseAcceptanceLabel() }}</span>
-                    <v-icon
-                        :icon="additionalCourseAcceptanceIcon()"
-                        :color="additionalCourseAcceptanceColor()"
-                        size="16" />
-                </span>
+                    class="robot-quality-summary__item robot-quality-summary__item--static robot-quality-summary__item--additional"
+                    :class="{
+                        'robot-quality-summary__item--reached': additionalCoursesAcceptedBySelectedTimetable(),
+                        'robot-quality-summary__item--missed': !additionalCoursesAcceptedBySelectedTimetable(),
+                    }">
+                    <span class="robot-quality-summary__content">
+                        <span class="robot-quality-summary__label">Zusatzkurse</span>
+                        <span class="robot-quality-summary__meta-row">
+                            <span class="robot-quality-summary__meta">{{ additionalCourseAcceptanceLabel() }}</span>
+                            <span class="robot-quality-summary__controls">
+                                <v-icon
+                                    class="robot-quality-summary__status"
+                                    :icon="additionalCourseAcceptanceIcon()"
+                                    :color="additionalCourseAcceptanceColor()"
+                                    size="18" />
+                            </span>
+                        </span>
+                    </span>
+                </div>
             </div>
-
-            <v-alert
-                v-if="selectedRobotTimetable.statusMessage"
-                type="info"
-                variant="tonal"
-                density="compact"
-                class="robot-no-result-alert">
-                {{ selectedRobotTimetable.statusMessage }}
-            </v-alert>
 
             <v-alert
                 v-if="selectedTimetableMissingAdditionalCourses().length"
@@ -2441,7 +2532,7 @@ const ALL_DATES_OPTION_VALUE = 'all_dates'
 
 export default {
     components: { EvaluationSettings },
-    emits: ['timetable-overtaken'],
+    emits: ['generated-timetable-visibility-change', 'timetable-overtaken'],
     props: {
         embeddedCourseCardsOnly: {
             type: Boolean,
@@ -2493,6 +2584,8 @@ export default {
             courseActionHiddenUntilCourseInteraction: false,
             additionalCoursePanelRetained: false,
             additionalCourseSelectionChangedAfterTimetable: false,
+            embeddedCourseSelectionExpanded: true,
+            embeddedAdditionalCourseSelectionExpanded: true,
             courseItemPanels: [],
             schoolHours: [],
             courseGroups: [],
@@ -2620,6 +2713,19 @@ export default {
         courseCardsLoading() {
             return this.embeddedCourseCardsOnly
                 && this.loading
+        },
+        embeddedCourseSelectionLocked() {
+            return this.embeddedCourseCardsOnly && Boolean(this.selectedRobotTimetable)
+        },
+        embeddedGeneratorVisible() {
+            return this.embeddedCourseCardsOnly
+                && (
+                    Boolean(this.fullGreenTimetableCountError)
+                    || (
+                        this.additionalCourseSelectionChangedAfterTimetable !== true
+                        && (this.timetableCountResultsAvailable || Boolean(this.selectedRobotTimetable))
+                    )
+                )
         },
         timeOptions() {
             const configuredHours = Array.isArray(this.schoolHours) ? this.schoolHours : []
@@ -2852,6 +2958,17 @@ export default {
             return this.selectedAdditionalCourses.length > 0
                 && this.additionalCourseExtensionActionHidden !== true
         },
+        additionalCourseSelectionLocked() {
+            return this.additionalCourseTimetableRequired === true
+                && this.additionalCourseExtensionActionHidden === true
+        },
+        generatedTimetableActionButtonsVisible() {
+            return this.additionalCourseSelectionChangedAfterTimetable !== true
+        },
+        generatedTimetableDisplayVisible() {
+            return Boolean(this.selectedRobotTimetable)
+                && this.additionalCourseSelectionChangedAfterTimetable !== true
+        },
         courseGroupItemsByCourseKey() {
             const courseItems = [
                 ...(Array.isArray(this.availableCourses) ? this.availableCourses : []),
@@ -3040,7 +3157,14 @@ export default {
             return this.generatedTimetables[0] || null
         },
         robotTimetableWeekdays() {
-            return this.selectedRobotTimetable ? this.generatedWeekdays : this.emptyTimetableWeekdays
+            if (!this.selectedRobotTimetable) {
+                return this.emptyTimetableWeekdays
+            }
+
+            return this.weekdayOptions.filter(weekday =>
+                Number(weekday.value) <= 5
+                    || (Number(weekday.value) === 6 && this.selectedRobotTimetableHasSaturday()),
+            )
         },
         robotTimetableTimes() {
             return this.selectedRobotTimetable ? this.generatedTimes : this.emptyTimetableTimes
@@ -3111,8 +3235,7 @@ export default {
                 || this.timetableResultCount('green') > 0
         },
         showConflictTimetableResults() {
-            return !this.hasGreenTimetableResults
-                && this.timetableResultCount('conflict') > 0
+            return false
         },
         backendVariationCountsAvailable() {
             return this.totalTimetableVariationCount !== null
@@ -3183,6 +3306,12 @@ export default {
                 conflict: 'Stundenplan mit Konflikten',
             }[this.selectedTimetableResultType] || 'Stundenplan'
         },
+        selectedTimetableResultStatusLabel() {
+            return this.selectedTimetableResultType === 'full_green' ? 'Voll grün' : 'Grün'
+        },
+        selectedTimetableResultStatusColor() {
+            return this.selectedTimetableResultType === 'full_green' ? 'success' : 'primary'
+        },
     },
     watch: {
         evaluationCriteriaSettings: {
@@ -3202,6 +3331,16 @@ export default {
         },
         studentCode() {
             this.syncExternalStudentSelection()
+        },
+        selectedRobotTimetable: {
+            immediate: true,
+            handler(timetable) {
+                if (!this.embeddedCourseCardsOnly) return
+
+                this.embeddedCourseSelectionExpanded = !timetable
+                this.embeddedAdditionalCourseSelectionExpanded = true
+                this.$emit('generated-timetable-visibility-change', Boolean(timetable))
+            },
         },
         selection: {
             deep: true,
@@ -3795,7 +3934,15 @@ export default {
             this.courseActionHiddenUntilCourseInteraction = true
         },
         showCourseActionAfterCourseInteraction() {
+            if (this.embeddedCourseSelectionLocked) return
+
             this.courseActionHiddenUntilCourseInteraction = false
+        },
+        toggleEmbeddedCourseSelection() {
+            this.embeddedCourseSelectionExpanded = !this.embeddedCourseSelectionExpanded
+        },
+        toggleEmbeddedAdditionalCourseSelection() {
+            this.embeddedAdditionalCourseSelectionExpanded = !this.embeddedAdditionalCourseSelectionExpanded
         },
         backendTimetableRequestPayload(options = {}) {
             const evaluationCriteria = this.storageEvaluationCriteria(this.evaluationCriteria)
@@ -4003,11 +4150,7 @@ export default {
             this.loadQualityCountersForSelectedTimetableType()
         },
         autoSelectTimetableResultType(options = {}) {
-            const selectableResultTypes = this.backendVariationCountsAvailable
-                ? ['full_green', 'green', 'conflict']
-                : this.hasGreenTimetableResults
-                ? ['full_green', 'green']
-                : ['full_green', 'green', 'conflict']
+            const selectableResultTypes = ['full_green', 'green']
 
             if (
                 options?.preferFullGreen === true
@@ -4055,10 +4198,7 @@ export default {
             return true
         },
         shouldLoadConflictTimetableForRequiredAdditionalCourses(timetable) {
-            return this.additionalCourseTimetableRequired === true
-                && this.selectedTimetableResultType !== 'conflict'
-                && this.timetableResultCount('conflict') > 0
-                && !this.timetableIncludesSelectedAdditionalCourses(timetable)
+            return false
         },
         timetableIncludesSelectedAdditionalCourses(timetable) {
             if (!this.selectedAdditionalCourses.length) return true
@@ -4083,7 +4223,7 @@ export default {
         backendCountCardSelectable(type) {
             return this.backendVariationCountsAvailable
                 && !this.fullGreenTimetableCountLoading
-                && ['full_green', 'green', 'conflict'].includes(type)
+                && ['full_green', 'green'].includes(type)
                 && this.isTimetableResultTypeSelectable(type)
         },
         selectBackendCountCard(type) {
@@ -4176,13 +4316,12 @@ export default {
         },
         isTimetableResultTypeSelectable(type) {
             if (this.backendVariationCountsAvailable) {
-                return ['full_green', 'green', 'conflict'].includes(type)
+                return ['full_green', 'green'].includes(type)
                     && this.timetableResultCount(type) > 0
             }
 
             if (type === 'conflict') {
-                return this.showConflictTimetableResults
-                    && this.timetableResultCount(type) > 0
+                return false
             }
 
             return this.timetableResultCount(type) > 0
@@ -5003,10 +5142,27 @@ export default {
             this.generationError = ''
             this.generationProblems = []
             this.generatedTimetables = []
+            this.embeddedCourseSelectionExpanded = true
+            this.embeddedAdditionalCourseSelectionExpanded = true
             this.additionalCourseSelectionChangedAfterTimetable = false
             this.additionalCoursePanelRetained = options?.keepAdditionalCoursePanelVisible === true
                 && this.studentAdditionalCourses.length > 0
             this.clearTimetableCountResults()
+        },
+        returnToCourseSelectionFromGeneratedTimetable() {
+            const selectedAdditionalCourseCount = new Set(
+                Array.isArray(this.additionalCourseSelectedKeys) ? this.additionalCourseSelectedKeys : [],
+            ).size
+
+            this.clearGeneratedTimetables({
+                keepAdditionalCoursePanelVisible: this.additionalCourseTimetableRequired === true
+                    && selectedAdditionalCourseCount > 0,
+            })
+            this.additionalCourseTimetableRequired = false
+            this.additionalCourseExtensionActionHidden = false
+            this.additionalCourseSelectionChangedAfterTimetable = selectedAdditionalCourseCount > 0
+            this.showCourseActionAfterCourseInteraction()
+            this.saveLastRobotState()
         },
         clearTimetableCountResults() {
             this.totalTimetableVariationCount = null
@@ -5292,6 +5448,18 @@ export default {
             const suffix = bestValueLabel ? ` (${bestValueLabel})` : ''
 
             return `${counter?.label || '-'}: ${countLabel}${suffix}`
+        },
+        qualityCounterCardMeta(counter) {
+            if (counter?.enabled !== true) return '-'
+
+            if (Object.prototype.hasOwnProperty.call(counter || {}, 'count')) {
+                return `${this.formatNumber(counter?.count || 0)} Stundenpläne`
+            }
+
+            const selectedLabel = String(counter?.selected_label || '').trim()
+            if (selectedLabel && selectedLabel !== '-') return selectedLabel
+
+            return this.qualityCounterBestValueLabel(counter) || 'Noch keine Berechnung.'
         },
         qualityCounterBestValueLabel(counter) {
             if (counter?.enabled !== true) return ''
@@ -5918,6 +6086,8 @@ export default {
             return selectedGroupsCount > 0 && selectedGroupsCount < groups.length
         },
         setCourseGroupSelected(course, group, selected) {
+            if (this.embeddedCourseSelectionLocked) return
+
             this.deselectedCourseGroupKeys = Array.isArray(this.deselectedCourseGroupKeys)
                 ? this.deselectedCourseGroupKeys
                 : []
@@ -6463,11 +6633,12 @@ export default {
 
             this.additionalCoursePanelRetained = keepAdditionalCoursePanelVisible
                 && this.studentAdditionalCourses.length > 0
-            this.additionalCourseSelectionChangedAfterTimetable = true
-            this.clearTimetableCountResults()
+            this.additionalCourseSelectionChangedAfterTimetable = this.uniqueValues(this.additionalCourseSelectedKeys).length > 0
+            this.fullGreenTimetableCountError = ''
             this.saveLastRobotState()
         },
         setAdditionalCourseSelected(course, selected) {
+            if (this.additionalCourseSelectionLocked) return
             if (this.additionalCourseInteractionDisabled(course)) return
             if (selected && !this.additionalCourseSelectable(course)) return
 
@@ -6494,6 +6665,7 @@ export default {
             }
         },
         setAdditionalCourseGroupSelected(course, group, selected) {
+            if (this.additionalCourseSelectionLocked) return
             if (this.additionalCourseInteractionDisabled(course)) return
             if (selected && !this.additionalCourseSelectable(course)) return
 
@@ -6686,6 +6858,8 @@ export default {
                 .some(baseAlias => ['D', 'E', 'M', 'F', 'L', 'S', 'SPA', 'INF'].includes(baseAlias))
         },
         setCourseSelected(course, selected) {
+            if (this.embeddedCourseSelectionLocked) return
+
             const selectionChanged = this.setCourseSelectedState(course, selected)
             const groupSelectionChanged = this.setCourseGroupsSelectedState(course, selected)
 
@@ -9302,6 +9476,29 @@ export default {
     min-height: 28px;
 }
 
+.robot-timetable-embedded-course-cards .robot-course-list__toggle {
+    min-width: 28px;
+    min-height: 28px;
+}
+
+.robot-timetable-embedded-course-cards--locked .robot-course-panel {
+    background: rgba(248, 251, 255, 0.78);
+}
+
+.robot-timetable-embedded-course-cards--locked .robot-course-panel__title {
+    border-bottom-color: rgba(37, 99, 235, 0.1);
+}
+
+.robot-timetable-embedded-course-cards--locked .robot-course-item-row__select,
+.robot-timetable-embedded-course-cards--locked .robot-course-item-detail__check {
+    pointer-events: none;
+}
+
+.robot-timetable-embedded-course-cards--locked .robot-course-panel--additional .robot-course-item-row__select,
+.robot-timetable-embedded-course-cards--locked .robot-course-panel--additional .robot-course-item-detail__check {
+    pointer-events: auto;
+}
+
 .robot-timetable-embedded-course-cards .robot-course-columns {
     gap: 8px;
 }
@@ -9359,17 +9556,6 @@ export default {
 
 .robot-timetable-embedded-course-cards .robot-course-item-detail {
     padding: 4px 6px;
-}
-
-@media (min-width: 1280px) {
-    .robot-timetable-embedded-course-cards--with-additional {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        align-items: start;
-    }
-
-    .robot-timetable-embedded-course-cards--with-additional .robot-course-columns {
-        grid-template-columns: minmax(0, 1fr);
-    }
 }
 
 .robot-timetable-grid {
@@ -9511,7 +9697,7 @@ export default {
 }
 
 .robot-student-course-section--additional {
-    border-color: #15803d;
+    border-color: rgba(234, 88, 12, 0.82);
     background: #bbf7d0;
 }
 
@@ -10144,40 +10330,109 @@ export default {
 }
 
 .robot-quality-summary {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
     margin-bottom: 8px;
-    font-size: 0.78rem;
-    color: rgba(var(--v-theme-on-surface), 0.7);
 }
 
 .robot-quality-summary__item {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    position: relative;
+    display: block;
     min-width: 0;
+    min-height: 66px;
+    padding: 10px 12px;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.86);
+    color: #172d40;
+    text-align: left;
+    transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.robot-quality-summary__item--selected {
+    border-color: rgba(var(--v-theme-primary), 0.42);
+    background: rgba(var(--v-theme-primary), 0.08);
+    box-shadow: inset 3px 0 0 rgb(var(--v-theme-primary));
+}
+
+.robot-quality-summary__item--reached {
+    border-color: rgba(var(--v-theme-success), 0.42);
+    background: rgba(var(--v-theme-success), 0.1);
+    box-shadow: inset 3px 0 0 rgb(var(--v-theme-success));
+}
+
+.robot-quality-summary__item--missed {
+    border-color: rgba(16, 38, 58, 0.14);
+}
+
+.robot-quality-summary__item--additional,
+.robot-quality-summary__item--additional.robot-quality-summary__item--reached,
+.robot-quality-summary__item--additional.robot-quality-summary__item--missed {
+    border-color: rgba(234, 88, 12, 0.82);
+    background: #fff7ed;
+    box-shadow: inset 3px 0 0 rgb(234, 88, 12);
+}
+
+.robot-quality-summary__content {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.robot-quality-summary__label {
+    font-size: 0.78rem;
+    font-weight: 850;
+    line-height: 1.15;
+}
+
+.robot-quality-summary__meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 24px;
+}
+
+.robot-quality-summary__meta {
+    color: rgba(23, 45, 64, 0.68);
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.15;
+}
+
+.robot-quality-summary__controls {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    margin-left: auto;
+}
+
+.robot-quality-summary__status {
+    flex: 0 0 auto;
+}
+
+.robot-quality-summary__status--reached {
+    color: rgb(var(--v-theme-success));
+}
+
+.robot-quality-summary__status--missed {
+    color: rgb(var(--v-theme-error));
 }
 
 .robot-quality-summary__check {
     flex: 0 0 auto;
-    width: 18px;
-    height: 18px;
+    margin: -4px -6px -6px 0;
 }
 
 .robot-quality-summary__check :deep(.v-selection-control) {
-    min-height: 18px;
+    min-height: 24px;
 }
 
 .robot-quality-summary__check :deep(.v-selection-control__wrapper) {
-    width: 18px;
-    height: 18px;
-}
-
-.robot-quality-summary__label {
-    font-weight: 600;
-    line-height: 1.25;
+    width: 24px;
+    height: 24px;
 }
 
 .robot-generated-grid {
@@ -10386,7 +10641,7 @@ export default {
 }
 
 .robot-generated-header {
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 12px;
     flex-wrap: wrap;
 }
@@ -10395,23 +10650,36 @@ export default {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-left: auto;
+    margin-left: 0;
     flex-wrap: wrap;
-    justify-content: flex-end;
+    justify-content: flex-start;
+    width: 100%;
+}
+
+.robot-generated-back-button {
+    flex: 0 0 auto;
+    min-height: 48px;
+    border-radius: 8px;
+    color: #263238 !important;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
 }
 
 .robot-generated-overtake-button {
     flex: 0 0 auto;
     min-height: 48px;
     border-radius: 8px;
-    font-weight: 850;
+    font-weight: 400;
     letter-spacing: 0;
     text-transform: none;
 }
 
 .robot-timetable-selector {
     display: inline-grid;
-    grid-template-columns: 34px minmax(104px, auto) 34px;
+    order: -1;
+    margin-right: auto;
+    grid-template-columns: 34px minmax(104px, auto) 34px auto;
     gap: 8px;
     align-items: center;
     border: 1px solid rgba(var(--v-theme-primary), 0.28);
@@ -10433,6 +10701,11 @@ export default {
     line-height: 1;
     text-align: center;
     white-space: nowrap;
+}
+
+.robot-timetable-selector__status {
+    justify-self: end;
+    font-weight: 400;
 }
 
 .robot-course-list__header--panel {

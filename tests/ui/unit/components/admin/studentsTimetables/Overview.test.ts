@@ -2077,8 +2077,7 @@ describe('Students timetable overview', () => {
             componentSource.indexOf('</v-btn>', componentSource.indexOf('class="overview-wizard-button"')),
         )
         expect(wizardButtonSource).not.toContain('block')
-        expect(wizardButtonSource).toContain('variant="tonal"')
-        expect(wizardButtonSource).toContain('color="primary"')
+        expect(wizardButtonSource).toContain('variant="flat"')
         expect(wizardButtonSource).toContain('prepend-icon="mdi-calendar-clock"')
         expect(wizardButtonSource).not.toContain('append-icon')
         expect(componentSource).toContain(':active="wizardPanelOpen"')
@@ -2091,7 +2090,8 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('applyTimetableOverviewLandingState()')
         expect(componentSource).toContain('<span>Automatischer</span>')
         expect(componentSource).toContain('<span>Stundenplan</span>')
-        expect(componentSource).toContain('class="overview-active-label overview-active-label--auto"')
+        expect(componentSource).toContain('class="overview-automatic-heading"')
+        expect(componentSource).toContain('class="overview-active-label__stars"')
         expect(componentSource).toContain('Automatischer Stundenplan')
         expect(componentSource).toContain('RobotTimetable')
         expect(componentSource).toContain('v-if="wizardPanelMounted"')
@@ -2117,13 +2117,20 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('Zurück')
         expect(componentSource).toContain('Abbruch')
         expect(componentSource).toContain('overview-wizard-cancel-button')
+        expect(componentSource).toContain('overview-wizard-back-button')
+        expect(componentSource).toContain('color: rgba(var(--v-theme-on-surface), 0.78);')
         expect(componentSource).toContain('margin-left: auto;')
         expect(componentSource).toContain('color="error"')
         expect(componentSource).toContain('prepend-icon="mdi-close-circle-outline"')
         expect(componentSource).toContain('@click="resetSavedTimetable"')
-        expect(componentSource).toContain('v-if="wizardPanelOpen || directManualPanelOpen"')
-        expect(componentSource).toContain('@click="closeActiveTimetablePanel"')
-        expect(componentSource).toContain('Schließen')
+        expect(componentSource).toContain('overview-wizard-close-button--calm')
+        expect(componentSource.indexOf('overview-wizard-cancel-button overview-wizard-close-button--calm')).toBeLessThan(
+            componentSource.indexOf('overview-wizard-back-button overview-wizard-close-button--calm'),
+        )
+        expect(componentSource).toContain('@click="handleWizardCourseActionBack(extending)"')
+        expect(componentSource).toContain('handleWizardCourseActionBack(extending = false)')
+        expect(componentSource).toContain('prepend-icon="mdi-arrow-left"')
+        expect(componentSource).toContain('Zurück')
         expect(componentSource).toContain('class="overview-wizard-create-button"')
         expect(componentSource).toContain('class="overview-wizard-footer"')
         expect(componentSource).toContain('class="overview-wizard-loading"')
@@ -2146,22 +2153,21 @@ describe('Students timetable overview', () => {
         expect(componentSource).not.toContain('class="course-choice-panel__back-row"')
         expect(componentSource).not.toContain('class="course-choice-panel__back-button"')
         expect(componentSource).not.toContain('Zurück zum automatischen Stundenplan')
-        expect(componentSource).toContain('v-if="wizardPanelOpen" class="overview-wizard-settings-summary"')
-        expect(componentSource).toContain('v-if="wizardPanelOpen" class="overview-wizard-actions"')
+        expect(componentSource).toContain('v-if="wizardPanelOpen && !wizardTimetableResultVisible" class="overview-wizard-settings-summary"')
+        expect(componentSource).toContain('wizardTimetableResultVisible: false')
+        expect(componentSource).toContain('@generated-timetable-visibility-change="setWizardTimetableResultVisible"')
+        expect(componentSource).toContain('setWizardTimetableResultVisible(visible)')
         expect(componentSource).toContain('activeEvaluationCriteria')
         expect(componentSource).toContain('Bewertungskriterien')
         expect(componentSource).toContain('Keine Bewertungskriterien aktiv')
-        expect(componentSource).toContain('justify-items: end;')
         expect(componentSource).toContain('margin-left: auto;')
         expect(componentSource).toContain('justify-content: flex-end;')
         expect(componentSource).toContain('margin: -6px 0 16px;')
         expect(componentSource).toContain('min-height: 48px;')
         expect(componentSource).toContain('border: 1px solid rgba(var(--v-theme-primary), 0.18);')
-        expect(componentSource).toContain('background: rgba(255, 255, 255, 0.72);')
+        expect(componentSource).toContain('background: rgba(255, 255, 255, 0.78);')
         expect(componentSource).toContain('icon="mdi-cog-outline"')
         expect(componentSource).toContain('@click="settingsDialogOpen = true"')
-        expect(componentSource).toContain('icon="mdi-information-outline"')
-        expect(componentSource).toContain('@click="infoDialogOpen = true"')
         expect(componentSource).toContain('<v-dialog v-model="infoDialogOpen" persistent max-width="680">')
         expect(componentSource).toContain('Hinweise zum Stundenplan Wizzard')
         expect(componentSource).toContain('<v-dialog v-model="settingsDialogOpen" persistent max-width="1120" scrollable>')
@@ -2184,7 +2190,8 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('noStudentCourseHistory')
         expect(componentSource).toContain('visibleTransferredStudentCourseSections')
         expect(componentSource).toContain('v-model="expandedTransferredStudentCourseSections"')
-        expect(componentSource).toContain('<div v-if="transferredStudentContext" class="transferred-student-course-overview">')
+        expect(componentSource).toContain('v-if="transferredStudentContext && visibleTransferredStudentCourseSections.length"')
+        expect(componentSource).toContain('class="transferred-student-course-overview"')
         expect(componentSource).toContain('class="transferred-student-course-panels"')
         expect(componentSource).toContain('class="transferred-student-course-panel"')
         expect(componentSource).toContain('class="transferred-student-course-panel__title"')
@@ -2945,6 +2952,29 @@ describe('Students timetable overview', () => {
         expect(ctx.manualPanelSource).toBeNull()
     })
 
+    it('resets additional courses instead of closing when the wizard extension back button is used', () => {
+        const methods = (Overview as any).methods
+        const resetAdditionalCourseSelection = vi.fn()
+        const closeActiveTimetablePanel = vi.fn()
+        const ctx = {
+            closeActiveTimetablePanel,
+            $refs: {
+                wizardCourseCards: {
+                    resetAdditionalCourseSelection,
+                },
+            },
+        }
+
+        methods.handleWizardCourseActionBack.call(ctx, true)
+
+        expect(resetAdditionalCourseSelection).toHaveBeenCalled()
+        expect(closeActiveTimetablePanel).not.toHaveBeenCalled()
+
+        methods.handleWizardCourseActionBack.call(ctx, false)
+
+        expect(closeActiveTimetablePanel).toHaveBeenCalled()
+    })
+
     it('syncs overview timetable panel clicks with route URLs', () => {
         const methods = (Overview as any).methods
         const pushedPaths: string[] = []
@@ -3191,7 +3221,7 @@ describe('Students timetable overview', () => {
         expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.icon))
             .toEqual(['mdi-check-circle-outline', 'mdi-alert-circle-outline', 'mdi-format-list-checks', 'mdi-plus-circle-outline'])
         expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.color))
-            .toEqual(['success', 'warning', 'primary', 'info'])
+            .toEqual(['#00897B', '#FB8C00', '#3949AB', '#0288D1'])
     })
 
     it('shows imported religion from robot student data when restored student context is stale', () => {
@@ -3233,7 +3263,8 @@ describe('Students timetable overview', () => {
             'utf8',
         )
 
-        expect(componentSource).toContain('<div v-if="transferredStudentContext" class="transferred-student-course-overview">')
+        expect(componentSource).toContain('v-if="transferredStudentContext && visibleTransferredStudentCourseSections.length"')
+        expect(componentSource).toContain('class="transferred-student-course-overview"')
     })
 
     it('still derives possible selected-option courses for filtering without a selected student', () => {

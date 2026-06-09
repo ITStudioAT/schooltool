@@ -161,7 +161,7 @@
                     :default-quality-criterion-selection="!automaticTimetableQualityCriteriaSelectionExplicit"
                     :proposed-courses="automaticTimetableSelectableCourses"
                     :course-summary="automaticTimetableCourseSummary"
-                    :course-sections="automaticTimetableCourseSections"
+                    :course-sections="automaticTimetableAllCourseSections"
                     :selection-override="selectionOverridePayload() || {}"
                     @close="closeAutomaticTimetable"
                     @course-selection-change="setAutomaticTimetableCourseKeys"
@@ -279,6 +279,33 @@ export default {
             return Array.isArray(this.automaticTimetableCourseSelection.sections)
                 ? this.automaticTimetableCourseSelection.sections
                 : []
+        },
+        automaticTimetableAllCourseSections() {
+            const automaticSectionKeys = this.automaticTimetableCourseSections
+                .map(section => String(section?.key || ''))
+                .filter(Boolean)
+            const additionalCourseSections = this.courseSections
+                .filter(section => String(section?.key || '') === 'additional')
+                .filter(section => !automaticSectionKeys.includes(String(section?.key || '')))
+            const additionalCourses = Array.isArray(this.overview?.additional_courses)
+                ? this.overview.additional_courses
+                : []
+            const syntheticAdditionalCourseSections = additionalCourseSections.length || !additionalCourses.length
+                ? []
+                : [{
+                    key: 'additional',
+                    title: 'Zusätzliche Kurse',
+                    icon: 'mdi-plus-circle-outline',
+                    color: 'warning',
+                    items: additionalCourses,
+                    empty: 'Keine zusätzlichen Kurse erkannt.',
+                }]
+
+            return [
+                ...this.automaticTimetableCourseSections,
+                ...additionalCourseSections,
+                ...syntheticAdditionalCourseSections,
+            ]
         },
         automaticTimetableSelectableCourses() {
             return Array.isArray(this.automaticTimetableCourseSelection.courses)

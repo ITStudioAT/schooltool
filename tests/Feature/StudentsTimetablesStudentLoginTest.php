@@ -12,6 +12,7 @@ use App\Models\StudentTimetableProfileSelection;
 use App\Models\StudentTimetableRecognitionImport;
 use App\Models\StudentTimetableRecognitionRow;
 use App\Models\StudentTimetableSubjectRow;
+use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -556,6 +557,19 @@ it('creates the first automatic timetable for the authenticated student', functi
         'sort_order' => 1,
     ]);
 
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 2,
+        'branch' => 'common',
+        'json_code' => 'D2',
+        'json_subject' => 'D',
+        'name' => 'Deutsch 2',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => 2,
+    ]);
+
     StudentTimetableEntry::factory()->create([
         'school_id' => $school->id,
         'schoolyear_id' => $schoolyear->id,
@@ -570,15 +584,50 @@ it('creates the first automatic timetable for the authenticated student', functi
         'is_active' => true,
     ]);
 
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2025-09-08',
+        'semester' => 2,
+        'period' => '12',
+        'subject' => 'D2',
+        'course' => 'D2',
+        'teacher' => 'MUE',
+        'room' => '102',
+        'class_name' => 'D2 - 4A - MUE',
+        'is_active' => true,
+    ]);
+
+    TeachingSchoolHour::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'hour' => 11,
+        'from' => '16:10:00',
+        'until' => '16:55:00',
+    ]);
+
+    TeachingSchoolHour::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'hour' => 12,
+        'from' => '16:55:00',
+        'until' => '17:40:00',
+    ]);
+
     $overviewResponse = $this->actingAs($user)
         ->getJson('/api/homepage/students-timetables/overview')
         ->assertSuccessful();
 
     $selectedCourseKey = $overviewResponse->json('data.proposed_courses.0.key');
+    $selectedAdditionalCourseKey = $overviewResponse->json('data.additional_courses.0.key');
+
+    expect($selectedAdditionalCourseKey)->not->toBeNull();
 
     $this->actingAs($user)
         ->postJson('/api/homepage/students-timetables/automatic-timetable', [
             'selected_course_keys' => [$selectedCourseKey],
+            'selected_additional_course_keys' => [$selectedAdditionalCourseKey],
+            'selected_additional_courses_required' => true,
             'selected_quality_criterion_keys' => ['saturday_free'],
             'selected_timetable_type' => 'full_green',
             'selected_timetable_number' => 1,
@@ -592,8 +641,15 @@ it('creates the first automatic timetable for the authenticated student', functi
         ->assertSuccessful()
         ->assertJsonPath('data.algorithm.key', 'backend-v2')
         ->assertJsonPath('data.selected_course_count', 1)
+        ->assertJsonPath('data.selected_additional_course_count', 1)
+        ->assertJsonPath('data.additional_course_timetable_count', 1)
+        ->assertJsonPath('data.school_hours.0.hour', 11)
+        ->assertJsonPath('data.school_hours.0.from', '16:10')
+        ->assertJsonPath('data.school_hours.0.until', '16:55')
+        ->assertJsonPath('data.school_hours.1.hour', 12)
         ->assertJsonPath('data.selected_timetable.type', 'full_green')
         ->assertJsonPath('data.selected_timetable.slots.1-11.code', 'D1')
+        ->assertJsonPath('data.selected_timetable.slots.1-12.code', 'D2')
         ->assertJsonPath('data.selected_timetable.slots.1-11.courseGroup.teacher', 'MUE');
 });
 

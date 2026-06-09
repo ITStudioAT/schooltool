@@ -324,4 +324,40 @@ describe('RobotTimetable', () => {
         expect(context.qualityCriteriaResultFilterEnabled).toBe(false)
         expect(setTimetableResultCounter).not.toHaveBeenCalled()
     })
+
+    it('returns from the generated timetable to course selection', () => {
+        const clearGeneratedTimetables = vi.fn()
+        const showCourseActionAfterCourseInteraction = vi.fn()
+        const saveLastRobotState = vi.fn()
+
+        RobotTimetable.methods.returnToCourseSelectionFromGeneratedTimetable.call({
+            clearGeneratedTimetables,
+            showCourseActionAfterCourseInteraction,
+            saveLastRobotState,
+        })
+
+        expect(clearGeneratedTimetables).toHaveBeenCalledOnce()
+        expect(showCourseActionAfterCourseInteraction).toHaveBeenCalledOnce()
+        expect(saveLastRobotState).toHaveBeenCalledOnce()
+    })
+
+    it('does not change course selection while the embedded generated timetable is locked', () => {
+        const context = {
+            embeddedCourseSelectionLocked: true,
+            deselectedCourseKeys: [],
+            deselectedCourseGroupKeys: [],
+            additionalCourseSelectedKeys: [],
+            setCourseSelectedState: vi.fn(),
+            setCourseGroupsSelectedState: vi.fn(),
+            clearGeneratedTimetables: vi.fn(),
+            saveLastRobotState: vi.fn(),
+        }
+
+        RobotTimetable.methods.setCourseSelected.call(context, { key: 'M-1' }, false)
+
+        expect(context.setCourseSelectedState).not.toHaveBeenCalled()
+        expect(context.setCourseGroupsSelectedState).not.toHaveBeenCalled()
+        expect(context.clearGeneratedTimetables).not.toHaveBeenCalled()
+        expect(context.saveLastRobotState).not.toHaveBeenCalled()
+    })
 })

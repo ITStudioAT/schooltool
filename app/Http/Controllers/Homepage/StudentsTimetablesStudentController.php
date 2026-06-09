@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Homepage;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Admin\Teaching\SchoolHourResource;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Homepage\StudentsTimetablesUserResource;
 use App\Models\SchoolTool;
 use App\Models\User;
 use App\Services\LicenceService;
+use App\Services\SchoolHourService;
 use App\Services\StudentsTimetables\RobotTimetableBackendSetupService;
 use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
@@ -233,6 +235,7 @@ class StudentsTimetablesStudentController extends Controller
         StudentTimetableOverviewService $overviewService,
         RobotTimetableBackendSetupService $backendSetupService,
         StudentTimetableEvaluationSettingsService $evaluationSettingsService,
+        SchoolHourService $schoolHourService,
     ): JsonResponse {
         if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -241,6 +244,9 @@ class StudentsTimetablesStudentController extends Controller
         $validated = $request->validate([
             'selected_course_keys' => ['required', 'array', 'min:1'],
             'selected_course_keys.*' => ['required', 'string', 'max:255'],
+            'selected_additional_course_keys' => ['sometimes', 'array'],
+            'selected_additional_course_keys.*' => ['string', 'max:255', 'distinct'],
+            'selected_additional_courses_required' => ['sometimes', 'boolean'],
             'selected_quality_criterion_keys' => ['sometimes', 'array'],
             'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
             'selected_timetable_type' => ['nullable', 'string', Rule::in(['full_green', 'green', 'conflict'])],
@@ -255,6 +261,12 @@ class StudentsTimetablesStudentController extends Controller
             $validated['selected_course_keys'],
             $summary['automatic_course_selection']['courses'] ?? [],
         );
+        $selectedAdditionalCourseKeys = $this->selectedAutomaticCourseKeys(
+            $validated['selected_additional_course_keys'] ?? [],
+            $summary['additional_courses'] ?? [],
+        );
+        $selectedAdditionalCoursesRequired = $selectedAdditionalCourseKeys !== []
+            && ($validated['selected_additional_courses_required'] ?? false) === true;
 
         if ($selectedCourseKeys === []) {
             abort(422, 'Bitte wählen Sie mindestens einen Kurs aus.');
@@ -266,6 +278,8 @@ class StudentsTimetablesStudentController extends Controller
             $selectedCourseKeys,
             $this->availableTimesForAutomaticTimetable($overviewService->courseGroupsForUser($authUser)),
             $validated['selected_quality_criterion_keys'] ?? [],
+            $selectedAdditionalCourseKeys,
+            $selectedAdditionalCoursesRequired,
             $validated['selected_timetable_type'] ?? null,
             (int) ($validated['selected_timetable_number'] ?? 1),
         );
@@ -280,7 +294,10 @@ class StudentsTimetablesStudentController extends Controller
         );
 
         return response()->json([
-            'data' => $result,
+            'data' => [
+                ...$result,
+                'school_hours' => SchoolHourResource::collection($schoolHourService->listForUser($authUser)),
+            ],
         ]);
     }
 
@@ -386,6 +403,7 @@ class StudentsTimetablesStudentController extends Controller
      * @param  list<string>  $selectedCourseKeys
      * @param  list<int>  $availableTimes
      * @param  list<string>  $selectedQualityCriterionKeys
+     * @param  list<string>  $selectedAdditionalCourseKeys
      * @return array<string, mixed>
      */
     private function automaticTimetableSettings(
@@ -393,6 +411,8 @@ class StudentsTimetablesStudentController extends Controller
         array $selectedCourseKeys,
         array $availableTimes,
         array $selectedQualityCriterionKeys,
+        array $selectedAdditionalCourseKeys,
+        bool $selectedAdditionalCoursesRequired,
         ?string $selectedTimetableType,
         int $selectedTimetableNumber,
     ): array {
@@ -417,8 +437,8 @@ class StudentsTimetablesStudentController extends Controller
             'selected_course_keys' => $selectedCourseKeys,
             'deselected_course_keys' => [],
             'deselected_course_group_keys' => [],
-            'selected_additional_course_keys' => [],
-            'selected_additional_courses_required' => false,
+            'selected_additional_course_keys' => $selectedAdditionalCourseKeys,
+            'selected_additional_courses_required' => $selectedAdditionalCoursesRequired,
             'selected_timetable_type' => $selectedTimetableType ?? 'full_green',
             'selected_timetable_number' => $selectedTimetableNumber,
             'include_quality_counters' => true,

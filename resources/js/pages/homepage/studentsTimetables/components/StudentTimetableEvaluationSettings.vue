@@ -3,7 +3,7 @@
         class="student-evaluation-settings"
         :class="{ 'student-evaluation-settings--criteria': currentStep === 'criteria' }">
         <div
-            v-if="currentStep !== 'criteria'"
+            v-if="currentStep === 'courses'"
             class="student-evaluation-settings__title">
             <div class="student-evaluation-settings__title-label">
                 <v-icon icon="mdi-auto-fix" />
@@ -14,7 +14,7 @@
             </div>
         </div>
 
-        <template v-else>
+        <template v-else-if="currentStep === 'criteria'">
             <div class="student-evaluation-settings__automatic-card">
                 <v-icon icon="mdi-calendar-clock" size="22" />
                 <h2>Automatischer Stundenplan</h2>
@@ -24,7 +24,6 @@
                     <v-icon icon="mdi-star-four-points" size="8" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--3" />
                 </span>
             </div>
-
             <div class="student-evaluation-settings__summary-card">
                 <div class="student-evaluation-settings__summary-header">
                     <div class="student-evaluation-settings__summary-title">
@@ -84,7 +83,7 @@
 
                 <div class="student-evaluation-settings__course-section-grid">
                     <div
-                        v-for="section in displayedCourseSections"
+                        v-for="section in regularCourseSections"
                         :key="section.key"
                         class="student-evaluation-settings__course-section-card">
                         <div class="student-evaluation-settings__course-section-title">
@@ -272,6 +271,142 @@
         </div>
 
         <div v-else-if="currentStep === 'result'" class="student-generated-timetable">
+            <div class="student-evaluation-settings__automatic-card">
+                <v-icon icon="mdi-calendar-clock" size="22" />
+                <h2>Automatischer Stundenplan</h2>
+                <span class="student-evaluation-settings__automatic-stars" aria-hidden="true">
+                    <v-icon icon="mdi-star-four-points" size="10" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--1" />
+                    <v-icon icon="mdi-star-four-points" size="14" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--2" />
+                    <v-icon icon="mdi-star-four-points" size="8" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--3" />
+                </span>
+            </div>
+
+            <v-expansion-panels
+                v-if="resultCoursePanelsVisible"
+                v-model="resultCoursePanelOpen"
+                class="student-result-course-panels"
+                multiple
+                variant="accordion">
+                <v-expansion-panel
+                    v-if="readOnlySelectedCourseSections.length"
+                    value="selected-courses"
+                    class="student-result-course-panel">
+                    <v-expansion-panel-title class="student-result-course-panel__head">
+                        <div class="student-result-course-panel__title">
+                            <v-icon icon="mdi-format-list-checks" size="18" color="primary" />
+                            <span>{{ courseSummaryTitle }}</span>
+                            <v-chip size="x-small" color="primary" variant="tonal">
+                                {{ effectiveSelectedCourseCount }} / {{ effectiveCourseSummaryTotal }}
+                            </v-chip>
+                            <v-chip v-if="selectedCourseHoursLabel" size="x-small" color="default" variant="tonal">
+                                {{ selectedCourseHoursLabel }}
+                            </v-chip>
+                        </div>
+                    </v-expansion-panel-title>
+                    <v-expansion-panel-text>
+                        <div class="student-evaluation-settings__course-section-grid student-evaluation-settings__course-section-grid--readonly">
+                            <div
+                                v-for="section in readOnlySelectedCourseSections"
+                                :key="`result-${section.key}`"
+                                class="student-evaluation-settings__course-section-card">
+                                <div class="student-evaluation-settings__course-section-title">
+                                    {{ section.title }}
+                                    <span class="student-evaluation-settings__course-section-count">
+                                        {{ section.items.length }}
+                                    </span>
+                                </div>
+
+                                <div class="student-evaluation-settings__course-table">
+                                    <div class="student-evaluation-settings__course-table-row student-evaluation-settings__course-table-row--head">
+                                        <span>Aktiv</span>
+                                        <span>Code</span>
+                                        <span>Bezeichnung</span>
+                                        <span>Zweig</span>
+                                        <span>Std.</span>
+                                    </div>
+                                    <div
+                                        v-for="course in section.items"
+                                        :key="courseSelectionKey(course)"
+                                        class="student-evaluation-settings__course-table-row student-evaluation-settings__course-table-row--readonly">
+                                        <span>
+                                            <v-checkbox
+                                                :model-value="true"
+                                                color="primary"
+                                                density="compact"
+                                                disabled
+                                                hide-details />
+                                        </span>
+                                        <strong>{{ course.code || '-' }}</strong>
+                                        <span>{{ course.name || course.code || '-' }}</span>
+                                        <span>{{ courseBranchLabel(course) }}</span>
+                                        <span>{{ courseHoursValue(course) }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </v-expansion-panel-text>
+                </v-expansion-panel>
+
+                <v-expansion-panel
+                    v-if="additionalCoursePanelVisible"
+                    value="additional-courses"
+                    class="student-result-course-panel student-result-course-panel--additional">
+                    <v-expansion-panel-title class="student-result-course-panel__head">
+                        <div class="student-result-course-panel__title">
+                            <v-icon icon="mdi-plus-circle-outline" size="18" color="warning" />
+                            <span>Zusätzliche Kurse</span>
+                            <v-chip size="x-small" color="warning" variant="tonal">
+                                {{ selectedAdditionalCourseKeys.length }} / {{ additionalCourses.length }}
+                            </v-chip>
+                        </div>
+                    </v-expansion-panel-title>
+                    <v-expansion-panel-text>
+                        <div class="student-evaluation-settings__course-section-grid student-evaluation-settings__course-section-grid--readonly">
+                            <div
+                                v-for="section in additionalCourseSections"
+                                :key="`result-${section.key}`"
+                                class="student-evaluation-settings__course-section-card student-evaluation-settings__course-section-card--additional">
+                                <div class="student-evaluation-settings__course-section-title">
+                                    {{ section.title }}
+                                    <span class="student-evaluation-settings__course-section-count">
+                                        {{ additionalCourseSectionSelectedCount(section) }}
+                                    </span>
+                                </div>
+
+                                <div class="student-evaluation-settings__course-table">
+                                    <div class="student-evaluation-settings__course-table-row student-evaluation-settings__course-table-row--head">
+                                        <span>Aktiv</span>
+                                        <span>Code</span>
+                                        <span>Bezeichnung</span>
+                                        <span>Zweig</span>
+                                        <span>Std.</span>
+                                    </div>
+                                    <div
+                                        v-for="course in section.items"
+                                        :key="courseSelectionKey(course)"
+                                        class="student-evaluation-settings__course-table-row"
+                                        :class="{ 'student-evaluation-settings__course-table-row--selected': additionalCourseSelected(course) }">
+                                        <span>
+                                            <v-checkbox
+                                                :model-value="additionalCourseSelected(course)"
+                                                color="success"
+                                                density="compact"
+                                                :disabled="additionalCourseSelectionLocked || generatingTimetable"
+                                                hide-details
+                                                @update:model-value="setAdditionalCourseSelected(course, $event)" />
+                                        </span>
+                                        <strong>{{ course.code || '-' }}</strong>
+                                        <span>{{ course.name || course.code || '-' }}</span>
+                                        <span>{{ courseBranchLabel(course) }}</span>
+                                        <span>{{ courseHoursValue(course) }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </v-expansion-panel-text>
+                </v-expansion-panel>
+            </v-expansion-panels>
+
             <v-alert v-if="timetableError" type="error" variant="tonal" density="comfortable">
                 {{ timetableError }}
             </v-alert>
@@ -279,13 +414,33 @@
             <v-skeleton-loader v-else-if="generatingTimetable" type="list-item-three-line@3" />
 
             <template v-else-if="generatedTimetable">
+                <div
+                    v-if="additionalCourseSelectionChangedAfterTimetable"
+                    class="student-generated-timetable__extension-actions">
+                    <v-btn
+                        color="success"
+                        variant="flat"
+                        prepend-icon="mdi-calendar-plus"
+                        rounded="pill"
+                        :loading="generatingTimetable"
+                        :disabled="loading || saving || generatingTimetable"
+                        @click="createExtendedAutomaticTimetable">
+                        Stundenplan erweitern
+                    </v-btn>
+                    <v-btn
+                        class="student-generated-timetable__back-button"
+                        variant="tonal"
+                        color="secondary"
+                        prepend-icon="mdi-arrow-left"
+                        rounded="pill"
+                        :disabled="saving || generatingTimetable"
+                        @click="handleBack">
+                        Zurück
+                    </v-btn>
+                </div>
+
+                <template v-else>
                 <div class="student-generated-timetable__head">
-                    <div>
-                        <div class="student-generated-timetable__label">Stundenplan</div>
-                        <div class="student-generated-timetable__description">
-                            {{ generatedTimetable.statusMessage || 'Erster passender Stundenplan' }}
-                        </div>
-                    </div>
                     <div class="student-generated-timetable__controls">
                         <v-btn
                             icon="mdi-chevron-left"
@@ -309,33 +464,102 @@
                         <v-chip size="small" color="success" variant="tonal">
                             {{ generatedTimetableTypeLabel }}
                         </v-chip>
+                        <div class="student-generated-timetable__actions">
+                            <v-btn
+                                color="success"
+                                variant="flat"
+                                prepend-icon="mdi-close"
+                                rounded="pill"
+                                :loading="saving || generatingTimetable"
+                                :disabled="loading || saving || generatingTimetable"
+                                @click="continueToNextStep">
+                                Schließen
+                            </v-btn>
+                            <v-btn
+                                class="student-generated-timetable__back-button"
+                                variant="tonal"
+                                color="primary"
+                                prepend-icon="mdi-arrow-left"
+                                rounded="pill"
+                                :disabled="saving"
+                                @click="handleBack">
+                                Zurück
+                            </v-btn>
+                        </div>
                     </div>
                 </div>
 
-                <div v-if="activeGeneratedQualityCriteria.length" class="student-generated-criteria">
-                    <button
+                <div
+                    v-if="activeGeneratedQualityCriteria.length || selectedAdditionalCourseKeys.length"
+                    class="student-generated-criteria">
+                    <div
                         v-for="criterion in activeGeneratedQualityCriteria"
                         :key="criterion.key"
-                        type="button"
                         class="student-generated-criteria__card"
                         :class="{
                             'student-generated-criteria__card--selected': generatedQualityCriterionSelected(criterion),
-                            'student-generated-criteria__card--reached': generatedQualityCriterionReached(criterion),
-                            'student-generated-criteria__card--missed': generatedQualityCriterionSelected(criterion) && !generatedQualityCriterionReached(criterion),
+                            'student-generated-criteria__card--reached': generatedQualityCriterionSelected(criterion) && generatedQualityCriterionReached(criterion),
+                            'student-generated-criteria__card--missed': !generatedQualityCriterionReached(criterion),
                         }"
-                        :disabled="generatingTimetable"
-                        @click="toggleGeneratedQualityCriterion(criterion)">
-                        <span class="student-generated-criteria__label">{{ criterion.label }}</span>
-                        <span v-if="generatedQualityCriterionMeta(criterion)" class="student-generated-criteria__meta">
-                            {{ generatedQualityCriterionMeta(criterion) }} erfüllen das Kriterium
+                        :role="generatingTimetable ? null : 'button'"
+                        :tabindex="generatingTimetable ? -1 : 0"
+                        @click="toggleGeneratedQualityCriterion(criterion)"
+                        @keydown.enter.prevent="toggleGeneratedQualityCriterion(criterion)"
+                        @keydown.space.prevent="toggleGeneratedQualityCriterion(criterion)">
+                        <span class="student-generated-criteria__content">
+                            <span class="student-generated-criteria__label">{{ criterion.label }}</span>
+                            <span class="student-generated-criteria__meta-row">
+                                <span v-if="generatedQualityCriterionMeta(criterion)" class="student-generated-criteria__meta">
+                                    {{ generatedQualityCriterionMeta(criterion) }}
+                                </span>
+                                <span class="student-generated-criteria__controls">
+                                    <v-icon
+                                        class="student-generated-criteria__status"
+                                        :class="{
+                                            'student-generated-criteria__status--reached': generatedQualityCriterionReached(criterion),
+                                            'student-generated-criteria__status--missed': !generatedQualityCriterionReached(criterion),
+                                        }"
+                                        :icon="generatedQualityCriterionReached(criterion) ? 'mdi-check-circle' : 'mdi-close-circle'"
+                                        size="18"
+                                        :title="generatedQualityCriterionReached(criterion)
+                                            ? 'Aktueller Stundenplan erfüllt das Kriterium'
+                                            : 'Aktueller Stundenplan erfüllt das Kriterium nicht'" />
+                                    <v-checkbox-btn
+                                        class="student-generated-criteria__check"
+                                        :model-value="generatedQualityCriterionSelected(criterion)"
+                                        color="primary"
+                                        density="compact"
+                                        :disabled="generatingTimetable"
+                                        :aria-label="`${criterion.label} als Kriterium verwenden`"
+                                        @click.stop
+                                        @update:model-value="toggleGeneratedQualityCriterion(criterion)" />
+                                </span>
+                            </span>
                         </span>
-                        <v-icon
-                            v-if="generatedQualityCriterionSelected(criterion)"
-                            :icon="generatedQualityCriterionReached(criterion) ? 'mdi-check-circle' : 'mdi-checkbox-marked-circle-outline'"
-                            :color="generatedQualityCriterionReached(criterion) ? 'success' : 'primary'"
-                            size="16"
-                            class="student-generated-criteria__icon" />
-                    </button>
+                    </div>
+                    <div
+                        v-if="selectedAdditionalCourseKeys.length"
+                        class="student-generated-criteria__card student-generated-criteria__card--additional student-generated-criteria__card--static"
+                        :class="{
+                            'student-generated-criteria__card--reached': generatedAdditionalCoursesAccepted(),
+                            'student-generated-criteria__card--missed': !generatedAdditionalCoursesAccepted(),
+                        }">
+                        <span class="student-generated-criteria__content">
+                            <span class="student-generated-criteria__label">Zusatzkurse</span>
+                            <span class="student-generated-criteria__meta-row">
+                                <span class="student-generated-criteria__meta">
+                                    {{ generatedAdditionalCourseAcceptanceLabel() }}
+                                </span>
+                                <span class="student-generated-criteria__controls">
+                                    <v-icon
+                                        class="student-generated-criteria__status"
+                                        :icon="generatedAdditionalCourseAcceptanceIcon()"
+                                        :color="generatedAdditionalCourseAcceptanceColor()"
+                                        size="18" />
+                                </span>
+                            </span>
+                        </span>
+                    </div>
                 </div>
 
                 <div
@@ -351,27 +575,36 @@
 
                     <template
                         v-for="hour in generatedTimetableHours"
-                        :key="`generated-hour-${hour}`">
+                        :key="`generated-hour-${hour.value}`">
                         <div class="student-generated-timetable__cell student-generated-timetable__cell--time">
-                            {{ hour }}.
+                            <span class="student-generated-timetable__hour">{{ hour.hourLabel }}</span>
+                            <span v-if="hour.timeFrom" class="student-generated-timetable__time-range">{{ hour.timeFrom }}</span>
+                            <span v-if="hour.timeUntil" class="student-generated-timetable__time-range">{{ hour.timeUntil }}</span>
                         </div>
                         <div
                             v-for="weekday in generatedTimetableWeekdays"
-                            :key="`generated-${weekday.value}-${hour}`"
+                            :key="`generated-${weekday.value}-${hour.value}`"
                             class="student-generated-timetable__cell"
                             :class="{
-                                'student-generated-timetable__cell--filled': generatedTimetableDisplaySlot(weekday.value, hour),
-                                'student-generated-timetable__cell--conflict': generatedSlotVisualConflictBlocks(generatedTimetableDisplaySlot(weekday.value, hour)).length,
-                                'student-generated-timetable__cell--has-occasional': generatedTimetableOccasionalMarkers(weekday.value, hour).length,
+                                'student-generated-timetable__cell--filled': generatedTimetableDisplaySlot(weekday.value, hour.value),
+                                'student-generated-timetable__cell--conflict': generatedSlotVisualConflictBlocks(generatedTimetableDisplaySlot(weekday.value, hour.value)).length,
+                                'student-generated-timetable__cell--has-occasional': generatedTimetableOccasionalMarkers(weekday.value, hour.value).length,
+                                'student-generated-timetable__cell--additional': generatedTimetableCellHasAdditionalCourse(weekday.value, hour.value),
                             }">
-                            <template v-if="generatedTimetableDisplaySlot(weekday.value, hour)">
+                            <template v-if="generatedTimetableDisplaySlot(weekday.value, hour.value)">
                                 <div
-                                    v-for="block in generatedSlotDisplayBlocks(generatedTimetableDisplaySlot(weekday.value, hour))"
+                                    v-for="block in generatedSlotDisplayBlocks(generatedTimetableDisplaySlot(weekday.value, hour.value))"
                                     :key="generatedSlotBlockKey(block)"
                                     class="student-generated-timetable__entry"
                                     :class="{ 'student-generated-timetable__entry--conflict': block.isConflict === true }">
                                     <div class="student-generated-timetable__code">
-                                        {{ generatedSlotTitle(block) }}
+                                        <span>{{ generatedSlotTitle(block) }}</span>
+                                        <sup v-if="block.isDistanceLearningCourse" class="student-generated-timetable__badge">FU</sup>
+                                        <sup
+                                            v-if="generatedSlotWeekMarker(block)"
+                                            class="student-generated-timetable__badge student-generated-timetable__badge--week">
+                                            {{ generatedSlotWeekMarker(block) }}
+                                        </sup>
                                     </div>
                                     <div v-if="generatedSlotDetails(block)" class="student-generated-timetable__details">
                                         {{ generatedSlotDetails(block) }}
@@ -379,20 +612,27 @@
                                 </div>
                             </template>
                             <div
-                                v-if="generatedTimetableOccasionalMarkers(weekday.value, hour).length"
+                                v-if="generatedTimetableOccasionalMarkers(weekday.value, hour.value).length"
                                 class="student-generated-timetable__occasional-markers">
                                 <span
-                                    v-for="marker in generatedTimetableOccasionalMarkers(weekday.value, hour)"
+                                    v-for="marker in generatedTimetableOccasionalMarkers(weekday.value, hour.value)"
                                     :key="marker.key"
                                     class="student-generated-timetable__occasional-marker"
                                     :class="{ 'student-generated-timetable__occasional-marker--additional': marker.isAdditionalCourse }"
                                     :title="generatedOccasionalMarkerTitle(marker)">
-                                    {{ marker.code }}
+                                    <span>{{ marker.code }}</span>
+                                    <sup v-if="marker.isDistanceLearningCourse" class="student-generated-timetable__badge">FU</sup>
+                                    <sup
+                                        v-if="marker.weekMarker"
+                                        class="student-generated-timetable__badge student-generated-timetable__badge--week">
+                                        {{ marker.weekMarker }}
+                                    </sup>
                                 </span>
                             </div>
                         </div>
                     </template>
                 </div>
+                </template>
             </template>
 
             <div v-else class="student-course-selection__empty">
@@ -420,14 +660,14 @@
                 variant="tonal"
                 color="primary"
                 size="large"
-                prepend-icon="mdi-close"
+                prepend-icon="mdi-arrow-left"
                 :disabled="saving || generatingTimetable"
                 @click="$emit('close')">
-                Schließen
+                Zurück
             </v-btn>
         </div>
 
-        <div v-else class="student-evaluation-settings__footer">
+        <div v-else-if="currentStep !== 'result'" class="student-evaluation-settings__footer">
             <v-btn
                 variant="tonal"
                 color="secondary"
@@ -508,8 +748,10 @@ export default {
             criteria: [],
             originalCriteria: [],
             selectedCourseKeys: this.normalizedCourseKeys(this.initialSelectedCourseKeys),
+            selectedAdditionalCourseKeys: [],
             selectedQualityCriterionKeys: this.normalizedCourseKeys(this.initialSelectedQualityCriterionKeys),
             generatedTimetable: null,
+            schoolHours: [],
             timetableCounts: {},
             selectedTimetableType: null,
             selectedTimetableNumber: 1,
@@ -518,6 +760,10 @@ export default {
             timetableError: '',
             error: '',
             criteriaEditorDialogOpen: false,
+            resultBackStep: this.normalizedResultBackStep(this.normalizedStep(this.initialStep)),
+            resultCoursePanelOpen: ['additional-courses'],
+            additionalCourseSelectionChangedAfterTimetable: false,
+            additionalCourseSelectionLocked: false,
         }
     },
 
@@ -559,6 +805,40 @@ export default {
         },
         displayedCourseSections() {
             return Array.isArray(this.courseSections) ? this.courseSections : []
+        },
+        regularCourseSections() {
+            return this.displayedCourseSections
+                .filter(section => String(section?.key || '') !== 'additional')
+        },
+        additionalCourseSections() {
+            return this.displayedCourseSections
+                .filter(section => String(section?.key || '') === 'additional')
+                .map(section => ({
+                    ...section,
+                    items: Array.isArray(section?.items) ? section.items : [],
+                }))
+                .filter(section => section.items.length > 0)
+        },
+        additionalCourses() {
+            return this.additionalCourseSections
+                .flatMap(section => section.items)
+        },
+        additionalCoursePanelVisible() {
+            return this.currentStep === 'result'
+                && Boolean(this.generatedTimetable)
+                && this.additionalCourses.length > 0
+        },
+        resultCoursePanelsVisible() {
+            return this.readOnlySelectedCourseSections.length > 0 || this.additionalCoursePanelVisible
+        },
+        readOnlySelectedCourseSections() {
+            return this.regularCourseSections
+                .map(section => ({
+                    ...section,
+                    items: (Array.isArray(section?.items) ? section.items : [])
+                        .filter(course => this.courseSelectedByDefault(course)),
+                }))
+                .filter(section => section.items.length > 0)
         },
         selectedCourseHoursLabel() {
             if (this.allCoursesSelectedByDefault && this.courseSummary?.hours_label) {
@@ -606,7 +886,17 @@ export default {
             const firstHour = Math.min(...hours)
             const lastHour = Math.max(...hours)
 
-            return Array.from({ length: (lastHour - firstHour) + 1 }, (value, index) => firstHour + index)
+            return Array.from({ length: (lastHour - firstHour) + 1 }, (value, index) => {
+                const hour = firstHour + index
+                const schoolHour = this.generatedTimetableSchoolHour(hour)
+
+                return {
+                    value: hour,
+                    hourLabel: `${hour}.`,
+                    timeFrom: this.generatedTimetableHourTimeFrom(schoolHour, hour),
+                    timeUntil: this.generatedTimetableHourTimeUntil(schoolHour, hour),
+                }
+            })
         },
         generatedTimetableTypeLabel() {
             return {
@@ -619,22 +909,14 @@ export default {
             return this.generatedTimetable?.type || this.selectedTimetableType || null
         },
         generatedTimetableTotalCount() {
-            return this.generatedTimetableTypeOrder()
-                .reduce((totalCount, timetableType) => totalCount + this.generatedTimetableCountForType(timetableType), 0)
-        },
-        generatedTimetableAbsoluteNumber() {
-            const timetableType = this.generatedTimetableNavigationType
-            const timetableTypeIndex = this.generatedTimetableTypeOrder().indexOf(timetableType)
-
-            if (timetableTypeIndex < 0) {
-                return this.selectedTimetableNumber
+            if ((this.selectedQualityCriterionKeys || []).length) {
+                return this.selectedQualityCriteriaTimetableCount()
             }
 
-            const previousTypeCount = this.generatedTimetableTypeOrder()
-                .slice(0, timetableTypeIndex)
-                .reduce((totalCount, previousType) => totalCount + this.generatedTimetableCountForType(previousType), 0)
-
-            return previousTypeCount + this.selectedTimetableNumber
+            return this.generatedTimetableCountForType(this.generatedTimetableNavigationType)
+        },
+        generatedTimetableAbsoluteNumber() {
+            return this.selectedTimetableNumber
         },
         generatedTimetablePositionLabel() {
             const totalCount = this.generatedTimetableTotalCount
@@ -753,6 +1035,7 @@ export default {
 
             if (this.currentStep === 'courses') {
                 this.resetGeneratedTimetableSelection()
+                this.resultBackStep = 'courses'
                 await this.createAutomaticTimetable()
 
                 return
@@ -768,7 +1051,20 @@ export default {
 
         handleBack() {
             if (this.currentStep === 'result') {
-                this.moveToStep('courses')
+                if (this.additionalCourseSelectionChangedAfterTimetable) {
+                    this.resetAdditionalCourseSelection()
+
+                    return
+                }
+
+                if (this.additionalCourseSelectionLocked) {
+                    this.additionalCourseSelectionLocked = false
+                    this.commitAdditionalCourseSelectionChange()
+
+                    return
+                }
+
+                this.moveToStep(this.resultBackStep)
 
                 return
             }
@@ -902,6 +1198,10 @@ export default {
         },
 
         setCourseSelected(course, selected) {
+            if (this.currentStep === 'result') {
+                return
+            }
+
             const courseKey = this.courseSelectionKey(course)
 
             if (selected === true && !this.selectedCourseKeys.includes(courseKey)) {
@@ -919,6 +1219,40 @@ export default {
             }
 
             this.emitCourseSelectionChange()
+        },
+        additionalCourseSelected(course) {
+            return this.selectedAdditionalCourseKeys.includes(this.courseSelectionKey(course))
+        },
+        setAdditionalCourseSelected(course, selected) {
+            if (this.currentStep !== 'result' || !this.generatedTimetable || this.additionalCourseSelectionLocked) {
+                return
+            }
+
+            const courseKey = this.courseSelectionKey(course)
+
+            if (selected === true && !this.selectedAdditionalCourseKeys.includes(courseKey)) {
+                this.selectedAdditionalCourseKeys = [...this.selectedAdditionalCourseKeys, courseKey]
+            }
+
+            if (selected !== true) {
+                this.selectedAdditionalCourseKeys = this.selectedAdditionalCourseKeys
+                    .filter(selectedCourseKey => selectedCourseKey !== courseKey)
+            }
+
+            this.commitAdditionalCourseSelectionChange()
+        },
+        commitAdditionalCourseSelectionChange() {
+            this.additionalCourseSelectionChangedAfterTimetable = this.selectedAdditionalCourseKeys.length > 0
+        },
+        resetAdditionalCourseSelection() {
+            this.selectedAdditionalCourseKeys = []
+            this.additionalCourseSelectionChangedAfterTimetable = false
+            this.additionalCourseSelectionLocked = false
+        },
+        additionalCourseSectionSelectedCount(section) {
+            const courses = Array.isArray(section?.items) ? section.items : []
+
+            return courses.filter(course => this.additionalCourseSelected(course)).length
         },
         displayedCourseSectionSelectedCount(section) {
             const courses = Array.isArray(section?.items) ? section.items : []
@@ -998,6 +1332,8 @@ export default {
             try {
                 const response = await axios.post('/api/homepage/students-timetables/automatic-timetable', {
                     selected_course_keys: this.selectedCourseKeys,
+                    selected_additional_course_keys: this.selectedAdditionalCourseKeys,
+                    selected_additional_courses_required: this.selectedAdditionalCourseKeys.length > 0,
                     selected_quality_criterion_keys: this.selectedQualityCriterionKeys,
                     selected_timetable_type: this.selectedTimetableType,
                     selected_timetable_number: this.selectedTimetableNumber,
@@ -1005,15 +1341,35 @@ export default {
                 })
 
                 this.generatedTimetable = response.data?.data?.selected_timetable || null
+                this.schoolHours = response.data?.data?.school_hours || []
                 this.timetableCounts = response.data?.data || {}
                 this.selectedTimetableType = this.generatedTimetable?.type || this.selectedTimetableType
                 this.selectedTimetableNumber = this.normalizedTimetableNumber(this.generatedTimetable?.number)
+                this.additionalCourseSelectionChangedAfterTimetable = false
                 this.moveToStep('result')
             } catch (error) {
                 this.timetableError = error?.response?.data?.message || 'Der Stundenplan konnte nicht erstellt werden.'
                 this.moveToStep('result')
             } finally {
                 this.generatingTimetable = false
+            }
+        },
+
+        async createExtendedAutomaticTimetable() {
+            if (!this.selectedAdditionalCourseKeys.length) {
+                this.additionalCourseSelectionChangedAfterTimetable = false
+                this.additionalCourseSelectionLocked = false
+
+                return
+            }
+
+            this.additionalCourseSelectionLocked = true
+            this.resetGeneratedTimetableSelection()
+            await this.createAutomaticTimetable()
+
+            if (!this.generatedTimetable) {
+                this.additionalCourseSelectionLocked = false
+                this.commitAdditionalCourseSelectionChange()
             }
         },
 
@@ -1035,6 +1391,36 @@ export default {
 
         generatedTimetableSlot(weekday, hour) {
             return this.generatedTimetable?.slots?.[`${weekday}-${hour}`] || null
+        },
+
+        generatedTimetableSchoolHour(hour) {
+            return Object.values(this.generatedTimetable?.slots || {})
+                .map(slot => slot?.courseGroup || {})
+                .find(courseGroup => Number(courseGroup?.hour) === Number(hour)) || {}
+        },
+
+        generatedTimetableConfiguredSchoolHour(hour) {
+            const schoolHours = Array.isArray(this.schoolHours) ? this.schoolHours : []
+
+            return schoolHours.find(schoolHour => Number(schoolHour?.hour) === Number(hour)) || {}
+        },
+
+        generatedTimetableHourTimeFrom(courseGroup, hour = null) {
+            return this.formatTimeValue(
+                courseGroup?.time_from
+                || courseGroup?.from
+                || courseGroup?.timeFrom
+                || this.generatedTimetableConfiguredSchoolHour(hour ?? courseGroup?.hour)?.from,
+            )
+        },
+
+        generatedTimetableHourTimeUntil(courseGroup, hour = null) {
+            return this.formatTimeValue(
+                courseGroup?.time_until
+                || courseGroup?.until
+                || courseGroup?.timeUntil
+                || this.generatedTimetableConfiguredSchoolHour(hour ?? courseGroup?.hour)?.until,
+            )
         },
 
         async toggleGeneratedQualityCriterion(criterion) {
@@ -1063,7 +1449,7 @@ export default {
         },
 
         canMoveGeneratedTimetable(direction) {
-            const nextTimetableNumber = this.generatedTimetableAbsoluteNumber + direction
+            const nextTimetableNumber = this.selectedTimetableNumber + direction
 
             return this.generatedTimetable
                 && this.generatedTimetableTotalCount > 0
@@ -1076,9 +1462,8 @@ export default {
                 return
             }
 
-            const nextSelection = this.resolveGeneratedTimetableSelection(this.generatedTimetableAbsoluteNumber + direction)
-            this.selectedTimetableType = nextSelection.type
-            this.selectedTimetableNumber = nextSelection.number
+            this.selectedTimetableType = this.generatedTimetableNavigationType
+            this.selectedTimetableNumber += direction
             await this.createAutomaticTimetable()
         },
 
@@ -1108,6 +1493,24 @@ export default {
             return Number.isFinite(count) ? count : 0
         },
 
+        selectedQualityCriteriaTimetableCount() {
+            if (!(this.selectedQualityCriterionKeys || []).length) {
+                return 0
+            }
+
+            if (Object.prototype.hasOwnProperty.call(this.timetableCounts || {}, 'selected_quality_criteria_count')) {
+                return Math.max(0, Number(this.timetableCounts.selected_quality_criteria_count || 0))
+            }
+
+            return this.activeGeneratedQualityCriteria
+                .filter(criterion => this.generatedQualityCriterionSelected(criterion))
+                .reduce((minimumCount, criterion) => {
+                    const criterionCount = Math.max(0, Number(criterion?.count || 0))
+
+                    return minimumCount === null ? criterionCount : Math.min(minimumCount, criterionCount)
+                }, null) ?? 0
+        },
+
         resolveGeneratedTimetableSelection(absoluteTimetableNumber) {
             let remainingTimetableNumber = absoluteTimetableNumber
 
@@ -1135,11 +1538,7 @@ export default {
         },
 
         generatedQualityCriterionReached(criterion) {
-            if (!this.generatedQualityCriterionSelected(criterion)) {
-                return false
-            }
-
-            if (typeof criterion?.selected_reached === 'boolean') {
+            if (Object.prototype.hasOwnProperty.call(criterion || {}, 'selected_reached')) {
                 return criterion.selected_reached === true
             }
 
@@ -1161,6 +1560,57 @@ export default {
             const optionLabel = this.selectedOptionLabel(criterion)
 
             return optionLabel || ''
+        },
+
+        generatedAdditionalCoursesAccepted() {
+            return this.generatedTimetable?.additionalCoursesAccepted === true
+        },
+
+        generatedMissingAdditionalCourses() {
+            return Array.isArray(this.generatedTimetable?.missingAdditionalCourses)
+                ? this.generatedTimetable.missingAdditionalCourses
+                : []
+        },
+
+        generatedAcceptedAdditionalCourseCount() {
+            if (!this.selectedAdditionalCourseKeys.length) {
+                return 0
+            }
+
+            if (this.generatedAdditionalCoursesAccepted()) {
+                return this.selectedAdditionalCourseKeys.length
+            }
+
+            const acceptedAdditionalCourseCount = Number(this.generatedTimetable?.acceptedAdditionalCourseCount)
+            if (Number.isFinite(acceptedAdditionalCourseCount) && acceptedAdditionalCourseCount > 0) {
+                return acceptedAdditionalCourseCount
+            }
+
+            return Math.max(0, this.selectedAdditionalCourseKeys.length - this.generatedMissingAdditionalCourses().length)
+        },
+
+        generatedAdditionalCourseAcceptanceLabel() {
+            if (!this.selectedAdditionalCourseKeys.length) {
+                return '-'
+            }
+
+            return `${this.generatedAcceptedAdditionalCourseCount()} / ${this.selectedAdditionalCourseKeys.length}`
+        },
+
+        generatedAdditionalCourseAcceptanceIcon() {
+            if (this.generatedAdditionalCoursesAccepted()) {
+                return 'mdi-check-circle'
+            }
+
+            if (this.generatedMissingAdditionalCourses().length) {
+                return 'mdi-alert-circle'
+            }
+
+            return 'mdi-close-circle'
+        },
+
+        generatedAdditionalCourseAcceptanceColor() {
+            return this.generatedAdditionalCoursesAccepted() ? 'success' : 'error'
         },
 
         syncSelectedQualityCriterionKeys() {
@@ -1236,6 +1686,13 @@ export default {
             ]
         },
 
+        generatedTimetableCellHasAdditionalCourse(weekday, hour) {
+            return this.generatedSlotDisplayBlocks(this.generatedTimetableDisplaySlot(weekday, hour))
+                .some(block => block.isAdditionalCourse === true)
+                || this.generatedTimetableOccasionalMarkers(weekday, hour)
+                    .some(marker => marker.isAdditionalCourse === true)
+        },
+
         generatedSlotBlocks(slot, key) {
             return Array.isArray(slot?.[key]) ? slot[key] : []
         },
@@ -1281,6 +1738,115 @@ export default {
                 isAdditionalCourse: source?.isAdditionalCourse === true,
                 isDistanceLearningCourse: source?.isDistanceLearningCourse === true,
             }
+        },
+
+        generatedSlotWeekMarker(slot) {
+            return this.visibleTimetableEntryWeekMarker(
+                this.generatedTimetable,
+                slot,
+                this.courseGroupWeekMarkerValue(slot?.courseGroup),
+            )
+        },
+
+        generatedAppointmentWeekMarker(appointment) {
+            return this.visibleTimetableEntryWeekMarker(
+                this.generatedTimetable,
+                appointment,
+                this.courseGroupWeekMarkerValue(appointment?.courseGroup || appointment),
+            )
+        },
+
+        visibleTimetableEntryWeekMarker(timetable, entry, weekMarker) {
+            const marker = String(weekMarker || '').trim()
+
+            if (!marker) return ''
+            if (marker !== '1-w') return marker
+
+            return this.timetableEntryWeekMarkers(timetable, entry)
+                .some(entryMarker => entryMarker && entryMarker !== '1-w')
+                ? marker
+                : ''
+        },
+
+        timetableEntryWeekMarkers(timetable, entry) {
+            return this.timetableWeekMarkerEntries(timetable)
+                .filter(timetableEntry => this.timetableEntriesShareWeekMarkerContext(timetableEntry, entry))
+                .map(timetableEntry => this.courseGroupWeekMarkerValue(timetableEntry?.courseGroup || timetableEntry))
+                .filter(Boolean)
+                .filter((marker, index, markers) => markers.indexOf(marker) === index)
+        },
+
+        timetableWeekMarkerEntries(timetable) {
+            const slots = Object.values(timetable?.slots || {})
+
+            return [
+                ...slots,
+                ...slots.flatMap(slot => Array.isArray(slot?.conflicts) ? slot.conflicts : []),
+                ...(Array.isArray(timetable?.occasionalAppointments) ? timetable.occasionalAppointments : []),
+            ]
+        },
+
+        timetableEntriesShareWeekMarkerContext(firstEntry, secondEntry) {
+            const firstCourseKey = this.timetableEntryCourseContextKey(firstEntry)
+            const secondCourseKey = this.timetableEntryCourseContextKey(secondEntry)
+
+            if (!firstCourseKey || !secondCourseKey || firstCourseKey !== secondCourseKey) return false
+
+            const firstSourceLabel = String(firstEntry?.sourceLabel || '').trim()
+            const secondSourceLabel = String(secondEntry?.sourceLabel || '').trim()
+
+            return firstSourceLabel && secondSourceLabel
+                ? firstSourceLabel === secondSourceLabel
+                : true
+        },
+
+        timetableEntryCourseContextKey(entry) {
+            return String(entry?.courseKey || entry?.code || entry?.key || '').trim()
+        },
+
+        courseGroupWeekMarkerValue(courseGroup) {
+            const interval = this.courseGroupWeekInterval(courseGroup)
+
+            return interval ? `${interval}-w` : ''
+        },
+
+        courseGroupWeekInterval(courseGroup) {
+            const explicitInterval = Number(courseGroup?.recurrence_interval)
+            if (Number.isInteger(explicitInterval) && explicitInterval > 0) return explicitInterval
+
+            const labelMatch = String(courseGroup?.recurrence_label || '').match(/(\d+)\s*-\s*w/iu)
+            if (labelMatch) return Number(labelMatch[1])
+
+            return this.weekIntervalFromDates(this.courseGroupDates(courseGroup))
+        },
+
+        weekIntervalFromDates(dates) {
+            if (!Array.isArray(dates) || dates.length < 2) return null
+
+            const parsedDates = dates
+                .map(date => this.dateFromIsoValue(date))
+                .filter(Boolean)
+                .sort((firstDate, secondDate) => firstDate.getTime() - secondDate.getTime())
+
+            if (parsedDates.length < 2) return null
+
+            const weekGaps = parsedDates
+                .slice(1)
+                .map((date, index) => Math.round((date.getTime() - parsedDates[index].getTime()) / (7 * 24 * 60 * 60 * 1000)))
+                .filter(gap => gap > 0)
+
+            const uniqueGaps = weekGaps.filter((gap, index, gaps) => gaps.indexOf(gap) === index)
+
+            return uniqueGaps.length === 1 ? uniqueGaps[0] : null
+        },
+
+        dateFromIsoValue(value) {
+            const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/u)
+            if (!match) return null
+
+            const [, year, month, day] = match
+
+            return new Date(Number(year), Number(month) - 1, Number(day))
         },
 
         generatedSlotBlockIsOccasional(block) {
@@ -1350,6 +1916,8 @@ export default {
                         sourceLabel: appointment?.sourceLabel || '',
                         date: appointment?.date || this.courseGroupDates(appointment?.courseGroup)[0] || '',
                         isAdditionalCourse: appointment?.isAdditionalCourse === true,
+                        isDistanceLearningCourse: appointment?.isDistanceLearningCourse === true,
+                        weekMarker: this.generatedAppointmentWeekMarker(appointment),
                     }))
                 : []
 
@@ -1390,6 +1958,8 @@ export default {
                     sourceLabel: block.sourceLabel,
                     date: this.courseGroupDates(block.courseGroup)[0] || '',
                     isAdditionalCourse: block.isAdditionalCourse === true,
+                    isDistanceLearningCourse: block.isDistanceLearningCourse === true,
+                    weekMarker: this.generatedSlotWeekMarker(block),
                 }))
         },
 
@@ -1422,6 +1992,14 @@ export default {
                     .map(date => String(date || '').trim())
                     .filter(Boolean)
                 : []
+        },
+
+        formatTimeValue(value) {
+            const rawValue = String(value || '').trim()
+
+            if (!rawValue) return ''
+
+            return rawValue.slice(0, 5)
         },
 
         generatedOccasionalMarkerTitle(marker) {
@@ -1471,6 +2049,10 @@ export default {
                 return
             }
 
+            if (nextStep === 'result') {
+                this.resultBackStep = this.normalizedResultBackStep(this.currentStep)
+            }
+
             this.currentStep = nextStep
 
             if (nextStep === 'courses' && this.selectedCourseKeys.length === 0) {
@@ -1484,6 +2066,10 @@ export default {
 
         normalizedStep(step) {
             return ['criteria', 'courses', 'result'].includes(String(step || '')) ? step : 'criteria'
+        },
+
+        normalizedResultBackStep(step) {
+            return step === 'courses' ? 'courses' : 'criteria'
         },
 
         selectAllProposedCourses() {
@@ -1744,12 +2330,21 @@ export default {
     padding: 0 8px 8px;
 }
 
+.student-evaluation-settings__course-section-grid--readonly {
+    padding: 8px 0 0;
+}
+
 .student-evaluation-settings__course-section-card {
     min-width: 0;
     border: 1px solid rgba(16, 38, 58, 0.14);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.82);
     overflow: hidden;
+}
+
+.student-evaluation-settings__course-section-card--additional {
+    border-color: rgba(234, 88, 12, 0.28);
+    background: #fed7aa;
 }
 
 .student-evaluation-settings__course-section-title {
@@ -1798,6 +2393,18 @@ export default {
 
 .student-evaluation-settings__course-table-row :deep(.v-selection-control) {
     min-height: 24px;
+}
+
+.student-evaluation-settings__course-table-row--readonly {
+    background: rgba(248, 250, 252, 0.64);
+}
+
+.student-evaluation-settings__course-table-row--selected {
+    background: rgba(220, 252, 231, 0.7);
+}
+
+.student-evaluation-settings__course-table-row--readonly :deep(.v-selection-control) {
+    pointer-events: none;
 }
 
 .student-evaluation-settings__course-empty {
@@ -2017,10 +2624,42 @@ export default {
     gap: 12px;
 }
 
+.student-result-course-panels {
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 8px;
+    background: rgba(248, 251, 255, 0.82);
+    overflow: hidden;
+}
+
+.student-result-course-panel {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.student-result-course-panel__head {
+    min-height: 46px;
+    padding: 8px 12px;
+}
+
+.student-result-course-panel__title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+    color: #0f172a;
+    font-size: 0.86rem;
+    font-weight: 900;
+}
+
+.student-result-course-panel :deep(.v-expansion-panel-text__wrapper) {
+    padding: 0 12px 12px;
+}
+
 .student-generated-timetable__head {
     display: flex;
     align-items: flex-start;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 12px;
 }
 
@@ -2038,8 +2677,28 @@ export default {
 .student-generated-timetable__controls {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    gap: 8px;
+}
+
+.student-generated-timetable__actions {
+    display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 8px;
+    margin-left: auto;
+}
+
+.student-generated-timetable__extension-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.student-generated-timetable__back-button {
+    color: rgb(var(--v-theme-primary)) !important;
 }
 
 .student-generated-timetable__counter {
@@ -2058,10 +2717,9 @@ export default {
 
 .student-generated-criteria__card {
     position: relative;
-    display: grid;
-    gap: 2px;
-    min-height: 48px;
-    padding: 8px 28px 8px 10px;
+    display: block;
+    min-height: 66px;
+    padding: 10px 12px;
     border: 1px solid rgba(16, 38, 58, 0.1);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.86);
@@ -2071,9 +2729,13 @@ export default {
     transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
 }
 
-.student-generated-criteria__card:disabled {
+.student-generated-criteria__card[tabindex="-1"] {
     cursor: wait;
     opacity: 0.72;
+}
+
+.student-generated-criteria__card--static {
+    cursor: default;
 }
 
 .student-generated-criteria__card--selected {
@@ -2089,7 +2751,54 @@ export default {
 }
 
 .student-generated-criteria__card--missed {
-    border-color: rgba(var(--v-theme-primary), 0.34);
+    border-color: rgba(16, 38, 58, 0.14);
+}
+
+.student-generated-criteria__card--additional {
+    border-color: rgba(234, 88, 12, 0.28);
+    background: #fff7ed;
+    box-shadow: inset 3px 0 0 rgb(234, 88, 12);
+}
+
+.student-generated-criteria__card--additional.student-generated-criteria__card--reached {
+    border-color: rgba(234, 88, 12, 0.42);
+    background: #fff7ed;
+}
+
+.student-generated-criteria__card--additional.student-generated-criteria__card--missed {
+    border-color: rgba(234, 88, 12, 0.32);
+    background: #fff7ed;
+}
+
+.student-generated-criteria__controls {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    margin-left: auto;
+}
+
+.student-generated-criteria__status {
+    flex: 0 0 auto;
+}
+
+.student-generated-criteria__status--reached {
+    color: rgb(var(--v-theme-success));
+}
+
+.student-generated-criteria__status--missed {
+    color: rgb(var(--v-theme-error));
+}
+
+.student-generated-criteria__check {
+    flex: 0 0 auto;
+    margin: -4px -6px -6px 0;
+}
+
+.student-generated-criteria__content {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
 }
 
 .student-generated-criteria__label {
@@ -2105,10 +2814,12 @@ export default {
     line-height: 1.15;
 }
 
-.student-generated-criteria__icon {
-    position: absolute;
-    top: 8px;
-    right: 8px;
+.student-generated-criteria__meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 24px;
 }
 
 .student-generated-timetable__grid {
@@ -2141,12 +2852,33 @@ export default {
     font-weight: 800;
 }
 
+.student-generated-timetable__cell--time {
+    flex-direction: column;
+    gap: 2px;
+}
+
+.student-generated-timetable__hour {
+    font-weight: 900;
+    line-height: 1;
+}
+
+.student-generated-timetable__time-range {
+    color: rgba(23, 45, 64, 0.68);
+    font-size: 0.66rem;
+    font-weight: 400;
+    line-height: 1;
+}
+
 .student-generated-timetable__cell--filled {
     background: rgba(var(--v-theme-success), 0.09);
 }
 
 .student-generated-timetable__cell--conflict {
     background: rgba(var(--v-theme-error), 0.09);
+}
+
+.student-generated-timetable__cell--additional {
+    background: #fed7aa;
 }
 
 .student-generated-timetable__cell--has-occasional {
@@ -2168,6 +2900,7 @@ export default {
 .student-generated-timetable__occasional-marker {
     display: inline-flex;
     align-items: center;
+    gap: 2px;
     max-width: 100%;
     min-height: 16px;
     padding: 1px 5px;
@@ -2202,9 +2935,31 @@ export default {
 }
 
 .student-generated-timetable__code {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 3px;
     color: rgb(var(--v-theme-success));
     font-size: 0.86rem;
     font-weight: 900;
+}
+
+.student-generated-timetable__badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 14px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 0.54rem;
+    font-weight: 950;
+    line-height: 1;
+}
+
+.student-generated-timetable__badge--week {
+    background: #dcfce7;
+    color: #166534;
 }
 
 .student-generated-timetable__details {
@@ -2255,6 +3010,11 @@ export default {
         justify-content: flex-start;
         flex-wrap: wrap;
         width: 100%;
+    }
+
+    .student-generated-timetable__actions {
+        width: 100%;
+        margin-left: 0;
     }
 
     .student-generated-timetable__grid {

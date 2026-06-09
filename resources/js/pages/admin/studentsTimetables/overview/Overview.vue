@@ -89,7 +89,7 @@
                     </span>
                 </div>
 
-                <div v-if="wizardPanelOpen" class="overview-wizard-settings-summary">
+                <div v-if="wizardPanelOpen && !wizardTimetableResultVisible" class="overview-wizard-settings-summary">
                     <div class="overview-wizard-settings-summary__header">
                         <div class="overview-wizard-settings-summary__title">
                             <v-icon icon="mdi-tune-variant" size="18" />
@@ -175,6 +175,7 @@
                         :evaluation-criteria-settings="evaluationCriteria"
                         :student-code="transferredStudentContext?.student?.studentCode || null"
                         class="overview-wizard-course-cards"
+                        @generated-timetable-visibility-change="setWizardTimetableResultVisible"
                         @timetable-overtaken="showOvertakenManualTimetable">
                         <template #course-actions="{ ready, loading, extending, createActionVisible, hasSelectedAdditionalCourses, extensionActionVisible }">
                             <div
@@ -197,9 +198,9 @@
                                     variant="tonal"
                                     color="grey-darken-1"
                                     size="large"
-                                    prepend-icon="mdi-close"
-                                    @click="closeActiveTimetablePanel">
-                                    Schließen
+                                    prepend-icon="mdi-arrow-left"
+                                    @click="handleWizardCourseActionBack(extending)">
+                                    Zurück
                                 </v-btn>
                             </div>
                             <div
@@ -306,23 +307,22 @@
                         </div>
                         <v-btn
                             v-if="manualPanelBackToWizardVisible"
-                            class="overview-wizard-close-button"
-                            variant="tonal"
-                            color="primary"
-                            size="large"
-                            prepend-icon="mdi-arrow-left"
-                            @click="openWizardPanel">
-                            Zurück
-                        </v-btn>
-                        <v-btn
-                            v-if="manualPanelBackToWizardVisible"
-                            class="overview-wizard-close-button overview-wizard-cancel-button"
+                            class="overview-wizard-close-button overview-wizard-cancel-button overview-wizard-close-button--calm"
                             variant="tonal"
                             color="error"
                             size="large"
                             prepend-icon="mdi-close-circle-outline"
                             @click="resetSavedTimetable">
                             Abbruch
+                        </v-btn>
+                        <v-btn
+                            v-if="manualPanelBackToWizardVisible"
+                            class="overview-wizard-close-button overview-wizard-back-button overview-wizard-close-button--calm"
+                            variant="tonal"
+                            size="large"
+                            prepend-icon="mdi-arrow-left"
+                            @click="openWizardPanel">
+                            Zurück
                         </v-btn>
                         <v-btn
                             v-if="directManualPanelOpen"
@@ -915,6 +915,7 @@ export default {
             settingsDialogOpen: false,
             wizardPanelOpen: false,
             wizardPanelMounted: false,
+            wizardTimetableResultVisible: false,
             manualPanelOpen: false,
             manualPanelSource: null,
             wizardTimetableCreating: false,
@@ -1556,6 +1557,7 @@ export default {
         openWizardPanel(options = {}) {
             this.wizardPanelMounted = true
             this.wizardPanelOpen = true
+            this.wizardTimetableResultVisible = false
             this.manualPanelOpen = false
             this.manualPanelSource = null
             if (options?.syncRoute !== false) {
@@ -1564,6 +1566,7 @@ export default {
         },
         closeWizardPanel() {
             this.wizardPanelOpen = false
+            this.wizardTimetableResultVisible = false
             this.navigateToTimetableOverviewMode?.()
         },
         closeActiveTimetablePanel() {
@@ -1574,6 +1577,15 @@ export default {
             }
 
             this.closeManualPanel()
+        },
+        handleWizardCourseActionBack(extending = false) {
+            if (extending === true) {
+                this.$refs.wizardCourseCards?.resetAdditionalCourseSelection?.()
+
+                return
+            }
+
+            this.closeActiveTimetablePanel()
         },
         async createWizardTimetable(requireAdditionalCourses = false) {
             if (this.wizardTimetableCreating) return
@@ -1589,9 +1601,13 @@ export default {
                 await createTimetables.call(wizardCourseCards, {
                     requireAdditionalCourses: requireAdditionalCourses === true,
                 })
+                this.wizardTimetableResultVisible = Boolean(wizardCourseCards?.selectedRobotTimetable)
             } finally {
                 this.wizardTimetableCreating = false
             }
+        },
+        setWizardTimetableResultVisible(visible) {
+            this.wizardTimetableResultVisible = visible === true
         },
         openManualPanel(options = {}) {
             this.manualPanelOpen = true
@@ -1955,6 +1971,7 @@ export default {
             wizardCourseCards?.resetStudentCourseSelection?.()
             wizardCourseCards?.clearGeneratedTimetables?.()
             wizardCourseCards?.showCourseActionAfterCourseInteraction?.()
+            this.wizardTimetableResultVisible = false
             this.activeCourseGroupFilterKeys = []
             this.activeDistanceLearningCourseGroupKeys = []
             this.removeSavedRobotTimetableState()
@@ -1975,6 +1992,7 @@ export default {
             wizardCourseCards?.clearGeneratedTimetables?.()
             this.wizardPanelOpen = false
             this.wizardPanelMounted = false
+            this.wizardTimetableResultVisible = false
             this.manualPanelOpen = false
             this.manualPanelSource = null
             this.infoDialogOpen = false
@@ -5205,6 +5223,10 @@ export default {
 
 .overview-wizard-close-button--calm {
     font-weight: 400;
+}
+
+.overview-wizard-back-button {
+    color: rgba(var(--v-theme-on-surface), 0.78);
 }
 
 .overview-wizard-cancel-button {
