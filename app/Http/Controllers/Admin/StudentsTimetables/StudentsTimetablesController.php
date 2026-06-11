@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\StudentsTimetables;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Teaching\SchoolHourResource;
 use App\Models\Import116;
+use App\Models\StudentTimetablePublishedTimetable;
 use App\Models\User;
 use App\Services\SchoolHourService;
 use App\Services\SchoolyearService;
@@ -356,38 +357,64 @@ class StudentsTimetablesController extends Controller
         ]);
     }
 
+    public function publishStudentTimetable(Request $request): JsonResponse
+    {
+        $authUser = $this->studentsTimetablesUser();
+
+        $validated = $request->validate([
+            'student_code' => ['required', 'string', 'max:255'],
+            'student_label' => ['nullable', 'string', 'max:255'],
+            'state' => ['nullable', 'array'],
+            'timetable' => ['required', 'array'],
+            ...$this->timetableOverviewPayloadRules('timetable'),
+        ]);
+
+        $student = Import116::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where('student_code', $validated['student_code'])
+            ->whereNotNull('exists_date')
+            ->first();
+
+        if (! $student) {
+            abort(422, 'Der ausgewählte Schüler wurde nicht gefunden.');
+        }
+
+        $timetable = $this->normalizeTimetableOverviewPdfLabels($validated['timetable']);
+        $studentLabel = trim((string) ($validated['student_label'] ?? ''))
+            ?: trim("{$student->last_name} {$student->first_name}");
+
+        $publishedTimetable = StudentTimetablePublishedTimetable::query()->updateOrCreate(
+            [
+                'school_id' => $authUser->school_id,
+                'schoolyear_id' => $authUser->schoolyear_id,
+                'student_code' => (string) $student->student_code,
+            ],
+            [
+                'published_by_user_id' => $authUser->id,
+                'student_label' => $studentLabel,
+                'timetable' => $timetable,
+                'state' => $validated['state'] ?? null,
+                'published_at' => now(),
+            ],
+        );
+
+        return response()->json([
+            'message' => "Stundenplan für {$studentLabel} wurde gespeichert.",
+            'data' => [
+                'id' => $publishedTimetable->id,
+                'student_code' => $publishedTimetable->student_code,
+                'student_label' => $publishedTimetable->student_label,
+                'published_at' => optional($publishedTimetable->published_at)->toIso8601String(),
+            ],
+        ]);
+    }
+
     public function overviewPdf(Request $request): Responsable
     {
         $this->studentsTimetablesUser();
 
-        $validated = $request->validate([
-            'title' => ['nullable', 'string', 'max:120'],
-            'subtitle' => ['nullable', 'string', 'max:255'],
-            'student' => ['nullable', 'string', 'max:255'],
-            'schoolyear' => ['nullable', 'string', 'max:120'],
-            'generated_at' => ['nullable', 'string', 'max:120'],
-            'weekdays' => ['required', 'array', 'min:1', 'max:6'],
-            'weekdays.*.label' => ['required', 'string', 'max:12'],
-            'semesters' => ['required', 'array', 'min:1', 'max:2'],
-            'semesters.*.label' => ['required', 'string', 'max:80'],
-            'semesters.*.date_range' => ['nullable', 'string', 'max:80'],
-            'semesters.*.weeks' => ['required', 'array', 'min:1', 'max:8'],
-            'semesters.*.weeks.*.label' => ['nullable', 'string', 'max:80'],
-            'semesters.*.weeks.*.hours' => ['required', 'array', 'max:20'],
-            'semesters.*.weeks.*.hours.*.hour' => ['required', 'integer', 'min:1', 'max:30'],
-            'semesters.*.weeks.*.hours.*.from' => ['nullable', 'string', 'max:20'],
-            'semesters.*.weeks.*.hours.*.until' => ['nullable', 'string', 'max:20'],
-            'semesters.*.weeks.*.hours.*.cells' => ['required', 'array', 'min:1', 'max:6'],
-            'semesters.*.weeks.*.hours.*.cells.*.status' => ['nullable', 'string', Rule::in(['empty', 'filled', 'conflict', 'related'])],
-            'semesters.*.weeks.*.hours.*.cells.*.courses' => ['array', 'max:10'],
-            'semesters.*.weeks.*.hours.*.cells.*.courses.*.label' => ['required', 'string', 'max:160'],
-            'semesters.*.weeks.*.hours.*.cells.*.courses.*.details' => ['nullable', 'string', 'max:160'],
-            'semesters.*.weeks.*.hours.*.cells.*.courses.*.dates' => ['nullable', 'array', 'max:120'],
-            'semesters.*.weeks.*.hours.*.cells.*.courses.*.dates.*' => ['string', 'max:20'],
-            'semesters.*.weeks.*.hours.*.cells.*.markers' => ['array', 'max:10'],
-            'semesters.*.weeks.*.hours.*.cells.*.markers.*.label' => ['required', 'string', 'max:40'],
-            'semesters.*.weeks.*.hours.*.cells.*.markers.*.title' => ['nullable', 'string', 'max:160'],
-        ]);
+        $validated = $request->validate($this->timetableOverviewPayloadRules());
 
         $validated = $this->normalizeTimetableOverviewPdfLabels($validated);
 
@@ -398,6 +425,43 @@ class StudentsTimetablesController extends Controller
             ->margins(top: 8, right: 20, bottom: 8, left: 20, unit: 'mm')
             ->name('stundenplan.pdf')
             ->download();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function timetableOverviewPayloadRules(string $prefix = ''): array
+    {
+        $key = fn (string $field): string => $prefix === '' ? $field : "{$prefix}.{$field}";
+
+        return [
+            $key('title') => ['nullable', 'string', 'max:120'],
+            $key('subtitle') => ['nullable', 'string', 'max:255'],
+            $key('student') => ['nullable', 'string', 'max:255'],
+            $key('schoolyear') => ['nullable', 'string', 'max:120'],
+            $key('generated_at') => ['nullable', 'string', 'max:120'],
+            $key('weekdays') => ['required', 'array', 'min:1', 'max:6'],
+            $key('weekdays.*.label') => ['required', 'string', 'max:12'],
+            $key('semesters') => ['required', 'array', 'min:1', 'max:2'],
+            $key('semesters.*.label') => ['required', 'string', 'max:80'],
+            $key('semesters.*.date_range') => ['nullable', 'string', 'max:80'],
+            $key('semesters.*.weeks') => ['required', 'array', 'min:1', 'max:8'],
+            $key('semesters.*.weeks.*.label') => ['nullable', 'string', 'max:80'],
+            $key('semesters.*.weeks.*.hours') => ['required', 'array', 'max:20'],
+            $key('semesters.*.weeks.*.hours.*.hour') => ['required', 'integer', 'min:1', 'max:30'],
+            $key('semesters.*.weeks.*.hours.*.from') => ['nullable', 'string', 'max:20'],
+            $key('semesters.*.weeks.*.hours.*.until') => ['nullable', 'string', 'max:20'],
+            $key('semesters.*.weeks.*.hours.*.cells') => ['required', 'array', 'min:1', 'max:6'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.status') => ['nullable', 'string', Rule::in(['empty', 'filled', 'conflict', 'related'])],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses') => ['array', 'max:10'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.label') => ['required', 'string', 'max:160'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.details') => ['nullable', 'string', 'max:160'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.dates') => ['nullable', 'array', 'max:120'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.dates.*') => ['string', 'max:20'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.markers') => ['array', 'max:10'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.markers.*.label') => ['required', 'string', 'max:40'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.markers.*.title') => ['nullable', 'string', 'max:160'],
+        ];
     }
 
     private function normalizeTimetableOverviewPdfLabels(array $data): array

@@ -189,6 +189,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/students-timetables/evaluation-settings', [StudentsTimetablesController::class, 'updateEvaluationSettings']);
         Route::get('/admin/students-timetables/overview-selections', [StudentsTimetablesController::class, 'overviewSelections']);
         Route::put('/admin/students-timetables/overview-selections', [StudentsTimetablesController::class, 'updateOverviewSelections']);
+        Route::post('/admin/students-timetables/overview/student-timetable', [StudentsTimetablesController::class, 'publishStudentTimetable']);
         Route::post('/admin/students-timetables/overview/pdf', [StudentsTimetablesController::class, 'overviewPdf']);
         Route::get('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'index']);
         Route::post('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'upload']);

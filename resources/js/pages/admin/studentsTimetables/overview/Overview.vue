@@ -397,6 +397,36 @@
                             @click="endAndRestartAdoptedTimetable">
                             Ende/Neustart
                         </v-btn>
+                        <div
+                            v-if="manualPanelBackToWizardVisible && studentTimetableSaveVisible"
+                            class="overview-student-save-action">
+                            <v-btn
+                                class="overview-wizard-close-button overview-student-save-button overview-wizard-close-button--calm"
+                                color="success"
+                                variant="flat"
+                                size="large"
+                                prepend-icon="mdi-content-save-outline"
+                                :title="`Stundenplan für ${publishedTimetableStudentName} speichern`"
+                                :aria-label="`Stundenplan für ${publishedTimetableStudentName} speichern`"
+                                :disabled="loading || timetableUpdatePending || publishedTimetableSaving"
+                                :loading="publishedTimetableSaving"
+                                @click="savePublishedStudentTimetable">
+                                <span class="overview-student-save-button__label">
+                                    <span>Speichern für</span>
+                                    <span>{{ publishedTimetableStudentName }}</span>
+                                </span>
+                            </v-btn>
+                            <v-alert
+                                v-if="publishedTimetableReport.message"
+                                class="overview-published-timetable-report"
+                                :type="publishedTimetableReport.type"
+                                variant="tonal"
+                                closable
+                                density="compact"
+                                @click:close="clearPublishedTimetableReport">
+                                {{ publishedTimetableReport.message }}
+                            </v-alert>
+                        </div>
                         <v-btn
                             v-if="manualPanelBackToWizardVisible && visibleTimetableSemesters.length"
                             class="overview-wizard-close-button overview-wizard-pdf-button overview-wizard-close-button--calm"
@@ -431,6 +461,36 @@
                             Ende/Neustart
                         </v-btn>
                         <v-spacer v-if="directManualPanelOpen" />
+                        <div
+                            v-if="directManualPanelOpen && studentTimetableSaveVisible"
+                            class="overview-student-save-action">
+                            <v-btn
+                                class="overview-wizard-close-button overview-student-save-button overview-wizard-close-button--calm"
+                                color="success"
+                                variant="flat"
+                                size="large"
+                                prepend-icon="mdi-content-save-outline"
+                                :title="`Stundenplan für ${publishedTimetableStudentName} speichern`"
+                                :aria-label="`Stundenplan für ${publishedTimetableStudentName} speichern`"
+                                :disabled="loading || timetableUpdatePending || publishedTimetableSaving"
+                                :loading="publishedTimetableSaving"
+                                @click="savePublishedStudentTimetable">
+                                <span class="overview-student-save-button__label">
+                                    <span>Speichern für</span>
+                                    <span>{{ publishedTimetableStudentName }}</span>
+                                </span>
+                            </v-btn>
+                            <v-alert
+                                v-if="publishedTimetableReport.message"
+                                class="overview-published-timetable-report"
+                                :type="publishedTimetableReport.type"
+                                variant="tonal"
+                                closable
+                                density="compact"
+                                @click:close="clearPublishedTimetableReport">
+                                {{ publishedTimetableReport.message }}
+                            </v-alert>
+                        </div>
                         <v-btn
                             v-if="directManualPanelOpen && visibleTimetableSemesters.length"
                             class="overview-wizard-close-button overview-wizard-pdf-button overview-manual-pdf-button overview-wizard-close-button--calm"
@@ -1049,6 +1109,11 @@ export default {
             wizardTimetableCreating: false,
             timetableUpdatePending: false,
             pdfExporting: false,
+            publishedTimetableSaving: false,
+            publishedTimetableReport: {
+                type: 'success',
+                message: '',
+            },
             studentDialogOpen: false,
             studentOptionsLoading: false,
             studentSearch: '',
@@ -1446,6 +1511,39 @@ export default {
         },
         transferredStudentLabel() {
             return this.transferredStudentContext?.student?.label || 'Kein Student'
+        },
+        publishedTimetableStudentCode() {
+            return this.normalizedStudentCode(this.transferredStudentContext?.student?.studentCode)
+        },
+        publishedTimetableStudentName() {
+            const studentCode = this.publishedTimetableStudentCode
+            const robotStudents = Array.isArray(this.robotStudents) ? this.robotStudents : []
+            const selectedStudent = studentCode
+                ? robotStudents.find(student => this.normalizedStudentCode(student?.student_code) === studentCode)
+                : null
+            const studentName = [selectedStudent?.last_name, selectedStudent?.first_name]
+                .map(value => String(value || '').trim())
+                .filter(Boolean)
+                .join(' ')
+
+            if (studentName) return studentName
+
+            const label = String(this.transferredStudentContext?.student?.label || '').trim()
+            const labelParts = label
+                .split('·')
+                .map(part => part.trim())
+                .filter(Boolean)
+
+            if (labelParts.length >= 2) return labelParts[1]
+
+            return label || 'Student'
+        },
+        studentTimetableSaveVisible() {
+            return Boolean(
+                (this.directManualPanelOpen || this.manualPanelBackToWizardVisible)
+                && this.visibleTimetableSemesters.length
+                && this.publishedTimetableStudentCode,
+            )
         },
         transferredStudentReligion() {
             const contextReligion = String(this.transferredStudentContext?.student?.religion || '').trim()
@@ -2022,6 +2120,45 @@ export default {
                 window.alert?.('PDF konnte nicht erstellt werden.')
             } finally {
                 this.pdfExporting = false
+            }
+        },
+        async savePublishedStudentTimetable() {
+            if (this.publishedTimetableSaving || !this.publishedTimetableStudentCode) return
+
+            this.publishedTimetableSaving = true
+            this.clearPublishedTimetableReport()
+
+            try {
+                const response = await axios.post(
+                    '/api/admin/students-timetables/overview/student-timetable',
+                    this.publishedStudentTimetablePayload(),
+                )
+
+                this.publishedTimetableReport = {
+                    type: 'success',
+                    message: response?.data?.message || 'Stundenplan wurde gespeichert.',
+                }
+            } catch (error) {
+                this.publishedTimetableReport = {
+                    type: 'error',
+                    message: error?.response?.data?.message || 'Stundenplan konnte nicht gespeichert werden.',
+                }
+            } finally {
+                this.publishedTimetableSaving = false
+            }
+        },
+        clearPublishedTimetableReport() {
+            this.publishedTimetableReport = {
+                type: 'success',
+                message: '',
+            }
+        },
+        publishedStudentTimetablePayload() {
+            return {
+                student_code: this.publishedTimetableStudentCode,
+                student_label: this.publishedTimetableStudentName,
+                timetable: this.timetablePdfPayload(),
+                state: this.currentTimetableState(),
             }
         },
         timetablePdfPayload() {
@@ -5638,6 +5775,42 @@ export default {
 
 .overview-wizard-pdf-button {
     min-width: 96px;
+}
+
+.overview-student-save-action {
+    display: grid;
+    gap: 6px;
+    flex: 0 1 240px;
+    min-width: 160px;
+    max-width: 280px;
+}
+
+.overview-student-save-button {
+    width: 100%;
+    min-width: 160px;
+}
+
+.overview-student-save-button :deep(.v-btn__content) {
+    min-width: 0;
+}
+
+.overview-student-save-button__label {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+    line-height: 1.05;
+    text-align: left;
+}
+
+.overview-student-save-button__label span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.overview-published-timetable-report {
+    font-size: 0.78rem;
+    line-height: 1.15;
 }
 
 .overview-wizard-cancel-button {

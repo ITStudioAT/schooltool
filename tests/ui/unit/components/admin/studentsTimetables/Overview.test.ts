@@ -33,6 +33,86 @@ describe('Students timetable overview', () => {
         globalThis.axios = originalAxios
     })
 
+    it('saves a published student timetable for the selected student', async () => {
+        const methods = (Overview as any).methods
+        const originalAxios = globalThis.axios
+        const post = vi.fn().mockResolvedValue({
+            data: {
+                message: 'Stundenplan wurde gespeichert.',
+            },
+        })
+        const timetable = { title: 'Stundenplan' }
+        const state = { activeCourseGroupFilterKeys: ['d-1'] }
+        const ctx = {
+            publishedTimetableSaving: false,
+            publishedTimetableStudentCode: '100',
+            publishedTimetableStudentName: 'SCHROLL Lukas',
+            publishedTimetableReport: {
+                type: 'error',
+                message: 'Alter Fehler',
+            },
+            clearPublishedTimetableReport: methods.clearPublishedTimetableReport,
+            publishedStudentTimetablePayload: methods.publishedStudentTimetablePayload,
+            timetablePdfPayload: () => timetable,
+            currentTimetableState: () => state,
+        }
+
+        globalThis.axios = { post } as never
+
+        await methods.savePublishedStudentTimetable.call(ctx)
+
+        expect(post).toHaveBeenCalledWith('/api/admin/students-timetables/overview/student-timetable', {
+            student_code: '100',
+            student_label: 'SCHROLL Lukas',
+            timetable,
+            state,
+        })
+        expect(ctx.publishedTimetableReport).toEqual({
+            type: 'success',
+            message: 'Stundenplan wurde gespeichert.',
+        })
+        expect(ctx.publishedTimetableSaving).toBe(false)
+
+        globalThis.axios = originalAxios
+    })
+
+    it('shows an inline report when publishing a student timetable fails', async () => {
+        const methods = (Overview as any).methods
+        const originalAxios = globalThis.axios
+        const post = vi.fn().mockRejectedValue({
+            response: {
+                data: {
+                    message: 'Der ausgewählte Schüler wurde nicht gefunden.',
+                },
+            },
+        })
+        const ctx = {
+            publishedTimetableSaving: false,
+            publishedTimetableStudentCode: '100',
+            publishedTimetableReport: {
+                type: 'success',
+                message: '',
+            },
+            clearPublishedTimetableReport: methods.clearPublishedTimetableReport,
+            publishedStudentTimetablePayload: () => ({
+                student_code: '100',
+                timetable: { title: 'Stundenplan' },
+            }),
+        }
+
+        globalThis.axios = { post } as never
+
+        await methods.savePublishedStudentTimetable.call(ctx)
+
+        expect(ctx.publishedTimetableReport).toEqual({
+            type: 'error',
+            message: 'Der ausgewählte Schüler wurde nicht gefunden.',
+        })
+        expect(ctx.publishedTimetableSaving).toBe(false)
+
+        globalThis.axios = originalAxios
+    })
+
     it('shows a pending state while queued timetable updates run', () => {
         vi.useFakeTimers()
         const methods = (Overview as any).methods
@@ -2064,6 +2144,15 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain("axios.post(\n                    '/api/admin/students-timetables/overview/pdf'")
         expect(componentSource).toContain("responseType: 'blob'")
         expect(componentSource).toContain(':loading="pdfExporting"')
+        expect(componentSource).toContain('Speichern für')
+        expect(componentSource).toContain('overview-student-save-action')
+        expect(componentSource).toContain('overview-student-save-button__label')
+        expect(componentSource).toContain(':loading="publishedTimetableSaving"')
+        expect(componentSource).toContain('v-if="publishedTimetableReport.message"')
+        expect(componentSource).toContain('@click:close="clearPublishedTimetableReport"')
+        expect(componentSource).toContain('publishedTimetableReport = {')
+        expect(componentSource).toContain('@click="savePublishedStudentTimetable"')
+        expect(componentSource).toContain("axios.post(\n                    '/api/admin/students-timetables/overview/student-timetable'")
         expect(componentSource).toContain('size="large"')
         expect(componentSource).toContain('margin-left: auto;')
         expect(componentSource).toContain('.recurrence-week-selector :deep(.v-btn-toggle) {')
