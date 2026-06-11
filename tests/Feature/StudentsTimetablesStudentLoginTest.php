@@ -618,6 +618,12 @@ it('creates the first automatic timetable for the authenticated student', functi
         ->getJson('/api/homepage/students-timetables/overview')
         ->assertSuccessful();
 
+    $overviewResponse
+        ->assertJsonPath('data.manual_timetable.courses.0.course_groups.0.course', 'D1')
+        ->assertJsonPath('data.manual_timetable.courses.0.course_groups.0.time_from', '16:10')
+        ->assertJsonPath('data.manual_timetable.additional_courses.0.course_groups.0.course', 'D2')
+        ->assertJsonPath('data.school_hours.0.hour', 11);
+
     $selectedCourseKey = $overviewResponse->json('data.proposed_courses.0.key');
     $selectedAdditionalCourseKey = $overviewResponse->json('data.additional_courses.0.key');
 

@@ -1620,13 +1620,12 @@ export default {
             this.subAction = 'overview'
             this.importPage = ''
             this.importSubPage = ''
-            this.$router.replace({ path: '/admin/students-timetables' })
+            this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
         },
         redirectLegacyOverviewRoute() {
             if (
                 this.$route.params.section !== 'timetable'
-                || this.$route.params.subsection !== 'overview'
-                || this.$route.params.detail
+                || this.$route.params.subsection
             ) {
                 return false
             }
@@ -1634,7 +1633,7 @@ export default {
             this.subAction = 'overview'
             this.importPage = ''
             this.importSubPage = ''
-            this.$router.replace({ path: '/admin/students-timetables' })
+            this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
 
             return true
         },

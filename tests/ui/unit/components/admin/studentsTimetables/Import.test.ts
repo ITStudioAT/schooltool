@@ -23,6 +23,8 @@ describe('Students timetable import', () => {
         expect(componentSource).toContain("label: 'Import'")
         expect(componentSource).toContain("v-if=\"import_action === 'overview'\"")
         expect(componentSource).toContain("v-if=\"import_action === 'import'\"")
+        expect(componentSource).toContain('redirectMissingImportRoute()')
+        expect(componentSource).toContain("this.$router.replace({ path: '/admin/students-timetables/import/overview' })")
         expect(componentSource).toContain('/admin/students-timetables/import/${this.import_action}')
         expect(componentSource).toContain('Hauptdatenbestand')
         expect(componentSource).toContain('student_timetable_entries')
@@ -51,6 +53,26 @@ describe('Students timetable import', () => {
         expect(componentSource).not.toContain('Unimportieren')
         expect(componentSource).toContain('@click.stop="openDeleteDialog(importItem)"')
         expect(componentSource).toContain('per_page: 100')
+    })
+
+    it('writes the default import overview step into the URL', () => {
+        const methods = (Import as any).methods
+        const replace = vi.fn()
+        const ctx: any = {
+            $route: {
+                params: {
+                    section: 'import',
+                },
+            },
+            $router: {
+                replace,
+            },
+            import_action: 'import',
+        }
+
+        expect(methods.redirectMissingImportRoute.call(ctx)).toBe(true)
+        expect(ctx.import_action).toBe('overview')
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/import/overview' })
     })
 
     it('calculates imported TT records after skipped invalid records', () => {

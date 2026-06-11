@@ -214,6 +214,56 @@ describe('RobotTimetable', () => {
         expect(loadQualityCountersForSelectedTimetableType).not.toHaveBeenCalled()
     })
 
+    it('restores a generated timetable for the embedded result route', async () => {
+        const loadFullGreenTimetableCount = vi.fn()
+        const context = robotContext({
+            embeddedCourseCardsOnly: true,
+            restoreGeneratedTimetable: true,
+            selectedRobotTimetable: null,
+            timetableCalculationReady: () => true,
+            loadFullGreenTimetableCount,
+        })
+
+        await RobotTimetable.methods.restoreGeneratedTimetableFromSavedState.call(context)
+
+        expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({
+            skipAdditionalCourseDefaultSelection: true,
+            skipQualityCriteriaDefaultSelection: true,
+        })
+    })
+
+    it('does not restore a generated timetable outside the embedded result route', async () => {
+        const loadFullGreenTimetableCount = vi.fn()
+        const context = robotContext({
+            embeddedCourseCardsOnly: true,
+            restoreGeneratedTimetable: false,
+            selectedRobotTimetable: null,
+            timetableCalculationReady: () => true,
+            loadFullGreenTimetableCount,
+        })
+
+        await RobotTimetable.methods.restoreGeneratedTimetableFromSavedState.call(context)
+
+        expect(loadFullGreenTimetableCount).not.toHaveBeenCalled()
+    })
+
+    it('keeps embedded course cards loading while selected student history loads', () => {
+        const context = robotContext({
+            embeddedCourseCardsOnly: true,
+            loading: false,
+            studentCompletedCoursesLoading: true,
+            availableCourses: [{ key: 'D1' }],
+        })
+
+        expect(RobotTimetable.computed.courseCardsLoading.call(context)).toBe(true)
+        expect(RobotTimetable.computed.courseCardsReady.call(context)).toBe(false)
+
+        context.studentCompletedCoursesLoading = false
+
+        expect(RobotTimetable.computed.courseCardsLoading.call(context)).toBe(false)
+        expect(RobotTimetable.computed.courseCardsReady.call(context)).toBe(true)
+    })
+
     it('shows the latest checked criteria count on the criteria timetable card', () => {
         const context = robotContext({
             qualitySummaryCheckedKeys: ['saturday_free|', 'free_days|'],
@@ -242,6 +292,38 @@ describe('RobotTimetable', () => {
         expect(label.replace(/\u00a0/gu, ' ')).toBe('1 296')
     })
 
+    it('uses the checked quality criterion count before the backend subset count', () => {
+        const context = robotContext({
+            selectedQualityCriteriaCount: 8,
+            qualitySummaryCheckedKeys: ['saturday_free|'],
+            qualityCriterionRows: [
+                { key: 'saturday_free', option: null, count: 3 },
+            ],
+        })
+
+        expect(RobotTimetable.methods.selectedCriteriaTimetableCount.call(context)).toBe(3)
+        expect(RobotTimetable.computed.selectedTimetableResultCount.call({
+            ...context,
+            qualityCriteriaResultFilterActive: true,
+        })).toBe(3)
+    })
+
+    it('pages by the checked criterion count when the first generated timetable selects it', () => {
+        const context = robotContext({
+            qualityCriteriaResultFilterEnabled: false,
+            selectedQualityCriteriaCount: 8,
+            qualitySummaryCheckedKeys: ['saturday_free|'],
+            qualityCriterionRows: [
+                { key: 'saturday_free', option: null, count: 5 },
+            ],
+        })
+
+        context.qualityCriteriaResultFilterActive = RobotTimetable.computed.qualityCriteriaResultFilterActive.call(context)
+
+        expect(context.qualityCriteriaResultFilterActive).toBe(true)
+        expect(RobotTimetable.computed.selectedTimetableResultCount.call(context)).toBe(5)
+    })
+
     it('activates the criteria timetable view when a counted summary checkbox is checked', () => {
         const context = robotContext({
             qualityCriterionRows: [
@@ -258,6 +340,43 @@ describe('RobotTimetable', () => {
         expect(context.qualityCriteriaResultFilterEnabled).toBe(true)
         expect(RobotTimetable.computed.qualityCriteriaResultFilterActive.call(context)).toBe(true)
         expect(RobotTimetable.methods.selectedCriteriaTimetableCount.call(context)).toBe(1296)
+    })
+
+    it('selects the first counted quality criterion by default', () => {
+        const setTimetableResultCounter = vi.fn()
+        const normalizeTimetableResultCounters = vi.fn()
+        const context = robotContext({
+            activeQualityCriterionRows: [
+                { key: 'saturday_free', option: null, count: 4 },
+                { key: 'free_days', option: null, count: 8 },
+            ],
+            setTimetableResultCounter,
+            normalizeTimetableResultCounters,
+        })
+
+        const selected = RobotTimetable.methods.autoSelectFirstQualityCriterionTimetable.call(context)
+
+        expect(selected).toBe(true)
+        expect(context.qualitySummaryCheckedKeys).toEqual(['saturday_free|'])
+        expect(context.selectedQualityCriteriaCount).toBeNull()
+        expect(context.qualityCriteriaResultFilterEnabled).toBe(true)
+        expect(setTimetableResultCounter).toHaveBeenCalledWith('full_green', 1)
+        expect(normalizeTimetableResultCounters).toHaveBeenCalledOnce()
+    })
+
+    it('does not replace an existing quality criterion selection by default', () => {
+        const context = robotContext({
+            qualitySummaryCheckedKeys: ['free_days|'],
+            activeQualityCriterionRows: [
+                { key: 'saturday_free', option: null, count: 4 },
+            ],
+        })
+
+        const selected = RobotTimetable.methods.autoSelectFirstQualityCriterionTimetable.call(context)
+
+        expect(selected).toBe(false)
+        expect(context.qualitySummaryCheckedKeys).toEqual(['free_days|'])
+        expect(context.qualityCriteriaResultFilterEnabled).toBe(false)
     })
 
     it('uses the selected criteria count when the criteria card checkbox is active', () => {

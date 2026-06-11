@@ -46,7 +46,7 @@
                             <div class="overview-selected-card__top">
                                 <div class="overview-selected-card__label">{{ item.label }}</div>
                                 <v-btn
-                                    v-if="selectionItemEditable(item) && !showEvaluationSettings"
+                                    v-if="selectionItemEditable(item) && !showEvaluationSettings && !showManualTimetable"
                                     icon="mdi-pencil"
                                     variant="text"
                                     color="primary"
@@ -60,7 +60,7 @@
                         </div>
                     </div>
                     <v-btn
-                        v-if="hasSelectionOverride && !showEvaluationSettings"
+                        v-if="hasSelectionOverride && !showEvaluationSettings && !showManualTimetable"
                         class="overview-selection__restore"
                         icon="mdi-restore"
                         variant="tonal"
@@ -94,7 +94,7 @@
                 </v-dialog>
 
                 <v-expansion-panels
-                    v-if="!showEvaluationSettings"
+                    v-if="!showEvaluationSettings && !showManualTimetable"
                     v-model="expandedCourseSections"
                     class="summary-grid summary-panels"
                     multiple
@@ -132,7 +132,7 @@
                     </v-expansion-panel>
                 </v-expansion-panels>
 
-                <div v-if="!showEvaluationSettings" class="timetable-actions">
+                <div v-if="!showEvaluationSettings && !showManualTimetable" class="timetable-actions">
                     <v-btn
                         class="timetable-actions__button timetable-actions__automatic"
                         variant="flat"
@@ -148,10 +148,107 @@
                     <v-btn
                         class="timetable-actions__button timetable-actions__manual"
                         variant="flat"
-                        prepend-icon="mdi-calendar-edit">
+                        prepend-icon="mdi-calendar-edit"
+                        @click="openManualTimetable">
                         Manueller Stundenplan
                     </v-btn>
                 </div>
+
+                <section v-if="showManualTimetable" class="student-manual-timetable">
+                    <div class="student-manual-timetable__toolbar">
+                        <div>
+                            <p class="student-manual-timetable__eyebrow">Manuell</p>
+                            <h3>{{ manualTimetableSelection.title || 'Manueller Stundenplan' }}</h3>
+                        </div>
+                        <v-btn variant="text" prepend-icon="mdi-arrow-left" @click="closeManualTimetable">Zurück</v-btn>
+                    </div>
+
+                    <div class="student-manual-timetable__layout">
+                        <div class="student-manual-timetable__courses">
+                            <v-expansion-panels v-model="manualExpandedCourseSections" multiple flat>
+                                <v-expansion-panel
+                                    v-for="section in manualTimetableCourseSections"
+                                    :key="section.key"
+                                    :value="section.key"
+                                    class="student-manual-timetable__course-section">
+                                    <v-expansion-panel-title class="student-manual-timetable__course-section-title">
+                                        <v-icon size="20">{{ section.icon }}</v-icon>
+                                        <span>{{ section.title }}</span>
+                                        <v-chip size="x-small" variant="flat" :color="section.color">{{ section.items.length }}</v-chip>
+                                    </v-expansion-panel-title>
+
+                                    <v-expansion-panel-text>
+                                        <div v-if="section.items.length" class="student-manual-timetable__course-list">
+                                            <label
+                                                v-for="course in section.items"
+                                                :key="manualCourseKey(course)"
+                                                class="student-manual-timetable__course"
+                                                :class="{ 'student-manual-timetable__course--disabled': !manualCourseGroups(course).length }">
+                                                <v-checkbox-btn
+                                                    :model-value="manualCourseSelected(course)"
+                                                    :disabled="!manualCourseGroups(course).length"
+                                                    density="compact"
+                                                    color="primary"
+                                                    @update:model-value="setManualCourseSelected(course, $event)" />
+                                                <span>
+                                                    <strong>{{ course.code || course.name || '-' }}</strong>
+                                                    <small>{{ manualCourseMeta(course) }}</small>
+                                                </span>
+                                            </label>
+                                        </div>
+
+                                        <div v-else class="empty-state">
+                                            <v-icon size="20">mdi-information-outline</v-icon>
+                                            <span>{{ section.empty }}</span>
+                                        </div>
+                                    </v-expansion-panel-text>
+                                </v-expansion-panel>
+                            </v-expansion-panels>
+                        </div>
+
+                        <div class="student-manual-timetable__preview">
+                            <div v-if="manualSelectedCourseGroups.length" class="student-manual-timetable__grid-wrap">
+                                <div
+                                    class="student-manual-timetable__grid"
+                                    :style="{ '--manual-timetable-weekday-count': manualTimetableWeekdays.length }">
+                                    <div class="student-manual-timetable__corner"></div>
+                                    <div
+                                        v-for="weekday in manualTimetableWeekdays"
+                                        :key="weekday.value"
+                                        class="student-manual-timetable__weekday">
+                                        {{ weekday.label }}
+                                    </div>
+
+                                    <template v-for="hour in manualTimetableHours" :key="hour.value">
+                                        <div class="student-manual-timetable__hour">
+                                            <strong>{{ hour.hourLabel }}</strong>
+                                            <span v-if="hour.timeFrom || hour.timeUntil">{{ hour.timeFrom }} - {{ hour.timeUntil }}</span>
+                                        </div>
+                                        <div
+                                            v-for="weekday in manualTimetableWeekdays"
+                                            :key="`${weekday.value}-${hour.value}`"
+                                            class="student-manual-timetable__cell"
+                                            :class="{ 'student-manual-timetable__cell--conflict': manualGroupsForCell(weekday.value, hour.value).length > 1 }">
+                                            <div
+                                                v-for="group in manualGroupsForCell(weekday.value, hour.value)"
+                                                :key="manualCourseGroupKey(group)"
+                                                class="student-manual-timetable__block">
+                                                <strong>{{ manualCourseGroupLabel(group) }}</strong>
+                                                <span>{{ manualCourseGroupDetails(group) }}</span>
+                                                <small v-if="manualCourseGroupWeekMarker(group)">{{ manualCourseGroupWeekMarker(group) }}</small>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <div v-else class="student-manual-timetable__empty">
+                                <v-icon size="24">mdi-calendar-search</v-icon>
+                                <span>Keine passenden Kurstermine gefunden.</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
 
                 <StudentTimetableEvaluationSettings
                     v-if="showEvaluationSettings"
@@ -212,7 +309,10 @@ export default {
             studentTimetablesStore: null,
             showDrawer: false,
             showEvaluationSettings: false,
+            showManualTimetable: false,
             expandedCourseSections: [],
+            manualExpandedCourseSections: ['missing', 'proposed'],
+            manualSelectedCourseKeys: [],
             selectionOverride: {},
             selectionDialogOpen: false,
             selectionDraftKey: '',
@@ -315,6 +415,80 @@ export default {
         automaticTimetableCourseSummary() {
             return this.automaticTimetableCourseSelection
         },
+        manualTimetableSelection() {
+            const manualTimetable = this.overview?.manual_timetable
+
+            return manualTimetable && typeof manualTimetable === 'object' ? manualTimetable : {}
+        },
+        manualTimetableCourseSections() {
+            return Array.isArray(this.manualTimetableSelection.sections)
+                ? this.manualTimetableSelection.sections
+                : []
+        },
+        manualTimetableCourses() {
+            return this.manualTimetableCourseSections
+                .flatMap(section => Array.isArray(section.items) ? section.items : [])
+        },
+        manualSelectedCourses() {
+            const selectedCourseKeys = new Set(this.manualSelectedCourseKeys)
+
+            return this.manualTimetableCourses
+                .filter(course => selectedCourseKeys.has(this.manualCourseKey(course)))
+        },
+        manualSelectedCourseGroups() {
+            const courseGroups = new Map()
+
+            this.manualSelectedCourses.forEach((course) => {
+                this.manualCourseGroups(course).forEach((courseGroup) => {
+                    const courseGroupKey = this.manualCourseGroupKey(courseGroup)
+
+                    if (!courseGroups.has(courseGroupKey)) {
+                        courseGroups.set(courseGroupKey, courseGroup)
+                    }
+                })
+            })
+
+            return Array.from(courseGroups.values())
+        },
+        manualTimetableWeekdays() {
+            const selectedWeekdays = new Set(
+                this.manualSelectedCourseGroups
+                    .map(courseGroup => Number(courseGroup?.weekday || 0))
+                    .filter(weekday => weekday >= 1 && weekday <= 6),
+            )
+            const weekdayLabels = [
+                { value: 1, label: 'Mo' },
+                { value: 2, label: 'Di' },
+                { value: 3, label: 'Mi' },
+                { value: 4, label: 'Do' },
+                { value: 5, label: 'Fr' },
+                { value: 6, label: 'Sa' },
+            ]
+
+            return weekdayLabels.filter(weekday => weekday.value < 6 || selectedWeekdays.has(6))
+        },
+        manualTimetableHours() {
+            const hours = new Map()
+
+            this.manualSelectedCourseGroups.forEach((courseGroup) => {
+                const hour = Number(courseGroup?.hour || 0)
+
+                if (!Number.isFinite(hour) || hour <= 0) {
+                    return
+                }
+
+                if (!hours.has(hour)) {
+                    hours.set(hour, {
+                        value: hour,
+                        hourLabel: `${hour}.`,
+                        timeFrom: this.manualTimetableHourTimeFrom(courseGroup, hour),
+                        timeUntil: this.manualTimetableHourTimeUntil(courseGroup, hour),
+                    })
+                }
+            })
+
+            return Array.from(hours.values()).sort((firstHour, secondHour) => firstHour.value - secondHour.value)
+        },
     },
 
     watch: {
@@ -324,12 +498,23 @@ export default {
                 this.showEvaluationSettings = this.isAutomaticTimetableStep(step)
             },
         },
+        '$route.query.manual_timetable': {
+            immediate: true,
+            handler(value) {
+                this.showManualTimetable = String(value || '') === '1'
+
+                if (this.showManualTimetable) {
+                    this.ensureManualTimetableDefaultSelection()
+                }
+            },
+        },
     },
 
     methods: {
         async loadOverview() {
             await this.studentTimetablesStore.loadOverview()
             this.syncSelectionOverrideFromOverview()
+            this.ensureManualTimetableDefaultSelection()
         },
         async handleLogout() {
             this.showDrawer = false
@@ -338,6 +523,7 @@ export default {
         },
         openAutomaticTimetable() {
             this.showEvaluationSettings = true
+            this.showManualTimetable = false
             this.setAutomaticTimetableStep('criteria')
         },
         closeAutomaticTimetable() {
@@ -357,12 +543,13 @@ export default {
                 return
             }
 
+            const query = { ...this.$route.query }
+            delete query.manual_timetable
+            query.automatic_timetable = step
+
             this.$router.push({
                 path: this.$route.path,
-                query: {
-                    ...this.$route.query,
-                    automatic_timetable: step,
-                },
+                query,
             })
         },
         setAutomaticTimetableCourseKeys(courseKeys) {
@@ -435,6 +622,149 @@ export default {
         },
         isAutomaticTimetableStep(step) {
             return ['criteria', 'courses', 'result'].includes(String(step || ''))
+        },
+        openManualTimetable() {
+            this.showManualTimetable = true
+            this.showEvaluationSettings = false
+            this.ensureManualTimetableDefaultSelection()
+
+            const query = { ...this.$route.query }
+            delete query.automatic_timetable
+            delete query.automatic_timetable_courses
+            delete query.automatic_timetable_criteria
+            query.manual_timetable = '1'
+
+            this.$router.push({
+                path: this.$route.path,
+                query,
+            })
+        },
+        closeManualTimetable() {
+            this.showManualTimetable = false
+            this.clearManualTimetableState()
+        },
+        clearManualTimetableState() {
+            if (!this.$route.query.manual_timetable) {
+                return
+            }
+
+            const query = { ...this.$route.query }
+            delete query.manual_timetable
+
+            this.$router.push({
+                path: this.$route.path,
+                query,
+            })
+        },
+        ensureManualTimetableDefaultSelection() {
+            if (!this.showManualTimetable || this.manualSelectedCourseKeys.length) {
+                return
+            }
+
+            this.manualSelectedCourseKeys = this.manualTimetableCourseSections
+                .filter(section => ['missing', 'proposed'].includes(String(section?.key || '')))
+                .flatMap(section => Array.isArray(section.items) ? section.items : [])
+                .filter(course => this.manualCourseGroups(course).length)
+                .map(course => this.manualCourseKey(course))
+        },
+        manualCourseKey(course) {
+            return String(course?.key || [course?.code || '', course?.name || '', course?.semester || ''].join('|'))
+        },
+        manualCourseGroups(course) {
+            return Array.isArray(course?.course_groups) ? course.course_groups : []
+        },
+        manualCourseSelected(course) {
+            return this.manualSelectedCourseKeys.includes(this.manualCourseKey(course))
+        },
+        setManualCourseSelected(course, selected) {
+            const courseKey = this.manualCourseKey(course)
+
+            if (!courseKey) {
+                return
+            }
+
+            if (selected === true && !this.manualSelectedCourseKeys.includes(courseKey)) {
+                this.manualSelectedCourseKeys = [...this.manualSelectedCourseKeys, courseKey]
+                return
+            }
+
+            if (selected !== true) {
+                this.manualSelectedCourseKeys = this.manualSelectedCourseKeys
+                    .filter(selectedCourseKey => selectedCourseKey !== courseKey)
+            }
+        },
+        manualCourseMeta(course) {
+            const courseGroupsCount = this.manualCourseGroups(course).length
+            const hoursLabel = this.courseHoursLabel(course)
+            const groupLabel = courseGroupsCount === 1 ? '1 Termin' : `${courseGroupsCount} Termine`
+
+            return [hoursLabel, groupLabel]
+                .filter(Boolean)
+                .join(' · ')
+        },
+        manualGroupsForCell(weekday, hour) {
+            return this.manualSelectedCourseGroups
+                .filter(courseGroup => Number(courseGroup?.weekday || 0) === Number(weekday))
+                .filter(courseGroup => Number(courseGroup?.hour || 0) === Number(hour))
+        },
+        manualCourseGroupKey(courseGroup) {
+            return String(courseGroup?.key || [
+                courseGroup?.course || courseGroup?.subject || courseGroup?.title || '',
+                courseGroup?.weekday || '',
+                courseGroup?.hour || '',
+                courseGroup?.teacher || '',
+            ].join('|'))
+        },
+        manualCourseGroupLabel(courseGroup) {
+            return courseGroup?.course || courseGroup?.subject || courseGroup?.title || courseGroup?.display_label || '-'
+        },
+        manualCourseGroupDetails(courseGroup) {
+            const rooms = Array.isArray(courseGroup?.rooms) ? courseGroup.rooms.join(', ') : ''
+
+            return [
+                courseGroup?.display_label,
+                courseGroup?.teacher,
+                rooms,
+            ]
+                .filter(Boolean)
+                .join(' · ')
+        },
+        manualCourseGroupWeekMarker(courseGroup) {
+            const recurrenceInterval = Number(courseGroup?.recurrence_interval || 0)
+
+            if (recurrenceInterval > 1) {
+                return `${recurrenceInterval}-w`
+            }
+
+            if (courseGroup?.block_label) {
+                return courseGroup.block_label
+            }
+
+            return ''
+        },
+        manualTimetableHourTimeFrom(courseGroup, hour = null) {
+            return this.formatTimeValue(
+                courseGroup?.time_from
+                || courseGroup?.from
+                || this.configuredSchoolHour(hour ?? courseGroup?.hour)?.from,
+            )
+        },
+        manualTimetableHourTimeUntil(courseGroup, hour = null) {
+            return this.formatTimeValue(
+                courseGroup?.time_until
+                || courseGroup?.until
+                || this.configuredSchoolHour(hour ?? courseGroup?.hour)?.until,
+            )
+        },
+        configuredSchoolHour(hour) {
+            const schoolHours = Array.isArray(this.overview?.school_hours) ? this.overview.school_hours : []
+
+            return schoolHours.find(schoolHour => Number(schoolHour?.hour) === Number(hour)) || {}
+        },
+        formatTimeValue(value) {
+            const timeValue = String(value || '').trim()
+
+            return timeValue ? timeValue.slice(0, 5) : ''
         },
         selectionItemEditable(item) {
             return studentOverviewEditableSelectionKeys.includes(String(item?.key || ''))
@@ -701,6 +1031,242 @@ export default {
     animation-delay: 1.1s;
 }
 
+.student-manual-timetable {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.student-manual-timetable__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(16, 38, 58, 0.08);
+}
+
+.student-manual-timetable__toolbar h3,
+.student-manual-timetable__eyebrow {
+    margin: 0;
+}
+
+.student-manual-timetable__toolbar h3 {
+    color: #10263a;
+    font-size: 1.18rem;
+    line-height: 1.2;
+}
+
+.student-manual-timetable__eyebrow {
+    color: #0f766e;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.student-manual-timetable__layout {
+    display: grid;
+    grid-template-columns: minmax(260px, 330px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+.student-manual-timetable__courses {
+    min-width: 0;
+}
+
+.student-manual-timetable__course-section {
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    border-radius: 8px !important;
+    background: #ffffff !important;
+    overflow: hidden;
+}
+
+.student-manual-timetable__course-section-title {
+    min-height: 50px;
+    padding: 12px;
+}
+
+.student-manual-timetable__course-section-title :deep(.v-expansion-panel-title__overlay) {
+    display: none;
+}
+
+.student-manual-timetable__course-section-title span {
+    flex: 1;
+    min-width: 0;
+    color: #10263a;
+    font-size: 0.9rem;
+    font-weight: 850;
+}
+
+.student-manual-timetable :deep(.v-expansion-panel-text__wrapper) {
+    padding: 0;
+}
+
+.student-manual-timetable__course-list {
+    display: grid;
+}
+
+.student-manual-timetable__course {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px;
+    border-top: 1px solid rgba(16, 38, 58, 0.06);
+}
+
+.student-manual-timetable__course--disabled {
+    opacity: 0.58;
+}
+
+.student-manual-timetable__course strong,
+.student-manual-timetable__course small {
+    display: block;
+}
+
+.student-manual-timetable__course strong {
+    color: #172d40;
+    font-size: 0.9rem;
+    line-height: 1.18;
+}
+
+.student-manual-timetable__course small {
+    margin-top: 2px;
+    color: rgba(23, 45, 64, 0.64);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.student-manual-timetable__preview {
+    min-width: 0;
+}
+
+.student-manual-timetable__grid-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.student-manual-timetable__grid {
+    --manual-timetable-weekday-count: 5;
+    display: grid;
+    grid-template-columns: 82px repeat(var(--manual-timetable-weekday-count), minmax(112px, 1fr));
+    min-width: calc(82px + (112px * var(--manual-timetable-weekday-count)));
+}
+
+.student-manual-timetable__corner,
+.student-manual-timetable__weekday,
+.student-manual-timetable__hour,
+.student-manual-timetable__cell {
+    border-right: 1px solid rgba(16, 38, 58, 0.07);
+    border-bottom: 1px solid rgba(16, 38, 58, 0.07);
+}
+
+.student-manual-timetable__weekday,
+.student-manual-timetable__hour {
+    background: #f8fafc;
+}
+
+.student-manual-timetable__weekday {
+    padding: 10px 8px;
+    color: #10263a;
+    font-size: 0.78rem;
+    font-weight: 900;
+    text-align: center;
+}
+
+.student-manual-timetable__hour {
+    display: grid;
+    align-content: center;
+    gap: 2px;
+    min-height: 78px;
+    padding: 8px;
+    color: #10263a;
+}
+
+.student-manual-timetable__hour strong,
+.student-manual-timetable__hour span {
+    display: block;
+}
+
+.student-manual-timetable__hour strong {
+    font-size: 0.78rem;
+}
+
+.student-manual-timetable__hour span {
+    color: rgba(23, 45, 64, 0.62);
+    font-size: 0.66rem;
+    font-weight: 750;
+    line-height: 1.15;
+}
+
+.student-manual-timetable__cell {
+    display: grid;
+    align-content: start;
+    gap: 5px;
+    min-height: 78px;
+    padding: 6px;
+    background: #ffffff;
+}
+
+.student-manual-timetable__cell--conflict {
+    background: #fff7ed;
+}
+
+.student-manual-timetable__block {
+    display: grid;
+    gap: 2px;
+    padding: 6px;
+    border: 1px solid rgba(15, 118, 110, 0.18);
+    border-radius: 6px;
+    background: #ecfdf5;
+}
+
+.student-manual-timetable__block strong,
+.student-manual-timetable__block span,
+.student-manual-timetable__block small {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.student-manual-timetable__block strong {
+    color: #065f46;
+    font-size: 0.76rem;
+    line-height: 1.12;
+}
+
+.student-manual-timetable__block span {
+    color: #134e4a;
+    font-size: 0.66rem;
+    font-weight: 720;
+    line-height: 1.16;
+}
+
+.student-manual-timetable__block small {
+    color: #0f766e;
+    font-size: 0.62rem;
+    font-weight: 900;
+}
+
+.student-manual-timetable__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 180px;
+    padding: 20px;
+    border: 1px dashed rgba(16, 38, 58, 0.16);
+    border-radius: 8px;
+    color: rgba(23, 45, 64, 0.68);
+    background: #f8fafc;
+    font-size: 0.9rem;
+    font-weight: 750;
+}
+
 @keyframes timetable-star-twinkle {
     0%,
     100% {
@@ -744,12 +1310,23 @@ export default {
         width: 100%;
     }
 
+    .student-manual-timetable__toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
     .overview-selected-cards {
         grid-template-columns: 1fr;
     }
 
     .overview-selection {
         flex-direction: column;
+    }
+}
+
+@media (max-width: 980px) {
+    .student-manual-timetable__layout {
+        grid-template-columns: 1fr;
     }
 }
 

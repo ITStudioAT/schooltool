@@ -2717,7 +2717,8 @@ export default {
 
 .student-generated-criteria__card {
     position: relative;
-    display: block;
+    display: flex;
+    flex-direction: column;
     min-height: 66px;
     padding: 10px 12px;
     border: 1px solid rgba(16, 38, 58, 0.1);
@@ -2796,7 +2797,10 @@ export default {
 }
 
 .student-generated-criteria__content {
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex: 1;
     gap: 6px;
     min-width: 0;
 }

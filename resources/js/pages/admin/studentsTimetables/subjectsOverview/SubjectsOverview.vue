@@ -521,6 +521,7 @@ export default {
         }
     },
     mounted() {
+        this.redirectMissingSubjectRoute()
         this.redirectUnauthorizedSubjectRoute()
         this.loadImports()
         this.loadSettings()
@@ -687,6 +688,7 @@ export default {
             }
 
             this.subject_action = this.normalizedSubjectAction(subsection)
+            this.redirectMissingSubjectRoute()
             this.redirectUnauthorizedSubjectRoute()
         },
         'config.selected_schoolyear.id'() {
@@ -708,6 +710,20 @@ export default {
             }
 
             this.$router.push({ path: `/admin/students-timetables/subjects-overview/${this.subject_action}` })
+        },
+        redirectMissingSubjectRoute() {
+            if (
+                this.embedded
+                || this.$route.params.section !== 'subjects-overview'
+                || this.$route.params.subsection
+            ) {
+                return false
+            }
+
+            this.subject_action = 'subject-plan'
+            this.$router.replace({ path: '/admin/students-timetables/subjects-overview/subject-plan' })
+
+            return true
         },
         redirectUnauthorizedSubjectRoute() {
             if (this.embedded || this.canManageSubjectSettings) return

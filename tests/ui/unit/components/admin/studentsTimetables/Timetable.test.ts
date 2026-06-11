@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import Timetable from '@/pages/admin/studentsTimetables/timetable/Timetable.vue'
 
 describe('Students timetable timetable page', () => {
@@ -22,13 +22,38 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).toContain('redirectUnauthorizedImportRoute()')
         expect(componentSource).toContain('redirectLegacyOverviewRoute()')
         expect(componentSource).toContain('redirectLegacyRobotRoute()')
-        expect(componentSource).toContain("this.$router.replace({ path: '/admin/students-timetables' })")
+        expect(componentSource).toContain("this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })")
+        expect(componentSource).not.toContain("this.$router.replace({ path: '/admin/students-timetables' })")
         expect(componentSource).toContain("this.$router.replace({ path: '/admin/students-timetables/timetable/overview/automatic' })")
         expect(componentSource).not.toContain('v-if="showTimetableSubnav"')
         expect(componentSource).not.toContain('showTimetableSubnav()')
         expect(componentSource).not.toContain('subnavItems()')
         expect(componentSource).not.toContain('handleSubnavigation(key)')
         expect(componentSource).not.toContain('Hier entsteht das Stundenplan Center.')
+    })
+
+    it('writes the default timetable overview step into the URL', () => {
+        const methods = (Timetable as any).methods
+        const replace = vi.fn()
+        const ctx: any = {
+            $route: {
+                params: {
+                    section: 'timetable',
+                },
+            },
+            $router: {
+                replace,
+            },
+            subAction: 'imports',
+            importPage: 'stundenplan',
+            importSubPage: 'import',
+        }
+
+        expect(methods.redirectLegacyOverviewRoute.call(ctx)).toBe(true)
+        expect(ctx.subAction).toBe('overview')
+        expect(ctx.importPage).toBe('')
+        expect(ctx.importSubPage).toBe('')
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable/overview' })
     })
 
     it('shows import buttons that open import subpages', () => {

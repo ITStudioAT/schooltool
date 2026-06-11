@@ -575,9 +575,11 @@ export default {
         },
         '$route.params.subsection'(subsection) {
             this.import_action = this.normalizedImportAction(subsection)
+            this.redirectMissingImportRoute()
         },
     },
     mounted() {
+        this.redirectMissingImportRoute()
         this.loadImport()
     },
     unmounted() {
@@ -589,6 +591,14 @@ export default {
             const allowedActions = ['overview', 'import']
 
             return allowedActions.includes(subsection) ? subsection : 'overview'
+        },
+        redirectMissingImportRoute() {
+            if (this.$route.params.section !== 'import' || this.$route.params.subsection) return false
+
+            this.import_action = 'overview'
+            this.$router.replace({ path: '/admin/students-timetables/import/overview' })
+
+            return true
         },
         handleImportNavigation(key) {
             this.import_action = this.normalizedImportAction(key)

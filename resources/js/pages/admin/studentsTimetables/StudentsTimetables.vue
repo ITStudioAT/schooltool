@@ -83,6 +83,7 @@ const Timetable = defineAsyncComponent(() => import('./timetable/Timetable.vue')
 const Import = defineAsyncComponent(() => import('./import/Import.vue'))
 const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/SubjectsOverview.vue'))
 
+const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'
 const mainSectionKeys = ['timetable', 'subjects-overview', 'import']
 
 export default {
@@ -193,6 +194,10 @@ export default {
         this.schoolyearStore = useSchoolyearStore()
         this.schoolyearStore.index()
         const section = this.$route.params.section
+        if (this.redirectMissingSection()) {
+            return
+        }
+
         if (this.redirectLegacySection(section)) {
             return
         }
@@ -204,6 +209,10 @@ export default {
     },
     watch: {
         '$route.params.section'(section) {
+            if (this.redirectMissingSection()) {
+                return
+            }
+
             if (this.redirectLegacySection(section)) {
                 return
             }
@@ -228,16 +237,28 @@ export default {
         canAccessNavigationItem(item) {
             return this.hasAnyRole(item.roles || [])
         },
+        redirectMissingSection() {
+            if (this.$route.params.section) return false
+
+            this.main_action = 'timetable'
+            this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })
+
+            return true
+        },
         redirectUnauthorizedSection() {
-            if (this.$route.params.section === 'timetable' && this.$route.params.subsection === 'imports' && !this.canManageStudentsTimetables) {
+            if (
+                this.$route.params.section === 'timetable'
+                && this.$route.params.subsection === 'imports'
+                && !this.canManageStudentsTimetables
+            ) {
                 this.main_action = 'timetable'
-                this.$router.replace({ path: '/admin/students-timetables' })
+                this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })
             }
         },
         redirectLegacySection(section) {
             if (section === 'overview') {
                 this.main_action = 'timetable'
-                this.$router.replace({ path: '/admin/students-timetables' })
+                this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })
 
                 return true
             }
@@ -254,7 +275,7 @@ export default {
         handleNavigation(key) {
             this.main_action = key === 'imports' ? 'timetable' : key
             const paths = {
-                timetable: '/admin/students-timetables',
+                timetable: TIMETABLE_OVERVIEW_PATH,
                 imports: '/admin/students-timetables/timetable/imports',
                 import: '/admin/students-timetables/import/overview',
                 'subjects-overview': '/admin/students-timetables/subjects-overview/subject-plan',

@@ -42,15 +42,20 @@
             <div
                 v-show="!embeddedCourseSelectionLocked || embeddedCourseSelectionExpanded"
                 class="robot-course-panel__body">
-                <v-alert v-if="!loading && !availableCourses.length" type="info" variant="tonal" class="mb-0">
+                <div v-if="courseCardsLoading" class="robot-course-loading">
+                    <v-progress-circular indeterminate size="18" width="2" color="primary" />
+                    <span>Kurse werden geladen</span>
+                </div>
+
+                <v-alert v-if="!courseCardsLoading && !availableCourses.length" type="info" variant="tonal" class="mb-0">
                     Keine passenden Kurse gefunden.
                 </v-alert>
 
-                <v-alert v-else-if="!selectedCourses.length" type="warning" variant="tonal" class="mb-3">
+                <v-alert v-else-if="!courseCardsLoading && !selectedCourses.length" type="warning" variant="tonal" class="mb-3">
                     Keine Kurse ausgewählt.
                 </v-alert>
 
-                <div v-if="availableCourses.length" class="robot-course-columns">
+                <div v-if="!courseCardsLoading && availableCourses.length" class="robot-course-columns">
                     <div
                         v-for="(courseColumn, columnIndex) in regularCourseColumns"
                         :key="`embedded-course-column-${courseColumn.key || columnIndex}`"
@@ -156,7 +161,7 @@
         </div>
 
         <div
-            v-if="additionalCoursePanelVisible"
+            v-if="!courseCardsLoading && additionalCoursePanelVisible"
             class="robot-course-list robot-course-panel robot-course-panel--additional">
             <div class="robot-course-panel__title">
                 <div class="robot-course-list__header robot-course-list__header--panel">
@@ -1200,6 +1205,11 @@
                                     Übernehmen
                                 </v-btn>
                                 <div
+                                    v-if="selectedTimetableResultCount > 0 && $slots['timetable-selector-start']"
+                                    class="robot-timetable-selector-start">
+                                    <slot name="timetable-selector-start" />
+                                </div>
+                                <div
                                     v-if="selectedTimetableResultCount > 0"
                                     class="robot-timetable-selector">
                                     <v-btn
@@ -2170,6 +2180,11 @@
                         Zurück
                     </v-btn>
                     <div
+                        v-if="selectedTimetableResultCount > 0 && $slots['timetable-selector-start']"
+                        class="robot-timetable-selector-start">
+                        <slot name="timetable-selector-start" />
+                    </div>
+                    <div
                         v-if="selectedTimetableResultCount > 0"
                         class="robot-timetable-selector">
                         <v-btn
@@ -2546,6 +2561,10 @@ export default {
             type: Array,
             default: null,
         },
+        restoreGeneratedTimetable: {
+            type: Boolean,
+            default: false,
+        },
     },
     data() {
         return {
@@ -2708,11 +2727,12 @@ export default {
         courseCardsReady() {
             return this.embeddedCourseCardsOnly
                 && !this.loading
+                && !this.studentCompletedCoursesLoading
                 && this.availableCourses.length > 0
         },
         courseCardsLoading() {
             return this.embeddedCourseCardsOnly
-                && this.loading
+                && (this.loading || this.studentCompletedCoursesLoading)
         },
         embeddedCourseSelectionLocked() {
             return this.embeddedCourseCardsOnly && Boolean(this.selectedRobotTimetable)
@@ -3257,7 +3277,7 @@ export default {
             return this.timetableResultCounterLimit(this.selectedTimetableResultType)
         },
         qualityCriteriaResultFilterActive() {
-            return this.qualityCriteriaResultFilterEnabled === true
+            return (this.qualityCriteriaResultFilterEnabled === true || (this.qualitySummaryCheckedKeys || []).length > 0)
                 && this.qualityCriteriaResultFilterAvailable()
         },
         selectedOptionsNoResultAlertVisible() {
@@ -3322,6 +3342,11 @@ export default {
 
                 this.applyEvaluationCriteriaSettings(criteria)
             },
+        },
+        restoreGeneratedTimetable(restoreGeneratedTimetable) {
+            if (restoreGeneratedTimetable !== true) return
+
+            this.restoreGeneratedTimetableFromSavedState()
         },
         'config.selected_schoolyear.id'() {
             this.loadSettings()
@@ -3425,6 +3450,7 @@ export default {
                 this.syncAvailableTimes()
                 this.loadStudentCompletedCourses()
                 this.restoreTimetablePreferencesAfterRestore()
+                await this.restoreGeneratedTimetableFromSavedState()
             } catch (error) {
                 this.schoolHours = []
                 this.courseGroups = []
@@ -4047,6 +4073,16 @@ export default {
                     return
                 }
 
+                if (this.autoSelectFirstQualityCriterionTimetable(options)) {
+                    await this.loadFullGreenTimetableCount({
+                        calculateQualityCounters: true,
+                        preserveGeneratedTimetable: true,
+                        skipQualityCriteriaDefaultSelection: true,
+                    })
+
+                    return
+                }
+
                 const selectedTimetable = response.data?.data?.selected_timetable
                     ? this.backendTimetableFromResponse(response.data.data.selected_timetable)
                     : null
@@ -4122,6 +4158,14 @@ export default {
                 this.allQualityCriteriaCount = Number(response.data?.data?.all_quality_criteria_count || 0)
                 this.selectedQualityCriteriaCount = this.selectedQualityCriteriaCountFromResponse(response.data?.data || {})
                 this.applySelectedQualityMetricsToCounters()
+
+                if (this.autoSelectFirstQualityCriterionTimetable()) {
+                    await this.loadFullGreenTimetableCount({
+                        calculateQualityCounters: true,
+                        preserveGeneratedTimetable: true,
+                        skipQualityCriteriaDefaultSelection: true,
+                    })
+                }
             } catch {
                 if (requestId !== this.qualityCountersRequestId) return
 
@@ -4194,6 +4238,23 @@ export default {
 
             this.additionalCourseTimetableRequired = true
             this.setTimetableResultCounter(this.selectedTimetableResultType, 1)
+
+            return true
+        },
+        autoSelectFirstQualityCriterionTimetable(options = {}) {
+            if (options?.skipQualityCriteriaDefaultSelection === true) return false
+            if ((this.qualitySummaryCheckedKeys || []).length) return false
+
+            const firstQualityCriterion = (this.activeQualityCriterionRows || [])[0]
+
+            if (!firstQualityCriterion) return false
+            if (Number(firstQualityCriterion.count || 0) <= 0) return false
+
+            this.qualitySummaryCheckedKeys = [this.qualitySummaryCheckboxKey(firstQualityCriterion)]
+            this.selectedQualityCriteriaCount = null
+            this.qualityCriteriaResultFilterEnabled = true
+            this.setTimetableResultCounter(this.selectedTimetableResultType, 1)
+            this.normalizeTimetableResultCounters()
 
             return true
         },
@@ -4856,6 +4917,15 @@ export default {
             }
 
         },
+        async restoreGeneratedTimetableFromSavedState() {
+            if (!this.embeddedCourseCardsOnly || this.restoreGeneratedTimetable !== true) return
+            if (this.selectedRobotTimetable || !this.timetableCalculationReady()) return
+
+            await this.loadFullGreenTimetableCount({
+                skipAdditionalCourseDefaultSelection: true,
+                skipQualityCriteriaDefaultSelection: true,
+            })
+        },
         studentByCode(studentCode) {
             const normalizedStudentCode = this.normalizedStudentCode(studentCode)
             if (!normalizedStudentCode) return null
@@ -5197,11 +5267,17 @@ export default {
         },
         selectedCriteriaTimetableCount() {
             if (!this.qualitySummaryCheckedKeys.length) return 0
+
+            const selectedCriterion = this.selectedQualitySummaryCriterion()
+            const selectedCriterionCount = Number(selectedCriterion?.count)
+
+            if (Number.isFinite(selectedCriterionCount)) {
+                return Math.max(0, selectedCriterionCount)
+            }
+
             if (this.selectedQualityCriteriaCount !== null) {
                 return Math.max(0, Number(this.selectedQualityCriteriaCount || 0))
             }
-
-            const selectedCriterion = this.selectedQualitySummaryCriterion()
 
             return Math.max(0, Number(selectedCriterion?.count || 0))
         },
@@ -9467,6 +9543,16 @@ export default {
     padding: 8px;
 }
 
+.robot-course-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
 .robot-timetable-embedded-course-cards .robot-course-list__title {
     font-size: 0.82rem;
     font-weight: 850;
@@ -10338,7 +10424,8 @@ export default {
 
 .robot-quality-summary__item {
     position: relative;
-    display: block;
+    display: flex;
+    flex-direction: column;
     min-width: 0;
     min-height: 66px;
     padding: 10px 12px;
@@ -10375,9 +10462,13 @@ export default {
 }
 
 .robot-quality-summary__content {
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex: 1 1 0%;
     gap: 6px;
     min-width: 0;
+    min-height: 0;
 }
 
 .robot-quality-summary__label {
@@ -10686,6 +10777,11 @@ export default {
     border-radius: 8px;
     padding: 5px 8px;
     background: rgba(var(--v-theme-primary), 0.07);
+}
+
+.robot-timetable-selector-start {
+    order: -2;
+    flex: 0 0 auto;
 }
 
 .robot-timetable-selector :deep(.v-btn) {

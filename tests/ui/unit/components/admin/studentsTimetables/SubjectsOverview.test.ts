@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import StudentsTimetables from '@/pages/admin/studentsTimetables/StudentsTimetables.vue'
 import SubjectsOverview from '@/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue'
 
 describe('Students timetable subjects overview', () => {
@@ -162,11 +163,14 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('/admin/students-timetables/timetable/overview/automatic')
         expect(componentSource).toContain('/admin/students-timetables/subjects-overview/subject-plan')
         expect(componentSource).toContain("const mainSectionKeys = ['timetable', 'subjects-overview', 'import']")
+        expect(componentSource).toContain("const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'")
+        expect(componentSource).toContain("redirectMissingSection()")
         expect(componentSource).toContain("redirectLegacySection(section)")
-        expect(componentSource).toContain("this.$router.replace({ path: '/admin/students-timetables' })")
+        expect(componentSource).toContain("this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })")
+        expect(componentSource).not.toContain("this.$router.replace({ path: '/admin/students-timetables' })")
         expect(componentSource).toContain("this.$router.replace({ path: '/admin/students-timetables/timetable/overview/automatic' })")
         expect(componentSource).toContain("activeNavigationKey === item.key")
-        expect(componentSource).toContain("timetable: '/admin/students-timetables'")
+        expect(componentSource).toContain('timetable: TIMETABLE_OVERVIEW_PATH')
         expect(componentSource).toContain("imports: '/admin/students-timetables/timetable/imports'")
         expect(componentSource).toContain("import('./subjectsOverview/SubjectsOverview.vue')")
         expect(componentSource).not.toContain("import('./overview/Overview.vue')")
@@ -179,6 +183,40 @@ describe('Students timetable subjects overview', () => {
             .toBeLessThan(componentSource.indexOf("key: 'imports'"))
         expect(componentSource.indexOf("key: 'imports'"))
             .toBeLessThan(componentSource.indexOf("key: 'subjects-overview'"))
+    })
+
+    it('writes the default module timetable step into the URL', () => {
+        const methods = (StudentsTimetables as any).methods
+        const replace = vi.fn()
+        const ctx: any = {
+            $route: {
+                params: {},
+            },
+            $router: {
+                replace,
+            },
+            main_action: 'subjects-overview',
+        }
+
+        expect(methods.redirectMissingSection.call(ctx)).toBe(true)
+        expect(ctx.main_action).toBe('timetable')
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable/overview' })
+    })
+
+    it('opens the timetable navigation on the canonical overview URL', () => {
+        const methods = (StudentsTimetables as any).methods
+        const push = vi.fn()
+        const ctx: any = {
+            $router: {
+                push,
+            },
+            main_action: 'subjects-overview',
+        }
+
+        methods.handleNavigation.call(ctx, 'timetable')
+
+        expect(ctx.main_action).toBe('timetable')
+        expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable/overview' })
     })
 
     it('splits the subjects area into subject plan, hidden import route, subjects, and mapping pages', () => {
@@ -207,12 +245,34 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("['subject-plan']")
         expect(componentSource).toContain("return allowedActions.includes(subsection) ? subsection : 'subject-plan'")
         expect(componentSource).toContain('redirectUnauthorizedSubjectRoute()')
+        expect(componentSource).toContain('redirectMissingSubjectRoute()')
         expect(componentSource).toContain("this.$router.replace({ path: '/admin/students-timetables/subjects-overview/subject-plan' })")
         expect(componentSource).toContain('handleSubjectNavigation(key)')
         expect(componentSource).toContain('embedded')
         expect(componentSource).toContain("subject_action: this.embedded ? 'subject-plan' : this.normalizedSubjectAction(this.$route.params.subsection)")
         expect(componentSource).toContain('if (this.embedded) {')
         expect(componentSource).toContain('/admin/students-timetables/subjects-overview/${this.subject_action}')
+    })
+
+    it('writes the default subject plan step into the URL', () => {
+        const methods = (SubjectsOverview as any).methods
+        const replace = vi.fn()
+        const ctx: any = {
+            embedded: false,
+            $route: {
+                params: {
+                    section: 'subjects-overview',
+                },
+            },
+            $router: {
+                replace,
+            },
+            subject_action: 'subjects',
+        }
+
+        expect(methods.redirectMissingSubjectRoute.call(ctx)).toBe(true)
+        expect(ctx.subject_action).toBe('subject-plan')
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/subjects-overview/subject-plan' })
     })
 
     it('uses FilePond upload for json files', () => {

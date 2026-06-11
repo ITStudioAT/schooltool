@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import StudentTimetableEvaluationSettings from '@/pages/homepage/studentsTimetables/components/StudentTimetableEvaluationSettings.vue'
+import Overview from '@/pages/homepage/studentsTimetables/overview/Overview.vue'
 
 describe('Student timetable evaluation settings', () => {
     it('receives proposed courses from the student overview', () => {
@@ -31,6 +32,94 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain("const noAutomaticTimetableQualityCriteriaValue = '__none'")
         expect(source).toContain("this.setAutomaticTimetableStep('criteria')")
         expect(source).toContain("'criteria', 'courses', 'result'")
+    })
+
+    it('opens a manual timetable from the student overview', () => {
+        const overviewPath = resolve(
+            process.cwd(),
+            'resources/js/pages/homepage/studentsTimetables/overview/Overview.vue',
+        )
+        const source = readFileSync(overviewPath, 'utf8')
+
+        expect(source).toContain('@click="openManualTimetable"')
+        expect(source).toContain('showManualTimetable')
+        expect(source).toContain('manual_timetable')
+        expect(source).toContain('manualTimetableSelection()')
+        expect(source).toContain('manualSelectedCourseGroups()')
+        expect(source).toContain('manualGroupsForCell(weekday.value, hour.value)')
+        expect(source).toContain('<v-checkbox-btn')
+        expect(source).toContain('Manueller Stundenplan')
+        expect(source).toContain('Keine passenden Kurstermine gefunden.')
+    })
+
+    it('builds manual timetable cells from selected student courses', () => {
+        const methods = (Overview as any).methods
+        const computed = (Overview as any).computed
+        const courseGroup = {
+            key: 'group-1',
+            course: 'D1',
+            display_label: 'D1 - 4A - MUE',
+            weekday: 1,
+            hour: 11,
+            time_from: '16:10',
+            time_until: '16:55',
+            teacher: 'MUE',
+            rooms: ['101'],
+        }
+        const course = {
+            key: 'course-1',
+            code: 'D1',
+            name: 'Deutsch',
+            course_groups: [courseGroup],
+        }
+        const ctx = {
+            manualSelectedCourseKeys: ['course-1'],
+            overview: {
+                school_hours: [],
+                manual_timetable: {
+                    sections: [
+                        {
+                            key: 'proposed',
+                            items: [course],
+                        },
+                    ],
+                },
+            },
+            manualCourseKey: methods.manualCourseKey,
+            manualCourseGroups: methods.manualCourseGroups,
+            manualCourseGroupKey: methods.manualCourseGroupKey,
+            manualTimetableHourTimeFrom: methods.manualTimetableHourTimeFrom,
+            manualTimetableHourTimeUntil: methods.manualTimetableHourTimeUntil,
+            configuredSchoolHour: methods.configuredSchoolHour,
+            formatTimeValue: methods.formatTimeValue,
+            get manualTimetableSelection() {
+                return computed.manualTimetableSelection.call(ctx)
+            },
+            get manualTimetableCourseSections() {
+                return computed.manualTimetableCourseSections.call(ctx)
+            },
+            get manualTimetableCourses() {
+                return computed.manualTimetableCourses.call(ctx)
+            },
+            get manualSelectedCourses() {
+                return computed.manualSelectedCourses.call(ctx)
+            },
+            get manualSelectedCourseGroups() {
+                return computed.manualSelectedCourseGroups.call(ctx)
+            },
+        }
+
+        expect(computed.manualSelectedCourseGroups.call(ctx)).toEqual([courseGroup])
+        expect(computed.manualTimetableHours.call(ctx)).toEqual([
+            {
+                value: 11,
+                hourLabel: '11.',
+                timeFrom: '16:10',
+                timeUntil: '16:55',
+            },
+        ])
+        expect(methods.manualGroupsForCell.call(ctx, 1, 11)).toEqual([courseGroup])
+        expect(methods.manualCourseGroupDetails(courseGroup)).toBe('D1 - 4A - MUE · MUE · 101')
     })
 
     it('shows the imported student religion on the religion card', () => {

@@ -1940,6 +1940,89 @@ describe('Students timetable overview', () => {
         expect(ctx.manualPanelSource).toBeNull()
     })
 
+    it('ends and restarts an adopted timetable without removing the transferred student', () => {
+        const methods = (Overview as any).methods
+        const clearGeneratedTimetables = vi.fn()
+        const resetAdditionalCourseSelection = vi.fn()
+        const resetCourseSelection = vi.fn()
+        const persistTimetableState = vi.fn()
+        const navigateToTimetableOverviewMode = vi.fn()
+        const transferredStudentContext = {
+            student: {
+                studentCode: '100',
+                label: '4Q · GRASSL Tobias · Semester 6',
+                semesterLabel: 'Semester 6',
+                religion: 'Rk',
+            },
+            courses: {
+                completed: [],
+                missing: [],
+                planned: [],
+                additional: [],
+            },
+        }
+        const ctx = {
+            wizardPanelOpen: false,
+            wizardPanelMounted: true,
+            wizardTimetableResultVisible: false,
+            manualPanelOpen: true,
+            manualPanelSource: 'wizard',
+            infoDialogOpen: true,
+            settingsDialogOpen: true,
+            courseMenuDialog: true,
+            courseGroupDialog: true,
+            studentDialogOpen: true,
+            selectionDialogOpen: true,
+            selectedCourseMenuKey: 'menu-1',
+            selectedCourseGroup: { key: 'group-1' },
+            activeCourseGroupFilterKeys: ['bio-1'],
+            activeDistanceLearningCourseGroupKeys: ['bio-1'],
+            selectedRecurrenceWeeks: {
+                1: 2,
+                2: 'extra_dates',
+            },
+            expandedRecurrenceWeeks: {
+                1: true,
+                2: true,
+            },
+            showExtraDatesInSelectedWeeks: {
+                1: true,
+                2: true,
+            },
+            transferredStudentContext,
+            $refs: {
+                wizardCourseCards: {
+                    clearGeneratedTimetables,
+                    resetAdditionalCourseSelection,
+                    resetCourseSelection,
+                },
+            },
+            defaultTimetableState: methods.defaultTimetableState,
+            defaultSelection: methods.defaultSelection,
+            resetTimetablePanels: methods.resetTimetablePanels,
+            removeSavedRobotTimetableState: vi.fn(),
+            persistTimetableState,
+            navigateToTimetableOverviewMode,
+            runTimetableUpdate(action: () => void) {
+                action()
+            },
+        }
+
+        methods.endAndRestartAdoptedTimetable.call(ctx)
+
+        expect(ctx.transferredStudentContext).toBe(transferredStudentContext)
+        expect(ctx.activeCourseGroupFilterKeys).toEqual([])
+        expect(ctx.selectedRecurrenceWeeks).toEqual({
+            1: 'all_dates',
+            2: 'all_dates',
+        })
+        expect(resetCourseSelection).toHaveBeenCalled()
+        expect(resetAdditionalCourseSelection).toHaveBeenCalled()
+        expect(clearGeneratedTimetables).toHaveBeenCalled()
+        expect(persistTimetableState).toHaveBeenCalled()
+        expect(navigateToTimetableOverviewMode).toHaveBeenCalledWith()
+    })
+
     it('shows the date range for block course labels', () => {
         const methods = (Overview as any).methods
         const ctx = {
@@ -1974,6 +2057,7 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('courseGroupSingleDateOverlapMarkersForCell(semester.value, weekday.value, hour.hour, timetableWeek)')
         expect(componentSource).toContain('prepend-icon="mdi-file-pdf-box"')
         expect(componentSource).toContain('class="recurrence-week-selector__btn recurrence-week-selector__pdf-btn overview-print-hidden"')
+        expect(componentSource).toContain('v-if="!manualPanelBackToWizardVisible && !directManualPanelOpen"')
         expect(componentSource.indexOf('class="recurrence-week-selector__btn recurrence-week-selector__pdf-btn overview-print-hidden"'))
             .toBeGreaterThan(componentSource.indexOf('class="recurrence-week-selector"'))
         expect(componentSource).toContain('@click="downloadTimetablePdf"')
@@ -2034,15 +2118,18 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('restrictCourseChoiceBySelection')
         expect(componentSource).toContain('courseChoiceRestrictionMode')
         expect(componentSource).toContain('courseChoiceRestrictionOptions')
+        expect(componentSource).toContain('Fehlende Kurse')
         expect(componentSource).toContain('Vorgesehene Kurse')
         expect(componentSource).toContain('Zusätzliche Kurse')
-        expect(componentSource).toContain('Alle')
+        expect(componentSource).toContain('Offene Kurse')
+        expect(componentSource).toContain("label: 'Alle'")
         expect(componentSource).toContain('<v-btn-toggle')
         expect(componentSource).toContain('class="course-menu-dialog-options"')
         expect(componentSource.indexOf('class="course-menu-dialog-options"'))
             .toBeGreaterThan(componentSource.indexOf('<v-dialog v-model="courseMenuDialog" persistent'))
         expect(componentSource).toContain('@update:model-value="handleCourseChoiceRestrictionUpdate"')
         expect(componentSource).toContain('courseGroupMatchesCourseChoiceRestriction(courseGroup, courseRestrictionContext)')
+        expect(componentSource).toContain('COURSE_CHOICE_RESTRICTION_ALL_AVAILABLE')
         expect(componentSource).toContain('selectionCourseChoiceCodes')
         expect(componentSource).toContain('shouldRestrictCourseChoiceByTimetableSemester')
         expect(componentSource).toContain('restrictedStudentCourseCodes')
@@ -2083,16 +2170,35 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain(':active="wizardPanelOpen"')
         expect(componentSource).toContain('@click="openWizardPanel"')
         expect(componentSource).toContain("const TIMETABLE_OVERVIEW_BASE_PATH = '/admin/students-timetables/timetable/overview'")
-        expect(componentSource).toContain("const TIMETABLE_OVERVIEW_LANDING_PATH = '/admin/students-timetables'")
+        expect(componentSource).toContain('const TIMETABLE_OVERVIEW_LANDING_PATH = TIMETABLE_OVERVIEW_BASE_PATH')
         expect(componentSource).toContain("const TIMETABLE_OVERVIEW_ROUTE_MODES = ['automatic', 'manual', 'adopted']")
+        expect(componentSource).toContain("const TIMETABLE_OVERVIEW_RESULT_ACTION = 'result'")
+        expect(componentSource).toContain(':restore-generated-timetable="wizardTimetableResultRouteActive"')
         expect(componentSource).toContain("'$route.params.detail'(detail)")
-        expect(componentSource).toContain('applyTimetableOverviewModeFromRoute(detail)')
+        expect(componentSource).toContain("'$route.params.action'(action)")
+        expect(componentSource).toContain('applyTimetableOverviewModeFromRoute(detail, this.$route.params.action)')
         expect(componentSource).toContain('applyTimetableOverviewLandingState()')
         expect(componentSource).toContain('<span>Automatischer</span>')
         expect(componentSource).toContain('<span>Stundenplan</span>')
         expect(componentSource).toContain('class="overview-automatic-heading"')
         expect(componentSource).toContain('class="overview-active-label__stars"')
         expect(componentSource).toContain('Automatischer Stundenplan')
+        expect(componentSource).toContain('timetableContextLocked')
+        expect(componentSource).toContain('transferredTimetableContextLocked')
+        expect(componentSource).toContain('v-if="!wizardPanelOpen && !adoptedTimetableOverviewActive"')
+        expect(componentSource).toContain('v-if="!wizardPanelOpen && !timetableContextLocked"')
+        expect(componentSource).toContain('v-if="directManualPanelOpen || transferredTimetableContextLocked"')
+        expect(componentSource).toContain('class="overview-automatic-heading overview-automatic-heading--manual"')
+        expect(componentSource).toContain('<h2>Manueller Stundenplan</h2>')
+        expect(componentSource).toContain('v-if="manualCourseOverviewVisible"')
+        expect(componentSource).toContain('manualCourseOverviewVisible()')
+        expect(componentSource).toContain('class="manual-course-overview"')
+        expect(componentSource).toContain('v-model="expandedManualCourseOverviewPanels"')
+        expect(componentSource).toContain('expandedManualCourseOverviewPanels: []')
+        expect(componentSource).toContain('class="manual-course-overview__title"')
+        expect(componentSource).toContain('<h3>Kurse</h3>')
+        expect(componentSource).toContain('{{ transferredStudentCourseTotalCount }}')
+        expect(componentSource).toContain('manual-course-overview__course-panels')
         expect(componentSource).toContain('RobotTimetable')
         expect(componentSource).toContain('v-if="wizardPanelMounted"')
         expect(componentSource).toContain('v-show="wizardPanelOpen"')
@@ -2110,20 +2216,37 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('<span>Manueller</span>')
         expect(componentSource).toContain('<span>Stundenplan</span>')
         expect(componentSource).toContain('Manueller Stundenplan')
-        expect(componentSource).toContain('class="overview-active-label overview-active-label--manual"')
+        expect(componentSource).not.toContain('class="overview-active-label overview-active-label--manual"')
         expect(componentSource).toContain('directManualPanelOpen')
-        expect(componentSource).toContain('class="overview-wizard-close-button"')
+        expect(componentSource).toContain('overview-wizard-close-button')
+        expect(componentSource).toContain('v-if="directManualPanelOpen"')
+        expect(componentSource).toContain('@click="closeActiveTimetablePanel"')
         expect(componentSource).toContain('v-if="manualPanelBackToWizardVisible"')
+        expect(componentSource).toContain('v-if="directManualPanelOpen && selectedCourseCount > 0"')
         expect(componentSource).toContain('Zurück')
-        expect(componentSource).toContain('Abbruch')
+        expect(componentSource).toContain('Ende/Neustart')
+        expect(componentSource).toContain('<template #timetable-selector-start>')
         expect(componentSource).toContain('overview-wizard-cancel-button')
         expect(componentSource).toContain('overview-wizard-back-button')
+        expect(componentSource).toContain('overview-wizard-pdf-button')
+        expect(componentSource).toContain('overview-manual-pdf-button')
+        expect(componentSource).toContain('v-if="directManualPanelOpen && visibleTimetableSemesters.length"')
+        expect(componentSource).toContain('<v-spacer v-if="directManualPanelOpen" />')
+        expect(componentSource).toContain('@click="returnToWizardTimetableResult"')
+        expect(componentSource).toContain('returnToWizardTimetableResult(options = {})')
         expect(componentSource).toContain('color: rgba(var(--v-theme-on-surface), 0.78);')
-        expect(componentSource).toContain('margin-left: auto;')
+        expect(componentSource).toContain('margin-right: auto;')
         expect(componentSource).toContain('color="error"')
         expect(componentSource).toContain('prepend-icon="mdi-close-circle-outline"')
-        expect(componentSource).toContain('@click="resetSavedTimetable"')
+        expect(componentSource).toContain('@click="endAndRestartAdoptedTimetable"')
+        expect(componentSource).toContain('endAndRestartAdoptedTimetable()')
         expect(componentSource).toContain('overview-wizard-close-button--calm')
+        expect(componentSource).toContain('overview-manual-back-button')
+        expect(componentSource).toContain('margin-left: 0;')
+        expect(componentSource).not.toContain('Übernehmen')
+        expect(componentSource.indexOf('overview-wizard-pdf-button')).toBeLessThan(
+            componentSource.indexOf('overview-wizard-back-button'),
+        )
         expect(componentSource.indexOf('overview-wizard-cancel-button overview-wizard-close-button--calm')).toBeLessThan(
             componentSource.indexOf('overview-wizard-back-button overview-wizard-close-button--calm'),
         )
@@ -2207,6 +2330,12 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('refreshTransferredStudentCourseHistory()')
         expect(componentSource.indexOf('class="transferred-student-context"')).toBeLessThan(
             componentSource.indexOf('class="overview-selection"'),
+        )
+        expect(componentSource.indexOf('class="overview-selection"')).toBeLessThan(
+            componentSource.indexOf('class="manual-course-overview"'),
+        )
+        expect(componentSource.indexOf('class="manual-course-overview"')).toBeLessThan(
+            componentSource.indexOf('class="overview-automatic-heading overview-automatic-heading--manual"'),
         )
         expect(componentSource.indexOf('class="overview-selection"')).toBeLessThan(
             componentSource.indexOf('class="transferred-student-course-overview"'),
@@ -2306,7 +2435,7 @@ describe('Students timetable overview', () => {
         const ctx = {
             ...methods,
             restrictCourseChoiceBySelection: true,
-            courseChoiceRestrictionMode: 'planned_additional',
+            courseChoiceRestrictionMode: 'additional',
             selection: {
                 semester: 6,
                 religion: 'ETH',
@@ -2413,8 +2542,12 @@ describe('Students timetable overview', () => {
         const restrictedMenus = methods.buildSemesterCourseMenus.call(ctx, 2)
 
         expect(restrictedMenus.map((courseMenu: Record<string, string>) => courseMenu.label))
-            .toEqual(['ETH', 'S'])
+            .toEqual(['ETH'])
         expect(methods.buildSemesterCourseMenus.call(ctx, 1)).toEqual([])
+
+        ctx.courseChoiceRestrictionMode = 'missing'
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['CH'])
 
         ctx.courseChoiceRestrictionMode = 'planned'
         expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
@@ -2422,16 +2555,120 @@ describe('Students timetable overview', () => {
 
         ctx.courseChoiceRestrictionMode = 'all'
         expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
-            .toEqual(['CH', 'D', 'ETH', 'F', 'Rk', 'S'])
+            .toEqual(['CH', 'D', 'ETH', 'F', 'S'])
     })
 
-    it('keeps additional student courses visible when restricting course choices', () => {
+    it('shows only additional courses in the course picker additional filter', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            restrictCourseChoiceBySelection: false,
+            courseChoiceRestrictionMode: 'additional',
+            selection: {
+                semester: 1,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            configuredSchoolHours: [],
+            weekdays: [{ label: 'Mo', value: 1 }],
+            activeCourseGroupFilterKeys: ['d-1', 'm-1'],
+            configuredCourseGroups: [
+                { key: 'd-1', semester: 1, weekday: 1, hour: 1, course: 'D1', display_label: 'D1 - ABC', subject: 'D' },
+                { key: 'm-1', semester: 1, weekday: 1, hour: 2, course: 'M1', display_label: 'M1 - ABC', subject: 'M' },
+            ],
+            transferredStudentContext: {
+                courses: {
+                    missing: [],
+                    planned: [{ code: 'D1', label: 'D1' }],
+                    additional: [{ code: 'M1', label: 'M1' }],
+                },
+            },
+            $route: {
+                params: {
+                    detail: 'manual',
+                },
+            },
+        }
+
+        Object.defineProperty(ctx, 'adoptedTimetableOverviewActive', {
+            get() {
+                return computed.adoptedTimetableOverviewActive.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'effectiveCourseChoiceRestrictionMode', {
+            get() {
+                return computed.effectiveCourseChoiceRestrictionMode.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceRestrictionCourses', {
+            get() {
+                return computed.courseChoiceRestrictionCourses.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'restrictedStudentCourseCodes', {
+            get() {
+                return computed.restrictedStudentCourseCodes.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceRestrictionContext', {
+            get() {
+                return computed.courseChoiceRestrictionContext.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceCourseGroups', {
+            get() {
+                return computed.courseChoiceCourseGroups.call(this)
+            },
+        })
+
+        expect(computed.visibleCourseChoiceRestrictionMode.call(ctx)).toBe('additional')
+        expect(computed.courseChoiceRestrictionOptions.call(ctx)).toEqual([
+            { value: 'missing', label: 'Fehlende Kurse' },
+            { value: 'planned', label: 'Vorgesehene Kurse' },
+            { value: 'additional', label: 'Zusätzliche Kurse' },
+            { value: 'all', label: 'Offene Kurse' },
+            { value: 'all_available', label: 'Alle' },
+        ])
+        expect(methods.buildSemesterCourseMenus.call(ctx, 1).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['M'])
+
+        ctx.courseChoiceRestrictionMode = 'planned'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 1).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['D'])
+
+        ctx.courseChoiceRestrictionMode = 'all'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 1).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['D', 'M'])
+
+        ctx.courseChoiceRestrictionMode = 'additional'
+        ctx.transferredStudentContext.courses.additional = [{ code: 'PP2', label: 'PP2' }]
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 1).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual([])
+
+        ctx.transferredStudentContext.courses.missing = [{ code: 'M1', label: 'M1' }]
+        ctx.transferredStudentContext.courses.additional = []
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 1).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual([])
+    })
+
+    it('shows only additional student courses when restricting course choices to additional', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx = {
             ...methods,
             restrictCourseChoiceBySelection: true,
-            courseChoiceRestrictionMode: 'planned_additional',
+            courseChoiceRestrictionMode: 'additional',
             selection: {
                 semester: 1,
                 religion: 'ETH',
@@ -2485,10 +2722,235 @@ describe('Students timetable overview', () => {
                 return computed.restrictedStudentCourseCodes.call(this)
             },
         })
+        expect(methods.buildSemesterCourseMenus.call(ctx, 1)
+            .map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual([])
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2)
+            .map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['M'])
+    })
+
+    it('keeps exact additional module matches in their imported timetable semester', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            restrictCourseChoiceBySelection: true,
+            courseChoiceRestrictionMode: 'additional',
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            configuredSchoolHours: [],
+            weekdays: [{ label: 'Mo', value: 1 }],
+            configuredCourseGroups: [
+                {
+                    key: 'm-7',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 1,
+                    course: 'M',
+                    module_code: 'M7',
+                    display_label: 'M7-7C-DOM',
+                    subject: 'M',
+                },
+                {
+                    key: 'm-8',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 2,
+                    course: 'M',
+                    module_code: 'M8',
+                    display_label: 'M8-8A-KÖCK',
+                    subject: 'M',
+                },
+                {
+                    key: 'd-6',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 3,
+                    course: 'D',
+                    module_code: 'D6',
+                    display_label: 'D6-6A-TEST',
+                    subject: 'D',
+                },
+            ],
+            transferredStudentContext: {
+                courses: {
+                    missing: [],
+                    planned: [{ code: 'D6', label: 'D6' }],
+                    additional: [{ code: 'M7', label: 'M7', meta: '4 Std.' }],
+                },
+            },
+        }
+
+        Object.defineProperty(ctx, 'courseChoiceCourseGroups', {
+            get() {
+                return computed.courseChoiceCourseGroups.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'restrictedStudentCourseCodes', {
+            get() {
+                return computed.restrictedStudentCourseCodes.call(this)
+            },
+        })
+
         expect(methods.buildSemesterCourseMenus.call(ctx, 1).map((courseMenu: Record<string, string>) => courseMenu.label))
-            .toEqual(['D'])
+            .toEqual([])
         expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
             .toEqual(['M'])
+        expect(computed.courseChoiceCourseGroups.call(ctx)
+            .map((courseGroup: Record<string, string>) => courseGroup.key))
+            .toEqual(['m-7'])
+    })
+
+    it('hides positively completed courses from the course picker', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            restrictCourseChoiceBySelection: true,
+            courseChoiceRestrictionMode: 'all',
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            configuredSchoolHours: [],
+            weekdays: [{ label: 'Mo', value: 1 }],
+            configuredCourseGroups: [
+                {
+                    key: 'd-6',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 1,
+                    course: 'D',
+                    module_code: 'D6',
+                    display_label: 'D6 - ABC',
+                    subject: 'D',
+                },
+                {
+                    key: 'm-7',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 2,
+                    course: 'M',
+                    module_code: 'M7',
+                    display_label: 'M7-7C-DOM',
+                    subject: 'M',
+                },
+                {
+                    key: 's-4',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 3,
+                    course: 'S',
+                    module_code: 'S4',
+                    display_label: 'S4 - KOR',
+                    subject: 'S',
+                },
+                {
+                    key: 'f-2',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 4,
+                    course: 'F',
+                    module_code: 'F2',
+                    display_label: 'F2 - ABC',
+                    subject: 'F',
+                },
+                {
+                    key: 'ch-2',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 5,
+                    course: 'CH',
+                    module_code: 'CH2',
+                    display_label: 'CH2 - PLA',
+                    subject: 'CH',
+                },
+            ],
+            transferredStudentContext: {
+                courses: {
+                    completed: [
+                        { code: 'D6', label: 'D6', grade: '1' },
+                        { key: 'M7', label: 'M7', meta: 'B' },
+                        { code: 'S4', label: 'S4', grade: '4' },
+                        { code: 'F2', label: 'F2', grade: '5' },
+                    ],
+                    missing: [],
+                    planned: [
+                        { code: 'D6', label: 'D6' },
+                        { code: 'S4', label: 'S4' },
+                        { code: 'CH2', label: 'CH2' },
+                    ],
+                    additional: [
+                        { code: 'M7', label: 'M7' },
+                        { code: 'F2', label: 'F2' },
+                    ],
+                },
+            },
+        }
+
+        Object.defineProperty(ctx, 'completedStudentCourseCodes', {
+            get() {
+                return computed.completedStudentCourseCodes.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'availableCourseChoiceCourseGroups', {
+            get() {
+                return computed.availableCourseChoiceCourseGroups.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceRestrictionCourses', {
+            get() {
+                return computed.courseChoiceRestrictionCourses.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'restrictedStudentCourseCodes', {
+            get() {
+                return computed.restrictedStudentCourseCodes.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceRestrictionContext', {
+            get() {
+                return computed.courseChoiceRestrictionContext.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceCourseGroups', {
+            get() {
+                return computed.courseChoiceCourseGroups.call(this)
+            },
+        })
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2)
+            .map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['CH'])
+
+        ctx.courseChoiceRestrictionMode = 'planned'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2)
+            .map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['CH'])
+
+        ctx.courseChoiceRestrictionMode = 'additional'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2)
+            .map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual([])
     })
 
     it('restricts course choices to the transferred student card courses', () => {
@@ -2512,7 +2974,7 @@ describe('Students timetable overview', () => {
         const ctx = {
             ...methods,
             restrictCourseChoiceBySelection: true,
-            courseChoiceRestrictionMode: 'planned_additional',
+            courseChoiceRestrictionMode: 'additional',
             selection: {
                 semester: 1,
                 religion: 'ETH',
@@ -2554,9 +3016,324 @@ describe('Students timetable overview', () => {
         })
 
         expect(new Set(methods.buildSemesterCourseMenus.call(ctx, 1).map((courseMenu: Record<string, string>) => courseMenu.label)))
-            .toEqual(new Set(['BU', 'CH', 'D', 'E', 'ETH', 'GS', 'GW', 'INF', 'L', 'LPT', 'M', 'PH', 'PP', 'ÖKO']))
+            .toEqual(new Set(['BU', 'CH', 'GS', 'L', 'PH', 'PP', 'ÖKO']))
         expect(new Set(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label)))
             .toEqual(new Set(['D', 'E', 'ETH', 'GW', 'INF', 'M']))
+    })
+
+    it('does not show unselected language courses in the course picker', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            restrictCourseChoiceBySelection: true,
+            courseChoiceRestrictionMode: 'planned',
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            configuredSchoolHours: [],
+            weekdays: [{ label: 'Mo', value: 1 }],
+            configuredCourseGroups: [
+                {
+                    key: 'l-5',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 1,
+                    course: 'L5',
+                    display_label: 'L5 - TEST',
+                    subject: 'L',
+                },
+                {
+                    key: 'f-5',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 2,
+                    course: 'F5',
+                    display_label: 'F5 - TEST',
+                    subject: 'F',
+                },
+                {
+                    key: 'spa-5',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 3,
+                    course: 'SPA5',
+                    display_label: 'SPA5 - TEST',
+                    subject: 'SPA',
+                },
+                {
+                    key: 'd-6',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 4,
+                    course: 'D6',
+                    display_label: 'D6 - TEST',
+                    subject: 'D',
+                },
+            ],
+            transferredStudentContext: {
+                courses: {
+                    missing: [],
+                    planned: [
+                        { code: 'L5', label: 'L5' },
+                        { code: 'F5', label: 'F5' },
+                        { code: 'S5', label: 'S5' },
+                        { code: 'D6', label: 'D6' },
+                    ],
+                    additional: [],
+                },
+            },
+        }
+
+        Object.defineProperty(ctx, 'courseChoiceRestrictionCourses', {
+            get() {
+                return computed.courseChoiceRestrictionCourses.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'selectionCourseChoiceCodes', {
+            get() {
+                return computed.selectionCourseChoiceCodes.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'restrictedStudentCourseCodes', {
+            get() {
+                return computed.restrictedStudentCourseCodes.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceRestrictionContext', {
+            get() {
+                return computed.courseChoiceRestrictionContext.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceCourseGroups', {
+            get() {
+                return computed.courseChoiceCourseGroups.call(this)
+            },
+        })
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2)
+            .map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['D', 'L'])
+
+        ctx.courseChoiceRestrictionMode = 'all'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2)
+            .map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['D', 'L'])
+    })
+
+    it('does not show unselected religion courses in the open course picker', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            restrictCourseChoiceBySelection: true,
+            courseChoiceRestrictionMode: 'all',
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            configuredSchoolHours: [],
+            weekdays: [{ label: 'Mo', value: 1 }],
+            configuredCourseGroups: [
+                {
+                    key: 'eth-5',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 1,
+                    course: 'ETH5',
+                    display_label: 'ETH5 - TEST',
+                    subject: 'ETH',
+                },
+                {
+                    key: 'rk-5',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 2,
+                    course: 'Rk5',
+                    display_label: 'Rk5 - TEST',
+                    subject: 'Rk',
+                },
+                {
+                    key: 'rev-5',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 3,
+                    course: 'Rev5',
+                    display_label: 'Rev5 - TEST',
+                    subject: 'Rev',
+                },
+                {
+                    key: 'd-6',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 4,
+                    course: 'D6',
+                    display_label: 'D6 - TEST',
+                    subject: 'D',
+                },
+            ],
+            transferredStudentContext: {
+                courses: {
+                    completed: [],
+                    missing: [],
+                    planned: [],
+                    additional: [],
+                },
+            },
+        }
+
+        Object.defineProperty(ctx, 'completedStudentCourseCodes', {
+            get() {
+                return computed.completedStudentCourseCodes.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'availableCourseChoiceCourseGroups', {
+            get() {
+                return computed.availableCourseChoiceCourseGroups.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceRestrictionContext', {
+            get() {
+                return computed.courseChoiceRestrictionContext.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceCourseGroups', {
+            get() {
+                return computed.courseChoiceCourseGroups.call(this)
+            },
+        })
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2)
+            .map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['D', 'ETH'])
+    })
+
+    it('does not show timetable-only courses in the open course picker for selected students', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            restrictCourseChoiceBySelection: true,
+            courseChoiceRestrictionMode: 'all',
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            configuredSchoolHours: [],
+            weekdays: [{ label: 'Mo', value: 1 }],
+            subjectRows: [
+                {
+                    id: 1,
+                    is_active: true,
+                    semester: 6,
+                    json_subject: 'D',
+                    json_code: 'D6',
+                    name: 'Deutsch',
+                    branch: 'common',
+                    hours_per_week: 3,
+                },
+            ],
+            configuredCourseGroups: [
+                {
+                    key: 'd-6',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 1,
+                    course: 'D6',
+                    display_label: 'D6 - TEST',
+                    subject: 'D',
+                },
+                {
+                    key: 'boks-1',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 2,
+                    course: 'BOKS',
+                    display_label: 'BOKS - TEST',
+                    subject: 'BOKS',
+                },
+                {
+                    key: 'gus-1',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 3,
+                    course: 'GUS',
+                    display_label: 'GUS - TEST',
+                    subject: 'GUS',
+                },
+                {
+                    key: 'dafd-1',
+                    semester: 2,
+                    weekday: 1,
+                    hour: 4,
+                    course: 'DAFD',
+                    display_label: 'DAFD - TEST',
+                    subject: 'DAFD',
+                },
+            ],
+            transferredStudentContext: {
+                courses: {
+                    completed: [],
+                    missing: [],
+                    planned: [],
+                    additional: [],
+                },
+            },
+        }
+
+        Object.defineProperty(ctx, 'completedStudentCourseCodes', {
+            get() {
+                return computed.completedStudentCourseCodes.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'availableCourseChoiceCourseGroups', {
+            get() {
+                return computed.availableCourseChoiceCourseGroups.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceRestrictionContext', {
+            get() {
+                return computed.courseChoiceRestrictionContext.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceCourseGroups', {
+            get() {
+                return computed.courseChoiceCourseGroups.call(this)
+            },
+        })
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2)
+            .map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['D'])
+
+        ctx.courseChoiceRestrictionMode = 'all_available'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2)
+            .map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['BOKS', 'D', 'DAFD', 'GUS'])
     })
 
     it('restricts course choice menus by selected options when no student is selected', () => {
@@ -2802,6 +3579,48 @@ describe('Students timetable overview', () => {
         ])
     })
 
+    it('does not edit the overview selection when the timetable context is locked', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            timetableContextLocked: true,
+            selectionDialogOpen: false,
+            selection: {
+                semester: 4,
+                religion: 'RK',
+                language: 'F',
+                branch: 'gymnasial',
+                artsSubject: 'BE',
+            },
+            selectionDraft: {
+                semester: 4,
+                religion: 'RK',
+                language: 'F',
+                branch: 'gymnasial',
+                artsSubject: 'BE',
+            },
+            refreshTransferredStudentCourseHistory: vi.fn(),
+            runTimetableUpdate: vi.fn(),
+        }
+
+        methods.openSelectionDialog.call(ctx)
+
+        expect(ctx.selectionDialogOpen).toBe(false)
+
+        ctx.selectionDraft = {
+            semester: 6,
+            religion: 'ETH',
+            language: 'S',
+            branch: 'wirtschaftskundlich',
+            artsSubject: 'ME',
+        }
+
+        methods.updateSelection.call(ctx)
+
+        expect(ctx.selection.semester).toBe(4)
+        expect(ctx.runTimetableUpdate).not.toHaveBeenCalled()
+        expect(ctx.refreshTransferredStudentCourseHistory).not.toHaveBeenCalled()
+    })
+
     it('summarizes enabled Wizzard evaluation criteria like the robot settings', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
@@ -2975,6 +3794,59 @@ describe('Students timetable overview', () => {
         expect(closeActiveTimetablePanel).toHaveBeenCalled()
     })
 
+    it('returns from an adopted manual timetable to the wizard result without showing settings', () => {
+        const methods = (Overview as any).methods
+        const pushedPaths: string[] = []
+        const ctx = {
+            wizardPanelOpen: false,
+            wizardPanelMounted: true,
+            wizardTimetableResultVisible: false,
+            manualPanelOpen: true,
+            manualPanelSource: 'wizard',
+            navigateToTimetableOverviewMode(mode = '', action = '') {
+                pushedPaths.push([mode, action].filter(Boolean).join('/'))
+            },
+        }
+
+        methods.returnToWizardTimetableResult.call(ctx)
+
+        expect(ctx.wizardPanelOpen).toBe(true)
+        expect(ctx.wizardPanelMounted).toBe(true)
+        expect(ctx.wizardTimetableResultVisible).toBe(true)
+        expect(ctx.manualPanelOpen).toBe(false)
+        expect(ctx.manualPanelSource).toBeNull()
+        expect(pushedPaths).toEqual(['automatic/result'])
+    })
+
+    it('stores the created wizard timetable result step in the URL', async () => {
+        const methods = (Overview as any).methods
+        const createTimetables = vi.fn()
+        const pushedPaths: string[] = []
+        const ctx = {
+            wizardTimetableCreating: false,
+            wizardTimetableResultVisible: false,
+            navigateToTimetableOverviewMode(mode = '', action = '') {
+                pushedPaths.push([mode, action].filter(Boolean).join('/'))
+            },
+            $refs: {
+                wizardCourseCards: {
+                    createTimetables,
+                    selectedRobotTimetable: {
+                        slots: {},
+                    },
+                },
+            },
+        }
+
+        await methods.createWizardTimetable.call(ctx)
+
+        expect(createTimetables).toHaveBeenCalledWith({
+            requireAdditionalCourses: false,
+        })
+        expect(ctx.wizardTimetableResultVisible).toBe(true)
+        expect(pushedPaths).toEqual(['automatic/result'])
+    })
+
     it('syncs overview timetable panel clicks with route URLs', () => {
         const methods = (Overview as any).methods
         const pushedPaths: string[] = []
@@ -2984,13 +3856,15 @@ describe('Students timetable overview', () => {
             manualPanelOpen: false,
             manualPanelSource: null,
             normalizedTimetableOverviewRouteMode: methods.normalizedTimetableOverviewRouteMode,
+            normalizedTimetableOverviewRouteAction: methods.normalizedTimetableOverviewRouteAction,
             timetableOverviewModePath: methods.timetableOverviewModePath,
             navigateToTimetableOverviewMode: methods.navigateToTimetableOverviewMode,
             openWizardPanel: methods.openWizardPanel,
+            returnToWizardTimetableResult: methods.returnToWizardTimetableResult,
             openManualPanel: methods.openManualPanel,
             closeManualPanel: methods.closeManualPanel,
             $route: {
-                path: '/admin/students-timetables',
+                path: '/admin/students-timetables/timetable/overview',
                 params: {},
             },
             $router: {
@@ -3002,13 +3876,15 @@ describe('Students timetable overview', () => {
         }
 
         methods.openWizardPanel.call(ctx)
+        methods.returnToWizardTimetableResult.call(ctx)
         methods.openManualPanel.call(ctx)
         methods.closeManualPanel.call(ctx)
 
         expect(pushedPaths).toEqual([
             '/admin/students-timetables/timetable/overview/automatic',
+            '/admin/students-timetables/timetable/overview/automatic/result',
             '/admin/students-timetables/timetable/overview/manual',
-            '/admin/students-timetables',
+            '/admin/students-timetables/timetable/overview',
         ])
     })
 
@@ -3049,6 +3925,7 @@ describe('Students timetable overview', () => {
                 courses: {},
             },
             normalizedTimetableOverviewRouteMode: methods.normalizedTimetableOverviewRouteMode,
+            normalizedTimetableOverviewRouteAction: methods.normalizedTimetableOverviewRouteAction,
             applyTimetableOverviewLandingState: methods.applyTimetableOverviewLandingState,
             applyTimetableState: methods.applyTimetableState,
             currentTimetableState: methods.currentTimetableState,
@@ -3060,6 +3937,7 @@ describe('Students timetable overview', () => {
             normalizedTransferredStudentCourses: methods.normalizedTransferredStudentCourses,
             savedRobotTimetableStateAvailable: () => true,
             openWizardPanel: methods.openWizardPanel,
+            returnToWizardTimetableResult: methods.returnToWizardTimetableResult,
             openManualPanel: methods.openManualPanel,
         }
 
@@ -3067,6 +3945,14 @@ describe('Students timetable overview', () => {
 
         expect(ctx.wizardPanelOpen).toBe(true)
         expect(ctx.wizardPanelMounted).toBe(true)
+        expect(ctx.wizardTimetableResultVisible).toBe(false)
+        expect(ctx.manualPanelOpen).toBe(false)
+
+        methods.applyTimetableOverviewModeFromRoute.call(ctx, 'automatic', 'result')
+
+        expect(ctx.wizardPanelOpen).toBe(true)
+        expect(ctx.wizardPanelMounted).toBe(true)
+        expect(ctx.wizardTimetableResultVisible).toBe(true)
         expect(ctx.manualPanelOpen).toBe(false)
 
         methods.applyTimetableOverviewModeFromRoute.call(ctx, 'manual')
@@ -3098,6 +3984,166 @@ describe('Students timetable overview', () => {
         expect(ctx.wizardPanelMounted).toBe(false)
         expect(ctx.manualPanelOpen).toBe(false)
         expect(ctx.manualPanelSource).toBeNull()
+    })
+
+    it('marks only the automatic result route as a generated timetable route', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            normalizedTimetableOverviewRouteMode: methods.normalizedTimetableOverviewRouteMode,
+            normalizedTimetableOverviewRouteAction: methods.normalizedTimetableOverviewRouteAction,
+            $route: {
+                params: {
+                    detail: 'automatic',
+                    action: 'result',
+                },
+            },
+        }
+
+        expect(computed.wizardTimetableResultRouteActive.call(ctx)).toBe(true)
+
+        ctx.$route.params.action = undefined
+
+        expect(computed.wizardTimetableResultRouteActive.call(ctx)).toBe(false)
+
+        ctx.$route.params.detail = 'manual'
+        ctx.$route.params.action = 'result'
+
+        expect(computed.wizardTimetableResultRouteActive.call(ctx)).toBe(false)
+    })
+
+    it('locks transferred timetable context only for adopted wizard timetables', () => {
+        const computed = (Overview as any).computed
+        const ctx = {
+            manualPanelOpen: true,
+            manualPanelSource: 'wizard',
+        }
+
+        expect(computed.transferredTimetableContextLocked.call(ctx)).toBe(true)
+
+        ctx.manualPanelSource = 'direct'
+
+        expect(computed.transferredTimetableContextLocked.call(ctx)).toBe(false)
+
+        ctx.manualPanelOpen = false
+        ctx.manualPanelSource = 'wizard'
+
+        expect(computed.transferredTimetableContextLocked.call(ctx)).toBe(false)
+    })
+
+    it('locks timetable context while any manual timetable panel is open', () => {
+        const computed = (Overview as any).computed
+        const ctx = {
+            manualPanelOpen: true,
+            manualPanelSource: 'direct',
+        }
+
+        expect(computed.timetableContextLocked.call(ctx)).toBe(true)
+
+        ctx.manualPanelSource = 'wizard'
+
+        expect(computed.timetableContextLocked.call(ctx)).toBe(true)
+
+        ctx.manualPanelOpen = false
+
+        expect(computed.timetableContextLocked.call(ctx)).toBe(false)
+    })
+
+    it('refreshes transferred student courses with selection defaults', () => {
+        const methods = (Overview as any).methods
+        const loadTransferredStudentCompletedCourses = vi.fn()
+        const ctx = {
+            transferredStudentContext: {
+                student: {
+                    studentCode: '100',
+                },
+            },
+            loadTransferredStudentCompletedCourses,
+        }
+
+        methods.refreshTransferredStudentCourseHistory.call(ctx)
+
+        expect(loadTransferredStudentCompletedCourses).toHaveBeenCalledWith('100', {
+            includeSelection: true,
+            applySelectionDefaults: true,
+        })
+    })
+
+    it('hides transferred student course cards on manual timetable pages', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            wizardPanelOpen: false,
+            manualPanelOpen: false,
+            transferredStudentCourseSections: [
+                { key: 'completed', title: 'Abgeschlossene Kurse' },
+                { key: 'missing', title: 'Fehlende Kurse' },
+                { key: 'planned', title: 'Vorgesehene Kurse' },
+                { key: 'additional', title: 'Zusätzliche Kurse' },
+            ],
+            normalizedTimetableOverviewRouteMode: methods.normalizedTimetableOverviewRouteMode,
+            $route: {
+                params: {
+                    detail: 'adopted',
+                },
+            },
+        }
+
+        Object.defineProperty(ctx, 'adoptedTimetableOverviewActive', {
+            get() {
+                return computed.adoptedTimetableOverviewActive.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'timetableContextLocked', {
+            get() {
+                return computed.timetableContextLocked.call(this)
+            },
+        })
+
+        expect(computed.visibleTransferredStudentCourseSections.call(ctx)).toEqual([])
+
+        ctx.$route.params.detail = 'manual'
+        ctx.manualPanelOpen = true
+
+        expect(computed.visibleTransferredStudentCourseSections.call(ctx)).toEqual([])
+
+        ctx.manualPanelOpen = false
+
+        expect(computed.visibleTransferredStudentCourseSections.call(ctx)).toEqual(ctx.transferredStudentCourseSections)
+    })
+
+    it('shows the collapsible course overview for adopted manual timetable pages', () => {
+        const computed = (Overview as any).computed
+        const ctx = {
+            manualPanelOpen: true,
+            manualPanelSource: 'wizard',
+            transferredStudentContext: {
+                student: {
+                    studentCode: '100',
+                },
+            },
+            transferredStudentCourseSections: [
+                { key: 'completed', title: 'Abgeschlossene Kurse', items: [] },
+                { key: 'missing', title: 'Fehlende Kurse', items: [{ code: 'D1', label: 'D1' }] },
+            ],
+        }
+
+        Object.defineProperty(ctx, 'directManualPanelOpen', {
+            get() {
+                return computed.directManualPanelOpen.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'transferredTimetableContextLocked', {
+            get() {
+                return computed.transferredTimetableContextLocked.call(this)
+            },
+        })
+
+        expect(computed.manualCourseOverviewVisible.call(ctx)).toBe(true)
+
+        ctx.transferredStudentCourseSections = []
+
+        expect(computed.manualCourseOverviewVisible.call(ctx)).toBe(false)
     })
 
     it('shows an overtaken Wizzard timetable as the manual overview timetable', () => {
@@ -3222,6 +4268,7 @@ describe('Students timetable overview', () => {
             .toEqual(['mdi-check-circle-outline', 'mdi-alert-circle-outline', 'mdi-format-list-checks', 'mdi-plus-circle-outline'])
         expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.color))
             .toEqual(['#00897B', '#FB8C00', '#3949AB', '#0288D1'])
+        expect(computed.transferredStudentCourseTotalCount.call(ctx)).toBe(2)
     })
 
     it('shows imported religion from robot student data when restored student context is stale', () => {
@@ -3531,6 +4578,101 @@ describe('Students timetable overview', () => {
         expect(ctx.selectedCourseGroup).toBeNull()
     })
 
+    it('preselects the religion card from completed course history fields', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            selection: {
+                semester: 6,
+                religion: 'Rk',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            selectionDraft: {
+                semester: 6,
+                religion: 'Rk',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            selectedCourseMenuKey: 'old-menu',
+            selectedCourseGroup: { key: 'old-group' },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+        }
+
+        methods.applyTransferredStudentSelectionDefaultsFromOverview.call(ctx, {
+            selection: {
+                semester: 6,
+                religion: 'Rk',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                arts_subject: 'ME',
+            },
+            completed_courses: [
+                { label: 'ETH2', grade: '2' },
+            ],
+        })
+
+        expect(ctx.selection.religion).toBe('ETH')
+        expect(ctx.selectionDraft).toEqual(ctx.selection)
+        expect(ctx.selectedCourseMenuKey).toBe('')
+        expect(ctx.selectedCourseGroup).toBeNull()
+    })
+
+    it('keeps ethics selected when completed ethics and religion modules tie', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            selection: {
+                semester: 6,
+                religion: 'Rk',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            selectionDraft: {
+                semester: 6,
+                religion: 'Rk',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            selectedCourseMenuKey: 'old-menu',
+            selectedCourseGroup: { key: 'old-group' },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+        }
+
+        methods.applyTransferredStudentSelectionDefaultsFromOverview.call(ctx, {
+            selection: {
+                semester: 6,
+                religion: 'Rk',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                arts_subject: 'ME',
+            },
+            completed_courses: [
+                { subject: 'ETH1', grade: '1' },
+                { subject: 'ETH2', grade: '1' },
+                { subject: 'ETH3', grade: '2' },
+                { subject: 'ETH4', grade: '1' },
+                { subject: 'RK3', grade: '1' },
+                { subject: 'RK4', grade: '1' },
+            ],
+        })
+
+        expect(ctx.selection.religion).toBe('ETH')
+        expect(ctx.selectionDraft).toEqual(ctx.selection)
+    })
+
     it('focuses the student search field when editing the overview student', () => {
         const methods = (Overview as any).methods
         const focusCalls: string[] = []
@@ -3576,6 +4718,32 @@ describe('Students timetable overview', () => {
         expect(ctx.studentSearch).toBe('')
         expect(ctx.studentDialogOpen).toBe(true)
         expect(focusCalls).toEqual(['field', 'input'])
+    })
+
+    it('does not open the overview student dialog when the timetable context is locked', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            timetableContextLocked: true,
+            studentSelectionDraft: {
+                studentCode: null,
+            },
+            studentDialogOpen: false,
+            studentSearch: 'Grassl',
+            transferredStudentContext: {
+                student: {
+                    studentCode: '100',
+                },
+            },
+            normalizedStudentCode: methods.normalizedStudentCode,
+            $nextTick: vi.fn(),
+        }
+
+        methods.openStudentDialog.call(ctx)
+
+        expect(ctx.studentSelectionDraft).toEqual({ studentCode: null })
+        expect(ctx.studentSearch).toBe('Grassl')
+        expect(ctx.studentDialogOpen).toBe(false)
+        expect(ctx.$nextTick).not.toHaveBeenCalled()
     })
 
     it('selects the only matching overview student before updating on enter', () => {
@@ -3624,6 +4792,21 @@ describe('Students timetable overview', () => {
         expect(ctx.appliedStudentCode).toBe('100')
     })
 
+    it('does not update the overview student selection when the timetable context is locked', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            timetableContextLocked: true,
+            studentSelectionDraft: {
+                studentCode: '200',
+            },
+            applyTransferredStudentSelection: vi.fn(),
+        }
+
+        methods.updateStudentSelection.call(ctx)
+
+        expect(ctx.applyTransferredStudentSelection).not.toHaveBeenCalled()
+    })
+
     it('clears the transferred overview student directly', () => {
         const methods = (Overview as any).methods
         const ctx = {
@@ -3666,6 +4849,44 @@ describe('Students timetable overview', () => {
         expect(ctx.transferredStudentContext).toBeNull()
     })
 
+    it('does not clear the transferred student when the timetable context is locked', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            timetableContextLocked: true,
+            transferredStudentContext: {
+                student: {
+                    studentCode: '100',
+                },
+            },
+            studentSelectionDraft: {
+                studentCode: '100',
+            },
+            selection: {
+                semester: 4,
+                religion: 'RK',
+                language: 'F',
+                branch: 'gymnasial',
+                artsSubject: 'BE',
+            },
+            selectionDraft: {
+                semester: 4,
+                religion: 'RK',
+                language: 'F',
+                branch: 'gymnasial',
+                artsSubject: 'BE',
+            },
+            applyTransferredStudentSelection: vi.fn(),
+        }
+
+        methods.clearTransferredStudentSelection.call(ctx)
+
+        expect(ctx.studentSelectionDraft).toEqual({ studentCode: '100' })
+        expect(ctx.selection.semester).toBe(4)
+        expect(ctx.selectionDraft.semester).toBe(4)
+        expect(ctx.applyTransferredStudentSelection).not.toHaveBeenCalled()
+        expect(ctx.transferredStudentContext).not.toBeNull()
+    })
+
     it('shows course items in the dialog only after a course menu is selected', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
@@ -3673,6 +4894,8 @@ describe('Students timetable overview', () => {
         const ctx = {
             courseMenuDialog: false,
             selectedCourseMenuKey: '',
+            courseChoiceRestrictionMode: 'all',
+            restrictCourseChoiceBySelection: false,
             visibleCourseChoiceSemesters: [
                 { value: 2, label: 'Semester', dateRangeLabel: '16.02.2026 - 10.07.2026' },
             ],
@@ -3711,6 +4934,8 @@ describe('Students timetable overview', () => {
         methods.openCourseMenuDialog.call(ctx)
         expect(ctx.courseMenuDialog).toBe(true)
         expect(ctx.selectedCourseMenuKey).toBe('')
+        expect(ctx.courseChoiceRestrictionMode).toBe('planned')
+        expect(ctx.restrictCourseChoiceBySelection).toBe(true)
 
         methods.selectCourseMenu.call(ctx, allCourseChoiceMenus[0])
         expect(ctx.selectedCourseMenuKey).toBe('semester-2-ETH')
@@ -3732,13 +4957,20 @@ describe('Students timetable overview', () => {
             persistTimetableState: vi.fn(),
         }
 
-        methods.handleCourseChoiceRestrictionUpdate.call(ctx, 'planned_additional')
+        methods.handleCourseChoiceRestrictionUpdate.call(ctx, 'additional')
 
-        expect(ctx.courseChoiceRestrictionMode).toBe('planned_additional')
+        expect(ctx.courseChoiceRestrictionMode).toBe('additional')
         expect(ctx.restrictCourseChoiceBySelection).toBe(true)
         expect(ctx.selectedCourseMenuKey).toBe('semester-2-M')
         expect(ctx.activeCourseGroupFilterKeys).toEqual(['m-1'])
         expect(ctx.persistTimetableState).not.toHaveBeenCalled()
+
+        methods.handleCourseChoiceRestrictionUpdate.call(ctx, 'all_available')
+
+        expect(ctx.courseChoiceRestrictionMode).toBe('all_available')
+        expect(ctx.restrictCourseChoiceBySelection).toBe(false)
+        expect(ctx.selectedCourseMenuKey).toBe('semester-2-M')
+        expect(ctx.activeCourseGroupFilterKeys).toEqual(['m-1'])
     })
 
     it('keeps selected course chips independent from the course choice mode filter', () => {

@@ -7,6 +7,7 @@ use App\Models\SchoolTool;
 use App\Models\StudentTimetableProfileSelection;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
+use App\Services\SchoolHourService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -21,6 +22,8 @@ class StudentTimetablesStudentOverviewService
 
     public function __construct(
         protected StudentTimetableCompletedCourseHistoryService $completedCourseHistoryService,
+        protected StudentTimetableOverviewService $overviewService,
+        protected SchoolHourService $schoolHourService,
     ) {}
 
     /**
@@ -142,6 +145,8 @@ class StudentTimetablesStudentOverviewService
             'additional_courses' => $additionalCourses,
             'course_sections' => $courseSections,
             'automatic_course_selection' => $automaticCourseSelection,
+            'manual_timetable' => $this->manualTimetableSelection($user, $courseSections),
+            'school_hours' => $this->schoolHoursForUser($user),
             'counts' => [
                 'completed_courses' => count($completedCourses),
                 'missing_courses' => count($missingCourses),
@@ -342,6 +347,220 @@ class StudentTimetablesStudentOverviewService
             'hours' => $hours,
             'hours_label' => $this->courseHoursLabel($hours),
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courseSections
+     * @return array<string, mixed>
+     */
+    private function manualTimetableSelection(User $user, array $courseSections): array
+    {
+        $courseGroups = $this->manualTimetableCourseGroupsForUser($user);
+        $sections = collect($courseSections)
+            ->filter(fn (array $section): bool => in_array((string) ($section['key'] ?? ''), ['missing', 'proposed', 'additional'], true))
+            ->map(fn (array $section): array => [
+                ...$section,
+                'items' => collect(is_array($section['items'] ?? null) ? $section['items'] : [])
+                    ->map(fn (array $course): array => $this->courseWithManualTimetableGroups($course, $courseGroups))
+                    ->values()
+                    ->all(),
+            ])
+            ->values()
+            ->all();
+
+        $regularCourses = collect($sections)
+            ->filter(fn (array $section): bool => in_array((string) ($section['key'] ?? ''), ['missing', 'proposed'], true))
+            ->flatMap(fn (array $section): array => is_array($section['items'] ?? null) ? $section['items'] : [])
+            ->values();
+        $additionalCourses = collect($sections)
+            ->firstWhere('key', 'additional')['items'] ?? [];
+
+        return [
+            'title' => 'Manueller Stundenplan',
+            'sections' => $sections,
+            'courses' => $regularCourses->all(),
+            'additional_courses' => is_array($additionalCourses) ? $additionalCourses : [],
+            'total' => $regularCourses->count(),
+            'course_group_count' => $regularCourses
+                ->flatMap(fn (array $course): array => is_array($course['course_groups'] ?? null) ? $course['course_groups'] : [])
+                ->pluck('key')
+                ->unique()
+                ->count(),
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function manualTimetableCourseGroupsForUser(User $user): array
+    {
+        $schoolHours = collect($this->schoolHoursForUser($user))->keyBy('hour');
+
+        return collect($this->overviewService->courseGroupsForUser($user))
+            ->map(function (array $courseGroup) use ($schoolHours): array {
+                $schoolHour = $schoolHours->get((int) ($courseGroup['hour'] ?? 0), []);
+
+                return [
+                    ...$courseGroup,
+                    'time_from' => $this->nonEmptyString($courseGroup['time_from'] ?? $courseGroup['from'] ?? $schoolHour['from'] ?? null),
+                    'time_until' => $this->nonEmptyString($courseGroup['time_until'] ?? $courseGroup['until'] ?? $schoolHour['until'] ?? null),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @return array<string, mixed>
+     */
+    private function courseWithManualTimetableGroups(array $course, array $courseGroups): array
+    {
+        $matchingGroups = collect($courseGroups)
+            ->filter(fn (array $courseGroup): bool => $this->courseGroupMatchesCourse($courseGroup, $course))
+            ->sortBy(fn (array $courseGroup): string => $this->manualCourseGroupSortValue($courseGroup))
+            ->values()
+            ->all();
+
+        return [
+            ...$course,
+            'course_groups' => $matchingGroups,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     * @param  array<string, mixed>  $course
+     */
+    private function courseGroupMatchesCourse(array $courseGroup, array $course): bool
+    {
+        return collect($this->courseAliases($course))
+            ->intersect($this->courseGroupCodes($courseGroup))
+            ->isNotEmpty();
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @return list<string>
+     */
+    private function courseAliases(array $course): array
+    {
+        return collect([
+            $course['code'] ?? '',
+            $course['ttCode'] ?? '',
+            ...(is_array($course['ttCodes'] ?? null) ? $course['ttCodes'] : []),
+        ])
+            ->flatMap(fn (mixed $value): array => [
+                (string) $value,
+                $this->defaultTimetableCodeAlias((string) $value),
+            ])
+            ->flatMap(fn (string $value): array => $this->courseCodeAliasParts($value))
+            ->map(fn (string $value): string => $this->normalizedCourseCode($value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     * @return list<string>
+     */
+    private function courseGroupCodes(array $courseGroup): array
+    {
+        return collect([
+            $courseGroup['course'] ?? '',
+            $courseGroup['subject'] ?? '',
+            $courseGroup['module_code'] ?? '',
+            ...$this->courseCodeTokensFromValue((string) ($courseGroup['title'] ?? '')),
+            ...$this->courseCodeTokensFromValue((string) ($courseGroup['display_label'] ?? '')),
+        ])
+            ->map(fn (mixed $value): string => $this->normalizedCourseCode((string) $value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function courseCodeTokensFromValue(string $value): array
+    {
+        return collect(preg_split('/[\s,;|()\\[\\]{}]+/u', $value) ?: [])
+            ->flatMap(fn (string $part): array => preg_split('/[-–—]+/u', $part) ?: [])
+            ->map(fn (string $part): string => trim($part))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function defaultTimetableCodeAlias(string $value): string
+    {
+        $normalizedValue = $this->normalizedCourseCode($value);
+
+        if (! preg_match('/^([A-ZÄÖÜ]+)(\d*)$/u', $normalizedValue, $match)) {
+            return '';
+        }
+
+        $aliases = [
+            'ET' => 'ETH',
+            'ETH' => 'ET',
+            'GS' => 'GPB',
+            'GPB' => 'GS',
+            'GW' => 'GWB',
+            'GWB' => 'GW',
+            'ME' => 'MU',
+            'MU' => 'ME',
+            'R' => 'RK',
+            'RK' => 'R',
+            'S' => 'SPA',
+            'SPA' => 'S',
+            'LPT' => 'LET',
+            'LET' => 'LPT',
+        ];
+
+        return isset($aliases[$match[1]]) ? $aliases[$match[1]].($match[2] ?? '') : '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function manualCourseGroupSortValue(array $courseGroup): string
+    {
+        return implode('|', [
+            str_pad((string) ($courseGroup['semester'] ?? 99), 2, '0', STR_PAD_LEFT),
+            str_pad((string) ($courseGroup['weekday'] ?? 99), 2, '0', STR_PAD_LEFT),
+            str_pad((string) ($courseGroup['hour'] ?? 99), 2, '0', STR_PAD_LEFT),
+            (string) ($courseGroup['display_label'] ?? $courseGroup['title'] ?? ''),
+        ]);
+    }
+
+    /**
+     * @return list<array{hour: int, from: ?string, until: ?string}>
+     */
+    private function schoolHoursForUser(User $user): array
+    {
+        return $this->schoolHourService->listForUser($user)
+            ->map(fn (mixed $schoolHour): array => [
+                'hour' => (int) $schoolHour->hour,
+                'from' => $this->formatTimeValue($schoolHour->from),
+                'until' => $this->formatTimeValue($schoolHour->until),
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function formatTimeValue(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        return mb_substr($value, 0, 5);
     }
 
     /**
