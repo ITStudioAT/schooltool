@@ -50,6 +50,12 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('<v-checkbox-btn')
         expect(source).toContain('Manueller Stundenplan')
         expect(source).toContain('Keine passenden Kurstermine gefunden.')
+        expect(source).toContain('showManualTimetable && courseSections.length')
+        expect(source).toContain('class="manual-overview-course-card"')
+        expect(source).toContain('v-model="expandedManualOverviewCoursePanels"')
+        expect(source).toContain('expandedManualOverviewCoursePanels: []')
+        expect(source).toContain('<h3>Kurse</h3>')
+        expect(source).toContain('courseSectionTotalCount')
     })
 
     it('builds manual timetable cells from selected student courses', () => {

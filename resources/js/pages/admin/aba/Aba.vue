@@ -168,16 +168,6 @@ export default {
                     meta: 'Aktives Schuljahr',
                     icon: 'mdi-calendar-month-outline',
                 },
-                ...(this.isAdminOrSuperAdmin
-                    ? [
-                          {
-                              key: 'ai-settings',
-                              label: 'KI-Einstellungen',
-                              meta: 'Beta',
-                              icon: 'mdi-brain',
-                          },
-                      ]
-                    : []),
             ]
         },
     },
@@ -198,8 +188,6 @@ export default {
 
             if (target === 'schoolyear') {
                 await this.openSchoolyearDialog()
-            } else if (target === 'ai-settings') {
-                this.$router.push('/admin/aba/ai-settings')
             } else {
                 this.mainAction = target
             }

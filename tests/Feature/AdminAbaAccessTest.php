@@ -288,7 +288,9 @@ it('keeps aba navigation focused on overview and schoolyear', function () {
 
     expect($abaPageContent)
         ->toContain("key: 'overview'")
-        ->toContain("key: 'schoolyear'");
+        ->toContain("key: 'schoolyear'")
+        ->not->toContain("key: 'ai-settings'")
+        ->not->toContain('/admin/aba/ai-settings');
 });
 
 it('ships an aba detail page with extraction access and back navigation', function () {

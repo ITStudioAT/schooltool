@@ -212,12 +212,10 @@ export default {
                     const sem2Entries = this.entriesForSemester(studentEntries, 2)
 
                     const sem1Groups = this.buildCategoryGroups(sem1Entries)
-                    const sem1ForcedNa = this.hasSingleNaSemesterGrade(sem1Entries)
-                    const sem1Calculated = sem1ForcedNa ? 5 : this.totalFromCategoryGroups(sem1Groups)
+                    const sem1Calculated = this.totalFromCategoryGroups(sem1Groups)
 
                     const sem2Groups = this.buildCategoryGroups(sem2Entries)
-                    const sem2ForcedNa = this.hasSingleNaSemesterGrade(sem2Entries)
-                    const sem2Calculated = sem2ForcedNa ? 5 : this.totalFromCategoryGroups(sem2Groups)
+                    const sem2Calculated = this.totalFromCategoryGroups(sem2Groups)
 
                     const useSemGradeOnly = !!this.grading.use_semester_grade_only
                     const storedSem1 = student.sem_1_grade || null
@@ -255,8 +253,7 @@ export default {
                     }
                 } else {
                     const groups = this.buildCategoryGroups(studentEntries)
-                    const forcedNa = this.hasSingleNaSemesterGrade(studentEntries)
-                    const calculated = forcedNa ? 5 : this.totalFromCategoryGroups(groups)
+                    const calculated = this.totalFromCategoryGroups(groups)
 
                     const storedGrade = student.sem_grade || null
                     const storedParsed = storedGrade != null ? this.parseStoredGrade(storedGrade) : null
@@ -431,27 +428,6 @@ export default {
 
             return numericValues.length === gradeKeys.length ? numericValues : []
         },
-        isTypeInRequireAllCategory(type) {
-            if (!type) return false
-            const categories = this.grading?.categories || []
-            return categories.some((cat) => {
-                if (!cat?.require_all_entries) return false
-                return (cat.works || []).some((w) => {
-                    const sn = typeof w === 'string' ? w : w?.short_name
-                    return String(sn || '') === String(type)
-                })
-            })
-        },
-        hasSingleNaSemesterGrade(entries) {
-            const graded = (entries || []).filter((e) => this.isGradedEntry(e))
-            if (graded.length !== 1) return false
-            const only = graded[0]
-            if (!this.isNaGradeKey(this.effectiveGradeKeyForEntry(only))) return false
-            if (!this.isTypeInRequireAllCategory(only?.type)) return false
-            const sameType = (entries || []).filter((e) => e?.type === only?.type)
-            return !sameType.some((e) => !this.isGradedEntry(e))
-        },
-
         // --- Core calculation (mirrored from CourseStudent.vue) ---
         buildCategoryGroups(entries) {
             const categories = this.grading?.categories || []
@@ -508,10 +484,12 @@ export default {
                             workAverages.push({ value: avg, weight })
                             return
                         }
+                        if (!workEntries.length) return
 
                         const values = workEntries
                             .map((e) => this.gradeValueForWork(work, this.effectiveGradeKeyForEntry(e, work)))
                             .filter((v) => v !== null)
+                        if (!values.length) return
                         const sum = values.reduce((s, v) => s + v, 0)
                         const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
                         const grade = this.pointsGradeForWork(work, rounded)

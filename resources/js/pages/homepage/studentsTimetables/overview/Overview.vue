@@ -71,6 +71,66 @@
                         @click="restoreSelectionDefaults" />
                 </div>
 
+                <v-expansion-panels
+                    v-if="showManualTimetable && courseSections.length"
+                    v-model="expandedManualOverviewCoursePanels"
+                    class="manual-overview-course-card"
+                    flat>
+                    <v-expansion-panel value="courses" class="manual-overview-course-card__panel">
+                        <v-expansion-panel-title class="manual-overview-course-card__title">
+                            <v-icon icon="mdi-book-open-page-variant-outline" size="22" />
+                            <h3>Kurse</h3>
+                            <v-chip size="small" variant="flat" color="primary">
+                                {{ courseSectionTotalCount }}
+                            </v-chip>
+                        </v-expansion-panel-title>
+
+                        <v-expansion-panel-text>
+                            <v-expansion-panels
+                                v-model="expandedCourseSections"
+                                class="summary-grid summary-panels manual-overview-course-card__sections"
+                                multiple
+                                flat>
+                                <v-expansion-panel
+                                    v-for="section in courseSections"
+                                    :key="section.key"
+                                    :value="section.key"
+                                    class="summary-panel">
+                                    <v-expansion-panel-title class="summary-head">
+                                        <v-icon size="22">{{ section.icon }}</v-icon>
+                                        <h3>{{ section.title }}</h3>
+                                        <v-chip size="small" variant="flat" :color="section.color">{{ section.items.length }}</v-chip>
+                                    </v-expansion-panel-title>
+
+                                    <v-expansion-panel-text>
+                                        <div v-if="section.items.length" class="course-list">
+                                            <div v-for="course in section.items" :key="courseKey(section.key, course)" class="course-row">
+                                                <div>
+                                                    <strong>{{ course.code || course.name || '-' }}</strong>
+                                                    <span v-if="course.name && course.name !== course.code">{{ course.name }}</span>
+                                                </div>
+                                                <div class="course-meta">
+                                                    <v-chip v-if="courseHoursLabel(course)" size="x-small" color="primary" variant="tonal">
+                                                        {{ courseHoursLabel(course) }}
+                                                    </v-chip>
+                                                    <v-chip v-if="course.semester" size="x-small" variant="tonal">S{{ course.semester }}</v-chip>
+                                                    <v-chip v-if="course.grade" size="x-small" color="success" variant="tonal">{{ course.grade }}</v-chip>
+                                                    <v-chip v-if="course.branch && course.branch !== 'common'" size="x-small" variant="tonal">{{ course.branch }}</v-chip>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div v-else class="empty-state">
+                                            <v-icon size="20">mdi-information-outline</v-icon>
+                                            <span>{{ section.empty }}</span>
+                                        </div>
+                                    </v-expansion-panel-text>
+                                </v-expansion-panel>
+                            </v-expansion-panels>
+                        </v-expansion-panel-text>
+                    </v-expansion-panel>
+                </v-expansion-panels>
+
                 <v-dialog v-model="selectionDialogOpen" max-width="420">
                     <v-card>
                         <v-card-title>{{ selectionDraftLabel }} bearbeiten</v-card-title>
@@ -311,6 +371,7 @@ export default {
             showEvaluationSettings: false,
             showManualTimetable: false,
             expandedCourseSections: [],
+            expandedManualOverviewCoursePanels: [],
             manualExpandedCourseSections: ['missing', 'proposed'],
             manualSelectedCourseKeys: [],
             selectionOverride: {},
@@ -369,6 +430,11 @@ export default {
         },
         courseSections() {
             return Array.isArray(this.overview?.course_sections) ? this.overview.course_sections : []
+        },
+        courseSectionTotalCount() {
+            return this.courseSections.reduce((courseCount, section) => (
+                courseCount + (Array.isArray(section?.items) ? section.items.length : 0)
+            ), 0)
         },
         automaticTimetableCourseSelection() {
             const courseSelection = this.overview?.automatic_course_selection
@@ -964,6 +1030,41 @@ export default {
 
 .overview-selection__restore {
     flex: 0 0 auto;
+}
+
+.manual-overview-course-card {
+    margin: -4px 0 18px;
+}
+
+.manual-overview-course-card :deep(.v-expansion-panel) {
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    border-radius: 8px !important;
+    background: rgba(255, 255, 255, 0.84) !important;
+    overflow: hidden;
+}
+
+.manual-overview-course-card__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 56px;
+    padding: 14px;
+}
+
+.manual-overview-course-card__title h3 {
+    flex: 1;
+    margin: 0;
+    color: #10263a;
+    font-size: 1rem;
+}
+
+.manual-overview-course-card :deep(.v-expansion-panel-text__wrapper) {
+    padding: 0;
+}
+
+.manual-overview-course-card__sections {
+    margin: 0;
+    padding: 12px;
 }
 
 .timetable-actions {

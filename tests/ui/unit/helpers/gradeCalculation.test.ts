@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCategoryGroups } from '@/helpers/gradeCalculation'
+import { buildCategoryGroups, computeStudentGrades } from '@/helpers/gradeCalculation'
 
 describe('grade calculation helper', () => {
     it('uses the configured grade value before falling back to a numeric grade key', () => {
@@ -116,5 +116,49 @@ describe('grade calculation helper', () => {
         )
 
         expect(groups[0].value).toBe(2)
+    })
+
+    it('keeps a required NA points work as NA instead of converting zero points to grade five', () => {
+        const grades = computeStudentGrades(
+            { sem_grade: null },
+            [
+                {
+                    id: 1,
+                    type: 'TE-E',
+                    grade: '',
+                    effective_grade: 'NA',
+                },
+            ],
+            [
+                {
+                    short_name: 'TE-E',
+                    calculation: 'points',
+                    grades: [
+                        { grade: '1', value: '1' },
+                        { grade: '5', value: '5' },
+                    ],
+                    semester_points_table: [
+                        { grade: '1', min_points: 5 },
+                        { grade: '4', min_points: 1 },
+                    ],
+                    semester_points_sonst_grade: '5',
+                    default_grade: '',
+                },
+            ],
+            {
+                categories: [
+                    {
+                        name: 'Test - Excel',
+                        weight: 100,
+                        require_all_entries: true,
+                        works: [{ short_name: 'TE-E', factor: 100 }],
+                    },
+                ],
+            },
+            1,
+            null,
+        )
+
+        expect(grades.sem1).toBe('NA')
     })
 })

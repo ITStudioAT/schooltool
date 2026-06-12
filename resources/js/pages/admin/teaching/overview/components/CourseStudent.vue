@@ -99,7 +99,7 @@
                                                 <v-list-item-title class="text-subtitle-2" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : (!cat.rows.length ? 'text-warning' : ''))">
                                                     {{ cat.name }}
                                                 </v-list-item-title>
-                                                <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
+                                                <v-chip v-if="cat.weight != null && cat.weight !== ''" size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
                                                 <v-chip v-if="cat.requireAllEntries" size="x-small" variant="tonal" color="primary">
                                                     Alle erforderlich
                                                 </v-chip>
@@ -179,7 +179,7 @@
                                                 <v-list-item-title class="text-subtitle-2" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : (!cat.rows.length ? 'text-warning' : ''))">
                                                     {{ cat.name }}
                                                 </v-list-item-title>
-                                                <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
+                                                <v-chip v-if="cat.weight != null && cat.weight !== ''" size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
                                                 <v-chip v-if="cat.requireAllEntries" size="x-small" variant="tonal" color="primary">
                                                     Alle erforderlich
                                                 </v-chip>
@@ -1228,15 +1228,9 @@ export default {
             return this.buildCategoryGroups(this.entriesForSemester(this.entries || [], 2))
         },
         semester1Total() {
-            const entries = this.semesterCount === 2
-                ? this.entriesForSemester(this.entries || [], 1)
-                : (this.filteredEntries || [])
-            if (this.hasSingleNaSemesterGrade(entries)) return 5
             return this.totalFromCategoryGroups(this.semester1Groups)
         },
         semester2Total() {
-            const entries = this.entriesForSemester(this.entries || [], 2)
-            if (this.hasSingleNaSemesterGrade(entries)) return 5
             return this.totalFromCategoryGroups(this.semester2Groups)
         },
         semester1HasMissingCategory() {
@@ -1279,8 +1273,7 @@ export default {
             // Semester 1 basis for yearly grade:
             // - use_semester_grade_only = true  -> stored sem_1_grade
             // - otherwise                        -> calculated Semester-1 value
-            const sem1ForcedNa = this.hasSingleNaSemesterGrade(sem1Entries)
-            const sem1CalculatedValue = sem1ForcedNa ? 5 : this.totalFromCategoryGroups(sem1Groups)
+            const sem1CalculatedValue = this.totalFromCategoryGroups(sem1Groups)
             const sem1GradeRaw = this.selected_course_student?.sem_1_grade
             const sem1GradeKey = this.normalizeGradeKey(sem1GradeRaw)
             const sem1GradeValue = sem1GradeRaw != null && sem1GradeRaw !== ''
@@ -1293,8 +1286,7 @@ export default {
                 : sem1CalculatedValue
 
             // Semester 2 for yearly grade is based on calculated Semester-2 value.
-            const sem2ForcedNa = this.hasSingleNaSemesterGrade(sem2Entries)
-            const sem2CalculatedValue = sem2ForcedNa ? 5 : this.totalFromCategoryGroups(sem2Groups)
+            const sem2CalculatedValue = this.totalFromCategoryGroups(sem2Groups)
             const sem2Value = sem2CalculatedValue
 
             if (this.isNaGradeKey(sem1Value) || this.isNaGradeKey(sem2Value)) {
@@ -2348,31 +2340,6 @@ export default {
         isGradedEntry(entry, workOverride = null) {
             return this.effectiveGradeKeyForEntry(entry, workOverride) !== ''
         },
-        isTypeInRequireAllCategory(type) {
-            if (!type) return false
-            const categories = this.selectedSchema?.grading?.categories || []
-            return categories.some((category) => {
-                if (!category?.require_all_entries) return false
-                const works = Array.isArray(category.works) ? category.works : []
-                return works.some((workItem) => {
-                    const shortName = typeof workItem === 'string' ? workItem : workItem?.short_name
-                    return String(shortName || '') === String(type)
-                })
-            })
-        },
-        hasSingleNaSemesterGrade(entries) {
-            const gradedEntries = (entries || []).filter((entry) => this.isGradedEntry(entry))
-            if (gradedEntries.length !== 1) return false
-
-            const onlyEntry = gradedEntries[0]
-            if (!this.isNaGradeKey(this.effectiveGradeKeyForEntry(onlyEntry))) return false
-
-            if (!this.isTypeInRequireAllCategory(onlyEntry?.type)) return false
-
-            const sameTypeEntries = (entries || []).filter((entry) => entry?.type === onlyEntry?.type)
-            const hasUngraded = sameTypeEntries.some((entry) => !this.isGradedEntry(entry))
-            return !hasUngraded
-        },
         gradeValueForWork(work, gradeKey) {
             if (!work || !gradeKey) return null
             const numericGradeKey = this.numericValueFromGradeKey(gradeKey)
@@ -2670,10 +2637,23 @@ export default {
                             })
                             return
                         }
+                        if (!workEntries.length) return
 
                         const values = workEntries
                             .map((entry) => this.gradeValueForWork(work, this.effectiveGradeKeyForEntry(entry, work)))
                             .filter((val) => val !== null)
+                        if (!values.length) {
+                            const hasNaEntry = workEntries.some((entry) => this.isNaGradeKey(this.effectiveGradeKeyForEntry(entry, work)))
+                            rows.push({
+                                key: `sum-${type}`,
+                                type,
+                                sum: 0,
+                                grade: hasNaEntry ? 'NA' : null,
+                                requireAllEntries,
+                                requireAllEntriesIncomplete,
+                            })
+                            return
+                        }
                         const sum = values.reduce((s, v) => s + v, 0)
                         const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
                         const grade = this.pointsGradeForWork(work, rounded)
@@ -2768,12 +2748,13 @@ export default {
                         .filter((val) => val !== null)
                     const sum = values.length ? values.reduce((s, v) => s + v, 0) : 0
                     const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
+                    const hasNaEntry = typeEntries.some((e) => this.isNaGradeKey(this.effectiveGradeKeyForEntry(e, work)))
                     if (!undefinedRows.some((r) => r.key === `sum-${entry.type}`)) {
                         undefinedRows.push({
                             key: `sum-${entry.type}`,
                             type: entry.type,
                             sum: rounded,
-                            grade: this.pointsGradeForWork(work, rounded),
+                            grade: values.length ? this.pointsGradeForWork(work, rounded) : (hasNaEntry ? 'NA' : null),
                             requireAllEntries,
                             requireAllEntriesIncomplete,
                         })
@@ -2797,8 +2778,12 @@ export default {
             })
 
             if (undefinedRows.length) {
+                const undefinedTypes = [...new Set(undefinedRows.map((row) => row.type).filter((type) => type))]
+                const undefinedWork = undefinedTypes.length === 1 ? worksByType.get(undefinedTypes[0]) : null
+
                 grouped.push({
-                    name: 'Undefiniert',
+                    name: undefinedWork?.name || (undefinedTypes.length === 1 ? undefinedTypes[0] : 'Weitere Leistungen'),
+                    weight: null,
                     rows: undefinedRows,
                     grade: null,
                     isNb: false,

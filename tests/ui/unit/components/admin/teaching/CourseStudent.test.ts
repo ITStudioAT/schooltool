@@ -820,6 +820,16 @@ describe('CourseStudent auswertung category colors', () => {
         expect(source).toContain("categoryHasBewertung(cat) ? 'text-success'")
         expect(source).toContain('categoryHasBewertung(category)')
     })
+
+    it('hides the category weight chip when no weight exists', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('v-chip v-if="cat.weight != null && cat.weight !== \'\'" size="x-small" variant="outlined"')
+    })
 })
 
 describe('CourseStudent auswertung trigger placement', () => {
@@ -1160,6 +1170,42 @@ describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
         expect(groups[0].rows[0].value).toBe(2)
     })
 
+    it('keeps an unheld required points work as NA instead of converting zero points to grade five', () => {
+        const work = {
+            short_name: 'TE-E',
+            calculation: 'points',
+            grades: [
+                { grade: '1', value: '1' },
+                { grade: '5', value: '5' },
+            ],
+            semester_points_table: [
+                { grade: '1', min_points: 5 },
+                { grade: '4', min_points: 1 },
+            ],
+            semester_points_sonst_grade: '5',
+            default_grade: '',
+        }
+        const ctx = makeCtx({
+            teachingWorks: [work],
+            selectedSchema: {
+                grading: {
+                    categories: [
+                        { name: 'Test - Excel', weight: 100, require_all_entries: true, works: [{ short_name: 'TE-E', factor: 100 }] },
+                    ],
+                },
+            },
+        })
+
+        const groups = methods.buildCategoryGroups.call(ctx, [
+            { id: 1, type: 'TE-E', grade: '', effective_grade: 'NA', date: '2026-06-30' },
+        ])
+
+        expect(groups[0].isNa).toBe(true)
+        expect(groups[0].grade).toBe('NA')
+        expect(groups[0].rows[0].grade).toBe('NA')
+        expect(methods.totalFromCategoryGroups.call(ctx, groups)).toBe('NA')
+    })
+
     it('uses NA as display value when a work entry has no grade', () => {
         const work = {
             short_name: 'PÜ',
@@ -1186,6 +1232,35 @@ describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
 
         expect(groups).toHaveLength(1)
         expect(groups[0].rows).toHaveLength(1)
+        expect(groups[0].rows[0].value).toBe('NA')
+    })
+
+    it('uses the work title for a single uncategorized work type without showing a weight', () => {
+        const work = {
+            short_name: 'LF',
+            name: 'Leistungsfeststellung/Nachtest',
+            calculation: 'grade',
+            grades: [{ grade: 'NA', value: null }, { grade: '1', value: 1 }],
+            default_grade: '',
+        }
+        const ctx = makeCtx({
+            teachingWorks: [work],
+            selectedSchema: {
+                grading: {
+                    categories: [],
+                },
+            },
+            entryWorkTitle: () => 'Leistungsfeststellung/Nachtest: Word',
+        })
+
+        const groups = methods.buildCategoryGroups.call(ctx, [
+            { id: 1, type: 'LF', grade: '', effective_grade: 'NA', teaching_course_work_id: 10, date: '2026-07-03' },
+        ])
+
+        expect(groups).toHaveLength(1)
+        expect(groups[0].name).toBe('Leistungsfeststellung/Nachtest')
+        expect(groups[0].weight).toBeNull()
+        expect(groups[0].rows[0].workTitle).toBe('Leistungsfeststellung/Nachtest: Word')
         expect(groups[0].rows[0].value).toBe('NA')
     })
 

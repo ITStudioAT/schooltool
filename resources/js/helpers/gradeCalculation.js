@@ -99,28 +99,6 @@ function numericGradeValuesForWorkEntries(workEntries, work, teachingWorks) {
     return numericValues.length === gradeKeys.length ? numericValues : []
 }
 
-function isTypeInRequireAllCategory(type, grading) {
-    if (!type) return false
-    const categories = grading?.categories || []
-    return categories.some((cat) => {
-        if (!cat?.require_all_entries) return false
-        return (cat.works || []).some((w) => {
-            const sn = typeof w === 'string' ? w : w?.short_name
-            return String(sn || '') === String(type)
-        })
-    })
-}
-
-function hasSingleNaSemesterGrade(entries, teachingWorks, grading) {
-    const graded = (entries || []).filter((e) => isGradedEntry(e, null, teachingWorks))
-    if (graded.length !== 1) return false
-    const only = graded[0]
-    if (!isNaGradeKey(effectiveGradeKeyForEntry(only, null, teachingWorks))) return false
-    if (!isTypeInRequireAllCategory(only?.type, grading)) return false
-    const sameType = (entries || []).filter((e) => e?.type === only?.type)
-    return !sameType.some((e) => !isGradedEntry(e, null, teachingWorks))
-}
-
 function entriesForSemester(entries, semester, semesterCount, sem2Boundary) {
     if (semesterCount !== 2) return entries
     if (!sem2Boundary) return entries
@@ -173,10 +151,12 @@ export function buildCategoryGroups(entries, teachingWorks, grading) {
                     workAverages.push({ value: avg, weight })
                     return
                 }
+                if (!workEntries.length) return
 
                 const values = workEntries
                     .map((e) => gradeValueForWork(work, effectiveGradeKeyForEntry(e, work, teachingWorks)))
                     .filter((v) => v !== null)
+                if (!values.length) return
                 const sum = values.reduce((s, v) => s + v, 0)
                 const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
                 const grade = pointsGradeForWork(work, rounded)
@@ -292,12 +272,10 @@ export function computeStudentGrades(student, studentEntries, teachingWorks, gra
         const sem2Entries = entriesForSemester(studentEntries, 2, 2, sem2Boundary)
 
         const sem1Groups = buildCategoryGroups(sem1Entries, teachingWorks, grading)
-        const sem1ForcedNa = hasSingleNaSemesterGrade(sem1Entries, teachingWorks, grading)
-        const sem1Calculated = sem1ForcedNa ? 5 : totalFromCategoryGroups(sem1Groups)
+        const sem1Calculated = totalFromCategoryGroups(sem1Groups)
 
         const sem2Groups = buildCategoryGroups(sem2Entries, teachingWorks, grading)
-        const sem2ForcedNa = hasSingleNaSemesterGrade(sem2Entries, teachingWorks, grading)
-        const sem2Calculated = sem2ForcedNa ? 5 : totalFromCategoryGroups(sem2Groups)
+        const sem2Calculated = totalFromCategoryGroups(sem2Groups)
 
         const useSemGradeOnly = !!grading.use_semester_grade_only
         const storedSem1Parsed = student.sem_1_grade != null ? parseStoredGrade(student.sem_1_grade) : null
@@ -307,8 +285,7 @@ export function computeStudentGrades(student, studentEntries, teachingWorks, gra
         result.year = computeYearlyGrade(sem1Calculated, sem2Calculated, student, grading)
     } else {
         const groups = buildCategoryGroups(studentEntries, teachingWorks, grading)
-        const forcedNa = hasSingleNaSemesterGrade(studentEntries, teachingWorks, grading)
-        result.sem1 = forcedNa ? 5 : totalFromCategoryGroups(groups)
+        result.sem1 = totalFromCategoryGroups(groups)
     }
 
     return result
