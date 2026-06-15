@@ -86,6 +86,7 @@
                                 :class="{
                                     'robot-course-item-panel--disabled': !courseSelected(course),
                                     'robot-course-item-panel--no-timetable-hours': !courseSelectable(course),
+                                    'robot-course-item-panel--progression-locked': courseProgressionLocked(course),
                                     'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
                                     'robot-course-item-panel--conflict': courseOverlapsInSelectedTimetable(course) || courseAllGroupsNoLongerFitSelectedTimetable(course),
                                 }">
@@ -98,7 +99,7 @@
                                                 :aria-label="`${course.code} auswählen`"
                                                 density="compact"
                                                 color="primary"
-                                                :disabled="embeddedCourseSelectionLocked || !courseSelectable(course)"
+                                                :disabled="embeddedCourseSelectionLocked || !regularCourseSelectable(course)"
                                                 hide-details
                                                 @click.stop="showCourseActionAfterCourseInteraction"
                                                 @update:model-value="setCourseSelected(course, $event)" />
@@ -133,7 +134,7 @@
                                                             :aria-label="`${group.title} auswählen`"
                                                             density="compact"
                                                             color="primary"
-                                                            :disabled="embeddedCourseSelectionLocked"
+                                                            :disabled="embeddedCourseSelectionLocked || courseProgressionLocked(course)"
                                                             hide-details
                                                             class="robot-course-item-detail__check"
                                                             @click.stop="showCourseActionAfterCourseInteraction"
@@ -150,12 +151,29 @@
                                             <div v-else class="robot-course-item-details__empty">
                                                 Keine TT-Stunden.
                                             </div>
+                                            <div
+                                                v-if="courseProgressionLocked(course)"
+                                                class="robot-course-item-details__notice">
+                                                {{ courseProgressionLockReason(course) }}
+                                            </div>
                                         </div>
                                     </div>
                                 </v-expansion-panel-text>
                             </v-expansion-panel>
                         </v-expansion-panels>
                     </div>
+                </div>
+                <div
+                    v-if="courseCardsReady && courseActionVisible"
+                    class="robot-course-panel__actions">
+                    <slot
+                        name="course-card-action"
+                        :loading="courseCardsLoading"
+                        :ready="courseCardsReady"
+                        :extending="false"
+                        :create-action-visible="courseActionVisible"
+                        :has-selected-additional-courses="selectedAdditionalCourses.length > 0"
+                        :extension-action-visible="false" />
                 </div>
             </div>
         </div>
@@ -220,6 +238,8 @@
                                     'robot-course-item-panel--no-timetable-hours': !courseSelectable(course),
                                     'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
                                     'robot-course-item-panel--missing-additional': additionalCourseInteractionDisabled(course),
+                                    'robot-course-item-panel--progression-additional': courseMovedToAdditionalCourseSelection(course),
+                                    'robot-course-item-panel--progression-additional-missing': progressionAdditionalCourseSource(course) === 'missing',
                                 }">
                                 <v-expansion-panel-title class="robot-course-item-panel__title">
                                     <div class="robot-course-item-row">
@@ -238,7 +258,17 @@
                                         <div class="robot-course-item-row__code">
                                             <span>{{ course.code }}</span>
                                         </div>
-                                        <div>{{ course.name }}</div>
+                                        <div class="robot-course-item-row__name">
+                                            <span>{{ course.name }}</span>
+                                            <v-chip
+                                                v-if="courseMovedToAdditionalCourseSelection(course) && progressionAdditionalCourseLabel(course)"
+                                                size="x-small"
+                                                :color="progressionAdditionalCourseColor(course)"
+                                                variant="tonal"
+                                                class="robot-course-item-row__badge">
+                                                {{ progressionAdditionalCourseLabel(course) }}
+                                            </v-chip>
+                                        </div>
                                         <div>{{ course.branch }}</div>
                                         <div class="text-right">{{ formatHours(course.hours) }}</div>
                                     </div>
@@ -288,6 +318,18 @@
                             </v-expansion-panel>
                         </v-expansion-panels>
                     </div>
+                </div>
+                <div
+                    v-if="courseCardsReady && additionalCourseExtensionActionVisible"
+                    class="robot-course-panel__actions robot-course-panel__actions--additional">
+                    <slot
+                        name="course-card-action"
+                        :loading="courseCardsLoading"
+                        :ready="courseCardsReady"
+                        :extending="true"
+                        :create-action-visible="false"
+                        :has-selected-additional-courses="selectedAdditionalCourses.length > 0"
+                        :extension-action-visible="additionalCourseExtensionActionVisible" />
                 </div>
             </div>
         </div>
@@ -647,6 +689,7 @@
                                         :class="{
                                             'robot-course-item-panel--disabled': !courseSelected(course),
                                             'robot-course-item-panel--no-timetable-hours': !courseSelectable(course),
+                                            'robot-course-item-panel--progression-locked': courseProgressionLocked(course),
                                             'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
                                             'robot-course-item-panel--conflict': courseOverlapsInSelectedTimetable(course) || courseAllGroupsNoLongerFitSelectedTimetable(course),
                                         }">
@@ -659,7 +702,7 @@
                                                         :aria-label="`${course.code} auswählen`"
                                                         density="compact"
                                                         color="primary"
-                                                        :disabled="!courseSelectable(course)"
+                                                        :disabled="!regularCourseSelectable(course)"
                                                         hide-details
                                                         @click.stop
                                                         @update:model-value="setCourseSelected(course, $event)" />
@@ -694,6 +737,7 @@
                                                                     :aria-label="`${group.title} auswählen`"
                                                                     density="compact"
                                                                     color="primary"
+                                                                    :disabled="courseProgressionLocked(course)"
                                                                     hide-details
                                                                     class="robot-course-item-detail__check"
                                                                     @click.stop
@@ -710,12 +754,27 @@
                                                     <div v-else class="robot-course-item-details__empty">
                                                         Keine TT-Stunden.
                                                     </div>
+                                                    <div
+                                                        v-if="courseProgressionLocked(course)"
+                                                        class="robot-course-item-details__notice">
+                                                        {{ courseProgressionLockReason(course) }}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </v-expansion-panel-text>
                                     </v-expansion-panel>
                                 </v-expansion-panels>
                             </div>
+                        </div>
+                        <div class="robot-course-panel__actions">
+                            <v-btn
+                                color="primary"
+                                prepend-icon="mdi-calendar-clock"
+                                :disabled="loading || timetableGenerationLoading || !selectedCourses.length"
+                                :loading="timetableGenerationLoading"
+                                @click="createTimetables">
+                                Stundenpläne erstellen
+                            </v-btn>
                         </div>
                     </div>
                 </div>
@@ -768,6 +827,8 @@
                                             'robot-course-item-panel--no-timetable-hours': !courseSelectable(course),
                                             'robot-course-item-panel--used': courseUsedInSelectedTimetable(course),
                                             'robot-course-item-panel--missing-additional': additionalCourseInteractionDisabled(course),
+                                            'robot-course-item-panel--progression-additional': courseMovedToAdditionalCourseSelection(course),
+                                            'robot-course-item-panel--progression-additional-missing': progressionAdditionalCourseSource(course) === 'missing',
                                         }">
                                         <v-expansion-panel-title class="robot-course-item-panel__title">
                                             <div class="robot-course-item-row">
@@ -786,7 +847,17 @@
                                                 <div class="robot-course-item-row__code">
                                                     <span>{{ course.code }}</span>
                                                 </div>
-                                                <div>{{ course.name }}</div>
+                                                <div class="robot-course-item-row__name">
+                                                    <span>{{ course.name }}</span>
+                                                    <v-chip
+                                                        v-if="courseMovedToAdditionalCourseSelection(course) && progressionAdditionalCourseLabel(course)"
+                                                        size="x-small"
+                                                        :color="progressionAdditionalCourseColor(course)"
+                                                        variant="tonal"
+                                                        class="robot-course-item-row__badge">
+                                                        {{ progressionAdditionalCourseLabel(course) }}
+                                                    </v-chip>
+                                                </div>
                                                 <div>{{ course.branch }}</div>
                                                 <div class="text-right">{{ formatHours(course.hours) }}</div>
                                             </div>
@@ -838,20 +909,21 @@
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <div class="robot-generator">
-                    <div class="robot-generator__actions">
+                    <div
+                        v-if="additionalCourseExtensionActionVisible"
+                        class="robot-course-panel__actions robot-course-panel__actions--additional">
                         <v-btn
                             color="primary"
                             prepend-icon="mdi-calendar-clock"
-                            :disabled="loading || timetableGenerationLoading || !selectedCourses.length"
+                            :disabled="timetableGenerationLoading || !selectedAdditionalCourses.length"
                             :loading="timetableGenerationLoading"
-                            @click="createTimetables">
-                            Stundenpläne erstellen
+                            @click="createTimetables({ requireAdditionalCourses: true })">
+                            Stundenplan erweitern
                         </v-btn>
                     </div>
+                </div>
 
+                <div class="robot-generator">
                     <v-alert
                         v-if="fullGreenTimetableCountError"
                         type="error"
@@ -1193,62 +1265,36 @@
                     <div v-if="generatedTimetableDisplayVisible" class="robot-generated">
                         <div class="robot-course-list__header robot-generated-header">
                             <div class="robot-generated-header__actions">
-                                <v-btn
-                                    v-if="generatedTimetableActionButtonsVisible"
-                                    class="robot-generated-overtake-button"
-                                    color="success"
-                                    variant="flat"
-                                    size="large"
-                                    prepend-icon="mdi-calendar-clock"
-                                    :disabled="timetableGenerationLoading || !selectedRobotTimetableCourseGroupKeys().length"
-                                    @click="overtakeSelectedTimetableToOverview">
-                                    Übernehmen
-                                </v-btn>
-                                <v-btn
-                                    v-if="generatedTimetableActionButtonsVisible"
-                                    class="robot-generated-back-button"
-                                    color="grey-darken-1"
-                                    variant="tonal"
-                                    size="large"
-                                    prepend-icon="mdi-arrow-left"
-                                    :disabled="timetableGenerationLoading"
-                                    @click="returnToCourseSelectionFromGeneratedTimetable">
-                                    Zurück
-                                </v-btn>
-                                <div
-                                    v-if="selectedTimetableResultCount > 0 && $slots['timetable-selector-start']"
-                                    class="robot-timetable-selector-start">
-                                    <slot name="timetable-selector-start" />
-                                </div>
-                                <div
-                                    v-if="selectedTimetableResultCount > 0"
-                                    class="robot-timetable-selector">
-                                    <v-btn
-                                        icon="mdi-chevron-left"
-                                        size="small"
-                                        variant="tonal"
-                                        color="primary"
-                                        :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) <= 1"
-                                        :aria-label="`Vorheriger ${selectedTimetableResultTitle}`"
-                                        @click="moveTimetableResultCounter(selectedTimetableResultType, -1)" />
-                                    <div class="robot-timetable-selector__value" aria-live="polite">
-                                        {{ timetableResultCounter(selectedTimetableResultType) }} / {{ selectedTimetableResultCount }}
+                                <div class="robot-generated-header__actions-start">
+                                    <div
+                                        v-if="selectedTimetableResultCount > 0 && $slots['timetable-selector-start']"
+                                        class="robot-timetable-selector-start">
+                                        <slot name="timetable-selector-start" />
                                     </div>
+                                </div>
+                                <div class="robot-generated-header__actions-end">
                                     <v-btn
-                                        icon="mdi-chevron-right"
-                                        size="small"
+                                        v-if="generatedTimetableActionButtonsVisible"
+                                        class="robot-generated-overtake-button"
+                                        color="success"
+                                        variant="flat"
+                                        size="large"
+                                        prepend-icon="mdi-calendar-clock"
+                                        :disabled="timetableGenerationLoading || !selectedRobotTimetableCourseGroupKeys().length"
+                                        @click="overtakeSelectedTimetableToOverview">
+                                        Übernehmen
+                                    </v-btn>
+                                    <v-btn
+                                        v-if="generatedTimetableActionButtonsVisible"
+                                        class="robot-generated-back-button"
+                                        color="grey-darken-1"
                                         variant="tonal"
-                                        color="primary"
-                                        :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
-                                        :aria-label="`Nächster ${selectedTimetableResultTitle}`"
-                                        @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
-                                    <v-chip
-                                        size="small"
-                                        :color="selectedTimetableResultStatusColor"
-                                        variant="tonal"
-                                        class="robot-timetable-selector__status">
-                                        {{ selectedTimetableResultStatusLabel }}
-                                    </v-chip>
+                                        size="large"
+                                        prepend-icon="mdi-arrow-left"
+                                        :disabled="timetableGenerationLoading"
+                                        @click="returnToCourseSelectionFromGeneratedTimetable">
+                                        Zurück
+                                    </v-btn>
                                 </div>
                             </div>
                         </div>
@@ -1282,62 +1328,97 @@
                         </div>
 
                         <div
-                            v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length"
-                            class="robot-quality-summary">
+                            v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length || selectedTimetableResultCount > 0"
+                            class="robot-generated-summary-row">
                             <div
-                                v-for="counter in activeQualityCriterionRows"
-                                :key="`quality-summary-${counter.key}`"
-                                class="robot-quality-summary__item"
-                                :class="{
-                                    'robot-quality-summary__item--selected': qualitySummaryCheckboxChecked(counter),
-                                    'robot-quality-summary__item--reached': qualitySummaryCheckboxChecked(counter) && qualityCounterReached(counter),
-                                    'robot-quality-summary__item--missed': !qualityCounterReached(counter),
-                                }">
-                                <span class="robot-quality-summary__content">
-                                    <span class="robot-quality-summary__label">{{ counter.label }}</span>
-                                    <span class="robot-quality-summary__meta-row">
-                                        <span class="robot-quality-summary__meta">
-                                            {{ qualityCounterCardMeta(counter) }}
-                                        </span>
-                                        <span class="robot-quality-summary__controls">
-                                            <v-icon
-                                                class="robot-quality-summary__status"
-                                                :class="{
-                                                    'robot-quality-summary__status--reached': qualityCounterReached(counter),
-                                                    'robot-quality-summary__status--missed': !qualityCounterReached(counter),
-                                                }"
-                                                :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
-                                                size="18" />
-                                            <v-checkbox-btn
-                                                :model-value="qualitySummaryCheckboxChecked(counter)"
-                                                density="compact"
-                                                :aria-label="qualityCounterSummaryLabel(counter)"
-                                                class="robot-quality-summary__check"
-                                                @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
+                                v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length"
+                                class="robot-quality-summary">
+                                <div
+                                    v-for="counter in activeQualityCriterionRows"
+                                    :key="`quality-summary-${counter.key}`"
+                                    class="robot-quality-summary__item"
+                                    :class="{
+                                        'robot-quality-summary__item--selected': qualitySummaryCheckboxChecked(counter),
+                                        'robot-quality-summary__item--reached': qualitySummaryCheckboxChecked(counter) && qualityCounterReached(counter),
+                                        'robot-quality-summary__item--missed': !qualityCounterReached(counter),
+                                    }">
+                                    <span class="robot-quality-summary__content">
+                                        <span class="robot-quality-summary__label">{{ counter.label }}</span>
+                                        <span class="robot-quality-summary__meta-row">
+                                            <span class="robot-quality-summary__meta">
+                                                {{ qualityCounterCardMeta(counter) }}
+                                            </span>
+                                            <span class="robot-quality-summary__controls">
+                                                <v-icon
+                                                    class="robot-quality-summary__status"
+                                                    :class="{
+                                                        'robot-quality-summary__status--reached': qualityCounterReached(counter),
+                                                        'robot-quality-summary__status--missed': !qualityCounterReached(counter),
+                                                    }"
+                                                    :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
+                                                    size="18" />
+                                                <v-checkbox-btn
+                                                    :model-value="qualitySummaryCheckboxChecked(counter)"
+                                                    density="compact"
+                                                    :disabled="qualitySummaryReloadLoading"
+                                                    :aria-label="qualityCounterSummaryLabel(counter)"
+                                                    class="robot-quality-summary__check"
+                                                    @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
+                                            </span>
                                         </span>
                                     </span>
-                                </span>
+                                </div>
+                                <div
+                                    v-if="selectedAdditionalCourses.length"
+                                    class="robot-quality-summary__item robot-quality-summary__item--static robot-quality-summary__item--additional"
+                                    :class="{
+                                        'robot-quality-summary__item--reached': additionalCoursesAcceptedBySelectedTimetable(),
+                                        'robot-quality-summary__item--missed': !additionalCoursesAcceptedBySelectedTimetable(),
+                                    }">
+                                    <span class="robot-quality-summary__content">
+                                        <span class="robot-quality-summary__label">Zusatzkurse</span>
+                                        <span class="robot-quality-summary__meta-row">
+                                            <span class="robot-quality-summary__meta">{{ additionalCourseAcceptanceLabel() }}</span>
+                                            <span class="robot-quality-summary__controls">
+                                                <v-icon
+                                                    class="robot-quality-summary__status"
+                                                    :icon="additionalCourseAcceptanceIcon()"
+                                                    :color="additionalCourseAcceptanceColor()"
+                                                    size="18" />
+                                            </span>
+                                        </span>
+                                    </span>
+                                </div>
                             </div>
                             <div
-                                v-if="selectedAdditionalCourses.length"
-                                class="robot-quality-summary__item robot-quality-summary__item--static robot-quality-summary__item--additional"
-                                :class="{
-                                    'robot-quality-summary__item--reached': additionalCoursesAcceptedBySelectedTimetable(),
-                                    'robot-quality-summary__item--missed': !additionalCoursesAcceptedBySelectedTimetable(),
-                                }">
-                                <span class="robot-quality-summary__content">
-                                    <span class="robot-quality-summary__label">Zusatzkurse</span>
-                                    <span class="robot-quality-summary__meta-row">
-                                        <span class="robot-quality-summary__meta">{{ additionalCourseAcceptanceLabel() }}</span>
-                                        <span class="robot-quality-summary__controls">
-                                            <v-icon
-                                                class="robot-quality-summary__status"
-                                                :icon="additionalCourseAcceptanceIcon()"
-                                                :color="additionalCourseAcceptanceColor()"
-                                                size="18" />
-                                        </span>
-                                    </span>
-                                </span>
+                                v-if="selectedTimetableResultCount > 0"
+                                class="robot-timetable-selector robot-timetable-selector--summary">
+                                <v-btn
+                                    icon="mdi-chevron-left"
+                                    size="small"
+                                    variant="tonal"
+                                    color="primary"
+                                    :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) <= 1"
+                                    :aria-label="`Vorheriger ${selectedTimetableResultTitle}`"
+                                    @click="moveTimetableResultCounter(selectedTimetableResultType, -1)" />
+                                <div class="robot-timetable-selector__value" aria-live="polite">
+                                    {{ timetableResultCounter(selectedTimetableResultType) }} / {{ selectedTimetableResultCount }}
+                                </div>
+                                <v-btn
+                                    icon="mdi-chevron-right"
+                                    size="small"
+                                    variant="tonal"
+                                    color="primary"
+                                    :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
+                                    :aria-label="`Nächster ${selectedTimetableResultTitle}`"
+                                    @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
+                                <v-chip
+                                    size="small"
+                                    :color="selectedTimetableResultStatusColor"
+                                    variant="tonal"
+                                    class="robot-timetable-selector__status">
+                                    {{ selectedTimetableResultStatusLabel }}
+                                </v-chip>
                             </div>
                         </div>
 
@@ -1403,6 +1484,14 @@
                                                 class="robot-course-fu robot-course-week-marker">
                                                 {{ generatedSlotWeekMarker(robotTimetableDisplaySlot(weekday.value, time.value), selectedRobotTimetable) }}
                                             </sup>
+                                            <span
+                                                v-if="generatedSlotCourseSourceBadge(robotTimetableDisplaySlot(weekday.value, time.value))"
+                                                :class="[
+                                                    'robot-generated-cell__source-badge',
+                                                    `robot-generated-cell__source-badge--${generatedSlotCourseSourceType(robotTimetableDisplaySlot(weekday.value, time.value))}`,
+                                                ]">
+                                                {{ generatedSlotCourseSourceBadge(robotTimetableDisplaySlot(weekday.value, time.value)) }}
+                                            </span>
                                         </div>
                                         <div
                                             v-if="generatedSlotDateLabel(robotTimetableDisplaySlot(weekday.value, time.value))"
@@ -1427,6 +1516,14 @@
                                                     <sup v-if="generatedSlotWeekMarker(sameSlotBlock, selectedRobotTimetable)" class="robot-course-fu robot-course-week-marker">
                                                         {{ generatedSlotWeekMarker(sameSlotBlock, selectedRobotTimetable) }}
                                                     </sup>
+                                                    <span
+                                                        v-if="generatedSlotCourseSourceBadge(sameSlotBlock)"
+                                                        :class="[
+                                                            'robot-generated-cell__source-badge',
+                                                            `robot-generated-cell__source-badge--${generatedSlotCourseSourceType(sameSlotBlock)}`,
+                                                        ]">
+                                                        {{ generatedSlotCourseSourceBadge(sameSlotBlock) }}
+                                                    </span>
                                                 </div>
                                                 <div
                                                     v-if="generatedSlotDateLabel(sameSlotBlock)"
@@ -1453,6 +1550,14 @@
                                                     <sup v-if="generatedSlotWeekMarker(conflictBlock, selectedRobotTimetable)" class="robot-course-fu robot-course-week-marker">
                                                         {{ generatedSlotWeekMarker(conflictBlock, selectedRobotTimetable) }}
                                                     </sup>
+                                                    <span
+                                                        v-if="generatedSlotCourseSourceBadge(conflictBlock)"
+                                                        :class="[
+                                                            'robot-generated-cell__source-badge',
+                                                            `robot-generated-cell__source-badge--${generatedSlotCourseSourceType(conflictBlock)}`,
+                                                        ]">
+                                                        {{ generatedSlotCourseSourceBadge(conflictBlock) }}
+                                                    </span>
                                                 </div>
                                                 <div
                                                     v-if="generatedSlotDetails(conflictBlock)"
@@ -1826,7 +1931,8 @@
 
     <div
         v-if="embeddedGeneratorVisible"
-        class="robot-generator robot-generator--embedded">
+        class="robot-generator robot-generator--embedded"
+        :class="{ 'robot-generator--embedded-extension': additionalCourseTimetableRequired }">
         <v-alert
             v-if="fullGreenTimetableCountError"
             type="error"
@@ -2168,62 +2274,36 @@
         <div v-if="generatedTimetableDisplayVisible" class="robot-generated">
             <div class="robot-course-list__header robot-generated-header">
                 <div class="robot-generated-header__actions">
-                    <v-btn
-                        v-if="generatedTimetableActionButtonsVisible"
-                        class="robot-generated-overtake-button"
-                        color="success"
-                        variant="flat"
-                        size="large"
-                        prepend-icon="mdi-calendar-clock"
-                        :disabled="timetableGenerationLoading || !selectedRobotTimetableCourseGroupKeys().length"
-                        @click="overtakeSelectedTimetableToOverview">
-                        Übernehmen
-                    </v-btn>
-                    <v-btn
-                        v-if="generatedTimetableActionButtonsVisible"
-                        class="robot-generated-back-button"
-                        color="grey-darken-1"
-                        variant="tonal"
-                        size="large"
-                        prepend-icon="mdi-arrow-left"
-                        :disabled="timetableGenerationLoading"
-                        @click="returnToCourseSelectionFromGeneratedTimetable">
-                        Zurück
-                    </v-btn>
-                    <div
-                        v-if="selectedTimetableResultCount > 0 && $slots['timetable-selector-start']"
-                        class="robot-timetable-selector-start">
-                        <slot name="timetable-selector-start" />
-                    </div>
-                    <div
-                        v-if="selectedTimetableResultCount > 0"
-                        class="robot-timetable-selector">
-                        <v-btn
-                            icon="mdi-chevron-left"
-                            size="small"
-                            variant="tonal"
-                            color="primary"
-                            :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) <= 1"
-                            :aria-label="`Vorheriger ${selectedTimetableResultTitle}`"
-                            @click="moveTimetableResultCounter(selectedTimetableResultType, -1)" />
-                        <div class="robot-timetable-selector__value" aria-live="polite">
-                            {{ timetableResultCounter(selectedTimetableResultType) }} / {{ selectedTimetableResultCount }}
+                    <div class="robot-generated-header__actions-start">
+                        <div
+                            v-if="selectedTimetableResultCount > 0 && $slots['timetable-selector-start']"
+                            class="robot-timetable-selector-start">
+                            <slot name="timetable-selector-start" />
                         </div>
+                    </div>
+                    <div class="robot-generated-header__actions-end">
                         <v-btn
-                            icon="mdi-chevron-right"
-                            size="small"
+                            v-if="generatedTimetableActionButtonsVisible"
+                            class="robot-generated-overtake-button"
+                            color="success"
+                            variant="flat"
+                            size="large"
+                            prepend-icon="mdi-calendar-clock"
+                            :disabled="timetableGenerationLoading || !selectedRobotTimetableCourseGroupKeys().length"
+                            @click="overtakeSelectedTimetableToOverview">
+                            Übernehmen
+                        </v-btn>
+                        <v-btn
+                            v-if="generatedTimetableActionButtonsVisible"
+                            class="robot-generated-back-button"
+                            color="grey-darken-1"
                             variant="tonal"
-                            color="primary"
-                            :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
-                            :aria-label="`Nächster ${selectedTimetableResultTitle}`"
-                            @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
-                        <v-chip
-                            size="small"
-                            :color="selectedTimetableResultStatusColor"
-                            variant="tonal"
-                            class="robot-timetable-selector__status">
-                            {{ selectedTimetableResultStatusLabel }}
-                        </v-chip>
+                            size="large"
+                            prepend-icon="mdi-arrow-left"
+                            :disabled="timetableGenerationLoading"
+                            @click="returnToCourseSelectionFromGeneratedTimetable">
+                            Zurück
+                        </v-btn>
                     </div>
                 </div>
             </div>
@@ -2257,62 +2337,97 @@
             </div>
 
             <div
-                v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length"
-                class="robot-quality-summary">
+                v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length || selectedTimetableResultCount > 0"
+                class="robot-generated-summary-row">
                 <div
-                    v-for="counter in activeQualityCriterionRows"
-                    :key="`embedded-quality-summary-${counter.key}`"
-                    class="robot-quality-summary__item"
-                    :class="{
-                        'robot-quality-summary__item--selected': qualitySummaryCheckboxChecked(counter),
-                        'robot-quality-summary__item--reached': qualitySummaryCheckboxChecked(counter) && qualityCounterReached(counter),
-                        'robot-quality-summary__item--missed': !qualityCounterReached(counter),
-                    }">
-                    <span class="robot-quality-summary__content">
-                        <span class="robot-quality-summary__label">{{ counter.label }}</span>
-                        <span class="robot-quality-summary__meta-row">
-                            <span class="robot-quality-summary__meta">
-                                {{ qualityCounterCardMeta(counter) }}
-                            </span>
-                            <span class="robot-quality-summary__controls">
-                                <v-icon
-                                    class="robot-quality-summary__status"
-                                    :class="{
-                                        'robot-quality-summary__status--reached': qualityCounterReached(counter),
-                                        'robot-quality-summary__status--missed': !qualityCounterReached(counter),
-                                    }"
-                                    :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
-                                    size="18" />
-                                <v-checkbox-btn
-                                    :model-value="qualitySummaryCheckboxChecked(counter)"
-                                    density="compact"
-                                    :aria-label="qualityCounterSummaryLabel(counter)"
-                                    class="robot-quality-summary__check"
-                                    @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
+                    v-if="activeQualityCriterionRows.length || selectedAdditionalCourses.length"
+                    class="robot-quality-summary">
+                    <div
+                        v-for="counter in activeQualityCriterionRows"
+                        :key="`embedded-quality-summary-${counter.key}`"
+                        class="robot-quality-summary__item"
+                        :class="{
+                            'robot-quality-summary__item--selected': qualitySummaryCheckboxChecked(counter),
+                            'robot-quality-summary__item--reached': qualitySummaryCheckboxChecked(counter) && qualityCounterReached(counter),
+                            'robot-quality-summary__item--missed': !qualityCounterReached(counter),
+                        }">
+                        <span class="robot-quality-summary__content">
+                            <span class="robot-quality-summary__label">{{ counter.label }}</span>
+                            <span class="robot-quality-summary__meta-row">
+                                <span class="robot-quality-summary__meta">
+                                    {{ qualityCounterCardMeta(counter) }}
+                                </span>
+                                <span class="robot-quality-summary__controls">
+                                    <v-icon
+                                        class="robot-quality-summary__status"
+                                        :class="{
+                                            'robot-quality-summary__status--reached': qualityCounterReached(counter),
+                                            'robot-quality-summary__status--missed': !qualityCounterReached(counter),
+                                        }"
+                                        :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
+                                        size="18" />
+                                    <v-checkbox-btn
+                                        :model-value="qualitySummaryCheckboxChecked(counter)"
+                                        density="compact"
+                                        :disabled="qualitySummaryReloadLoading"
+                                        :aria-label="qualityCounterSummaryLabel(counter)"
+                                        class="robot-quality-summary__check"
+                                        @update:model-value="setQualitySummaryCheckboxChecked(counter, $event)" />
+                                </span>
                             </span>
                         </span>
-                    </span>
+                    </div>
+                    <div
+                        v-if="selectedAdditionalCourses.length"
+                        class="robot-quality-summary__item robot-quality-summary__item--static robot-quality-summary__item--additional"
+                        :class="{
+                            'robot-quality-summary__item--reached': additionalCoursesAcceptedBySelectedTimetable(),
+                            'robot-quality-summary__item--missed': !additionalCoursesAcceptedBySelectedTimetable(),
+                        }">
+                        <span class="robot-quality-summary__content">
+                            <span class="robot-quality-summary__label">Zusatzkurse</span>
+                            <span class="robot-quality-summary__meta-row">
+                                <span class="robot-quality-summary__meta">{{ additionalCourseAcceptanceLabel() }}</span>
+                                <span class="robot-quality-summary__controls">
+                                    <v-icon
+                                        class="robot-quality-summary__status"
+                                        :icon="additionalCourseAcceptanceIcon()"
+                                        :color="additionalCourseAcceptanceColor()"
+                                        size="18" />
+                                </span>
+                            </span>
+                        </span>
+                    </div>
                 </div>
                 <div
-                    v-if="selectedAdditionalCourses.length"
-                    class="robot-quality-summary__item robot-quality-summary__item--static robot-quality-summary__item--additional"
-                    :class="{
-                        'robot-quality-summary__item--reached': additionalCoursesAcceptedBySelectedTimetable(),
-                        'robot-quality-summary__item--missed': !additionalCoursesAcceptedBySelectedTimetable(),
-                    }">
-                    <span class="robot-quality-summary__content">
-                        <span class="robot-quality-summary__label">Zusatzkurse</span>
-                        <span class="robot-quality-summary__meta-row">
-                            <span class="robot-quality-summary__meta">{{ additionalCourseAcceptanceLabel() }}</span>
-                            <span class="robot-quality-summary__controls">
-                                <v-icon
-                                    class="robot-quality-summary__status"
-                                    :icon="additionalCourseAcceptanceIcon()"
-                                    :color="additionalCourseAcceptanceColor()"
-                                    size="18" />
-                            </span>
-                        </span>
-                    </span>
+                    v-if="selectedTimetableResultCount > 0"
+                    class="robot-timetable-selector robot-timetable-selector--summary">
+                    <v-btn
+                        icon="mdi-chevron-left"
+                        size="small"
+                        variant="tonal"
+                        color="primary"
+                        :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) <= 1"
+                        :aria-label="`Vorheriger ${selectedTimetableResultTitle}`"
+                        @click="moveTimetableResultCounter(selectedTimetableResultType, -1)" />
+                    <div class="robot-timetable-selector__value" aria-live="polite">
+                        {{ timetableResultCounter(selectedTimetableResultType) }} / {{ selectedTimetableResultCount }}
+                    </div>
+                    <v-btn
+                        icon="mdi-chevron-right"
+                        size="small"
+                        variant="tonal"
+                        color="primary"
+                        :disabled="timetableGenerationLoading || timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
+                        :aria-label="`Nächster ${selectedTimetableResultTitle}`"
+                        @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
+                    <v-chip
+                        size="small"
+                        :color="selectedTimetableResultStatusColor"
+                        variant="tonal"
+                        class="robot-timetable-selector__status">
+                        {{ selectedTimetableResultStatusLabel }}
+                    </v-chip>
                 </div>
             </div>
 
@@ -2366,22 +2481,30 @@
                         <div
                             v-if="robotTimetableDisplaySlot(weekday.value, time.value)"
                             class="robot-generated-cell__content">
-                            <div class="robot-generated-cell__code">
-                                <span>{{ generatedSlotTitle(robotTimetableDisplaySlot(weekday.value, time.value)) }}</span>
-                                <sup
-                                    v-if="robotTimetableDisplaySlot(weekday.value, time.value).isDistanceLearningCourse"
-                                    class="robot-course-fu">
+                                    <div class="robot-generated-cell__code">
+                                        <span>{{ generatedSlotTitle(robotTimetableDisplaySlot(weekday.value, time.value)) }}</span>
+                                        <sup
+                                            v-if="robotTimetableDisplaySlot(weekday.value, time.value).isDistanceLearningCourse"
+                                            class="robot-course-fu">
                                     FU
                                 </sup>
                                 <sup
                                     v-if="generatedSlotWeekMarker(robotTimetableDisplaySlot(weekday.value, time.value), selectedRobotTimetable)"
                                     class="robot-course-fu robot-course-week-marker">
-                                    {{ generatedSlotWeekMarker(robotTimetableDisplaySlot(weekday.value, time.value), selectedRobotTimetable) }}
-                                </sup>
-                            </div>
-                            <div
-                                v-if="generatedSlotDateLabel(robotTimetableDisplaySlot(weekday.value, time.value))"
-                                class="robot-generated-cell__date">
+                                            {{ generatedSlotWeekMarker(robotTimetableDisplaySlot(weekday.value, time.value), selectedRobotTimetable) }}
+                                        </sup>
+                                        <span
+                                            v-if="generatedSlotCourseSourceBadge(robotTimetableDisplaySlot(weekday.value, time.value))"
+                                            :class="[
+                                                'robot-generated-cell__source-badge',
+                                                `robot-generated-cell__source-badge--${generatedSlotCourseSourceType(robotTimetableDisplaySlot(weekday.value, time.value))}`,
+                                            ]">
+                                            {{ generatedSlotCourseSourceBadge(robotTimetableDisplaySlot(weekday.value, time.value)) }}
+                                        </span>
+                                    </div>
+                                    <div
+                                        v-if="generatedSlotDateLabel(robotTimetableDisplaySlot(weekday.value, time.value))"
+                                        class="robot-generated-cell__date">
                                 {{ generatedSlotDateLabel(robotTimetableDisplaySlot(weekday.value, time.value)) }}
                             </div>
                             <div
@@ -2396,16 +2519,24 @@
                                     v-for="sameSlotBlock in generatedSlotSameSlotBlocks(robotTimetableDisplaySlot(weekday.value, time.value))"
                                     :key="sameSlotBlock.key"
                                     class="robot-generated-cell__same-slot-block">
-                                    <div class="robot-generated-cell__code">
-                                        <span>{{ generatedSlotTitle(sameSlotBlock) }}</span>
-                                        <sup v-if="sameSlotBlock.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
-                                        <sup v-if="generatedSlotWeekMarker(sameSlotBlock, selectedRobotTimetable)" class="robot-course-fu robot-course-week-marker">
-                                            {{ generatedSlotWeekMarker(sameSlotBlock, selectedRobotTimetable) }}
-                                        </sup>
-                                    </div>
-                                    <div
-                                        v-if="generatedSlotDateLabel(sameSlotBlock)"
-                                        class="robot-generated-cell__date">
+                                            <div class="robot-generated-cell__code">
+                                                <span>{{ generatedSlotTitle(sameSlotBlock) }}</span>
+                                                <sup v-if="sameSlotBlock.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                                                <sup v-if="generatedSlotWeekMarker(sameSlotBlock, selectedRobotTimetable)" class="robot-course-fu robot-course-week-marker">
+                                                    {{ generatedSlotWeekMarker(sameSlotBlock, selectedRobotTimetable) }}
+                                                </sup>
+                                                <span
+                                                    v-if="generatedSlotCourseSourceBadge(sameSlotBlock)"
+                                                    :class="[
+                                                        'robot-generated-cell__source-badge',
+                                                        `robot-generated-cell__source-badge--${generatedSlotCourseSourceType(sameSlotBlock)}`,
+                                                    ]">
+                                                    {{ generatedSlotCourseSourceBadge(sameSlotBlock) }}
+                                                </span>
+                                            </div>
+                                            <div
+                                                v-if="generatedSlotDateLabel(sameSlotBlock)"
+                                                class="robot-generated-cell__date">
                                         {{ generatedSlotDateLabel(sameSlotBlock) }}
                                     </div>
                                     <div
@@ -2422,16 +2553,24 @@
                                     v-for="conflictBlock in generatedSlotConflictBlocks(robotTimetableDisplaySlot(weekday.value, time.value))"
                                     :key="conflictBlock.key"
                                     class="robot-generated-cell__conflict-block">
-                                    <div class="robot-generated-cell__code">
-                                        <span>{{ generatedSlotTitle(conflictBlock) }}</span>
-                                        <sup v-if="conflictBlock.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
-                                        <sup v-if="generatedSlotWeekMarker(conflictBlock, selectedRobotTimetable)" class="robot-course-fu robot-course-week-marker">
-                                            {{ generatedSlotWeekMarker(conflictBlock, selectedRobotTimetable) }}
-                                        </sup>
-                                    </div>
-                                    <div
-                                        v-if="generatedSlotDetails(conflictBlock)"
-                                        class="robot-generated-cell__details">
+                                            <div class="robot-generated-cell__code">
+                                                <span>{{ generatedSlotTitle(conflictBlock) }}</span>
+                                                <sup v-if="conflictBlock.isDistanceLearningCourse" class="robot-course-fu">FU</sup>
+                                                <sup v-if="generatedSlotWeekMarker(conflictBlock, selectedRobotTimetable)" class="robot-course-fu robot-course-week-marker">
+                                                    {{ generatedSlotWeekMarker(conflictBlock, selectedRobotTimetable) }}
+                                                </sup>
+                                                <span
+                                                    v-if="generatedSlotCourseSourceBadge(conflictBlock)"
+                                                    :class="[
+                                                        'robot-generated-cell__source-badge',
+                                                        `robot-generated-cell__source-badge--${generatedSlotCourseSourceType(conflictBlock)}`,
+                                                    ]">
+                                                    {{ generatedSlotCourseSourceBadge(conflictBlock) }}
+                                                </span>
+                                            </div>
+                                            <div
+                                                v-if="generatedSlotDetails(conflictBlock)"
+                                                class="robot-generated-cell__details">
                                         {{ generatedSlotDetails(conflictBlock) }}
                                     </div>
                                 </div>
@@ -2544,20 +2683,34 @@
             </div>
         </div>
     </div>
+
+    <template v-if="qualitySummaryReloadLoading">
+        <div class="robot-screen-loading-blocker" aria-hidden="true"></div>
+        <div
+            class="robot-screen-loading"
+            role="status"
+            aria-live="polite"
+            aria-label="Stundenplan wird aktualisiert...">
+            <LoadingAnimation class="robot-screen-loading__dots" />
+            <span>Stundenplan wird aktualisiert...</span>
+        </div>
+    </template>
 </template>
 
 <script>
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
 import EvaluationSettings from '../evaluationSettings/EvaluationSettings.vue'
 
 const ROBOT_TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:robot:last-settings'
 const OVERVIEW_TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:overview:last-timetable'
 const OVERVIEW_TIMETABLE_PATH = '/admin/students-timetables/timetable/overview'
 const ALL_DATES_OPTION_VALUE = 'all_dates'
+const AUTOMATIC_COURSE_PROGRESSION_LOCK_VARIATION_LIMIT = 200000
 
 export default {
-    components: { EvaluationSettings },
+    components: { EvaluationSettings, LoadingAnimation },
     emits: ['generated-timetable-visibility-change', 'timetable-overtaken'],
     props: {
         embeddedCourseCardsOnly: {
@@ -2602,9 +2755,11 @@ export default {
             fullGreenTimetableCountError: '',
             fullGreenTimetableCountLoading: false,
             qualityCountersLoading: false,
+            qualitySummarySelectionLoading: false,
             timetableCreateLoading: false,
             fullGreenTimetableCountRequestId: 0,
             qualityCountersRequestId: 0,
+            qualitySummarySelectionRequestId: 0,
             selectedTimetableResultType: 'full_green',
             restoredTimetableResultType: null,
             restoredQualityCriteriaFilterEnabled: false,
@@ -2622,6 +2777,7 @@ export default {
             deselectedCourseKeys: [],
             deselectedCourseGroupKeys: [],
             additionalCourseSelectedKeys: [],
+            progressionAdditionalCourseKeys: [],
             subjectMappings: [],
             subjectRows: [],
             infoDialogOpen: false,
@@ -2733,7 +2889,10 @@ export default {
             ]
         },
         timetableGenerationLoading() {
-            return this.timetableCreateLoading || this.fullGreenTimetableCountLoading
+            return this.timetableCreateLoading || this.fullGreenTimetableCountLoading || this.qualitySummarySelectionLoading
+        },
+        qualitySummaryReloadLoading() {
+            return this.qualitySummarySelectionLoading
         },
         courseCardsReady() {
             return this.embeddedCourseCardsOnly
@@ -2848,10 +3007,12 @@ export default {
                 ...plannedCourses,
             ])
 
-            return this.coursesAfterSemester(semester)
+            const additionalCourses = this.coursesAfterSemester(semester)
                 .filter(course => !this.courseCompletedForStudentPlanning(course, unavailableCourseCodes))
                 .filter(course => !this.courseCompletedForStudentPlanning(course, regularCourseCodes))
                 .filter(course => this.coursePossibleAsStudentAdditional(course, completedCourseCodes, visitedCourseCodes, plannedCourseCodes))
+
+            return this.additionalCoursesWithProgressionAdditionalCourses(additionalCourses)
         },
         studentTotalCountLabel() {
             const count = Array.isArray(this.robotStudents) ? this.robotStudents.length : 0
@@ -2920,23 +3081,22 @@ export default {
                 .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
         },
         availableCourseColumns() {
-            const splitIndex = Math.ceil(this.availableCourses.length / 2)
+            if (!this.availableCourses.length) return []
 
-            return [
-                this.availableCourses.slice(0, splitIndex),
-                this.availableCourses.slice(splitIndex),
-            ].filter(courseColumn => courseColumn.length)
+            return [this.availableCourses]
         },
         regularCourseColumns() {
             if (!this.selectedStudent) {
-                return this.availableCourseColumns.map((courses, index) => ({
-                    key: `courses-${index}`,
-                    title: index === 0 ? 'Vorgesehene Kurse' : '',
-                    courses,
-                }))
+                return this.availableCourses.length
+                    ? [{
+                        key: 'planned',
+                        title: 'Vorgesehene Kurse',
+                        courses: this.availableCourses,
+                    }]
+                    : []
             }
 
-            const studentCourseColumns = [
+            return [
                 {
                     key: 'missing',
                     title: 'Fehlende Kurse',
@@ -2948,32 +3108,11 @@ export default {
                     courses: this.studentPlannedCourses,
                 },
             ].filter(courseColumn => courseColumn.courses.length)
-
-            if (studentCourseColumns.length !== 1) return studentCourseColumns
-
-            const [studentCourseColumn] = studentCourseColumns
-            const splitIndex = Math.ceil(studentCourseColumn.courses.length / 2)
-
-            return [
-                {
-                    ...studentCourseColumn,
-                    courses: studentCourseColumn.courses.slice(0, splitIndex),
-                },
-                {
-                    ...studentCourseColumn,
-                    key: `${studentCourseColumn.key}-overflow`,
-                    title: '',
-                    courses: studentCourseColumn.courses.slice(splitIndex),
-                },
-            ].filter(courseColumn => courseColumn.courses.length)
         },
         additionalCourseColumns() {
-            const splitIndex = Math.ceil(this.studentAdditionalCourses.length / 2)
+            if (!this.studentAdditionalCourses.length) return []
 
-            return [
-                this.studentAdditionalCourses.slice(0, splitIndex),
-                this.studentAdditionalCourses.slice(splitIndex),
-            ].filter(courseColumn => courseColumn.length)
+            return [this.studentAdditionalCourses]
         },
         additionalCoursePanelVisible() {
             const additionalCourses = Array.isArray(this.studentAdditionalCourses) ? this.studentAdditionalCourses : []
@@ -3024,6 +3163,9 @@ export default {
         additionalCourseSelectedKeySet() {
             return new Set(Array.isArray(this.additionalCourseSelectedKeys) ? this.additionalCourseSelectedKeys : [])
         },
+        progressionAdditionalCourseKeySet() {
+            return new Set(Array.isArray(this.progressionAdditionalCourseKeys) ? this.progressionAdditionalCourseKeys : [])
+        },
         selectedAdditionalCourses() {
             return this.studentAdditionalCourses.filter(course => this.additionalCourseSelected(course))
         },
@@ -3058,6 +3200,30 @@ export default {
             })
 
             return disabledKeys
+        },
+        rawSelectedCoursesForVariationLimit() {
+            return (Array.isArray(this.availableCourses) ? this.availableCourses : [])
+                .filter(course => this.courseSelectedBeforeProgressionLock(course))
+        },
+        selectedCourseVariationEstimate() {
+            return this.estimatedCourseVariationCount(this.rawSelectedCoursesForVariationLimit)
+        },
+        progressionCourseLockingActive() {
+            return Boolean(this.selectedStudent)
+                && this.selectedCourseVariationEstimate > AUTOMATIC_COURSE_PROGRESSION_LOCK_VARIATION_LIMIT
+        },
+        progressionLockedCourseKeySet() {
+            const lockedCourseKeys = new Set()
+
+            if (!this.progressionCourseLockingActive) return lockedCourseKeys
+
+            this.rawSelectedCoursesForVariationLimit.forEach(course => {
+                if (this.courseHasSelectedLowerRegularCourse(course, this.rawSelectedCoursesForVariationLimit)) {
+                    lockedCourseKeys.add(course.key)
+                }
+            })
+
+            return lockedCourseKeys
         },
         selectedCourses() {
             return this.availableCourses.filter(course => this.courseSelected(course))
@@ -3374,7 +3540,9 @@ export default {
                 if (!this.embeddedCourseCardsOnly) return
 
                 this.embeddedCourseSelectionExpanded = !timetable
-                this.embeddedAdditionalCourseSelectionExpanded = true
+                this.embeddedAdditionalCourseSelectionExpanded = !timetable
+                    || this.additionalCourseTimetableRequired !== true
+                    || this.additionalCourseExtensionActionHidden !== true
                 this.$emit('generated-timetable-visibility-change', Boolean(timetable))
             },
         },
@@ -3482,7 +3650,7 @@ export default {
 
             try {
                 await useAdminStore().loadConfig?.()
-            } catch {
+            } catch (error) {
                 // Keep loading robot settings even if the shared admin config is unavailable.
             }
         },
@@ -3927,6 +4095,7 @@ export default {
                 return
             }
 
+            this.deselectProgressionLockedCoursesForTimetableCreation()
             this.hideCourseActionUntilCourseInteraction()
             this.timetableCreateLoading = true
 
@@ -3934,9 +4103,15 @@ export default {
                 this.prepareTimetableCreationOptions(options)
 
                 await this.loadFullGreenTimetableCount({ preferFullGreen: true })
+                this.retainAdditionalCoursePanelAfterTimetableCreation()
             } finally {
                 this.timetableCreateLoading = false
             }
+        },
+        retainAdditionalCoursePanelAfterTimetableCreation() {
+            const additionalCourses = Array.isArray(this.studentAdditionalCourses) ? this.studentAdditionalCourses : []
+
+            this.additionalCoursePanelRetained = additionalCourses.length > 0
         },
         prepareTimetableCreationOptions(options = {}) {
             if (options?.requireAdditionalCourses !== true) {
@@ -3948,6 +4123,7 @@ export default {
             if (!this.selectedAdditionalCourses.length) return
 
             this.additionalCourseExtensionActionHidden = true
+            this.embeddedAdditionalCourseSelectionExpanded = false
             const requiredStateChanged = this.additionalCourseTimetableRequired !== true
             this.additionalCourseTimetableRequired = true
 
@@ -3971,7 +4147,13 @@ export default {
             this.courseActionHiddenUntilCourseInteraction = true
         },
         showCourseActionAfterCourseInteraction() {
-            if (this.embeddedCourseSelectionLocked) return
+            if (this.embeddedCourseSelectionLocked) {
+                if (this.additionalCourseTimetableRequired === true) return
+
+                this.additionalCourseExtensionActionHidden = false
+
+                return
+            }
 
             this.courseActionHiddenUntilCourseInteraction = false
         },
@@ -4546,6 +4728,7 @@ export default {
                 deselectedCourseKeys: [],
                 deselectedCourseGroupKeys: [],
                 selectedAdditionalCourseKeys: [],
+                progressionAdditionalCourseKeys: [],
                 additionalCourseTimetableRequired: false,
                 selectedCourseKeys: null,
             }
@@ -4558,6 +4741,7 @@ export default {
                 deselectedCourseKeys: this.uniqueValues(this.deselectedCourseKeys),
                 deselectedCourseGroupKeys: this.uniqueValues(this.deselectedCourseGroupKeys),
                 selectedAdditionalCourseKeys: this.uniqueValues(this.additionalCourseSelectedKeys),
+                progressionAdditionalCourseKeys: this.uniqueValues(this.progressionAdditionalCourseKeys),
                 additionalCourseTimetableRequired: this.additionalCourseTimetableRequired === true,
                 selectedCourseKeys: this.selectedCourseKeysForState(),
                 selectedCourseCodes: this.selectedCourseCodesForState(),
@@ -4599,6 +4783,7 @@ export default {
                 this.deselectedCourseKeys = this.restoredDeselectedCourseKeys(state)
                 this.deselectedCourseGroupKeys = this.uniqueValues(state?.deselectedCourseGroupKeys)
                 this.additionalCourseSelectedKeys = this.uniqueValues(state?.selectedAdditionalCourseKeys)
+                this.progressionAdditionalCourseKeys = this.uniqueValues(state?.progressionAdditionalCourseKeys)
                 this.additionalCourseTimetableRequired = state?.additionalCourseTimetableRequired === true
                 this.studentSelectionDefaultsPendingCode = selectedStudent ? studentCode : null
                 this.restoredTimetableResultType = state?.selectedTimetableResultType || null
@@ -5104,6 +5289,13 @@ export default {
         },
         slotHasVisualConflict(slot) {
             return Boolean(slot)
+                && (
+                    this.slotHasCourseConflict(slot)
+                    || this.generatedSlotSameSlotBlocks(slot).length > 0
+                )
+        },
+        slotHasCourseConflict(slot) {
+            return Boolean(slot)
                 && this.generatedSlotConflictBlocks(slot).length > 0
         },
         weekdayTimeAvailable(weekday, time) {
@@ -5220,20 +5412,60 @@ export default {
             this.generationProblems = this.uniqueProblems(this.generatedTimetables.flatMap(timetable => timetable.problems))
         },
         clearGeneratedTimetables(options = {}) {
+            const keepAdditionalCoursePanelVisible = options?.keepAdditionalCoursePanelVisible === true
+
             this.generationError = ''
             this.generationProblems = []
             this.generatedTimetables = []
             this.embeddedCourseSelectionExpanded = true
             this.embeddedAdditionalCourseSelectionExpanded = true
             this.additionalCourseSelectionChangedAfterTimetable = false
-            this.additionalCoursePanelRetained = options?.keepAdditionalCoursePanelVisible === true
+            if (!keepAdditionalCoursePanelVisible) {
+                const progressionAdditionalCourseKeys = new Set(
+                    Array.isArray(this.progressionAdditionalCourseKeys) ? this.progressionAdditionalCourseKeys : [],
+                )
+
+                this.progressionAdditionalCourseKeys = []
+                this.additionalCourseSelectedKeys = Array.isArray(this.additionalCourseSelectedKeys)
+                    ? this.additionalCourseSelectedKeys.filter(courseKey => !progressionAdditionalCourseKeys.has(courseKey))
+                    : []
+            }
+            this.additionalCoursePanelRetained = keepAdditionalCoursePanelVisible
                 && this.studentAdditionalCourses.length > 0
             this.clearTimetableCountResults()
         },
-        returnToCourseSelectionFromGeneratedTimetable() {
+        returnToCourseSelectionFromGeneratedTimetable(options = {}) {
             const selectedAdditionalCourseCount = new Set(
                 Array.isArray(this.additionalCourseSelectedKeys) ? this.additionalCourseSelectedKeys : [],
             ).size
+
+            if (options?.regularCourseSelection === true) {
+                this.clearGeneratedTimetables({ keepAdditionalCoursePanelVisible: false })
+                this.additionalCourseTimetableRequired = false
+                this.additionalCourseExtensionActionHidden = false
+                this.additionalCourseSelectionChangedAfterTimetable = false
+                this.$emit?.('generated-timetable-visibility-change', false)
+                this.saveLastRobotState()
+
+                return
+            }
+
+            if (
+                this.additionalCourseTimetableRequired === true
+                && this.additionalCourseExtensionActionHidden === true
+                && selectedAdditionalCourseCount > 0
+            ) {
+                this.additionalCourseExtensionActionHidden = false
+                this.additionalCourseSelectionChangedAfterTimetable = true
+                this.additionalCoursePanelRetained = this.studentAdditionalCourses.length > 0
+                this.embeddedCourseSelectionExpanded = false
+                this.embeddedAdditionalCourseSelectionExpanded = true
+                this.fullGreenTimetableCountError = ''
+                this.$emit?.('generated-timetable-visibility-change', false)
+                this.saveLastRobotState()
+
+                return
+            }
 
             this.clearGeneratedTimetables({
                 keepAdditionalCoursePanelVisible: this.additionalCourseTimetableRequired === true
@@ -5449,7 +5681,7 @@ export default {
         selectedTimetableConflictCourses() {
             return Object.values(this.selectedRobotTimetable?.slots || {})
                 .map(slot => this.displaySlotForGeneratedSlot(slot) || slot)
-                .filter(slot => this.slotHasVisualConflict(slot))
+                .filter(slot => this.slotHasCourseConflict(slot))
                 .flatMap(slot => [
                     slot,
                     ...(Array.isArray(slot.sameSlotEntries) ? slot.sameSlotEntries : []),
@@ -5646,7 +5878,7 @@ export default {
         qualitySummaryCheckboxChecked(counter) {
             return this.qualitySummaryCheckedKeys.includes(this.qualitySummaryCheckboxKey(counter))
         },
-        setQualitySummaryCheckboxChecked(counter, checked) {
+        async setQualitySummaryCheckboxChecked(counter, checked) {
             const checkedKeys = new Set(this.qualitySummaryCheckedKeys)
             const checkboxKey = this.qualitySummaryCheckboxKey(counter)
 
@@ -5666,16 +5898,26 @@ export default {
             this.setTimetableResultCounter(this.selectedTimetableResultType, 1)
 
             if (typeof this.timetableCalculationReady === 'function' && this.timetableCalculationReady()) {
-                if (this.qualityCriteriaResultFilterActive) {
-                    this.loadFullGreenTimetableCount({
-                        calculateQualityCounters: true,
-                        preserveGeneratedTimetable: true,
-                    })
+                const requestId = this.qualitySummarySelectionRequestId + 1
+                this.qualitySummarySelectionRequestId = requestId
+                this.qualitySummarySelectionLoading = true
 
-                    return
+                try {
+                    if (this.qualityCriteriaResultFilterActive) {
+                        await this.loadFullGreenTimetableCount({
+                            calculateQualityCounters: true,
+                            preserveGeneratedTimetable: true,
+                        })
+
+                        return
+                    }
+
+                    await this.loadQualityCountersForSelectedTimetableType()
+                } finally {
+                    if (requestId === this.qualitySummarySelectionRequestId) {
+                        this.qualitySummarySelectionLoading = false
+                    }
                 }
-
-                this.loadQualityCountersForSelectedTimetableType()
             }
         },
         resetQualityCounterSelection() {
@@ -5868,6 +6110,48 @@ export default {
                 isAdditionalCourse: source?.isAdditionalCourse === true,
                 isDistanceLearningCourse: source?.isDistanceLearningCourse === true,
             }
+        },
+        generatedSlotCourseSourceType(slot) {
+            const comparisonKeys = new Set(this.generatedSlotComparisonKeys(slot))
+            if (!comparisonKeys.size) return ''
+
+            return ['missing', 'planned', 'additional']
+                .find(type => this.generatedSlotCourseSourceItems(type)
+                    .some(course => this.courseComparisonKeys(course)
+                        .some(courseKey => comparisonKeys.has(courseKey)))) || ''
+        },
+        generatedSlotComparisonKeys(slot) {
+            if (!slot) return []
+
+            return [
+                slot,
+                {
+                    key: slot?.courseGroup?.course,
+                    code: slot?.courseGroup?.course,
+                },
+                {
+                    key: slot?.courseGroup?.module_code || slot?.courseGroup?.moduleCode,
+                    code: slot?.courseGroup?.module_code || slot?.courseGroup?.moduleCode,
+                },
+            ]
+                .flatMap(source => this.courseComparisonKeys(source))
+                .filter(Boolean)
+                .filter((courseKey, index, courseKeys) => courseKeys.indexOf(courseKey) === index)
+        },
+        generatedSlotCourseSourceItems(type) {
+            if (type === 'missing') return Array.isArray(this.studentMissingCourses) ? this.studentMissingCourses : []
+            if (type === 'planned') return Array.isArray(this.studentPlannedCourses) ? this.studentPlannedCourses : []
+            if (type === 'additional') return Array.isArray(this.studentAdditionalCourses) ? this.studentAdditionalCourses : []
+
+            return []
+        },
+        generatedSlotCourseSourceBadge(slot) {
+            const type = this.generatedSlotCourseSourceType(slot)
+
+            if (type === 'missing') return 'Fehlend'
+            if (type === 'additional') return 'Zusätzlich'
+
+            return ''
         },
         generatedSlotBlocksMatch(firstBlock, secondBlock) {
             const firstIdentity = this.generatedSlotBlockIdentity(firstBlock)
@@ -6157,6 +6441,8 @@ export default {
             return this.courseGroupsAreDistanceLearningCourse(option?.course, option?.courseGroups)
         },
         courseFullySelected(course) {
+            if (!this.regularCourseSelectable(course)) return false
+
             const groups = this.courseGroupItems(course)
 
             if (!groups.length) return this.courseSelected(course)
@@ -6164,6 +6450,8 @@ export default {
             return groups.every(group => this.courseGroupSelected(course, group))
         },
         coursePartiallySelected(course) {
+            if (!this.regularCourseSelectable(course)) return false
+
             const groups = this.courseGroupItems(course)
 
             if (!groups.length) return false
@@ -6174,6 +6462,7 @@ export default {
         },
         setCourseGroupSelected(course, group, selected) {
             if (this.embeddedCourseSelectionLocked) return
+            if (this.courseProgressionLocked(course)) return
 
             this.deselectedCourseGroupKeys = Array.isArray(this.deselectedCourseGroupKeys)
                 ? this.deselectedCourseGroupKeys
@@ -6495,7 +6784,121 @@ export default {
 
             return String(courseGroup?.room || courseGroup?.rooms || '').trim()
         },
-        courseSelected(course) {
+        estimatedCourseVariationCount(courses) {
+            return (Array.isArray(courses) ? courses : [])
+                .reduce((total, course) => total * Math.max(1, this.courseGroupItems(course).length), 1)
+        },
+        courseProgressionLocked(course) {
+            const courseKey = course?.key
+            if (!courseKey) return false
+
+            const lockedCourseKeys = this.progressionLockedCourseKeySet instanceof Set
+                ? this.progressionLockedCourseKeySet
+                : new Set()
+
+            return lockedCourseKeys.has(courseKey)
+        },
+        regularCourseSelectable(course) {
+            return this.courseSelectable(course) && !this.courseProgressionLocked(course)
+        },
+        deselectProgressionLockedCoursesForTimetableCreation() {
+            const lockedCourseKeys = this.progressionLockedCourseKeySet instanceof Set
+                ? [...this.progressionLockedCourseKeySet]
+                : []
+
+            if (!lockedCourseKeys.length) return
+
+            this.progressionAdditionalCourseKeys = this.uniqueValues(lockedCourseKeys)
+            this.deselectedCourseKeys = this.uniqueValues([
+                ...(Array.isArray(this.deselectedCourseKeys) ? this.deselectedCourseKeys : []),
+                ...lockedCourseKeys,
+            ])
+        },
+        additionalCoursesWithProgressionAdditionalCourses(additionalCourses) {
+            const progressionAdditionalCourseKeys = this.progressionAdditionalCourseKeySet instanceof Set
+                ? this.progressionAdditionalCourseKeySet
+                : new Set(Array.isArray(this.progressionAdditionalCourseKeys) ? this.progressionAdditionalCourseKeys : [])
+            const courses = Array.isArray(additionalCourses) ? additionalCourses : []
+
+            if (!progressionAdditionalCourseKeys.size) return courses
+
+            const existingKeys = new Set(courses.map(course => course?.key).filter(Boolean))
+            const progressionCourses = (Array.isArray(this.availableCourses) ? this.availableCourses : [])
+                .filter(course => course?.key && progressionAdditionalCourseKeys.has(course.key))
+                .filter(course => !existingKeys.has(course.key))
+
+            const markedCourses = [...courses, ...progressionCourses]
+                .map(course => this.courseMovedToAdditionalCourseSelection(course)
+                    ? {
+                        ...course,
+                        progressionAdditionalCourse: true,
+                        progressionAdditionalCourseSource: this.progressionAdditionalCourseSource(course),
+                    }
+                    : course)
+            const progressionAdditionalCourses = markedCourses
+                .filter(course => this.courseMovedToAdditionalCourseSelection(course))
+                .sort((firstCourse, secondCourse) =>
+                    this.progressionAdditionalCourseSortValue(firstCourse) - this.progressionAdditionalCourseSortValue(secondCourse)
+                        || this.compareCourses(firstCourse, secondCourse),
+                )
+            const regularAdditionalCourses = markedCourses
+                .filter(course => !this.courseMovedToAdditionalCourseSelection(course))
+
+            return [
+                ...progressionAdditionalCourses,
+                ...regularAdditionalCourses,
+            ]
+        },
+        courseMovedToAdditionalCourseSelection(course) {
+            const courseKey = course?.key
+            if (!courseKey) return false
+
+            const progressionAdditionalCourseKeys = this.progressionAdditionalCourseKeySet instanceof Set
+                ? this.progressionAdditionalCourseKeySet
+                : new Set(Array.isArray(this.progressionAdditionalCourseKeys) ? this.progressionAdditionalCourseKeys : [])
+
+            return progressionAdditionalCourseKeys.has(courseKey)
+        },
+        progressionAdditionalCourseSource(course) {
+            if (!this.courseMovedToAdditionalCourseSelection(course)) return null
+            if (course?.progressionAdditionalCourseSource) return course.progressionAdditionalCourseSource
+
+            const courseKey = course?.key
+            if (!courseKey) return null
+
+            if ((Array.isArray(this.studentMissingCourses) ? this.studentMissingCourses : [])
+                .some(missingCourse => missingCourse?.key === courseKey)) {
+                return 'missing'
+            }
+
+            if ((Array.isArray(this.studentPlannedCourses) ? this.studentPlannedCourses : [])
+                .some(plannedCourse => plannedCourse?.key === courseKey)) {
+                return 'planned'
+            }
+
+            return null
+        },
+        progressionAdditionalCourseLabel(course) {
+            const source = this.progressionAdditionalCourseSource(course)
+
+            if (source === 'missing') return 'Fehlend'
+            if (source === 'planned') return 'Vorgesehen'
+
+            return 'Zusatz'
+        },
+        progressionAdditionalCourseColor(course) {
+            if (this.progressionAdditionalCourseSource(course) === 'missing') return 'warning'
+            if (this.progressionAdditionalCourseSource(course) === 'planned') return 'info'
+
+            return 'warning'
+        },
+        progressionAdditionalCourseSortValue(course) {
+            if (this.progressionAdditionalCourseSource(course) === 'missing') return 0
+            if (this.progressionAdditionalCourseSource(course) === 'planned') return 1
+
+            return 2
+        },
+        courseSelectedBeforeProgressionLock(course) {
             if (!this.courseSelectable(course)) return false
 
             const deselectedCourseKeys = this.deselectedCourseKeySet instanceof Set
@@ -6508,11 +6911,55 @@ export default {
 
             return groups.some(group => this.courseGroupSelected(course, group))
         },
+        courseSelected(course) {
+            if (!this.regularCourseSelectable(course)) return false
+
+            return this.courseSelectedBeforeProgressionLock(course)
+        },
         courseSelectable(course) {
             return this.courseHasTimetableHours(course)
         },
         courseHasTimetableHours(course) {
             return this.courseGroupItems(course).length > 0
+        },
+        courseHasSelectedLowerRegularCourse(course, selectedCourses) {
+            const courseParts = this.courseModulePartsForStudentPlanning(course)
+            if (!courseParts.length) return false
+
+            return (Array.isArray(selectedCourses) ? selectedCourses : [])
+                .filter(selectedCourse => selectedCourse?.key !== course?.key)
+                .some(selectedCourse => this.courseIsLowerRegularModule(courseParts, selectedCourse))
+        },
+        courseIsLowerRegularModule(courseParts, selectedCourse) {
+            return this.courseModulePartsForStudentPlanning(selectedCourse)
+                .some(selectedCoursePart => courseParts.some(coursePart => {
+                    const courseModule = Number(coursePart.module)
+                    const selectedCourseModule = Number(selectedCoursePart.module)
+
+                    if (!Number.isInteger(courseModule) || !Number.isInteger(selectedCourseModule)) return false
+                    if (selectedCourseModule >= courseModule) return false
+
+                    const baseAliases = this.studentCourseBaseAliases(coursePart.base)
+
+                    return this.studentCourseBaseAliases(selectedCoursePart.base)
+                        .some(baseAlias => baseAliases.includes(baseAlias))
+                }))
+        },
+        courseProgressionLockReason(course) {
+            const lowerCourses = this.rawSelectedCoursesForVariationLimit
+                .filter(selectedCourse => selectedCourse?.key !== course?.key)
+                .filter(selectedCourse => this.courseIsLowerRegularModule(
+                    this.courseModulePartsForStudentPlanning(course),
+                    selectedCourse,
+                ))
+                .map(selectedCourse => selectedCourse?.code)
+                .filter(Boolean)
+
+            if (!lowerCourses.length) {
+                return 'Vorübergehend gesperrt, weil die aktuelle Kursauswahl zu viele Stundenplan-Varianten erzeugt.'
+            }
+
+            return `Vorübergehend gesperrt: zuerst ${lowerCourses.join(', ')} erledigen.`
         },
         applyStudentPlannedCourseSelection() {
             if (!this.selectedStudent) return false
@@ -6956,7 +7403,7 @@ export default {
             }
         },
         setCourseSelectedState(course, selected) {
-            if (selected && !this.courseSelectable(course)) return false
+            if (selected && !this.regularCourseSelectable(course)) return false
 
             const courseKey = course.key
             const deselectedIndex = this.deselectedCourseKeys.indexOf(courseKey)
@@ -6976,6 +7423,8 @@ export default {
             return false
         },
         setCourseGroupsSelectedState(course, selected) {
+            if (selected && !this.regularCourseSelectable(course)) return false
+
             this.deselectedCourseGroupKeys = Array.isArray(this.deselectedCourseGroupKeys)
                 ? this.deselectedCourseGroupKeys
                 : []
@@ -9526,8 +9975,9 @@ export default {
 
 .robot-timetable-embedded-course-cards {
     display: grid;
-    gap: 10px;
-    margin-bottom: 16px;
+    gap: 8px;
+    width: min(100%, 1180px);
+    margin-bottom: 12px;
 }
 
 .robot-timetable-embedded-course-cards .robot-course-list {
@@ -9537,7 +9987,7 @@ export default {
 .robot-timetable-embedded-course-cards .robot-course-panel {
     border-color: rgba(37, 99, 235, 0.32);
     background: #f8fbff;
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+    box-shadow: 0 5px 12px rgba(15, 23, 42, 0.06);
 }
 
 .robot-timetable-embedded-course-cards .robot-course-panel + .robot-course-panel {
@@ -9545,9 +9995,27 @@ export default {
     background: #fff7ed;
 }
 
+.robot-timetable-embedded-course-cards .robot-course-panel--additional {
+    width: min(100%, 587px);
+    justify-self: start;
+}
+
+@media (min-width: 1120px) {
+    .robot-timetable-embedded-course-cards--with-additional {
+        grid-template-columns: minmax(728px, 2fr) minmax(360px, 1fr);
+        align-items: start;
+        width: 100%;
+    }
+
+    .robot-timetable-embedded-course-cards--with-additional .robot-course-panel--additional {
+        width: 100%;
+        justify-self: stretch;
+    }
+}
+
 .robot-timetable-embedded-course-cards .robot-course-panel__title {
-    min-height: 34px;
-    padding: 6px 10px;
+    min-height: 30px;
+    padding: 4px 8px;
     border-bottom: 1px solid rgba(37, 99, 235, 0.14);
     border-radius: 8px 8px 0 0;
     background: rgba(219, 234, 254, 0.72);
@@ -9559,7 +10027,7 @@ export default {
 }
 
 .robot-timetable-embedded-course-cards .robot-course-panel__body {
-    padding: 8px;
+    padding: 6px;
 }
 
 .robot-course-loading {
@@ -9573,17 +10041,18 @@ export default {
 }
 
 .robot-timetable-embedded-course-cards .robot-course-list__title {
-    font-size: 0.82rem;
+    font-size: 0.76rem;
     font-weight: 850;
 }
 
 .robot-timetable-embedded-course-cards .robot-course-list__reset {
-    min-height: 28px;
+    min-height: 24px;
+    font-size: 0.68rem;
 }
 
 .robot-timetable-embedded-course-cards .robot-course-list__toggle {
-    min-width: 28px;
-    min-height: 28px;
+    min-width: 24px;
+    min-height: 24px;
 }
 
 .robot-timetable-embedded-course-cards--locked .robot-course-panel {
@@ -9605,7 +10074,8 @@ export default {
 }
 
 .robot-timetable-embedded-course-cards .robot-course-columns {
-    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 6px;
 }
 
 .robot-timetable-embedded-course-cards .robot-course-item-list {
@@ -9615,36 +10085,36 @@ export default {
 
 .robot-timetable-embedded-course-cards .robot-course-item-header,
 .robot-timetable-embedded-course-cards .robot-course-item-row {
-    grid-template-columns: 42px minmax(42px, 0.7fr) minmax(96px, 1.6fr) minmax(58px, 0.72fr) minmax(34px, 0.45fr);
-    gap: 6px;
+    grid-template-columns: 34px minmax(36px, 0.55fr) minmax(88px, 1.7fr) minmax(46px, 0.55fr) minmax(30px, 0.35fr);
+    gap: 5px;
 }
 
 .robot-timetable-embedded-course-cards .robot-course-item-header {
-    padding: 5px 8px;
+    padding: 4px 6px;
     background: #f8fafc;
-    font-size: 0.68rem;
+    font-size: 0.64rem;
 }
 
 .robot-timetable-embedded-course-cards .robot-course-item-header--expandable {
-    padding-right: 34px;
+    padding-right: 30px;
 }
 
 .robot-timetable-embedded-course-cards .robot-course-item-panel__title {
-    min-height: 39px;
-    padding: 0 8px;
+    min-height: 32px;
+    padding: 0 6px;
 }
 
 .robot-timetable-embedded-course-cards .robot-course-item-row {
-    font-size: 0.77rem;
+    font-size: 0.72rem;
 }
 
 .robot-timetable-embedded-course-cards .robot-course-item-row > :nth-child(3),
 .robot-timetable-embedded-course-cards .robot-course-item-row > :nth-child(4) {
-    font-size: 0.72rem;
+    font-size: 0.68rem;
 }
 
 .robot-timetable-embedded-course-cards .robot-course-item-panels :deep(.v-expansion-panel-text__wrapper) {
-    padding: 0 8px 8px;
+    padding: 0 6px 6px;
 }
 
 .robot-timetable-embedded-course-cards .robot-course-item-details {
@@ -9916,6 +10386,16 @@ export default {
     padding: 0 12px 12px;
 }
 
+.robot-course-panel__actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+.robot-course-panel__actions--additional {
+    align-self: stretch;
+}
+
 .robot-generator {
     margin-top: 14px;
     padding-top: 12px;
@@ -9929,6 +10409,10 @@ export default {
     border: 1px solid rgba(15, 23, 42, 0.1);
     border-radius: 8px;
     background: #ffffff;
+}
+
+.robot-generator--embedded-extension {
+    border-top-color: transparent;
 }
 
 @media (min-width: 1280px) {
@@ -9962,11 +10446,6 @@ export default {
         padding: 3px 9px;
         font-size: 0.7rem;
     }
-}
-
-.robot-generator__actions {
-    display: flex;
-    justify-content: flex-end;
 }
 
 .robot-generated {
@@ -10434,11 +10913,77 @@ export default {
     font-weight: 750;
 }
 
+.robot-generated-summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
 .robot-quality-summary {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 8px;
     margin-bottom: 8px;
+}
+
+.robot-generated-summary-row .robot-quality-summary {
+    flex: 1 1 auto;
+    margin-bottom: 0;
+}
+
+.robot-timetable-selector--summary {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+.robot-screen-loading-blocker {
+    position: fixed;
+    inset: 0;
+    z-index: 2390;
+    background: rgba(255, 255, 255, 0.24);
+    cursor: progress;
+}
+
+.robot-screen-loading {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    z-index: 2400;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-width: 260px;
+    padding: 22px 28px;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgba(25, 118, 210, 0.24);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.2);
+    color: #0d47a1;
+    font-size: 1rem;
+    font-weight: 800;
+    text-align: center;
+}
+
+.robot-screen-loading__dots {
+    padding: 0;
+}
+
+.robot-screen-loading__dots :deep(.loading-animation) {
+    padding: 0;
+}
+
+.robot-screen-loading__dots :deep(.loading-dots) {
+    gap: 7px;
+}
+
+.robot-screen-loading__dots :deep(.dot) {
+    width: 10px;
+    height: 10px;
 }
 
 .robot-quality-summary__item {
@@ -10587,8 +11132,8 @@ export default {
 }
 
 .robot-generated-cell--additional {
-    background: #fed7aa;
-    color: #7c2d12;
+    background: #bbf7d0;
+    color: #052e16;
 }
 
 .robot-generated-cell--has-occasional {
@@ -10628,20 +11173,23 @@ export default {
 }
 
 .robot-generated-cell__occasional-marker--additional {
-    border-color: rgba(234, 88, 12, 0.3);
+    border-color: rgba(14, 165, 233, 0.3);
+    background: #bae6fd;
+    color: #0369a1;
+}
+
+.robot-generated-cell--conflict {
     background: #fed7aa;
     color: #7c2d12;
 }
 
-.robot-generated-cell--conflict {
-    background: #fecaca;
-    color: #7f1d1d;
-}
-
 .robot-generated-cell__code {
-    display: inline-flex;
+    display: flex;
+    justify-content: flex-start;
     align-items: flex-start;
+    flex-wrap: wrap;
     gap: 2px;
+    width: 100%;
     font-weight: 750;
 }
 
@@ -10650,6 +11198,31 @@ export default {
     font-size: 0.68rem;
     font-weight: 700;
     line-height: 1.1;
+}
+
+.robot-generated-cell__source-badge {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 0 4px;
+    border-radius: 999px;
+    font-size: 0.5rem;
+    font-weight: 850;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.robot-generated-cell__source-badge--missing {
+    background: rgba(251, 146, 60, 0.24);
+    color: #9a3412;
+}
+
+.robot-generated-cell__source-badge--additional {
+    background: rgba(14, 165, 233, 0.22);
+    color: #0369a1;
 }
 
 .robot-generated-cell__details {
@@ -10754,6 +11327,7 @@ export default {
     justify-content: flex-start;
     gap: 12px;
     flex-wrap: wrap;
+    width: 100%;
 }
 
 .robot-generated-header__actions {
@@ -10762,8 +11336,26 @@ export default {
     gap: 10px;
     margin-left: 0;
     flex-wrap: wrap;
-    justify-content: flex-start;
+    justify-content: space-between;
     width: 100%;
+}
+
+.robot-generated-header__actions-start,
+.robot-generated-header__actions-end {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.robot-generated-header__actions-start {
+    flex: 0 0 auto;
+    justify-content: flex-start;
+}
+
+.robot-generated-header__actions-end {
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    margin-left: auto;
 }
 
 .robot-generated-back-button {
@@ -10787,8 +11379,6 @@ export default {
 
 .robot-timetable-selector {
     display: inline-grid;
-    order: -1;
-    margin-right: auto;
     grid-template-columns: 34px minmax(104px, auto) 34px auto;
     gap: 8px;
     align-items: center;
@@ -10799,7 +11389,6 @@ export default {
 }
 
 .robot-timetable-selector-start {
-    order: -2;
     flex: 0 0 auto;
 }
 
@@ -10839,7 +11428,7 @@ export default {
 
 .robot-course-columns {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
     gap: 10px;
     align-items: start;
 }
@@ -10918,6 +11507,32 @@ export default {
     text-decoration-thickness: 2px;
 }
 
+.robot-course-item-panel--progression-locked {
+    background: rgba(148, 163, 184, 0.1);
+}
+
+.robot-course-item-panel--progression-locked .robot-course-item-row > :not(:first-child) {
+    text-decoration: none;
+}
+
+.robot-course-item-panel--progression-additional {
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.robot-course-item-panel--progression-additional :deep(.v-expansion-panel-title) {
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.robot-course-item-panel--progression-additional-missing,
+.robot-course-item-panel--progression-additional-missing :deep(.v-expansion-panel-title) {
+    background: rgba(var(--v-theme-warning), 0.12);
+}
+
+.robot-course-item-panel--progression-additional + .robot-course-item-panel,
+.robot-course-item-panel + .robot-course-item-panel--progression-additional {
+    border-top-color: rgba(245, 158, 11, 0.36);
+}
+
 .robot-course-item-panel--used {
     background: rgba(var(--v-theme-success), 0.16);
 }
@@ -10986,6 +11601,22 @@ export default {
     font-weight: 750;
 }
 
+.robot-course-item-row__name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.robot-course-item-row__name > span {
+    min-width: 0;
+}
+
+.robot-course-item-row__badge {
+    flex: 0 0 auto;
+    font-weight: 750;
+}
+
 .robot-course-fu {
     font-size: 0.58em;
     font-weight: 900;
@@ -10993,10 +11624,29 @@ export default {
     vertical-align: super;
 }
 
+.robot-course-week-marker {
+    order: 10;
+    margin-left: auto;
+}
+
 @media (min-width: 701px) {
     .robot-course-week-marker {
         font-size: 0.72em;
         font-weight: 400;
+    }
+}
+
+@media (max-width: 900px) {
+    .robot-generated-summary-row {
+        flex-wrap: wrap;
+    }
+
+    .robot-generated-summary-row .robot-quality-summary {
+        flex-basis: 100%;
+    }
+
+    .robot-timetable-selector--summary {
+        margin-left: auto;
     }
 }
 
@@ -11071,13 +11721,19 @@ export default {
 }
 
 .robot-course-item-detail__meta,
-.robot-course-item-details__empty {
+.robot-course-item-details__empty,
+.robot-course-item-details__notice {
     margin-top: 2px;
     color: #64748b;
     font-size: 0.7rem;
     line-height: 1.25;
     overflow-wrap: anywhere;
     white-space: pre-line;
+}
+
+.robot-course-item-details__notice {
+    color: #475569;
+    font-weight: 700;
 }
 
 @media (max-width: 700px) {

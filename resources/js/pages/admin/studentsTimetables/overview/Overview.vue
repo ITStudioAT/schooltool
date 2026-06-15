@@ -33,6 +33,20 @@
                             <div class="transferred-student-context__title">
                                 <v-icon icon="mdi-account-school-outline" size="18" color="primary" />
                                 <span>{{ transferredStudentLabel }}</span>
+                                <button
+                                    v-if="transferredStudentEmail"
+                                    type="button"
+                                    class="transferred-student-context__email"
+                                    title="E-Mail kopieren"
+                                    :aria-label="'E-Mail ' + transferredStudentEmail + ' kopieren'"
+                                    @click.stop="copyTransferredStudentEmail">
+                                    <v-icon icon="mdi-email-outline" size="15" />
+                                    <span>{{ transferredStudentEmail }}</span>
+                                    <v-icon
+                                        :icon="transferredStudentEmailCopied ? 'mdi-check-circle-outline' : 'mdi-content-copy'"
+                                        :class="{ 'transferred-student-context__email-copy-icon--copied': transferredStudentEmailCopied }"
+                                        size="14" />
+                                </button>
                                 <span v-if="!wizardPanelOpen && !timetableContextLocked" class="overview-student-inline-actions">
                                     <v-btn
                                         icon="mdi-pencil"
@@ -254,9 +268,24 @@
                                 Ende/Neustart
                             </v-btn>
                         </template>
-                        <template #course-actions="{ ready, loading, extending, createActionVisible, hasSelectedAdditionalCourses }">
+                        <template #course-card-action="{ ready, extending, createActionVisible, extensionActionVisible }">
+                            <v-btn
+                                v-if="ready && (extensionActionVisible || (createActionVisible && !wizardTimetableResultVisible))"
+                                class="overview-wizard-create-button"
+                                variant="flat"
+                                color="success"
+                                size="large"
+                                style="font-weight: 400"
+                                prepend-icon="mdi-calendar-clock"
+                                :disabled="wizardTimetableCreating"
+                                :loading="wizardTimetableCreating"
+                                @click="createWizardTimetable(extending)">
+                                {{ extending ? 'Stundenplan erweitern' : 'Stundenplan erstellen' }}
+                            </v-btn>
+                        </template>
+                        <template #course-actions="{ ready, loading, extending, createActionVisible, extensionActionVisible }">
                             <div
-                                v-if="ready && (createActionVisible || (extending && hasSelectedAdditionalCourses))"
+                                v-if="ready && (extensionActionVisible || (createActionVisible && !wizardTimetableResultVisible))"
                                 class="overview-wizard-footer">
                                 <div
                                     v-if="wizardTimetableCreating"
@@ -267,7 +296,7 @@
                                         indeterminate
                                         size="18"
                                         width="2"
-                                        color="success" />
+                                    color="success" />
                                     <span>{{ extending ? 'Stundenplan wird erweitert...' : 'Stundenplan wird erstellt...' }}</span>
                                 </div>
                                 <v-btn
@@ -280,21 +309,9 @@
                                     Ende/Neustart
                                 </v-btn>
                                 <v-btn
-                                    class="overview-wizard-create-button"
-                                    variant="flat"
-                                    color="success"
-                                    size="large"
-                                    style="font-weight: 400"
-                                    prepend-icon="mdi-calendar-clock"
-                                    :disabled="wizardTimetableCreating"
-                                    :loading="wizardTimetableCreating"
-                                    @click="createWizardTimetable(extending)">
-                                    {{ extending ? 'Stundenplan erweitern' : 'Stundenplan erstellen' }}
-                                </v-btn>
-                                <v-btn
-                                    class="overview-wizard-close-button overview-wizard-close-button--calm ms-3"
+                                    v-if="extending"
+                                    class="overview-wizard-close-button overview-wizard-back-button overview-wizard-close-button--calm overview-wizard-footer-back-button"
                                     variant="tonal"
-                                    color="grey-darken-1"
                                     size="large"
                                     prepend-icon="mdi-arrow-left"
                                     @click="handleWizardCourseActionBack(extending)">
@@ -314,16 +331,18 @@
                                 </div>
                             </div>
                             <div
-                                v-if="wizardTimetableCreating"
+                                v-if="loading"
                                 class="overview-wizard-screen-loading"
                                 role="status"
-                                aria-label="Stundenplan wird berechnet"
+                                aria-label="Kurse werden geladen"
                                 aria-live="polite">
-                                <span
-                                    v-for="dot in 3"
-                                    :key="dot"
-                                    class="overview-wizard-screen-loading__dot"
-                                    aria-hidden="true" />
+                                <span class="overview-wizard-screen-loading__dots" aria-hidden="true">
+                                    <span
+                                        v-for="dot in 3"
+                                        :key="dot"
+                                        class="overview-wizard-screen-loading__dot" />
+                                </span>
+                                <span class="overview-wizard-screen-loading__label">Kurse werden geladen...</span>
                             </div>
                         </template>
                     </RobotTimetable>
@@ -368,12 +387,20 @@
                             v-for="filterChip in selectedCourseFilterChipsAll"
                             :key="filterChip.key"
                             size="small"
-                            :color="filterChip.hasBlockingOverlap ? 'error' : filterChip.hasRelatedOverlap ? 'warning' : 'success'"
+                            :color="filterChip.hasOverlap || filterChip.hasRelatedOverlap ? 'warning' : 'success'"
                             variant="tonal"
                             closable
                             class="selected-course-filter-chip"
                             @click:close="handleCourseMenuEntryFilterClick(filterChip.entry)">
-                            {{ filterChip.label }}
+                            <span>{{ filterChip.label }}</span>
+                            <span
+                                v-if="filterChip.studentCourseBadge"
+                                :class="[
+                                    'selected-course-filter-chip__source',
+                                    `selected-course-filter-chip__source--${filterChip.studentCourseType}`,
+                                ]">
+                                {{ filterChip.studentCourseBadge }}
+                            </span>
                         </v-chip>
                     </div>
                 </div>
@@ -636,6 +663,14 @@
                                             <div class="timetable-generated-cell__code">
                                                 <span>{{ courseGroupDisplayLabel(courseGroup) }}</span>
                                                 <sup v-if="courseGroupDistanceLearning(courseGroup)" class="timetable-course-fu">FU</sup>
+                                                <span
+                                                    v-if="courseGroupStudentCourseBadge(courseGroup)"
+                                                    :class="[
+                                                        'timetable-generated-cell__course-badge',
+                                                        `timetable-generated-cell__course-badge--${courseGroupStudentCourseType(courseGroup)}`,
+                                                    ]">
+                                                    {{ courseGroupStudentCourseBadge(courseGroup) }}
+                                                </span>
                                             </div>
                                             <div v-if="courseGroupDetailLabel(courseGroup)" class="timetable-generated-cell__details">
                                                 {{ courseGroupDetailLabel(courseGroup) }}
@@ -746,15 +781,20 @@
                     </section>
                 </div>
 
-                <template v-if="timetableUpdatePending">
-                    <div class="timetable-update-blocker" aria-hidden="true"></div>
-                    <div class="timetable-update-indicator" role="status" aria-live="polite">
-                        <LoadingAnimation class="timetable-update-indicator__dots" />
-                        <span>Stundenplan wird aktualisiert...</span>
-                    </div>
-                </template>
             </v-card-text>
         </v-card>
+
+        <template v-if="overviewScreenLoadingVisible">
+            <div class="overview-screen-loading-blocker" aria-hidden="true"></div>
+            <div
+                class="overview-screen-loading"
+                role="status"
+                aria-live="polite"
+                :aria-label="overviewScreenLoadingLabel">
+                <LoadingAnimation class="overview-screen-loading__dots" />
+                <span>{{ overviewScreenLoadingLabel }}</span>
+            </div>
+        </template>
 
         <v-dialog v-model="selectionDialogOpen" persistent max-width="640">
             <v-card rounded="lg">
@@ -1140,7 +1180,10 @@ export default {
             },
             studentDialogOpen: false,
             studentOptionsLoading: false,
+            transferredStudentCoursesLoading: false,
             studentSearch: '',
+            transferredStudentEmailCopied: false,
+            transferredStudentEmailCopiedTimeout: null,
             robotStudents: [],
             subjectRows: [],
             evaluationCriteria: [],
@@ -1519,6 +1562,34 @@ export default {
         studentSearchReady() {
             return this.normalizedStudentSearch.length >= 2
         },
+        overviewScreenLoadingVisible() {
+            return Boolean(
+                this.loading
+                || this.studentOptionsLoading
+                || this.transferredStudentCoursesLoading
+                || this.wizardTimetableCreating
+                || this.timetableUpdatePending
+                || this.pdfExporting
+                || this.publishedTimetableSaving,
+            )
+        },
+        overviewScreenLoadingLabel() {
+            if (this.pdfExporting) return 'PDF wird erstellt...'
+
+            if (this.publishedTimetableSaving) return 'Stundenplan wird gespeichert...'
+
+            if (this.timetableUpdatePending) return 'Stundenplan wird aktualisiert...'
+
+            if (this.wizardTimetableCreating) return 'Stundenplan wird berechnet...'
+
+            if (this.transferredStudentCoursesLoading) return 'Schülerdaten werden geladen...'
+
+            if (this.studentOptionsLoading) return 'Studenten werden geladen...'
+
+            if (this.loading) return 'Stundenplandaten werden geladen...'
+
+            return 'Bitte warten...'
+        },
         normalizedStudentSearch() {
             return String(this.studentSearch || '').trim().toLowerCase()
         },
@@ -1535,6 +1606,18 @@ export default {
         },
         transferredStudentLabel() {
             return this.transferredStudentContext?.student?.label || 'Kein Student'
+        },
+        transferredStudentEmail() {
+            const contextEmail = this.normalizedEmailValue(this.transferredStudentContext?.student?.email)
+            if (contextEmail) return contextEmail
+
+            const studentCode = this.normalizedStudentCode(this.transferredStudentContext?.student?.studentCode)
+            if (!studentCode) return ''
+
+            const selectedStudent = (Array.isArray(this.robotStudents) ? this.robotStudents : [])
+                .find(student => this.normalizedStudentCode(student?.student_code) === studentCode)
+
+            return this.normalizedEmailValue(selectedStudent?.email)
         },
         publishedTimetableStudentCode() {
             return this.normalizedStudentCode(this.transferredStudentContext?.student?.studentCode)
@@ -1672,7 +1755,7 @@ export default {
                     hasBlockingOverlap,
                     hasRelatedOverlap,
                     isActive,
-                    color: hasBlockingOverlap ? 'error' : hasRelatedOverlap ? 'warning' : isActive ? 'success' : 'primary',
+                    color: hasBlockingOverlap || hasRelatedOverlap ? 'warning' : isActive ? 'success' : 'primary',
                 }
             })
         },
@@ -1751,6 +1834,12 @@ export default {
         this.restoreLastTimetableState()
         this.applyTimetableOverviewModeFromRoute()
         this.loadData()
+    },
+
+    beforeUnmount() {
+        if (this.transferredStudentEmailCopiedTimeout) {
+            window.clearTimeout(this.transferredStudentEmailCopiedTimeout)
+        }
     },
 
     methods: {
@@ -1963,7 +2052,17 @@ export default {
         },
         handleWizardCourseActionBack(extending = false) {
             if (extending === true) {
-                this.$refs.wizardCourseCards?.resetAdditionalCourseSelection?.()
+                const wizardCourseCards = this.$refs.wizardCourseCards
+
+                if (wizardCourseCards?.returnToCourseSelectionFromGeneratedTimetable) {
+                    wizardCourseCards.returnToCourseSelectionFromGeneratedTimetable({
+                        regularCourseSelection: true,
+                    })
+
+                    return
+                }
+
+                wizardCourseCards?.resetAdditionalCourseSelection?.()
 
                 return
             }
@@ -2363,6 +2462,7 @@ export default {
                         label: this.studentOptionTitle(selectedStudent),
                         semesterLabel: this.studentSemesterLabel(selectedStudent),
                         religion: selectedStudent.religion,
+                        email: this.normalizedEmailValue(selectedStudent.email),
                     },
                     courses: {
                         completed: [],
@@ -2607,7 +2707,13 @@ export default {
             const requestId = this.studentCompletedCoursesRequestId + 1
             this.studentCompletedCoursesRequestId = requestId
 
-            if (!normalizedStudentCode) return
+            if (!normalizedStudentCode) {
+                this.transferredStudentCoursesLoading = false
+
+                return
+            }
+
+            this.transferredStudentCoursesLoading = true
 
             try {
                 const response = await axios.get('/api/admin/students-timetables/robot/student-overview', {
@@ -2637,6 +2743,10 @@ export default {
                 this.persistTimetableState()
             } catch {
                 if (requestId !== this.studentCompletedCoursesRequestId) return
+            } finally {
+                if (requestId === this.studentCompletedCoursesRequestId) {
+                    this.transferredStudentCoursesLoading = false
+                }
             }
         },
         studentOverviewSelectionPayload() {
@@ -2914,6 +3024,63 @@ export default {
             const name = [lastName, firstName].filter(Boolean).join(' ')
 
             return [schoolClass, name, semester].filter(Boolean).join(' · ')
+        },
+        normalizedEmailValue(value) {
+            return String(value || '').trim()
+        },
+        async copyTransferredStudentEmail() {
+            const copied = await this.copyTextToClipboard(this.transferredStudentEmail)
+
+            if (copied) {
+                this.showTransferredStudentEmailCopied()
+            }
+
+            return copied
+        },
+        showTransferredStudentEmailCopied() {
+            this.transferredStudentEmailCopied = true
+
+            if (this.transferredStudentEmailCopiedTimeout) {
+                window.clearTimeout(this.transferredStudentEmailCopiedTimeout)
+            }
+
+            this.transferredStudentEmailCopiedTimeout = window.setTimeout(() => {
+                this.transferredStudentEmailCopied = false
+                this.transferredStudentEmailCopiedTimeout = null
+            }, 1800)
+        },
+        async copyTextToClipboard(value) {
+            const text = String(value || '').trim()
+            if (!text) return false
+
+            if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
+                try {
+                    await navigator.clipboard.writeText(text)
+
+                    return true
+                } catch {
+                    // Fall back to the textarea copy path below.
+                }
+            }
+
+            if (typeof document === 'undefined') return false
+
+            try {
+                const textarea = document.createElement('textarea')
+                textarea.value = text
+                textarea.setAttribute('readonly', '')
+                textarea.style.position = 'fixed'
+                textarea.style.left = '-9999px'
+                document.body.appendChild(textarea)
+                textarea.select()
+                textarea.setSelectionRange(0, text.length)
+                const copied = document.execCommand('copy')
+                document.body.removeChild(textarea)
+
+                return copied
+            } catch {
+                return false
+            }
         },
         formatNumber(value) {
             return new Intl.NumberFormat('de-AT').format(Number(value || 0))
@@ -3356,6 +3523,7 @@ export default {
                     label: String(context.student?.label || '').trim(),
                     semesterLabel: String(context.student?.semesterLabel || '').trim(),
                     religion: String(context.student?.religion || '').trim(),
+                    email: String(context.student?.email || '').trim(),
                 },
                 courses: {
                     completed: this.normalizedTransferredStudentCourses(context.courses?.completed),
@@ -4435,14 +4603,25 @@ export default {
         },
         selectedCourseFilterChips(semester) {
             return this.selectedCourseMenuEntries(semester)
-                .map((entry) => ({
-                    key: `selected-${entry.key}`,
-                    label: entry.scheduleLabel ? `${entry.label} · ${entry.scheduleLabel}` : entry.label,
-                    hasBlockingOverlap: this.courseMenuEntryHasBlockingOverlap(entry, semester),
-                    hasRelatedOverlap: this.courseMenuEntryHasRelatedOverlap(entry, semester),
-                    hasOverlap: this.courseMenuEntryHasOverlap(entry, semester),
-                    entry,
-                }))
+                .map((entry) => {
+                    const studentCourseType = typeof this.courseMenuEntryStudentCourseType === 'function'
+                        ? this.courseMenuEntryStudentCourseType(entry)
+                        : ''
+                    const studentCourseBadge = typeof this.studentCourseTypeBadge === 'function'
+                        ? this.studentCourseTypeBadge(studentCourseType)
+                        : ''
+
+                    return {
+                        key: `selected-${entry.key}`,
+                        label: entry.scheduleLabel ? `${entry.label} · ${entry.scheduleLabel}` : entry.label,
+                        hasBlockingOverlap: this.courseMenuEntryHasBlockingOverlap(entry, semester),
+                        hasRelatedOverlap: this.courseMenuEntryHasRelatedOverlap(entry, semester),
+                        hasOverlap: this.courseMenuEntryHasOverlap(entry, semester),
+                        studentCourseType,
+                        studentCourseBadge,
+                        entry,
+                    }
+                })
         },
         selectedCourseMenuEntries(semester) {
             if (this.selectedCourseMenuEntriesBySemester) {
@@ -4794,7 +4973,13 @@ export default {
                 && this.extraDatesOptions(semester).length > 0
         },
         courseGroupHasRegularRecurrence(courseGroup) {
-            return [1, 2, 3, 4].includes(Number(courseGroup?.recurrence_interval))
+            const explicitInterval = Number(courseGroup?.recurrence_interval)
+            if ([1, 2, 3, 4].includes(explicitInterval)) return true
+
+            const labelMatch = String(courseGroup?.recurrence_label || '').match(/(\d+)\s*-\s*w/iu)
+            if (labelMatch) return [1, 2, 3, 4].includes(Number(labelMatch[1]))
+
+            return false
         },
         courseGroupHasExtraDateWeek(courseGroup) {
             return !this.courseGroupHasRegularRecurrence(courseGroup)
@@ -4963,7 +5148,13 @@ export default {
                 || this.courseGroupIsSingleDate(rightCourseGroup)
         },
         courseGroupIsSingleDate(courseGroup) {
-            return ![1, 2, 3, 4].includes(Number(courseGroup?.recurrence_interval))
+            const explicitInterval = Number(courseGroup?.recurrence_interval)
+            if ([1, 2, 3, 4].includes(explicitInterval)) return false
+
+            const labelMatch = String(courseGroup?.recurrence_label || '').match(/(\d+)\s*-\s*w/iu)
+            if (labelMatch) return ![1, 2, 3, 4].includes(Number(labelMatch[1]))
+
+            return true
         },
         courseGroupHasRelatedOverlap(courseGroup) {
             if (this.courseGroupHasOverlap(courseGroup)) {
@@ -4981,8 +5172,22 @@ export default {
             return Boolean(containingEntry && this.courseMenuEntryHasOverlap(containingEntry, semester))
         },
         cellHasOverlap(semester, weekday, hour, recurrenceWeek = null) {
-            return this.courseGroupsForCell(semester, weekday, hour, recurrenceWeek)
-                .some((courseGroup) => this.courseGroupHasOverlap(courseGroup))
+            const directCourseGroups = this.courseGroupsForCell(semester, weekday, hour, recurrenceWeek)
+            if (directCourseGroups.some((courseGroup) => this.courseGroupHasOverlap(courseGroup))) {
+                return true
+            }
+
+            const displayCourseGroups = typeof this.displayCourseGroupsForCell === 'function'
+                ? this.displayCourseGroupsForCell(semester, weekday, hour, recurrenceWeek)
+                : directCourseGroups
+
+            return displayCourseGroups.some((leftCourseGroup, leftIndex) => (
+                displayCourseGroups.slice(leftIndex + 1).some((rightCourseGroup) => (
+                    this.courseGroupsOverlap(leftCourseGroup, rightCourseGroup)
+                        && this.courseGroupDatesOverlap(leftCourseGroup, rightCourseGroup)
+                        && !this.courseGroupOverlapIsSingleDateOnly(leftCourseGroup, rightCourseGroup)
+                ))
+            ))
         },
         cellHasRelatedOverlap(semester, weekday, hour, recurrenceWeek = null) {
             if (this.cellHasOverlap(semester, weekday, hour, recurrenceWeek)) {
@@ -5090,6 +5295,46 @@ export default {
                 courseGroup?.recurrence_label,
                 courseGroup?.is_block ? this.courseGroupBlockLabel(courseGroup) : '',
             ].filter(Boolean).join(' · ')
+        },
+        courseMenuEntryStudentCourseType(entry) {
+            return (Array.isArray(entry?.courseGroups) ? entry.courseGroups : [])
+                .map(courseGroup => this.courseGroupStudentCourseType(courseGroup))
+                .find(Boolean) || ''
+        },
+        courseGroupStudentCourseType(courseGroup) {
+            const courseGroupCodes = this.courseGroupCodes(courseGroup)
+            if (!courseGroupCodes.length) return ''
+
+            return ['missing', 'planned', 'additional']
+                .find(type => this.transferredStudentCoursesForType(type)
+                    .some(course => this.studentCourseItemMatchesCourseGroup(course, courseGroupCodes))) || ''
+        },
+        transferredStudentCoursesForType(type) {
+            const courses = this.transferredStudentContext?.courses || {}
+            const courseItems = courses?.[type]
+
+            return Array.isArray(courseItems) ? courseItems : []
+        },
+        studentCourseItemMatchesCourseGroup(course, courseGroupCodes) {
+            const courseCodes = this.courseAliasesFromValues([
+                course?.code,
+                course?.label,
+                course?.name,
+                course?.subject,
+                course?.ttCode,
+                ...(Array.isArray(course?.ttCodes) ? course.ttCodes : []),
+            ])
+
+            return courseCodes.some(courseCode => courseGroupCodes.includes(courseCode))
+        },
+        courseGroupStudentCourseBadge(courseGroup) {
+            return this.studentCourseTypeBadge(this.courseGroupStudentCourseType(courseGroup))
+        },
+        studentCourseTypeBadge(type) {
+            if (type === 'missing') return 'Fehlend'
+            if (type === 'additional') return 'Zusätzlich'
+
+            return ''
         },
         courseGroupDistanceLearning(courseGroup) {
             if (
@@ -5548,19 +5793,19 @@ export default {
     position: relative;
 }
 
-.timetable-update-blocker {
+.overview-screen-loading-blocker {
     position: fixed;
     inset: 0;
-    z-index: 90;
+    z-index: 2390;
     background: rgba(255, 255, 255, 0.28);
     cursor: progress;
 }
 
-.timetable-update-indicator {
+.overview-screen-loading {
     position: fixed;
     top: 50%;
     left: 50%;
-    z-index: 100;
+    z-index: 2400;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -5579,19 +5824,19 @@ export default {
     text-align: center;
 }
 
-.timetable-update-indicator__dots {
+.overview-screen-loading__dots {
     padding: 0;
 }
 
-.timetable-update-indicator__dots :deep(.loading-animation) {
+.overview-screen-loading__dots :deep(.loading-animation) {
     padding: 0;
 }
 
-.timetable-update-indicator__dots :deep(.loading-dots) {
+.overview-screen-loading__dots :deep(.loading-dots) {
     gap: 6px;
 }
 
-.timetable-update-indicator__dots :deep(.dot) {
+.overview-screen-loading__dots :deep(.dot) {
     width: 8px;
     height: 8px;
 }
@@ -5994,6 +6239,10 @@ export default {
     margin: -6px 0 16px;
 }
 
+.overview-wizard-footer-back-button {
+    margin-left: auto;
+}
+
 .overview-wizard-loading {
     display: inline-flex;
     align-items: center;
@@ -6015,6 +6264,7 @@ export default {
     inset: 0;
     z-index: 2400;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 10px;
@@ -6024,17 +6274,23 @@ export default {
 .overview-wizard-screen-loading::before {
     content: "";
     position: absolute;
-    width: 106px;
-    height: 56px;
+    width: 240px;
+    height: 92px;
     border: 1px solid rgba(22, 101, 52, 0.16);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.88);
     box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
 }
 
-.overview-wizard-screen-loading__dot {
+.overview-wizard-screen-loading__dots {
     position: relative;
     z-index: 1;
+    display: flex;
+    gap: 10px;
+}
+
+.overview-wizard-screen-loading__dot {
+    position: relative;
     width: 12px;
     height: 12px;
     border-radius: 50%;
@@ -6048,6 +6304,14 @@ export default {
 
 .overview-wizard-screen-loading__dot:nth-child(3) {
     animation-delay: 0.28s;
+}
+
+.overview-wizard-screen-loading__label {
+    position: relative;
+    z-index: 1;
+    color: #166534;
+    font-size: 0.82rem;
+    font-weight: 800;
 }
 
 @keyframes overview-wizard-dot-pulse {
@@ -6238,6 +6502,25 @@ export default {
     font-weight: 650;
 }
 
+.selected-course-filter-chip__source {
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 850;
+    line-height: 1.25;
+}
+
+.selected-course-filter-chip__source--missing {
+    background: rgba(251, 146, 60, 0.24);
+    color: #9a3412;
+}
+
+.selected-course-filter-chip__source--additional {
+    background: rgba(14, 165, 233, 0.22);
+    color: #0369a1;
+}
+
 .overview-student-selection {
     margin-bottom: 14px;
 }
@@ -6303,9 +6586,41 @@ export default {
 
 .transferred-student-context__title {
     min-width: 0;
+    flex-wrap: wrap;
     color: #0f172a;
     font-size: 0.82rem;
     font-weight: 800;
+}
+
+.transferred-student-context__email {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    gap: 5px;
+    padding: 3px 8px;
+    border: 1px solid rgba(37, 99, 235, 0.22);
+    border-radius: 999px;
+    background: rgba(219, 234, 254, 0.78);
+    color: #1d4ed8;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.transferred-student-context__email span {
+    overflow: hidden;
+    min-width: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.transferred-student-context__email:hover {
+    background: rgba(191, 219, 254, 0.95);
+}
+
+.transferred-student-context__email-copy-icon--copied {
+    color: #16a34a;
 }
 
 .transferred-student-course-overview {
@@ -6644,11 +6959,6 @@ export default {
 }
 
 .timetable-generated-cell--conflict {
-    background: #fecaca;
-    color: #7f1d1d;
-}
-
-.timetable-generated-cell--related-overlap {
     background: #fed7aa;
     color: #7c2d12;
 }
@@ -6684,9 +6994,35 @@ export default {
     display: inline-flex;
     justify-content: center;
     align-items: flex-start;
+    flex-wrap: wrap;
     gap: 2px;
     font-weight: 750;
     overflow-wrap: anywhere;
+}
+
+.timetable-generated-cell__course-badge {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 0 4px;
+    border-radius: 999px;
+    font-size: 0.5rem;
+    font-weight: 850;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.timetable-generated-cell__course-badge--missing {
+    background: rgba(251, 146, 60, 0.24);
+    color: #9a3412;
+}
+
+.timetable-generated-cell__course-badge--additional {
+    background: rgba(14, 165, 233, 0.22);
+    color: #0369a1;
 }
 
 .timetable-course-fu {

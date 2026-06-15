@@ -1538,6 +1538,7 @@ it('returns current schoolyear import116 students for the robot student selector
         'student_code' => '100',
         'last_name' => 'Alpha',
         'first_name' => 'Anna',
+        'email' => 'anna.alpha@example.test',
         'import_user_id' => $user->id,
         'exists_date' => now(),
     ]);
@@ -1558,6 +1559,7 @@ it('returns current schoolyear import116 students for the robot student selector
         ->assertJsonPath('data.0.school_level', '09')
         ->assertJsonPath('data.0.attendance_year', '1')
         ->assertJsonPath('data.0.religion', 'Rk')
+        ->assertJsonPath('data.0.email', 'anna.alpha@example.test')
         ->assertJsonPath('data.1.student_code', '200');
 });
 

@@ -14,6 +14,8 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('studentCode')
         expect(componentSource).toContain('syncExternalStudentSelection()')
         expect(componentSource).toContain('class="robot-timetable-embedded-course-cards"')
+        expect(componentSource).toContain('name="course-card-action"')
+        expect(componentSource.match(/name="course-card-action"/g) ?? []).toHaveLength(2)
         expect(componentSource).toContain('name="course-actions"')
         expect(componentSource).toContain(':loading="courseCardsLoading"')
         expect(componentSource).toContain(':ready="courseCardsReady"')
@@ -21,6 +23,16 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain(':create-action-visible="courseActionVisible"')
         expect(componentSource).toContain(':has-selected-additional-courses="selectedAdditionalCourses.length > 0"')
         expect(componentSource).toContain(':extension-action-visible="additionalCourseExtensionActionVisible"')
+        expect(componentSource).toContain('v-if="courseCardsReady && courseActionVisible"')
+        expect(componentSource).toContain(':extending="false"')
+        expect(componentSource).toContain(':extension-action-visible="false"')
+        expect(componentSource).toContain('v-if="courseCardsReady && additionalCourseExtensionActionVisible"')
+        expect(componentSource).toContain('class="robot-course-panel__actions robot-course-panel__actions--additional"')
+        expect(componentSource).toContain(':extending="true"')
+        expect(componentSource).toContain(':create-action-visible="false"')
+        expect(componentSource).toContain('@click="createTimetables({ requireAdditionalCourses: true })"')
+        expect(componentSource).toContain('Stundenplan erweitern')
+        expect(componentSource).not.toContain('courseCardsReady && (courseActionVisible || additionalCourseExtensionActionVisible)')
         expect(componentSource).toContain("'robot-timetable-embedded-course-cards--with-additional': additionalCoursePanelVisible")
         expect(componentSource).toContain("'robot-timetable-embedded-course-cards--locked': embeddedCourseSelectionLocked")
         expect(componentSource).toContain('v-show="!embeddedCourseSelectionLocked || embeddedCourseSelectionExpanded"')
@@ -28,10 +40,17 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('toggleEmbeddedCourseSelection')
         expect(componentSource).toContain('toggleEmbeddedAdditionalCourseSelection')
         expect(componentSource).toContain('embeddedAdditionalCourseSelectionExpanded')
+        expect(componentSource).toContain('this.embeddedAdditionalCourseSelectionExpanded = !timetable')
         expect(componentSource).toContain("'generated-timetable-visibility-change'")
         expect(componentSource).toContain("this.$emit('generated-timetable-visibility-change', Boolean(timetable))")
-        expect(componentSource).toContain(':disabled="embeddedCourseSelectionLocked || !courseSelectable(course)"')
+        expect(componentSource).toContain(':disabled="embeddedCourseSelectionLocked || !regularCourseSelectable(course)"')
+        expect(componentSource).toContain("'robot-course-item-panel--progression-locked': courseProgressionLocked(course)")
+        expect(componentSource).toContain("'robot-course-item-panel--progression-additional': courseMovedToAdditionalCourseSelection(course)")
+        expect(componentSource).toContain('AUTOMATIC_COURSE_PROGRESSION_LOCK_VARIATION_LIMIT = 200000')
         expect(componentSource).toContain('class="robot-generator robot-generator--embedded"')
+        expect(componentSource).toContain(":class=\"{ 'robot-generator--embedded-extension': additionalCourseTimetableRequired }\"")
+        expect(componentSource).toContain('.robot-generator--embedded-extension')
+        expect(componentSource).toContain('border-top-color: transparent;')
         expect(componentSource).toContain('v-if="embeddedGeneratorVisible"')
         expect(componentSource).toContain('embeddedGeneratorVisible()')
         expect(componentSource).toContain('.robot-generator--embedded')
@@ -41,10 +60,17 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('embedded-course-column')
         expect(componentSource).toContain('embedded-additional-course-column')
         expect(componentSource).toContain('.robot-timetable-embedded-course-cards .robot-course-panel')
-        expect(componentSource).toContain('box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);')
+        expect(componentSource).toContain('width: min(100%, 1180px);')
+        expect(componentSource).toContain('width: min(100%, 587px);')
+        expect(componentSource).toContain('justify-self: start;')
+        expect(componentSource).toContain('@media (min-width: 1120px)')
+        expect(componentSource).toContain('grid-template-columns: minmax(728px, 2fr) minmax(360px, 1fr);')
+        expect(componentSource).toContain('justify-self: stretch;')
+        expect(componentSource).toContain('grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));')
+        expect(componentSource).toContain('box-shadow: 0 5px 12px rgba(15, 23, 42, 0.06);')
         expect(componentSource).toContain('background: rgba(219, 234, 254, 0.72);')
         expect(componentSource).toContain('background: rgba(255, 237, 213, 0.86);')
-        expect(componentSource).toContain('min-height: 39px;')
+        expect(componentSource).toContain('min-height: 32px;')
         expect(componentSource).not.toContain('.robot-timetable-embedded-course-cards--with-additional .robot-course-columns')
         expect(componentSource).toContain('icon="mdi-information-outline"')
         expect(componentSource).toContain('infoDialogOpen')
@@ -92,8 +118,8 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('prepend-icon="mdi-arrow-left"')
         expect(componentSource).toContain('@click="returnToCourseSelectionFromGeneratedTimetable"')
         expect(componentSource.match(/class="robot-generated-back-button"/g)?.length).toBe(2)
-        expect(componentSource.indexOf('class="robot-generated-back-button"')).toBeLessThan(
-            componentSource.indexOf('class="robot-timetable-selector-start"'),
+        expect(componentSource.indexOf('class="robot-timetable-selector-start"')).toBeLessThan(
+            componentSource.indexOf('class="robot-generated-overtake-button"'),
         )
         expect(componentSource).toContain('Übernehmen')
         expect(componentSource).toContain('class="robot-generated-overtake-button"')
@@ -213,12 +239,12 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('robot-course-item-panels')
         expect(componentSource).not.toContain('robot-additional-course-panel-row')
         expect(componentSource).not.toContain('robot-additional-course-row')
-        expect(componentSource).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+        expect(componentSource).toContain('grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr))')
         expect(componentSource).toContain(':model-value="additionalCourseFullySelected(course)"')
         expect(componentSource).toContain(':indeterminate="additionalCoursePartiallySelected(course)"')
         expect(componentSource).toContain(':model-value="additionalCourseGroupSelected(course, group)"')
         expect(componentSource).toContain('setAdditionalCourseGroupSelected(course, group, $event)')
-        expect(componentSource).toContain(':disabled="!courseSelectable(course)"')
+        expect(componentSource).toContain(':disabled="!regularCourseSelectable(course)"')
         expect(componentSource).not.toContain('embeddedCourseSelectionLocked || !additionalCourseSelectable(course)')
         expect(componentSource).toContain('.robot-timetable-embedded-course-cards--locked .robot-course-panel--additional .robot-course-item-row__select')
         expect(componentSource).not.toContain(':disabled="additionalCourseInteractionDisabled(course)"')
@@ -226,6 +252,19 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain(':disabled="additionalCourseSelectionLocked || !additionalCourseSelectable(course) || additionalCourseInteractionDisabled(course)"')
         expect(componentSource).toContain("'robot-course-item-panel--no-timetable-hours': !courseSelectable(course)")
         expect(componentSource).toContain("'robot-course-item-panel--missing-additional': additionalCourseInteractionDisabled(course)")
+        expect(componentSource).toContain('progressionAdditionalCourseKeys')
+        expect(componentSource).toContain('additionalCoursesWithProgressionAdditionalCourses(additionalCourses)')
+        expect(componentSource).toContain('courseMovedToAdditionalCourseSelection(course)')
+        expect(componentSource).toContain('progressionAdditionalCourseLabel(course)')
+        expect(componentSource).toContain('progressionAdditionalCourseColor(course)')
+        expect(componentSource).toContain('progressionAdditionalCourseSortValue(course)')
+        expect(componentSource).toContain('Fehlend')
+        expect(componentSource).toContain('Vorgesehen')
+        expect(componentSource).not.toContain('Aufbaukurs')
+        expect(componentSource).toContain('.robot-course-item-panel--progression-additional')
+        expect(componentSource).toContain('.robot-course-item-panel--progression-additional-missing')
+        expect(componentSource).not.toContain('.robot-course-item-panel--progression-additional-planned')
+        expect(componentSource).toContain('.robot-course-item-row__badge')
         expect(componentSource).toContain("'robot-student-completed-course--no-timetable-hours': !courseSelectable(course)")
         expect(componentSource).not.toContain('<sup v-if="courseGroupWeekMarker(group)"')
         expect(componentSource).toContain('setAdditionalCourseSelected(course, $event)')
@@ -357,6 +396,8 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('autoSelectAdditionalCourseTimetableFilter(options)')
         expect(componentSource).toContain('additionalCourseTimetableRequired')
         expect(componentSource).toContain('selected_additional_courses_required: this.additionalCourseTimetableRequired === true')
+        expect(componentSource).toContain('this.embeddedAdditionalCourseSelectionExpanded = false')
+        expect(componentSource).toContain('if (this.additionalCourseTimetableRequired === true) return')
         expect(componentSource).toContain('@click="setAdditionalCourseTimetableRequired(true)"')
         expect(componentSource).not.toContain('setAdditionalCourseTimetableRequired($event)')
         expect(componentSource).toContain(':disabled="additionalCourseSelectionLocked || !additionalCourseSelectionResettable"')
@@ -384,8 +425,14 @@ describe('Students timetable robot page', () => {
             componentSource.indexOf('robot-count-card--conflict'),
         )
         expect(componentSource).toContain('robot-generated-cell--additional')
+        expect(componentSource).toContain('robot-generated-cell__source-badge')
+        expect(componentSource).toContain('generatedSlotCourseSourceBadge(robotTimetableDisplaySlot(weekday.value, time.value))')
+        expect(componentSource).toContain('generatedSlotCourseSourceType(slot)')
+        expect(componentSource).toContain('.robot-generated-cell--conflict {\n    background: #fed7aa;')
+        expect(componentSource).not.toContain('.robot-generated-cell--conflict {\n    background: #fecaca;')
         expect(componentSource).toContain('robot-course-fu')
         expect(componentSource).toContain('robot-course-week-marker')
+        expect(componentSource).toContain('.robot-course-week-marker {\n    order: 10;\n    margin-left: auto;')
         expect(componentSource).toContain('courseWeekMarker(course)')
         expect(componentSource).toContain('generatedSlotWeekMarker(robotTimetableDisplaySlot(weekday.value, time.value), selectedRobotTimetable)')
         expect(componentSource).not.toContain('v-if="courseDistanceLearning(course)"')
@@ -425,12 +472,22 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('<v-checkbox-btn')
         expect(componentSource).toContain('qualityCounterReached(counter)')
         expect(componentSource).toContain('robot-quality-summary__check')
+        expect(componentSource).toContain(':disabled="qualitySummaryReloadLoading"')
+        expect(componentSource).toContain('LoadingAnimation')
+        expect(componentSource).toContain('robot-screen-loading')
+        expect(componentSource).toContain('robot-screen-loading-blocker')
+        expect(componentSource).toContain('robot-screen-loading__dots')
+        expect(componentSource).toContain('Stundenplan wird aktualisiert...')
         expect(componentSource).toContain('robot-quality-summary__meta-row')
         expect(componentSource).toContain('robot-quality-summary__controls')
         expect(componentSource).toContain('robot-quality-summary__status')
         expect(componentSource).toContain("'robot-quality-summary__item--reached': qualitySummaryCheckboxChecked(counter) && qualityCounterReached(counter)")
         expect(componentSource).toContain(':model-value="qualitySummaryCheckboxChecked(counter)"')
         expect(componentSource).toContain('@update:model-value="setQualitySummaryCheckboxChecked(counter, $event)"')
+        expect(componentSource).toContain('qualitySummarySelectionLoading: false')
+        expect(componentSource).toContain('qualitySummarySelectionRequestId: 0')
+        expect(componentSource).toContain('qualitySummaryReloadLoading()')
+        expect(componentSource).toContain('async setQualitySummaryCheckboxChecked(counter, checked)')
         expect(componentSource).toContain('selectedQualityCriteriaCount')
         expect(componentSource).toContain('selectedQualityCriteriaCountFromResponse(responseData)')
         expect(componentSource).toContain('{{ counter.label }}')
@@ -483,8 +540,17 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('selectedTimetableResultTitle()')
         expect(componentSource).toContain('robot-timetable-selector')
         expect(componentSource).toContain('robot-timetable-selector-start')
+        expect(componentSource).toContain('robot-generated-header__actions-start')
+        expect(componentSource).toContain('robot-generated-header__actions-end')
+        expect(componentSource).toContain('robot-generated-summary-row')
+        expect(componentSource).toContain('robot-timetable-selector robot-timetable-selector--summary')
         expect(componentSource).toContain('<slot name="timetable-selector-start" />')
-        expect(componentSource).toContain('order: -2;')
+        expect(componentSource).toContain('justify-content: space-between;')
+        expect(componentSource).toContain('justify-content: flex-end;')
+        expect(componentSource).toContain('margin-left: auto;')
+        expect(componentSource).toContain('.robot-generated-summary-row .robot-quality-summary')
+        expect(componentSource).toContain('flex-wrap: wrap;')
+        expect(componentSource).not.toContain('order: -2;')
         expect(componentSource).toContain('v-if="selectedTimetableResultCount > 0"')
         expect(componentSource).toContain('aria-live="polite"')
         expect(componentSource).toContain('grid-template-columns: 34px minmax(104px, auto) 34px')
@@ -526,7 +592,10 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('await this.loadFullGreenTimetableCount({ preferFullGreen: true })')
         expect(componentSource).toContain('options?.preferFullGreen === true')
         expect(componentSource).toContain("'/api/admin/students-timetables/robot/backend-timetable'")
+        expect(componentSource).toContain('} catch (error) {')
         expect(componentSource).toContain('selected_course_keys: this.selectedCourses.map(course => course.key)')
+        expect(componentSource).toContain('deselectProgressionLockedCoursesForTimetableCreation()')
+        expect(componentSource).toContain('progressionAdditionalCourseKeys: this.uniqueValues(this.progressionAdditionalCourseKeys)')
         expect(componentSource).toContain('timetable_variation_count')
         expect(componentSource).toContain('Variationen gesamt')
         expect(componentSource).toContain('totalTimetableVariationCountLabel')
@@ -536,7 +605,10 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('emptyTimetableTimes()')
         expect(componentSource).toContain('fullGreenTimetableCountLabel()')
         expect(componentSource).toContain('formatNumber(value)')
-        expect(componentSource).toContain('robot-generator__actions')
+        expect(componentSource).toContain('<div class="robot-course-list__title">{{ regularCourseListTitle }}</div>')
+        expect(componentSource).toContain('class="robot-course-panel__actions"')
+        expect(componentSource).toContain('justify-content: flex-end;')
+        expect(componentSource).toContain('@click="createTimetables"')
         expect(componentSource).toContain('generateTimetables()')
         expect(componentSource).toContain('generatedTimetables')
         expect(componentSource).toContain('generationProblems')
@@ -558,7 +630,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('<div class="robot-course-list__header robot-generated-header">')
         expect(componentSource).not.toContain('<div class="robot-course-list__title">Stundenplan</div>')
         expect(componentSource).toContain('class="robot-generated-header__actions"')
-        expect(componentSource).toContain('class="robot-timetable-selector"')
+        expect(componentSource).toContain('class="robot-timetable-selector robot-timetable-selector--summary"')
         expect(componentSource).toContain('robot-generated-grid')
         expect(componentSource).toContain('robot-generated-cell__details')
         expect(componentSource).toContain('generatedSlotDetails(slot)')
@@ -631,6 +703,42 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('robot-course-columns')
         expect(componentSource).toContain('Keine passenden Kurse gefunden.')
         expect(componentSource).toContain('Kurse')
+    })
+
+    it('collapses the additional-course card after an extended timetable is created', () => {
+        const watcher = (RobotTimetable as any).watch.selectedRobotTimetable.handler
+        const emit = vi.fn()
+        const ctx = {
+            embeddedCourseCardsOnly: true,
+            embeddedCourseSelectionExpanded: true,
+            embeddedAdditionalCourseSelectionExpanded: true,
+            additionalCourseTimetableRequired: true,
+            additionalCourseExtensionActionHidden: true,
+            $emit: emit,
+        }
+
+        watcher.call(ctx, { key: 'generated-extended' })
+
+        expect(ctx.embeddedCourseSelectionExpanded).toBe(false)
+        expect(ctx.embeddedAdditionalCourseSelectionExpanded).toBe(false)
+        expect(emit).toHaveBeenCalledWith('generated-timetable-visibility-change', true)
+    })
+
+    it('keeps the additional-course card open after a normal timetable is created', () => {
+        const watcher = (RobotTimetable as any).watch.selectedRobotTimetable.handler
+        const ctx = {
+            embeddedCourseCardsOnly: true,
+            embeddedCourseSelectionExpanded: true,
+            embeddedAdditionalCourseSelectionExpanded: false,
+            additionalCourseTimetableRequired: false,
+            additionalCourseExtensionActionHidden: false,
+            $emit: vi.fn(),
+        }
+
+        watcher.call(ctx, { key: 'generated-normal' })
+
+        expect(ctx.embeddedCourseSelectionExpanded).toBe(false)
+        expect(ctx.embeddedAdditionalCourseSelectionExpanded).toBe(true)
     })
 
     it('resets selected quality counter checks before recalculating ranking', () => {
@@ -891,6 +999,8 @@ describe('Students timetable robot page', () => {
             timetableCreateLoading: false,
             fullGreenTimetableCountLoading: false,
             selectedCourses: [{ key: 'D1' }],
+            studentAdditionalCourses: [{ key: 'D2' }],
+            additionalCoursePanelRetained: false,
             get timetableGenerationLoading() {
                 return this.timetableCreateLoading || this.fullGreenTimetableCountLoading
             },
@@ -908,6 +1018,7 @@ describe('Students timetable robot page', () => {
 
         expect(ctx.timetableCreateLoading).toBe(false)
         expect(ctx.timetableGenerationLoading).toBe(false)
+        expect(ctx.additionalCoursePanelRetained).toBe(true)
     })
 
     it('shows the count of timetables that match all active quality criteria', () => {
@@ -993,6 +1104,93 @@ describe('Students timetable robot page', () => {
             preserveGeneratedTimetable: true,
             preserveQualityCounters: true,
         })
+    })
+
+    it('keeps the category reload loading state active until the selected category reload finishes', async () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        let finishReload = () => {}
+        const reloadPromise = new Promise<void>(resolve => {
+            finishReload = () => resolve()
+        })
+        const loadFullGreenTimetableCount = vi.fn(() => reloadPromise)
+        const ctx = {
+            ...methods,
+            qualitySummaryCheckedKeys: [],
+            selectedQualityCriteriaCount: 3,
+            qualityCriteriaResultFilterEnabled: false,
+            qualityCriteriaResultFilterActive: true,
+            qualitySummarySelectionLoading: false,
+            qualitySummarySelectionRequestId: 0,
+            selectedTimetableResultType: 'green',
+            qualityCriteriaResultFilterAvailable: vi.fn(() => true),
+            timetableCalculationReady: vi.fn(() => true),
+            setTimetableResultCounter: vi.fn(),
+            loadFullGreenTimetableCount,
+            loadQualityCountersForSelectedTimetableType: vi.fn(),
+        }
+
+        const selectionPromise = methods.setQualitySummaryCheckboxChecked.call(ctx, {
+            key: 'free_days',
+            option: null,
+        }, true)
+
+        expect(ctx.qualitySummaryCheckedKeys).toEqual(['free_days|'])
+        expect(ctx.qualityCriteriaResultFilterEnabled).toBe(true)
+        expect(ctx.qualitySummarySelectionLoading).toBe(true)
+        expect(computed.qualitySummaryReloadLoading.call(ctx)).toBe(true)
+        expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({
+            calculateQualityCounters: true,
+            preserveGeneratedTimetable: true,
+        })
+
+        finishReload()
+        await selectionPromise
+
+        expect(ctx.qualitySummarySelectionLoading).toBe(false)
+        expect(computed.qualitySummaryReloadLoading.call(ctx)).toBe(false)
+    })
+
+    it('keeps the category reload loading state active until the last category unselection reload finishes', async () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        let finishReload = () => {}
+        const reloadPromise = new Promise<void>(resolve => {
+            finishReload = () => resolve()
+        })
+        const loadQualityCountersForSelectedTimetableType = vi.fn(() => reloadPromise)
+        const ctx = {
+            ...methods,
+            qualitySummaryCheckedKeys: ['free_days|'],
+            selectedQualityCriteriaCount: 3,
+            qualityCriteriaResultFilterEnabled: true,
+            qualityCriteriaResultFilterActive: false,
+            qualitySummarySelectionLoading: false,
+            qualitySummarySelectionRequestId: 0,
+            selectedTimetableResultType: 'green',
+            qualityCriteriaResultFilterAvailable: vi.fn(() => true),
+            timetableCalculationReady: vi.fn(() => true),
+            setTimetableResultCounter: vi.fn(),
+            loadFullGreenTimetableCount: vi.fn(),
+            loadQualityCountersForSelectedTimetableType,
+        }
+
+        const selectionPromise = methods.setQualitySummaryCheckboxChecked.call(ctx, {
+            key: 'free_days',
+            option: null,
+        }, false)
+
+        expect(ctx.qualitySummaryCheckedKeys).toEqual([])
+        expect(ctx.qualityCriteriaResultFilterEnabled).toBe(false)
+        expect(ctx.qualitySummarySelectionLoading).toBe(true)
+        expect(computed.qualitySummaryReloadLoading.call(ctx)).toBe(true)
+        expect(loadQualityCountersForSelectedTimetableType).toHaveBeenCalledOnce()
+
+        finishReload()
+        await selectionPromise
+
+        expect(ctx.qualitySummarySelectionLoading).toBe(false)
+        expect(computed.qualitySummaryReloadLoading.call(ctx)).toBe(false)
     })
 
     it('shows the all quality criteria count against the active filtered timetable result count', () => {
@@ -1157,6 +1355,7 @@ describe('Students timetable robot page', () => {
             selectedCourses: [{ key: 'D1' }],
             selectedAdditionalCourses: [{ key: 'INF2' }],
             additionalCourseTimetableRequired: false,
+            embeddedAdditionalCourseSelectionExpanded: true,
             selectedTimetableResultType: 'green',
             fullGreenTimetableNumber: 4,
             greenTimetableNumber: 8,
@@ -1173,6 +1372,7 @@ describe('Students timetable robot page', () => {
 
         expect(ctx.additionalCourseTimetableRequired).toBe(true)
         expect(ctx.additionalCourseExtensionActionHidden).toBe(true)
+        expect(ctx.embeddedAdditionalCourseSelectionExpanded).toBe(false)
         expect(computed.additionalCourseSelectionLocked.call(ctx)).toBe(true)
         expect(ctx.greenTimetableNumber).toBe(1)
         expect(loadFullGreenTimetableCount).toHaveBeenCalledWith({ preferFullGreen: true })
@@ -3076,6 +3276,141 @@ describe('Students timetable robot page', () => {
         expect(methods.courseSelected.call(ctx, course)).toBe(false)
     })
 
+    it('temporarily locks higher regular courses when the selected progression creates too many variations', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const courses = [
+            { key: 'CH1', code: 'CH1', name: 'Chemie 1' },
+            { key: 'CH2', code: 'CH2', name: 'Chemie 2' },
+            { key: 'M3', code: 'M3', name: 'Mathematik 3' },
+            { key: 'M4', code: 'M4', name: 'Mathematik 4' },
+            { key: 'M5', code: 'M5', name: 'Mathematik 5' },
+            { key: 'D5', code: 'D5', name: 'Deutsch 5' },
+            { key: 'E5', code: 'E5', name: 'Englisch 5' },
+            { key: 'BU2', code: 'BU2', name: 'Biologie 2' },
+            { key: 'GS2', code: 'GS2', name: 'Geschichte 2' },
+            { key: 'GW2', code: 'GW2', name: 'Geografie 2' },
+        ]
+        const normalAdditionalCourse = { key: 'D9', code: 'D9', name: 'Deutsch 9' }
+        const optionCounts = {
+            BU2: 5,
+            CH1: 3,
+            CH2: 3,
+            D5: 4,
+            E5: 4,
+            GS2: 5,
+            GW2: 5,
+            M3: 4,
+            M4: 4,
+            M5: 4,
+        }
+        const ctx = {
+            ...methods,
+            selectedStudent: { student_code: '100' },
+            availableCourses: courses,
+            deselectedCourseKeys: [],
+            deselectedCourseGroupKeys: [],
+            additionalCourseSelectedKeys: [],
+            progressionAdditionalCourseKeys: [],
+            studentMissingCourses: [courses[1], courses[3]],
+            studentPlannedCourses: [courses[4]],
+            subjectRows: [],
+            subjectMappings: [],
+            courseGroupItems(course) {
+                return Array.from({ length: optionCounts[course.code] || 1 }, (item, index) => ({
+                    title: `${course.code}-${index + 1}`,
+                }))
+            },
+        }
+
+        Object.defineProperty(ctx, 'rawSelectedCoursesForVariationLimit', {
+            get() {
+                return computed.rawSelectedCoursesForVariationLimit.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'selectedCourseVariationEstimate', {
+            get() {
+                return computed.selectedCourseVariationEstimate.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'progressionCourseLockingActive', {
+            get() {
+                return computed.progressionCourseLockingActive.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'progressionLockedCourseKeySet', {
+            get() {
+                return computed.progressionLockedCourseKeySet.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'progressionAdditionalCourseKeySet', {
+            get() {
+                return computed.progressionAdditionalCourseKeySet.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'studentAdditionalCourses', {
+            get() {
+                return methods.additionalCoursesWithProgressionAdditionalCourses.call(this, [])
+            },
+        })
+
+        expect(computed.selectedCourseVariationEstimate.call(ctx)).toBeGreaterThan(200000)
+        expect(computed.progressionCourseLockingActive.call(ctx)).toBe(true)
+        expect([...computed.progressionLockedCourseKeySet.call(ctx)].toSorted()).toEqual(['CH2', 'M4', 'M5'])
+        expect(methods.regularCourseSelectable.call(ctx, courses[1])).toBe(false)
+        expect(methods.courseProgressionLockReason.call(ctx, courses[4])).toBe(
+            'Vorübergehend gesperrt: zuerst M3, M4 erledigen.',
+        )
+        expect(computed.selectedCourses.call(ctx).map(course => course.code)).toEqual([
+            'CH1',
+            'M3',
+            'D5',
+            'E5',
+            'BU2',
+            'GS2',
+            'GW2',
+        ])
+
+        methods.deselectProgressionLockedCoursesForTimetableCreation.call(ctx)
+        ctx.selectedRobotTimetable = { key: 'generated-1', slots: {} }
+
+        const additionalCourses = methods.additionalCoursesWithProgressionAdditionalCourses.call(ctx, [normalAdditionalCourse])
+        const progressionAdditionalCourses = additionalCourses.filter(course =>
+            methods.courseMovedToAdditionalCourseSelection.call(ctx, course),
+        )
+
+        expect(ctx.deselectedCourseKeys.toSorted()).toEqual(['CH2', 'M4', 'M5'])
+        expect(ctx.progressionAdditionalCourseKeys.toSorted()).toEqual(['CH2', 'M4', 'M5'])
+        expect(additionalCourses.map(course => course.code)).toEqual(['CH2', 'M4', 'M5', 'D9'])
+        expect(progressionAdditionalCourses.every(course => course.progressionAdditionalCourse === true)).toBe(true)
+        expect(progressionAdditionalCourses.map(course => methods.progressionAdditionalCourseLabel.call(ctx, course))).toEqual([
+            'Fehlend',
+            'Fehlend',
+            'Vorgesehen',
+        ])
+        expect(progressionAdditionalCourses.map(course => methods.progressionAdditionalCourseColor.call(ctx, course))).toEqual([
+            'warning',
+            'warning',
+            'info',
+        ])
+        expect(methods.courseMovedToAdditionalCourseSelection.call(ctx, courses[1])).toBe(true)
+        expect(methods.courseProgressionLocked.call(ctx, courses[1])).toBe(false)
+        expect(methods.regularCourseSelectable.call(ctx, courses[1])).toBe(true)
+        expect(methods.courseSelected.call(ctx, courses[1])).toBe(false)
+
+        ctx.embeddedCourseSelectionLocked = true
+        ctx.commitAdditionalCourseSelectionChange = vi.fn()
+
+        methods.setCourseSelected.call(ctx, courses[1], true)
+
+        expect(ctx.deselectedCourseKeys.toSorted()).toEqual(['CH2', 'M4', 'M5'])
+
+        methods.setAdditionalCourseSelected.call(ctx, courses[1], true)
+
+        expect(ctx.additionalCourseSelectedKeys).toEqual(['CH2'])
+        expect(ctx.commitAdditionalCourseSelectionChange).toHaveBeenCalledOnce()
+    })
+
     it('does not select courses without imported timetable hours', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {
@@ -3928,6 +4263,30 @@ describe('Students timetable robot page', () => {
         expect(methods.courseUsedInSelectedTimetable.call(ctx, { key: 'ÖKO2', code: 'ÖKO2' })).toBe(false)
     })
 
+    it('marks generated timetable slots with the student course source badge', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            studentMissingCourses: [{ key: 'ETH4', code: 'ETH4', ttCodes: ['ET4'] }],
+            studentPlannedCourses: [{ key: 'M5', code: 'M5' }],
+            studentAdditionalCourses: [{ key: 'D6', code: 'D6' }],
+        }
+
+        expect(methods.generatedSlotCourseSourceBadge.call(ctx, {
+            key: 'ETH4',
+            code: 'ET4',
+            courseGroup: { course: 'ETH4' },
+        })).toBe('Fehlend')
+        expect(methods.generatedSlotCourseSourceBadge.call(ctx, {
+            key: 'M5',
+            code: 'M5',
+        })).toBe('')
+        expect(methods.generatedSlotCourseSourceBadge.call(ctx, {
+            key: 'D6',
+            code: 'D6',
+        })).toBe('Zusätzlich')
+    })
+
     it('does not duplicate the generated slot when it also appears in its conflict list', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = { ...methods }
@@ -4155,7 +4514,7 @@ describe('Students timetable robot page', () => {
         const sameSlotBlocks = methods.generatedSlotSameSlotBlocks.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])
 
         expect(methods.generatedSlotConflicts.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])).toEqual([])
-        expect(methods.robotTimetableCellClasses.call(ctx, 5, 7)['robot-generated-cell--conflict']).toBe(false)
+        expect(methods.robotTimetableCellClasses.call(ctx, 5, 7)['robot-generated-cell--conflict']).toBe(true)
         expect(methods.generatedSlotTitle.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])).toBe('SPA4-KOR / S4')
         expect(methods.generatedSlotDateLabel.call(ctx, ctx.selectedRobotTimetable.slots['5-7'])).toBe('20.02.-6.3.')
         expect(methods.generatedSlotTitle.call(ctx, sameSlotBlocks[0])).toBe('SPA5-PIB / S5')
@@ -4364,7 +4723,7 @@ describe('Students timetable robot page', () => {
         expect(ctx.generatedTimetables[0].slots['5-7'].dateRangeLabel).toBe('20.02.')
         expect(ctx.generatedTimetables[0].slots['5-7'].sameSlotEntries[0].dateRangeLabel).toBe('8.5.')
         ctx.selectedRobotTimetable = ctx.generatedTimetables[0]
-        expect(methods.robotTimetableCellClasses.call(ctx, 5, 7)['robot-generated-cell--conflict']).toBe(false)
+        expect(methods.robotTimetableCellClasses.call(ctx, 5, 7)['robot-generated-cell--conflict']).toBe(true)
         expect(methods.courseUsedInSelectedTimetable.call(ctx, { key: 'S5', code: 'S5' })).toBe(true)
     })
 
@@ -4813,6 +5172,31 @@ describe('Students timetable robot page', () => {
         ctx.selectedStudent = { student_code: '100' }
         methods.hideCourseActionUntilCourseInteraction.call(ctx)
         expect(ctx.courseActionHiddenUntilCourseInteraction).toBe(false)
+    })
+
+    it('keeps additional course checkboxes locked after creating an extended timetable until returning', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            embeddedCourseCardsOnly: true,
+            embeddedCourseSelectionLocked: true,
+            selectedRobotTimetable: { key: 'generated-1', slots: {} },
+            additionalCourseTimetableRequired: true,
+            additionalCourseExtensionActionHidden: true,
+            selectedAdditionalCourses: [{ key: 'INF2' }],
+            courseActionHiddenUntilCourseInteraction: true,
+        }
+
+        expect(computed.additionalCourseSelectionLocked.call(ctx)).toBe(true)
+        expect(computed.additionalCourseExtensionActionVisible.call(ctx)).toBe(false)
+
+        methods.showCourseActionAfterCourseInteraction.call(ctx)
+
+        expect(ctx.additionalCourseExtensionActionHidden).toBe(true)
+        expect(computed.additionalCourseSelectionLocked.call(ctx)).toBe(true)
+        expect(computed.additionalCourseExtensionActionVisible.call(ctx)).toBe(false)
+        expect(ctx.courseActionHiddenUntilCourseInteraction).toBe(true)
     })
 
     it('resets changed course selections to the selected student defaults', () => {
@@ -5325,9 +5709,10 @@ describe('Students timetable robot page', () => {
         expect(ctx.saved).toBeUndefined()
     })
 
-    it('unlocks additional course checkboxes when returning from an extended timetable', () => {
+    it('returns from an extended timetable to editable additional courses first', () => {
         const computed = (RobotTimetable as any).computed
         const methods = (RobotTimetable as any).methods
+        const emit = vi.fn()
         const ctx = {
             ...methods,
             additionalCourseTimetableRequired: true,
@@ -5335,7 +5720,11 @@ describe('Students timetable robot page', () => {
             additionalCourseSelectionChangedAfterTimetable: false,
             additionalCourseSelectedKeys: ['INF2'],
             additionalCoursePanelRetained: false,
+            embeddedCourseSelectionExpanded: false,
+            embeddedAdditionalCourseSelectionExpanded: false,
+            fullGreenTimetableCountError: 'old',
             studentAdditionalCourses: [{ key: 'INF2' }],
+            $emit: emit,
             clearGeneratedTimetables(options = {}) {
                 this.clearGeneratedTimetablesOptions = options
                 this.additionalCoursePanelRetained = options?.keepAdditionalCoursePanelVisible === true
@@ -5352,13 +5741,47 @@ describe('Students timetable robot page', () => {
 
         methods.returnToCourseSelectionFromGeneratedTimetable.call(ctx)
 
-        expect(ctx.clearGeneratedTimetablesOptions).toEqual({ keepAdditionalCoursePanelVisible: true })
-        expect(ctx.additionalCourseTimetableRequired).toBe(false)
+        expect(ctx.clearGeneratedTimetablesOptions).toBeUndefined()
+        expect(ctx.additionalCourseTimetableRequired).toBe(true)
         expect(ctx.additionalCourseExtensionActionHidden).toBe(false)
         expect(ctx.additionalCourseSelectionChangedAfterTimetable).toBe(true)
         expect(ctx.additionalCoursePanelRetained).toBe(true)
+        expect(ctx.embeddedCourseSelectionExpanded).toBe(false)
+        expect(ctx.embeddedAdditionalCourseSelectionExpanded).toBe(true)
+        expect(ctx.fullGreenTimetableCountError).toBe('')
         expect(computed.additionalCourseSelectionLocked.call(ctx)).toBe(false)
-        expect(ctx.courseActionShown).toBe(true)
+        expect(ctx.courseActionShown).toBeUndefined()
+        expect(emit).toHaveBeenCalledWith('generated-timetable-visibility-change', false)
+        expect(ctx.saved).toBe(true)
+    })
+
+    it('returns from editable additional courses to regular course selection on the second back step', () => {
+        const methods = (RobotTimetable as any).methods
+        const emit = vi.fn()
+        const ctx = {
+            ...methods,
+            additionalCourseTimetableRequired: true,
+            additionalCourseExtensionActionHidden: false,
+            additionalCourseSelectionChangedAfterTimetable: true,
+            additionalCoursePanelRetained: true,
+            clearGeneratedTimetables(options = {}) {
+                this.clearGeneratedTimetablesOptions = options
+                this.additionalCoursePanelRetained = options?.keepAdditionalCoursePanelVisible === true
+            },
+            $emit: emit,
+            saveLastRobotState() {
+                this.saved = true
+            },
+        }
+
+        methods.returnToCourseSelectionFromGeneratedTimetable.call(ctx, { regularCourseSelection: true })
+
+        expect(ctx.clearGeneratedTimetablesOptions).toEqual({ keepAdditionalCoursePanelVisible: false })
+        expect(ctx.additionalCourseTimetableRequired).toBe(false)
+        expect(ctx.additionalCourseExtensionActionHidden).toBe(false)
+        expect(ctx.additionalCourseSelectionChangedAfterTimetable).toBe(false)
+        expect(ctx.additionalCoursePanelRetained).toBe(false)
+        expect(emit).toHaveBeenCalledWith('generated-timetable-visibility-change', false)
         expect(ctx.saved).toBe(true)
     })
 
@@ -5419,8 +5842,7 @@ describe('Students timetable robot page', () => {
         expect(computed.availableCourseColumns.call(ctx).map(courseColumn =>
             courseColumn.map(course => course.code),
         )).toEqual([
-            ['D1', 'E1', 'INF1'],
-            ['M1', 'ME1'],
+            ['D1', 'E1', 'INF1', 'M1', 'ME1'],
         ])
     })
 
@@ -5446,7 +5868,7 @@ describe('Students timetable robot page', () => {
         ])
     })
 
-    it('splits a single student course group into two display columns', () => {
+    it('keeps a single student course group in one display column', () => {
         const computed = (RobotTimetable as any).computed
         const ctx = {
             selectedStudent: { student_code: '100' },
@@ -5466,8 +5888,24 @@ describe('Students timetable robot page', () => {
             title: courseColumn.title,
             courses: courseColumn.courses.map(course => course.code),
         }))).toEqual([
-            { title: 'Vorgesehene Kurse', courses: ['D1', 'E1', 'ETH1', 'GW1'] },
-            { title: '', courses: ['INF1', 'LPT', 'M1'] },
+            { title: 'Vorgesehene Kurse', courses: ['D1', 'E1', 'ETH1', 'GW1', 'INF1', 'LPT', 'M1'] },
+        ])
+    })
+
+    it('keeps additional student courses in one display column', () => {
+        const computed = (RobotTimetable as any).computed
+        const ctx = {
+            studentAdditionalCourses: [
+                { key: 'D2', code: 'D2' },
+                { key: 'INF2', code: 'INF2' },
+                { key: 'M2', code: 'M2' },
+            ],
+        }
+
+        expect(computed.additionalCourseColumns.call(ctx).map(courseColumn =>
+            courseColumn.map(course => course.code),
+        )).toEqual([
+            ['D2', 'INF2', 'M2'],
         ])
     })
 

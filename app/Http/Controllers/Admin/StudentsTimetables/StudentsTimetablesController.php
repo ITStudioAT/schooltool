@@ -68,7 +68,7 @@ class StudentsTimetablesController extends Controller
             ->orderBy('class')
             ->orderBy('last_name')
             ->orderBy('first_name')
-            ->get(['id', 'class', 'school_level', 'attendance_year', 'religion', 'student_code', 'last_name', 'first_name'])
+            ->get(['id', 'class', 'school_level', 'attendance_year', 'religion', 'student_code', 'last_name', 'first_name', 'email'])
             ->map(fn (Import116 $student): array => [
                 'id' => (int) $student->id,
                 'class' => (string) $student->class,
@@ -78,6 +78,7 @@ class StudentsTimetablesController extends Controller
                 'student_code' => (string) $student->student_code,
                 'last_name' => (string) $student->last_name,
                 'first_name' => (string) $student->first_name,
+                'email' => (string) $student->email,
                 'title' => trim("{$student->class} · {$student->last_name} {$student->first_name}"),
             ])
             ->values();
