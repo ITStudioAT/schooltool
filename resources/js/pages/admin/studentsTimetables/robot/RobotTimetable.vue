@@ -1204,6 +1204,17 @@
                                     @click="overtakeSelectedTimetableToOverview">
                                     Übernehmen
                                 </v-btn>
+                                <v-btn
+                                    v-if="generatedTimetableActionButtonsVisible"
+                                    class="robot-generated-back-button"
+                                    color="grey-darken-1"
+                                    variant="tonal"
+                                    size="large"
+                                    prepend-icon="mdi-arrow-left"
+                                    :disabled="timetableGenerationLoading"
+                                    @click="returnToCourseSelectionFromGeneratedTimetable">
+                                    Zurück
+                                </v-btn>
                                 <div
                                     v-if="selectedTimetableResultCount > 0 && $slots['timetable-selector-start']"
                                     class="robot-timetable-selector-start">

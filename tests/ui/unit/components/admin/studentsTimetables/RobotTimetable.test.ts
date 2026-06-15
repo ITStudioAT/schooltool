@@ -91,6 +91,10 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('font-weight: 400;')
         expect(componentSource).toContain('prepend-icon="mdi-arrow-left"')
         expect(componentSource).toContain('@click="returnToCourseSelectionFromGeneratedTimetable"')
+        expect(componentSource.match(/class="robot-generated-back-button"/g)?.length).toBe(2)
+        expect(componentSource.indexOf('class="robot-generated-back-button"')).toBeLessThan(
+            componentSource.indexOf('class="robot-timetable-selector-start"'),
+        )
         expect(componentSource).toContain('Übernehmen')
         expect(componentSource).toContain('class="robot-generated-overtake-button"')
         expect(componentSource).toContain('variant="flat"')

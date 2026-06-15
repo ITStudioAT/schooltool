@@ -254,10 +254,22 @@
                                 Ende/Neustart
                             </v-btn>
                         </template>
-                        <template #course-actions="{ ready, loading, extending, createActionVisible, hasSelectedAdditionalCourses, extensionActionVisible }">
+                        <template #course-actions="{ ready, loading, extending, createActionVisible, hasSelectedAdditionalCourses }">
                             <div
-                                v-if="ready && createActionVisible && (!extending || (hasSelectedAdditionalCourses && extensionActionVisible))"
+                                v-if="ready && (createActionVisible || (extending && hasSelectedAdditionalCourses))"
                                 class="overview-wizard-footer">
+                                <div
+                                    v-if="wizardTimetableCreating"
+                                    class="overview-wizard-loading overview-wizard-loading--creating"
+                                    role="status"
+                                    aria-live="polite">
+                                    <v-progress-circular
+                                        indeterminate
+                                        size="18"
+                                        width="2"
+                                        color="success" />
+                                    <span>{{ extending ? 'Stundenplan wird erweitert...' : 'Stundenplan wird erstellt...' }}</span>
+                                </div>
                                 <v-btn
                                     class="overview-wizard-close-button overview-wizard-cancel-button overview-wizard-close-button--calm"
                                     variant="tonal"
@@ -300,6 +312,18 @@
                                         color="primary" />
                                     <span>Kurse werden geladen</span>
                                 </div>
+                            </div>
+                            <div
+                                v-if="wizardTimetableCreating"
+                                class="overview-wizard-screen-loading"
+                                role="status"
+                                aria-label="Stundenplan wird berechnet"
+                                aria-live="polite">
+                                <span
+                                    v-for="dot in 3"
+                                    :key="dot"
+                                    class="overview-wizard-screen-loading__dot"
+                                    aria-hidden="true" />
                             </div>
                         </template>
                     </RobotTimetable>
@@ -5963,6 +5987,9 @@ export default {
 
 .overview-wizard-footer {
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
     justify-content: flex-end;
     margin: -6px 0 16px;
 }
@@ -5976,6 +6003,65 @@ export default {
     color: #334155;
     font-size: 0.82rem;
     font-weight: 800;
+}
+
+.overview-wizard-loading--creating {
+    margin-right: auto;
+    color: #166534;
+}
+
+.overview-wizard-screen-loading {
+    position: fixed;
+    inset: 0;
+    z-index: 2400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    pointer-events: none;
+}
+
+.overview-wizard-screen-loading::before {
+    content: "";
+    position: absolute;
+    width: 106px;
+    height: 56px;
+    border: 1px solid rgba(22, 101, 52, 0.16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+}
+
+.overview-wizard-screen-loading__dot {
+    position: relative;
+    z-index: 1;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #16a34a;
+    animation: overview-wizard-dot-pulse 0.9s ease-in-out infinite;
+}
+
+.overview-wizard-screen-loading__dot:nth-child(2) {
+    animation-delay: 0.14s;
+}
+
+.overview-wizard-screen-loading__dot:nth-child(3) {
+    animation-delay: 0.28s;
+}
+
+@keyframes overview-wizard-dot-pulse {
+    0%,
+    80%,
+    100% {
+        opacity: 0.35;
+        transform: translateY(0) scale(0.82);
+    }
+
+    40% {
+        opacity: 1;
+        transform: translateY(-6px) scale(1);
+    }
 }
 
 .overview-selection-dialog-grid {
