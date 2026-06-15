@@ -437,8 +437,14 @@ class StudentsTimetablesStudentController extends Controller
             'selected_course_keys' => $selectedCourseKeys,
             'deselected_course_keys' => [],
             'deselected_course_group_keys' => [],
+            'available_additional_course_keys' => collect($summary['additional_courses'] ?? [])
+                ->pluck('key')
+                ->map(fn (mixed $courseKey): string => (string) $courseKey)
+                ->filter()
+                ->values()
+                ->all(),
             'selected_additional_course_keys' => $selectedAdditionalCourseKeys,
-            'selected_additional_courses_required' => $selectedAdditionalCoursesRequired,
+            'selected_additional_courses_required' => $selectedAdditionalCoursesRequired && $selectedAdditionalCourseKeys !== [],
             'selected_timetable_type' => $selectedTimetableType ?? 'full_green',
             'selected_timetable_number' => $selectedTimetableNumber,
             'include_quality_counters' => true,

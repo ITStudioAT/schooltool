@@ -5384,7 +5384,7 @@ export default {
 
             const assignedSlots = this.selectedRobotTimetable.slots || {}
 
-            return courseGroups.some(courseGroup => this.assignedSlotConfrontsCourseGroup(assignedSlots, courseGroup))
+            return courseGroups.some(courseGroup => this.assignedSlotBlocksCourseGroup(assignedSlots, courseGroup))
         },
         selectedTimetableScheduledCourseGroups() {
             const timetable = this.selectedRobotTimetable
@@ -8849,6 +8849,14 @@ export default {
 
             return this.assignedSlotEntries(assignedSlot).some(entry =>
                 this.courseGroupsConfront(entry.courseGroup, courseGroup),
+            )
+        },
+        assignedSlotBlocksCourseGroup(assignedSlots, courseGroup) {
+            const assignedSlot = assignedSlots[this.slotKey(courseGroup.weekday, courseGroup.hour)]
+            if (!assignedSlot) return false
+
+            return this.assignedSlotEntries(assignedSlot).some(entry =>
+                this.courseGroupsBlockTimetableSlot(entry.courseGroup, courseGroup),
             )
         },
         assignedSlotEntries(slot) {

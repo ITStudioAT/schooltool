@@ -811,17 +811,38 @@ export default {
                 .filter(section => String(section?.key || '') !== 'additional')
         },
         additionalCourseSections() {
+            const isAdditionalCourseHidden = typeof this.additionalCourseHiddenForSelectedTimetable === 'function'
+                ? course => this.additionalCourseHiddenForSelectedTimetable(course)
+                : () => false
+
             return this.displayedCourseSections
                 .filter(section => String(section?.key || '') === 'additional')
                 .map(section => ({
                     ...section,
-                    items: Array.isArray(section?.items) ? section.items : [],
+                    items: (Array.isArray(section?.items) ? section.items : [])
+                        .filter(course => !isAdditionalCourseHidden(course)),
                 }))
                 .filter(section => section.items.length > 0)
         },
         additionalCourses() {
             return this.additionalCourseSections
                 .flatMap(section => section.items)
+        },
+        selectedVisibleAdditionalCourseKeys() {
+            const visibleAdditionalCourseKeys = new Set(this.additionalCourses.map(course => this.courseSelectionKey(course)))
+
+            return this.selectedAdditionalCourseKeys.filter(courseKey => visibleAdditionalCourseKeys.has(courseKey))
+        },
+        hiddenGeneratedAdditionalCourseKeySet() {
+            return new Set([
+                ...(Array.isArray(this.timetableCounts?.conflicting_additional_course_keys)
+                    ? this.timetableCounts.conflicting_additional_course_keys
+                    : []),
+                ...this.hiddenGeneratedAdditionalCourses()
+                    .flatMap(course => this.courseComparisonKeys(course)),
+            ]
+                .map(courseKey => this.normalizedCourseCode(courseKey))
+                .filter(Boolean))
         },
         additionalCoursePanelVisible() {
             return this.currentStep === 'result'
@@ -1189,6 +1210,55 @@ export default {
                 course?.hours ?? course?.hours_per_week ?? '',
             ].join('|'))
         },
+        normalizedCourseCode(value) {
+            return String(value || '').trim().toUpperCase().replace(/\s+/g, '')
+        },
+        courseCodeAliases(course) {
+            return [
+                course?.code,
+                course?.ttCode,
+                ...(Array.isArray(course?.ttCodes) ? course.ttCodes : []),
+            ]
+                .flatMap(courseCode => String(courseCode || '').split('/'))
+                .map(courseCode => this.normalizedCourseCode(courseCode))
+                .filter(Boolean)
+                .filter((courseCode, index, courseCodes) => courseCodes.indexOf(courseCode) === index)
+        },
+        courseComparisonKeys(course) {
+            return [
+                this.courseSelectionKey(course),
+                course?.key,
+                course?.code,
+                ...(Array.isArray(course?.alternativeLabels) ? course.alternativeLabels : []),
+                ...(Array.isArray(course?.ttCodes) ? course.ttCodes : []),
+                ...this.courseCodeAliases(course),
+            ]
+                .map(value => String(value || '').trim())
+                .filter(Boolean)
+                .map(value => this.normalizedCourseCode(value) || value)
+                .filter((value, index, values) => values.indexOf(value) === index)
+        },
+        additionalCourseHiddenForSelectedTimetable(course) {
+            const hiddenCourseKeys = this.hiddenGeneratedAdditionalCourseKeySet
+
+            return hiddenCourseKeys.size > 0
+                && this.courseComparisonKeys(course).some(courseKey => hiddenCourseKeys.has(courseKey))
+        },
+        hiddenGeneratedAdditionalCourses() {
+            const missingAdditionalCourses = Array.isArray(this.generatedTimetable?.missingAdditionalCourses)
+                ? this.generatedTimetable.missingAdditionalCourses
+                : []
+
+            return [
+                ...missingAdditionalCourses,
+                ...this.generatedAdditionalConflictCourses(),
+            ]
+        },
+        generatedAdditionalConflictCourses() {
+            return Object.values(this.generatedTimetable?.slots || {})
+                .flatMap(slot => this.generatedSlotVisualConflictBlocks(slot))
+                .filter(block => block?.isAdditionalCourse === true)
+        },
 
         courseSelected(course) {
             return this.selectedCourseKeys.includes(this.courseSelectionKey(course))
@@ -1332,8 +1402,8 @@ export default {
             try {
                 const response = await axios.post('/api/homepage/students-timetables/automatic-timetable', {
                     selected_course_keys: this.selectedCourseKeys,
-                    selected_additional_course_keys: this.selectedAdditionalCourseKeys,
-                    selected_additional_courses_required: this.selectedAdditionalCourseKeys.length > 0,
+                    selected_additional_course_keys: this.selectedVisibleAdditionalCourseKeys,
+                    selected_additional_courses_required: this.selectedVisibleAdditionalCourseKeys.length > 0,
                     selected_quality_criterion_keys: this.selectedQualityCriterionKeys,
                     selected_timetable_type: this.selectedTimetableType,
                     selected_timetable_number: this.selectedTimetableNumber,
@@ -1345,6 +1415,7 @@ export default {
                 this.timetableCounts = response.data?.data || {}
                 this.selectedTimetableType = this.generatedTimetable?.type || this.selectedTimetableType
                 this.selectedTimetableNumber = this.normalizedTimetableNumber(this.generatedTimetable?.number)
+                this.removeHiddenAdditionalCourseSelections()
                 this.additionalCourseSelectionChangedAfterTimetable = false
                 this.moveToStep('result')
             } catch (error) {
@@ -1371,6 +1442,17 @@ export default {
                 this.additionalCourseSelectionLocked = false
                 this.commitAdditionalCourseSelectionChange()
             }
+        },
+
+        removeHiddenAdditionalCourseSelections() {
+            if (!this.selectedAdditionalCourseKeys.length) {
+                return
+            }
+
+            const visibleAdditionalCourseKeys = new Set(this.additionalCourses.map(course => this.courseSelectionKey(course)))
+
+            this.selectedAdditionalCourseKeys = this.selectedAdditionalCourseKeys
+                .filter(courseKey => visibleAdditionalCourseKeys.has(courseKey))
         },
 
         ensureAutomaticTimetableForResultStep() {

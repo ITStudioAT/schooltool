@@ -542,8 +542,8 @@ describe('Student timetable evaluation settings', () => {
 
         expect(source).toContain("axios.post('/api/homepage/students-timetables/automatic-timetable'")
         expect(source).toContain('selected_course_keys: this.selectedCourseKeys')
-        expect(source).toContain('selected_additional_course_keys: this.selectedAdditionalCourseKeys')
-        expect(source).toContain('selected_additional_courses_required: this.selectedAdditionalCourseKeys.length > 0')
+        expect(source).toContain('selected_additional_course_keys: this.selectedVisibleAdditionalCourseKeys')
+        expect(source).toContain('selected_additional_courses_required: this.selectedVisibleAdditionalCourseKeys.length > 0')
         expect(source).toContain('selected_quality_criterion_keys: this.selectedQualityCriterionKeys')
         expect(source).toContain('selected_timetable_type: this.selectedTimetableType')
         expect(source).toContain('selected_timetable_number: this.selectedTimetableNumber')
@@ -571,6 +571,54 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('generatedAdditionalCourseAcceptanceLabel()')
         expect(source).toContain('generatedAdditionalCourseAcceptanceIcon()')
         expect(source).toContain('Stundenpläne')
+    })
+
+    it('hides fully conflicting additional courses from the result panel', () => {
+        const methods = (StudentTimetableEvaluationSettings as any).methods
+        const computed = (StudentTimetableEvaluationSettings as any).computed
+        const ctx = {
+            currentStep: 'result',
+            generatedTimetable: { slots: {} },
+            selectedAdditionalCourseKeys: ['additional-red', 'additional-green'],
+            timetableCounts: {
+                conflicting_additional_course_keys: ['additional-red'],
+            },
+            courseSections: [
+                {
+                    key: 'additional',
+                    title: 'ZusÃ¤tzliche Kurse',
+                    items: [
+                        { key: 'additional-red', code: 'D2' },
+                        { key: 'additional-green', code: 'M2' },
+                    ],
+                },
+            ],
+            courseSelectionKey: methods.courseSelectionKey,
+            normalizedCourseCode: methods.normalizedCourseCode,
+            courseCodeAliases: methods.courseCodeAliases,
+            courseComparisonKeys: methods.courseComparisonKeys,
+            hiddenGeneratedAdditionalCourses: methods.hiddenGeneratedAdditionalCourses,
+            generatedAdditionalConflictCourses: methods.generatedAdditionalConflictCourses,
+            additionalCourseHiddenForSelectedTimetable: methods.additionalCourseHiddenForSelectedTimetable,
+            generatedSlotVisualConflictBlocks: () => [],
+            get displayedCourseSections() {
+                return computed.displayedCourseSections.call(ctx)
+            },
+            get additionalCourseSections() {
+                return computed.additionalCourseSections.call(ctx)
+            },
+            get additionalCourses() {
+                return computed.additionalCourses.call(ctx)
+            },
+            get hiddenGeneratedAdditionalCourseKeySet() {
+                return computed.hiddenGeneratedAdditionalCourseKeySet.call(ctx)
+            },
+        }
+
+        expect(computed.additionalCourses.call(ctx)).toEqual([
+            { key: 'additional-green', code: 'M2' },
+        ])
+        expect(computed.selectedVisibleAdditionalCourseKeys.call(ctx)).toEqual(['additional-green'])
     })
 
     it('shows current timetable criterion status independently from the checkbox selection', () => {

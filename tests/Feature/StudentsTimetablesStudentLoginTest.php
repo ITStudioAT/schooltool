@@ -313,7 +313,7 @@ it('returns the student timetable overview summary for the authenticated import1
         ->getJson('/api/homepage/students-timetables/overview')
         ->assertSuccessful()
         ->assertJsonPath('data.selection.semester', 1)
-        ->assertJsonPath('data.selection.branch', null)
+        ->assertJsonPath('data.selection.branch', 'wirtschaftskundlich')
         ->assertJsonPath('data.selection.religion', 'ETH')
         ->assertJsonPath('data.student.religion', 'Rk')
         ->assertJsonPath('data.selection_items.0.value', 'Semester 1')
@@ -657,6 +657,186 @@ it('creates the first automatic timetable for the authenticated student', functi
         ->assertJsonPath('data.selected_timetable.slots.1-11.code', 'D1')
         ->assertJsonPath('data.selected_timetable.slots.1-12.code', 'D2')
         ->assertJsonPath('data.selected_timetable.slots.1-11.courseGroup.teacher', 'MUE');
+});
+
+it('flags fully conflicting additional courses for the authenticated student', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $import116->forceFill([
+        'school_level' => '09_1',
+        'attendance_year' => null,
+    ])->save();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 1,
+        'branch' => 'common',
+        'json_code' => 'D1',
+        'json_subject' => 'D',
+        'name' => 'Deutsch',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => 1,
+    ]);
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 2,
+        'branch' => 'common',
+        'json_code' => 'D2',
+        'json_subject' => 'D',
+        'name' => 'Deutsch',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => 2,
+    ]);
+
+    foreach ([1 => 'D1', 2 => 'D2'] as $semester => $courseCode) {
+        StudentTimetableEntry::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'date' => '2025-09-08',
+            'semester' => $semester,
+            'period' => '11',
+            'subject' => $courseCode,
+            'course' => $courseCode,
+            'teacher' => 'MUE',
+            'room' => '101',
+            'class_name' => "{$courseCode} - 4A - MUE",
+            'is_active' => true,
+        ]);
+    }
+
+    $overviewResponse = $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful();
+
+    $selectedCourseKey = $overviewResponse->json('data.proposed_courses.0.key');
+    $conflictingAdditionalCourseKey = $overviewResponse->json('data.additional_courses.0.key');
+
+    $this->actingAs($user)
+        ->postJson('/api/homepage/students-timetables/automatic-timetable', [
+            'selected_course_keys' => [$selectedCourseKey],
+            'selected_quality_criterion_keys' => ['saturday_free'],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.selected_timetable.type', 'full_green')
+        ->assertJsonPath('data.conflicting_additional_course_keys.0', $conflictingAdditionalCourseKey);
+});
+
+it('does not flag additional courses as fully conflicting when only an occasional appointment uses the slot', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $import116->forceFill([
+        'school_level' => '09_1',
+        'attendance_year' => null,
+    ])->save();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    foreach ([
+        [1, 'D1', 'D', 'Deutsch', 1],
+        [1, 'LPT', 'LPT', 'LPT', 1],
+        [2, 'INF2', 'INF', 'Informatik', 1],
+    ] as [$semester, $jsonCode, $jsonSubject, $name, $hoursPerWeek]) {
+        StudentTimetableSubjectRow::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'semester' => $semester,
+            'branch' => 'common',
+            'json_code' => $jsonCode,
+            'json_subject' => $jsonSubject,
+            'name' => $name,
+            'hours_per_week' => $hoursPerWeek,
+            'is_active' => true,
+            'sort_order' => $semester,
+        ]);
+    }
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2025-09-08',
+        'semester' => 1,
+        'period' => '11',
+        'subject' => 'D1',
+        'course' => 'D1',
+        'teacher' => 'MUE',
+        'room' => '101',
+        'class_name' => 'D1 - 4A - MUE',
+        'is_active' => true,
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2025-09-12',
+        'semester' => 1,
+        'period' => '14',
+        'subject' => 'LPT',
+        'course' => 'LPT',
+        'teacher' => 'HER',
+        'room' => '101',
+        'class_name' => 'LPT - 4A - HER',
+        'is_active' => true,
+    ]);
+
+    foreach (['2025-09-12', '2025-09-19', '2025-09-26'] as $date) {
+        StudentTimetableEntry::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'date' => $date,
+            'semester' => 2,
+            'period' => '14',
+            'subject' => 'INF2',
+            'course' => 'INF2',
+            'teacher' => 'MAY',
+            'room' => '101',
+            'class_name' => 'INF2 - 4A - MAY',
+            'is_active' => true,
+        ]);
+    }
+
+    $overviewResponse = $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful();
+
+    $selectedCourseKeys = collect($overviewResponse->json('data.proposed_courses'))
+        ->whereIn('code', ['D1', 'LPT'])
+        ->pluck('key')
+        ->values()
+        ->all();
+
+    expect($selectedCourseKeys)->toHaveCount(2);
+
+    $this->actingAs($user)
+        ->postJson('/api/homepage/students-timetables/automatic-timetable', [
+            'selected_course_keys' => $selectedCourseKeys,
+            'selected_quality_criterion_keys' => ['saturday_free'],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.selected_timetable.type', 'full_green')
+        ->assertJsonPath('data.conflicting_additional_course_keys', []);
 });
 
 function studentsTimetablesStudentLoginSetup(): array

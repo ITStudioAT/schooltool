@@ -3739,6 +3739,54 @@ describe('Students timetable robot page', () => {
         expect(methods.optionHasBlockingUsedSlot.call(ctx, regularOption, assignedSlots, new Set(['2-14']))).toBe(false)
     })
 
+    it('does not mark additional courses red when only a one-off appointment uses the slot', () => {
+        const methods = (RobotTimetable as any).methods
+        const course = { key: 'INF2', code: 'INF2', ttCodes: ['INF2'], name: 'Informatik 2', hours: 2 }
+        const group = {
+            key: 'INF2|INF2-4QS+7K-MAY',
+            title: 'INF2-4QS+7K-MAY',
+            courseGroups: [
+                {
+                    key: 'inf2-fr-14',
+                    class_name: 'INF2-4QS+7K-MAY',
+                    course: 'INF2',
+                    subject: 'INF',
+                    weekday: 5,
+                    hour: 14,
+                    dates_count: 18,
+                },
+            ],
+        }
+        const ctx = {
+            ...methods,
+            selectedRobotTimetable: {
+                slots: {
+                    '5-14': {
+                        key: 'LPT',
+                        code: 'LPT',
+                        sourceLabel: 'LPT-1U-HER',
+                        courseGroup: {
+                            key: 'lpt-fr-14',
+                            class_name: 'LPT-1U-HER',
+                            course: 'LPT',
+                            subject: 'LPT',
+                            weekday: 5,
+                            hour: 14,
+                            dates: ['2026-02-20'],
+                            dates_count: 1,
+                        },
+                    },
+                },
+            },
+            courseGroupItems() {
+                return [group]
+            },
+        }
+
+        expect(methods.courseGroupNoLongerFitsSelectedTimetable.call(ctx, course, group)).toBe(false)
+        expect(methods.courseAllGroupsNoLongerFitSelectedTimetable.call(ctx, course)).toBe(false)
+    })
+
     it('keeps regular timetable cells visible when one-off appointments overlap them', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {

@@ -20,6 +20,8 @@ class StudentTimetablesStudentOverviewService
         'additional' => '#0288D1',
     ];
 
+    private const DEFAULT_BRANCH = 'wirtschaftskundlich';
+
     public function __construct(
         protected StudentTimetableCompletedCourseHistoryService $completedCourseHistoryService,
         protected StudentTimetableOverviewService $overviewService,
@@ -724,15 +726,19 @@ class StudentTimetablesStudentOverviewService
         return $semesterBySchoolLevel[$schoolLevel] ?? null;
     }
 
-    private function studentBranch(?Import116 $student): ?string
+    private function studentBranch(?Import116 $student): string
     {
-        $schoolLevel = trim((string) $student?->school_level);
+        $schoolLevel = mb_strtolower(trim((string) $student?->school_level), 'UTF-8');
 
-        if ($this->studentSchoolLevelKey($student) !== '') {
-            return null;
+        if (str_contains($schoolLevel, 'gymnasial')) {
+            return 'gymnasial';
         }
 
-        return $schoolLevel !== '' ? $schoolLevel : null;
+        if (str_contains($schoolLevel, 'wirtschaft')) {
+            return self::DEFAULT_BRANCH;
+        }
+
+        return self::DEFAULT_BRANCH;
     }
 
     private function studentSchoolLevelKey(?Import116 $student): string
@@ -1021,10 +1027,7 @@ class StudentTimetablesStudentOverviewService
      */
     private function subjectMatchesSelection(StudentTimetableSubjectRow $row, array $selection): bool
     {
-        $branch = trim((string) $row->branch);
-        $selectedBranch = trim((string) ($selection['branch'] ?? ''));
-
-        if ($branch !== '' && $branch !== 'common' && $selectedBranch !== '' && $branch !== $selectedBranch) {
+        if (! $this->subjectMatchesSelectedBranch($row, $selection)) {
             return false;
         }
 
@@ -1039,6 +1042,21 @@ class StudentTimetablesStudentOverviewService
         }
 
         return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $selection
+     */
+    private function subjectMatchesSelectedBranch(StudentTimetableSubjectRow $row, array $selection): bool
+    {
+        $branch = trim((string) $row->branch);
+        $selectedBranch = trim((string) ($selection['branch'] ?? ''));
+
+        if ($this->isArtsSubject($row)) {
+            return $branch === 'gymnasial' && $selectedBranch === 'gymnasial';
+        }
+
+        return $branch === '' || $branch === 'common' || $branch === $selectedBranch;
     }
 
     /**
@@ -1209,7 +1227,13 @@ class StudentTimetablesStudentOverviewService
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $regularCourseCodes))
             ->filter(fn (array $course): bool => $this->coursePossibleAsStudentAdditional($course, $completedCourseCodes, $visitedCourseCodes, $plannedCourseCodes))
             ->unique(fn (array $course): string => (string) $course['key'])
-            ->sort(fn (array $firstCourse, array $secondCourse): int => strnatcasecmp((string) $firstCourse['code'], (string) $secondCourse['code']))
+            ->sort(function (array $firstCourse, array $secondCourse): int {
+                $semesterComparison = (int) ($firstCourse['semester'] ?? 0) <=> (int) ($secondCourse['semester'] ?? 0);
+
+                return $semesterComparison !== 0
+                    ? $semesterComparison
+                    : strnatcasecmp((string) $firstCourse['code'], (string) $secondCourse['code']);
+            })
             ->values()
             ->all();
     }

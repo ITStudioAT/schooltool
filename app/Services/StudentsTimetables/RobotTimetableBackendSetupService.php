@@ -46,7 +46,7 @@ class RobotTimetableBackendSetupService
         $variationResult = $this->calculateTimetableVariations(
             subjectRows: $subjectRows,
             subjectMappings: $subjectMappings,
-            courseGroups: $overviewService->courseGroupsForUser($authUser),
+            courseGroups: $courseGroups = $overviewService->courseGroupsForUser($authUser),
             settings: $settings,
             evaluationCriteria: $evaluationCriteria,
             selectedQualityCriterionKeys: $selectedQualityCriterionKeys,
@@ -73,7 +73,106 @@ class RobotTimetableBackendSetupService
             'quality_counters' => $variationResult['quality_counters'],
             'all_quality_criteria_count' => $variationResult['all_quality_criteria_count'],
             'selected_quality_criteria_count' => $variationResult['selected_quality_criteria_count'],
+            'conflicting_additional_course_keys' => $this->conflictingAdditionalCourseKeys(
+                $subjectRows,
+                $subjectMappings,
+                $courseGroups,
+                $settings,
+                $variationResult['selected_timetable'],
+            ),
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @return list<string>
+     */
+    public function conflictingAdditionalCourseKeys(
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+        ?array $selectedTimetable,
+    ): array {
+        if (! $selectedTimetable) {
+            return [];
+        }
+
+        $availableAdditionalCourseKeys = $this->stringList($settings['available_additional_course_keys'] ?? []);
+        if ($availableAdditionalCourseKeys === []) {
+            return [];
+        }
+
+        $additionalCourseSettings = [
+            ...$settings,
+            'selected_course_keys' => $availableAdditionalCourseKeys,
+            'selected_additional_course_keys' => [],
+        ];
+        $selectedCourseKeys = $this->stringList($settings['selected_course_keys'] ?? []);
+        $selectedCourseKeySet = array_flip($selectedCourseKeys);
+        $occupiedCourseGroups = $this->selectedTimetableOccupiedCourseGroups($selectedTimetable);
+
+        return collect($this->selectedCourses($subjectRows, $subjectMappings, $courseGroups, $additionalCourseSettings))
+            ->reject(fn (array $course): bool => isset($selectedCourseKeySet[(string) ($course['key'] ?? '')]))
+            ->filter(function (array $course) use ($courseGroups, $subjectMappings, $settings, $occupiedCourseGroups): bool {
+                $options = $this->courseOptions($course, $courseGroups, $subjectMappings, $settings);
+
+                return $options !== []
+                    && collect($options)->every(fn (array $option): bool => $this->courseOptionConflictsWithSelectedTimetable(
+                        $option,
+                        $occupiedCourseGroups,
+                    ));
+            })
+            ->pluck('key')
+            ->map(fn (mixed $courseKey): string => (string) $courseKey)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $option
+     * @param  list<array<string, mixed>>  $occupiedCourseGroups
+     */
+    private function courseOptionConflictsWithSelectedTimetable(array $option, array $occupiedCourseGroups): bool
+    {
+        if (($option['all_date_summary']['has_overlap'] ?? false) === true) {
+            return true;
+        }
+
+        return collect($option['course_groups'] ?? [])
+            ->contains(fn (array $courseGroup): bool => collect($occupiedCourseGroups)
+                ->contains(fn (array $occupiedCourseGroup): bool => $this->courseGroupsBlockTimetableSlot(
+                    $occupiedCourseGroup,
+                    $courseGroup,
+                )));
+    }
+
+    /**
+     * @param  array<string, mixed>  $selectedTimetable
+     * @return list<array<string, mixed>>
+     */
+    private function selectedTimetableOccupiedCourseGroups(array $selectedTimetable): array
+    {
+        return collect($selectedTimetable['slots'] ?? [])
+            ->flatMap(function (array $slot): array {
+                return [
+                    $slot['courseGroup'] ?? null,
+                    ...collect($slot['sameSlotEntries'] ?? [])
+                        ->pluck('courseGroup')
+                        ->all(),
+                    ...collect($slot['conflicts'] ?? [])
+                        ->pluck('courseGroup')
+                        ->all(),
+                ];
+            })
+            ->filter(fn (mixed $courseGroup): bool => is_array($courseGroup))
+            ->values()
+            ->all();
     }
 
     /**
@@ -2465,6 +2564,39 @@ class RobotTimetableBackendSetupService
         return $firstSummary['has_overlap']
             || $secondSummary['has_overlap']
             || $this->dateKeySummariesOverlap($firstSummary, $secondSummary);
+    }
+
+    /**
+     * @param  array<string, mixed>  $firstCourseGroup
+     * @param  array<string, mixed>  $secondCourseGroup
+     */
+    private function courseGroupsBlockTimetableSlot(array $firstCourseGroup, array $secondCourseGroup): bool
+    {
+        if (! $this->courseGroupsShareWeekdayTime($firstCourseGroup, $secondCourseGroup)) {
+            return false;
+        }
+
+        return ! $this->courseGroupsMixRegularAndOccasional($firstCourseGroup, $secondCourseGroup)
+            && $this->courseGroupsDateSlotOverlap($firstCourseGroup, $secondCourseGroup);
+    }
+
+    /**
+     * @param  array<string, mixed>  $firstCourseGroup
+     * @param  array<string, mixed>  $secondCourseGroup
+     */
+    private function courseGroupsShareWeekdayTime(array $firstCourseGroup, array $secondCourseGroup): bool
+    {
+        return (int) ($firstCourseGroup['weekday'] ?? 0) === (int) ($secondCourseGroup['weekday'] ?? 0)
+            && (int) ($firstCourseGroup['hour'] ?? 0) === (int) ($secondCourseGroup['hour'] ?? 0);
+    }
+
+    /**
+     * @param  array<string, mixed>  $firstCourseGroup
+     * @param  array<string, mixed>  $secondCourseGroup
+     */
+    private function courseGroupsMixRegularAndOccasional(array $firstCourseGroup, array $secondCourseGroup): bool
+    {
+        return $this->isOccasionalCourseGroup($firstCourseGroup) !== $this->isOccasionalCourseGroup($secondCourseGroup);
     }
 
     /**
