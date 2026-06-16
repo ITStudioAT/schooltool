@@ -384,6 +384,36 @@ describe('Students timetable overview', () => {
                     subject: 'GWB',
                 },
                 {
+                    key: 'gs',
+                    semester: 1,
+                    weekday: 3,
+                    hour: 4,
+                    course: 'GSGPB',
+                    title: 'GSGPB',
+                    display_label: 'GSGPB1 - 1A - ABC',
+                    subject: 'GSGPB',
+                },
+                {
+                    key: 'me',
+                    semester: 1,
+                    weekday: 4,
+                    hour: 4,
+                    course: 'MEMU',
+                    title: 'MEMU',
+                    display_label: 'ME1 - 1A - ABC',
+                    subject: 'MEMU',
+                },
+                {
+                    key: 'oko',
+                    semester: 1,
+                    weekday: 5,
+                    hour: 1,
+                    course: 'OKON',
+                    title: 'OKON',
+                    display_label: 'ÖKO1 - PLA',
+                    subject: 'OKON',
+                },
+                {
                     key: 'f',
                     semester: 2,
                     weekday: 4,
@@ -437,7 +467,7 @@ describe('Students timetable overview', () => {
         const semesterOneMenus = methods.semesterCourseMenus.call(ctx, 1)
 
         expect(semesterOneMenus.map((courseMenu: Record<string, string>) => courseMenu.label))
-            .toEqual(['ETH', 'GWB'])
+            .toEqual(['ETH', 'GS', 'GWB', 'ME', 'ÖKO'])
         expect(semesterOneMenus[0].entries.map((entry: Record<string, string>) => entry.label))
             .toEqual(['ETH1 - 1RU - PLOEC', 'ETH2 - 2RU - PLOEC'])
         expect(semesterOneMenus[0].entries[1].courseGroupKeys)
@@ -3530,6 +3560,147 @@ describe('Students timetable overview', () => {
 
         expect(methods.buildSemesterCourseMenus.call(ctx, 1).map((courseMenu: Record<string, string>) => courseMenu.label))
             .toEqual([])
+    })
+
+    it('uses the correct adopted timetable course picker items for every restriction tab', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            restrictCourseChoiceBySelection: true,
+            courseChoiceRestrictionMode: 'missing',
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            configuredSchoolHours: [],
+            weekdays: [{ label: 'Mo', value: 1 }],
+            subjectRows: [
+                { id: 1, is_active: true, semester: 6, json_subject: 'CH', json_code: 'CH2', name: 'Chemie', branch: 'common', hours_per_week: 2 },
+                { id: 2, is_active: true, semester: 6, json_subject: 'D', json_code: 'D6', name: 'Deutsch', branch: 'common', hours_per_week: 3 },
+                { id: 3, is_active: true, semester: 6, json_subject: 'M', json_code: 'M6', name: 'Mathematik', branch: 'common', hours_per_week: 4 },
+                { id: 4, is_active: true, semester: 6, json_subject: 'PH', json_code: 'PH2', name: 'Physik', branch: 'common', hours_per_week: 2 },
+                { id: 5, is_active: true, semester: 6, json_subject: 'PP', json_code: 'PP2', name: 'Projekt', branch: 'common', hours_per_week: 2 },
+                { id: 6, is_active: true, semester: 6, json_subject: 'ETH', json_code: 'ETH5', name: 'Ethik', branch: 'common', hours_per_week: 2 },
+            ],
+            activeCourseGroupFilterKeys: ['d-6', 'pp-2'],
+            configuredCourseGroups: [
+                { key: 'ch-2', semester: 2, weekday: 1, hour: 1, course: 'CH2', display_label: 'CH2 - TEST', subject: 'CH' },
+                { key: 'd-6', semester: 2, weekday: 1, hour: 2, course: 'D6', display_label: 'D6 - TEST', subject: 'D' },
+                { key: 'd-dk', semester: 2, weekday: 1, hour: 8, course: 'D_DK', display_label: 'D_DK - TEST', subject: 'D_DK' },
+                { key: 'daf', semester: 2, weekday: 1, hour: 9, course: 'DAF', display_label: 'DAF - TEST', subject: 'DAF' },
+                { key: 'm-6', semester: 2, weekday: 1, hour: 3, course: 'M6', display_label: 'M6 - TEST', subject: 'M' },
+                { key: 'm-dk', semester: 2, weekday: 1, hour: 10, course: 'M_DK', display_label: 'M_DK - TEST', subject: 'M_DK' },
+                { key: 'ph-2', semester: 2, weekday: 1, hour: 4, course: 'PH2', display_label: 'PH2 - TEST', subject: 'PH' },
+                { key: 'pp-2', semester: 2, weekday: 1, hour: 5, course: 'PP2', display_label: 'PP2 - TEST', subject: 'PP' },
+                { key: 'eth-5', semester: 2, weekday: 1, hour: 6, course: 'ETH5', display_label: 'ETH5 - TEST', subject: 'ETH' },
+                { key: 'rk-5', semester: 2, weekday: 1, hour: 7, course: 'Rk5', display_label: 'Rk5 - TEST', subject: 'Rk' },
+            ],
+            transferredStudentContext: {
+                courses: {
+                    completed: [],
+                    missing: [{ code: 'CH2', label: 'CH2' }],
+                    planned: [{ code: 'D6', label: 'D6' }],
+                    additional: [{ code: 'PH2', label: 'PH2' }],
+                },
+            },
+            $route: {
+                params: {
+                    detail: 'adopted',
+                },
+            },
+        }
+
+        Object.defineProperty(ctx, 'adoptedTimetableOverviewActive', {
+            get() {
+                return computed.adoptedTimetableOverviewActive.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'activeCourseGroupFilterKeySet', {
+            get() {
+                return computed.activeCourseGroupFilterKeySet.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'completedStudentCourseCodes', {
+            get() {
+                return computed.completedStudentCourseCodes.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'availableCourseChoiceCourseGroups', {
+            get() {
+                return computed.availableCourseChoiceCourseGroups.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'effectiveCourseChoiceRestrictionMode', {
+            get() {
+                return computed.effectiveCourseChoiceRestrictionMode.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceRestrictionCourses', {
+            get() {
+                return computed.courseChoiceRestrictionCourses.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'selectionCourseChoiceCodes', {
+            get() {
+                return computed.selectionCourseChoiceCodes.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'restrictedStudentCourseCodes', {
+            get() {
+                return computed.restrictedStudentCourseCodes.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceRestrictionContext', {
+            get() {
+                return computed.courseChoiceRestrictionContext.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'courseChoiceCourseGroups', {
+            get() {
+                return computed.courseChoiceCourseGroups.call(this)
+            },
+        })
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['CH'])
+
+        ctx.courseChoiceRestrictionMode = 'planned'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['D'])
+
+        ctx.courseChoiceRestrictionMode = 'additional'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['PH', 'PP'])
+
+        ctx.courseChoiceRestrictionMode = 'all'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['CH', 'D', 'D_DK', 'ETH', 'M', 'M_DK', 'PH', 'PP'])
+
+        ctx.courseChoiceRestrictionMode = 'all_available'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['CH', 'D', 'D_DK', 'DAF', 'ETH', 'M', 'M_DK', 'PH', 'PP', 'Rk'])
+
+        ctx.transferredStudentContext.courses.missing = []
+        ctx.courseChoiceRestrictionMode = 'missing'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2)).toEqual([])
+
+        ctx.courseChoiceRestrictionMode = 'planned'
+
+        expect(methods.buildSemesterCourseMenus.call(ctx, 2).map((courseMenu: Record<string, string>) => courseMenu.label))
+            .toEqual(['D'])
     })
 
     it('shows only additional student courses when restricting course choices to additional', () => {

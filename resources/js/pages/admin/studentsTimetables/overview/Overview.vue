@@ -1192,7 +1192,11 @@ const OVERVIEW_SECTION_COLORS = {
 }
 
 function normalizedCourseDisplayLabel(label) {
-    return String(label || '').replace(/^LET(?=\d|\s|-|$)/iu, 'LPT')
+    return String(label || '')
+        .replace(/^LET(?=\d|\s|-|$)/iu, 'LPT')
+        .replace(/^GSGPB(?=\d|\s|-|$)/iu, 'GS')
+        .replace(/^MEMU(?=\d|\s|-|$)/iu, 'ME')
+        .replace(/^OKON(?=\d|\s|-|$)/iu, 'ÖKO')
 }
 
 export default {
@@ -1426,6 +1430,16 @@ export default {
                 .filter(courseGroup => this.courseGroupMatchesCourseChoiceRestriction(courseGroup, courseRestrictionContext))
 
             if (
+                this.adoptedTimetableOverviewActive
+                && courseRestrictionMode === COURSE_CHOICE_RESTRICTION_ADDITIONAL
+            ) {
+                return this.uniqueCourseGroupsByKey([
+                    ...restrictedCourseGroups,
+                    ...this.adoptedAdditionalCourseChoiceCourseGroups(),
+                ])
+            }
+
+            if (
                 restrictedCourseGroups.length
                 || courseRestrictionMode !== COURSE_CHOICE_RESTRICTION_ADDITIONAL
                 || courseRestrictionContext.hasCourseChoiceRestrictions
@@ -1504,16 +1518,17 @@ export default {
                 : this.normalizedCourseChoiceRestrictionMode(this.courseChoiceRestrictionMode, {
                     restrictCourseChoiceBySelection: this.restrictCourseChoiceBySelection,
                 })
+            const courseHistory = this.transferredStudentContext?.courses || this.noStudentCourseHistory
             const studentCourses = Array.isArray(this.courseChoiceRestrictionCourses)
                 ? this.courseChoiceRestrictionCourses
                 : this.courseChoiceRestrictionItemsFromCourses(
-                    this.transferredStudentContext?.courses || this.noStudentCourseHistory,
+                    courseHistory,
                     courseRestrictionMode,
                 )
             const selectionCourseChoiceCodes = this.selectionCourseChoiceCodes instanceof Set
                 ? this.selectionCourseChoiceCodes
                 : new Set()
-            const fallbackCourseCodes = courseRestrictionMode === COURSE_CHOICE_RESTRICTION_ADDITIONAL
+            const fallbackCourseCodes = courseHistory || courseRestrictionMode === COURSE_CHOICE_RESTRICTION_ADDITIONAL
                 ? []
                 : [...selectionCourseChoiceCodes]
 
@@ -4541,6 +4556,7 @@ export default {
                 if (!this.courseGroupMatchesSelectedLanguageChoice(courseGroup, courseRestrictionContext)) return false
 
                 return this.courseGroupMatchesRestrictedCourseCodes(courseGroupCodes, studentCourseCodes, courseGroup, {
+                    allowBaseModuleMatch: false,
                     shouldRestrictByTimetableSemester,
                 })
             }
@@ -4553,7 +4569,7 @@ export default {
             ) return false
             if (!this.courseGroupMatchesSelectedChoiceOptions(courseGroup, courseRestrictionContext)) return false
 
-            if (!studentCourseCodes.size) return true
+            if (!studentCourseCodes.size) return false
 
             return this.courseGroupMatchesRestrictedCourseCodes(courseGroupCodes, studentCourseCodes)
         },
@@ -4594,6 +4610,7 @@ export default {
             )
             const normalizedCourseGroupCodes = this.uniqueValues(courseGroupCodes)
             if (normalizedCourseGroupCodes.some(courseCode => restrictedCourseCodes.has(courseCode))) return true
+            if (options?.allowBaseModuleMatch === false) return false
 
             return normalizedCourseGroupCodes.some(courseGroupCode => {
                 const courseGroupParts = this.courseCodeModuleParts(courseGroupCode)
@@ -5658,7 +5675,23 @@ export default {
             }
         },
         mainCourseLabel(courseGroup) {
-            const source = this.courseGroupCourseSource(courseGroup)
+            const sourceFromGroup = this.courseGroupCourseSource(courseGroup)
+            const sourceFirstSegment = sourceFromGroup.split(/\s+-\s+/u)[0]?.trim() || ''
+            const preferredSource = [
+                courseGroup?.display_label,
+                courseGroup?.title,
+                courseGroup?.module_code,
+                courseGroup?.moduleCode,
+            ]
+                .map(value => String(value || '').trim())
+                .find((value) => {
+                    const firstSegment = value.split(/\s+-\s+/u)[0]?.trim() || ''
+
+                    return /^[^\d\s-]+\d+/u.test(firstSegment)
+                })
+            const source = /^[^\d\s-]+\d+/u.test(sourceFirstSegment)
+                ? sourceFromGroup
+                : preferredSource || sourceFromGroup
             if (!source) return ''
 
             const firstSegment = source.split(/\s+-\s+/u)[0]?.trim() || ''
