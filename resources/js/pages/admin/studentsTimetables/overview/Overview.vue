@@ -70,6 +70,40 @@
                                 </span>
                             </div>
                         </div>
+                        <div
+                            v-if="transferredStudentContext"
+                            class="transferred-student-completed-card">
+                            <div class="transferred-student-completed-card__header">
+                                <v-icon
+                                    :icon="completedTransferredStudentCourseSection.icon"
+                                    size="20"
+                                    :color="completedTransferredStudentCourseSection.color" />
+                                <h3>{{ completedTransferredStudentCourseSection.title }}</h3>
+                                <v-chip
+                                    size="small"
+                                    variant="flat"
+                                    :color="completedTransferredStudentCourseSection.color">
+                                    {{ completedTransferredStudentCourseSection.items.length }}
+                                </v-chip>
+                            </div>
+                            <div
+                                v-if="completedTransferredStudentCourseSection.items.length"
+                                class="transferred-student-course-section__chips transferred-student-completed-card__chips">
+                                <v-chip
+                                    v-for="course in completedTransferredStudentCourseSection.items"
+                                    :key="course.key"
+                                    size="x-small"
+                                    :color="completedTransferredStudentCourseSection.color"
+                                    variant="tonal"
+                                    class="transferred-student-course-chip">
+                                    <span>{{ course.label }}</span>
+                                    <span v-if="course.meta" class="transferred-student-course-chip__meta">
+                                        {{ course.meta }}
+                                    </span>
+                                </v-chip>
+                            </div>
+                            <div v-else class="transferred-student-course-section__empty">Keine</div>
+                        </div>
                     </div>
                 </div>
 
@@ -201,27 +235,22 @@
                 </div>
 
                 <div
-                    v-if="transferredStudentContext && visibleTransferredStudentCourseSections.length"
+                    v-if="visibleTransferredStudentCourseSections.length"
                     class="transferred-student-course-overview">
-                    <v-expansion-panels
-                        v-model="expandedTransferredStudentCourseSections"
-                        class="transferred-student-course-panels"
-                        multiple
-                        flat>
-                        <v-expansion-panel
+                    <div class="transferred-student-course-panels">
+                        <section
                             v-for="section in visibleTransferredStudentCourseSections"
                             :key="section.key"
-                            :value="section.key"
                             class="transferred-student-course-panel">
-                            <v-expansion-panel-title class="transferred-student-course-panel__title">
+                            <div class="transferred-student-course-panel__title">
                                 <v-icon size="22">{{ section.icon }}</v-icon>
                                 <h3>{{ section.title }}</h3>
                                 <v-chip size="small" variant="flat" :color="section.color">
                                     {{ section.items.length }}
                                 </v-chip>
-                            </v-expansion-panel-title>
+                            </div>
 
-                            <v-expansion-panel-text>
+                            <div class="transferred-student-course-panel__body">
                                 <div
                                     v-if="section.items.length"
                                     class="transferred-student-course-section__chips">
@@ -239,9 +268,9 @@
                                     </v-chip>
                                 </div>
                                 <div v-else class="transferred-student-course-section__empty">Keine</div>
-                            </v-expansion-panel-text>
-                        </v-expansion-panel>
-                    </v-expansion-panels>
+                            </div>
+                        </section>
+                    </div>
                 </div>
 
                 <div
@@ -256,6 +285,7 @@
                         :student-code="transferredStudentContext?.student?.studentCode || null"
                         class="overview-wizard-course-cards"
                         @generated-timetable-visibility-change="setWizardTimetableResultVisible"
+                        @timetable-result-selection-loading-change="setTimetableResultSelectionLoading"
                         @timetable-overtaken="showOvertakenManualTimetable">
                         <template #timetable-selector-start>
                             <v-btn
@@ -648,7 +678,7 @@
                                         class="timetable-generated-cell"
                                         :class="{
                                             'timetable-generated-cell--filled': displayCourseGroupsForCell(semester.value, weekday.value, hour.hour, timetableWeek).length,
-                                            'timetable-generated-cell--conflict': cellHasOverlap(semester.value, weekday.value, hour.hour, timetableWeek),
+                                            'timetable-generated-cell--conflict': cellShouldShowWarning(semester.value, weekday.value, hour.hour, timetableWeek),
                                             'timetable-generated-cell--related-overlap': cellHasRelatedOverlap(semester.value, weekday.value, hour.hour, timetableWeek),
                                             'timetable-generated-cell--has-single-date-markers': courseGroupSingleDateOverlapMarkersForCell(semester.value, weekday.value, hour.hour, timetableWeek).length,
                                         }">
@@ -702,6 +732,43 @@
                             <div v-if="shouldShowExtraDatesNotice(semester.value, timetableWeek)" class="extra-dates-notice">
                                 <span class="extra-dates-notice__text">Zusatzwochen vorhanden</span>
                             </div>
+
+                            <div
+                                v-if="sameSlotDateOverviewGroupsForSemester(semester.value, timetableWeek).length"
+                                class="timetable-date-overview">
+                                <div class="timetable-date-overview__title">Termine in gleichen Zellen</div>
+                                <div class="timetable-date-overview__groups">
+                                    <div
+                                        v-for="dateOverviewGroup in sameSlotDateOverviewGroupsForSemester(semester.value, timetableWeek)"
+                                        :key="dateOverviewGroup.key"
+                                        class="timetable-date-overview__group">
+                                        <div class="timetable-date-overview__slot">{{ dateOverviewGroup.title }}</div>
+                                        <div class="timetable-date-overview__courses">
+                                            <div
+                                                v-for="course in dateOverviewGroup.courses"
+                                                :key="course.key"
+                                                class="timetable-date-overview__course">
+                                                <div class="timetable-date-overview__course-title">
+                                                    <span>{{ course.title }}</span>
+                                                    <span
+                                                        v-if="course.dateRangeLabel"
+                                                        class="timetable-date-overview__range">
+                                                        {{ course.dateRangeLabel }}
+                                                    </span>
+                                                </div>
+                                                <div class="timetable-date-overview__dates">
+                                                    <span
+                                                        v-for="dateLabel in course.dateLabels"
+                                                        :key="dateLabel"
+                                                        class="timetable-date-overview__date">
+                                                        {{ dateLabel }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div
@@ -737,43 +804,6 @@
                                             class="timetable-date-overview__date">
                                             {{ dateLabel }}
                                         </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div
-                            v-if="sameSlotDateOverviewGroupsForSemester(semester.value).length"
-                            class="timetable-date-overview">
-                            <div class="timetable-date-overview__title">Termine in gleichen Zellen</div>
-                            <div class="timetable-date-overview__groups">
-                                <div
-                                    v-for="dateOverviewGroup in sameSlotDateOverviewGroupsForSemester(semester.value)"
-                                    :key="dateOverviewGroup.key"
-                                    class="timetable-date-overview__group">
-                                    <div class="timetable-date-overview__slot">{{ dateOverviewGroup.title }}</div>
-                                    <div class="timetable-date-overview__courses">
-                                        <div
-                                            v-for="course in dateOverviewGroup.courses"
-                                            :key="course.key"
-                                            class="timetable-date-overview__course">
-                                            <div class="timetable-date-overview__course-title">
-                                                <span>{{ course.title }}</span>
-                                                <span
-                                                    v-if="course.dateRangeLabel"
-                                                    class="timetable-date-overview__range">
-                                                    {{ course.dateRangeLabel }}
-                                                </span>
-                                            </div>
-                                            <div class="timetable-date-overview__dates">
-                                                <span
-                                                    v-for="dateLabel in course.dateLabels"
-                                                    :key="dateLabel"
-                                                    class="timetable-date-overview__date">
-                                                    {{ dateLabel }}
-                                                </span>
-                                            </div>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1701,6 +1731,16 @@ export default {
                 },
             ]
         },
+        completedTransferredStudentCourseSection() {
+            return this.transferredStudentCourseSections
+                .find(section => section.key === 'completed') || ({
+                    key: 'completed',
+                    title: 'Abgeschlossene Kurse',
+                    icon: 'mdi-check-circle-outline',
+                    color: OVERVIEW_SECTION_COLORS.completed,
+                    items: [],
+                })
+        },
         transferredStudentCourseTotalCount() {
             return this.transferredStudentCourseSections
                 .reduce((courseCount, section) => courseCount + section.items.length, 0)
@@ -1718,6 +1758,7 @@ export default {
             }
 
             return this.transferredStudentCourseSections
+                .filter(section => section.key !== 'completed')
         },
         noStudentCourseHistory() {
             return this.overviewStudentCourseHistory([])
@@ -1934,6 +1975,22 @@ export default {
             }
 
             this.$nextTick(scheduleActionAfterPaint)
+        },
+        setTimetableResultSelectionLoading(loading) {
+            if (loading === true) {
+                this.timetableUpdatePending = true
+
+                return
+            }
+
+            const updateWindow = typeof window !== 'undefined' ? window : null
+            const timerTarget = updateWindow || globalThis
+
+            this.$nextTick(() => {
+                timerTarget.setTimeout(() => {
+                    this.timetableUpdatePending = false
+                }, 0)
+            })
         },
         normalizedTimetableOverviewRouteMode(mode = this.$route?.params?.detail) {
             const normalizedMode = String(mode || '').trim()
@@ -2340,7 +2397,7 @@ export default {
             }
         },
         timetablePdfCellStatus(semester, weekday, hour, timetableWeek, courses, markers) {
-            if (this.cellHasOverlap(semester, weekday, hour, timetableWeek)) return 'conflict'
+            if (this.cellShouldShowWarning(semester, weekday, hour, timetableWeek)) return 'conflict'
             if (this.cellHasRelatedOverlap(semester, weekday, hour, timetableWeek)) return 'related'
             if (courses.length || markers.length) return 'filled'
 
@@ -3882,7 +3939,7 @@ export default {
 
             return startHour === endHour ? `${startHour}.` : `${startHour}.-${endHour}.`
         },
-        sameSlotDateOverviewGroupsForSemester(semester) {
+        sameSlotDateOverviewGroupsForSemester(semester, recurrenceWeek = null) {
             const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
                 ? this.activeCourseGroupFilterKeySet
                 : new Set(this.activeCourseGroupFilterKeys || [])
@@ -3890,6 +3947,7 @@ export default {
             const courseGroupsBySlot = (Array.isArray(this.configuredCourseGroups) ? this.configuredCourseGroups : [])
                 .filter(courseGroup => activeCourseGroupFilterKeySet.has(courseGroup?.key))
                 .filter(courseGroup => Number(courseGroup?.semester) === Number(semester))
+                .filter(courseGroup => this.sameSlotDateOverviewCourseGroupMatchesView(courseGroup, semester, recurrenceWeek))
                 .filter(courseGroup => !this.courseGroupIsSingleDate(courseGroup))
                 .filter(courseGroup => this.courseGroupDates(courseGroup).length > 0)
                 .reduce((groups, courseGroup) => {
@@ -3901,7 +3959,7 @@ export default {
                 }, {})
 
             const groups = Object.entries(courseGroupsBySlot)
-                .map(([key, courseGroups]) => this.sameSlotDateOverviewGroup(key, courseGroups))
+                .map(([key, courseGroups]) => this.sameSlotDateOverviewGroup(key, courseGroups, semester, recurrenceWeek))
                 .filter(Boolean)
                 .sort((left, right) => left.sortValue.localeCompare(right.sortValue, 'de-AT', {
                     numeric: true,
@@ -3910,7 +3968,15 @@ export default {
 
             return this.compactSameSlotDateOverviewGroups(groups)
         },
-        sameSlotDateOverviewGroup(key, courseGroups) {
+        sameSlotDateOverviewCourseGroupMatchesView(courseGroup, semester, recurrenceWeek = null) {
+            if (recurrenceWeek?.type === 'recurrence') {
+                return !this.courseGroupHasExtraDateWeek(courseGroup)
+                    || this.shouldIncludeExtraDatesInRegularWeek(semester)
+            }
+
+            return this.courseGroupMatchesSelectedRecurrenceWeek(courseGroup, semester, recurrenceWeek)
+        },
+        sameSlotDateOverviewGroup(key, courseGroups, semester = null, recurrenceWeek = null) {
             const uniqueCourseGroups = this.uniqueCourseGroupsByKey(courseGroups)
 
             if (uniqueCourseGroups.length < 2) return null
@@ -3920,11 +3986,13 @@ export default {
             const hour = Number(firstCourseGroup?.hour)
             const timeRange = this.courseGroupTimeRangeParts(firstCourseGroup)
             const courses = uniqueCourseGroups
-                .map(courseGroup => this.sameSlotDateOverviewCourse(courseGroup))
+                .map(courseGroup => this.sameSlotDateOverviewCourse(courseGroup, semester, recurrenceWeek))
+                .filter(course => course.dateLabels.length > 0)
                 .sort((left, right) => left.title.localeCompare(right.title, 'de-AT', {
                     numeric: true,
                     sensitivity: 'base',
                 }))
+            if (!courses.length) return null
 
             return {
                 key,
@@ -3984,16 +4052,66 @@ export default {
                 .sort((left, right) => left.localeCompare(right, 'de-AT', { numeric: true, sensitivity: 'base' }))
                 .join('||')
         },
-        sameSlotDateOverviewCourse(courseGroup) {
-            const dates = this.courseGroupDates(courseGroup)
+        sameSlotDateOverviewCourse(courseGroup, semester = null, recurrenceWeek = null) {
+            const dates = this.sameSlotDateOverviewCourseDates(courseGroup, semester, recurrenceWeek)
             const title = this.sameSlotDateOverviewCourseTitle(courseGroup)
 
             return {
                 key: courseGroup?.key || title,
                 title,
-                dateRangeLabel: this.courseGroupDateRangeLabel(courseGroup),
+                dateRangeLabel: this.courseGroupDateRangeLabelForDates(courseGroup, dates),
                 dateLabels: dates.map(date => this.formatDateWithWeekdayLabel(date)),
             }
+        },
+        sameSlotDateOverviewCourseDates(courseGroup, semester = null, recurrenceWeek = null) {
+            const dates = this.courseGroupDates(courseGroup)
+            const hasNumericRecurrenceWeek = recurrenceWeek !== null
+                && recurrenceWeek !== undefined
+                && Number.isFinite(Number(recurrenceWeek))
+            if (recurrenceWeek?.type !== 'recurrence' && !hasNumericRecurrenceWeek) {
+                return dates
+            }
+
+            const targetWeek = recurrenceWeek?.type === 'recurrence'
+                ? Number(recurrenceWeek.value)
+                : Number(recurrenceWeek)
+            if (!Number.isFinite(targetWeek) || !Number.isFinite(Number(semester))) {
+                return dates
+            }
+
+            const maxWeek = Math.max(this.recurrenceWeekOptions(semester).length, targetWeek)
+            const semesterStart = this.semesterStartDate(semester)
+            if (!Number.isFinite(maxWeek) || maxWeek <= 1 || !semesterStart) {
+                return dates
+            }
+
+            return dates.filter(date => this.dateBelongsToRecurrenceWeek(date, semesterStart, targetWeek, maxWeek))
+        },
+        dateBelongsToRecurrenceWeek(date, semesterStart, targetWeek, maxWeek) {
+            const parsedDate = this.dateFromIsoValue(date)
+            if (!parsedDate || !semesterStart) return true
+
+            const dayDifference = Math.floor((parsedDate.getTime() - semesterStart.getTime()) / 86400000)
+            const weekOffset = Math.floor(dayDifference / 7)
+            const week = ((weekOffset % maxWeek) + maxWeek) % maxWeek + 1
+
+            return week === targetWeek
+        },
+        courseGroupDateRangeLabelForDates(courseGroup, dates) {
+            const selectedDates = Array.isArray(dates)
+                ? [...dates].filter(Boolean).sort()
+                : []
+
+            if (!selectedDates.length) {
+                return ''
+            }
+
+            return this.courseGroupDateRangeLabel({
+                ...courseGroup,
+                first_date: selectedDates[0],
+                last_date: selectedDates[selectedDates.length - 1],
+                dates: selectedDates,
+            })
         },
         sameSlotDateOverviewCourseTitle(courseGroup) {
             const label = [
@@ -5189,6 +5307,13 @@ export default {
                 ))
             ))
         },
+        cellHasMultipleDisplayCourses(semester, weekday, hour, recurrenceWeek = null) {
+            return this.displayCourseGroupsForCell(semester, weekday, hour, recurrenceWeek).length > 1
+        },
+        cellShouldShowWarning(semester, weekday, hour, recurrenceWeek = null) {
+            return this.cellHasOverlap(semester, weekday, hour, recurrenceWeek)
+                || (this.adoptedTimetableOverviewActive && this.cellHasMultipleDisplayCourses(semester, weekday, hour, recurrenceWeek))
+        },
         cellHasRelatedOverlap(semester, weekday, hour, recurrenceWeek = null) {
             if (this.cellHasOverlap(semester, weekday, hour, recurrenceWeek)) {
                 return false
@@ -5917,6 +6042,7 @@ export default {
 .overview-wizard-row {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 10px;
     min-width: 0;
 }
@@ -6623,6 +6749,34 @@ export default {
     color: #16a34a;
 }
 
+.transferred-student-completed-card {
+    overflow: hidden;
+    border: 1px solid rgba(0, 137, 123, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.transferred-student-completed-card__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(0, 137, 123, 0.12);
+}
+
+.transferred-student-completed-card__header h3 {
+    flex: 1;
+    margin: 0;
+    color: #10263a;
+    font-size: 0.96rem;
+    font-weight: 500;
+}
+
+.transferred-student-completed-card__chips {
+    padding: 12px 14px;
+}
+
 .transferred-student-course-overview {
     display: grid;
     margin-bottom: 14px;
@@ -6653,7 +6807,7 @@ export default {
     margin: 0;
     color: #10263a;
     font-size: 1rem;
-    font-weight: 800;
+    font-weight: 500;
 }
 
 .manual-course-overview__panels :deep(.v-expansion-panel-text__wrapper) {
@@ -6671,13 +6825,19 @@ export default {
 .transferred-student-course-panels {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 10px 14px;
+    gap: 12px 16px;
     align-items: start;
 }
 
 @media (min-width: 900px) {
     .transferred-student-course-panels {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1200px) {
+    .transferred-student-course-overview .transferred-student-course-panels {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 
@@ -6689,12 +6849,19 @@ export default {
     background: rgba(255, 255, 255, 0.92) !important;
 }
 
+.transferred-student-course-panel {
+    overflow: hidden;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+}
+
 .transferred-student-course-panel__title {
     display: flex;
     align-items: center;
     gap: 10px;
-    min-height: 58px;
-    padding: 14px;
+    min-height: 64px;
+    padding: 16px;
     border-bottom: 1px solid rgba(16, 38, 58, 0.07);
 }
 
@@ -6702,8 +6869,8 @@ export default {
     flex: 1;
     margin: 0;
     color: #10263a;
-    font-size: 1rem;
-    font-weight: 800;
+    font-size: 1.08rem;
+    font-weight: 500;
 }
 
 .transferred-student-course-panels :deep(.v-expansion-panel-text__wrapper) {
@@ -6713,26 +6880,28 @@ export default {
 .transferred-student-course-section__chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
+    gap: 6px;
     min-width: 0;
-    padding: 12px 14px;
+    padding: 14px 16px;
 }
 
 .transferred-student-course-chip {
     max-width: 100%;
-    font-weight: 750;
+    min-height: 24px;
+    font-size: 0.82rem;
+    font-weight: 500;
 }
 
 .transferred-student-course-chip__meta {
-    margin-left: 5px;
+    margin-left: 6px;
     opacity: 0.78;
 }
 
 .transferred-student-course-section__empty {
-    padding: 14px;
+    padding: 16px;
     color: rgba(var(--v-theme-on-surface), 0.54);
-    font-size: 0.8rem;
-    font-weight: 650;
+    font-size: 0.86rem;
+    font-weight: 500;
 }
 
 .recurrence-week-selector {

@@ -975,6 +975,47 @@ it('stores a subject overview json file for the selected school', function () {
         ->assertJsonPath('data.mappings.0.note', 'manuell');
 });
 
+it('returns the canonical LPT subject name in subjects overview settings', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 1,
+        'branch' => null,
+        'json_code' => 'LPT',
+        'json_subject' => 'LPT',
+        'name' => 'Literarisches Praktikum',
+        'hours_per_week' => 2,
+        'is_active' => true,
+        'sort_order' => 0,
+        'source' => 'json',
+    ]);
+
+    $settingsResponse = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/subjects-overview-settings')
+        ->assertSuccessful()
+        ->assertJsonPath('data.subjects.0.json_code', 'LPT')
+        ->assertJsonPath('data.subjects.0.name', 'Lern- und Präsentationstechniken');
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/subjects-overview-settings/subjects', [
+            'subjects' => $settingsResponse->json('data.subjects'),
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.subjects.0.name', 'Lern- und Präsentationstechniken');
+
+    expect(StudentTimetableSubjectRow::query()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $schoolyear->id)
+        ->where('json_code', 'LPT')
+        ->value('name'))->toBe('Lern- und Präsentationstechniken');
+});
+
 it('stores filtered recognition csv uploads for the selected school', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $schoolyear = Schoolyear::factory()->create([

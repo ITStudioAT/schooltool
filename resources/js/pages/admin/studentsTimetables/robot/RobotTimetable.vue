@@ -2711,7 +2711,7 @@ const AUTOMATIC_COURSE_PROGRESSION_LOCK_VARIATION_LIMIT = 200000
 
 export default {
     components: { EvaluationSettings, LoadingAnimation },
-    emits: ['generated-timetable-visibility-change', 'timetable-overtaken'],
+    emits: ['generated-timetable-visibility-change', 'timetable-overtaken', 'timetable-result-selection-loading-change'],
     props: {
         embeddedCourseCardsOnly: {
             type: Boolean,
@@ -4596,14 +4596,19 @@ export default {
             this.setTimetableResultCounter(type, this.timetableResultCounter(type) + direction)
 
             if (type === this.selectedTimetableResultType && previousCounter !== this.timetableResultCounter(type)) {
-                this.loadFullGreenTimetableCount({
+                this.$emit?.('timetable-result-selection-loading-change', true)
+
+                const timetableLoad = this.loadFullGreenTimetableCount({
                     preserveGeneratedTimetable: true,
                     preserveQualityCounters: true,
                 })
+                const qualityCountersLoad = !(this.qualityCounters || []).length && (this.activeQualityCriterionRows || []).length
+                    ? this.loadQualityCountersForSelectedTimetableType()
+                    : Promise.resolve()
 
-                if (!(this.qualityCounters || []).length && (this.activeQualityCriterionRows || []).length) {
-                    this.loadQualityCountersForSelectedTimetableType()
-                }
+                return Promise.allSettled([timetableLoad, qualityCountersLoad]).then(() => {
+                    this.$emit?.('timetable-result-selection-loading-change', false)
+                })
             }
         },
         setTimetableResultCounter(type, value) {

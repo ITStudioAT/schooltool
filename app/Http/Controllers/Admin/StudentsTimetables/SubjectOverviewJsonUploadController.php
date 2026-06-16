@@ -23,6 +23,10 @@ class SubjectOverviewJsonUploadController extends Controller
 
     private const MODERATOR_ROLES = ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'];
 
+    private const CANONICAL_SUBJECT_NAMES = [
+        'LPT' => 'Lern- und Präsentationstechniken',
+    ];
+
     public function index(Request $request): JsonResponse
     {
         if (! $authUser = $this->userHasRole(self::MODERATOR_ROLES)) {
@@ -116,7 +120,11 @@ class SubjectOverviewJsonUploadController extends Controller
                 'branch' => $this->normalizeSubjectBranch($subject['branch'] ?? null),
                 'json_code' => $this->emptyToNull($subject['json_code'] ?? null),
                 'json_subject' => $this->emptyToNull($subject['json_subject'] ?? null),
-                'name' => $this->emptyToNull($subject['name'] ?? null),
+                'name' => $this->canonicalSubjectName(
+                    $subject['name'] ?? null,
+                    $subject['json_code'] ?? null,
+                    $subject['json_subject'] ?? null,
+                ),
                 'hours_per_week' => $subject['hours_per_week'] ?? null,
                 'is_active' => (bool) ($subject['is_active'] ?? true),
                 'sort_order' => $index,
@@ -404,7 +412,7 @@ class SubjectOverviewJsonUploadController extends Controller
             'branch' => $this->normalizeSubjectBranch($branch),
             'json_code' => $subject['short_name'] ?: $subject['name'],
             'json_subject' => $subject['json_subject'] ?: $subject['name'],
-            'name' => $subject['name'],
+            'name' => $this->canonicalSubjectName($subject['name'], $subject['short_name'], $subject['json_subject']),
             'hours_per_week' => $subject['hours_per_week'] ?? $this->firstNumericValue($node, ['hours_per_week', 'hours', 'stunden', 'wochenstunden']),
             'is_active' => true,
         ];
@@ -1116,7 +1124,11 @@ class SubjectOverviewJsonUploadController extends Controller
                 'branch' => $this->normalizeSubjectBranch($subjectRow['branch'] ?? null),
                 'json_code' => $subjectRow['json_code'] ?? null,
                 'json_subject' => $subjectRow['json_subject'] ?? null,
-                'name' => $subjectRow['name'] ?? null,
+                'name' => $this->canonicalSubjectName(
+                    $subjectRow['name'] ?? null,
+                    $subjectRow['json_code'] ?? null,
+                    $subjectRow['json_subject'] ?? null,
+                ),
                 'hours_per_week' => $subjectRow['hours_per_week'] ?? null,
                 'is_active' => true,
                 'sort_order' => $index,
@@ -1383,7 +1395,7 @@ class SubjectOverviewJsonUploadController extends Controller
                     'branch' => $this->normalizeSubjectBranch($row->branch),
                     'json_code' => $row->json_code,
                     'json_subject' => $row->json_subject,
-                    'name' => $row->name,
+                    'name' => $this->canonicalSubjectName($row->name, $row->json_code, $row->json_subject),
                     'hours_per_week' => $row->hours_per_week,
                     'is_active' => $row->is_active,
                     'source' => $row->source,
@@ -1418,6 +1430,19 @@ class SubjectOverviewJsonUploadController extends Controller
         $value = trim((string) $value);
 
         return $value === '' ? null : $value;
+    }
+
+    private function canonicalSubjectName(mixed $name, mixed $jsonCode = null, mixed $jsonSubject = null): ?string
+    {
+        $subjectKey = $this->subjectCodeWithoutModule($this->emptyToNull($jsonSubject))
+            ?: $this->subjectCodeWithoutModule($this->emptyToNull($jsonCode));
+        $subjectKey = $subjectKey ? Str::upper($subjectKey) : null;
+
+        if ($subjectKey && array_key_exists($subjectKey, self::CANONICAL_SUBJECT_NAMES)) {
+            return self::CANONICAL_SUBJECT_NAMES[$subjectKey];
+        }
+
+        return $this->emptyToNull($name);
     }
 
     private function normalizeSubjectBranch(mixed $value): ?string

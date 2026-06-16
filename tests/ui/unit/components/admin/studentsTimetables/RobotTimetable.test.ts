@@ -7976,4 +7976,37 @@ describe('Students timetable robot page', () => {
         expect(ctx.fullGreenTimetableCountError).toBe('')
         expect(ctx.normalizeTimetableResultCounters).toHaveBeenCalledOnce()
     })
+
+    it('emits a loading state while moving between generated timetable results', async () => {
+        const methods = (RobotTimetable as any).methods
+        const emittedStates: boolean[] = []
+        const ctx = {
+            selectedTimetableResultType: 'full_green',
+            fullGreenTimetableNumber: 1,
+            greenTimetableNumber: 1,
+            conflictTimetableNumber: 1,
+            qualityCounters: [],
+            activeQualityCriterionRows: [{ key: 'compact_days' }],
+            timetableResultCounter: methods.timetableResultCounter,
+            setTimetableResultCounter: methods.setTimetableResultCounter,
+            normalizedTimetableResultCounter: methods.normalizedTimetableResultCounter,
+            timetableResultCounterLimitForCounter: vi.fn(() => 3),
+            loadFullGreenTimetableCount: vi.fn().mockResolvedValue(undefined),
+            loadQualityCountersForSelectedTimetableType: vi.fn().mockResolvedValue(undefined),
+            $emit(event: string, state: boolean) {
+                expect(event).toBe('timetable-result-selection-loading-change')
+                emittedStates.push(state)
+            },
+        }
+
+        await methods.moveTimetableResultCounter.call(ctx, 'full_green', 1)
+
+        expect(ctx.fullGreenTimetableNumber).toBe(2)
+        expect(emittedStates).toEqual([true, false])
+        expect(ctx.loadFullGreenTimetableCount).toHaveBeenCalledWith({
+            preserveGeneratedTimetable: true,
+            preserveQualityCounters: true,
+        })
+        expect(ctx.loadQualityCountersForSelectedTimetableType).toHaveBeenCalledOnce()
+    })
 })

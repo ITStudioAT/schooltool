@@ -158,6 +158,31 @@ describe('Students timetable overview', () => {
         vi.useRealTimers()
     })
 
+    it('uses the timetable update pending state while generated result selection loads', () => {
+        vi.useFakeTimers()
+        const methods = (Overview as any).methods
+        const ctx = {
+            timetableUpdatePending: false,
+            $nextTick(callback: () => void) {
+                callback()
+            },
+        }
+
+        methods.setTimetableResultSelectionLoading.call(ctx, true)
+
+        expect(ctx.timetableUpdatePending).toBe(true)
+
+        methods.setTimetableResultSelectionLoading.call(ctx, false)
+
+        expect(ctx.timetableUpdatePending).toBe(true)
+
+        vi.advanceTimersByTime(0)
+
+        expect(ctx.timetableUpdatePending).toBe(false)
+
+        vi.useRealTimers()
+    })
+
     it('builds semester course menus from main course labels', () => {
         const methods = (Overview as any).methods
         const ctx = {
@@ -1008,8 +1033,11 @@ describe('Students timetable overview', () => {
             cellHasRelatedOverlap: methods.cellHasRelatedOverlap,
             courseCellKey: methods.courseCellKey,
             sameSlotDateOverviewGroupsForSemester: methods.sameSlotDateOverviewGroupsForSemester,
+            sameSlotDateOverviewCourseGroupMatchesView: methods.sameSlotDateOverviewCourseGroupMatchesView,
             sameSlotDateOverviewGroup: methods.sameSlotDateOverviewGroup,
             sameSlotDateOverviewCourse: methods.sameSlotDateOverviewCourse,
+            sameSlotDateOverviewCourseDates: methods.sameSlotDateOverviewCourseDates,
+            courseGroupDateRangeLabelForDates: methods.courseGroupDateRangeLabelForDates,
             sameSlotDateOverviewCourseTitle: methods.sameSlotDateOverviewCourseTitle,
             sameSlotDateOverviewSlotTitle: methods.sameSlotDateOverviewSlotTitle,
             sameSlotDateOverviewSlotRangeTitle: methods.sameSlotDateOverviewSlotRangeTitle,
@@ -1060,6 +1088,111 @@ describe('Students timetable overview', () => {
             .toEqual(['D2 - 1U - HER', 'E2 - 1U - NIE'])
     })
 
+    it('keeps same-cell date overview visible and filters dates to the selected recurrence week', () => {
+        const methods = (Overview as any).methods
+        const courseGroups = [
+            {
+                key: 'd5-week-1',
+                semester: 1,
+                weekday: 2,
+                hour: 14,
+                course: 'D5',
+                display_label: 'D5 - 3R - SHAM',
+                recurrence_interval: 2,
+                dates: ['2026-02-24', '2026-03-10'],
+            },
+            {
+                key: 'e5-week-1',
+                semester: 1,
+                weekday: 2,
+                hour: 14,
+                course: 'E5',
+                display_label: 'E5 - 3R - HÖF',
+                recurrence_interval: 2,
+                dates: ['2026-02-17', '2026-03-03'],
+            },
+        ]
+        const ctx = {
+            activeCourseGroupFilterKeys: courseGroups.map(courseGroup => courseGroup.key),
+            configuredCourseGroups: courseGroups,
+            configuredSchoolHours: [
+                { hour: 14, from: '20:25:00', until: '21:10:00' },
+            ],
+            weekdays: [
+                { label: 'Mo', value: 1 },
+                { label: 'Di', value: 2 },
+            ],
+            sameSlotDateOverviewGroupsForSemester: methods.sameSlotDateOverviewGroupsForSemester,
+            sameSlotDateOverviewCourseGroupMatchesView: methods.sameSlotDateOverviewCourseGroupMatchesView,
+            sameSlotDateOverviewGroup: methods.sameSlotDateOverviewGroup,
+            sameSlotDateOverviewCourse: methods.sameSlotDateOverviewCourse,
+            sameSlotDateOverviewCourseDates: methods.sameSlotDateOverviewCourseDates,
+            dateBelongsToRecurrenceWeek: methods.dateBelongsToRecurrenceWeek,
+            courseGroupDateRangeLabelForDates: methods.courseGroupDateRangeLabelForDates,
+            sameSlotDateOverviewCourseTitle: methods.sameSlotDateOverviewCourseTitle,
+            sameSlotDateOverviewSlotTitle: methods.sameSlotDateOverviewSlotTitle,
+            sameSlotDateOverviewSlotRangeTitle: methods.sameSlotDateOverviewSlotRangeTitle,
+            compactSameSlotDateOverviewGroups: methods.compactSameSlotDateOverviewGroups,
+            sameSlotDateOverviewGroupsCanMerge: methods.sameSlotDateOverviewGroupsCanMerge,
+            mergedSameSlotDateOverviewGroup: methods.mergedSameSlotDateOverviewGroup,
+            sameSlotDateOverviewCourseSignature: methods.sameSlotDateOverviewCourseSignature,
+            courseGroupDateRangeLabel: methods.courseGroupDateRangeLabel,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+            formatTimeValue: methods.formatTimeValue,
+            formatDateWithWeekdayLabel: methods.formatDateWithWeekdayLabel,
+            weekdayLabelForDate: methods.weekdayLabelForDate,
+            formatDateValue: methods.formatDateValue,
+            formatCompactDateValue: methods.formatCompactDateValue,
+            formatDate: methods.formatDate,
+            normalizeDate: methods.normalizeDate,
+            uniqueCourseGroupsByKey: methods.uniqueCourseGroupsByKey,
+            courseCellKey: methods.courseCellKey,
+            courseGroupDates: methods.courseGroupDates,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
+            courseGroupMatchesSelectedRecurrenceWeek() {
+                return true
+            },
+            courseGroupHasExtraDateWeek: methods.courseGroupHasExtraDateWeek,
+            courseGroupHasRegularRecurrence: methods.courseGroupHasRegularRecurrence,
+            shouldIncludeExtraDatesInRegularWeek() {
+                return false
+            },
+            recurrenceWeekOptions: () => [
+                { value: 1, label: 'Woche 1' },
+                { value: 2, label: 'Woche 2' },
+            ],
+            semesterStartDate: () => new Date(2026, 1, 16),
+            dateFromIsoValue: methods.dateFromIsoValue,
+            selectedTimetableOptionValue() {
+                return 'all_dates'
+            },
+        }
+
+        const weekOneGroups = methods.sameSlotDateOverviewGroupsForSemester.call(ctx, 1, {
+            type: 'recurrence',
+            value: 1,
+        })
+        const weekTwoGroups = methods.sameSlotDateOverviewGroupsForSemester.call(ctx, 1, {
+            type: 'recurrence',
+            value: 2,
+        })
+
+        expect(weekOneGroups).toHaveLength(1)
+        expect(weekOneGroups[0].title).toBe('Di 14. 20:25 - 21:10')
+        expect(weekOneGroups[0].courses.map((course: Record<string, string>) => course.title))
+            .toEqual(['E5 - 3R - HÖF'])
+        expect(weekOneGroups[0].courses[0].dateLabels)
+            .toEqual(['Di, 17.02.2026', 'Di, 03.03.2026'])
+        expect(weekTwoGroups).toHaveLength(1)
+        expect(weekTwoGroups[0].courses.map((course: Record<string, string>) => course.title))
+            .toEqual(['D5 - 3R - SHAM'])
+        expect(weekTwoGroups[0].courses[0].dateLabels)
+            .toEqual(['Di, 24.02.2026', 'Di, 10.03.2026'])
+    })
+
     it('collects consecutive manual same-slot date overview rows with identical courses', () => {
         const methods = (Overview as any).methods
         const e2Dates = ['2026-05-09', '2026-05-16', '2026-05-30']
@@ -1105,8 +1238,11 @@ describe('Students timetable overview', () => {
                 { label: 'Sa', value: 6 },
             ],
             sameSlotDateOverviewGroupsForSemester: methods.sameSlotDateOverviewGroupsForSemester,
+            sameSlotDateOverviewCourseGroupMatchesView: methods.sameSlotDateOverviewCourseGroupMatchesView,
             sameSlotDateOverviewGroup: methods.sameSlotDateOverviewGroup,
             sameSlotDateOverviewCourse: methods.sameSlotDateOverviewCourse,
+            sameSlotDateOverviewCourseDates: methods.sameSlotDateOverviewCourseDates,
+            courseGroupDateRangeLabelForDates: methods.courseGroupDateRangeLabelForDates,
             sameSlotDateOverviewCourseTitle: methods.sameSlotDateOverviewCourseTitle,
             sameSlotDateOverviewSlotTitle: methods.sameSlotDateOverviewSlotTitle,
             sameSlotDateOverviewSlotRangeTitle: methods.sameSlotDateOverviewSlotRangeTitle,
@@ -1130,6 +1266,9 @@ describe('Students timetable overview', () => {
             courseCellKey: methods.courseCellKey,
             courseGroupDates: methods.courseGroupDates,
             courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
+            courseGroupMatchesSelectedRecurrenceWeek() {
+                return true
+            },
         }
 
         const groups = methods.sameSlotDateOverviewGroupsForSemester.call(ctx, 1)
@@ -2267,6 +2406,9 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('class="timetable-generated-grid"')
         expect(componentSource).toContain("'timetable-generated-cell--filled'")
         expect(componentSource).toContain("'timetable-generated-cell--conflict'")
+        expect(componentSource).toContain('cellShouldShowWarning(semester.value, weekday.value, hour.hour, timetableWeek)')
+        expect(componentSource).toContain('cellHasMultipleDisplayCourses(semester, weekday, hour, recurrenceWeek = null)')
+        expect(componentSource).toContain('this.adoptedTimetableOverviewActive && this.cellHasMultipleDisplayCourses')
         expect(componentSource).toContain("'timetable-generated-cell--related-overlap'")
         expect(componentSource).not.toContain('.timetable-generated-cell--related-overlap {\n    background: #fed7aa;')
         expect(componentSource).toContain("'timetable-generated-cell--has-single-date-markers'")
@@ -2387,6 +2529,10 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('transferredStudentLabel')
         expect(componentSource).toContain('transferredStudentEmail')
         expect(componentSource).toContain('Kein Student')
+        expect(componentSource).toContain('class="transferred-student-completed-card"')
+        expect(componentSource).toContain('class="transferred-student-completed-card__header"')
+        expect(componentSource).toContain('completedTransferredStudentCourseSection')
+        expect(componentSource).toContain('v-if="transferredStudentContext"')
         expect(componentSource).toContain('class="overview-selection"')
         expect(componentSource).toContain('class="overview-selected-card"')
         expect(componentSource).toContain('class="overview-selected-card__meta"')
@@ -2394,6 +2540,11 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('Religion: ${value}')
         expect(componentSource).toContain('class="overview-context-card"')
         expect(componentSource).toContain('class="overview-wizard-button"')
+        const wizardRowStyles = componentSource.slice(
+            componentSource.indexOf('.overview-wizard-row {'),
+            componentSource.indexOf('}', componentSource.indexOf('.overview-wizard-row {')),
+        )
+        expect(wizardRowStyles).toContain('justify-content: flex-end;')
         const wizardButtonSource = componentSource.slice(
             componentSource.indexOf('class="overview-wizard-button"'),
             componentSource.indexOf('</v-btn>', componentSource.indexOf('class="overview-wizard-button"')),
@@ -2576,11 +2727,36 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('noStudentCourseHistory')
         expect(componentSource).toContain('visibleTransferredStudentCourseSections')
         expect(componentSource).toContain('v-model="expandedTransferredStudentCourseSections"')
-        expect(componentSource).toContain('v-if="transferredStudentContext && visibleTransferredStudentCourseSections.length"')
+        expect(componentSource).toContain('v-if="visibleTransferredStudentCourseSections.length"')
+        expect(componentSource).toContain('noStudentCourseHistory')
         expect(componentSource).toContain('class="transferred-student-course-overview"')
         expect(componentSource).toContain('class="transferred-student-course-panels"')
         expect(componentSource).toContain('class="transferred-student-course-panel"')
         expect(componentSource).toContain('class="transferred-student-course-panel__title"')
+        expect(componentSource).toContain('class="transferred-student-course-panel__body"')
+        const transferredCoursePanelTitleStyles = componentSource.slice(
+            componentSource.indexOf('.transferred-student-course-panel__title {'),
+            componentSource.indexOf('}', componentSource.indexOf('.transferred-student-course-panel__title {')),
+        )
+        const transferredCourseChipStyles = componentSource.slice(
+            componentSource.indexOf('.transferred-student-course-chip {'),
+            componentSource.indexOf('}', componentSource.indexOf('.transferred-student-course-chip {')),
+        )
+        expect(transferredCoursePanelTitleStyles).toContain('min-height: 64px;')
+        expect(transferredCoursePanelTitleStyles).toContain('padding: 16px;')
+        expect(componentSource).toContain('font-size: 1.08rem;')
+        expect(componentSource).toContain('font-weight: 500;')
+        expect(transferredCourseChipStyles).toContain('min-height: 24px;')
+        expect(transferredCourseChipStyles).toContain('font-size: 0.82rem;')
+        expect(transferredCourseChipStyles).toContain('font-weight: 500;')
+        const transferredCourseOverviewSource = componentSource.slice(
+            componentSource.indexOf('class="transferred-student-course-overview"'),
+            componentSource.indexOf('class="overview-wizard-course-cards-panel"'),
+        )
+        expect(transferredCourseOverviewSource).toContain('<section')
+        expect(transferredCourseOverviewSource).not.toContain('<v-expansion-panels')
+        expect(transferredCourseOverviewSource).not.toContain('<v-expansion-panel-title')
+        expect(transferredCourseOverviewSource).not.toContain('<v-expansion-panel-text')
         expect(componentSource).not.toContain('transferredStudentContextExpanded')
         expect(componentSource).not.toContain('toggleTransferredStudentContext')
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/subjects-overview-settings')")
@@ -2592,6 +2768,9 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('overviewStudentCourseHistoryFromSummary(overviewSummary)')
         expect(componentSource).toContain('refreshTransferredStudentCourseHistory()')
         expect(componentSource.indexOf('class="transferred-student-context"')).toBeLessThan(
+            componentSource.indexOf('class="transferred-student-completed-card"'),
+        )
+        expect(componentSource.indexOf('class="transferred-student-completed-card"')).toBeLessThan(
             componentSource.indexOf('class="overview-selection"'),
         )
         expect(componentSource.indexOf('class="overview-selection"')).toBeLessThan(
@@ -2611,6 +2790,9 @@ describe('Students timetable overview', () => {
         )
         expect(componentSource).not.toContain('<v-expand-transition>')
         expect(componentSource).toContain('return this.transferredStudentCourseSections')
+        expect(componentSource).toContain(".filter(section => section.key !== 'completed')")
+        expect(componentSource).toContain('.transferred-student-course-overview .transferred-student-course-panels')
+        expect(componentSource).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));')
         expect(componentSource).toContain('Abgeschlossene Kurse')
         expect(componentSource).toContain('mdi-check-circle-outline')
         expect(componentSource).toContain('Fehlende Kurse')
@@ -2622,10 +2804,16 @@ describe('Students timetable overview', () => {
         expect(componentSource).not.toContain('v-for="courseMenu in semesterCourseMenus(semester.value)"')
         expect(componentSource).toContain('class="semester-timetable"')
         expect(componentSource).toContain('v-if="!wizardPanelOpen && visibleTimetableSemesters.length"')
-        expect(componentSource).toContain('sameSlotDateOverviewGroupsForSemester(semester.value)')
+        expect(componentSource).toContain('sameSlotDateOverviewGroupsForSemester(semester.value, timetableWeek)')
         expect(componentSource).toContain('class="timetable-date-overview"')
         expect(componentSource).toContain('Termine in gleichen Zellen')
         expect(componentSource).toContain('class="timetable-date-overview__date"')
+        expect(componentSource.indexOf('sameSlotDateOverviewGroupsForSemester(semester.value, timetableWeek)')).toBeGreaterThan(
+            componentSource.indexOf('v-for="timetableWeek in visibleTimetableWeeks(semester.value)"'),
+        )
+        expect(componentSource.indexOf('sameSlotDateOverviewGroupsForSemester(semester.value, timetableWeek)')).toBeLessThan(
+            componentSource.indexOf('singleDateOverviewGroupsForSemester(semester.value)'),
+        )
         expect(componentSource).not.toContain('Wähle oben Kurse aus, um den Stundenplan anzuzeigen.')
         expect(componentSource).toContain("label: 'Semester'")
         expect(componentSource).not.toContain("label: 'Semester 1'")
@@ -2633,6 +2821,39 @@ describe('Students timetable overview', () => {
         expect(componentSource).not.toContain('class="semester-section"')
         expect(componentSource).not.toContain("axios.get('/api/admin/students-timetables/overview-selections')")
         expect(componentSource).not.toContain("axios.put('/api/admin/students-timetables/overview-selections'")
+    })
+
+    it('marks adopted timetable cells with multiple displayed courses as warnings', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            adoptedTimetableOverviewActive: true,
+            cellHasOverlap: vi.fn(() => false),
+            cellHasMultipleDisplayCourses: methods.cellHasMultipleDisplayCourses,
+            displayCourseGroupsForCell: vi.fn(() => [
+                { key: 'd-1', course: 'D1' },
+                { key: 'm-1', course: 'M1' },
+            ]),
+        }
+
+        expect(methods.cellHasMultipleDisplayCourses.call(ctx, 1, 1, 1)).toBe(true)
+        expect(methods.cellShouldShowWarning.call(ctx, 1, 1, 1)).toBe(true)
+        expect(ctx.cellHasOverlap).toHaveBeenCalledWith(1, 1, 1, null)
+    })
+
+    it('keeps non-adopted multi-course cells neutral when they do not overlap', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            adoptedTimetableOverviewActive: false,
+            cellHasOverlap: vi.fn(() => false),
+            cellHasMultipleDisplayCourses: methods.cellHasMultipleDisplayCourses,
+            displayCourseGroupsForCell: vi.fn(() => [
+                { key: 'd-1', course: 'D1' },
+                { key: 'm-1', course: 'M1' },
+            ]),
+        }
+
+        expect(methods.cellHasMultipleDisplayCourses.call(ctx, 1, 1, 1)).toBe(true)
+        expect(methods.cellShouldShowWarning.call(ctx, 1, 1, 1)).toBe(false)
     })
 
     it('shows the central loading overlay for overview background requests', () => {
@@ -4423,7 +4644,28 @@ describe('Students timetable overview', () => {
 
         ctx.manualPanelOpen = false
 
-        expect(computed.visibleTransferredStudentCourseSections.call(ctx)).toEqual(ctx.transferredStudentCourseSections)
+        expect(computed.visibleTransferredStudentCourseSections.call(ctx)).toEqual(
+            ctx.transferredStudentCourseSections.filter((section: Record<string, string>) => section.key !== 'completed'),
+        )
+    })
+
+    it('uses the completed transferred student course section for the open student card', () => {
+        const computed = (Overview as any).computed
+        const completedSection = {
+            key: 'completed',
+            title: 'Abgeschlossene Kurse',
+            icon: 'mdi-check-circle-outline',
+            color: '#00897B',
+            items: [{ key: 'D1', label: 'D1', meta: 'Note 2' }],
+        }
+        const ctx = {
+            transferredStudentCourseSections: [
+                completedSection,
+                { key: 'missing', title: 'Fehlende Kurse', items: [] },
+            ],
+        }
+
+        expect(computed.completedTransferredStudentCourseSection.call(ctx)).toBe(completedSection)
     })
 
     it('shows the collapsible course overview for adopted manual timetable pages', () => {
@@ -4577,12 +4819,40 @@ describe('Students timetable overview', () => {
         })
 
         expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.key))
-            .toEqual(['completed', 'missing', 'planned', 'additional'])
+            .toEqual(['missing', 'planned', 'additional'])
         expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.icon))
-            .toEqual(['mdi-check-circle-outline', 'mdi-alert-circle-outline', 'mdi-format-list-checks', 'mdi-plus-circle-outline'])
+            .toEqual(['mdi-alert-circle-outline', 'mdi-format-list-checks', 'mdi-plus-circle-outline'])
         expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.color))
-            .toEqual(['#00897B', '#FB8C00', '#3949AB', '#0288D1'])
+            .toEqual(['#FB8C00', '#3949AB', '#0288D1'])
         expect(computed.transferredStudentCourseTotalCount.call(ctx)).toBe(2)
+    })
+
+    it('shows course rows from the current selection when no student is selected', () => {
+        const computed = (Overview as any).computed
+        const noStudentCourseHistory = {
+            completed: [],
+            missing: [{ key: 'BU2', label: 'BU2', meta: '4 Std.' }],
+            planned: [{ key: 'D7', label: 'D7', meta: '4 Std.' }],
+            additional: [{ key: 'D8', label: 'D8', meta: '4 Std.' }],
+        }
+        const ctx = {
+            transferredStudentContext: null,
+            noStudentCourseHistory,
+        }
+        Object.defineProperty(ctx, 'transferredStudentCourseSections', {
+            get() {
+                return computed.transferredStudentCourseSections.call(this)
+            },
+        })
+
+        expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.key))
+            .toEqual(['missing', 'planned', 'additional'])
+        expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, any>) => section.items))
+            .toEqual([
+                noStudentCourseHistory.missing,
+                noStudentCourseHistory.planned,
+                noStudentCourseHistory.additional,
+            ])
     })
 
     it('shows imported religion from robot student data when restored student context is stale', () => {
@@ -4678,14 +4948,16 @@ describe('Students timetable overview', () => {
         vi.useRealTimers()
     })
 
-    it('does not render student course cards without a selected student', () => {
+    it('renders selected-option course cards without a selected student', () => {
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/overview/Overview.vue',
             'utf8',
         )
 
-        expect(componentSource).toContain('v-if="transferredStudentContext && visibleTransferredStudentCourseSections.length"')
+        expect(componentSource).toContain('v-if="visibleTransferredStudentCourseSections.length"')
         expect(componentSource).toContain('class="transferred-student-course-overview"')
+        expect(componentSource).toContain('v-if="transferredStudentContext"')
+        expect(componentSource).toContain('class="transferred-student-completed-card"')
     })
 
     it('still derives possible selected-option courses for filtering without a selected student', () => {
@@ -4748,12 +5020,11 @@ describe('Students timetable overview', () => {
         const sections = computed.visibleTransferredStudentCourseSections.call(ctx)
 
         expect(sections.map((section: Record<string, string>) => section.key))
-            .toEqual(['completed', 'missing', 'planned', 'additional'])
+            .toEqual(['missing', 'planned', 'additional'])
         expect(sections[0].items).toEqual([])
-        expect(sections[1].items).toEqual([])
-        expect(sections[2].items.map((course: Record<string, string>) => `${course.label} ${course.meta}`))
+        expect(sections[1].items.map((course: Record<string, string>) => `${course.label} ${course.meta}`))
             .toEqual(['D1 3 Std.'])
-        expect(sections[3].items.map((course: Record<string, string>) => `${course.label} ${course.meta}`))
+        expect(sections[2].items.map((course: Record<string, string>) => `${course.label} ${course.meta}`))
             .toEqual(['D2 3 Std.', 'GS1 4 Std.'])
     })
 
