@@ -151,12 +151,21 @@ export function buildCategoryGroups(entries, teachingWorks, grading) {
                     workAverages.push({ value: avg, weight })
                     return
                 }
-                if (!workEntries.length) return
-
                 const values = workEntries
                     .map((e) => gradeValueForWork(work, effectiveGradeKeyForEntry(e, work, teachingWorks)))
                     .filter((v) => v !== null)
-                if (!values.length) return
+                if (!values.length) {
+                    if (workEntries.length) return
+
+                    const grade = pointsGradeForWork(work, 0)
+                    let numericGrade = gradeValueForWork(work, grade)
+                    if (numericGrade === null && grade != null && grade !== '') {
+                        const parsed = parseFloat(String(grade).replace(',', '.'))
+                        numericGrade = Number.isNaN(parsed) ? null : parsed
+                    }
+                    if (numericGrade !== null) workAverages.push({ value: numericGrade, weight })
+                    return
+                }
                 const sum = values.reduce((s, v) => s + v, 0)
                 const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
                 const grade = pointsGradeForWork(work, rounded)

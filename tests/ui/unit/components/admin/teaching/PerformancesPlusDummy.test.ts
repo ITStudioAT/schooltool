@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import PerformancesPlusDummy from '@/pages/admin/teaching/more/components/PerformancesPlusDummy.vue'
 
 describe('PerformancesPlusDummy grade calculation', () => {
@@ -111,5 +113,117 @@ describe('PerformancesPlusDummy grade calculation', () => {
 
         expect(groups[0].value).toBe(5)
         expect(groups[0].entries[0].displayValue).toBe(5)
+    })
+
+    it('calculates an empty points work as zero points when the table defines a zero threshold', () => {
+        const methods = (PerformancesPlusDummy as any).methods
+        const work = {
+            short_name: 'MA',
+            calculation: 'points',
+            grades: [
+                { grade: '+', value: '1' },
+                { grade: '-', value: '-1' },
+                { grade: '~', value: '0' },
+            ],
+            semester_points_table: [
+                { grade: '1', min_points: 2 },
+                { grade: '2', min_points: 2 },
+                { grade: '3', min_points: 1 },
+                { grade: '4', min_points: 0 },
+            ],
+            semester_points_sonst_grade: '5',
+            default_grade: '',
+        }
+        const ctx = makeCtx({
+            grading: {
+                categories: [
+                    {
+                        name: 'Mitarbeit',
+                        weight: 100,
+                        works: [{ short_name: 'MA', factor: 100 }],
+                    },
+                ],
+            },
+            teachingWorks: [work],
+        })
+
+        const groups = methods.buildCategoryGroups.call(ctx, [])
+
+        expect(groups[0].value).toBe(4)
+    })
+})
+
+describe('PerformancesPlusDummy semester grade editing', () => {
+    it('renders semester grade chips and a persistent edit dialog in the student column', () => {
+        const source = readFileSync(
+            resolve(process.cwd(), 'resources/js/pages/admin/teaching/more/components/PerformancesPlusDummy.vue'),
+            'utf8',
+        )
+
+        expect(source).toContain('class="student-semester-grades"')
+        expect(source).toContain('class="student-semester-grade"')
+        expect(source).toContain("S1 {{ row.student.sem_1_grade || '–' }}")
+        expect(source).toContain("S2 {{ row.student.sem_2_grade || '–' }}")
+        expect(source).toContain('icon="mdi-pencil"')
+        expect(source).toContain('@click.stop="openGradeDialog(row.student, \'sem_1_grade\')"')
+        expect(source).toContain('@click.stop="openGradeDialog(row.student, \'sem_2_grade\')"')
+        expect(source).toContain('<v-dialog v-model="showGradeDialog" persistent max-width="420">')
+        expect(source).toContain('Semesternoten bearbeiten')
+    })
+
+    it('saves semester grades for the selected student only', async () => {
+        const methods = (PerformancesPlusDummy as any).methods
+        const selectedCourse = {
+            id: 5,
+            teaching_schema_id: 'schema-1',
+            students_info: [
+                { id: 11, last_name: 'Alpha', first_name: 'Anna', sem_1_grade: null, sem_2_grade: null },
+                { id: 12, last_name: 'Beta', first_name: 'Berta', sem_1_grade: '3', sem_2_grade: '2' },
+            ],
+            students: [11, 12],
+            students_deleted: [],
+        }
+        const update = vi.fn().mockResolvedValue(true)
+        const ctx: Record<string, any> = {
+            selectedCourse,
+            selectedGradeStudent: null,
+            showGradeDialog: false,
+            savingGrades: false,
+            hasTwoSemesters: true,
+            gradeDialogFocusField: 'sem_1_grade',
+            gradeForm: {
+                sem_1_grade: '',
+                sem_2_grade: '',
+                sem_grade: '',
+            },
+            courseStore: {
+                ensureCourseStudentCollections: vi.fn(),
+                update,
+            },
+            studentLabelWithClass: methods.studentLabelWithClass,
+            openGradeDialog: methods.openGradeDialog,
+            closeGradeDialog: methods.closeGradeDialog,
+        }
+
+        methods.openGradeDialog.call(ctx, selectedCourse.students_info[0], 'sem_2_grade')
+        expect(ctx.gradeDialogFocusField).toBe('sem_2_grade')
+
+        ctx.gradeForm.sem_1_grade = '4'
+        ctx.gradeForm.sem_2_grade = '2'
+
+        await methods.saveGradeDialog.call(ctx)
+
+        expect(update).toHaveBeenCalledWith(expect.objectContaining({
+            id: 5,
+            students: [
+                expect.objectContaining({ id: 11, sem_1_grade: '4', sem_2_grade: '2' }),
+                expect.objectContaining({ id: 12, sem_1_grade: '3', sem_2_grade: '2' }),
+            ],
+            students_deleted: [],
+        }))
+        expect(selectedCourse.students_info[0].sem_1_grade).toBe('4')
+        expect(selectedCourse.students_info[0].sem_2_grade).toBe('2')
+        expect(ctx.showGradeDialog).toBe(false)
+        expect(ctx.selectedGradeStudent).toBeNull()
     })
 })

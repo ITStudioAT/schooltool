@@ -55,6 +55,36 @@
                                         color="success"
                                     >mdi-check</v-icon>
                                 </div>
+                                <div v-if="hasTwoSemesters" class="student-semester-grades">
+                                    <div class="student-semester-grade">
+                                        <v-chip size="x-small" variant="tonal" :color="row.student.sem_1_grade ? 'success' : 'default'">
+                                            S1 {{ row.student.sem_1_grade || '–' }}
+                                        </v-chip>
+                                        <v-btn
+                                            icon="mdi-pencil"
+                                            size="x-small"
+                                            variant="text"
+                                            color="primary"
+                                            title="1. Semester bearbeiten"
+                                            :disabled="savingGrades"
+                                            @click.stop="openGradeDialog(row.student, 'sem_1_grade')"
+                                        />
+                                    </div>
+                                    <div class="student-semester-grade">
+                                        <v-chip size="x-small" variant="tonal" :color="row.student.sem_2_grade ? 'success' : 'default'">
+                                            S2 {{ row.student.sem_2_grade || '–' }}
+                                        </v-chip>
+                                        <v-btn
+                                            icon="mdi-pencil"
+                                            size="x-small"
+                                            variant="text"
+                                            color="primary"
+                                            title="2. Semester bearbeiten"
+                                            :disabled="savingGrades"
+                                            @click.stop="openGradeDialog(row.student, 'sem_2_grade')"
+                                        />
+                                    </div>
+                                </div>
                             </td>
                             <td v-for="col in gradeColumns" :key="`${row.student_id}-${col.key}`" class="grade-cell">
                                 <div class="grade-cell-inner">
@@ -101,12 +131,66 @@
                 </table>
             </div>
         </v-card-text>
+
+        <v-dialog v-model="showGradeDialog" persistent max-width="420">
+            <v-card>
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                    <v-icon size="18">mdi-pencil</v-icon>
+                    Semesternoten bearbeiten
+                </v-card-title>
+                <v-card-text>
+                    <div class="text-body-2 text-medium-emphasis mb-3">
+                        {{ selectedGradeStudentLabel }}
+                    </div>
+                    <template v-if="hasTwoSemesters">
+                        <v-text-field
+                            v-model="gradeForm.sem_1_grade"
+                            label="1. Semester"
+                            density="compact"
+                            variant="outlined"
+                            :autofocus="gradeDialogFocusField === 'sem_1_grade'"
+                        />
+                        <v-text-field
+                            v-model="gradeForm.sem_2_grade"
+                            label="2. Semester"
+                            density="compact"
+                            variant="outlined"
+                            :autofocus="gradeDialogFocusField === 'sem_2_grade'"
+                        />
+                    </template>
+                    <v-text-field
+                        v-else
+                        v-model="gradeForm.sem_grade"
+                        label="Note"
+                        density="compact"
+                        variant="outlined"
+                        autofocus
+                    />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" :disabled="savingGrades" @click="closeGradeDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        prepend-icon="mdi-content-save"
+                        :loading="savingGrades"
+                        @click="saveGradeDialog"
+                    >
+                        Speichern
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-card>
 </template>
 
 <script>
 import { parseLocalDate } from '@/helpers/date'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
+import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -122,18 +206,29 @@ export default {
     data() {
         return {
             entryStore: null,
+            courseStore: null,
             courseWorkStore: null,
             teachingStore: null,
             adminStore: null,
             sortMode: 'last_name_first_name',
             loading: false,
+            savingGrades: false,
             allEntries: [],
             copiedEmail: null,
+            showGradeDialog: false,
+            selectedGradeStudent: null,
+            gradeDialogFocusField: 'sem_1_grade',
+            gradeForm: {
+                sem_1_grade: '',
+                sem_2_grade: '',
+                sem_grade: '',
+            },
         }
     },
 
     async beforeMount() {
         this.entryStore = useCourseStudentEntryStore()
+        this.courseStore = useCourseStore()
         this.courseWorkStore = useCourseWorkStore()
         this.teachingStore = useTeachingStore()
         this.adminStore = useAdminStore()
@@ -190,6 +285,9 @@ export default {
                     if (canceledA !== canceledB) return canceledA - canceledB
                     return this.compareStudents(a, b)
                 })
+        },
+        selectedGradeStudentLabel() {
+            return this.selectedGradeStudent ? this.studentLabelWithClass(this.selectedGradeStudent) : ''
         },
         entriesByStudent() {
             const map = {}
@@ -271,6 +369,7 @@ export default {
                     student_label: this.studentLabelWithClass(student),
                     email: student.email || null,
                     is_canceled: this.isStudentCanceled(student),
+                    student,
                     grades,
                 }
             })
@@ -484,12 +583,21 @@ export default {
                             workAverages.push({ value: avg, weight })
                             return
                         }
-                        if (!workEntries.length) return
-
                         const values = workEntries
                             .map((e) => this.gradeValueForWork(work, this.effectiveGradeKeyForEntry(e, work)))
                             .filter((v) => v !== null)
-                        if (!values.length) return
+                        if (!values.length) {
+                            if (workEntries.length) return
+
+                            const grade = this.pointsGradeForWork(work, 0)
+                            let numericGrade = this.gradeValueForWork(work, grade)
+                            if (numericGrade === null && grade != null && grade !== '') {
+                                const parsed = parseFloat(String(grade).replace(',', '.'))
+                                numericGrade = Number.isNaN(parsed) ? null : parsed
+                            }
+                            if (numericGrade !== null) workAverages.push({ value: numericGrade, weight })
+                            return
+                        }
                         const sum = values.reduce((s, v) => s + v, 0)
                         const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
                         const grade = this.pointsGradeForWork(work, rounded)
@@ -627,6 +735,69 @@ export default {
                 /* clipboard not available */
             }
         },
+        openGradeDialog(student, focusField = 'sem_1_grade') {
+            this.selectedGradeStudent = student
+            this.gradeDialogFocusField = focusField === 'sem_2_grade' ? 'sem_2_grade' : 'sem_1_grade'
+            this.gradeForm = {
+                sem_1_grade: student?.sem_1_grade || '',
+                sem_2_grade: student?.sem_2_grade || '',
+                sem_grade: student?.sem_grade || '',
+            }
+            this.showGradeDialog = true
+        },
+        closeGradeDialog(force = false) {
+            if (this.savingGrades && !force) return
+            this.showGradeDialog = false
+            this.selectedGradeStudent = null
+            this.gradeDialogFocusField = 'sem_1_grade'
+            this.gradeForm = {
+                sem_1_grade: '',
+                sem_2_grade: '',
+                sem_grade: '',
+            }
+        },
+        async saveGradeDialog() {
+            if (!this.selectedCourse || !this.selectedGradeStudent || this.savingGrades) return
+
+            this.savingGrades = true
+            try {
+                this.courseStore.ensureCourseStudentCollections(this.selectedCourse)
+                const gradeFields = this.hasTwoSemesters
+                    ? {
+                        sem_1_grade: this.gradeForm.sem_1_grade || null,
+                        sem_2_grade: this.gradeForm.sem_2_grade || null,
+                    }
+                    : { sem_grade: this.gradeForm.sem_grade || null }
+
+                const studentsInfo = (this.selectedCourse.students_info || []).map((student) => {
+                    if (String(student.id) === String(this.selectedGradeStudent.id)) {
+                        return { ...student, ...gradeFields }
+                    }
+
+                    return student
+                })
+                const studentsPayload = studentsInfo.length
+                    ? studentsInfo
+                    : (Array.isArray(this.selectedCourse.students) ? this.selectedCourse.students : [])
+
+                const payload = {
+                    ...this.selectedCourse,
+                    students: studentsPayload,
+                    students_deleted: this.selectedCourse.students_deleted || [],
+                }
+
+                const ok = await this.courseStore.update(payload)
+                if (!ok) return
+
+                if (studentsInfo.length) {
+                    this.selectedCourse.students_info = studentsInfo
+                    this.selectedGradeStudent = studentsInfo.find((student) => String(student.id) === String(this.selectedGradeStudent.id)) || this.selectedGradeStudent
+                }
+                this.closeGradeDialog(true)
+            } finally {
+                this.savingGrades = false
+            }
+        },
 
         // --- Display helpers ---
         formatGrade(value) {
@@ -730,6 +901,24 @@ export default {
 
 .student-email-copied {
     flex-shrink: 0;
+}
+
+.student-semester-grades {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.student-semester-grade {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.student-semester-grades :deep(.v-btn) {
+    flex: 0 0 auto;
 }
 
 .row--canceled td {

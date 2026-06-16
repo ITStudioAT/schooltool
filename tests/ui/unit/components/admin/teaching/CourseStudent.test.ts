@@ -1170,6 +1170,42 @@ describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
         expect(groups[0].rows[0].value).toBe(2)
     })
 
+    it('calculates an empty points work as zero points when the table defines a zero threshold', () => {
+        const work = {
+            short_name: 'MA',
+            calculation: 'points',
+            grades: [
+                { grade: '+', value: '1' },
+                { grade: '-', value: '-1' },
+                { grade: '~', value: '0' },
+            ],
+            semester_points_table: [
+                { grade: '1', min_points: 2 },
+                { grade: '2', min_points: 2 },
+                { grade: '3', min_points: 1 },
+                { grade: '4', min_points: 0 },
+            ],
+            semester_points_sonst_grade: '5',
+            default_grade: '',
+        }
+        const ctx = makeCtx({
+            teachingWorks: [work],
+            selectedSchema: {
+                grading: {
+                    categories: [
+                        { name: 'Mitarbeit', weight: 100, works: [{ short_name: 'MA', factor: 100 }] },
+                    ],
+                },
+            },
+        })
+
+        const groups = methods.buildCategoryGroups.call(ctx, [])
+
+        expect(groups[0].value).toBe(4)
+        expect(groups[0].rows[0].sum).toBe(0)
+        expect(groups[0].rows[0].grade).toBe('4')
+    })
+
     it('keeps an unheld required points work as NA instead of converting zero points to grade five', () => {
         const work = {
             short_name: 'TE-E',

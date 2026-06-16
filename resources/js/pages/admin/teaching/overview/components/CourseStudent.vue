@@ -2637,21 +2637,30 @@ export default {
                             })
                             return
                         }
-                        if (!workEntries.length) return
-
                         const values = workEntries
                             .map((entry) => this.gradeValueForWork(work, this.effectiveGradeKeyForEntry(entry, work)))
                             .filter((val) => val !== null)
                         if (!values.length) {
                             const hasNaEntry = workEntries.some((entry) => this.isNaGradeKey(this.effectiveGradeKeyForEntry(entry, work)))
+                            const zeroPointsGrade = workEntries.length ? null : this.pointsGradeForWork(work, 0)
                             rows.push({
                                 key: `sum-${type}`,
                                 type,
                                 sum: 0,
-                                grade: hasNaEntry ? 'NA' : null,
+                                grade: hasNaEntry ? 'NA' : zeroPointsGrade,
                                 requireAllEntries,
                                 requireAllEntriesIncomplete,
                             })
+                            if (!workEntries.length && zeroPointsGrade != null && zeroPointsGrade !== '') {
+                                let numericGrade = this.gradeValueForWork(work, zeroPointsGrade)
+                                if (numericGrade === null) {
+                                    const parsed = parseFloat(String(zeroPointsGrade).replace(',', '.'))
+                                    numericGrade = Number.isNaN(parsed) ? null : parsed
+                                }
+                                if (numericGrade !== null) {
+                                    workAverages.push({ value: numericGrade, weight })
+                                }
+                            }
                             return
                         }
                         const sum = values.reduce((s, v) => s + v, 0)
