@@ -160,7 +160,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("meta: 'Überblick'")
         expect(componentSource).not.toContain("meta: 'Import'")
         expect(componentSource).not.toContain("meta: 'Tagesansicht'")
-        expect(componentSource).toContain('/admin/students-timetables/timetable/overview/automatic')
+        expect(componentSource).toContain('AUTOMATIC_TIMETABLE_OVERVIEW_PATH')
         expect(componentSource).toContain('/admin/students-timetables/subjects-overview/subject-plan')
         expect(componentSource).toContain("const mainSectionKeys = ['timetable', 'subjects-overview', 'import']")
         expect(componentSource).toContain("const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'")
@@ -168,7 +168,8 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("redirectLegacySection(section)")
         expect(componentSource).toContain("this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })")
         expect(componentSource).not.toContain("this.$router.replace({ path: '/admin/students-timetables' })")
-        expect(componentSource).toContain("this.$router.replace({ path: '/admin/students-timetables/timetable/overview/automatic' })")
+        expect(componentSource).toContain('const AUTOMATIC_TIMETABLE_OVERVIEW_PATH = `${TIMETABLE_OVERVIEW_PATH}/automatic`')
+        expect(componentSource).toContain('this.$router.replace({ path: AUTOMATIC_TIMETABLE_OVERVIEW_PATH })')
         expect(componentSource).toContain("activeNavigationKey === item.key")
         expect(componentSource).toContain('timetable: TIMETABLE_OVERVIEW_PATH')
         expect(componentSource).toContain("imports: '/admin/students-timetables/timetable/imports'")
@@ -183,6 +184,25 @@ describe('Students timetable subjects overview', () => {
             .toBeLessThan(componentSource.indexOf("key: 'imports'"))
         expect(componentSource.indexOf("key: 'imports'"))
             .toBeLessThan(componentSource.indexOf("key: 'subjects-overview'"))
+    })
+
+    it('keeps all automatic timetable steps in the focused automatic shell route', () => {
+        const computed = (StudentsTimetables as any).computed
+        const ctx: any = {
+            $route: {
+                path: '/admin/students-timetables/timetable/overview/automatic',
+            },
+        }
+
+        expect(computed.automaticTimetableRouteActive.call(ctx)).toBe(true)
+
+        ctx.$route.path = '/admin/students-timetables/timetable/overview/automatic/result'
+
+        expect(computed.automaticTimetableRouteActive.call(ctx)).toBe(true)
+
+        ctx.$route.path = '/admin/students-timetables/timetable/overview'
+
+        expect(computed.automaticTimetableRouteActive.call(ctx)).toBe(false)
     })
 
     it('writes the default module timetable step into the URL', () => {

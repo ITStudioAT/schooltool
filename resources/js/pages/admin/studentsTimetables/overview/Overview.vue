@@ -280,10 +280,12 @@
                     <RobotTimetable
                         ref="wizardCourseCards"
                         embedded-course-cards-only
+                        :automatic-route-step="automaticTimetableRouteStep"
                         :evaluation-criteria-settings="evaluationCriteria"
                         :restore-generated-timetable="wizardTimetableResultRouteActive"
                         :student-code="transferredStudentContext?.student?.studentCode || null"
                         class="overview-wizard-course-cards"
+                        @automatic-step-change="setAutomaticTimetableStep"
                         @generated-timetable-visibility-change="setWizardTimetableResultVisible"
                         @timetable-result-selection-loading-change="setTimetableResultSelectionLoading"
                         @timetable-overtaken="showOvertakenManualTimetable">
@@ -1151,6 +1153,7 @@ const TIMETABLE_OVERVIEW_BASE_PATH = '/admin/students-timetables/timetable/overv
 const TIMETABLE_OVERVIEW_LANDING_PATH = TIMETABLE_OVERVIEW_BASE_PATH
 const TIMETABLE_OVERVIEW_ROUTE_MODES = ['automatic', 'manual', 'adopted']
 const TIMETABLE_OVERVIEW_RESULT_ACTION = 'result'
+const TIMETABLE_OVERVIEW_ROUTE_STEPS = ['additional-courses']
 const COURSE_CHOICE_RESTRICTION_MISSING = 'missing'
 const COURSE_CHOICE_RESTRICTION_PLANNED = 'planned'
 const COURSE_CHOICE_RESTRICTION_PLANNED_ADDITIONAL = 'planned_additional'
@@ -1822,6 +1825,11 @@ export default {
             return this.normalizedTimetableOverviewRouteMode() === 'automatic'
                 && this.normalizedTimetableOverviewRouteAction() === TIMETABLE_OVERVIEW_RESULT_ACTION
         },
+        automaticTimetableRouteStep() {
+            return this.normalizedTimetableOverviewRouteMode() === 'automatic'
+                ? this.normalizedTimetableOverviewRouteStep()
+                : ''
+        },
         manualPanelBackToWizardVisible() {
             return this.manualPanelOpen
                 && this.manualPanelSource === 'wizard'
@@ -1868,6 +1876,9 @@ export default {
         },
         '$route.params.action'(action) {
             this.applyTimetableOverviewModeFromRoute(this.$route.params.detail, action)
+        },
+        '$route.query.step'() {
+            this.applyTimetableOverviewModeFromRoute()
         },
     },
 
@@ -2002,6 +2013,11 @@ export default {
 
             return normalizedAction === TIMETABLE_OVERVIEW_RESULT_ACTION ? normalizedAction : ''
         },
+        normalizedTimetableOverviewRouteStep(step = this.$route?.query?.step) {
+            const normalizedStep = String(step || '').trim()
+
+            return TIMETABLE_OVERVIEW_ROUTE_STEPS.includes(normalizedStep) ? normalizedStep : ''
+        },
         timetableOverviewModePath(mode = '', action = '') {
             const normalizedMode = this.normalizedTimetableOverviewRouteMode(mode)
             const normalizedAction = normalizedMode === 'automatic'
@@ -2014,11 +2030,42 @@ export default {
                 ? `${TIMETABLE_OVERVIEW_BASE_PATH}/${normalizedMode}/${normalizedAction}`
                 : `${TIMETABLE_OVERVIEW_BASE_PATH}/${normalizedMode}`
         },
-        navigateToTimetableOverviewMode(mode = '', action = '') {
+        timetableOverviewModeLocation(mode = '', action = '', step = '') {
             const path = this.timetableOverviewModePath(mode, action)
-            if (this.$route?.path === path) return
+            const normalizedStep = this.normalizedTimetableOverviewRouteMode(mode) === 'automatic'
+                && !this.normalizedTimetableOverviewRouteAction(action)
+                ? this.normalizedTimetableOverviewRouteStep(step)
+                : ''
 
-            const navigation = this.$router?.push?.({ path })
+            if (!normalizedStep) return { path }
+
+            return {
+                path,
+                query: {
+                    step: normalizedStep,
+                },
+            }
+        },
+        timetableOverviewLocationMatches(location) {
+            const expectedStep = location?.query?.step || ''
+            const currentStep = this.normalizedTimetableOverviewRouteStep()
+
+            return this.$route?.path === location.path && currentStep === expectedStep
+        },
+        navigateToTimetableOverviewMode(mode = '', action = '', step = '') {
+            const location = this.timetableOverviewModeLocation(mode, action, step)
+            if (this.timetableOverviewLocationMatches(location)) return
+
+            const navigation = this.$router?.push?.(location)
+            navigation?.catch?.(() => {})
+        },
+        replaceTimetableOverviewMode(mode = '', action = '', step = '') {
+            const location = this.timetableOverviewModeLocation(mode, action, step)
+            if (this.timetableOverviewLocationMatches(location)) return
+
+            const navigation = this.$router?.replace
+                ? this.$router.replace(location)
+                : this.$router?.push?.(location)
             navigation?.catch?.(() => {})
         },
         applyTimetableOverviewModeFromRoute(
@@ -2033,21 +2080,44 @@ export default {
             }
 
             if (normalizedMode === 'automatic') {
-                if (this.normalizedTimetableOverviewRouteAction(action) === TIMETABLE_OVERVIEW_RESULT_ACTION) {
+                const normalizedAction = this.normalizedTimetableOverviewRouteAction(action)
+                const normalizedStep = this.normalizedTimetableOverviewRouteStep()
+                const hasRouteStep = Boolean(this.$route?.query?.step)
+
+                if (normalizedAction === TIMETABLE_OVERVIEW_RESULT_ACTION) {
+                    if (hasRouteStep) {
+                        this.replaceTimetableOverviewMode('automatic', TIMETABLE_OVERVIEW_RESULT_ACTION)
+                    }
+
                     this.returnToWizardTimetableResult({ syncRoute: false })
 
                     return
                 }
 
+                if (action || (hasRouteStep && !normalizedStep)) {
+                    this.replaceTimetableOverviewMode('automatic')
+                }
+
                 this.openWizardPanel({ syncRoute: false })
+                if (normalizedStep) {
+                    this.wizardPanelMounted = true
+                }
 
                 return
             }
 
             if (normalizedMode === 'manual') {
+                if (action || this.normalizedTimetableOverviewRouteStep()) {
+                    this.replaceTimetableOverviewMode('manual')
+                }
+
                 this.openManualPanel({ syncRoute: false })
 
                 return
+            }
+
+            if (action || this.normalizedTimetableOverviewRouteStep()) {
+                this.replaceTimetableOverviewMode('adopted')
             }
 
             this.wizardPanelMounted = this.savedRobotTimetableStateAvailable()
@@ -2153,6 +2223,13 @@ export default {
             if (this.wizardTimetableResultVisible) {
                 this.navigateToTimetableOverviewMode?.('automatic', TIMETABLE_OVERVIEW_RESULT_ACTION)
             }
+        },
+        setAutomaticTimetableStep(step) {
+            if (!this.wizardPanelOpen) return
+
+            const normalizedStep = this.normalizedTimetableOverviewRouteStep(step)
+            this.wizardTimetableResultVisible = false
+            this.navigateToTimetableOverviewMode?.('automatic', '', normalizedStep)
         },
         openManualPanel(options = {}) {
             this.manualPanelOpen = true

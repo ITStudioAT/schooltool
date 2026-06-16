@@ -84,6 +84,7 @@ const Import = defineAsyncComponent(() => import('./import/Import.vue'))
 const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/SubjectsOverview.vue'))
 
 const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'
+const AUTOMATIC_TIMETABLE_OVERVIEW_PATH = `${TIMETABLE_OVERVIEW_PATH}/automatic`
 const mainSectionKeys = ['timetable', 'subjects-overview', 'import']
 
 export default {
@@ -104,7 +105,8 @@ export default {
             return this.config?.selected_schoolyear?.name || 'Kein Schuljahr gewählt'
         },
         automaticTimetableRouteActive() {
-            return this.$route.path === '/admin/students-timetables/timetable/overview/automatic'
+            return this.$route.path === AUTOMATIC_TIMETABLE_OVERVIEW_PATH
+                || this.$route.path.startsWith(`${AUTOMATIC_TIMETABLE_OVERVIEW_PATH}/`)
         },
         schoolyears() {
             return this.schoolyearStore?.schoolyears || []
@@ -265,7 +267,7 @@ export default {
 
             if (section === 'robot') {
                 this.main_action = 'timetable'
-                this.$router.replace({ path: '/admin/students-timetables/timetable/overview/automatic' })
+                this.$router.replace({ path: AUTOMATIC_TIMETABLE_OVERVIEW_PATH })
 
                 return true
             }

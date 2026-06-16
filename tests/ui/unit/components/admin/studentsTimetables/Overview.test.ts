@@ -4523,7 +4523,10 @@ describe('Students timetable overview', () => {
             manualPanelSource: null,
             normalizedTimetableOverviewRouteMode: methods.normalizedTimetableOverviewRouteMode,
             normalizedTimetableOverviewRouteAction: methods.normalizedTimetableOverviewRouteAction,
+            normalizedTimetableOverviewRouteStep: methods.normalizedTimetableOverviewRouteStep,
             timetableOverviewModePath: methods.timetableOverviewModePath,
+            timetableOverviewModeLocation: methods.timetableOverviewModeLocation,
+            timetableOverviewLocationMatches: methods.timetableOverviewLocationMatches,
             navigateToTimetableOverviewMode: methods.navigateToTimetableOverviewMode,
             openWizardPanel: methods.openWizardPanel,
             returnToWizardTimetableResult: methods.returnToWizardTimetableResult,
@@ -4532,11 +4535,13 @@ describe('Students timetable overview', () => {
             $route: {
                 path: '/admin/students-timetables/timetable/overview',
                 params: {},
+                query: {},
             },
             $router: {
-                push({ path }: { path: string }) {
-                    pushedPaths.push(path)
-                    ctx.$route.path = path
+                push(location: { path: string, query?: Record<string, string> }) {
+                    pushedPaths.push(location.query?.step ? `${location.path}?step=${location.query.step}` : location.path)
+                    ctx.$route.path = location.path
+                    ctx.$route.query = location.query || {}
                 },
             },
         }
@@ -4552,6 +4557,48 @@ describe('Students timetable overview', () => {
             '/admin/students-timetables/timetable/overview/manual',
             '/admin/students-timetables/timetable/overview',
         ])
+    })
+
+    it('writes editable additional-course automatic step into the URL query', () => {
+        const methods = (Overview as any).methods
+        const pushedLocations: Array<{ path: string, query?: Record<string, string> }> = []
+        const ctx = {
+            wizardPanelOpen: true,
+            wizardTimetableResultVisible: true,
+            normalizedTimetableOverviewRouteMode: methods.normalizedTimetableOverviewRouteMode,
+            normalizedTimetableOverviewRouteAction: methods.normalizedTimetableOverviewRouteAction,
+            normalizedTimetableOverviewRouteStep: methods.normalizedTimetableOverviewRouteStep,
+            timetableOverviewModePath: methods.timetableOverviewModePath,
+            timetableOverviewModeLocation: methods.timetableOverviewModeLocation,
+            timetableOverviewLocationMatches: methods.timetableOverviewLocationMatches,
+            navigateToTimetableOverviewMode: methods.navigateToTimetableOverviewMode,
+            setAutomaticTimetableStep: methods.setAutomaticTimetableStep,
+            $route: {
+                path: '/admin/students-timetables/timetable/overview/automatic/result',
+                params: {
+                    detail: 'automatic',
+                    action: 'result',
+                },
+                query: {},
+            },
+            $router: {
+                push(location: { path: string, query?: Record<string, string> }) {
+                    pushedLocations.push(location)
+                    ctx.$route.path = location.path
+                    ctx.$route.query = location.query || {}
+                },
+            },
+        }
+
+        methods.setAutomaticTimetableStep.call(ctx, 'additional-courses')
+
+        expect(ctx.wizardTimetableResultVisible).toBe(false)
+        expect(pushedLocations).toEqual([{
+            path: '/admin/students-timetables/timetable/overview/automatic',
+            query: {
+                step: 'additional-courses',
+            },
+        }])
     })
 
     it('restores overview timetable panel state from route URLs', () => {
@@ -4592,6 +4639,7 @@ describe('Students timetable overview', () => {
             },
             normalizedTimetableOverviewRouteMode: methods.normalizedTimetableOverviewRouteMode,
             normalizedTimetableOverviewRouteAction: methods.normalizedTimetableOverviewRouteAction,
+            normalizedTimetableOverviewRouteStep: methods.normalizedTimetableOverviewRouteStep,
             applyTimetableOverviewLandingState: methods.applyTimetableOverviewLandingState,
             applyTimetableState: methods.applyTimetableState,
             currentTimetableState: methods.currentTimetableState,
@@ -4650,6 +4698,47 @@ describe('Students timetable overview', () => {
         expect(ctx.wizardPanelMounted).toBe(false)
         expect(ctx.manualPanelOpen).toBe(false)
         expect(ctx.manualPanelSource).toBeNull()
+    })
+
+    it('canonicalizes malformed overview timetable step URLs', () => {
+        const methods = (Overview as any).methods
+        const replacedPaths: string[] = []
+        const ctx = {
+            wizardPanelOpen: false,
+            wizardPanelMounted: false,
+            wizardTimetableResultVisible: false,
+            manualPanelOpen: false,
+            manualPanelSource: null,
+            normalizedTimetableOverviewRouteMode: methods.normalizedTimetableOverviewRouteMode,
+            normalizedTimetableOverviewRouteAction: methods.normalizedTimetableOverviewRouteAction,
+            normalizedTimetableOverviewRouteStep: methods.normalizedTimetableOverviewRouteStep,
+            timetableOverviewModePath: methods.timetableOverviewModePath,
+            timetableOverviewModeLocation: methods.timetableOverviewModeLocation,
+            timetableOverviewLocationMatches: methods.timetableOverviewLocationMatches,
+            replaceTimetableOverviewMode: methods.replaceTimetableOverviewMode,
+            openWizardPanel: methods.openWizardPanel,
+            $route: {
+                path: '/admin/students-timetables/timetable/overview/automatic/unknown',
+                params: {},
+                query: {},
+            },
+            $router: {
+                replace(location: { path: string, query?: Record<string, string> }) {
+                    replacedPaths.push(location.query?.step ? `${location.path}?step=${location.query.step}` : location.path)
+                    ctx.$route.path = location.path
+                    ctx.$route.query = location.query || {}
+                },
+            },
+        }
+
+        methods.applyTimetableOverviewModeFromRoute.call(ctx, 'automatic', 'unknown')
+
+        expect(ctx.wizardPanelOpen).toBe(true)
+        expect(ctx.wizardPanelMounted).toBe(true)
+        expect(ctx.wizardTimetableResultVisible).toBe(false)
+        expect(replacedPaths).toEqual([
+            '/admin/students-timetables/timetable/overview/automatic',
+        ])
     })
 
     it('marks only the automatic result route as a generated timetable route', () => {

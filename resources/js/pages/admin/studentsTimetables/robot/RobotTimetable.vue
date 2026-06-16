@@ -212,6 +212,15 @@
             <div
                 v-show="!embeddedCourseSelectionLocked || embeddedAdditionalCourseSelectionExpanded"
                 class="robot-course-panel__body">
+                <v-alert
+                    v-if="additionalCourseExtensionWarning"
+                    type="warning"
+                    variant="tonal"
+                    density="compact"
+                    class="mb-3">
+                    {{ additionalCourseExtensionWarning }}
+                </v-alert>
+
                 <div class="robot-course-columns">
                     <div
                         v-for="(courseColumn, columnIndex) in additionalCourseColumns"
@@ -801,6 +810,15 @@
                         </div>
                     </div>
                     <div class="robot-course-panel__body">
+                        <v-alert
+                            v-if="additionalCourseExtensionWarning"
+                            type="warning"
+                            variant="tonal"
+                            density="compact"
+                            class="mb-3">
+                            {{ additionalCourseExtensionWarning }}
+                        </v-alert>
+
                         <div class="robot-course-columns">
                             <div
                                 v-for="(courseColumn, columnIndex) in additionalCourseColumns"
@@ -2711,11 +2729,15 @@ const AUTOMATIC_COURSE_PROGRESSION_LOCK_VARIATION_LIMIT = 200000
 
 export default {
     components: { EvaluationSettings, LoadingAnimation },
-    emits: ['generated-timetable-visibility-change', 'timetable-overtaken', 'timetable-result-selection-loading-change'],
+    emits: ['automatic-step-change', 'generated-timetable-visibility-change', 'timetable-overtaken', 'timetable-result-selection-loading-change'],
     props: {
         embeddedCourseCardsOnly: {
             type: Boolean,
             default: false,
+        },
+        automaticRouteStep: {
+            type: String,
+            default: '',
         },
         studentCode: {
             type: [String, Number],
@@ -2766,6 +2788,7 @@ export default {
             restoredQualitySummaryCheckedKeys: [],
             additionalCourseTimetableRequired: false,
             additionalCourseExtensionActionHidden: false,
+            additionalCourseExtensionWarning: '',
             courseActionHiddenUntilCourseInteraction: false,
             additionalCoursePanelRetained: false,
             additionalCourseSelectionChangedAfterTimetable: false,
@@ -2786,6 +2809,7 @@ export default {
             studentDialogOpen: false,
             constraintsDialogOpen: false,
             robotStateRestoring: false,
+            robotCourseSelectionRestoredFromState: false,
             studentOptionsLoading: false,
             studentSearch: '',
             robotStudents: [],
@@ -3525,6 +3549,12 @@ export default {
 
             this.restoreGeneratedTimetableFromSavedState()
         },
+        automaticRouteStep: {
+            immediate: true,
+            handler(step) {
+                this.applyAutomaticRouteStep(step)
+            },
+        },
         'config.selected_schoolyear.id'() {
             this.loadSettings()
         },
@@ -3625,11 +3655,21 @@ export default {
                 )
                 this.robotStudents = studentOptionsResponse.data?.data || []
                 this.restoreLastRobotState()
+                this.applyAutomaticRouteStep(this.automaticRouteStep)
                 this.syncExternalStudentSelection()
                 this.syncAvailableTimes()
-                this.loadStudentCompletedCourses()
+                await this.loadStudentCompletedCourses({
+                    preserveCurrentCourseSelection: this.robotCourseSelectionRestoredFromState,
+                })
+                if (this.robotCourseSelectionRestoredFromState) {
+                    this.restoreLastRobotState()
+                    this.applyAutomaticRouteStep(this.automaticRouteStep)
+                    this.syncAvailableTimes()
+                }
                 this.restoreTimetablePreferencesAfterRestore()
+                this.loading = false
                 await this.restoreGeneratedTimetableFromSavedState()
+                this.applyAutomaticRouteStep(this.automaticRouteStep)
             } catch (error) {
                 this.schoolHours = []
                 this.courseGroups = []
@@ -3983,7 +4023,8 @@ export default {
 
             this.studentCompletedCoursesExpanded = !this.studentCompletedCoursesExpanded
         },
-        async loadStudentCompletedCourses() {
+        async loadStudentCompletedCourses(options = {}) {
+            const preserveCurrentCourseSelection = options?.preserveCurrentCourseSelection === true
             const studentCode = this.normalizedStudentCode(this.studentSelection.studentCode)
             const requestId = this.studentCompletedCoursesRequestId + 1
             this.studentCompletedCoursesRequestId = requestId
@@ -3994,7 +4035,9 @@ export default {
                 this.studentCompletedCoursesLoading = false
                 this.studentCompletedCoursesExpanded = false
                 this.additionalCourseSelectedKeys = []
-                this.selectAllAvailableCourses()
+                if (!preserveCurrentCourseSelection) {
+                    this.selectAllAvailableCourses()
+                }
 
                 return
             }
@@ -4012,7 +4055,7 @@ export default {
                 if (requestId !== this.studentCompletedCoursesRequestId) return
 
                 this.studentCompletedCourses = response.data?.data || []
-                if (this.studentSelectionDefaultsPendingCode === studentCode) {
+                if (!preserveCurrentCourseSelection && this.studentSelectionDefaultsPendingCode === studentCode) {
                     this.applySelectedStudentDefaultSelection({ includeCourseHistory: true })
                     this.studentSelectionDefaultsPendingCode = null
                 }
@@ -4028,7 +4071,7 @@ export default {
                 if (requestId === this.studentCompletedCoursesRequestId) {
                     this.studentCompletedCoursesLoading = false
 
-                    if (!this.studentCompletedCoursesError) {
+                    if (!this.studentCompletedCoursesError && !preserveCurrentCourseSelection) {
                         this.applyStudentPlannedCourseSelection()
                         this.pruneAdditionalCourseSelections()
                     }
@@ -4123,6 +4166,7 @@ export default {
             if (!this.selectedAdditionalCourses.length) return
 
             this.additionalCourseExtensionActionHidden = true
+            this.additionalCourseExtensionWarning = ''
             this.embeddedAdditionalCourseSelectionExpanded = false
             const requiredStateChanged = this.additionalCourseTimetableRequired !== true
             this.additionalCourseTimetableRequired = true
@@ -4162,6 +4206,21 @@ export default {
         },
         toggleEmbeddedAdditionalCourseSelection() {
             this.embeddedAdditionalCourseSelectionExpanded = !this.embeddedAdditionalCourseSelectionExpanded
+        },
+        applyAutomaticRouteStep(step) {
+            if (!this.embeddedCourseCardsOnly) return
+            if (step !== 'additional-courses') return
+
+            this.additionalCoursePanelRetained = true
+            this.additionalCourseExtensionActionHidden = false
+            this.additionalCourseSelectionChangedAfterTimetable = this.uniqueValues(this.additionalCourseSelectedKeys).length > 0
+            this.embeddedCourseSelectionExpanded = false
+            this.embeddedAdditionalCourseSelectionExpanded = true
+        },
+        emitAutomaticStepChange(step = '') {
+            if (!this.embeddedCourseCardsOnly) return
+
+            this.$emit?.('automatic-step-change', step)
         },
         backendTimetableRequestPayload(options = {}) {
             const evaluationCriteria = this.storageEvaluationCriteria(this.evaluationCriteria)
@@ -4231,6 +4290,15 @@ export default {
                 this.greenTimetableCount = Number(response.data?.data?.green_timetable_count || 0)
                 this.conflictTimetableCount = Number(response.data?.data?.conflict_timetable_count || 0)
                 this.additionalCourseTimetableCount = Number(response.data?.data?.additional_course_timetable_count || 0)
+                if (this.additionalCourseExtensionHasNoResult()) {
+                    this.recoverFromImpossibleAdditionalCourseExtension()
+                    await this.loadFullGreenTimetableCount({
+                        skipAdditionalCourseDefaultSelection: true,
+                    })
+
+                    return
+                }
+
                 if (options?.calculateQualityCounters === true) {
                     this.qualityCounters = response.data?.data?.quality_counters || []
                     this.allQualityCriteriaCount = Number(response.data?.data?.all_quality_criteria_count || 0)
@@ -4296,6 +4364,7 @@ export default {
                 this.additionalCourseSelectionChangedAfterTimetable = false
                 this.applySelectedQualityMetricsToCounters()
                 this.refreshQualityCountersAfterTimetableLoad(options)
+                this.saveLastRobotState()
             } catch {
                 if (requestId !== this.fullGreenTimetableCountRequestId) return
 
@@ -4324,6 +4393,29 @@ export default {
             const responseMessage = error?.response?.data?.message
 
             return firstError || responseMessage || 'Die Anzahl der Stundenpläne konnte nicht berechnet werden.'
+        },
+        additionalCourseExtensionHasNoResult() {
+            return this.additionalCourseTimetableRequired === true
+                && this.selectedAdditionalCourses.length > 0
+                && this.additionalCourseTimetableCount !== null
+                && Number(this.additionalCourseTimetableCount || 0) <= 0
+        },
+        recoverFromImpossibleAdditionalCourseExtension() {
+            const selectedAdditionalCourseLabels = this.selectedAdditionalCourseLabels()
+            const warningCourseList = selectedAdditionalCourseLabels
+                ? ` (${selectedAdditionalCourseLabels})`
+                : ''
+
+            this.resetAdditionalCourseSelection()
+            this.additionalCourseExtensionWarning = `Für die gewählten Zusatzkurse${warningCourseList} konnte kein Stundenplan erstellt werden. Die Zusatzkurse wurden automatisch abgewählt; du kannst die Auswahl jetzt anpassen.`
+            this.additionalCoursePanelRetained = this.studentAdditionalCourses.length > 0
+            this.additionalCourseExtensionActionHidden = false
+            this.additionalCourseTimetableRequired = false
+            this.additionalCourseSelectionChangedAfterTimetable = false
+            this.embeddedCourseSelectionExpanded = false
+            this.embeddedAdditionalCourseSelectionExpanded = true
+            this.$emit?.('generated-timetable-visibility-change', false)
+            this.saveLastRobotState()
         },
         async loadQualityCountersForSelectedTimetableType() {
             if (!this.timetableCalculationReady() || !this.activeQualityCriterionRows.length) {
@@ -4607,6 +4699,7 @@ export default {
                     : Promise.resolve()
 
                 return Promise.allSettled([timetableLoad, qualityCountersLoad]).then(() => {
+                    this.saveLastRobotState()
                     this.$emit?.('timetable-result-selection-loading-change', false)
                 })
             }
@@ -4735,6 +4828,12 @@ export default {
                 selectedAdditionalCourseKeys: [],
                 progressionAdditionalCourseKeys: [],
                 additionalCourseTimetableRequired: false,
+                additionalCoursePanelRetained: false,
+                additionalCourseSelectionChangedAfterTimetable: false,
+                additionalCourseExtensionActionHidden: false,
+                fullGreenTimetableNumber: 1,
+                greenTimetableNumber: 1,
+                conflictTimetableNumber: 1,
                 selectedCourseKeys: null,
             }
         },
@@ -4748,6 +4847,12 @@ export default {
                 selectedAdditionalCourseKeys: this.uniqueValues(this.additionalCourseSelectedKeys),
                 progressionAdditionalCourseKeys: this.uniqueValues(this.progressionAdditionalCourseKeys),
                 additionalCourseTimetableRequired: this.additionalCourseTimetableRequired === true,
+                additionalCoursePanelRetained: this.additionalCoursePanelRetained === true,
+                additionalCourseSelectionChangedAfterTimetable: this.additionalCourseSelectionChangedAfterTimetable === true,
+                additionalCourseExtensionActionHidden: this.additionalCourseExtensionActionHidden === true,
+                fullGreenTimetableNumber: Number(this.fullGreenTimetableNumber || 1),
+                greenTimetableNumber: Number(this.greenTimetableNumber || 1),
+                conflictTimetableNumber: Number(this.conflictTimetableNumber || 1),
                 selectedCourseKeys: this.selectedCourseKeysForState(),
                 selectedCourseCodes: this.selectedCourseCodesForState(),
                 selectedTimetableResultType: this.selectedTimetableResultType,
@@ -4757,6 +4862,7 @@ export default {
         },
         applyRobotState(state) {
             const defaults = this.defaultRobotState()
+            const courseSelectionRestoredFromState = this.robotStateHasCourseSelection(state)
             const studentCode = this.normalizedStudentCode(state?.student?.studentCode)
             const selectedStudent = this.studentByCode(studentCode)
             const studentDefaults = selectedStudent
@@ -4790,13 +4896,40 @@ export default {
                 this.additionalCourseSelectedKeys = this.uniqueValues(state?.selectedAdditionalCourseKeys)
                 this.progressionAdditionalCourseKeys = this.uniqueValues(state?.progressionAdditionalCourseKeys)
                 this.additionalCourseTimetableRequired = state?.additionalCourseTimetableRequired === true
-                this.studentSelectionDefaultsPendingCode = selectedStudent ? studentCode : null
+                this.additionalCoursePanelRetained = state?.additionalCoursePanelRetained === true
+                this.additionalCourseSelectionChangedAfterTimetable = state?.additionalCourseSelectionChangedAfterTimetable === true
+                this.additionalCourseExtensionActionHidden = state?.additionalCourseExtensionActionHidden === true
+                this.fullGreenTimetableNumber = this.numberOrDefault(
+                    state?.fullGreenTimetableNumber,
+                    defaults.fullGreenTimetableNumber,
+                )
+                this.greenTimetableNumber = this.numberOrDefault(
+                    state?.greenTimetableNumber,
+                    defaults.greenTimetableNumber,
+                )
+                this.conflictTimetableNumber = this.numberOrDefault(
+                    state?.conflictTimetableNumber,
+                    defaults.conflictTimetableNumber,
+                )
+                this.studentSelectionDefaultsPendingCode = selectedStudent && !courseSelectionRestoredFromState
+                    ? studentCode
+                    : null
+                this.robotCourseSelectionRestoredFromState = courseSelectionRestoredFromState
                 this.restoredTimetableResultType = state?.selectedTimetableResultType || null
                 this.restoredQualityCriteriaFilterEnabled = state?.qualityCriteriaResultFilterEnabled === true
                 this.restoredQualitySummaryCheckedKeys = Array.isArray(state?.qualitySummaryCheckedKeys) ? [...state.qualitySummaryCheckedKeys] : []
             } finally {
                 this.robotStateRestoring = false
             }
+        },
+        robotStateHasCourseSelection(state) {
+            const deselectedCourseKeys = this.uniqueValues(state?.deselectedCourseKeys)
+            const deselectedCourseGroupKeys = this.uniqueValues(state?.deselectedCourseGroupKeys)
+
+            return Array.isArray(state?.selectedCourseKeys)
+                || Array.isArray(state?.selectedCourseCodes)
+                || deselectedCourseKeys.length > 0
+                || deselectedCourseGroupKeys.length > 0
         },
         restoredDeselectedCourseKeys(state) {
             const selectedCourseKeys = this.uniqueValues(state?.selectedCourseKeys)
@@ -5434,6 +5567,9 @@ export default {
                 this.additionalCourseSelectedKeys = Array.isArray(this.additionalCourseSelectedKeys)
                     ? this.additionalCourseSelectedKeys.filter(courseKey => !progressionAdditionalCourseKeys.has(courseKey))
                     : []
+                this.deselectedCourseKeys = Array.isArray(this.deselectedCourseKeys)
+                    ? this.deselectedCourseKeys.filter(courseKey => !progressionAdditionalCourseKeys.has(courseKey))
+                    : []
             }
             this.additionalCoursePanelRetained = keepAdditionalCoursePanelVisible
                 && this.studentAdditionalCourses.length > 0
@@ -5450,6 +5586,7 @@ export default {
                 this.additionalCourseExtensionActionHidden = false
                 this.additionalCourseSelectionChangedAfterTimetable = false
                 this.$emit?.('generated-timetable-visibility-change', false)
+                this.emitAutomaticStepChange()
                 this.saveLastRobotState()
 
                 return
@@ -5467,6 +5604,7 @@ export default {
                 this.embeddedAdditionalCourseSelectionExpanded = true
                 this.fullGreenTimetableCountError = ''
                 this.$emit?.('generated-timetable-visibility-change', false)
+                this.emitAutomaticStepChange('additional-courses')
                 this.saveLastRobotState()
 
                 return
@@ -5480,6 +5618,7 @@ export default {
             this.additionalCourseExtensionActionHidden = false
             this.additionalCourseSelectionChangedAfterTimetable = selectedAdditionalCourseCount > 0
             this.showCourseActionAfterCourseInteraction()
+            this.emitAutomaticStepChange(this.additionalCourseSelectionChangedAfterTimetable ? 'additional-courses' : '')
             this.saveLastRobotState()
         },
         clearTimetableCountResults() {
@@ -5543,11 +5682,13 @@ export default {
             this.normalizeTimetableResultCounters()
 
             if (this.timetableCalculationReady()) {
-                this.loadFullGreenTimetableCount({
+                return this.loadFullGreenTimetableCount({
                     preserveGeneratedTimetable: true,
                     preserveQualityCounters: true,
                 })
             }
+
+            this.saveLastRobotState()
         },
         allQualityCriteriaCountDetail() {
             if (!this.activeQualityCriterionRows.length) {
@@ -5921,9 +6062,14 @@ export default {
                 } finally {
                     if (requestId === this.qualitySummarySelectionRequestId) {
                         this.qualitySummarySelectionLoading = false
+                        this.saveLastRobotState()
                     }
                 }
+
+                return
             }
+
+            this.saveLastRobotState()
         },
         resetQualityCounterSelection() {
             this.allQualityCriteriaCount = null
@@ -7160,6 +7306,7 @@ export default {
             const keepAdditionalCoursePanelVisible = this.additionalCoursePanelVisible
 
             this.additionalCourseExtensionActionHidden = false
+            this.additionalCourseExtensionWarning = ''
             this.generationError = ''
             this.generationProblems = []
 
@@ -7174,6 +7321,7 @@ export default {
                 && this.studentAdditionalCourses.length > 0
             this.additionalCourseSelectionChangedAfterTimetable = this.uniqueValues(this.additionalCourseSelectedKeys).length > 0
             this.fullGreenTimetableCountError = ''
+            this.emitAutomaticStepChange(this.additionalCourseSelectionChangedAfterTimetable ? 'additional-courses' : '')
             this.saveLastRobotState()
         },
         setAdditionalCourseSelected(course, selected) {
