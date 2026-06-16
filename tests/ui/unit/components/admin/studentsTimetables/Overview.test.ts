@@ -6170,6 +6170,7 @@ describe('Students timetable overview', () => {
             hasBlockingOverlap: false,
             hasRelatedOverlap: false,
             isActive: true,
+            isDisabled: false,
             color: 'success',
         }])
         expect(ctx.courseMenuEntryHasRelatedOverlap).toHaveBeenCalledWith(entry, 2, { hasBlockingOverlap: false })
@@ -6178,6 +6179,76 @@ describe('Students timetable overview', () => {
 
         expect(ctx.toggleCourseMenuEntryFilter).toHaveBeenCalledWith(entry)
         expect(ctx.runTimetableUpdate).not.toHaveBeenCalled()
+    })
+
+    it('marks unavailable course menu entries red and date-compatible overlaps orange', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const blockedEntry = {
+            key: 'semester-1-D-D1',
+            label: 'D1 - 1A - MAY',
+            courseGroupKeys: ['d-1'],
+        }
+        const relatedEntry = {
+            key: 'semester-1-E-E1',
+            label: 'E1 - 1A - KOW',
+            courseGroupKeys: ['e-1'],
+        }
+        const activeBlockingEntry = {
+            key: 'semester-1-M-M1',
+            label: 'M1 - 1A - MAY',
+            courseGroupKeys: ['m-1'],
+        }
+        const toggledEntries: unknown[] = []
+        const ctx = {
+            selectedCourseMenu: {
+                semesterValue: 1,
+                entries: [blockedEntry, relatedEntry, activeBlockingEntry],
+            },
+            courseMenuEntryHasBlockingOverlap: vi.fn((entry: Record<string, string>) => (
+                [blockedEntry.key, activeBlockingEntry.key].includes(entry.key)
+            )),
+            courseMenuEntryHasRelatedOverlap: vi.fn((entry: Record<string, string>) => entry.key === relatedEntry.key),
+            isCourseMenuEntryFilterActive: vi.fn((entry: Record<string, string>) => entry.key === activeBlockingEntry.key),
+            toggleCourseMenuEntryFilter(entry: unknown) {
+                toggledEntries.push(entry)
+            },
+        }
+
+        const entryOptions = computed.selectedCourseMenuEntryOptions.call(ctx)
+
+        expect(entryOptions).toEqual([
+            expect.objectContaining({
+                key: blockedEntry.key,
+                hasBlockingOverlap: true,
+                hasRelatedOverlap: false,
+                isActive: false,
+                isDisabled: true,
+                color: 'error',
+            }),
+            expect.objectContaining({
+                key: relatedEntry.key,
+                hasBlockingOverlap: false,
+                hasRelatedOverlap: true,
+                isActive: false,
+                isDisabled: false,
+                color: 'warning',
+            }),
+            expect.objectContaining({
+                key: activeBlockingEntry.key,
+                hasBlockingOverlap: true,
+                hasRelatedOverlap: false,
+                isActive: true,
+                isDisabled: false,
+                color: 'error',
+            }),
+        ])
+
+        methods.handleCourseMenuEntryFilterClick.call(ctx, blockedEntry, entryOptions[0])
+        methods.handleCourseMenuEntryFilterClick.call(ctx, relatedEntry, entryOptions[1])
+        methods.handleCourseMenuEntryFilterClick.call(ctx, activeBlockingEntry, entryOptions[2])
+
+        expect(toggledEntries).toEqual([relatedEntry, activeBlockingEntry])
     })
 
     it('marks course menu chips as active when one of their entries is selected', () => {

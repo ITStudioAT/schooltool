@@ -898,18 +898,56 @@ describe('Student timetable evaluation settings', () => {
                                         {
                                             key: 'bu2-14',
                                             display_label: 'BU2 - 5CK - FUCH',
+                                            semester: 1,
                                             weekday: 1,
                                             time_from: '20:25',
                                             time_until: '21:10',
                                             recurrence_label: '1w',
+                                            dates: ['2026-02-24', '2026-03-10'],
                                         },
                                         {
                                             key: 'bu2-15',
                                             display_label: 'BU2 - 5CK - FUCH',
+                                            semester: 1,
                                             weekday: 1,
                                             time_from: '21:10',
                                             time_until: '21:55',
                                             recurrence_label: '1w',
+                                            dates: ['2026-02-24', '2026-03-10'],
+                                        },
+                                    ],
+                                },
+                                {
+                                    key: 'bu3',
+                                    code: 'BU3',
+                                    semester: 1,
+                                    course_groups: [
+                                        {
+                                            key: 'bu3-14',
+                                            display_label: 'BU3 - 5CK - TEST',
+                                            semester: 1,
+                                            weekday: 1,
+                                            time_from: '20:25',
+                                            time_until: '21:10',
+                                            recurrence_label: '1w',
+                                            dates: ['2026-03-10'],
+                                        },
+                                    ],
+                                },
+                                {
+                                    key: 'bu4',
+                                    code: 'BU4',
+                                    semester: 1,
+                                    course_groups: [
+                                        {
+                                            key: 'bu4-14',
+                                            display_label: 'BU4 - 5CK - FREE',
+                                            semester: 1,
+                                            weekday: 1,
+                                            time_from: '20:25',
+                                            time_until: '21:10',
+                                            recurrence_label: '1w',
+                                            dates: ['2026-03-17'],
                                         },
                                     ],
                                 },
@@ -1027,6 +1065,12 @@ describe('Student timetable evaluation settings', () => {
             get manualTimetableCourseSections() {
                 return computed.manualTimetableCourseSections.call(ctx)
             },
+            get studentCoursePickerAllCourseGroups() {
+                return computed.studentCoursePickerAllCourseGroups.call(ctx)
+            },
+            get studentCoursePickerAllEntries() {
+                return computed.studentCoursePickerAllEntries.call(ctx)
+            },
             get savedTimetableCourseChipEntries() {
                 return computed.savedTimetableCourseChipEntries.call(ctx)
             },
@@ -1114,10 +1158,33 @@ describe('Student timetable evaluation settings', () => {
                 label: 'BU2 - 5CK - FUCH',
                 scheduleLabel: 'Mo 20:25 - 21:55 (1w)',
                 isActive: true,
+                isDisabled: false,
                 color: 'success',
+            }),
+            expect.objectContaining({
+                label: 'BU3 - 5CK - TEST',
+                scheduleLabel: 'Mo 20:25 - 21:10 (1w)',
+                hasBlockingOverlap: true,
+                hasRelatedOverlap: false,
+                isActive: false,
+                isDisabled: true,
+                color: 'error',
+            }),
+            expect.objectContaining({
+                label: 'BU4 - 5CK - FREE',
+                scheduleLabel: 'Mo 20:25 - 21:10 (1w)',
+                hasBlockingOverlap: false,
+                hasRelatedOverlap: true,
+                isActive: false,
+                isDisabled: false,
+                color: 'warning',
             }),
         ])
         expect(methods.studentCoursePickerMenuHasActiveSelection.call(ctx, ctx.selectedStudentCoursePickerMenu)).toBe(true)
+
+        methods.toggleStudentCoursePickerEntry.call(ctx, ctx.selectedStudentCoursePickerEntryOptions[1])
+
+        expect(ctx.hiddenSavedTimetableCourseChipKeys).toEqual([])
 
         expect(methods.publishedTimetableCellCourses.call(ctx, {
             courses: [
@@ -1144,7 +1211,7 @@ describe('Student timetable evaluation settings', () => {
 
         ctx.selectedStudentCoursePickerTab = 'open'
 
-        expect(ctx.studentCoursePickerCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['PH'])
+        expect(ctx.studentCoursePickerCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['BU', 'PH'])
 
         ctx.selectedStudentCoursePickerTab = 'all'
 

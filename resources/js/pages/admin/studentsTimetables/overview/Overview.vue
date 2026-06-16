@@ -1027,7 +1027,9 @@
                                     :color="entryOption.color"
                                     :variant="entryOption.isActive ? 'flat' : 'tonal'"
                                     class="course-item-chip"
-                                    @click="handleCourseMenuEntryFilterClick(entryOption.entry)">
+                                    :class="{ 'course-item-chip--disabled': entryOption.isDisabled }"
+                                    :aria-disabled="entryOption.isDisabled ? 'true' : 'false'"
+                                    @click="handleCourseMenuEntryFilterClick(entryOption.entry, entryOption)">
                                     <v-icon
                                         :icon="entryOption.isActive ? 'mdi-check' : 'mdi-calendar-blank'"
                                         size="16"
@@ -1825,6 +1827,7 @@ export default {
                 const hasBlockingOverlap = this.courseMenuEntryHasBlockingOverlap(entry, semester)
                 const hasRelatedOverlap = this.courseMenuEntryHasRelatedOverlap(entry, semester, { hasBlockingOverlap })
                 const isActive = this.isCourseMenuEntryFilterActive(entry)
+                const isDisabled = hasBlockingOverlap && !isActive
 
                 return {
                     ...entry,
@@ -1832,7 +1835,8 @@ export default {
                     hasBlockingOverlap,
                     hasRelatedOverlap,
                     isActive,
-                    color: hasBlockingOverlap || hasRelatedOverlap ? 'warning' : isActive ? 'success' : 'primary',
+                    isDisabled,
+                    color: hasBlockingOverlap ? 'error' : hasRelatedOverlap ? 'warning' : isActive ? 'success' : 'primary',
                 }
             })
         },
@@ -2369,7 +2373,11 @@ export default {
                 }
                 : criterion)
         },
-        handleCourseMenuEntryFilterClick(entry) {
+        handleCourseMenuEntryFilterClick(entry, entryOption = null) {
+            if (entryOption?.isDisabled) {
+                return
+            }
+
             this.toggleCourseMenuEntryFilter(entry)
         },
         handleSelectedTimetableOptionValueUpdate(semester, value) {
@@ -6845,6 +6853,15 @@ export default {
 .course-item-chip,
 .course-menu-dialog-chip {
     font-weight: 650;
+}
+
+.course-item-chip--disabled {
+    cursor: not-allowed;
+    opacity: 0.82;
+}
+
+.course-item-chip--disabled :deep(.v-chip__content) {
+    pointer-events: none;
 }
 
 .course-item-chip__schedule {

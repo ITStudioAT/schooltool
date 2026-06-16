@@ -252,6 +252,8 @@
                                             :color="entryOption.color"
                                             :variant="entryOption.isActive ? 'flat' : 'tonal'"
                                             class="course-item-chip"
+                                            :class="{ 'course-item-chip--disabled': entryOption.isDisabled }"
+                                            :aria-disabled="entryOption.isDisabled ? 'true' : 'false'"
                                             @click="toggleStudentCoursePickerEntry(entryOption)">
                                             <v-icon
                                                 :icon="entryOption.isActive ? 'mdi-check' : 'mdi-calendar-blank'"
@@ -911,7 +913,7 @@ export default {
             return this.savedTimetableCourseChipEntries
                 .filter(courseChip => !hiddenCourseChipKeys.has(courseChip.key))
         },
-        studentCoursePickerCourseGroups() {
+        studentCoursePickerAllCourseGroups() {
             return this.manualTimetableCourseSections.flatMap((section) => {
                 const sectionKey = String(section?.key || '')
                 const courses = Array.isArray(section?.items) ? section.items : []
@@ -925,7 +927,45 @@ export default {
                     sourceColor: section?.color || 'primary',
                 })))
             })
+        },
+        studentCoursePickerCourseGroups() {
+            return this.studentCoursePickerAllCourseGroups
                 .filter(courseGroup => this.studentCoursePickerCourseGroupMatchesTab(courseGroup))
+        },
+        studentCoursePickerAllEntries() {
+            const entries = new Map()
+
+            this.studentCoursePickerAllCourseGroups.forEach((courseGroup) => {
+                const semester = Number(courseGroup?.semester || 1)
+                const label = this.studentCoursePickerEntryLabel(courseGroup)
+                const entryKey = `semester-${semester}-${label.toLocaleUpperCase('de-AT')}`
+
+                if (!entries.has(entryKey)) {
+                    entries.set(entryKey, {
+                        key: entryKey,
+                        label,
+                        semester,
+                        courseGroups: [],
+                        courseGroupKeys: [],
+                        studentCourseType: courseGroup.studentCourseType,
+                        sourceColor: courseGroup.sourceColor,
+                    })
+                }
+
+                const entry = entries.get(entryKey)
+                entry.courseGroups.push(courseGroup)
+                if (courseGroup?.key) {
+                    entry.courseGroupKeys.push(String(courseGroup.key))
+                }
+            })
+
+            return Array.from(entries.values())
+                .map(entry => ({
+                    ...entry,
+                    courseGroupKeys: [...new Set(entry.courseGroupKeys)],
+                    courseChipKey: this.studentCoursePickerEntryCourseChipKey(entry),
+                    scheduleLabel: this.studentCoursePickerEntryScheduleLabel(entry),
+                }))
         },
         studentCoursePickerCourseMenus() {
             const courseMenus = new Map()
@@ -1009,13 +1049,25 @@ export default {
                 return []
             }
 
+            const semester = this.selectedStudentCoursePickerMenu.semester
+
             return this.selectedStudentCoursePickerMenu.entries.map((entry) => {
+                const hasBlockingOverlap = this.studentCoursePickerEntryHasBlockingOverlap(entry, semester)
+                const hasRelatedOverlap = this.studentCoursePickerEntryHasRelatedOverlap(entry, semester, { hasBlockingOverlap })
                 const isActive = this.studentCoursePickerEntryActive(entry)
+                const isDisabled = hasBlockingOverlap && !isActive
 
                 return {
                     ...entry,
+                    hasBlockingOverlap,
+                    hasRelatedOverlap,
                     isActive,
-                    color: this.studentCoursePickerEntryColor(entry, isActive),
+                    isDisabled,
+                    color: this.studentCoursePickerEntryColor(entry, {
+                        hasBlockingOverlap,
+                        hasRelatedOverlap,
+                        isActive,
+                    }),
                 }
             })
         },
@@ -1439,6 +1491,10 @@ export default {
             this.selectedStudentCoursePickerMenuKey = String(courseMenu?.key || '')
         },
         toggleStudentCoursePickerEntry(entryOption) {
+            if (entryOption?.isDisabled) {
+                return
+            }
+
             const courseChipKey = String(entryOption?.courseChipKey || '')
 
             if (!courseChipKey) {
@@ -1456,6 +1512,120 @@ export default {
         studentCoursePickerMenuHasActiveSelection(courseMenu) {
             return (courseMenu?.entries || [])
                 .some(entry => this.studentCoursePickerEntryActive(entry))
+        },
+        studentCoursePickerSelectedEntries(semester) {
+            return this.studentCoursePickerAllEntries
+                .filter(entry => Number(entry?.semester) === Number(semester))
+                .filter(entry => this.studentCoursePickerEntryActive(entry))
+        },
+        studentCoursePickerEntryHasBlockingOverlap(entry, semester) {
+            return this.studentCoursePickerSelectedEntries(semester)
+                .some(selectedEntry => (
+                    selectedEntry.key !== entry?.key
+                    && this.studentCoursePickerEntriesHaveBlockingOverlap(entry, selectedEntry)
+                ))
+        },
+        studentCoursePickerEntryHasRelatedOverlap(entry, semester, options = {}) {
+            if (options?.hasBlockingOverlap ?? this.studentCoursePickerEntryHasBlockingOverlap(entry, semester)) {
+                return false
+            }
+
+            return this.studentCoursePickerSelectedEntries(semester)
+                .some(selectedEntry => (
+                    selectedEntry.key !== entry?.key
+                    && this.studentCoursePickerEntriesOverlap(entry, selectedEntry)
+                ))
+        },
+        studentCoursePickerEntriesHaveBlockingOverlap(leftEntry, rightEntry) {
+            return (leftEntry?.courseGroups || []).some(leftCourseGroup => (
+                (rightEntry?.courseGroups || []).some(rightCourseGroup => (
+                    this.studentCoursePickerCourseGroupsOverlap(leftCourseGroup, rightCourseGroup)
+                        && this.studentCoursePickerCourseGroupDatesOverlap(leftCourseGroup, rightCourseGroup)
+                        && !this.studentCoursePickerCourseGroupOverlapIsSingleDateOnly(leftCourseGroup, rightCourseGroup)
+                ))
+            ))
+        },
+        studentCoursePickerEntriesOverlap(leftEntry, rightEntry) {
+            return (leftEntry?.courseGroups || []).some(leftCourseGroup => (
+                (rightEntry?.courseGroups || []).some(rightCourseGroup => (
+                    this.studentCoursePickerCourseGroupsOverlap(leftCourseGroup, rightCourseGroup)
+                        && !this.studentCoursePickerCourseGroupOverlapIsSingleDateOnly(leftCourseGroup, rightCourseGroup)
+                ))
+            ))
+        },
+        studentCoursePickerCourseGroupsOverlap(leftCourseGroup, rightCourseGroup) {
+            if (leftCourseGroup?.key && leftCourseGroup.key === rightCourseGroup?.key) {
+                return false
+            }
+
+            if (
+                Number(leftCourseGroup?.semester) !== Number(rightCourseGroup?.semester)
+                || Number(leftCourseGroup?.weekday) !== Number(rightCourseGroup?.weekday)
+            ) {
+                return false
+            }
+
+            const leftTimeRange = this.studentCoursePickerCourseGroupTimeRangeParts(leftCourseGroup)
+            const rightTimeRange = this.studentCoursePickerCourseGroupTimeRangeParts(rightCourseGroup)
+            if (leftTimeRange.from && leftTimeRange.until && rightTimeRange.from && rightTimeRange.until) {
+                return leftTimeRange.from < rightTimeRange.until && rightTimeRange.from < leftTimeRange.until
+            }
+
+            return Number(leftCourseGroup?.hour) === Number(rightCourseGroup?.hour)
+        },
+        studentCoursePickerCourseGroupDates(courseGroup) {
+            const explicitDates = Array.isArray(courseGroup?.dates) ? courseGroup.dates : []
+
+            return [
+                ...explicitDates,
+                courseGroup?.first_date,
+                courseGroup?.date,
+            ]
+                .map(date => String(date || '').trim())
+                .filter(Boolean)
+                .filter((date, index, dates) => dates.indexOf(date) === index)
+                .sort()
+        },
+        studentCoursePickerCourseGroupDatesOverlap(leftCourseGroup, rightCourseGroup) {
+            const leftDates = this.studentCoursePickerCourseGroupDates(leftCourseGroup)
+            const rightDates = this.studentCoursePickerCourseGroupDates(rightCourseGroup)
+
+            if (!leftDates.length || !rightDates.length) {
+                return true
+            }
+
+            return leftDates.some(date => rightDates.includes(date))
+        },
+        studentCoursePickerCourseGroupOverlapIsSingleDateOnly(leftCourseGroup, rightCourseGroup) {
+            return this.studentCoursePickerCourseGroupIsSingleDate(leftCourseGroup)
+                || this.studentCoursePickerCourseGroupIsSingleDate(rightCourseGroup)
+        },
+        studentCoursePickerCourseGroupIsSingleDate(courseGroup) {
+            const explicitInterval = Number(courseGroup?.recurrence_interval)
+            if ([1, 2, 3, 4].includes(explicitInterval)) {
+                return false
+            }
+
+            const labelMatch = String(courseGroup?.recurrence_label || '').match(/(\d+)\s*-\s*w/iu)
+            if (labelMatch) {
+                return ![1, 2, 3, 4].includes(Number(labelMatch[1]))
+            }
+
+            return false
+        },
+        studentCoursePickerCourseGroupTimeRangeParts(courseGroup) {
+            return {
+                from: this.formatTimeValue(
+                    courseGroup?.time_from
+                    || courseGroup?.from
+                    || this.configuredSchoolHour(courseGroup?.hour)?.from,
+                ),
+                until: this.formatTimeValue(
+                    courseGroup?.time_until
+                    || courseGroup?.until
+                    || this.configuredSchoolHour(courseGroup?.hour)?.until,
+                ),
+            }
         },
         studentCoursePickerCourseGroupMatchesTab(courseGroup) {
             const tab = String(this.selectedStudentCoursePickerTab || 'proposed')
@@ -1508,8 +1678,16 @@ export default {
 
             return !this.hiddenSavedTimetableCourseChipKeys.includes(courseChipKey)
         },
-        studentCoursePickerEntryColor(entry, isActive) {
-            if (isActive) {
+        studentCoursePickerEntryColor(entry, state = {}) {
+            if (state.hasBlockingOverlap) {
+                return 'error'
+            }
+
+            if (state.hasRelatedOverlap) {
+                return 'warning'
+            }
+
+            if (state.isActive) {
                 return 'success'
             }
 
@@ -2781,6 +2959,15 @@ export default {
 .course-item-chip,
 .course-menu-dialog-chip {
     font-weight: 650;
+}
+
+.course-item-chip--disabled {
+    cursor: not-allowed;
+    opacity: 0.82;
+}
+
+.course-item-chip--disabled :deep(.v-chip__content) {
+    pointer-events: none;
 }
 
 .course-item-chip__schedule {
