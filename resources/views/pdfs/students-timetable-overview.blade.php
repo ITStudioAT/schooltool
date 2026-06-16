@@ -89,7 +89,86 @@
             ->unique(fn (array $c): string => "{$c['semester']}|{$c['weekday']}|{$c['hour']}|{$c['label']}")
             ->sortBy([['weekday_index', 'asc'], ['hour', 'asc'], ['label', 'asc']])
             ->values();
+        $slotTimeParts = function (array $slot): array {
+            return array_map(
+                fn (string $time): string => trim($time),
+                array_pad(preg_split('/\s*[–-]\s*/u', (string) ($slot['time'] ?? ''), 2) ?: [], 2, ''),
+            );
+        };
+        $mergeCourseOverviewSlots = function ($slots) use ($slotTimeParts) {
+            $mergedSlots = collect();
+
+            $slots
+                ->sortBy([['weekday_index', 'asc'], ['hour', 'asc'], ['label', 'asc']])
+                ->groupBy(fn (array $slot): string => implode('|', [
+                    $slot['semester'] ?? '',
+                    $slot['weekday'] ?? '',
+                    $slot['label'] ?? '',
+                    $slot['details'] ?? '',
+                    $slot['status'] ?? '',
+                    !empty($slot['is_fu']) ? 'fu' : 'regular',
+                ]))
+                ->each(function ($groupedSlots) use ($mergedSlots, $slotTimeParts): void {
+                    $currentSlot = null;
+                    $previousHour = null;
+                    $until = '';
+
+                    $pushCurrentSlot = function () use (&$currentSlot, &$previousHour, &$until, $mergedSlots): void {
+                        if ($currentSlot === null) {
+                            return;
+                        }
+
+                        $startHour = (int) ($currentSlot['hour'] ?? 0);
+                        $endHour = (int) ($previousHour ?? $startHour);
+                        $currentSlot['hour_label'] = $startHour === $endHour
+                            ? "{$startHour}."
+                            : "{$startHour}.-{$endHour}.";
+
+                        [$from] = array_pad(preg_split('/\s*[–-]\s*/u', (string) ($currentSlot['time'] ?? ''), 2) ?: [], 2, '');
+                        $from = trim((string) $from);
+                        $currentSlot['time'] = ($from !== '' && $until !== '')
+                            ? "{$from} – {$until}"
+                            : trim(collect([$from, $until])->filter()->implode(' – '));
+
+                        $mergedSlots->push($currentSlot);
+                    };
+
+                    foreach ($groupedSlots->values() as $slot) {
+                        $hour = (int) ($slot['hour'] ?? 0);
+                        [, $slotUntil] = $slotTimeParts($slot);
+
+                        if ($currentSlot === null) {
+                            $currentSlot = $slot;
+                            $previousHour = $hour;
+                            $until = $slotUntil;
+
+                            continue;
+                        }
+
+                        if ($hour === (int) $previousHour + 1) {
+                            $previousHour = $hour;
+                            $until = $slotUntil !== '' ? $slotUntil : $until;
+
+                            continue;
+                        }
+
+                        $pushCurrentSlot();
+                        $currentSlot = $slot;
+                        $previousHour = $hour;
+                        $until = $slotUntil;
+                    }
+
+                    $pushCurrentSlot();
+                });
+
+            return $mergedSlots
+                ->sortBy([['weekday_index', 'asc'], ['hour', 'asc'], ['label', 'asc']])
+                ->values();
+        };
         $courseSemesters = $allCourseSlots->groupBy('semester');
+        $courseOverviewSemesters = $courseSemesters
+            ->map(fn ($slots) => $mergeCourseOverviewSlots($slots))
+            ->filter(fn ($slots): bool => $slots->isNotEmpty());
         $directorySlotSummary = function ($slots): string {
             return $slots
                 ->groupBy('weekday')
@@ -211,7 +290,8 @@
                     'slots' => $directorySlotSummary($slots),
                     'dates' => $formatCourseDates($slots),
                     'status' => $slots->contains('status', 'conflict') ? 'conflict'
-                        : ($slots->contains('status', 'related') ? 'related' : 'filled'),
+                        : ($slots->contains('status', 'warning') ? 'warning'
+                        : ($slots->contains('status', 'related') ? 'related' : 'filled')),
                     'is_fu' => $slots->contains('is_fu', true),
                 ];
             })
@@ -366,6 +446,11 @@
 
         .cell-filled {
             background: #bbf7d0;
+        }
+
+        .cell-warning {
+            background: #fed7aa;
+            color: #7c2d12;
         }
 
         .cell-conflict {
@@ -590,6 +675,7 @@
         }
 
         .status-dot--filled { background: #22c55e; }
+        .status-dot--warning { background: #f97316; }
         .status-dot--conflict { background: #ef4444; }
         .status-dot--related { background: #f97316; }
 
@@ -604,6 +690,28 @@
             line-height: 1.2;
             border-radius: 0.5mm;
             vertical-align: super;
+        }
+
+        .student-course-badge {
+            display: inline-block;
+            padding: 0.15mm 0.8mm;
+            margin-left: 0.5mm;
+            border-radius: 2mm;
+            font-size: 0.68em;
+            font-weight: 700;
+            line-height: 1.2;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+
+        .student-course-badge--missing {
+            background: rgba(251, 146, 60, 0.24);
+            color: #9a3412;
+        }
+
+        .student-course-badge--additional {
+            background: rgba(14, 165, 233, 0.22);
+            color: #0369a1;
         }
     </style>
 </head>
@@ -677,7 +785,12 @@
 
                                                         @foreach($shownCourses as $course)
                                                             <div class="course @if($hasDenseCourses) course--compact @endif">
-                                                                <div class="course-label">{{ $course['label'] ?? '' }}@if(! empty($course['is_fu']))<span class="fu-badge">FU</span>@endif</div>
+                                                                <div class="course-label">
+                                                                    {{ $course['label'] ?? '' }}@if(! empty($course['is_fu']))<span class="fu-badge">FU</span>@endif
+                                                                    @if(! empty($course['student_course_badge']) && in_array($course['student_course_type'] ?? '', ['missing', 'additional'], true))
+                                                                        <span class="student-course-badge student-course-badge--{{ $course['student_course_type'] }}">{{ $course['student_course_badge'] }}</span>
+                                                                    @endif
+                                                                </div>
                                                                 @if(! $hasDenseCourses && ! empty($course['details']))
                                                                     <div class="course-details">{{ $course['details'] }}</div>
                                                                 @endif
@@ -757,7 +870,7 @@
         </div>
     @endif
 
-    @if($allCourseSlots->isNotEmpty())
+    @if($courseOverviewSemesters->isNotEmpty())
         <div class="pdf-page-courses">
             <div class="courses-header">
                 <h1 class="courses-title">Kursübersicht</h1>
@@ -768,7 +881,7 @@
                 </div>
             </div>
 
-            @foreach($courseSemesters as $semesterLabel => $slots)
+            @foreach($courseOverviewSemesters as $semesterLabel => $slots)
                 <div class="courses-semester-title">
                     {{ $semesterLabel }}
                     @if($slots->first()['semester_range'] ?? '')
@@ -790,7 +903,7 @@
                         @foreach($slots as $slot)
                             <tr>
                                 <td class="cell-weekday">{{ $slot['weekday'] }}</td>
-                                <td class="cell-hour">{{ $slot['hour'] }}.</td>
+                                <td class="cell-hour">{{ $slot['hour_label'] ?? (($slot['hour'] ?? '') . '.') }}</td>
                                 <td class="cell-time">{{ $slot['time'] }}</td>
                                 <td class="cell-label">{{ $slot['label'] }}@if(! empty($slot['is_fu']))<span class="fu-badge">FU</span>@endif</td>
                                 <td class="cell-details">{{ $slot['details'] }}</td>

@@ -1894,6 +1894,133 @@ describe('Students timetable overview', () => {
             details: '1-wöchig',
             dates: [],
             is_fu: false,
+            student_course_type: '',
+            student_course_badge: '',
+        })
+    })
+
+    it('uses the all-dates timetable for pdf exports', () => {
+        const methods = (Overview as any).methods
+        const semester = {
+            value: 1,
+            label: 'Semester',
+            dateRangeLabel: '16.02.2026 - 10.07.2026',
+        }
+        const ctx = {
+            allDatesOption: methods.allDatesOption,
+            timetablePdfWeeksForSemester: methods.timetablePdfWeeksForSemester,
+            timetablePdfWeekPayload: vi.fn((selectedSemester, timetableWeek) => ({
+                label: timetableWeek.showLabel ? timetableWeek.label : '',
+                type: timetableWeek.type,
+                semester: selectedSemester.value,
+            })),
+        }
+
+        expect(methods.timetablePdfWeeksForSemester.call(ctx, semester)).toEqual([{
+            key: 'semester-1-all-dates',
+            type: 'all_dates',
+            value: 'all_dates',
+            label: 'Stundenplan',
+            showLabel: false,
+        }])
+        expect(methods.timetablePdfSemesterPayload.call(ctx, semester)).toEqual({
+            label: 'Semester',
+            date_range: '16.02.2026 - 10.07.2026',
+            weeks: [{
+                label: '',
+                type: 'all_dates',
+                semester: 1,
+            }],
+        })
+    })
+
+    it('uses warning pdf status for multi-course cells and conflict status for real overlaps', () => {
+        const methods = (Overview as any).methods
+        const alternatingCourseGroups = [
+            {
+                key: 'd5',
+                semester: 1,
+                weekday: 2,
+                hour: 14,
+                dates: ['2026-02-24', '2026-03-10'],
+                recurrence_interval: 2,
+            },
+            {
+                key: 'e5',
+                semester: 1,
+                weekday: 2,
+                hour: 14,
+                dates: ['2026-02-17', '2026-03-03'],
+                recurrence_interval: 2,
+            },
+        ]
+        const ctx = {
+            cellHasOverlap: vi.fn(() => false),
+            cellHasRelatedOverlap: vi.fn(() => false),
+            timetablePdfCellHasDateTimeCollision: methods.timetablePdfCellHasDateTimeCollision,
+            courseGroupDatesHaveExplicitOverlap: methods.courseGroupDatesHaveExplicitOverlap,
+            displayCourseGroupsForCell: vi.fn(() => alternatingCourseGroups),
+            courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupDates: methods.courseGroupDates,
+            courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+            formatTimeValue: methods.formatTimeValue,
+            configuredSchoolHours: [],
+        }
+
+        expect(methods.timetablePdfCellStatus.call(ctx, 1, 2, 14, {}, [{ label: 'D5' }, { label: 'E5' }], []))
+            .toBe('warning')
+
+        ctx.displayCourseGroupsForCell = vi.fn(() => [
+            alternatingCourseGroups[0],
+            {
+                ...alternatingCourseGroups[1],
+                dates: ['2026-02-24'],
+            },
+        ])
+
+        expect(methods.timetablePdfCellStatus.call(ctx, 1, 2, 14, {}, [{ label: 'D5' }, { label: 'E5' }], []))
+            .toBe('conflict')
+    })
+
+    it('keeps related-only pdf cells filled instead of orange', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            cellHasOverlap: vi.fn(() => false),
+            cellHasRelatedOverlap: vi.fn(() => true),
+        }
+
+        expect(methods.timetablePdfCellStatus.call(ctx, 1, 4, 14, {}, [{ label: 'E5 - 3R - HÖF' }], []))
+            .toBe('filled')
+    })
+
+    it('adds student course badge data to timetable pdf course payloads', () => {
+        const methods = (Overview as any).methods
+        const courseGroup = {
+            display_label: 'D5 - 3R - SHAM',
+            recurrence_label: '2-wöchig',
+        }
+        const ctx = {
+            courseGroupDetailLabel: methods.courseGroupDetailLabel,
+            courseGroupDisplayLabel: methods.courseGroupDisplayLabel,
+            courseGroupDistanceLearning: () => false,
+            courseGroupDates: methods.courseGroupDates,
+            courseGroupStudentCourseBadge: () => 'Fehlend',
+            courseGroupStudentCourseType: () => 'missing',
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+        }
+
+        expect(methods.timetablePdfCoursePayload.call(ctx, courseGroup)).toEqual({
+            label: 'D5 - 3R - SHAM',
+            details: '2-wöchig',
+            dates: [],
+            is_fu: false,
+            student_course_type: 'missing',
+            student_course_badge: 'Fehlend',
         })
     })
 
@@ -1972,6 +2099,8 @@ describe('Students timetable overview', () => {
             details: 'FU · 1-wöchig',
             dates: ['2026-03-13', '2026-03-20'],
             is_fu: true,
+            student_course_type: '',
+            student_course_badge: '',
         })
     })
 
@@ -1999,6 +2128,8 @@ describe('Students timetable overview', () => {
             details: 'FU · 2-wöchig',
             dates: [],
             is_fu: true,
+            student_course_type: '',
+            student_course_badge: '',
         })
     })
 

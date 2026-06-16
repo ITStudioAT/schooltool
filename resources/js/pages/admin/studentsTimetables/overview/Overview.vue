@@ -2360,9 +2360,12 @@ export default {
             return {
                 label: semester.label,
                 date_range: semester.dateRangeLabel,
-                weeks: this.visibleTimetableWeeks(semester.value)
+                weeks: this.timetablePdfWeeksForSemester(semester)
                     .map(timetableWeek => this.timetablePdfWeekPayload(semester, timetableWeek)),
             }
+        },
+        timetablePdfWeeksForSemester(semester) {
+            return [this.allDatesOption(semester.value)]
         },
         timetablePdfWeekPayload(semester, timetableWeek) {
             return {
@@ -2397,18 +2400,53 @@ export default {
             }
         },
         timetablePdfCellStatus(semester, weekday, hour, timetableWeek, courses, markers) {
-            if (this.cellShouldShowWarning(semester, weekday, hour, timetableWeek)) return 'conflict'
-            if (this.cellHasRelatedOverlap(semester, weekday, hour, timetableWeek)) return 'related'
+            if (courses.length > 1) {
+                return this.timetablePdfCellHasDateTimeCollision(semester, weekday, hour, timetableWeek)
+                    ? 'conflict'
+                    : 'warning'
+            }
+
+            if (this.cellHasOverlap(semester, weekday, hour, timetableWeek)) return 'conflict'
             if (courses.length || markers.length) return 'filled'
 
             return 'empty'
         },
+        timetablePdfCellHasDateTimeCollision(semester, weekday, hour, timetableWeek) {
+            const displayCourseGroups = typeof this.displayCourseGroupsForCell === 'function'
+                ? this.displayCourseGroupsForCell(semester, weekday, hour, timetableWeek)
+                : this.courseGroupsForCell(semester, weekday, hour, timetableWeek)
+
+            return displayCourseGroups.some((leftCourseGroup, leftIndex) => (
+                displayCourseGroups.slice(leftIndex + 1).some((rightCourseGroup) => (
+                    this.courseGroupsOverlap(leftCourseGroup, rightCourseGroup)
+                        && this.courseGroupDatesHaveExplicitOverlap(leftCourseGroup, rightCourseGroup)
+                        && !this.courseGroupOverlapIsSingleDateOnly(leftCourseGroup, rightCourseGroup)
+                ))
+            ))
+        },
+        courseGroupDatesHaveExplicitOverlap(leftCourseGroup, rightCourseGroup) {
+            const leftDates = this.courseGroupDates(leftCourseGroup)
+            const rightDates = this.courseGroupDates(rightCourseGroup)
+
+            if (!leftDates.length || !rightDates.length) return false
+
+            return leftDates.some(date => rightDates.includes(date))
+        },
         timetablePdfCoursePayload(courseGroup) {
+            const studentCourseBadge = typeof this.courseGroupStudentCourseBadge === 'function'
+                ? this.courseGroupStudentCourseBadge(courseGroup)
+                : ''
+            const studentCourseType = studentCourseBadge && typeof this.courseGroupStudentCourseType === 'function'
+                ? this.courseGroupStudentCourseType(courseGroup)
+                : ''
+
             return {
                 label: this.courseGroupDisplayLabel(courseGroup),
                 details: this.courseGroupDetailLabel(courseGroup),
                 dates: this.courseGroupDates(courseGroup),
                 is_fu: this.courseGroupDistanceLearning(courseGroup),
+                student_course_type: studentCourseType,
+                student_course_badge: studentCourseBadge,
             }
         },
         downloadBlob(blob, filename) {
