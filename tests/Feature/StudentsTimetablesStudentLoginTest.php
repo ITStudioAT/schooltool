@@ -8,6 +8,7 @@ use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableEntry;
 use App\Models\StudentTimetableEvaluationSetting;
+use App\Models\StudentTimetablePersonalTimetable;
 use App\Models\StudentTimetableProfileSelection;
 use App\Models\StudentTimetablePublishedTimetable;
 use App\Models\StudentTimetableRecognitionImport;
@@ -736,6 +737,66 @@ it('returns a published timetable for the authenticated student overview', funct
         ->assertJsonPath('data.published_timetable.timetable.title', 'Stundenplan')
         ->assertJsonPath('data.published_timetable.state.manualPanelOpen', true)
         ->assertJsonPath('data.published_timetable.active_course_group_keys.0', $courseGroupKey);
+});
+
+it('lets the authenticated student adopt and delete the published timetable for the active schoolyear', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $import116->forceFill([
+        'student_code' => 'student-100',
+    ])->save();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    StudentTimetablePublishedTimetable::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'published_by_user_id' => $user->id,
+        'student_code' => $import116->student_code,
+        'student_label' => 'Mustermann Max',
+        'timetable' => [
+            'title' => 'Stundenplan',
+            'weekdays' => [['label' => 'Mo']],
+            'semesters' => [],
+        ],
+        'state' => [
+            'activeCourseGroupFilterKeys' => ['saved-group', 'saved-group'],
+            'manualPanelOpen' => true,
+        ],
+        'published_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->postJson('/api/homepage/students-timetables/my-timetable')
+        ->assertSuccessful()
+        ->assertJsonPath('message', 'Stundenplan wurde übernommen.')
+        ->assertJsonPath('data.personal_timetable.student_code', $import116->student_code)
+        ->assertJsonPath('data.personal_timetable.student_label', 'Mustermann Max')
+        ->assertJsonPath('data.personal_timetable.timetable.title', 'Stundenplan')
+        ->assertJsonPath('data.personal_timetable.state.manualPanelOpen', true)
+        ->assertJsonPath('data.personal_timetable.active_course_group_keys.0', 'saved-group');
+
+    $personalTimetable = StudentTimetablePersonalTimetable::query()->firstOrFail();
+
+    expect($personalTimetable->school_id)->toBe($school->id)
+        ->and($personalTimetable->schoolyear_id)->toBe($schoolyear->id)
+        ->and($personalTimetable->user_id)->toBe($user->id)
+        ->and($personalTimetable->student_code)->toBe($import116->student_code)
+        ->and($personalTimetable->timetable['title'])->toBe('Stundenplan');
+
+    $this->actingAs($user)
+        ->deleteJson('/api/homepage/students-timetables/my-timetable')
+        ->assertSuccessful()
+        ->assertJsonPath('message', 'Mein Stundenplan wurde gelöscht.')
+        ->assertJsonPath('data.personal_timetable', null);
+
+    expect(StudentTimetablePersonalTimetable::query()->count())->toBe(0);
 });
 
 it('flags fully conflicting additional courses for the authenticated student', function () {

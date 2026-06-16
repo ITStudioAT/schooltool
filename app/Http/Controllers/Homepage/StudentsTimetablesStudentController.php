@@ -198,6 +198,30 @@ class StudentsTimetablesStudentController extends Controller
         ]);
     }
 
+    public function adoptPublishedTimetable(StudentTimetablesStudentOverviewService $overviewService): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        return response()->json([
+            'message' => 'Stundenplan wurde übernommen.',
+            'data' => $overviewService->adoptPublishedTimetableForUser($authUser),
+        ]);
+    }
+
+    public function deletePersonalTimetable(StudentTimetablesStudentOverviewService $overviewService): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        return response()->json([
+            'message' => 'Mein Stundenplan wurde gelöscht.',
+            'data' => $overviewService->deletePersonalTimetableForUser($authUser),
+        ]);
+    }
+
     public function evaluationSettings(StudentTimetableEvaluationSettingsService $service)
     {
         if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {

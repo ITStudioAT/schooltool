@@ -4,6 +4,7 @@ namespace App\Services\StudentsTimetables;
 
 use App\Models\Import116;
 use App\Models\SchoolTool;
+use App\Models\StudentTimetablePersonalTimetable;
 use App\Models\StudentTimetableProfileSelection;
 use App\Models\StudentTimetablePublishedTimetable;
 use App\Models\StudentTimetableSubjectRow;
@@ -93,6 +94,70 @@ class StudentTimetablesStudentOverviewService
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function adoptPublishedTimetableForUser(User $user): array
+    {
+        $schoolyearId = $this->schoolyearIdForUser($user);
+        $student = $this->import116StudentForUser($user, $schoolyearId);
+        $studentCode = $this->nonEmptyString($student?->student_code);
+
+        if (! $studentCode) {
+            abort(404, 'Schülerdatensatz nicht gefunden.');
+        }
+
+        $publishedTimetable = StudentTimetablePublishedTimetable::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('student_code', $studentCode)
+            ->first();
+
+        if (! $publishedTimetable) {
+            abort(404, 'Gespeicherter Stundenplan nicht gefunden.');
+        }
+
+        StudentTimetablePersonalTimetable::query()->updateOrCreate(
+            [
+                'school_id' => $user->school_id,
+                'schoolyear_id' => $schoolyearId,
+                'user_id' => $user->id,
+                'student_code' => $studentCode,
+            ],
+            [
+                'student_label' => $publishedTimetable->student_label,
+                'timetable' => is_array($publishedTimetable->timetable) ? $publishedTimetable->timetable : [],
+                'state' => is_array($publishedTimetable->state) ? $publishedTimetable->state : [],
+                'adopted_at' => now(),
+            ],
+        );
+
+        return $this->summaryForUser($user);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function deletePersonalTimetableForUser(User $user): array
+    {
+        $schoolyearId = $this->schoolyearIdForUser($user);
+        $student = $this->import116StudentForUser($user, $schoolyearId);
+        $studentCode = $this->nonEmptyString($student?->student_code);
+
+        if (! $studentCode) {
+            abort(404, 'Schülerdatensatz nicht gefunden.');
+        }
+
+        StudentTimetablePersonalTimetable::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('user_id', $user->id)
+            ->where('student_code', $studentCode)
+            ->delete();
+
+        return $this->summaryForUser($user);
+    }
+
+    /**
      * @param  array<string, mixed>  $selectionOverride
      * @return array<string, mixed>
      */
@@ -149,6 +214,7 @@ class StudentTimetablesStudentOverviewService
             'course_sections' => $courseSections,
             'automatic_course_selection' => $automaticCourseSelection,
             'manual_timetable' => $this->manualTimetableSelection($user, $courseSections),
+            'personal_timetable' => $this->personalTimetableForStudent($user, $schoolyearId, $student),
             'published_timetable' => $this->publishedTimetableForStudent($user, $schoolyearId, $student),
             'school_hours' => $this->schoolHoursForUser($user),
             'counts' => [
@@ -191,6 +257,41 @@ class StudentTimetablesStudentOverviewService
             'state' => $state,
             'active_course_group_keys' => $this->publishedTimetableCourseGroupKeys($state),
             'published_at' => optional($publishedTimetable->published_at)->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function personalTimetableForStudent(User $user, int $schoolyearId, ?Import116 $student): ?array
+    {
+        $studentCode = $this->nonEmptyString($student?->student_code);
+
+        if (! $studentCode) {
+            return null;
+        }
+
+        $personalTimetable = StudentTimetablePersonalTimetable::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('user_id', $user->id)
+            ->where('student_code', $studentCode)
+            ->first();
+
+        if (! $personalTimetable) {
+            return null;
+        }
+
+        $state = is_array($personalTimetable->state) ? $personalTimetable->state : [];
+
+        return [
+            'id' => (int) $personalTimetable->id,
+            'student_code' => (string) $personalTimetable->student_code,
+            'student_label' => $personalTimetable->student_label,
+            'timetable' => is_array($personalTimetable->timetable) ? $personalTimetable->timetable : [],
+            'state' => $state,
+            'active_course_group_keys' => $this->publishedTimetableCourseGroupKeys($state),
+            'adopted_at' => optional($personalTimetable->adopted_at)->toIso8601String(),
         ];
     }
 

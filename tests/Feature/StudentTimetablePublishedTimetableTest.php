@@ -72,6 +72,59 @@ it('replaces an existing published timetable for the same student', function () 
         ->toBe(['d2']);
 });
 
+it('marks students that have a published timetable in the admin robot student list', function () {
+    [$user, $student] = createPublishedTimetableAdminUser();
+
+    StudentTimetablePublishedTimetable::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+        'published_by_user_id' => $user->id,
+        'student_code' => $student->student_code,
+        'student_label' => 'SCHROLL Lukas',
+        'timetable' => publishedTimetablePayload('D1'),
+        'state' => [
+            'activeCourseGroupFilterKeys' => ['d-1'],
+            'manualPanelOpen' => true,
+        ],
+        'published_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/students')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.student_code', $student->student_code)
+        ->assertJsonPath('data.0.has_published_timetable', true)
+        ->assertJsonPath('data.0.published_timetable_id', StudentTimetablePublishedTimetable::query()->value('id'));
+});
+
+it('returns a published timetable state for the selected admin student', function () {
+    [$user, $student] = createPublishedTimetableAdminUser();
+
+    StudentTimetablePublishedTimetable::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+        'published_by_user_id' => $user->id,
+        'student_code' => $student->student_code,
+        'student_label' => 'SCHROLL Lukas',
+        'timetable' => publishedTimetablePayload('D1'),
+        'state' => [
+            'activeCourseGroupFilterKeys' => ['d-1'],
+            'manualPanelOpen' => true,
+            'manualPanelSource' => 'direct',
+        ],
+        'published_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->getJson("/api/admin/students-timetables/overview/student-timetable?student_code={$student->student_code}")
+        ->assertSuccessful()
+        ->assertJsonPath('data.student_code', $student->student_code)
+        ->assertJsonPath('data.student_label', 'SCHROLL Lukas')
+        ->assertJsonPath('data.state.activeCourseGroupFilterKeys.0', 'd-1')
+        ->assertJsonPath('data.state.manualPanelOpen', true)
+        ->assertJsonPath('data.timetable.semesters.0.weeks.0.hours.0.cells.0.courses.0.label', 'D1');
+});
+
 it('rejects publishing a timetable for a student outside the selected schoolyear', function () {
     [$user] = createPublishedTimetableAdminUser();
 

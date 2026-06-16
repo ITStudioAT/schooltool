@@ -41,13 +41,56 @@ describe('Student timetable evaluation settings', () => {
         )
         const source = readFileSync(overviewPath, 'utf8')
 
-        expect(source).toContain('@click="openManualTimetable"')
         expect(source).toContain('@click="openPublishedTimetable"')
-        expect(source).toContain('Gespeicherter Stundenplan')
+        expect(source).toContain('@click="openPersonalTimetable"')
+        expect(source).toContain('@click="adoptPublishedTimetable"')
+        expect(source).toContain('@click="openPersonalTimetableDeleteDialog"')
+        expect(source).toContain('@click="deletePersonalTimetable"')
+        expect(source).toContain('persistent max-width="460"')
+        expect(source).toContain('Mein Stundenplan löschen?')
+        expect(source).toContain('Dieser Stundenplan wird nur für dich und dieses Schuljahr gelöscht.')
+        expect(source).toContain('this.studentTimetablesStore.deletePersonalTimetable()')
+        expect(source).toContain('personalTimetableEmptyVisible')
+        expect(source).toContain('Mein Stundenplan ist noch leer.')
+        expect(source).toContain('personalTimetableViewChangeVisible')
+        expect(source).toContain('Der Stundenplan wurde übernommen. Du siehst jetzt "Mein Stundenplan".')
+        expect(source).toContain('closable')
+        expect(source).toContain('close-label="Meldung schließen"')
+        expect(source).toContain('@click:close="dismissPersonalTimetableViewChangeMessage"')
+        expect(source).toContain('Als mein Stundenplan übernehmen')
+        expect(source).toContain('class="student-course-choice-panel"')
+        expect(source).toContain('<span>Kursauswahl</span>')
+        expect(source).toContain('@click="openStudentCoursePickerDialog"')
+        expect(source).toContain('v-model="studentCoursePickerDialogOpen" persistent max-width="760"')
+        expect(source).toContain('Kurs wählen')
+        expect(source).toContain('studentCoursePickerTabs')
+        expect(source).toContain('Fehlende Kurse')
+        expect(source).toContain('Vorgesehene Kurse')
+        expect(source).toContain('Zusätzliche Kurse')
+        expect(source).toContain('Offene Kurse')
+        expect(source).toContain('selectedStudentCoursePickerEntryOptions')
+        expect(source).toContain('@click="toggleStudentCoursePickerEntry(entryOption)"')
+        expect(source).toContain('{{ savedTimetableCourseChips.length }} ausgewählt')
+        expect(source).toContain('@click="deselectAllSavedTimetableCourseChips"')
+        expect(source).toContain('@click:close="deselectSavedTimetableCourseChip(courseChip)"')
+        expect(source).toContain('savedTimetableCourseChips()')
+        expect(source).toContain('studentCoursePickerCourseMenus()')
+        expect(source).toContain('publishedTimetableCellRawCourses(cell)')
+        expect(source).toContain('Löschen')
+        expect(source).toContain('Mein Stundenplan')
+        expect(source).toContain('Von der Schule gespeicherter Stundenplan')
         expect(source).toContain('hasPublishedTimetable')
+        expect(source).toContain('hasPersonalTimetable')
+        expect(source).toContain('personal_timetable')
         expect(source).toContain('published_timetable')
         expect(source).toContain('publishedTimetableVisible')
+        expect(source).toContain("manual_timetable = 'personal'")
         expect(source).toContain('class="student-published-timetable__grid"')
+        expect(source).toContain('class="timetable-date-overview"')
+        expect(source).toContain('@media (max-width: 380px)')
+        expect(source).toContain('box-shadow: none;')
+        expect(source).toContain('color: #f8fafc;')
+        expect(source).toContain('grid-template-columns: 30px repeat(var(--published-timetable-weekday-count, 6), minmax(0, 1fr));')
         expect(source).toContain('showManualTimetable')
         expect(source).toContain('manual_timetable')
         expect(source).toContain('manualTimetableSelection()')
@@ -56,7 +99,7 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('<div class="student-manual-timetable__corner">Std.</div>')
         expect(source).toContain('.student-manual-timetable__cell--conflict {\n    background: #fef2f2;')
         expect(source).toContain('<v-checkbox-btn')
-        expect(source).toContain('Manueller Stundenplan')
+        expect(source).toContain("return 'Stundenplan'")
         expect(source).toContain('Keine passenden Kurstermine gefunden.')
         expect(source).toContain('showManualTimetable && courseSections.length')
         expect(source).toContain('class="manual-overview-course-card"')
@@ -88,6 +131,7 @@ describe('Student timetable evaluation settings', () => {
         }
         const pushedRoutes: unknown[] = []
         const ctx: any = {
+            ...methods,
             showManualTimetable: false,
             showEvaluationSettings: true,
             manualTimetableMode: 'manual',
@@ -118,11 +162,25 @@ describe('Student timetable evaluation settings', () => {
                                                 until: '17:50',
                                                 cells: [
                                                     {
-                                                        status: 'warning',
+                                                        status: 'conflict',
                                                         courses: [
                                                             {
                                                                 label: 'D5 - 3R - SHAM',
                                                                 details: 'FU · 2-wöchig',
+                                                                dates: [
+                                                                    '2026-02-24',
+                                                                    '2026-03-10',
+                                                                    '2026-06-30',
+                                                                ],
+                                                            },
+                                                            {
+                                                                label: 'E5 - 3R - HÖF',
+                                                                details: '2-wöchig',
+                                                                dates: [
+                                                                    '2026-02-17',
+                                                                    '2026-03-03',
+                                                                    '2026-04-14',
+                                                                ],
                                                             },
                                                         ],
                                                         markers: [],
@@ -163,6 +221,7 @@ describe('Student timetable evaluation settings', () => {
             manualCourseGroups: methods.manualCourseGroups,
             manualCourseGroupKey: methods.manualCourseGroupKey,
             applyPublishedTimetableSelection: methods.applyPublishedTimetableSelection,
+            applySavedTimetableSelection: methods.applySavedTimetableSelection,
             publishedTimetableCellCourses: methods.publishedTimetableCellCourses,
             get manualTimetableSelection() {
                 return computed.manualTimetableSelection.call(ctx)
@@ -176,6 +235,18 @@ describe('Student timetable evaluation settings', () => {
             get hasPublishedTimetable() {
                 return computed.hasPublishedTimetable.call(ctx)
             },
+            get personalTimetableSelection() {
+                return computed.personalTimetableSelection.call(ctx)
+            },
+            get hasPersonalTimetable() {
+                return computed.hasPersonalTimetable.call(ctx)
+            },
+            get activeSavedTimetableSelection() {
+                return computed.activeSavedTimetableSelection.call(ctx)
+            },
+            get activeSavedTimetableCourseGroupKeys() {
+                return computed.activeSavedTimetableCourseGroupKeys.call(ctx)
+            },
             get publishedTimetableCourseGroupKeys() {
                 return computed.publishedTimetableCourseGroupKeys.call(ctx)
             },
@@ -184,6 +255,9 @@ describe('Student timetable evaluation settings', () => {
             },
             get publishedTimetableVisible() {
                 return computed.publishedTimetableVisible.call(ctx)
+            },
+            get personalTimetableEmptyVisible() {
+                return computed.personalTimetableEmptyVisible.call(ctx)
             },
             get publishedTimetableSubtitle() {
                 return computed.publishedTimetableSubtitle.call(ctx)
@@ -204,13 +278,14 @@ describe('Student timetable evaluation settings', () => {
                 return computed.manualSelectedCourses.call(ctx)
             },
         }
+        const savedCell = ctx.publishedTimetableSemesters[0].weeks[0].hours[0].cells[0]
 
         methods.openPublishedTimetable.call(ctx)
 
         expect(ctx.showManualTimetable).toBe(true)
         expect(ctx.showEvaluationSettings).toBe(false)
         expect(ctx.manualTimetableMode).toBe('published')
-        expect(ctx.manualTimetableTitle).toBe('Gespeicherter Stundenplan')
+        expect(ctx.manualTimetableTitle).toBe('Von der Schule gespeicherter Stundenplan')
         expect(ctx.manualSelectedCourseKeys).toEqual(['course-1'])
         expect(ctx.manualSelectedCourseGroupKeys).toEqual(['saved-group'])
         expect(ctx.publishedTimetableVisible).toBe(true)
@@ -219,19 +294,380 @@ describe('Student timetable evaluation settings', () => {
         expect(methods.publishedTimetableSemesterWeeks(ctx.publishedTimetableSemesters[0])).toHaveLength(1)
         expect(methods.publishedTimetableHourCells.call(ctx, ctx.publishedTimetableSemesters[0].weeks[0].hours[0]))
             .toHaveLength(2)
-        expect(methods.publishedTimetableCellClasses.call(ctx, ctx.publishedTimetableSemesters[0].weeks[0].hours[0].cells[0]))
+        expect(methods.publishedTimetableCellClasses.call(ctx, savedCell))
             .toEqual({
                 'student-published-timetable__cell--filled': true,
                 'student-published-timetable__cell--warning': true,
                 'student-published-timetable__cell--conflict': false,
                 'student-published-timetable__cell--related': false,
             })
+        expect(methods.publishedTimetableSameSlotGroups.call(ctx, ctx.publishedTimetableSemesters[0].weeks[0]))
+            .toEqual([
+                {
+                    key: '10|17:05|17:50|0|D5 - 3R - SHAM|FU · 2-wöchig|2026-02-24,2026-03-10,2026-06-30|E5 - 3R - HÖF|2-wöchig|2026-02-17,2026-03-03,2026-04-14',
+                    title: 'Mo 10. 17:05 - 17:50',
+                    courses: [
+                        {
+                            key: 'D5 - 3R - SHAM|FU · 2-wöchig|2026-02-24,2026-03-10,2026-06-30',
+                            title: 'D5 - 3R - SHAM',
+                            dateRangeLabel: '24.02. - 30.06.',
+                            dateLabels: [
+                                'Di, 24.02.2026',
+                                'Di, 10.03.2026',
+                                'Di, 30.06.2026',
+                            ],
+                        },
+                        {
+                            key: 'E5 - 3R - HÖF|2-wöchig|2026-02-17,2026-03-03,2026-04-14',
+                            title: 'E5 - 3R - HÖF',
+                            dateRangeLabel: '17.02. - 14.04.',
+                            dateLabels: [
+                                'Di, 17.02.2026',
+                                'Di, 03.03.2026',
+                                'Di, 14.04.2026',
+                            ],
+                        },
+                    ],
+                },
+            ])
         expect(computed.manualSelectedCourseGroups.call(ctx)).toEqual([savedCourseGroup])
         expect(pushedRoutes).toEqual([
             {
                 path: '/students-timetables/overview',
                 query: {
                     manual_timetable: 'published',
+                },
+            },
+        ])
+    })
+
+    it('opens a personal timetable with the adopted course group selection', () => {
+        const methods = (Overview as any).methods
+        const computed = (Overview as any).computed
+        const savedCourseGroup = {
+            key: 'saved-group',
+            course: 'D1',
+            weekday: 1,
+            hour: 2,
+        }
+        const course = {
+            key: 'course-1',
+            code: 'D1',
+            course_groups: [savedCourseGroup],
+        }
+        const pushedRoutes: unknown[] = []
+        const ctx: any = {
+            ...methods,
+            showManualTimetable: false,
+            showEvaluationSettings: true,
+            manualTimetableMode: 'manual',
+            manualSelectedCourseKeys: [],
+            manualSelectedCourseGroupKeys: [],
+            overview: {
+                personal_timetable: {
+                    id: 9,
+                    active_course_group_keys: ['saved-group'],
+                    timetable: {
+                        student: '5C · ZADRA Isabella · Semester 5',
+                        weekdays: [{ label: 'Mo' }],
+                        semesters: [{ label: 'Semester', weeks: [] }],
+                    },
+                },
+                manual_timetable: {
+                    sections: [
+                        {
+                            key: 'proposed',
+                            items: [course],
+                        },
+                    ],
+                },
+            },
+            $route: {
+                path: '/students-timetables/overview',
+                query: {},
+            },
+            $router: {
+                push(route: unknown) {
+                    pushedRoutes.push(route)
+                },
+            },
+            manualCourseKey: methods.manualCourseKey,
+            manualCourseGroups: methods.manualCourseGroups,
+            manualCourseGroupKey: methods.manualCourseGroupKey,
+            applySavedTimetableSelection: methods.applySavedTimetableSelection,
+            get manualTimetableSelection() {
+                return computed.manualTimetableSelection.call(ctx)
+            },
+            get manualTimetableTitle() {
+                return computed.manualTimetableTitle.call(ctx)
+            },
+            get personalTimetableSelection() {
+                return computed.personalTimetableSelection.call(ctx)
+            },
+            get hasPersonalTimetable() {
+                return computed.hasPersonalTimetable.call(ctx)
+            },
+            get activeSavedTimetableSelection() {
+                return computed.activeSavedTimetableSelection.call(ctx)
+            },
+            get activeSavedTimetableCourseGroupKeys() {
+                return computed.activeSavedTimetableCourseGroupKeys.call(ctx)
+            },
+            get publishedTimetablePayload() {
+                return computed.publishedTimetablePayload.call(ctx)
+            },
+            get publishedTimetableVisible() {
+                return computed.publishedTimetableVisible.call(ctx)
+            },
+            get personalTimetableEmptyVisible() {
+                return computed.personalTimetableEmptyVisible.call(ctx)
+            },
+            get publishedTimetableSemesters() {
+                return computed.publishedTimetableSemesters.call(ctx)
+            },
+            get manualTimetableCourseSections() {
+                return computed.manualTimetableCourseSections.call(ctx)
+            },
+            get manualTimetableCourses() {
+                return computed.manualTimetableCourses.call(ctx)
+            },
+        }
+
+        methods.openPersonalTimetable.call(ctx)
+
+        expect(ctx.showManualTimetable).toBe(true)
+        expect(ctx.showEvaluationSettings).toBe(false)
+        expect(ctx.manualTimetableMode).toBe('personal')
+        expect(ctx.manualTimetableTitle).toBe('Mein Stundenplan')
+        expect(ctx.manualSelectedCourseKeys).toEqual(['course-1'])
+        expect(ctx.manualSelectedCourseGroupKeys).toEqual(['saved-group'])
+        expect(ctx.publishedTimetableVisible).toBe(true)
+        expect(ctx.personalTimetableEmptyVisible).toBe(false)
+        expect(pushedRoutes).toEqual([
+            {
+                path: '/students-timetables/overview',
+                query: {
+                    manual_timetable: 'personal',
+                },
+            },
+        ])
+    })
+
+    it('adopts the published timetable and shows that the view changed to the personal timetable', async () => {
+        const methods = (Overview as any).methods
+        const computed = (Overview as any).computed
+        const savedCourseGroup = {
+            key: 'saved-group',
+            course: 'D1',
+            weekday: 1,
+            hour: 2,
+        }
+        const course = {
+            key: 'course-1',
+            code: 'D1',
+            course_groups: [savedCourseGroup],
+        }
+        const pushedRoutes: unknown[] = []
+        const ctx: any = {
+            ...methods,
+            showManualTimetable: true,
+            showEvaluationSettings: false,
+            manualTimetableMode: 'published',
+            manualSelectedCourseKeys: [],
+            manualSelectedCourseGroupKeys: [],
+            personalTimetableSaving: false,
+            personalTimetableViewChangedMessageVisible: false,
+            overview: {
+                published_timetable: {
+                    id: 7,
+                    active_course_group_keys: ['saved-group'],
+                    timetable: {
+                        student: '5C · ZADRA Isabella · Semester 5',
+                        weekdays: [{ label: 'Mo' }],
+                        semesters: [{ label: 'Semester', weeks: [] }],
+                    },
+                },
+                personal_timetable: null,
+                manual_timetable: {
+                    sections: [
+                        {
+                            key: 'proposed',
+                            items: [course],
+                        },
+                    ],
+                },
+            },
+            $route: {
+                path: '/students-timetables/overview',
+                query: {
+                    manual_timetable: 'published',
+                },
+            },
+            $router: {
+                push(route: unknown) {
+                    pushedRoutes.push(route)
+                },
+            },
+            manualCourseKey: methods.manualCourseKey,
+            manualCourseGroups: methods.manualCourseGroups,
+            manualCourseGroupKey: methods.manualCourseGroupKey,
+            applySavedTimetableSelection: methods.applySavedTimetableSelection,
+            get manualTimetableSelection() {
+                return computed.manualTimetableSelection.call(ctx)
+            },
+            get manualTimetableTitle() {
+                return computed.manualTimetableTitle.call(ctx)
+            },
+            get publishedTimetableSelection() {
+                return computed.publishedTimetableSelection.call(ctx)
+            },
+            get personalTimetableSelection() {
+                return computed.personalTimetableSelection.call(ctx)
+            },
+            get hasPublishedTimetable() {
+                return computed.hasPublishedTimetable.call(ctx)
+            },
+            get activeSavedTimetableSelection() {
+                return computed.activeSavedTimetableSelection.call(ctx)
+            },
+            get activeSavedTimetableCourseGroupKeys() {
+                return computed.activeSavedTimetableCourseGroupKeys.call(ctx)
+            },
+            get publishedTimetablePayload() {
+                return computed.publishedTimetablePayload.call(ctx)
+            },
+            get publishedTimetableVisible() {
+                return computed.publishedTimetableVisible.call(ctx)
+            },
+            get personalTimetableViewChangeVisible() {
+                return computed.personalTimetableViewChangeVisible.call(ctx)
+            },
+            get publishedTimetableSemesters() {
+                return computed.publishedTimetableSemesters.call(ctx)
+            },
+            get manualTimetableCourseSections() {
+                return computed.manualTimetableCourseSections.call(ctx)
+            },
+            get manualTimetableCourses() {
+                return computed.manualTimetableCourses.call(ctx)
+            },
+        }
+        const adoptPublishedTimetable = vi.fn(async () => {
+            ctx.overview.personal_timetable = {
+                id: 9,
+                active_course_group_keys: ['saved-group'],
+                timetable: ctx.overview.published_timetable.timetable,
+            }
+
+            return true
+        })
+        ctx.studentTimetablesStore = { adoptPublishedTimetable }
+
+        await methods.adoptPublishedTimetable.call(ctx)
+
+        expect(adoptPublishedTimetable).toHaveBeenCalledOnce()
+        expect(ctx.showManualTimetable).toBe(true)
+        expect(ctx.showEvaluationSettings).toBe(false)
+        expect(ctx.manualTimetableMode).toBe('personal')
+        expect(ctx.manualTimetableTitle).toBe('Mein Stundenplan')
+        expect(ctx.manualSelectedCourseKeys).toEqual(['course-1'])
+        expect(ctx.manualSelectedCourseGroupKeys).toEqual(['saved-group'])
+        expect(ctx.personalTimetableViewChangedMessageVisible).toBe(true)
+        expect(ctx.personalTimetableViewChangeVisible).toBe(true)
+        expect(ctx.personalTimetableSaving).toBe(false)
+        methods.dismissPersonalTimetableViewChangeMessage.call(ctx)
+        expect(ctx.personalTimetableViewChangedMessageVisible).toBe(false)
+        expect(ctx.personalTimetableViewChangeVisible).toBe(false)
+        expect(pushedRoutes).toEqual([
+            {
+                path: '/students-timetables/overview',
+                query: {
+                    manual_timetable: 'personal',
+                },
+            },
+        ])
+    })
+
+    it('opens an empty personal timetable when no personal timetable exists yet', () => {
+        const methods = (Overview as any).methods
+        const computed = (Overview as any).computed
+        const pushedRoutes: unknown[] = []
+        const ctx: any = {
+            ...methods,
+            showManualTimetable: false,
+            showEvaluationSettings: true,
+            manualTimetableMode: 'manual',
+            manualSelectedCourseKeys: [],
+            manualSelectedCourseGroupKeys: [],
+            overview: {
+                personal_timetable: null,
+                manual_timetable: {
+                    sections: [],
+                },
+            },
+            $route: {
+                path: '/students-timetables/overview',
+                query: {},
+            },
+            $router: {
+                push(route: unknown) {
+                    pushedRoutes.push(route)
+                },
+            },
+            ensureManualTimetableDefaultSelection: methods.ensureManualTimetableDefaultSelection,
+            applySavedTimetableSelection: methods.applySavedTimetableSelection,
+            get manualTimetableSelection() {
+                return computed.manualTimetableSelection.call(ctx)
+            },
+            get manualTimetableTitle() {
+                return computed.manualTimetableTitle.call(ctx)
+            },
+            get personalTimetableSelection() {
+                return computed.personalTimetableSelection.call(ctx)
+            },
+            get hasPersonalTimetable() {
+                return computed.hasPersonalTimetable.call(ctx)
+            },
+            get activeSavedTimetableSelection() {
+                return computed.activeSavedTimetableSelection.call(ctx)
+            },
+            get activeSavedTimetableCourseGroupKeys() {
+                return computed.activeSavedTimetableCourseGroupKeys.call(ctx)
+            },
+            get publishedTimetablePayload() {
+                return computed.publishedTimetablePayload.call(ctx)
+            },
+            get publishedTimetableVisible() {
+                return computed.publishedTimetableVisible.call(ctx)
+            },
+            get personalTimetableEmptyVisible() {
+                return computed.personalTimetableEmptyVisible.call(ctx)
+            },
+            get publishedTimetableSemesters() {
+                return computed.publishedTimetableSemesters.call(ctx)
+            },
+            get manualTimetableCourseSections() {
+                return computed.manualTimetableCourseSections.call(ctx)
+            },
+            get manualTimetableCourses() {
+                return computed.manualTimetableCourses.call(ctx)
+            },
+        }
+
+        methods.openPersonalTimetable.call(ctx)
+
+        expect(ctx.showManualTimetable).toBe(true)
+        expect(ctx.showEvaluationSettings).toBe(false)
+        expect(ctx.manualTimetableMode).toBe('personal')
+        expect(ctx.manualTimetableTitle).toBe('Mein Stundenplan')
+        expect(ctx.hasPersonalTimetable).toBe(false)
+        expect(ctx.publishedTimetableVisible).toBe(false)
+        expect(ctx.personalTimetableEmptyVisible).toBe(true)
+        expect(pushedRoutes).toEqual([
+            {
+                path: '/students-timetables/overview',
+                query: {
+                    manual_timetable: 'personal',
                 },
             },
         ])
@@ -305,6 +741,477 @@ describe('Student timetable evaluation settings', () => {
         ])
         expect(methods.manualGroupsForCell.call(ctx, 1, 11)).toEqual([courseGroup])
         expect(methods.manualCourseGroupDetails(courseGroup)).toBe('D1 - 4A - MUE · MUE · 101')
+    })
+
+    it('builds the personal timetable course selection chips from the saved timetable courses', () => {
+        const methods = (Overview as any).methods
+        const computed = (Overview as any).computed
+        const ctx: any = {
+            ...methods,
+            manualTimetableMode: 'personal',
+            hiddenSavedTimetableCourseChipKeys: [],
+            selectedStudentCoursePickerTab: 'missing',
+            selectedStudentCoursePickerMenuKey: '',
+            studentCoursePickerDialogOpen: false,
+            overview: {
+                personal_timetable: {
+                    id: 9,
+                    timetable: {
+                        weekdays: [
+                            { label: 'Mo' },
+                            { label: 'Di' },
+                            { label: 'Do' },
+                        ],
+                        semesters: [
+                            {
+                                label: 'Semester',
+                                date_range: '16.02.2026 - 10.07.2026',
+                                weeks: [
+                                    {
+                                        hours: [
+                                            {
+                                                hour: 1,
+                                                from: '19:30',
+                                                until: '21:10',
+                                                cells: [
+                                                    {},
+                                                    {
+                                                        status: 'warning',
+                                                        courses: [
+                                                            {
+                                                                label: 'E5 - 3R - HÖF',
+                                                                details: '1w, 2w',
+                                                            },
+                                                            {
+                                                                label: 'D5 - 3R - SHAM',
+                                                                details: 'FU · 1w, 2w',
+                                                                student_course_type: 'missing',
+                                                                student_course_badge: 'Fehlend',
+                                                            },
+                                                        ],
+                                                    },
+                                                    {},
+                                                ],
+                                            },
+                                            {
+                                                hour: 13,
+                                                from: '19:30',
+                                                until: '20:15',
+                                                cells: [
+                                                    {},
+                                                    {
+                                                        status: 'filled',
+                                                        courses: [
+                                                            {
+                                                                label: 'CH1 - 4F - KOW',
+                                                                details: '1w, 2w',
+                                                            },
+                                                        ],
+                                                    },
+                                                    {},
+                                                ],
+                                            },
+                                            {
+                                                hour: 14,
+                                                from: '20:25',
+                                                until: '21:10',
+                                                cells: [
+                                                    {
+                                                        status: 'filled',
+                                                        courses: [
+                                                            {
+                                                                label: 'BU2 - 5CK - FUCH',
+                                                                details: '1w',
+                                                                student_course_type: 'missing',
+                                                                student_course_badge: 'Fehlend',
+                                                            },
+                                                        ],
+                                                    },
+                                                    {
+                                                        status: 'filled',
+                                                        courses: [
+                                                            {
+                                                                label: 'CH1 - 4F - KOW',
+                                                                details: '1w, 2w',
+                                                            },
+                                                        ],
+                                                    },
+                                                    {},
+                                                ],
+                                            },
+                                            {
+                                                hour: 15,
+                                                from: '21:10',
+                                                until: '21:55',
+                                                cells: [
+                                                    {
+                                                        status: 'filled',
+                                                        courses: [
+                                                            {
+                                                                label: 'BU2 - 5CK - FUCH',
+                                                                details: '1w',
+                                                                student_course_type: 'missing',
+                                                                student_course_badge: 'Fehlend',
+                                                            },
+                                                        ],
+                                                    },
+                                                    {},
+                                                    {},
+                                                ],
+                                            },
+                                            {
+                                                hour: 16,
+                                                from: '20:25',
+                                                until: '21:55',
+                                                cells: [
+                                                    {},
+                                                    {},
+                                                    {
+                                                        status: 'filled',
+                                                        courses: [
+                                                            {
+                                                                label: 'E5 - 3R - HÖF',
+                                                                details: '1w, 2w',
+                                                            },
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                manual_timetable: {
+                    sections: [
+                        {
+                            key: 'missing',
+                            color: 'error',
+                            items: [
+                                {
+                                    key: 'bu2',
+                                    code: 'BU2',
+                                    semester: 1,
+                                    course_groups: [
+                                        {
+                                            key: 'bu2-14',
+                                            display_label: 'BU2 - 5CK - FUCH',
+                                            weekday: 1,
+                                            time_from: '20:25',
+                                            time_until: '21:10',
+                                            recurrence_label: '1w',
+                                        },
+                                        {
+                                            key: 'bu2-15',
+                                            display_label: 'BU2 - 5CK - FUCH',
+                                            weekday: 1,
+                                            time_from: '21:10',
+                                            time_until: '21:55',
+                                            recurrence_label: '1w',
+                                        },
+                                    ],
+                                },
+                                {
+                                    key: 'd5',
+                                    code: 'D5',
+                                    semester: 1,
+                                    course_groups: [
+                                        {
+                                            key: 'd5-1',
+                                            display_label: 'D5 - 3R - SHAM',
+                                            weekday: 2,
+                                            time_from: '19:30',
+                                            time_until: '21:10',
+                                            recurrence_label: '1w, 2w',
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        {
+                            key: 'proposed',
+                            color: 'primary',
+                            items: [
+                                {
+                                    key: 'ch1',
+                                    code: 'CH1',
+                                    semester: 1,
+                                    course_groups: [
+                                        {
+                                            key: 'ch1-13',
+                                            display_label: 'CH1 - 4F - KOW',
+                                            weekday: 2,
+                                            time_from: '19:30',
+                                            time_until: '20:15',
+                                            recurrence_label: '1w, 2w',
+                                        },
+                                        {
+                                            key: 'ch1-14',
+                                            display_label: 'CH1 - 4F - KOW',
+                                            weekday: 2,
+                                            time_from: '20:25',
+                                            time_until: '21:10',
+                                            recurrence_label: '1w, 2w',
+                                        },
+                                    ],
+                                },
+                                {
+                                    key: 'e5',
+                                    code: 'E5',
+                                    semester: 1,
+                                    course_groups: [
+                                        {
+                                            key: 'e5-1',
+                                            display_label: 'E5 - 3R - HÖF',
+                                            weekday: 2,
+                                            time_from: '19:30',
+                                            time_until: '21:10',
+                                            recurrence_label: '1w, 2w',
+                                        },
+                                        {
+                                            key: 'e5-16',
+                                            display_label: 'E5 - 3R - HÖF',
+                                            weekday: 4,
+                                            time_from: '20:25',
+                                            time_until: '21:55',
+                                            recurrence_label: '1w, 2w',
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        {
+                            key: 'additional',
+                            color: 'warning',
+                            items: [
+                                {
+                                    key: 'ph2',
+                                    code: 'PH2',
+                                    semester: 1,
+                                    course_groups: [
+                                        {
+                                            key: 'ph2-1',
+                                            display_label: 'PH2 - 6A - ALT',
+                                            weekday: 4,
+                                            time_from: '18:45',
+                                            time_until: '20:15',
+                                            recurrence_label: '1w',
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+            get personalTimetableSelection() {
+                return computed.personalTimetableSelection.call(ctx)
+            },
+            get activeSavedTimetableSelection() {
+                return computed.activeSavedTimetableSelection.call(ctx)
+            },
+            get publishedTimetablePayload() {
+                return computed.publishedTimetablePayload.call(ctx)
+            },
+            get publishedTimetableWeekdays() {
+                return computed.publishedTimetableWeekdays.call(ctx)
+            },
+            get publishedTimetableSemesters() {
+                return computed.publishedTimetableSemesters.call(ctx)
+            },
+            get manualTimetableSelection() {
+                return computed.manualTimetableSelection.call(ctx)
+            },
+            get manualTimetableCourseSections() {
+                return computed.manualTimetableCourseSections.call(ctx)
+            },
+            get savedTimetableCourseChipEntries() {
+                return computed.savedTimetableCourseChipEntries.call(ctx)
+            },
+            get savedTimetableCourseChips() {
+                return computed.savedTimetableCourseChips.call(ctx)
+            },
+            get studentCoursePickerTabs() {
+                return computed.studentCoursePickerTabs.call(ctx)
+            },
+            get studentCoursePickerSemesterContexts() {
+                return computed.studentCoursePickerSemesterContexts.call(ctx)
+            },
+            get studentCoursePickerCourseGroups() {
+                return computed.studentCoursePickerCourseGroups.call(ctx)
+            },
+            get studentCoursePickerCourseMenus() {
+                return computed.studentCoursePickerCourseMenus.call(ctx)
+            },
+            get selectedStudentCoursePickerMenu() {
+                return computed.selectedStudentCoursePickerMenu.call(ctx)
+            },
+            get selectedStudentCoursePickerEntryOptions() {
+                return computed.selectedStudentCoursePickerEntryOptions.call(ctx)
+            },
+            get personalTimetableCourseSelectionVisible() {
+                return computed.personalTimetableCourseSelectionVisible.call(ctx)
+            },
+        }
+
+        expect(ctx.personalTimetableCourseSelectionVisible).toBe(true)
+        expect(ctx.savedTimetableCourseChips).toEqual([
+            expect.objectContaining({
+                key: 'BU2 - 5CK - FUCH',
+                label: 'BU2 - 5CK - FUCH · Mo 14.-15 (1w)',
+                hasOverlap: false,
+                studentCourseType: 'missing',
+                studentCourseBadge: 'Fehlend',
+            }),
+            expect.objectContaining({
+                key: 'CH1 - 4F - KOW',
+                label: 'CH1 - 4F - KOW · Di 13.-14 (1w, 2w)',
+                hasOverlap: false,
+            }),
+            expect.objectContaining({
+                key: 'D5 - 3R - SHAM',
+                label: 'D5 - 3R - SHAM · Di 1. (1w, 2w)',
+                hasOverlap: true,
+                studentCourseType: 'missing',
+                studentCourseBadge: 'Fehlend',
+            }),
+            expect.objectContaining({
+                key: 'E5 - 3R - HÖF',
+                label: 'E5 - 3R - HÖF · Di 1., Do 16. (1w, 2w)',
+                hasOverlap: true,
+            }),
+        ])
+        expect(methods.savedTimetableCourseChipBadgeLabel(ctx.savedTimetableCourseChips[0])).toBe('F')
+        expect(ctx.studentCoursePickerTabs).toEqual([
+            { value: 'missing', label: 'Fehlende Kurse' },
+            { value: 'proposed', label: 'Vorgesehene Kurse' },
+            { value: 'additional', label: 'Zusätzliche Kurse' },
+            { value: 'open', label: 'Offene Kurse' },
+            { value: 'all', label: 'Alle' },
+        ])
+        expect(ctx.studentCoursePickerSemesterContexts).toEqual([
+            {
+                value: 1,
+                label: 'Semester',
+                dateRangeLabel: '16.02.2026 - 10.07.2026',
+            },
+        ])
+        expect(ctx.studentCoursePickerCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['BU', 'D'])
+        expect(ctx.selectedStudentCoursePickerMenu).toBeNull()
+        expect(ctx.selectedStudentCoursePickerEntryOptions).toEqual([])
+
+        methods.selectStudentCoursePickerMenu.call(ctx, ctx.studentCoursePickerCourseMenus[0])
+
+        expect(ctx.selectedStudentCoursePickerMenu).toEqual(expect.objectContaining({
+            label: 'BU',
+            semesterLabel: 'Semester',
+            semesterDateRangeLabel: '16.02.2026 - 10.07.2026',
+        }))
+        expect(ctx.selectedStudentCoursePickerEntryOptions).toEqual([
+            expect.objectContaining({
+                label: 'BU2 - 5CK - FUCH',
+                scheduleLabel: 'Mo 20:25 - 21:55 (1w)',
+                isActive: true,
+                color: 'success',
+            }),
+        ])
+        expect(methods.studentCoursePickerMenuHasActiveSelection.call(ctx, ctx.selectedStudentCoursePickerMenu)).toBe(true)
+
+        expect(methods.publishedTimetableCellCourses.call(ctx, {
+            courses: [
+                { label: 'BU2 - 5CK - FUCH' },
+                { label: 'E5 - 3R - HÖF' },
+            ],
+        })).toHaveLength(2)
+
+        methods.deselectSavedTimetableCourseChip.call(ctx, ctx.savedTimetableCourseChips[0])
+
+        expect(ctx.hiddenSavedTimetableCourseChipKeys).toEqual(['BU2 - 5CK - FUCH'])
+        expect(methods.publishedTimetableCellCourses.call(ctx, {
+            courses: [
+                { label: 'BU2 - 5CK - FUCH' },
+                { label: 'E5 - 3R - HÖF' },
+            ],
+        })).toEqual([{ label: 'E5 - 3R - HÖF' }])
+
+        methods.deselectAllSavedTimetableCourseChips.call(ctx)
+
+        expect(ctx.hiddenSavedTimetableCourseChipKeys).toEqual(['BU2 - 5CK - FUCH', 'CH1 - 4F - KOW', 'D5 - 3R - SHAM', 'E5 - 3R - HÖF'])
+        expect(ctx.savedTimetableCourseChips).toEqual([])
+        expect(ctx.personalTimetableCourseSelectionVisible).toBe(true)
+
+        ctx.selectedStudentCoursePickerTab = 'open'
+
+        expect(ctx.studentCoursePickerCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['PH'])
+
+        ctx.selectedStudentCoursePickerTab = 'all'
+
+        expect(ctx.studentCoursePickerCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['BU', 'CH', 'D', 'E', 'PH'])
+        expect(ctx.selectedStudentCoursePickerEntryOptions[0]).toEqual(expect.objectContaining({
+            courseChipKey: 'BU2 - 5CK - FUCH',
+            isActive: false,
+        }))
+
+        methods.toggleStudentCoursePickerEntry.call(ctx, ctx.selectedStudentCoursePickerEntryOptions[0])
+
+        expect(ctx.hiddenSavedTimetableCourseChipKeys).toEqual(['CH1 - 4F - KOW', 'D5 - 3R - SHAM', 'E5 - 3R - HÖF'])
+    })
+
+    it('keeps manual timetable course selection helpers for the editable manual preview', () => {
+        const methods = (Overview as any).methods
+        const computed = (Overview as any).computed
+        const savedCourseGroup = {
+            key: 'group-1',
+            course: 'D5',
+            display_label: 'D5 - 3R - SHAM',
+            weekday: 2,
+            hour: 14,
+            time_from: '20:25',
+            time_until: '21:55',
+            recurrence_label: '1w, 2w',
+        }
+        const course = {
+            key: 'course-1',
+            code: 'D5',
+            course_groups: [savedCourseGroup],
+        }
+        const ctx: any = {
+            ...methods,
+            manualTimetableMode: 'manual',
+            manualSelectedCourseKeys: ['course-1'],
+            manualSelectedCourseGroupKeys: ['group-1'],
+            overview: {
+                manual_timetable: {
+                    sections: [
+                        {
+                            key: 'missing',
+                            items: [course],
+                        },
+                    ],
+                },
+            },
+            get manualTimetableSelection() {
+                return computed.manualTimetableSelection.call(ctx)
+            },
+            get manualTimetableCourseSections() {
+                return computed.manualTimetableCourseSections.call(ctx)
+            },
+            get manualTimetableCourses() {
+                return computed.manualTimetableCourses.call(ctx)
+            },
+            get manualSelectedCourses() {
+                return computed.manualSelectedCourses.call(ctx)
+            },
+            get manualSelectedCourseGroups() {
+                return computed.manualSelectedCourseGroups.call(ctx)
+            },
+        }
+
+        expect(methods.manualCourseGroupChipLabel.call(ctx, savedCourseGroup))
+            .toBe('D5 - 3R - SHAM · Di 20:25 - 21:55 (1w, 2w)')
+        expect(methods.manualCourseGroupStudentCourseBadge.call(ctx, savedCourseGroup)).toBe('Fehlend')
     })
 
     it('shows the imported student religion on the religion card', () => {

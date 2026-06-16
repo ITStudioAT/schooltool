@@ -153,6 +153,122 @@
                     </v-card>
                 </v-dialog>
 
+                <v-dialog v-model="personalTimetableDeleteDialogOpen" persistent max-width="460">
+                    <v-card>
+                        <v-card-title>Mein Stundenplan löschen?</v-card-title>
+                        <v-card-text>
+                            Dieser Stundenplan wird nur für dich und dieses Schuljahr gelöscht. Der von der Schule gespeicherte Stundenplan bleibt erhalten.
+                        </v-card-text>
+                        <v-card-actions>
+                            <v-spacer />
+                            <v-btn
+                                variant="text"
+                                :disabled="personalTimetableDeleting"
+                                @click="closePersonalTimetableDeleteDialog">
+                                Abbrechen
+                            </v-btn>
+                            <v-btn
+                                color="error"
+                                variant="flat"
+                                prepend-icon="mdi-trash-can-outline"
+                                :loading="personalTimetableDeleting"
+                                :disabled="personalTimetableDeleting"
+                                @click="deletePersonalTimetable">
+                                Löschen
+                            </v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
+
+                <v-dialog v-model="studentCoursePickerDialogOpen" persistent max-width="760">
+                    <v-card rounded="lg">
+                        <v-card-title class="d-flex align-center ga-2">
+                            <v-icon icon="mdi-plus-circle" color="primary" />
+                            Kurs wählen
+                            <v-spacer />
+                            <v-btn
+                                icon="mdi-close"
+                                variant="text"
+                                size="small"
+                                aria-label="Kursauswahl schließen"
+                                @click="studentCoursePickerDialogOpen = false" />
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text>
+                            <div class="course-menu-dialog-options">
+                                <v-btn-toggle
+                                    v-model="selectedStudentCoursePickerTab"
+                                    density="compact"
+                                    variant="text"
+                                    rounded="lg"
+                                    selected-class="course-choice-restriction-option--active"
+                                    mandatory
+                                    class="course-choice-restriction-switch">
+                                    <v-btn
+                                        v-for="option in studentCoursePickerTabs"
+                                        :key="option.value"
+                                        :value="option.value"
+                                        class="course-choice-restriction-option"
+                                        size="small">
+                                        {{ option.label }}
+                                    </v-btn>
+                                </v-btn-toggle>
+                            </div>
+
+                            <div v-if="studentCoursePickerCourseMenus.length" class="course-menu-dialog-chips">
+                                <v-chip
+                                    v-for="courseMenu in studentCoursePickerCourseMenus"
+                                    :key="courseMenu.key"
+                                    size="small"
+                                    :color="studentCoursePickerMenuHasActiveSelection(courseMenu) ? 'success' : 'primary'"
+                                    :variant="selectedStudentCoursePickerMenu?.key === courseMenu.key ? 'flat' : 'tonal'"
+                                    class="course-menu-dialog-chip"
+                                    @click="selectStudentCoursePickerMenu(courseMenu)">
+                                    {{ courseMenu.label }}
+                                </v-chip>
+                            </div>
+
+                            <div v-else class="empty-state">
+                                <v-icon size="20">mdi-information-outline</v-icon>
+                                <span>Keine Kurse in dieser Auswahl.</span>
+                            </div>
+
+                            <div v-if="selectedStudentCoursePickerMenu" class="course-choice-panel__semesters course-menu-dialog-items">
+                                <section
+                                    :key="selectedStudentCoursePickerMenu.key"
+                                    class="course-choice-semester">
+                                    <div class="course-choice-semester__label">
+                                        <span>{{ selectedStudentCoursePickerMenu.semesterLabel }}</span>
+                                        <span class="course-choice-semester__dates">{{ selectedStudentCoursePickerMenu.semesterDateRangeLabel }}</span>
+                                        <v-chip size="x-small" color="primary" variant="tonal">
+                                            {{ selectedStudentCoursePickerMenu.label }}
+                                        </v-chip>
+                                    </div>
+                                    <div class="course-item-chips">
+                                        <v-chip
+                                            v-for="entryOption in selectedStudentCoursePickerEntryOptions"
+                                            :key="entryOption.key"
+                                            size="small"
+                                            :color="entryOption.color"
+                                            :variant="entryOption.isActive ? 'flat' : 'tonal'"
+                                            class="course-item-chip"
+                                            @click="toggleStudentCoursePickerEntry(entryOption)">
+                                            <v-icon
+                                                :icon="entryOption.isActive ? 'mdi-check' : 'mdi-calendar-blank'"
+                                                size="16"
+                                                start />
+                                            <span>{{ entryOption.label }}</span>
+                                            <span v-if="entryOption.scheduleLabel" class="course-item-chip__schedule">
+                                                {{ entryOption.scheduleLabel }}
+                                            </span>
+                                        </v-chip>
+                                    </div>
+                                </section>
+                            </div>
+                        </v-card-text>
+                    </v-card>
+                </v-dialog>
+
                 <v-expansion-panels
                     v-if="!showEvaluationSettings && !showManualTimetable"
                     v-model="expandedCourseSections"
@@ -206,11 +322,11 @@
                         </span>
                     </v-btn>
                     <v-btn
-                        class="timetable-actions__button timetable-actions__manual"
+                        class="timetable-actions__button timetable-actions__personal"
                         variant="flat"
-                        prepend-icon="mdi-calendar-edit"
-                        @click="openManualTimetable">
-                        Manueller Stundenplan
+                        prepend-icon="mdi-account-calendar"
+                        @click="openPersonalTimetable">
+                        Mein Stundenplan
                     </v-btn>
                     <v-btn
                         v-if="hasPublishedTimetable"
@@ -218,17 +334,109 @@
                         variant="flat"
                         prepend-icon="mdi-calendar-check"
                         @click="openPublishedTimetable">
-                        Gespeicherter Stundenplan
+                        Von der Schule gespeicherter Stundenplan
                     </v-btn>
                 </div>
 
                 <section v-if="showManualTimetable" class="student-manual-timetable">
                     <div class="student-manual-timetable__toolbar">
                         <div>
-                            <p class="student-manual-timetable__eyebrow">Manuell</p>
                             <h3>{{ manualTimetableTitle }}</h3>
                         </div>
-                        <v-btn variant="text" prepend-icon="mdi-arrow-left" @click="closeManualTimetable">Zurück</v-btn>
+                        <div class="student-manual-timetable__toolbar-actions">
+                            <v-btn
+                                v-if="manualTimetableMode === 'published' && hasPublishedTimetable"
+                                color="primary"
+                                variant="flat"
+                                prepend-icon="mdi-content-save-check-outline"
+                                :loading="personalTimetableSaving"
+                                :disabled="personalTimetableSaving"
+                                @click="adoptPublishedTimetable">
+                                Als mein Stundenplan übernehmen
+                            </v-btn>
+                            <v-btn variant="text" prepend-icon="mdi-arrow-left" @click="closeManualTimetable">Zurück</v-btn>
+                            <v-btn
+                                v-if="manualTimetableMode === 'personal' && hasPersonalTimetable"
+                                color="error"
+                                variant="flat"
+                                prepend-icon="mdi-trash-can-outline"
+                                :disabled="personalTimetableDeleting"
+                                @click="openPersonalTimetableDeleteDialog">
+                                Löschen
+                            </v-btn>
+                        </div>
+                    </div>
+
+                    <v-alert
+                        v-if="personalTimetableViewChangeVisible"
+                        class="student-manual-timetable__view-change"
+                        type="success"
+                        variant="tonal"
+                        density="comfortable"
+                        icon="mdi-swap-horizontal-bold"
+                        closable
+                        close-label="Meldung schließen"
+                        @click:close="dismissPersonalTimetableViewChangeMessage">
+                        Der Stundenplan wurde übernommen. Du siehst jetzt "Mein Stundenplan".
+                    </v-alert>
+
+                    <div
+                        v-if="personalTimetableCourseSelectionVisible"
+                        class="student-course-choice-panel">
+                        <div class="student-course-choice-panel__header">
+                            <div class="student-course-choice-panel__title">
+                                <v-icon icon="mdi-format-list-checks" size="18" color="primary" />
+                                <span>Kursauswahl</span>
+                                <v-tooltip text="Kurs wählen">
+                                    <template #activator="{ props }">
+                                        <v-btn
+                                            v-bind="props"
+                                            icon="mdi-plus"
+                                            color="primary"
+                                            variant="flat"
+                                            size="small"
+                                            aria-label="Kurs wählen"
+                                            @click="openStudentCoursePickerDialog" />
+                                    </template>
+                                </v-tooltip>
+                            </div>
+                            <div class="student-course-choice-panel__actions">
+                                <v-chip size="x-small" color="primary" variant="tonal">
+                                    {{ savedTimetableCourseChips.length }} ausgewählt
+                                </v-chip>
+                                <v-btn
+                                    v-if="savedTimetableCourseChips.length > 0"
+                                    size="x-small"
+                                    variant="tonal"
+                                    color="error"
+                                    prepend-icon="mdi-close-circle-outline"
+                                    @click="deselectAllSavedTimetableCourseChips">
+                                    Alle abwählen
+                                </v-btn>
+                            </div>
+                        </div>
+
+                        <div class="student-selected-course-filter-chips">
+                            <v-chip
+                                v-for="courseChip in savedTimetableCourseChips"
+                                :key="courseChip.key"
+                                size="small"
+                                :color="courseChip.hasOverlap ? 'warning' : 'success'"
+                                variant="tonal"
+                                closable
+                                class="student-selected-course-filter-chip"
+                                @click:close="deselectSavedTimetableCourseChip(courseChip)">
+                                <span>{{ courseChip.label }}</span>
+                                <span
+                                    v-if="courseChip.studentCourseBadge"
+                                    :class="[
+                                        'student-selected-course-filter-chip__source',
+                                        `student-selected-course-filter-chip__source--${courseChip.studentCourseType}`,
+                                    ]">
+                                    {{ savedTimetableCourseChipBadgeLabel(courseChip) }}
+                                </span>
+                            </v-chip>
+                        </div>
                     </div>
 
                     <div v-if="publishedTimetableVisible" class="student-published-timetable">
@@ -291,8 +499,50 @@
                                         </div>
                                     </template>
                                 </div>
+
+                                <div
+                                    v-if="publishedTimetableSameSlotGroups(week).length"
+                                    class="timetable-date-overview">
+                                    <div class="timetable-date-overview__title">Termine in gleichen Zellen</div>
+                                    <div class="timetable-date-overview__groups">
+                                        <div
+                                            v-for="group in publishedTimetableSameSlotGroups(week)"
+                                            :key="group.key"
+                                            class="timetable-date-overview__group">
+                                            <div class="timetable-date-overview__slot">{{ group.title }}</div>
+                                            <div class="timetable-date-overview__courses">
+                                                <div
+                                                    v-for="course in group.courses"
+                                                    :key="course.key"
+                                                    class="timetable-date-overview__course">
+                                                    <div class="timetable-date-overview__course-title">
+                                                        <span>{{ course.title }}</span>
+                                                        <span
+                                                            v-if="course.dateRangeLabel"
+                                                            class="timetable-date-overview__range">
+                                                            {{ course.dateRangeLabel }}
+                                                        </span>
+                                                    </div>
+                                                    <div class="timetable-date-overview__dates">
+                                                        <span
+                                                            v-for="dateLabel in course.dateLabels"
+                                                            :key="dateLabel"
+                                                            class="timetable-date-overview__date">
+                                                            {{ dateLabel }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
+                    </div>
+
+                    <div v-else-if="personalTimetableEmptyVisible" class="student-manual-timetable__empty student-published-timetable__empty">
+                        <v-icon size="24">mdi-calendar-blank-outline</v-icon>
+                        <span>Mein Stundenplan ist noch leer.</span>
                     </div>
 
                     <div v-else class="student-manual-timetable__layout">
@@ -448,6 +698,14 @@ export default {
             manualSelectedCourseKeys: [],
             manualSelectedCourseGroupKeys: [],
             manualTimetableMode: 'manual',
+            personalTimetableDeleteDialogOpen: false,
+            personalTimetableDeleting: false,
+            personalTimetableSaving: false,
+            personalTimetableViewChangedMessageVisible: false,
+            hiddenSavedTimetableCourseChipKeys: [],
+            studentCoursePickerDialogOpen: false,
+            selectedStudentCoursePickerTab: 'missing',
+            selectedStudentCoursePickerMenuKey: '',
             selectionOverride: {},
             selectionDialogOpen: false,
             selectionDraftKey: '',
@@ -561,19 +819,45 @@ export default {
             return manualTimetable && typeof manualTimetable === 'object' ? manualTimetable : {}
         },
         manualTimetableTitle() {
-            if (this.manualTimetableMode === 'published') {
-                return 'Gespeicherter Stundenplan'
+            if (this.manualTimetableMode === 'personal') {
+                return 'Mein Stundenplan'
             }
 
-            return this.manualTimetableSelection.title || 'Manueller Stundenplan'
+            if (this.manualTimetableMode === 'published') {
+                return 'Von der Schule gespeicherter Stundenplan'
+            }
+
+            return 'Stundenplan'
         },
         publishedTimetableSelection() {
             const publishedTimetable = this.overview?.published_timetable
 
             return publishedTimetable && typeof publishedTimetable === 'object' ? publishedTimetable : {}
         },
+        personalTimetableSelection() {
+            const personalTimetable = this.overview?.personal_timetable
+
+            return personalTimetable && typeof personalTimetable === 'object' ? personalTimetable : {}
+        },
         hasPublishedTimetable() {
             return Boolean(this.publishedTimetableSelection.id)
+        },
+        hasPersonalTimetable() {
+            return Boolean(this.personalTimetableSelection.id)
+        },
+        activeSavedTimetableSelection() {
+            return this.manualTimetableMode === 'personal'
+                ? this.personalTimetableSelection
+                : this.publishedTimetableSelection
+        },
+        activeSavedTimetableCourseGroupKeys() {
+            const courseGroupKeys = Array.isArray(this.activeSavedTimetableSelection.active_course_group_keys)
+                ? this.activeSavedTimetableSelection.active_course_group_keys
+                : this.activeSavedTimetableSelection.state?.activeCourseGroupFilterKeys
+
+            return (Array.isArray(courseGroupKeys) ? courseGroupKeys : [])
+                .map(courseGroupKey => String(courseGroupKey || ''))
+                .filter(Boolean)
         },
         publishedTimetableCourseGroupKeys() {
             const courseGroupKeys = Array.isArray(this.publishedTimetableSelection.active_course_group_keys)
@@ -585,12 +869,222 @@ export default {
                 .filter(Boolean)
         },
         publishedTimetablePayload() {
-            const timetable = this.publishedTimetableSelection.timetable
+            const timetable = this.activeSavedTimetableSelection.timetable
 
             return timetable && typeof timetable === 'object' ? timetable : {}
         },
         publishedTimetableVisible() {
-            return this.manualTimetableMode === 'published' && this.publishedTimetableSemesters.length > 0
+            return ['personal', 'published'].includes(this.manualTimetableMode) && this.publishedTimetableSemesters.length > 0
+        },
+        personalTimetableEmptyVisible() {
+            return this.manualTimetableMode === 'personal' && this.publishedTimetableSemesters.length === 0
+        },
+        personalTimetableViewChangeVisible() {
+            return this.manualTimetableMode === 'personal' && this.personalTimetableViewChangedMessageVisible
+        },
+        personalTimetableCourseSelectionVisible() {
+            return this.manualTimetableMode === 'personal' && this.savedTimetableCourseChipEntries.length > 0
+        },
+        studentCoursePickerTabs() {
+            return [
+                { value: 'missing', label: 'Fehlende Kurse' },
+                { value: 'proposed', label: 'Vorgesehene Kurse' },
+                { value: 'additional', label: 'Zusätzliche Kurse' },
+                { value: 'open', label: 'Offene Kurse' },
+                { value: 'all', label: 'Alle' },
+            ]
+        },
+        studentCoursePickerSemesterContexts() {
+            return this.publishedTimetableSemesters.map((semester, index) => {
+                const semesterValue = Number(semester?.value || semester?.semester || index + 1)
+
+                return {
+                    value: Number.isFinite(semesterValue) && semesterValue > 0 ? semesterValue : index + 1,
+                    label: semester?.label || `Semester ${index + 1}`,
+                    dateRangeLabel: semester?.date_range || '',
+                }
+            })
+        },
+        savedTimetableCourseChips() {
+            const hiddenCourseChipKeys = new Set(this.hiddenSavedTimetableCourseChipKeys)
+
+            return this.savedTimetableCourseChipEntries
+                .filter(courseChip => !hiddenCourseChipKeys.has(courseChip.key))
+        },
+        studentCoursePickerCourseGroups() {
+            return this.manualTimetableCourseSections.flatMap((section) => {
+                const sectionKey = String(section?.key || '')
+                const courses = Array.isArray(section?.items) ? section.items : []
+
+                return courses.flatMap((course) => this.manualCourseGroups(course).map((courseGroup) => ({
+                    ...courseGroup,
+                    course: courseGroup?.course || course?.code || course?.name || courseGroup?.subject || courseGroup?.title,
+                    display_label: courseGroup?.display_label || courseGroup?.course || course?.code || course?.name,
+                    semester: courseGroup?.semester || course?.semester || 1,
+                    studentCourseType: sectionKey,
+                    sourceColor: section?.color || 'primary',
+                })))
+            })
+                .filter(courseGroup => this.studentCoursePickerCourseGroupMatchesTab(courseGroup))
+        },
+        studentCoursePickerCourseMenus() {
+            const courseMenus = new Map()
+
+            this.studentCoursePickerCourseGroups.forEach((courseGroup) => {
+                const semester = Number(courseGroup?.semester || 1)
+                const semesterContext = this.studentCoursePickerSemesterContext(semester)
+                const label = this.studentCoursePickerMenuLabel(courseGroup)
+                const normalizedLabel = label.toLocaleUpperCase('de-AT')
+                const courseMenuKey = `semester-${semester}-${normalizedLabel}`
+
+                if (!courseMenus.has(courseMenuKey)) {
+                    courseMenus.set(courseMenuKey, {
+                        key: courseMenuKey,
+                        label,
+                        semester,
+                        semesterLabel: semesterContext.label,
+                        semesterDateRangeLabel: semesterContext.dateRangeLabel,
+                        entries: [],
+                        entriesByLabel: new Map(),
+                    })
+                }
+
+                const courseMenu = courseMenus.get(courseMenuKey)
+                const entryLabel = this.studentCoursePickerEntryLabel(courseGroup)
+                const entryKey = `${courseMenuKey}-${entryLabel.toLocaleUpperCase('de-AT')}`
+
+                if (!courseMenu.entriesByLabel.has(entryKey)) {
+                    courseMenu.entriesByLabel.set(entryKey, {
+                        key: entryKey,
+                        label: entryLabel,
+                        courseGroups: [],
+                        courseGroupKeys: [],
+                        studentCourseType: courseGroup.studentCourseType,
+                        sourceColor: courseGroup.sourceColor,
+                    })
+                }
+
+                const entry = courseMenu.entriesByLabel.get(entryKey)
+                entry.courseGroups.push(courseGroup)
+                if (courseGroup?.key) {
+                    entry.courseGroupKeys.push(String(courseGroup.key))
+                }
+            })
+
+            return Array.from(courseMenus.values())
+                .map(courseMenu => ({
+                    ...courseMenu,
+                    entries: Array.from(courseMenu.entriesByLabel.values())
+                        .map(entry => ({
+                            ...entry,
+                            courseGroupKeys: [...new Set(entry.courseGroupKeys)],
+                            courseChipKey: this.studentCoursePickerEntryCourseChipKey(entry),
+                            scheduleLabel: this.studentCoursePickerEntryScheduleLabel(entry),
+                        }))
+                        .sort((leftEntry, rightEntry) => (
+                            leftEntry.label.localeCompare(rightEntry.label, 'de-AT', {
+                                numeric: true,
+                                sensitivity: 'base',
+                            })
+                        )),
+                }))
+                .sort((leftCourseMenu, rightCourseMenu) => {
+                    if (leftCourseMenu.semester !== rightCourseMenu.semester) {
+                        return leftCourseMenu.semester - rightCourseMenu.semester
+                    }
+
+                    return leftCourseMenu.label.localeCompare(rightCourseMenu.label, 'de-AT', {
+                        numeric: true,
+                        sensitivity: 'base',
+                    })
+                })
+        },
+        selectedStudentCoursePickerMenu() {
+            return this.studentCoursePickerCourseMenus
+                .find(courseMenu => courseMenu.key === this.selectedStudentCoursePickerMenuKey)
+                || null
+        },
+        selectedStudentCoursePickerEntryOptions() {
+            if (!this.selectedStudentCoursePickerMenu) {
+                return []
+            }
+
+            return this.selectedStudentCoursePickerMenu.entries.map((entry) => {
+                const isActive = this.studentCoursePickerEntryActive(entry)
+
+                return {
+                    ...entry,
+                    isActive,
+                    color: this.studentCoursePickerEntryColor(entry, isActive),
+                }
+            })
+        },
+        savedTimetableCourseChipEntries() {
+            const courseChips = new Map()
+
+            this.publishedTimetableSemesters.forEach((semester) => {
+                this.publishedTimetableSemesterWeeks(semester).forEach((week) => {
+                    this.publishedTimetableWeekHours(week).forEach((hour) => {
+                        this.publishedTimetableHourCells(hour).forEach((cell, cellIndex) => {
+                            const rawCourses = this.publishedTimetableCellRawCourses(cell)
+
+                            rawCourses.forEach((course) => {
+                                const courseKey = this.savedTimetableCourseChipKey(course)
+
+                                if (!courseKey) {
+                                    return
+                                }
+
+                                if (!courseChips.has(courseKey)) {
+                                    courseChips.set(courseKey, {
+                                        key: courseKey,
+                                        title: this.savedTimetableCourseChipTitle(course),
+                                        timeRanges: [],
+                                        detailLabels: [],
+                                        hasOverlap: false,
+                                        studentCourseType: String(course?.student_course_type || ''),
+                                        studentCourseBadge: String(course?.student_course_badge || ''),
+                                    })
+                                }
+
+                                const courseChip = courseChips.get(courseKey)
+                                const timeRange = this.savedTimetableCourseTimeRange(hour, cellIndex)
+                                const detailLabel = this.savedTimetableCourseDetailLabel(course)
+
+                                if (timeRange && !this.savedTimetableCourseTimeRangeExists(courseChip.timeRanges, timeRange)) {
+                                    courseChip.timeRanges.push(timeRange)
+                                }
+
+                                if (detailLabel && !courseChip.detailLabels.includes(detailLabel)) {
+                                    courseChip.detailLabels.push(detailLabel)
+                                }
+
+                                courseChip.hasOverlap = courseChip.hasOverlap
+                                    || rawCourses.length > 1
+                                    || ['warning', 'conflict'].includes(String(cell?.status || ''))
+
+                                if (!courseChip.studentCourseType && course?.student_course_type) {
+                                    courseChip.studentCourseType = String(course.student_course_type)
+                                }
+
+                                if (!courseChip.studentCourseBadge && course?.student_course_badge) {
+                                    courseChip.studentCourseBadge = String(course.student_course_badge)
+                                }
+                            })
+                        })
+                    })
+                })
+            })
+
+            return Array.from(courseChips.values())
+                .map(courseChip => ({
+                    ...courseChip,
+                    label: this.savedTimetableCourseChipLabel(courseChip),
+                }))
+                .sort((leftCourseChip, rightCourseChip) => leftCourseChip.title.localeCompare(rightCourseChip.title, 'de-AT', {
+                    numeric: true,
+                    sensitivity: 'base',
+                }))
         },
         publishedTimetableSubtitle() {
             return [
@@ -721,6 +1215,7 @@ export default {
             this.$router.push('/homepage/students-timetables')
         },
         openAutomaticTimetable() {
+            this.personalTimetableViewChangedMessageVisible = false
             this.showEvaluationSettings = true
             this.showManualTimetable = false
             this.setAutomaticTimetableStep('criteria')
@@ -823,6 +1318,7 @@ export default {
             return ['criteria', 'courses', 'result'].includes(String(step || ''))
         },
         openManualTimetable() {
+            this.personalTimetableViewChangedMessageVisible = false
             this.showManualTimetable = true
             this.showEvaluationSettings = false
             this.manualTimetableMode = 'manual'
@@ -846,6 +1342,7 @@ export default {
                 return
             }
 
+            this.personalTimetableViewChangedMessageVisible = false
             this.showManualTimetable = true
             this.showEvaluationSettings = false
             this.manualTimetableMode = 'published'
@@ -862,7 +1359,317 @@ export default {
                 query,
             })
         },
+        openPersonalTimetable() {
+            this.personalTimetableViewChangedMessageVisible = false
+            this.showManualTimetable = true
+            this.showEvaluationSettings = false
+            this.manualTimetableMode = 'personal'
+            this.applySavedTimetableSelection()
+
+            const query = { ...this.$route.query }
+            delete query.automatic_timetable
+            delete query.automatic_timetable_courses
+            delete query.automatic_timetable_criteria
+            query.manual_timetable = 'personal'
+
+            this.$router.push({
+                path: this.$route.path,
+                query,
+            })
+        },
+        async adoptPublishedTimetable() {
+            if (!this.hasPublishedTimetable || this.personalTimetableSaving) {
+                return
+            }
+
+            this.personalTimetableSaving = true
+
+            try {
+                const saved = await this.studentTimetablesStore.adoptPublishedTimetable()
+
+                if (!saved) {
+                    return
+                }
+
+                this.showManualTimetable = true
+                this.showEvaluationSettings = false
+                this.manualTimetableMode = 'personal'
+                this.applySavedTimetableSelection()
+                this.personalTimetableViewChangedMessageVisible = true
+
+                const query = { ...this.$route.query }
+                delete query.automatic_timetable
+                delete query.automatic_timetable_courses
+                delete query.automatic_timetable_criteria
+                query.manual_timetable = 'personal'
+
+                this.$router.push({
+                    path: this.$route.path,
+                    query,
+                })
+            } finally {
+                this.personalTimetableSaving = false
+            }
+        },
+        dismissPersonalTimetableViewChangeMessage() {
+            this.personalTimetableViewChangedMessageVisible = false
+        },
+        deselectSavedTimetableCourseChip(courseChip) {
+            const courseChipKey = String(courseChip?.key || '')
+
+            if (!courseChipKey || this.hiddenSavedTimetableCourseChipKeys.includes(courseChipKey)) {
+                return
+            }
+
+            this.hiddenSavedTimetableCourseChipKeys = [
+                ...this.hiddenSavedTimetableCourseChipKeys,
+                courseChipKey,
+            ]
+        },
+        deselectAllSavedTimetableCourseChips() {
+            this.hiddenSavedTimetableCourseChipKeys = this.savedTimetableCourseChipEntries
+                .map(courseChip => courseChip.key)
+        },
+        openStudentCoursePickerDialog() {
+            this.selectedStudentCoursePickerTab = 'missing'
+            this.selectedStudentCoursePickerMenuKey = ''
+            this.studentCoursePickerDialogOpen = true
+        },
+        selectStudentCoursePickerMenu(courseMenu) {
+            this.selectedStudentCoursePickerMenuKey = String(courseMenu?.key || '')
+        },
+        toggleStudentCoursePickerEntry(entryOption) {
+            const courseChipKey = String(entryOption?.courseChipKey || '')
+
+            if (!courseChipKey) {
+                return
+            }
+
+            if (entryOption.isActive) {
+                this.deselectSavedTimetableCourseChip({ key: courseChipKey })
+                return
+            }
+
+            this.hiddenSavedTimetableCourseChipKeys = this.hiddenSavedTimetableCourseChipKeys
+                .filter(hiddenCourseChipKey => hiddenCourseChipKey !== courseChipKey)
+        },
+        studentCoursePickerMenuHasActiveSelection(courseMenu) {
+            return (courseMenu?.entries || [])
+                .some(entry => this.studentCoursePickerEntryActive(entry))
+        },
+        studentCoursePickerCourseGroupMatchesTab(courseGroup) {
+            const tab = String(this.selectedStudentCoursePickerTab || 'proposed')
+            const studentCourseType = String(courseGroup?.studentCourseType || '')
+
+            if (tab === 'all') {
+                return true
+            }
+
+            if (tab === 'open') {
+                return !this.savedTimetableCourseChipEntryByTitle(this.studentCoursePickerEntryLabel(courseGroup))
+            }
+
+            if (tab === 'missing') {
+                return studentCourseType === 'missing'
+            }
+
+            if (tab === 'additional') {
+                return studentCourseType === 'additional'
+            }
+
+            return !['missing', 'additional'].includes(studentCourseType)
+        },
+        studentCoursePickerSemesterContext(semester) {
+            return this.studentCoursePickerSemesterContexts
+                .find(semesterContext => Number(semesterContext.value) === Number(semester))
+                || {
+                    value: Number(semester) || 1,
+                    label: `Semester ${Number(semester) || 1}`,
+                    dateRangeLabel: '',
+                }
+        },
+        studentCoursePickerMenuLabel(courseGroup) {
+            const label = this.studentCoursePickerEntryLabel(courseGroup)
+            const match = label
+                .trim()
+                .match(/^(.+?)(?=\d|\s|-|$)/u)
+
+            return (match ? match[1] : label).trim().toLocaleUpperCase('de-AT') || '-'
+        },
+        studentCoursePickerEntryLabel(courseGroup) {
+            return courseGroup?.display_label || this.manualCourseGroupLabel(courseGroup)
+        },
+        studentCoursePickerEntryActive(entry) {
+            const courseChipKey = String(entry?.courseChipKey || '')
+
+            if (!courseChipKey) {
+                return false
+            }
+
+            return !this.hiddenSavedTimetableCourseChipKeys.includes(courseChipKey)
+        },
+        studentCoursePickerEntryColor(entry, isActive) {
+            if (isActive) {
+                return 'success'
+            }
+
+            if (String(entry?.studentCourseType || '') === 'additional') {
+                return 'warning'
+            }
+
+            return 'primary'
+        },
+        studentCoursePickerEntryCourseChipKey(entry) {
+            return this.savedTimetableCourseChipEntryByTitle(entry?.label)?.key || ''
+        },
+        savedTimetableCourseChipEntryByTitle(title) {
+            const normalizedTitle = String(title || '').trim().toLocaleUpperCase('de-AT')
+
+            if (!normalizedTitle) {
+                return null
+            }
+
+            return this.savedTimetableCourseChipEntries.find(courseChip => (
+                String(courseChip?.title || '').trim().toLocaleUpperCase('de-AT') === normalizedTitle
+            )) || null
+        },
+        studentCoursePickerEntryScheduleLabel(entry) {
+            const courseGroups = Array.isArray(entry?.courseGroups) ? entry.courseGroups : []
+            const scheduleLabels = this.studentCoursePickerMergedScheduleLabels(courseGroups)
+            const frequencyLabel = this.studentCoursePickerFrequencyLabel(courseGroups)
+
+            return [
+                scheduleLabels.join(', '),
+                frequencyLabel ? `(${frequencyLabel})` : '',
+            ]
+                .filter(Boolean)
+                .join(' ')
+        },
+        studentCoursePickerMergedScheduleLabels(courseGroups) {
+            const schedules = new Map()
+
+            courseGroups.forEach((courseGroup) => {
+                const weekday = Number(courseGroup?.weekday || 0)
+                const weekdayLabel = this.manualCourseGroupWeekdayLabel(courseGroup)
+                const from = String(courseGroup?.time_from || '')
+                const until = String(courseGroup?.time_until || '')
+
+                if (!weekdayLabel && !from && !until) {
+                    return
+                }
+
+                const scheduleKey = weekday ? `weekday-${weekday}` : `time-${from}-${until}`
+
+                if (!schedules.has(scheduleKey)) {
+                    schedules.set(scheduleKey, {
+                        weekdayOrder: weekday || 99,
+                        weekdayLabel,
+                        ranges: [],
+                        fallbackLabels: new Set(),
+                    })
+                }
+
+                const schedule = schedules.get(scheduleKey)
+
+                if (from && until) {
+                    schedule.ranges.push({
+                        from,
+                        until,
+                        fromMinutes: this.studentCoursePickerTimeLabelToMinutes(from),
+                        untilMinutes: this.studentCoursePickerTimeLabelToMinutes(until),
+                    })
+
+                    return
+                }
+
+                schedule.fallbackLabels.add([weekdayLabel, this.manualCourseGroupTimeRange(courseGroup)].filter(Boolean).join(' '))
+            })
+
+            return Array.from(schedules.values())
+                .sort((leftSchedule, rightSchedule) => leftSchedule.weekdayOrder - rightSchedule.weekdayOrder)
+                .flatMap((schedule) => {
+                    const mergedRanges = schedule.ranges
+                        .sort((leftRange, rightRange) => (leftRange.fromMinutes ?? 0) - (rightRange.fromMinutes ?? 0))
+                        .reduce((ranges, range) => {
+                            const lastRange = ranges[ranges.length - 1]
+                            const gapMinutes = lastRange && lastRange.untilMinutes !== null && range.fromMinutes !== null
+                                ? range.fromMinutes - lastRange.untilMinutes
+                                : null
+
+                            if (lastRange && gapMinutes !== null && gapMinutes <= 15) {
+                                if ((range.untilMinutes ?? 0) > (lastRange.untilMinutes ?? 0)) {
+                                    lastRange.until = range.until
+                                    lastRange.untilMinutes = range.untilMinutes
+                                }
+
+                                return ranges
+                            }
+
+                            ranges.push({ ...range })
+
+                            return ranges
+                        }, [])
+                        .map(range => [schedule.weekdayLabel, `${range.from} - ${range.until}`].filter(Boolean).join(' '))
+
+                    return [
+                        ...mergedRanges,
+                        ...schedule.fallbackLabels,
+                    ]
+                })
+                .filter(Boolean)
+        },
+        studentCoursePickerFrequencyLabel(courseGroups) {
+            const recurrenceLabels = [...new Set(courseGroups
+                .map(courseGroup => this.manualCourseGroupWeekMarker(courseGroup).replace(/[()]/gu, '').trim())
+                .filter(Boolean))]
+
+            return recurrenceLabels.join(', ')
+        },
+        studentCoursePickerTimeLabelToMinutes(value) {
+            const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/u)
+
+            if (!match) {
+                return null
+            }
+
+            return Number(match[1]) * 60 + Number(match[2])
+        },
+        openPersonalTimetableDeleteDialog() {
+            if (this.manualTimetableMode !== 'personal' || !this.hasPersonalTimetable) {
+                return
+            }
+
+            this.personalTimetableDeleteDialogOpen = true
+        },
+        closePersonalTimetableDeleteDialog() {
+            if (this.personalTimetableDeleting) {
+                return
+            }
+
+            this.personalTimetableDeleteDialogOpen = false
+        },
+        async deletePersonalTimetable() {
+            if (this.manualTimetableMode !== 'personal' || !this.hasPersonalTimetable || this.personalTimetableDeleting) {
+                return
+            }
+
+            this.personalTimetableDeleting = true
+
+            try {
+                const deleted = await this.studentTimetablesStore.deletePersonalTimetable()
+
+                if (!deleted) {
+                    return
+                }
+
+                this.personalTimetableDeleteDialogOpen = false
+                this.closeManualTimetable()
+            } finally {
+                this.personalTimetableDeleting = false
+            }
+        },
         closeManualTimetable() {
+            this.personalTimetableViewChangedMessageVisible = false
             this.showManualTimetable = false
             this.clearManualTimetableState()
         },
@@ -882,8 +1689,10 @@ export default {
         applyManualTimetableRoute(value) {
             const manualTimetableRoute = String(value || '')
 
-            this.showManualTimetable = ['1', 'published'].includes(manualTimetableRoute)
-            this.manualTimetableMode = manualTimetableRoute === 'published' ? 'published' : 'manual'
+            this.showManualTimetable = ['1', 'personal', 'published'].includes(manualTimetableRoute)
+            this.manualTimetableMode = ['personal', 'published'].includes(manualTimetableRoute)
+                ? manualTimetableRoute
+                : 'manual'
 
             this.applyCurrentManualTimetableSelection()
         },
@@ -892,8 +1701,8 @@ export default {
                 return
             }
 
-            if (this.manualTimetableMode === 'published') {
-                this.applyPublishedTimetableSelection()
+            if (['personal', 'published'].includes(this.manualTimetableMode)) {
+                this.applySavedTimetableSelection()
 
                 return
             }
@@ -901,13 +1710,17 @@ export default {
             this.ensureManualTimetableDefaultSelection()
         },
         applyPublishedTimetableSelection() {
-            const publishedCourseGroupKeys = this.publishedTimetableCourseGroupKeys
-            const publishedCourseGroupKeySet = new Set(publishedCourseGroupKeys)
+            this.applySavedTimetableSelection(this.publishedTimetableCourseGroupKeys)
+        },
+        applySavedTimetableSelection(courseGroupKeys = this.activeSavedTimetableCourseGroupKeys) {
+            this.hiddenSavedTimetableCourseChipKeys = []
+            const savedCourseGroupKeys = courseGroupKeys
+            const savedCourseGroupKeySet = new Set(savedCourseGroupKeys)
 
-            this.manualSelectedCourseGroupKeys = publishedCourseGroupKeys
+            this.manualSelectedCourseGroupKeys = savedCourseGroupKeys
             this.manualSelectedCourseKeys = this.manualTimetableCourses
                 .filter(course => this.manualCourseGroups(course)
-                    .some(courseGroup => publishedCourseGroupKeySet.has(this.manualCourseGroupKey(courseGroup))))
+                    .some(courseGroup => savedCourseGroupKeySet.has(this.manualCourseGroupKey(courseGroup))))
                 .map(course => this.manualCourseKey(course))
 
             if (!this.manualSelectedCourseKeys.length) {
@@ -950,17 +1763,31 @@ export default {
             return Array.from({ length: weekdayCount }, (_, index) => cells[index] || {})
         },
         publishedTimetableCellCourses(cell) {
+            const courses = this.publishedTimetableCellRawCourses(cell)
+
+            if (this.manualTimetableMode !== 'personal' || !this.hiddenSavedTimetableCourseChipKeys.length) {
+                return courses
+            }
+
+            const hiddenCourseChipKeys = new Set(this.hiddenSavedTimetableCourseChipKeys)
+
+            return courses.filter(course => !hiddenCourseChipKeys.has(this.savedTimetableCourseChipKey(course)))
+        },
+        publishedTimetableCellRawCourses(cell) {
             return Array.isArray(cell?.courses) ? cell.courses : []
         },
         publishedTimetableCellMarkers(cell) {
             return Array.isArray(cell?.markers) ? cell.markers : []
         },
         publishedTimetableCellClasses(cell) {
+            const courses = this.publishedTimetableCellCourses(cell)
+            const hasMultipleCourses = courses.length > 1
+
             return {
-                'student-published-timetable__cell--filled': this.publishedTimetableCellCourses(cell).length > 0,
-                'student-published-timetable__cell--warning': String(cell?.status || '') === 'warning',
-                'student-published-timetable__cell--conflict': String(cell?.status || '') === 'conflict',
-                'student-published-timetable__cell--related': String(cell?.status || '') === 'related',
+                'student-published-timetable__cell--filled': courses.length > 0,
+                'student-published-timetable__cell--warning': hasMultipleCourses || String(cell?.status || '') === 'warning',
+                'student-published-timetable__cell--conflict': !hasMultipleCourses && String(cell?.status || '') === 'conflict',
+                'student-published-timetable__cell--related': !hasMultipleCourses && String(cell?.status || '') === 'related',
             }
         },
         publishedTimetableCourseKey(course) {
@@ -975,6 +1802,141 @@ export default {
                 marker?.label || '',
                 marker?.title || '',
             ].join('|')
+        },
+        publishedTimetableSameSlotGroups(week) {
+            return this.publishedTimetableWeekHours(week)
+                .flatMap((hour) => this.publishedTimetableHourCells(hour)
+                    .map((cell, cellIndex) => this.publishedTimetableSameSlotGroup(hour, cell, cellIndex))
+                    .filter(Boolean))
+        },
+        publishedTimetableSameSlotGroup(hour, cell, cellIndex) {
+            const courses = this.publishedTimetableCellCourses(cell)
+                .map(course => this.publishedTimetableSameSlotCourse(course))
+                .filter(course => course.dateLabels.length > 0)
+                .sort((leftCourse, rightCourse) => leftCourse.title.localeCompare(rightCourse.title, 'de-AT', {
+                    numeric: true,
+                    sensitivity: 'base',
+                }))
+
+            if (courses.length < 2) {
+                return null
+            }
+
+            return {
+                key: [
+                    hour?.hour || '',
+                    hour?.from || '',
+                    hour?.until || '',
+                    cellIndex,
+                    courses.map(course => course.key).join('|'),
+                ].join('|'),
+                title: this.publishedTimetableSameSlotTitle(hour, cellIndex),
+                courses,
+            }
+        },
+        publishedTimetableSameSlotCourse(course) {
+            const dates = this.publishedTimetableCourseDates(course)
+
+            return {
+                key: this.publishedTimetableCourseKey(course),
+                title: this.publishedTimetableSameSlotCourseTitle(course),
+                dateRangeLabel: this.publishedTimetableDateRangeLabel(dates),
+                dateLabels: dates.map(date => this.formatPublishedTimetableDateWithWeekday(date)),
+            }
+        },
+        publishedTimetableCourseDates(course) {
+            return (Array.isArray(course?.dates) ? course.dates : [])
+                .map(date => String(date || '').trim())
+                .filter(Boolean)
+                .filter((date, index, dates) => dates.indexOf(date) === index)
+                .sort()
+        },
+        publishedTimetableSameSlotCourseTitle(course) {
+            return String(course?.label || course?.title || course?.course || 'Ohne Bezeichnung').trim()
+        },
+        publishedTimetableSameSlotTitle(hour, cellIndex) {
+            const weekday = this.publishedTimetableWeekdayForCellIndex(cellIndex)
+            const hourLabel = hour?.hour ? `${Number(hour.hour)}.` : ''
+            const timeRange = hour?.from && hour?.until ? `${hour.from} - ${hour.until}` : ''
+
+            return [
+                weekday?.label || '',
+                hourLabel,
+                timeRange,
+            ]
+                .filter(Boolean)
+                .join(' ')
+        },
+        publishedTimetableWeekdayForCellIndex(cellIndex) {
+            return this.publishedTimetableWeekdays[cellIndex] || {}
+        },
+        publishedTimetableDateRangeLabel(dates) {
+            if (!Array.isArray(dates) || !dates.length) {
+                return ''
+            }
+
+            const firstDate = dates[0]
+            const lastDate = dates[dates.length - 1]
+
+            if (firstDate === lastDate) {
+                return this.formatPublishedTimetableCompactDate(firstDate)
+            }
+
+            return [
+                this.formatPublishedTimetableCompactDate(firstDate),
+                this.formatPublishedTimetableCompactDate(lastDate),
+            ].filter(Boolean).join(' - ')
+        },
+        formatPublishedTimetableDateWithWeekday(value) {
+            return [
+                this.publishedTimetableWeekdayLabelForDate(value),
+                this.formatPublishedTimetableDate(value),
+            ].filter(Boolean).join(', ')
+        },
+        publishedTimetableWeekdayLabelForDate(value) {
+            const date = this.publishedTimetableDateFromIsoValue(value)
+            if (!date) {
+                return ''
+            }
+
+            const weekday = date.getDay()
+            const isoWeekday = weekday === 0 ? 7 : weekday
+            const weekdayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+
+            return weekdayLabels[isoWeekday - 1] || ''
+        },
+        formatPublishedTimetableDate(value) {
+            const date = this.publishedTimetableDateFromIsoValue(value)
+            if (!date) {
+                return value || ''
+            }
+
+            return new Intl.DateTimeFormat('de-AT', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+            }).format(date)
+        },
+        formatPublishedTimetableCompactDate(value) {
+            const date = this.publishedTimetableDateFromIsoValue(value)
+            if (!date) {
+                return value || ''
+            }
+
+            const day = date.getDate().toString().padStart(2, '0')
+            const month = (date.getMonth() + 1).toString().padStart(2, '0')
+
+            return `${day}.${month}.`
+        },
+        publishedTimetableDateFromIsoValue(value) {
+            const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/u)
+            if (!match) {
+                return null
+            }
+
+            const [, year, month, day] = match
+
+            return new Date(Number(year), Number(month) - 1, Number(day))
         },
         ensureManualTimetableDefaultSelection() {
             if (!this.showManualTimetable || this.manualSelectedCourseKeys.length) {
@@ -1016,6 +1978,29 @@ export default {
                     .filter(selectedCourseKey => selectedCourseKey !== courseKey)
             }
         },
+        deselectManualCourseGroup(courseGroup) {
+            const courseGroupKey = this.manualCourseGroupKey(courseGroup)
+
+            if (!courseGroupKey) {
+                return
+            }
+
+            const selectedCourseGroupKeys = this.manualSelectedCourseGroupKeys.length
+                ? this.manualSelectedCourseGroupKeys
+                : this.manualSelectedCourseGroups.map(selectedCourseGroup => this.manualCourseGroupKey(selectedCourseGroup))
+            const nextCourseGroupKeys = selectedCourseGroupKeys
+                .filter(selectedCourseGroupKey => selectedCourseGroupKey !== courseGroupKey)
+
+            this.manualSelectedCourseGroupKeys = nextCourseGroupKeys
+            this.manualSelectedCourseKeys = this.manualTimetableCourses
+                .filter(course => this.manualCourseGroups(course)
+                    .some(selectedCourseGroup => nextCourseGroupKeys.includes(this.manualCourseGroupKey(selectedCourseGroup))))
+                .map(course => this.manualCourseKey(course))
+        },
+        deselectAllManualCourseGroups() {
+            this.manualSelectedCourseGroupKeys = []
+            this.manualSelectedCourseKeys = []
+        },
         manualCourseMeta(course) {
             const courseGroupsCount = this.manualCourseGroups(course).length
             const hoursLabel = this.courseHoursLabel(course)
@@ -1041,6 +2026,236 @@ export default {
         manualCourseGroupLabel(courseGroup) {
             return courseGroup?.course || courseGroup?.subject || courseGroup?.title || courseGroup?.display_label || '-'
         },
+        manualCourseGroupChipLabel(courseGroup) {
+            return [
+                courseGroup?.display_label || this.manualCourseGroupLabel(courseGroup),
+                this.manualCourseGroupScheduleLabel(courseGroup),
+            ]
+                .filter(Boolean)
+                .join(' · ')
+        },
+        manualCourseGroupScheduleLabel(courseGroup) {
+            return [
+                this.manualCourseGroupWeekdayLabel(courseGroup),
+                this.manualCourseGroupTimeRange(courseGroup),
+                this.manualCourseGroupWeekMarker(courseGroup),
+            ]
+                .filter(Boolean)
+                .join(' ')
+        },
+        manualCourseGroupWeekdayLabel(courseGroup) {
+            const weekday = Number(courseGroup?.weekday || 0)
+            const weekdayLabels = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+
+            return weekdayLabels[weekday] || ''
+        },
+        manualCourseGroupTimeRange(courseGroup) {
+            return [
+                courseGroup?.time_from,
+                courseGroup?.time_until,
+            ]
+                .filter(Boolean)
+                .join(' - ')
+        },
+        manualCourseGroupChipColor(courseGroup) {
+            return this.manualCourseGroupHasOverlap(courseGroup) ? 'warning' : 'success'
+        },
+        manualCourseGroupHasOverlap(courseGroup) {
+            const weekday = Number(courseGroup?.weekday || 0)
+            const hour = Number(courseGroup?.hour || 0)
+
+            if (!weekday || !hour) {
+                return false
+            }
+
+            return this.manualGroupsForCell(weekday, hour).length > 1
+        },
+        manualCourseGroupStudentCourseType(courseGroup) {
+            const sectionKey = this.manualCourseSectionKeyForCourseGroup(courseGroup)
+
+            if (sectionKey === 'missing') {
+                return 'missing'
+            }
+
+            if (sectionKey === 'additional') {
+                return 'additional'
+            }
+
+            return ''
+        },
+        manualCourseGroupStudentCourseBadge(courseGroup) {
+            const studentCourseType = this.manualCourseGroupStudentCourseType(courseGroup)
+
+            if (studentCourseType === 'missing') {
+                return 'Fehlend'
+            }
+
+            if (studentCourseType === 'additional') {
+                return 'Zusätzlich'
+            }
+
+            return ''
+        },
+        savedTimetableCourseChipKey(course) {
+            return this.savedTimetableCourseChipTitle(course)
+        },
+        savedTimetableCourseChipTitle(course) {
+            return String(course?.label || course?.title || course?.course || '').trim()
+        },
+        savedTimetableCourseChipLabel(courseChip) {
+            const scheduleLabel = [
+                this.savedTimetableCourseMergedTimeLabels(courseChip.timeRanges).join(', '),
+                courseChip.detailLabels.join(', '),
+            ]
+                .filter(Boolean)
+                .join(' ')
+
+            return [
+                courseChip.title,
+                scheduleLabel,
+            ]
+                .filter(Boolean)
+                .join(' · ')
+        },
+        savedTimetableCourseTimeRange(hour, cellIndex) {
+            const weekday = this.publishedTimetableWeekdayForCellIndex(cellIndex)
+            const weekdayLabel = String(weekday?.label || '')
+            const from = String(hour?.from || '')
+            const until = String(hour?.until || '')
+            const hourValue = Number(hour?.hour || 0)
+
+            if (!weekdayLabel && !from && !until && !hourValue) {
+                return null
+            }
+
+            return {
+                weekdayIndex: Number(cellIndex),
+                weekdayLabel,
+                from,
+                until,
+                startHour: Number.isFinite(hourValue) && hourValue > 0 ? hourValue : null,
+                endHour: Number.isFinite(hourValue) && hourValue > 0 ? hourValue : null,
+            }
+        },
+        savedTimetableCourseTimeRangeExists(timeRanges, timeRange) {
+            return timeRanges.some(existingTimeRange => (
+                existingTimeRange.weekdayLabel === timeRange.weekdayLabel
+                    && existingTimeRange.from === timeRange.from
+                    && existingTimeRange.until === timeRange.until
+            ))
+        },
+        savedTimetableCourseMergedTimeLabels(timeRanges) {
+            return this.savedTimetableCourseMergedTimeRanges(timeRanges)
+                .map(timeRange => this.savedTimetableCourseTimeRangeLabel(timeRange))
+                .filter(Boolean)
+        },
+        savedTimetableCourseMergedTimeRanges(timeRanges) {
+            return [...timeRanges]
+                .sort((leftTimeRange, rightTimeRange) => (
+                    leftTimeRange.weekdayIndex - rightTimeRange.weekdayIndex
+                        || leftTimeRange.from.localeCompare(rightTimeRange.from)
+                        || leftTimeRange.until.localeCompare(rightTimeRange.until)
+                ))
+                .reduce((mergedTimeRanges, timeRange) => {
+                    const previousTimeRange = mergedTimeRanges[mergedTimeRanges.length - 1]
+
+                    if (
+                        previousTimeRange
+                        && previousTimeRange.weekdayLabel === timeRange.weekdayLabel
+                        && this.savedTimetableCourseTimeRangesAreConsecutive(previousTimeRange, timeRange)
+                    ) {
+                        previousTimeRange.until = timeRange.until
+                        previousTimeRange.endHour = timeRange.endHour
+
+                        return mergedTimeRanges
+                    }
+
+                    mergedTimeRanges.push({ ...timeRange })
+
+                    return mergedTimeRanges
+                }, [])
+        },
+        savedTimetableCourseTimeRangesAreConsecutive(previousTimeRange, timeRange) {
+            if (
+                previousTimeRange.endHour
+                && timeRange.startHour
+                && previousTimeRange.endHour + 1 === timeRange.startHour
+            ) {
+                return true
+            }
+
+            return Boolean(previousTimeRange.until && previousTimeRange.until === timeRange.from)
+        },
+        savedTimetableCourseTimeRangeLabel(timeRange) {
+            const timeLabel = this.savedTimetableCourseHourRangeLabel(timeRange)
+                || [
+                    timeRange.from,
+                    timeRange.until,
+                ]
+                    .filter(Boolean)
+                    .join(' - ')
+
+            return [
+                timeRange.weekdayLabel,
+                timeLabel,
+            ]
+                .filter(Boolean)
+                .join(' ')
+        },
+        savedTimetableCourseHourRangeLabel(timeRange) {
+            if (!timeRange.startHour) {
+                return ''
+            }
+
+            if (!timeRange.endHour || timeRange.startHour === timeRange.endHour) {
+                return `${timeRange.startHour}.`
+            }
+
+            return `${timeRange.startHour}.-${timeRange.endHour}`
+        },
+        savedTimetableCourseChipBadgeLabel(courseChip) {
+            if (courseChip?.studentCourseType === 'missing' || courseChip?.studentCourseBadge === 'Fehlend') {
+                return 'F'
+            }
+
+            if (courseChip?.studentCourseType === 'additional' || courseChip?.studentCourseBadge === 'Zusätzlich') {
+                return 'Z'
+            }
+
+            return courseChip?.studentCourseBadge || ''
+        },
+        savedTimetableCourseDetailLabel(course) {
+            const details = String(course?.details || '')
+                .split('·')
+                .map(detail => detail.trim())
+                .filter(Boolean)
+                .filter(detail => detail.toLocaleUpperCase('de-AT') !== 'FU')
+                .filter(detail => !/\d{2}\.\d{2}\./u.test(detail))
+                .map(detail => detail
+                    .replace(/^(\d+)\s*-\s*wöchig$/iu, '$1w')
+                    .replace(/^(\d+)\s*wöchig$/iu, '$1w'))
+
+            if (!details.length) {
+                return ''
+            }
+
+            return `(${details.join(', ')})`
+        },
+        manualCourseSectionKeyForCourseGroup(courseGroup) {
+            const courseGroupKey = this.manualCourseGroupKey(courseGroup)
+
+            for (const section of this.manualTimetableCourseSections) {
+                const courses = Array.isArray(section?.items) ? section.items : []
+                const matchingCourse = courses.find(course => this.manualCourseGroups(course)
+                    .some(selectedCourseGroup => this.manualCourseGroupKey(selectedCourseGroup) === courseGroupKey))
+
+                if (matchingCourse) {
+                    return String(section?.key || '')
+                }
+            }
+
+            return ''
+        },
         manualCourseGroupDetails(courseGroup) {
             const rooms = Array.isArray(courseGroup?.rooms) ? courseGroup.rooms.join(', ') : ''
 
@@ -1053,10 +2268,14 @@ export default {
                 .join(' · ')
         },
         manualCourseGroupWeekMarker(courseGroup) {
+            if (courseGroup?.recurrence_label) {
+                return `(${courseGroup.recurrence_label})`
+            }
+
             const recurrenceInterval = Number(courseGroup?.recurrence_interval || 0)
 
             if (recurrenceInterval > 1) {
-                return `${recurrenceInterval}-w`
+                return `(${recurrenceInterval}-w)`
             }
 
             if (courseGroup?.block_label) {
@@ -1326,14 +2545,19 @@ export default {
 
 .timetable-actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 10px;
     margin: 0 0 20px;
 }
 
 .timetable-actions .v-btn {
+    flex: 1 1 0;
+    min-width: 0;
     min-height: 44px;
-    flex: 1 1 240px;
+}
+
+.timetable-actions :deep(.v-btn__content) {
+    white-space: normal;
 }
 
 .timetable-actions__button {
@@ -1356,13 +2580,13 @@ export default {
     box-shadow: 0 0 12px rgba(37, 99, 235, 0.6), 0 0 28px rgba(37, 99, 235, 0.35);
 }
 
-.timetable-actions__manual {
-    background: linear-gradient(135deg, #0f766e 0%, #16a34a 100%);
-    box-shadow: 0 0 8px rgba(15, 118, 110, 0.28), 0 0 18px rgba(22, 163, 74, 0.16);
+.timetable-actions__personal {
+    background: linear-gradient(135deg, #4338ca 0%, #0891b2 100%);
+    box-shadow: 0 0 8px rgba(67, 56, 202, 0.28), 0 0 18px rgba(8, 145, 178, 0.16);
 }
 
-.timetable-actions__manual:hover {
-    box-shadow: 0 0 12px rgba(15, 118, 110, 0.42), 0 0 24px rgba(22, 163, 74, 0.25);
+.timetable-actions__personal:hover {
+    box-shadow: 0 0 12px rgba(67, 56, 202, 0.42), 0 0 24px rgba(8, 145, 178, 0.25);
 }
 
 .timetable-actions__published {
@@ -1413,8 +2637,7 @@ export default {
     border-bottom: 1px solid rgba(16, 38, 58, 0.08);
 }
 
-.student-manual-timetable__toolbar h3,
-.student-manual-timetable__eyebrow {
+.student-manual-timetable__toolbar h3 {
     margin: 0;
 }
 
@@ -1424,12 +2647,188 @@ export default {
     line-height: 1.2;
 }
 
-.student-manual-timetable__eyebrow {
-    color: #0f766e;
-    font-size: 0.72rem;
-    font-weight: 900;
+.student-manual-timetable__toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.student-manual-timetable__view-change {
+    border: 1px solid rgba(22, 163, 74, 0.24);
+    color: #14532d;
+}
+
+.student-course-choice-panel {
+    display: grid;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(57, 73, 171, 0.16);
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.student-course-choice-panel__header,
+.student-course-choice-panel__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.student-course-choice-panel__header {
+    justify-content: space-between;
+}
+
+.student-course-choice-panel__title {
+    color: #172554;
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.student-course-choice-panel__actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.course-choice-restriction-switch {
+    display: inline-flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    height: auto;
+    max-width: 100%;
+    padding: 3px;
+    background: #eef2f7;
+    border: 1px solid #dbe4f0;
+    border-radius: 10px;
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
+    gap: 2px;
+}
+
+.course-choice-restriction-switch :deep(.v-btn) {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.course-choice-restriction-option {
+    min-height: 28px;
+    padding: 0 14px;
+    border-radius: 7px !important;
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 800;
     letter-spacing: 0;
-    text-transform: uppercase;
+    text-transform: none;
+}
+
+.course-choice-restriction-option :deep(.v-btn__content) {
+    white-space: nowrap;
+}
+
+.course-choice-restriction-option--active {
+    background: #ffffff;
+    color: #1d4ed8;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.16);
+}
+
+.course-menu-dialog-options {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 14px;
+}
+
+.course-choice-panel__semesters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+}
+
+.course-choice-semester {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.course-choice-semester__label {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.course-item-chips,
+.course-menu-dialog-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.course-menu-dialog-items .course-item-chips {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+}
+
+.course-menu-dialog-items .course-item-chip {
+    justify-content: flex-start;
+    width: 100%;
+}
+
+.course-item-chip,
+.course-menu-dialog-chip {
+    font-weight: 650;
+}
+
+.course-item-chip__schedule {
+    margin-left: 6px;
+    color: rgba(var(--v-theme-on-surface), 0.68);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.course-menu-dialog-chips {
+    max-height: 52vh;
+    overflow-y: auto;
+}
+
+.course-menu-dialog-items {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(57, 73, 171, 0.16);
+}
+
+.student-selected-course-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-top: 2px;
+}
+
+.student-selected-course-filter-chip {
+    font-weight: 650;
+}
+
+.student-selected-course-filter-chip__source {
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 850;
+    line-height: 1.25;
+}
+
+.student-selected-course-filter-chip__source--missing {
+    background: rgba(251, 146, 60, 0.24);
+    color: #9a3412;
+}
+
+.student-selected-course-filter-chip__source--additional {
+    background: rgba(14, 165, 233, 0.22);
+    color: #0369a1;
 }
 
 .student-manual-timetable__layout {
@@ -1746,7 +3145,8 @@ export default {
 }
 
 .student-published-timetable__cell--warning {
-    background: #fff7ed;
+    background: #fed7aa;
+    color: #7c2d12;
 }
 
 .student-published-timetable__cell--conflict {
@@ -1801,6 +3201,80 @@ export default {
     font-weight: 900;
 }
 
+.timetable-date-overview {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f172a;
+}
+
+.timetable-date-overview__title {
+    margin-bottom: 5px;
+    font-size: 0.78rem;
+    font-weight: 750;
+}
+
+.timetable-date-overview__groups,
+.timetable-date-overview__group,
+.timetable-date-overview__courses,
+.timetable-date-overview__course {
+    display: grid;
+}
+
+.timetable-date-overview__groups {
+    gap: 8px;
+}
+
+.timetable-date-overview__group {
+    gap: 5px;
+}
+
+.timetable-date-overview__slot {
+    color: #475569;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.timetable-date-overview__courses {
+    gap: 6px;
+}
+
+.timetable-date-overview__course {
+    gap: 3px;
+}
+
+.timetable-date-overview__course-title {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.timetable-date-overview__range {
+    color: #64748b;
+    font-weight: 650;
+}
+
+.timetable-date-overview__dates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+
+.timetable-date-overview__date {
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 0.69rem;
+    line-height: 1.45;
+    white-space: nowrap;
+}
+
 @keyframes timetable-star-twinkle {
     0%,
     100% {
@@ -1840,13 +3314,14 @@ export default {
 }
 
 @media (max-width: 520px) {
-    .timetable-actions .v-btn {
-        width: 100%;
-    }
-
     .student-manual-timetable__toolbar {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .student-manual-timetable__toolbar-actions {
+        justify-content: flex-start;
+        width: 100%;
     }
 
     .overview-selected-cards {
@@ -1855,6 +3330,137 @@ export default {
 
     .overview-selection {
         flex-direction: column;
+    }
+}
+
+@media (max-width: 380px) {
+    .lernportal-page {
+        padding-right: 0;
+        padding-left: 0;
+    }
+
+    .content-cover {
+        margin-top: 14px;
+        gap: 14px;
+    }
+
+    .content-card {
+        padding: 0 2px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    .content-head,
+    .overview-selection,
+    .manual-overview-course-card,
+    .student-manual-timetable__toolbar,
+    .student-published-timetable__meta,
+    .student-published-timetable__semester-head {
+        padding-right: 6px;
+        padding-left: 6px;
+    }
+
+    .content-head,
+    .content-head h2,
+    .student-manual-timetable__toolbar h3,
+    .student-published-timetable__semester-head h4 {
+        color: #f8fafc;
+    }
+
+    .content-head .v-icon,
+    .student-manual-timetable__toolbar .v-btn,
+    .student-manual-timetable__toolbar .v-icon {
+        color: #e0f2fe;
+    }
+
+    .student-published-timetable__meta,
+    .student-published-timetable__semester-head span,
+    .student-published-timetable__week-label {
+        color: rgba(226, 232, 240, 0.86);
+    }
+
+    .manual-overview-course-card__title h3,
+    .manual-overview-course-card__title .v-icon {
+        color: #0f172a;
+    }
+
+    .student-manual-timetable,
+    .student-published-timetable {
+        gap: 10px;
+    }
+
+    .student-manual-timetable__grid-wrap {
+        overflow-x: visible;
+    }
+
+    .student-manual-timetable__grid,
+    .student-published-timetable__grid {
+        grid-template-columns: 30px repeat(var(--manual-timetable-weekday-count, 6), minmax(0, 1fr));
+        min-width: 0;
+        border-radius: 6px;
+    }
+
+    .student-published-timetable__grid {
+        grid-template-columns: 30px repeat(var(--published-timetable-weekday-count, 6), minmax(0, 1fr));
+        overflow-x: visible;
+    }
+
+    .student-manual-timetable__corner,
+    .student-manual-timetable__weekday,
+    .student-published-timetable__corner,
+    .student-published-timetable__weekday {
+        padding: 6px 1px;
+        font-size: 0.58rem;
+        line-height: 1.1;
+    }
+
+    .student-manual-timetable__hour,
+    .student-published-timetable__hour {
+        min-height: 52px;
+        padding: 4px 1px;
+        text-align: center;
+    }
+
+    .student-manual-timetable__hour strong,
+    .student-published-timetable__hour strong {
+        font-size: 0.58rem;
+    }
+
+    .student-manual-timetable__hour span,
+    .student-published-timetable__hour span {
+        display: none;
+    }
+
+    .student-manual-timetable__cell,
+    .student-published-timetable__cell {
+        gap: 2px;
+        min-height: 52px;
+        padding: 2px;
+    }
+
+    .student-manual-timetable__block,
+    .student-published-timetable__block,
+    .student-published-timetable__marker {
+        gap: 1px;
+        padding: 3px 2px;
+        border-radius: 4px;
+    }
+
+    .student-manual-timetable__block strong,
+    .student-published-timetable__block strong {
+        font-size: 0.52rem;
+        line-height: 1.05;
+    }
+
+    .student-manual-timetable__block span,
+    .student-manual-timetable__block small,
+    .student-published-timetable__block span,
+    .student-published-timetable__block small,
+    .student-published-timetable__marker {
+        font-size: 0.48rem;
+        line-height: 1.05;
     }
 }
 

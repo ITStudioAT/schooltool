@@ -42,7 +42,28 @@ describe('Students timetable overview', () => {
             },
         })
         const timetable = { title: 'Stundenplan' }
-        const state = { activeCourseGroupFilterKeys: ['d-1'] }
+        const state = {
+            activeCourseGroupFilterKeys: ['d-1'],
+            selectedRecurrenceWeeks: {
+                1: 2,
+                2: 'extra_dates',
+            },
+            expandedRecurrenceWeeks: {
+                1: true,
+                2: false,
+            },
+        }
+        const expectedPublishedState = {
+            activeCourseGroupFilterKeys: ['d-1'],
+            selectedRecurrenceWeeks: {
+                1: 'all_dates',
+                2: 'all_dates',
+            },
+            expandedRecurrenceWeeks: {
+                1: false,
+                2: false,
+            },
+        }
         const ctx = {
             publishedTimetableSaving: false,
             publishedTimetableStudentCode: '100',
@@ -52,9 +73,13 @@ describe('Students timetable overview', () => {
                 message: 'Alter Fehler',
             },
             clearPublishedTimetableReport: methods.clearPublishedTimetableReport,
+            markStudentPublishedTimetable: vi.fn(),
             publishedStudentTimetablePayload: methods.publishedStudentTimetablePayload,
+            publishedStudentTimetableState: methods.publishedStudentTimetableState,
             timetablePdfPayload: () => timetable,
             currentTimetableState: () => state,
+            defaultTimetableState: methods.defaultTimetableState,
+            defaultSelection: methods.defaultSelection,
         }
 
         globalThis.axios = { post } as never
@@ -65,7 +90,7 @@ describe('Students timetable overview', () => {
             student_code: '100',
             student_label: 'SCHROLL Lukas',
             timetable,
-            state,
+            state: expectedPublishedState,
         })
         expect(ctx.publishedTimetableReport).toEqual({
             type: 'success',
@@ -109,6 +134,137 @@ describe('Students timetable overview', () => {
             message: 'Der ausgewählte Schüler wurde nicht gefunden.',
         })
         expect(ctx.publishedTimetableSaving).toBe(false)
+
+        globalThis.axios = originalAxios
+    })
+
+    it('shows the saved timetable button only for a selected student with a stored timetable', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            wizardPanelOpen: false,
+            manualPanelOpen: false,
+            transferredStudentContext: {
+                student: {
+                    studentCode: '100',
+                },
+            },
+            robotStudents: [
+                { student_code: '100', has_published_timetable: true },
+            ],
+            normalizedStudentCode: methods.normalizedStudentCode,
+        }
+
+        Object.defineProperty(ctx, 'publishedTimetableStudentCode', {
+            get() {
+                return computed.publishedTimetableStudentCode.call(ctx)
+            },
+        })
+        Object.defineProperty(ctx, 'selectedPublishedTimetableStudent', {
+            get() {
+                return computed.selectedPublishedTimetableStudent.call(ctx)
+            },
+        })
+
+        expect(computed.savedTimetableButtonVisible.call(ctx)).toBe(true)
+
+        ctx.manualPanelOpen = true
+
+        expect(computed.savedTimetableButtonVisible.call(ctx)).toBe(false)
+    })
+
+    it('loads a stored timetable into the manual overview', async () => {
+        const methods = (Overview as any).methods
+        const originalAxios = globalThis.axios
+        const savedContext = {
+            student: {
+                studentCode: '100',
+                label: '4S · SCHROLL Lukas · Semester 6',
+                semesterLabel: 'Semester 6',
+            },
+            courses: {
+                completed: [],
+                missing: [],
+                planned: [],
+                additional: [],
+            },
+        }
+        const get = vi.fn().mockResolvedValue({
+            data: {
+                data: {
+                    id: 7,
+                    student_code: '100',
+                    published_at: '2026-06-16T20:00:00+00:00',
+                    state: {
+                        activeCourseGroupFilterKeys: ['d-1'],
+                        transferredStudentContext: savedContext,
+                    },
+                },
+            },
+        })
+        const ctx = {
+            publishedTimetableLoading: false,
+            publishedTimetableStudentCode: '100',
+            publishedTimetableReport: {
+                type: 'error',
+                message: 'Alter Fehler',
+            },
+            robotStudents: [
+                { student_code: '100', has_published_timetable: false },
+            ],
+            transferredStudentContext: null,
+            wizardPanelOpen: true,
+            wizardTimetableResultVisible: true,
+            manualPanelOpen: false,
+            manualPanelSource: null,
+            appliedState: null as null | Record<string, unknown>,
+            normalizedStudentCode: methods.normalizedStudentCode,
+            clearPublishedTimetableReport: methods.clearPublishedTimetableReport,
+            markStudentPublishedTimetable: methods.markStudentPublishedTimetable,
+            runTimetableUpdate(action: () => void) {
+                action()
+            },
+            applyTimetableState(state: Record<string, unknown>) {
+                this.appliedState = state
+                this.transferredStudentContext = state.transferredStudentContext
+                this.manualPanelOpen = state.manualPanelOpen
+                this.manualPanelSource = state.manualPanelSource
+            },
+            navigateToTimetableOverviewMode: vi.fn(),
+            persistTimetableState: vi.fn(),
+            loadTransferredStudentCompletedCourses: vi.fn(),
+        }
+
+        globalThis.axios = { get } as never
+
+        await methods.loadPublishedStudentTimetable.call(ctx)
+
+        expect(get).toHaveBeenCalledWith('/api/admin/students-timetables/overview/student-timetable', {
+            params: {
+                student_code: '100',
+            },
+        })
+        expect(ctx.appliedState).toMatchObject({
+            activeCourseGroupFilterKeys: ['d-1'],
+            transferredStudentContext: savedContext,
+            manualPanelOpen: true,
+            manualPanelSource: 'direct',
+        })
+        expect(ctx.wizardPanelOpen).toBe(false)
+        expect(ctx.wizardTimetableResultVisible).toBe(false)
+        expect(ctx.manualPanelOpen).toBe(true)
+        expect(ctx.manualPanelSource).toBe('direct')
+        expect(ctx.navigateToTimetableOverviewMode).toHaveBeenCalledWith('manual')
+        expect(ctx.persistTimetableState).toHaveBeenCalled()
+        expect(ctx.loadTransferredStudentCompletedCourses).toHaveBeenCalledWith('100', {
+            includeSelection: true,
+        })
+        expect(ctx.robotStudents[0]).toMatchObject({
+            has_published_timetable: true,
+            published_timetable_id: 7,
+            published_timetable_at: '2026-06-16T20:00:00+00:00',
+        })
+        expect(ctx.publishedTimetableLoading).toBe(false)
 
         globalThis.axios = originalAxios
     })
@@ -2959,11 +3115,20 @@ describe('Students timetable overview', () => {
         const ctx = {
             adoptedTimetableOverviewActive: true,
             cellHasOverlap: vi.fn(() => false),
+            cellHasAggregateTimeOverlap: methods.cellHasAggregateTimeOverlap,
             cellHasMultipleDisplayCourses: methods.cellHasMultipleDisplayCourses,
             displayCourseGroupsForCell: vi.fn(() => [
                 { key: 'd-1', course: 'D1' },
                 { key: 'm-1', course: 'M1' },
             ]),
+            courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            formatTimeValue: methods.formatTimeValue,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
         }
 
         expect(methods.cellHasMultipleDisplayCourses.call(ctx, 1, 1, 1)).toBe(true)
@@ -2976,15 +3141,77 @@ describe('Students timetable overview', () => {
         const ctx = {
             adoptedTimetableOverviewActive: false,
             cellHasOverlap: vi.fn(() => false),
+            cellHasAggregateTimeOverlap: methods.cellHasAggregateTimeOverlap,
             cellHasMultipleDisplayCourses: methods.cellHasMultipleDisplayCourses,
             displayCourseGroupsForCell: vi.fn(() => [
                 { key: 'd-1', course: 'D1' },
                 { key: 'm-1', course: 'M1' },
             ]),
+            courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            formatTimeValue: methods.formatTimeValue,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
         }
 
         expect(methods.cellHasMultipleDisplayCourses.call(ctx, 1, 1, 1)).toBe(true)
         expect(methods.cellShouldShowWarning.call(ctx, 1, 1, 1)).toBe(false)
+    })
+
+    it('marks whole-timetable aggregate cells orange when displayed courses overlap by time', () => {
+        const methods = (Overview as any).methods
+        const d5CourseGroup = {
+            key: 'd5',
+            semester: 1,
+            weekday: 2,
+            hour: 14,
+            course: 'D5',
+            title: 'D5',
+            display_label: 'D5 - 3R - SHAM',
+            subject: '20:25',
+            teacher: '21:55',
+            recurrence_interval: 2,
+            dates: ['2026-02-24', '2026-03-10'],
+        }
+        const e5CourseGroup = {
+            key: 'e5',
+            semester: 1,
+            weekday: 2,
+            hour: 14,
+            course: 'E5',
+            title: 'E5',
+            display_label: 'E5 - 3R - HÖF',
+            subject: '19:30',
+            teacher: '21:10',
+            recurrence_interval: 2,
+            dates: ['2026-02-17', '2026-03-03'],
+        }
+        const ctx = {
+            adoptedTimetableOverviewActive: false,
+            cellHasOverlap: vi.fn(() => false),
+            cellHasAggregateTimeOverlap: methods.cellHasAggregateTimeOverlap,
+            cellHasMultipleDisplayCourses: methods.cellHasMultipleDisplayCourses,
+            configuredSchoolHours: [],
+            displayCourseGroupsForCell: vi.fn(() => [d5CourseGroup, e5CourseGroup]),
+            courseGroupsOverlap: methods.courseGroupsOverlap,
+            courseGroupOverlapIsSingleDateOnly: methods.courseGroupOverlapIsSingleDateOnly,
+            courseGroupIsSingleDate: methods.courseGroupIsSingleDate,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            formatTimeValue: methods.formatTimeValue,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+        }
+        const wholeTimetableWeek = {
+            type: 'all_dates',
+        }
+
+        expect(methods.cellHasAggregateTimeOverlap.call(ctx, 1, 2, 14, wholeTimetableWeek)).toBe(true)
+        expect(methods.cellShouldShowWarning.call(ctx, 1, 2, 14, wholeTimetableWeek)).toBe(true)
+        expect(methods.cellShouldShowWarning.call(ctx, 1, 2, 14, { type: 'recurrence', value: 1 })).toBe(false)
     })
 
     it('shows the central loading overlay for overview background requests', () => {

@@ -471,6 +471,20 @@
                             </span>
                         </v-btn>
                         <v-btn
+                            v-if="savedTimetableButtonVisible"
+                            class="overview-saved-timetable-button"
+                            variant="flat"
+                            size="large"
+                            prepend-icon="mdi-calendar-check-outline"
+                            :disabled="loading || timetableUpdatePending || publishedTimetableLoading"
+                            :loading="publishedTimetableLoading"
+                            @click="loadPublishedStudentTimetable">
+                            <span class="overview-manual-button__label">
+                                <span>Gespeicherter</span>
+                                <span>Plan</span>
+                            </span>
+                        </v-btn>
+                        <v-btn
                             v-if="manualPanelBackToWizardVisible"
                             class="overview-wizard-close-button overview-wizard-cancel-button overview-wizard-close-button--calm"
                             variant="tonal"
@@ -1206,6 +1220,7 @@ export default {
             wizardTimetableCreating: false,
             timetableUpdatePending: false,
             pdfExporting: false,
+            publishedTimetableLoading: false,
             publishedTimetableSaving: false,
             publishedTimetableReport: {
                 type: 'success',
@@ -1603,11 +1618,14 @@ export default {
                 || this.wizardTimetableCreating
                 || this.timetableUpdatePending
                 || this.pdfExporting
+                || this.publishedTimetableLoading
                 || this.publishedTimetableSaving,
             )
         },
         overviewScreenLoadingLabel() {
             if (this.pdfExporting) return 'PDF wird erstellt...'
+
+            if (this.publishedTimetableLoading) return 'Gespeicherter Plan wird geladen...'
 
             if (this.publishedTimetableSaving) return 'Stundenplan wird gespeichert...'
 
@@ -1677,6 +1695,21 @@ export default {
             if (labelParts.length >= 2) return labelParts[1]
 
             return label || 'Student'
+        },
+        selectedPublishedTimetableStudent() {
+            const studentCode = this.publishedTimetableStudentCode
+            if (!studentCode) return null
+
+            const robotStudents = Array.isArray(this.robotStudents) ? this.robotStudents : []
+
+            return robotStudents.find(student => this.normalizedStudentCode(student?.student_code) === studentCode) || null
+        },
+        savedTimetableButtonVisible() {
+            return Boolean(
+                !this.wizardPanelOpen
+                && !this.manualPanelOpen
+                && this.selectedPublishedTimetableStudent?.has_published_timetable,
+            )
         },
         studentTimetableSaveVisible() {
             return Boolean(
@@ -2395,6 +2428,7 @@ export default {
                     type: 'success',
                     message: response?.data?.message || 'Stundenplan wurde gespeichert.',
                 }
+                this.markStudentPublishedTimetable(response?.data?.data || {})
             } catch (error) {
                 this.publishedTimetableReport = {
                     type: 'error',
@@ -2410,12 +2444,97 @@ export default {
                 message: '',
             }
         },
+        async loadPublishedStudentTimetable() {
+            if (this.publishedTimetableLoading || !this.publishedTimetableStudentCode) return
+
+            this.publishedTimetableLoading = true
+            this.clearPublishedTimetableReport()
+
+            try {
+                const response = await axios.get('/api/admin/students-timetables/overview/student-timetable', {
+                    params: {
+                        student_code: this.publishedTimetableStudentCode,
+                    },
+                })
+                const publishedTimetable = response?.data?.data || {}
+                const savedState = publishedTimetable.state && typeof publishedTimetable.state === 'object'
+                    ? publishedTimetable.state
+                    : {}
+                const transferredStudentContext = savedState.transferredStudentContext
+                    || this.transferredStudentContext
+                    || this.transferredStudentContextFromRobotStudent(this.selectedPublishedTimetableStudent)
+
+                this.markStudentPublishedTimetable(publishedTimetable)
+                this.runTimetableUpdate(() => {
+                    this.applyTimetableState({
+                        ...savedState,
+                        transferredStudentContext,
+                        manualPanelOpen: true,
+                        manualPanelSource: 'direct',
+                    })
+                    this.wizardPanelOpen = false
+                    this.wizardTimetableResultVisible = false
+                    this.manualPanelOpen = true
+                    this.manualPanelSource = 'direct'
+                    this.navigateToTimetableOverviewMode?.('manual')
+                    this.persistTimetableState()
+
+                    if (this.transferredStudentContext?.student?.studentCode) {
+                        this.loadTransferredStudentCompletedCourses(this.transferredStudentContext.student.studentCode, {
+                            includeSelection: true,
+                        })
+                    }
+                })
+            } catch (error) {
+                this.publishedTimetableReport = {
+                    type: 'error',
+                    message: error?.response?.data?.message || 'Gespeicherter Plan konnte nicht geladen werden.',
+                }
+            } finally {
+                this.publishedTimetableLoading = false
+            }
+        },
+        markStudentPublishedTimetable(publishedTimetable) {
+            const studentCode = this.normalizedStudentCode(publishedTimetable?.student_code || this.publishedTimetableStudentCode)
+            if (!studentCode) return
+
+            this.robotStudents = (Array.isArray(this.robotStudents) ? this.robotStudents : []).map(student => {
+                if (this.normalizedStudentCode(student?.student_code) !== studentCode) return student
+
+                return {
+                    ...student,
+                    has_published_timetable: true,
+                    published_timetable_id: publishedTimetable?.id || student.published_timetable_id || null,
+                    published_timetable_at: publishedTimetable?.published_at || student.published_timetable_at || null,
+                }
+            })
+        },
         publishedStudentTimetablePayload() {
             return {
                 student_code: this.publishedTimetableStudentCode,
                 student_label: this.publishedTimetableStudentName,
                 timetable: this.timetablePdfPayload(),
-                state: this.currentTimetableState(),
+                state: this.publishedStudentTimetableState(),
+            }
+        },
+        publishedStudentTimetableState() {
+            const state = this.currentTimetableState()
+            const defaultState = this.defaultTimetableState()
+            const recurrenceSemesterKeys = [
+                ...Object.keys(defaultState.selectedRecurrenceWeeks || {}),
+                ...Object.keys(state.selectedRecurrenceWeeks || {}),
+            ]
+            const selectedRecurrenceWeeks = Object.fromEntries(
+                [...new Set(recurrenceSemesterKeys)].map(semester => [semester, ALL_DATES_OPTION_VALUE]),
+            )
+            const expandedRecurrenceWeeks = Object.fromEntries(
+                [...new Set(recurrenceSemesterKeys)].map(semester => [semester, false]),
+            )
+
+            return {
+                ...state,
+                selectedRecurrenceWeeks,
+                expandedRecurrenceWeeks,
             }
         },
         timetablePdfPayload() {
@@ -2628,21 +2747,7 @@ export default {
                     this.selectionDraft = { ...this.selection }
                 }
 
-                this.transferredStudentContext = this.normalizedTransferredStudentContext({
-                    student: {
-                        studentCode: nextStudentCode,
-                        label: this.studentOptionTitle(selectedStudent),
-                        semesterLabel: this.studentSemesterLabel(selectedStudent),
-                        religion: selectedStudent.religion,
-                        email: this.normalizedEmailValue(selectedStudent.email),
-                    },
-                    courses: {
-                        completed: [],
-                        missing: [],
-                        planned: [],
-                        additional: [],
-                    },
-                })
+                this.transferredStudentContext = this.transferredStudentContextFromRobotStudent(selectedStudent)
                 this.studentDialogOpen = false
                 this.studentSearch = ''
                 this.persistTimetableState()
@@ -3196,6 +3301,25 @@ export default {
             const name = [lastName, firstName].filter(Boolean).join(' ')
 
             return [schoolClass, name, semester].filter(Boolean).join(' · ')
+        },
+        transferredStudentContextFromRobotStudent(student) {
+            if (!student) return null
+
+            return this.normalizedTransferredStudentContext({
+                student: {
+                    studentCode: this.normalizedStudentCode(student.student_code),
+                    label: this.studentOptionTitle(student),
+                    semesterLabel: this.studentSemesterLabel(student),
+                    religion: student.religion,
+                    email: this.normalizedEmailValue(student.email),
+                },
+                courses: {
+                    completed: [],
+                    missing: [],
+                    planned: [],
+                    additional: [],
+                },
+            })
         },
         normalizedEmailValue(value) {
             return String(value || '').trim()
@@ -5427,7 +5551,25 @@ export default {
         },
         cellShouldShowWarning(semester, weekday, hour, recurrenceWeek = null) {
             return this.cellHasOverlap(semester, weekday, hour, recurrenceWeek)
+                || (
+                    typeof this.cellHasAggregateTimeOverlap === 'function'
+                    && this.cellHasAggregateTimeOverlap(semester, weekday, hour, recurrenceWeek)
+                )
                 || (this.adoptedTimetableOverviewActive && this.cellHasMultipleDisplayCourses(semester, weekday, hour, recurrenceWeek))
+        },
+        cellHasAggregateTimeOverlap(semester, weekday, hour, recurrenceWeek = null) {
+            if (recurrenceWeek?.type !== 'all_dates') return false
+
+            const displayCourseGroups = typeof this.displayCourseGroupsForCell === 'function'
+                ? this.displayCourseGroupsForCell(semester, weekday, hour, recurrenceWeek)
+                : this.courseGroupsForCell(semester, weekday, hour, recurrenceWeek)
+
+            return displayCourseGroups.some((leftCourseGroup, leftIndex) => (
+                displayCourseGroups.slice(leftIndex + 1).some((rightCourseGroup) => (
+                    this.courseGroupsOverlap(leftCourseGroup, rightCourseGroup)
+                        && !this.courseGroupOverlapIsSingleDateOnly(leftCourseGroup, rightCourseGroup)
+                ))
+            ))
         },
         cellHasRelatedOverlap(semester, weekday, hour, recurrenceWeek = null) {
             if (this.cellHasOverlap(semester, weekday, hour, recurrenceWeek)) {
@@ -6163,7 +6305,8 @@ export default {
 }
 
 .overview-wizard-button,
-.overview-manual-button {
+.overview-manual-button,
+.overview-saved-timetable-button {
     flex: 0 0 auto;
     min-height: 48px;
     border-radius: 8px;
@@ -6192,6 +6335,15 @@ export default {
 
 .overview-manual-button:hover {
     box-shadow: 0 0 12px rgba(15, 118, 110, 0.42), 0 0 24px rgba(22, 163, 74, 0.25);
+}
+
+.overview-saved-timetable-button {
+    background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%);
+    box-shadow: 0 0 8px rgba(124, 58, 237, 0.28), 0 0 18px rgba(219, 39, 119, 0.16);
+}
+
+.overview-saved-timetable-button:hover {
+    box-shadow: 0 0 12px rgba(124, 58, 237, 0.42), 0 0 24px rgba(219, 39, 119, 0.25);
 }
 
 @keyframes wizard-glow {
@@ -7523,7 +7675,8 @@ export default {
     }
 
     .overview-wizard-button,
-    .overview-manual-button {
+    .overview-manual-button,
+    .overview-saved-timetable-button {
         width: 100%;
     }
 

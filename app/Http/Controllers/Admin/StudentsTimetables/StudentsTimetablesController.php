@@ -68,7 +68,16 @@ class StudentsTimetablesController extends Controller
             ->orderBy('class')
             ->orderBy('last_name')
             ->orderBy('first_name')
-            ->get(['id', 'class', 'school_level', 'attendance_year', 'religion', 'student_code', 'last_name', 'first_name', 'email'])
+            ->get(['id', 'class', 'school_level', 'attendance_year', 'religion', 'student_code', 'last_name', 'first_name', 'email']);
+
+        $publishedTimetables = StudentTimetablePublishedTimetable::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->whereIn('student_code', $students->pluck('student_code')->filter()->values())
+            ->get(['id', 'student_code', 'published_at'])
+            ->keyBy(fn (StudentTimetablePublishedTimetable $publishedTimetable): string => (string) $publishedTimetable->student_code);
+
+        $students = $students
             ->map(fn (Import116 $student): array => [
                 'id' => (int) $student->id,
                 'class' => (string) $student->class,
@@ -80,6 +89,9 @@ class StudentsTimetablesController extends Controller
                 'first_name' => (string) $student->first_name,
                 'email' => (string) $student->email,
                 'title' => trim("{$student->class} · {$student->last_name} {$student->first_name}"),
+                'has_published_timetable' => $publishedTimetables->has((string) $student->student_code),
+                'published_timetable_id' => $publishedTimetables->get((string) $student->student_code)?->id,
+                'published_timetable_at' => optional($publishedTimetables->get((string) $student->student_code)?->published_at)->toIso8601String(),
             ])
             ->values();
 
@@ -136,6 +148,47 @@ class StudentsTimetablesController extends Controller
                 (string) $validated['student_code'],
                 $validated['selection'] ?? [],
             ),
+        ]);
+    }
+
+    public function publishedStudentTimetable(Request $request): JsonResponse
+    {
+        $authUser = $this->studentsTimetablesUser();
+
+        $validated = $request->validate([
+            'student_code' => ['required', 'string', 'max:255'],
+        ]);
+
+        $student = Import116::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where('student_code', $validated['student_code'])
+            ->whereNotNull('exists_date')
+            ->first();
+
+        if (! $student) {
+            abort(422, 'Der ausgewählte Schüler wurde nicht gefunden.');
+        }
+
+        $publishedTimetable = StudentTimetablePublishedTimetable::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->where('student_code', $validated['student_code'])
+            ->first();
+
+        if (! $publishedTimetable) {
+            abort(404, 'Für diesen Schüler ist kein gespeicherter Stundenplan vorhanden.');
+        }
+
+        return response()->json([
+            'data' => [
+                'id' => $publishedTimetable->id,
+                'student_code' => $publishedTimetable->student_code,
+                'student_label' => $publishedTimetable->student_label,
+                'timetable' => is_array($publishedTimetable->timetable) ? $publishedTimetable->timetable : [],
+                'state' => is_array($publishedTimetable->state) ? $publishedTimetable->state : [],
+                'published_at' => optional($publishedTimetable->published_at)->toIso8601String(),
+            ],
         ]);
     }
 

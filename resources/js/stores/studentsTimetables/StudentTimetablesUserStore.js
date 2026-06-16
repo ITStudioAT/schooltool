@@ -152,6 +152,54 @@ export const useStudentTimetablesUserStore = defineStore('StudentTimetablesUserS
             }
         },
 
+        async adoptPublishedTimetable() {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+
+            try {
+                const response = await axios.post('/api/homepage/students-timetables/my-timetable')
+                this.overview = response.data?.data ?? null
+                notification.notify({
+                    message: response.data?.message || 'Stundenplan wurde übernommen.',
+                    type: 'success',
+                    timeout: 2500,
+                })
+
+                return true
+            } catch (error) {
+                this.notifyError(notification, error)
+
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async deletePersonalTimetable() {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+
+            try {
+                const response = await axios.delete('/api/homepage/students-timetables/my-timetable')
+                this.overview = response.data?.data ?? null
+                notification.notify({
+                    message: response.data?.message || 'Mein Stundenplan wurde gelöscht.',
+                    type: 'success',
+                    timeout: 2500,
+                })
+
+                return true
+            } catch (error) {
+                this.notifyError(notification, error)
+
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
         async logout() {
             try {
                 await axios.post('/api/homepage/logout')

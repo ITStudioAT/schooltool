@@ -151,6 +151,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/homepage/students-timetables/overview', [StudentsTimetablesStudentController::class, 'overview'])->middleware('tool-licensed:StudentsTimetables');
     Route::put('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'updateProfileSelection'])->middleware('tool-licensed:StudentsTimetables');
     Route::delete('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'restoreProfileSelection'])->middleware('tool-licensed:StudentsTimetables');
+    Route::post('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'adoptPublishedTimetable'])->middleware('tool-licensed:StudentsTimetables');
+    Route::delete('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'deletePersonalTimetable'])->middleware('tool-licensed:StudentsTimetables');
     Route::get('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'evaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
     Route::put('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'updateEvaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
     Route::post('/homepage/students-timetables/automatic-timetable', [StudentsTimetablesStudentController::class, 'automaticTimetable'])->middleware('tool-licensed:StudentsTimetables');
@@ -189,6 +191,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/students-timetables/evaluation-settings', [StudentsTimetablesController::class, 'updateEvaluationSettings']);
         Route::get('/admin/students-timetables/overview-selections', [StudentsTimetablesController::class, 'overviewSelections']);
         Route::put('/admin/students-timetables/overview-selections', [StudentsTimetablesController::class, 'updateOverviewSelections']);
+        Route::get('/admin/students-timetables/overview/student-timetable', [StudentsTimetablesController::class, 'publishedStudentTimetable']);
         Route::post('/admin/students-timetables/overview/student-timetable', [StudentsTimetablesController::class, 'publishStudentTimetable']);
         Route::post('/admin/students-timetables/overview/pdf', [StudentsTimetablesController::class, 'overviewPdf']);
         Route::get('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'index']);
