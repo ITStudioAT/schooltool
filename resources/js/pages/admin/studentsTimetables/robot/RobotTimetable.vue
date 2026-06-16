@@ -5581,6 +5581,7 @@ export default {
             ).size
 
             if (options?.regularCourseSelection === true) {
+                this.clearAdditionalCourseSelectionState()
                 this.clearGeneratedTimetables({ keepAdditionalCoursePanelVisible: false })
                 this.additionalCourseTimetableRequired = false
                 this.additionalCourseExtensionActionHidden = false
@@ -7443,10 +7444,7 @@ export default {
 
             return `${selectedKeys}::${deselectedGroupKeys}`
         },
-        resetAdditionalCourseSelection(options = {}) {
-            const previousSnapshot = this.additionalCourseSelectionStateSnapshot(
-                this.currentAdditionalCourseSelectionState(),
-            )
+        clearAdditionalCourseSelectionState() {
             const additionalGroupKeys = this.additionalCourseGroupSelectionKeys()
 
             this.additionalCourseSelectedKeys = []
@@ -7454,6 +7452,13 @@ export default {
             this.deselectedCourseGroupKeys = Array.isArray(this.deselectedCourseGroupKeys)
                 ? this.deselectedCourseGroupKeys.filter(groupKey => !additionalGroupKeys.includes(groupKey))
                 : []
+        },
+        resetAdditionalCourseSelection(options = {}) {
+            const previousSnapshot = this.additionalCourseSelectionStateSnapshot(
+                this.currentAdditionalCourseSelectionState(),
+            )
+
+            this.clearAdditionalCourseSelectionState()
 
             const nextSnapshot = this.additionalCourseSelectionStateSnapshot(
                 this.currentAdditionalCourseSelectionState(),

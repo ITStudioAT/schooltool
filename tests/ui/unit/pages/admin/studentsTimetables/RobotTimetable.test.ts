@@ -42,6 +42,9 @@ function robotContext(overrides = {}) {
         normalizeTimetableResultCounters: () => {},
         loadFullGreenTimetableCount: () => {},
         loadQualityCountersForSelectedTimetableType: () => {},
+        saveLastRobotState: () => {},
+        emitAutomaticStepChange: () => {},
+        $emit: () => {},
         ...overrides,
     }
 }
@@ -448,15 +451,52 @@ describe('RobotTimetable', () => {
         const clearGeneratedTimetables = vi.fn()
         const showCourseActionAfterCourseInteraction = vi.fn()
         const saveLastRobotState = vi.fn()
+        const emitAutomaticStepChange = vi.fn()
 
         RobotTimetable.methods.returnToCourseSelectionFromGeneratedTimetable.call({
             clearGeneratedTimetables,
             showCourseActionAfterCourseInteraction,
             saveLastRobotState,
+            emitAutomaticStepChange,
         })
 
         expect(clearGeneratedTimetables).toHaveBeenCalledOnce()
         expect(showCourseActionAfterCourseInteraction).toHaveBeenCalledOnce()
+        expect(emitAutomaticStepChange).toHaveBeenCalledWith('')
+        expect(saveLastRobotState).toHaveBeenCalledOnce()
+    })
+
+    it('clears additional course selections when returning to regular course selection', () => {
+        const clearGeneratedTimetables = vi.fn()
+        const emitAutomaticStepChange = vi.fn()
+        const saveLastRobotState = vi.fn()
+        const emit = vi.fn()
+        const context = robotContext({
+            additionalCourseSelectedKeys: ['D2'],
+            additionalCourseTimetableRequired: true,
+            additionalCourseExtensionActionHidden: true,
+            additionalCourseSelectionChangedAfterTimetable: true,
+            deselectedCourseGroupKeys: ['regular-group', 'additional-group'],
+            additionalCourseGroupSelectionKeys: () => ['additional-group'],
+            clearAdditionalCourseSelectionState: RobotTimetable.methods.clearAdditionalCourseSelectionState,
+            clearGeneratedTimetables,
+            emitAutomaticStepChange,
+            saveLastRobotState,
+            $emit: emit,
+        })
+
+        RobotTimetable.methods.returnToCourseSelectionFromGeneratedTimetable.call(context, {
+            regularCourseSelection: true,
+        })
+
+        expect(context.additionalCourseSelectedKeys).toEqual([])
+        expect(context.additionalCourseTimetableRequired).toBe(false)
+        expect(context.additionalCourseExtensionActionHidden).toBe(false)
+        expect(context.additionalCourseSelectionChangedAfterTimetable).toBe(false)
+        expect(context.deselectedCourseGroupKeys).toEqual(['regular-group'])
+        expect(clearGeneratedTimetables).toHaveBeenCalledWith({ keepAdditionalCoursePanelVisible: false })
+        expect(emit).toHaveBeenCalledWith('generated-timetable-visibility-change', false)
+        expect(emitAutomaticStepChange).toHaveBeenCalledWith()
         expect(saveLastRobotState).toHaveBeenCalledOnce()
     })
 

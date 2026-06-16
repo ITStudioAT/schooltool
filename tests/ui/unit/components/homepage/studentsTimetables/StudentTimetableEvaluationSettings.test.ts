@@ -42,11 +42,19 @@ describe('Student timetable evaluation settings', () => {
         const source = readFileSync(overviewPath, 'utf8')
 
         expect(source).toContain('@click="openManualTimetable"')
+        expect(source).toContain('@click="openPublishedTimetable"')
+        expect(source).toContain('Gespeicherter Stundenplan')
+        expect(source).toContain('hasPublishedTimetable')
+        expect(source).toContain('published_timetable')
+        expect(source).toContain('publishedTimetableVisible')
+        expect(source).toContain('class="student-published-timetable__grid"')
         expect(source).toContain('showManualTimetable')
         expect(source).toContain('manual_timetable')
         expect(source).toContain('manualTimetableSelection()')
         expect(source).toContain('manualSelectedCourseGroups()')
         expect(source).toContain('manualGroupsForCell(weekday.value, hour.value)')
+        expect(source).toContain('<div class="student-manual-timetable__corner">Std.</div>')
+        expect(source).toContain('.student-manual-timetable__cell--conflict {\n    background: #fef2f2;')
         expect(source).toContain('<v-checkbox-btn')
         expect(source).toContain('Manueller Stundenplan')
         expect(source).toContain('Keine passenden Kurstermine gefunden.')
@@ -56,6 +64,177 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('expandedManualOverviewCoursePanels: []')
         expect(source).toContain('<h3>Kurse</h3>')
         expect(source).toContain('courseSectionTotalCount')
+    })
+
+    it('opens a published timetable with the saved course group selection', () => {
+        const methods = (Overview as any).methods
+        const computed = (Overview as any).computed
+        const savedCourseGroup = {
+            key: 'saved-group',
+            course: 'D1',
+            weekday: 1,
+            hour: 2,
+        }
+        const otherCourseGroup = {
+            key: 'other-group',
+            course: 'D1',
+            weekday: 2,
+            hour: 3,
+        }
+        const course = {
+            key: 'course-1',
+            code: 'D1',
+            course_groups: [savedCourseGroup, otherCourseGroup],
+        }
+        const pushedRoutes: unknown[] = []
+        const ctx: any = {
+            showManualTimetable: false,
+            showEvaluationSettings: true,
+            manualTimetableMode: 'manual',
+            manualSelectedCourseKeys: [],
+            manualSelectedCourseGroupKeys: [],
+            overview: {
+                published_timetable: {
+                    id: 7,
+                    active_course_group_keys: ['saved-group'],
+                    timetable: {
+                        student: '5C · ZADRA Isabella · Semester 5',
+                        schoolyear: 'Schuljahr 2025/26',
+                        generated_at: '16.06.26, 21:02',
+                        weekdays: [
+                            { label: 'Mo' },
+                            { label: 'Di' },
+                        ],
+                        semesters: [
+                            {
+                                label: 'Semester',
+                                date_range: '16.02.2026 - 10.07.2026',
+                                weeks: [
+                                    {
+                                        hours: [
+                                            {
+                                                hour: 10,
+                                                from: '17:05',
+                                                until: '17:50',
+                                                cells: [
+                                                    {
+                                                        status: 'warning',
+                                                        courses: [
+                                                            {
+                                                                label: 'D5 - 3R - SHAM',
+                                                                details: 'FU · 2-wöchig',
+                                                            },
+                                                        ],
+                                                        markers: [],
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                manual_timetable: {
+                    title: 'Manueller Stundenplan',
+                    sections: [
+                        {
+                            key: 'proposed',
+                            items: [course],
+                        },
+                    ],
+                },
+            },
+            $route: {
+                path: '/students-timetables/overview',
+                query: {
+                    automatic_timetable: 'criteria',
+                    automatic_timetable_courses: ['course-1'],
+                    automatic_timetable_criteria: ['saturday_free'],
+                },
+            },
+            $router: {
+                push(route: unknown) {
+                    pushedRoutes.push(route)
+                },
+            },
+            manualCourseKey: methods.manualCourseKey,
+            manualCourseGroups: methods.manualCourseGroups,
+            manualCourseGroupKey: methods.manualCourseGroupKey,
+            applyPublishedTimetableSelection: methods.applyPublishedTimetableSelection,
+            publishedTimetableCellCourses: methods.publishedTimetableCellCourses,
+            get manualTimetableSelection() {
+                return computed.manualTimetableSelection.call(ctx)
+            },
+            get manualTimetableTitle() {
+                return computed.manualTimetableTitle.call(ctx)
+            },
+            get publishedTimetableSelection() {
+                return computed.publishedTimetableSelection.call(ctx)
+            },
+            get hasPublishedTimetable() {
+                return computed.hasPublishedTimetable.call(ctx)
+            },
+            get publishedTimetableCourseGroupKeys() {
+                return computed.publishedTimetableCourseGroupKeys.call(ctx)
+            },
+            get publishedTimetablePayload() {
+                return computed.publishedTimetablePayload.call(ctx)
+            },
+            get publishedTimetableVisible() {
+                return computed.publishedTimetableVisible.call(ctx)
+            },
+            get publishedTimetableSubtitle() {
+                return computed.publishedTimetableSubtitle.call(ctx)
+            },
+            get publishedTimetableWeekdays() {
+                return computed.publishedTimetableWeekdays.call(ctx)
+            },
+            get publishedTimetableSemesters() {
+                return computed.publishedTimetableSemesters.call(ctx)
+            },
+            get manualTimetableCourseSections() {
+                return computed.manualTimetableCourseSections.call(ctx)
+            },
+            get manualTimetableCourses() {
+                return computed.manualTimetableCourses.call(ctx)
+            },
+            get manualSelectedCourses() {
+                return computed.manualSelectedCourses.call(ctx)
+            },
+        }
+
+        methods.openPublishedTimetable.call(ctx)
+
+        expect(ctx.showManualTimetable).toBe(true)
+        expect(ctx.showEvaluationSettings).toBe(false)
+        expect(ctx.manualTimetableMode).toBe('published')
+        expect(ctx.manualTimetableTitle).toBe('Gespeicherter Stundenplan')
+        expect(ctx.manualSelectedCourseKeys).toEqual(['course-1'])
+        expect(ctx.manualSelectedCourseGroupKeys).toEqual(['saved-group'])
+        expect(ctx.publishedTimetableVisible).toBe(true)
+        expect(ctx.publishedTimetableSubtitle).toBe('5C · ZADRA Isabella · Semester 5 · Schuljahr 2025/26 · 16.06.26, 21:02')
+        expect(ctx.publishedTimetableWeekdays).toEqual([{ label: 'Mo' }, { label: 'Di' }])
+        expect(methods.publishedTimetableSemesterWeeks(ctx.publishedTimetableSemesters[0])).toHaveLength(1)
+        expect(methods.publishedTimetableHourCells.call(ctx, ctx.publishedTimetableSemesters[0].weeks[0].hours[0]))
+            .toHaveLength(2)
+        expect(methods.publishedTimetableCellClasses.call(ctx, ctx.publishedTimetableSemesters[0].weeks[0].hours[0].cells[0]))
+            .toEqual({
+                'student-published-timetable__cell--filled': true,
+                'student-published-timetable__cell--warning': true,
+                'student-published-timetable__cell--conflict': false,
+                'student-published-timetable__cell--related': false,
+            })
+        expect(computed.manualSelectedCourseGroups.call(ctx)).toEqual([savedCourseGroup])
+        expect(pushedRoutes).toEqual([
+            {
+                path: '/students-timetables/overview',
+                query: {
+                    manual_timetable: 'published',
+                },
+            },
+        ])
     })
 
     it('builds manual timetable cells from selected student courses', () => {

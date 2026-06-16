@@ -9,6 +9,7 @@ use App\Models\Schoolyear;
 use App\Models\StudentTimetableEntry;
 use App\Models\StudentTimetableEvaluationSetting;
 use App\Models\StudentTimetableProfileSelection;
+use App\Models\StudentTimetablePublishedTimetable;
 use App\Models\StudentTimetableRecognitionImport;
 use App\Models\StudentTimetableRecognitionRow;
 use App\Models\StudentTimetableSubjectRow;
@@ -657,6 +658,84 @@ it('creates the first automatic timetable for the authenticated student', functi
         ->assertJsonPath('data.selected_timetable.slots.1-11.code', 'D1')
         ->assertJsonPath('data.selected_timetable.slots.1-12.code', 'D2')
         ->assertJsonPath('data.selected_timetable.slots.1-11.courseGroup.teacher', 'MUE');
+});
+
+it('returns a published timetable for the authenticated student overview', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $import116->forceFill([
+        'school_level' => '09_1',
+        'attendance_year' => null,
+        'student_code' => 'student-100',
+    ])->save();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 1,
+        'branch' => 'common',
+        'json_code' => 'D1',
+        'json_subject' => 'D',
+        'name' => 'Deutsch',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => 1,
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2025-09-08',
+        'semester' => 1,
+        'period' => '11',
+        'subject' => 'D1',
+        'course' => 'D1',
+        'teacher' => 'MUE',
+        'room' => '101',
+        'class_name' => 'D1 - 4A - MUE',
+        'is_active' => true,
+    ]);
+
+    $overviewResponse = $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful();
+
+    $courseGroupKey = $overviewResponse->json('data.manual_timetable.courses.0.course_groups.0.key');
+
+    StudentTimetablePublishedTimetable::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'published_by_user_id' => $user->id,
+        'student_code' => $import116->student_code,
+        'student_label' => 'Mustermann Max',
+        'timetable' => [
+            'title' => 'Stundenplan',
+            'weekdays' => [['label' => 'Mo']],
+            'semesters' => [],
+        ],
+        'state' => [
+            'activeCourseGroupFilterKeys' => [$courseGroupKey, $courseGroupKey],
+            'manualPanelOpen' => true,
+        ],
+        'published_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful()
+        ->assertJsonPath('data.published_timetable.student_code', $import116->student_code)
+        ->assertJsonPath('data.published_timetable.student_label', 'Mustermann Max')
+        ->assertJsonPath('data.published_timetable.timetable.title', 'Stundenplan')
+        ->assertJsonPath('data.published_timetable.state.manualPanelOpen', true)
+        ->assertJsonPath('data.published_timetable.active_course_group_keys.0', $courseGroupKey);
 });
 
 it('flags fully conflicting additional courses for the authenticated student', function () {

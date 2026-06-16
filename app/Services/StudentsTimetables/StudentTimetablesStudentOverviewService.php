@@ -5,6 +5,7 @@ namespace App\Services\StudentsTimetables;
 use App\Models\Import116;
 use App\Models\SchoolTool;
 use App\Models\StudentTimetableProfileSelection;
+use App\Models\StudentTimetablePublishedTimetable;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use App\Services\SchoolHourService;
@@ -148,6 +149,7 @@ class StudentTimetablesStudentOverviewService
             'course_sections' => $courseSections,
             'automatic_course_selection' => $automaticCourseSelection,
             'manual_timetable' => $this->manualTimetableSelection($user, $courseSections),
+            'published_timetable' => $this->publishedTimetableForStudent($user, $schoolyearId, $student),
             'school_hours' => $this->schoolHoursForUser($user),
             'counts' => [
                 'completed_courses' => count($completedCourses),
@@ -156,6 +158,54 @@ class StudentTimetablesStudentOverviewService
                 'additional_courses' => count($additionalCourses),
             ],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function publishedTimetableForStudent(User $user, int $schoolyearId, ?Import116 $student): ?array
+    {
+        $studentCode = $this->nonEmptyString($student?->student_code);
+
+        if (! $studentCode) {
+            return null;
+        }
+
+        $publishedTimetable = StudentTimetablePublishedTimetable::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('student_code', $studentCode)
+            ->first();
+
+        if (! $publishedTimetable) {
+            return null;
+        }
+
+        $state = is_array($publishedTimetable->state) ? $publishedTimetable->state : [];
+
+        return [
+            'id' => (int) $publishedTimetable->id,
+            'student_code' => (string) $publishedTimetable->student_code,
+            'student_label' => $publishedTimetable->student_label,
+            'timetable' => is_array($publishedTimetable->timetable) ? $publishedTimetable->timetable : [],
+            'state' => $state,
+            'active_course_group_keys' => $this->publishedTimetableCourseGroupKeys($state),
+            'published_at' => optional($publishedTimetable->published_at)->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @return list<string>
+     */
+    private function publishedTimetableCourseGroupKeys(array $state): array
+    {
+        return collect($state['activeCourseGroupFilterKeys'] ?? [])
+            ->map(fn (mixed $courseGroupKey): string => (string) $courseGroupKey)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**

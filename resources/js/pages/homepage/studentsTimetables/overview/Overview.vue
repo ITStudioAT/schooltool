@@ -212,18 +212,90 @@
                         @click="openManualTimetable">
                         Manueller Stundenplan
                     </v-btn>
+                    <v-btn
+                        v-if="hasPublishedTimetable"
+                        class="timetable-actions__button timetable-actions__published"
+                        variant="flat"
+                        prepend-icon="mdi-calendar-check"
+                        @click="openPublishedTimetable">
+                        Gespeicherter Stundenplan
+                    </v-btn>
                 </div>
 
                 <section v-if="showManualTimetable" class="student-manual-timetable">
                     <div class="student-manual-timetable__toolbar">
                         <div>
                             <p class="student-manual-timetable__eyebrow">Manuell</p>
-                            <h3>{{ manualTimetableSelection.title || 'Manueller Stundenplan' }}</h3>
+                            <h3>{{ manualTimetableTitle }}</h3>
                         </div>
                         <v-btn variant="text" prepend-icon="mdi-arrow-left" @click="closeManualTimetable">Zurück</v-btn>
                     </div>
 
-                    <div class="student-manual-timetable__layout">
+                    <div v-if="publishedTimetableVisible" class="student-published-timetable">
+                        <div v-if="publishedTimetableSubtitle" class="student-published-timetable__meta">
+                            {{ publishedTimetableSubtitle }}
+                        </div>
+
+                        <div
+                            v-for="semester in publishedTimetableSemesters"
+                            :key="publishedTimetableSemesterKey(semester)"
+                            class="student-published-timetable__semester">
+                            <div class="student-published-timetable__semester-head">
+                                <h4>{{ semester.label || 'Semester' }}</h4>
+                                <span v-if="semester.date_range">{{ semester.date_range }}</span>
+                            </div>
+
+                            <div
+                                v-for="week in publishedTimetableSemesterWeeks(semester)"
+                                :key="publishedTimetableWeekKey(semester, week)"
+                                class="student-published-timetable__week">
+                                <div v-if="week.label" class="student-published-timetable__week-label">{{ week.label }}</div>
+                                <div
+                                    class="student-published-timetable__grid"
+                                    :style="{ '--published-timetable-weekday-count': publishedTimetableWeekdays.length }">
+                                    <div class="student-published-timetable__corner">Std.</div>
+                                    <div
+                                        v-for="weekday in publishedTimetableWeekdays"
+                                        :key="weekday.label"
+                                        class="student-published-timetable__weekday">
+                                        {{ weekday.label }}
+                                    </div>
+
+                                    <template
+                                        v-for="hour in publishedTimetableWeekHours(week)"
+                                        :key="publishedTimetableHourKey(week, hour)">
+                                        <div class="student-published-timetable__hour">
+                                            <strong>{{ hour.hour }}.</strong>
+                                            <span v-if="hour.from || hour.until">{{ hour.from }} - {{ hour.until }}</span>
+                                        </div>
+                                        <div
+                                            v-for="(cell, cellIndex) in publishedTimetableHourCells(hour)"
+                                            :key="`${publishedTimetableHourKey(week, hour)}-${cellIndex}`"
+                                            class="student-published-timetable__cell"
+                                            :class="publishedTimetableCellClasses(cell)">
+                                            <div
+                                                v-for="course in publishedTimetableCellCourses(cell)"
+                                                :key="publishedTimetableCourseKey(course)"
+                                                class="student-published-timetable__block">
+                                                <strong>{{ course.label || '-' }}</strong>
+                                                <span v-if="course.details">{{ course.details }}</span>
+                                                <small v-if="course.student_course_badge">{{ course.student_course_badge }}</small>
+                                            </div>
+
+                                            <div
+                                                v-for="marker in publishedTimetableCellMarkers(cell)"
+                                                :key="publishedTimetableMarkerKey(marker)"
+                                                class="student-published-timetable__marker">
+                                                {{ marker.label || marker.title || '-' }}
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else class="student-manual-timetable__layout">
                         <div class="student-manual-timetable__courses">
                             <v-expansion-panels v-model="manualExpandedCourseSections" multiple flat>
                                 <v-expansion-panel
@@ -271,7 +343,7 @@
                                 <div
                                     class="student-manual-timetable__grid"
                                     :style="{ '--manual-timetable-weekday-count': manualTimetableWeekdays.length }">
-                                    <div class="student-manual-timetable__corner"></div>
+                                    <div class="student-manual-timetable__corner">Std.</div>
                                     <div
                                         v-for="weekday in manualTimetableWeekdays"
                                         :key="weekday.value"
@@ -374,6 +446,8 @@ export default {
             expandedManualOverviewCoursePanels: [],
             manualExpandedCourseSections: ['missing', 'proposed'],
             manualSelectedCourseKeys: [],
+            manualSelectedCourseGroupKeys: [],
+            manualTimetableMode: 'manual',
             selectionOverride: {},
             selectionDialogOpen: false,
             selectionDraftKey: '',
@@ -486,6 +560,63 @@ export default {
 
             return manualTimetable && typeof manualTimetable === 'object' ? manualTimetable : {}
         },
+        manualTimetableTitle() {
+            if (this.manualTimetableMode === 'published') {
+                return 'Gespeicherter Stundenplan'
+            }
+
+            return this.manualTimetableSelection.title || 'Manueller Stundenplan'
+        },
+        publishedTimetableSelection() {
+            const publishedTimetable = this.overview?.published_timetable
+
+            return publishedTimetable && typeof publishedTimetable === 'object' ? publishedTimetable : {}
+        },
+        hasPublishedTimetable() {
+            return Boolean(this.publishedTimetableSelection.id)
+        },
+        publishedTimetableCourseGroupKeys() {
+            const courseGroupKeys = Array.isArray(this.publishedTimetableSelection.active_course_group_keys)
+                ? this.publishedTimetableSelection.active_course_group_keys
+                : this.publishedTimetableSelection.state?.activeCourseGroupFilterKeys
+
+            return (Array.isArray(courseGroupKeys) ? courseGroupKeys : [])
+                .map(courseGroupKey => String(courseGroupKey || ''))
+                .filter(Boolean)
+        },
+        publishedTimetablePayload() {
+            const timetable = this.publishedTimetableSelection.timetable
+
+            return timetable && typeof timetable === 'object' ? timetable : {}
+        },
+        publishedTimetableVisible() {
+            return this.manualTimetableMode === 'published' && this.publishedTimetableSemesters.length > 0
+        },
+        publishedTimetableSubtitle() {
+            return [
+                this.publishedTimetablePayload.student,
+                this.publishedTimetablePayload.schoolyear,
+                this.publishedTimetablePayload.generated_at,
+            ]
+                .filter(Boolean)
+                .join(' · ')
+        },
+        publishedTimetableWeekdays() {
+            const weekdays = Array.isArray(this.publishedTimetablePayload.weekdays)
+                ? this.publishedTimetablePayload.weekdays
+                : []
+
+            return weekdays
+                .map((weekday, index) => ({
+                    label: String(weekday?.label || index + 1),
+                }))
+                .filter(weekday => weekday.label)
+        },
+        publishedTimetableSemesters() {
+            return Array.isArray(this.publishedTimetablePayload.semesters)
+                ? this.publishedTimetablePayload.semesters
+                : []
+        },
         manualTimetableCourseSections() {
             return Array.isArray(this.manualTimetableSelection.sections)
                 ? this.manualTimetableSelection.sections
@@ -503,10 +634,16 @@ export default {
         },
         manualSelectedCourseGroups() {
             const courseGroups = new Map()
+            const selectedCourseGroupKeys = new Set(this.manualSelectedCourseGroupKeys)
+            const shouldFilterCourseGroups = selectedCourseGroupKeys.size > 0
 
             this.manualSelectedCourses.forEach((course) => {
                 this.manualCourseGroups(course).forEach((courseGroup) => {
                     const courseGroupKey = this.manualCourseGroupKey(courseGroup)
+
+                    if (shouldFilterCourseGroups && !selectedCourseGroupKeys.has(courseGroupKey)) {
+                        return
+                    }
 
                     if (!courseGroups.has(courseGroupKey)) {
                         courseGroups.set(courseGroupKey, courseGroup)
@@ -567,11 +704,7 @@ export default {
         '$route.query.manual_timetable': {
             immediate: true,
             handler(value) {
-                this.showManualTimetable = String(value || '') === '1'
-
-                if (this.showManualTimetable) {
-                    this.ensureManualTimetableDefaultSelection()
-                }
+                this.applyManualTimetableRoute(value)
             },
         },
     },
@@ -580,7 +713,7 @@ export default {
         async loadOverview() {
             await this.studentTimetablesStore.loadOverview()
             this.syncSelectionOverrideFromOverview()
-            this.ensureManualTimetableDefaultSelection()
+            this.applyCurrentManualTimetableSelection()
         },
         async handleLogout() {
             this.showDrawer = false
@@ -692,6 +825,9 @@ export default {
         openManualTimetable() {
             this.showManualTimetable = true
             this.showEvaluationSettings = false
+            this.manualTimetableMode = 'manual'
+            this.manualSelectedCourseKeys = []
+            this.manualSelectedCourseGroupKeys = []
             this.ensureManualTimetableDefaultSelection()
 
             const query = { ...this.$route.query }
@@ -699,6 +835,27 @@ export default {
             delete query.automatic_timetable_courses
             delete query.automatic_timetable_criteria
             query.manual_timetable = '1'
+
+            this.$router.push({
+                path: this.$route.path,
+                query,
+            })
+        },
+        openPublishedTimetable() {
+            if (!this.hasPublishedTimetable) {
+                return
+            }
+
+            this.showManualTimetable = true
+            this.showEvaluationSettings = false
+            this.manualTimetableMode = 'published'
+            this.applyPublishedTimetableSelection()
+
+            const query = { ...this.$route.query }
+            delete query.automatic_timetable
+            delete query.automatic_timetable_courses
+            delete query.automatic_timetable_criteria
+            query.manual_timetable = 'published'
 
             this.$router.push({
                 path: this.$route.path,
@@ -721,6 +878,103 @@ export default {
                 path: this.$route.path,
                 query,
             })
+        },
+        applyManualTimetableRoute(value) {
+            const manualTimetableRoute = String(value || '')
+
+            this.showManualTimetable = ['1', 'published'].includes(manualTimetableRoute)
+            this.manualTimetableMode = manualTimetableRoute === 'published' ? 'published' : 'manual'
+
+            this.applyCurrentManualTimetableSelection()
+        },
+        applyCurrentManualTimetableSelection() {
+            if (!this.showManualTimetable) {
+                return
+            }
+
+            if (this.manualTimetableMode === 'published') {
+                this.applyPublishedTimetableSelection()
+
+                return
+            }
+
+            this.ensureManualTimetableDefaultSelection()
+        },
+        applyPublishedTimetableSelection() {
+            const publishedCourseGroupKeys = this.publishedTimetableCourseGroupKeys
+            const publishedCourseGroupKeySet = new Set(publishedCourseGroupKeys)
+
+            this.manualSelectedCourseGroupKeys = publishedCourseGroupKeys
+            this.manualSelectedCourseKeys = this.manualTimetableCourses
+                .filter(course => this.manualCourseGroups(course)
+                    .some(courseGroup => publishedCourseGroupKeySet.has(this.manualCourseGroupKey(courseGroup))))
+                .map(course => this.manualCourseKey(course))
+
+            if (!this.manualSelectedCourseKeys.length) {
+                this.ensureManualTimetableDefaultSelection()
+            }
+        },
+        publishedTimetableSemesterKey(semester) {
+            return [
+                semester?.label || '',
+                semester?.date_range || '',
+            ].join('|')
+        },
+        publishedTimetableSemesterWeeks(semester) {
+            return Array.isArray(semester?.weeks) ? semester.weeks : []
+        },
+        publishedTimetableWeekKey(semester, week) {
+            return [
+                this.publishedTimetableSemesterKey(semester),
+                week?.label || '',
+                this.publishedTimetableWeekHours(week)
+                    .map(hour => hour.hour)
+                    .join(','),
+            ].join('|')
+        },
+        publishedTimetableWeekHours(week) {
+            return Array.isArray(week?.hours) ? week.hours : []
+        },
+        publishedTimetableHourKey(week, hour) {
+            return [
+                week?.label || '',
+                hour?.hour || '',
+                hour?.from || '',
+                hour?.until || '',
+            ].join('|')
+        },
+        publishedTimetableHourCells(hour) {
+            const cells = Array.isArray(hour?.cells) ? hour.cells : []
+            const weekdayCount = Math.max(this.publishedTimetableWeekdays.length, cells.length)
+
+            return Array.from({ length: weekdayCount }, (_, index) => cells[index] || {})
+        },
+        publishedTimetableCellCourses(cell) {
+            return Array.isArray(cell?.courses) ? cell.courses : []
+        },
+        publishedTimetableCellMarkers(cell) {
+            return Array.isArray(cell?.markers) ? cell.markers : []
+        },
+        publishedTimetableCellClasses(cell) {
+            return {
+                'student-published-timetable__cell--filled': this.publishedTimetableCellCourses(cell).length > 0,
+                'student-published-timetable__cell--warning': String(cell?.status || '') === 'warning',
+                'student-published-timetable__cell--conflict': String(cell?.status || '') === 'conflict',
+                'student-published-timetable__cell--related': String(cell?.status || '') === 'related',
+            }
+        },
+        publishedTimetableCourseKey(course) {
+            return [
+                course?.label || '',
+                course?.details || '',
+                Array.isArray(course?.dates) ? course.dates.join(',') : '',
+            ].join('|')
+        },
+        publishedTimetableMarkerKey(marker) {
+            return [
+                marker?.label || '',
+                marker?.title || '',
+            ].join('|')
         },
         ensureManualTimetableDefaultSelection() {
             if (!this.showManualTimetable || this.manualSelectedCourseKeys.length) {
@@ -748,6 +1002,9 @@ export default {
             if (!courseKey) {
                 return
             }
+
+            this.manualSelectedCourseGroupKeys = []
+            this.manualTimetableMode = 'manual'
 
             if (selected === true && !this.manualSelectedCourseKeys.includes(courseKey)) {
                 this.manualSelectedCourseKeys = [...this.manualSelectedCourseKeys, courseKey]
@@ -1108,6 +1365,15 @@ export default {
     box-shadow: 0 0 12px rgba(15, 118, 110, 0.42), 0 0 24px rgba(22, 163, 74, 0.25);
 }
 
+.timetable-actions__published {
+    background: linear-gradient(135deg, #7c2d12 0%, #ea580c 100%);
+    box-shadow: 0 0 8px rgba(234, 88, 12, 0.28), 0 0 18px rgba(124, 45, 18, 0.14);
+}
+
+.timetable-actions__published:hover {
+    box-shadow: 0 0 12px rgba(234, 88, 12, 0.42), 0 0 24px rgba(124, 45, 18, 0.24);
+}
+
 .timetable-actions__stars {
     display: inline-flex;
     align-items: center;
@@ -1247,16 +1513,18 @@ export default {
 .student-manual-timetable__grid-wrap {
     width: 100%;
     overflow-x: auto;
-    border: 1px solid rgba(16, 38, 58, 0.08);
-    border-radius: 8px;
-    background: #ffffff;
 }
 
 .student-manual-timetable__grid {
     --manual-timetable-weekday-count: 5;
     display: grid;
     grid-template-columns: 82px repeat(var(--manual-timetable-weekday-count), minmax(112px, 1fr));
+    width: 100%;
     min-width: calc(82px + (112px * var(--manual-timetable-weekday-count)));
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    border-radius: 8px;
+    background: #ffffff;
+    overflow: hidden;
 }
 
 .student-manual-timetable__corner,
@@ -1267,11 +1535,13 @@ export default {
     border-bottom: 1px solid rgba(16, 38, 58, 0.07);
 }
 
+.student-manual-timetable__corner,
 .student-manual-timetable__weekday,
 .student-manual-timetable__hour {
     background: #f8fafc;
 }
 
+.student-manual-timetable__corner,
 .student-manual-timetable__weekday {
     padding: 10px 8px;
     color: #10263a;
@@ -1315,7 +1585,7 @@ export default {
 }
 
 .student-manual-timetable__cell--conflict {
-    background: #fff7ed;
+    background: #fef2f2;
 }
 
 .student-manual-timetable__block {
@@ -1366,6 +1636,169 @@ export default {
     background: #f8fafc;
     font-size: 0.9rem;
     font-weight: 750;
+}
+
+.student-published-timetable {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+}
+
+.student-published-timetable__meta {
+    color: rgba(23, 45, 64, 0.72);
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.student-published-timetable__semester,
+.student-published-timetable__week {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+.student-published-timetable__semester-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.student-published-timetable__semester-head h4 {
+    margin: 0;
+    color: #10263a;
+    font-size: 1rem;
+}
+
+.student-published-timetable__semester-head span,
+.student-published-timetable__week-label {
+    color: rgba(23, 45, 64, 0.64);
+    font-size: 0.74rem;
+    font-weight: 800;
+}
+
+.student-published-timetable__grid {
+    --published-timetable-weekday-count: 5;
+    display: grid;
+    grid-template-columns: 82px repeat(var(--published-timetable-weekday-count), minmax(112px, 1fr));
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.student-published-timetable__corner,
+.student-published-timetable__weekday,
+.student-published-timetable__hour,
+.student-published-timetable__cell {
+    border-right: 1px solid rgba(16, 38, 58, 0.07);
+    border-bottom: 1px solid rgba(16, 38, 58, 0.07);
+}
+
+.student-published-timetable__corner,
+.student-published-timetable__weekday,
+.student-published-timetable__hour {
+    background: #f8fafc;
+}
+
+.student-published-timetable__corner,
+.student-published-timetable__weekday {
+    padding: 10px 8px;
+    color: #10263a;
+    font-size: 0.78rem;
+    font-weight: 900;
+    text-align: center;
+}
+
+.student-published-timetable__hour {
+    display: grid;
+    align-content: center;
+    gap: 2px;
+    min-height: 78px;
+    padding: 8px;
+    color: #10263a;
+}
+
+.student-published-timetable__hour strong,
+.student-published-timetable__hour span {
+    display: block;
+}
+
+.student-published-timetable__hour strong {
+    font-size: 0.78rem;
+}
+
+.student-published-timetable__hour span {
+    color: rgba(23, 45, 64, 0.62);
+    font-size: 0.66rem;
+    font-weight: 750;
+    line-height: 1.15;
+}
+
+.student-published-timetable__cell {
+    display: grid;
+    align-content: start;
+    gap: 5px;
+    min-height: 78px;
+    padding: 6px;
+    background: #ffffff;
+}
+
+.student-published-timetable__cell--warning {
+    background: #fff7ed;
+}
+
+.student-published-timetable__cell--conflict {
+    background: #fef2f2;
+}
+
+.student-published-timetable__cell--related {
+    background: #eff6ff;
+}
+
+.student-published-timetable__block,
+.student-published-timetable__marker {
+    display: grid;
+    gap: 2px;
+    padding: 6px;
+    border: 1px solid rgba(15, 118, 110, 0.18);
+    border-radius: 6px;
+    background: #ecfdf5;
+}
+
+.student-published-timetable__marker {
+    border-color: rgba(234, 88, 12, 0.22);
+    color: #9a3412;
+    background: #ffedd5;
+    font-size: 0.7rem;
+    font-weight: 850;
+}
+
+.student-published-timetable__block strong,
+.student-published-timetable__block span,
+.student-published-timetable__block small {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.student-published-timetable__block strong {
+    color: #065f46;
+    font-size: 0.76rem;
+    line-height: 1.12;
+}
+
+.student-published-timetable__block span {
+    color: #134e4a;
+    font-size: 0.66rem;
+    font-weight: 720;
+    line-height: 1.16;
+}
+
+.student-published-timetable__block small {
+    color: #0f766e;
+    font-size: 0.62rem;
+    font-weight: 900;
 }
 
 @keyframes timetable-star-twinkle {
