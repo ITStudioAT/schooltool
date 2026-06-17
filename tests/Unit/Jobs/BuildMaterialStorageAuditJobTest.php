@@ -11,6 +11,7 @@ use App\Services\Materials\MaterialStorageAuditService;
 use App\Services\Materials\MaterialStorageAuditStatusStore;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -55,6 +56,8 @@ test('job implements should queue', function (): void {
 });
 
 test('job stores completed audit progress and result', function (): void {
+    Storage::fake('s3');
+
     $statusStore = app(MaterialStorageAuditStatusStore::class);
     $operation = $statusStore->createOperation($this->superAdmin->id, $this->activeSchool->id);
 

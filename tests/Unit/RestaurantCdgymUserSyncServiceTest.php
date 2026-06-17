@@ -23,6 +23,7 @@ test('dry run summarizes users and roles without writing', function () {
     ]);
 
     $service = app(RestaurantCdgymUserSyncService::class);
+    $userCountBeforeSync = User::query()->count();
 
     $summary = $service->sync(1, collect([
         [
@@ -52,7 +53,8 @@ test('dry run summarizes users and roles without writing', function () {
         ->and($summary['users_created'])->toBe(0)
         ->and($summary['roles_to_assign'])->toBe(2)
         ->and($summary['roles_assigned'])->toBe(0)
-        ->and(User::query()->count())->toBe(0);
+        ->and(User::query()->count())->toBe($userCountBeforeSync)
+        ->and(User::query()->where('email', 'lunchuser@example.test')->exists())->toBeFalse();
 });
 
 test('live sync creates a new local user in the target school and assigns imported roles', function () {
@@ -138,7 +140,10 @@ test('live sync only assigns missing imported roles when the email already exist
         ->and($summary['users_created'])->toBe(0)
         ->and($summary['roles_to_assign'])->toBe(1)
         ->and($summary['roles_assigned'])->toBe(1)
-        ->and(User::query()->count())->toBe(1)
+        ->and(User::query()
+            ->where('school_id', $school->id)
+            ->where('email', 'existing@example.test')
+            ->count())->toBe(1)
         ->and($existingUser->hasRole('lunch_user'))->toBeTrue()
         ->and($existingUser->hasRole('lunch_admin'))->toBeTrue()
         ->and($existingUser->first_name)->not->toBe('Should');
@@ -180,8 +185,11 @@ test('live sync creates a new user when the email exists only in another school'
         ->first();
 
     expect($summary['users_created'])->toBe(1)
-        ->and(User::query()->count())->toBe(2)
         ->and($targetSchoolUser)->not->toBeNull()
+        ->and(User::query()
+            ->whereIn('school_id', [$targetSchool->id, $otherSchool->id])
+            ->where('email', 'shared@example.test')
+            ->count())->toBe(2)
         ->and((int) $targetSchoolUser->schoolyear_id)->toBe($targetSchoolyear->id)
         ->and((int) $otherSchoolUser->school_id)->toBe($otherSchool->id);
 });

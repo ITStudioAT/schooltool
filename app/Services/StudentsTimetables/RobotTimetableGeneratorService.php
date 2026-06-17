@@ -3018,7 +3018,6 @@ class RobotTimetableGeneratorService
     private function weeklyCourseGroupSlotKeys(array $courseGroups): array
     {
         return collect($courseGroups)
-            ->filter(fn (array $courseGroup): bool => $this->courseGroupDates($courseGroup) === [])
             ->map(fn (array $courseGroup): string => $this->recurringDateSlotKey(
                 (string) ($courseGroup['weekday'] ?? ''),
                 (string) ($courseGroup['hour'] ?? ''),

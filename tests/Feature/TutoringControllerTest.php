@@ -47,6 +47,8 @@ beforeEach(function () {
     $this->schoolTool = SchoolTool::create([
         'id' => 1,
         'school_id' => $this->school->id,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => true,
         'tutoring_student_must_be_confirmed' => false,
         'tutoring_confirmer_email' => null,
     ]);
