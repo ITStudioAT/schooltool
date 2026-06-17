@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite';
 import laravel from 'laravel-vite-plugin';
 import vue from '@vitejs/plugin-vue';
-import { VueMcp } from 'vite-plugin-vue-mcp';
 import vuetify from 'vite-plugin-vuetify';
 import path from 'path';
 
@@ -42,12 +41,6 @@ export default defineConfig({
                     base: null,
                     includeAbsolute: false,
                 },
-            },
-        }),
-        VueMcp({
-            updateCursorMcpJson: {
-                enabled: true,
-                serverName: 'vue-app-mcp',
             },
         }),
         vuetify({

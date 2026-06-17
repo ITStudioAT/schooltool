@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowMount } from '@vue/test-utils'
+import axios from 'axios'
 import MaterialsOverviewView from '@/pages/admin/materials/components/views/MaterialsOverviewView.vue'
 
 const notificationNotifyMock = vi.fn()
@@ -73,7 +74,7 @@ describe('MaterialsOverviewView', () => {
             expect(header.text()).toContain('Auftrag')
             expect(header.text()).toContain('Inbox')
             expect(header.text()).toContain('Erledigt')
-            expect(header.text()).toContain('Belegter Speicher: 1.4 MB/20 GB')
+            expect(header.text()).toContain('Belegter Speicher: 1.4 MB / 20 GB')
         } finally {
             beforeMountSpy.mockRestore()
         }
@@ -1394,6 +1395,7 @@ describe('MaterialsOverviewView', () => {
         const vm = {
             subjectsTreeWorkspaceSelection: null,
             normalizeWorkspaceTreeSelection: methods.normalizeWorkspaceTreeSelection,
+            refreshLastDeletedMaterialRestoreInfo: vi.fn().mockResolvedValue(undefined),
             loadCards: vi.fn(async () => {
                 selectionsDuringLoad.push(vm.subjectsTreeWorkspaceSelection)
             }),
@@ -2048,7 +2050,7 @@ describe('MaterialsOverviewView', () => {
         })
 
         try {
-            expect(wrapper.find('[data-test="overview-alert"]').exists()).toBe(true)
+            expect(wrapper.find('[data-test="overview-alert"]').exists()).toBe(false)
             expect(wrapper.find('[data-test="subjects-tree"]').exists()).toBe(true)
         } finally {
             beforeMountSpy.mockRestore()
@@ -2499,7 +2501,10 @@ describe('MaterialsOverviewView', () => {
         expect(closeEditDialog).toHaveBeenCalledWith(false)
         expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
         expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
-        expect(refreshLastDeletedMaterialRestoreInfo).not.toHaveBeenCalled()
+        expect(refreshLastDeletedMaterialRestoreInfo).toHaveBeenCalledWith({
+            source: 'shared',
+            ruleId: 77,
+        })
     })
 
     it('routes shared full-access attachment deletes through inbox delete endpoint', async () => {

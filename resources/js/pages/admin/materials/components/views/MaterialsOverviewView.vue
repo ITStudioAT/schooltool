@@ -9,8 +9,7 @@
             @update:overview-view-mode="setOverviewMode"
             @refresh="handleOverviewRefresh">
             <div v-if="!isSharedSubjectsContentsSource && !subjectsTreeWorkspaceStructureExpanded" class="materials-overview-header-subtitle text-caption text-medium-emphasis">
-                Belegter Speicher: {{ allListedAttachmentSizeLabel }}
-                <span v-if="storageCapacityLabel">/{{ storageCapacityLabel }}</span>
+                Belegter Speicher: {{ allListedAttachmentSizeLabel }}<span v-if="storageCapacityLabel"> / {{ storageCapacityLabel }}</span>
             </div>
 
             <div class="materials-overview-secondary-filter-row d-flex align-center flex-wrap ga-2">

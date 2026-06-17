@@ -68,10 +68,15 @@ function fakeAppUpdateProcesses(string|array|null $npmCiError = null): void
             $npmCiAttempt++;
 
             if ($currentError !== null) {
-                return Process::result('', $currentError, 1);
+                return Process::describe()
+                    ->errorOutput($currentError)
+                    ->exitCode(1)
+                    ->iterations(2);
             }
 
-            return Process::result('npm ci complete');
+            return Process::describe()
+                ->output('npm ci complete')
+                ->iterations(2);
         }
 
         if (str_contains($command, 'powershell -NoProfile -ExecutionPolicy Bypass -Command')) {
@@ -79,7 +84,9 @@ function fakeAppUpdateProcesses(string|array|null $npmCiError = null): void
         }
 
         if (str_contains($command, 'npm run build')) {
-            return Process::result('frontend build complete');
+            return Process::describe()
+                ->output('frontend build complete')
+                ->iterations(2);
         }
 
         if (str_contains($command, 'Get-CimInstance Win32_Process')) {
@@ -181,13 +188,22 @@ it('runs the full update workflow end to end', function (): void {
 
     expect($result['exit_code'])->toBe(0);
     expect($result['output'])->toContain('▶ PREFLIGHT VALIDATION');
+    expect($result['output'])->toContain('Checking the toolbox before we start turning screws.');
     expect($result['output'])->toContain('Using npm cache: '.base_path('storage/framework/npm-cache'));
     expect($result['output'])->toContain('▶ INSTALLING FRONTEND DEPENDENCIES');
+    expect($result['output'])->toContain('npm is arranging a very large drawer of tiny packages.');
+    expect($result['output'])->toContain('Still installing dependencies. npm is sorting versions, scripts, and small opinions.');
     expect($result['output'])->toContain('▶ BUILDING FRONTEND');
+    expect($result['output'])->toContain('Vite is baking the frontend. Please enjoy the smell of compiled assets.');
+    expect($result['output'])->toContain('Still building. Vite is transforming modules and keeping count.');
     expect($result['output'])->toContain('▶ CLEARING CONFIG CACHE');
+    expect($result['output'])->toContain('Dusting off cached config so Laravel reads the fresh notes.');
     expect($result['output'])->toContain('▶ MIGRATIONS');
+    expect($result['output'])->toContain('Checking the database floorboards before anyone steps on them.');
     expect($result['output'])->toContain('▶ LICENCE BACKFILL');
+    expect($result['output'])->toContain('Matching licences with their users. Tiny paperwork parade.');
     expect($result['output'])->toContain('▶ TEACHING WORK GROUP INDEX BACKFILL');
+    expect($result['output'])->toContain('Tidying teaching work group indexes so future searches feel snappy.');
 
     Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'node --version'));
     Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'npm --version'));

@@ -6,6 +6,7 @@ use App\Services\InstallUpdateService;
 use App\Services\RecordsCreateService;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Process\ProcessResult as ProcessResultContract;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -19,6 +20,8 @@ class AppUpdateCommand extends Command
     private const int WINDOWS_NPM_CI_RETRY_DELAY_SECONDS = 2;
 
     private const int WINDOWS_UNLOCK_TIMEOUT_SECONDS = 30;
+
+    private const int PROCESS_HEARTBEAT_INTERVAL_SECONDS = 15;
 
     protected $signature = 'app:update';
 
@@ -42,35 +45,41 @@ class AppUpdateCommand extends Command
         $this->line(str_repeat('.', 50));
 
         $this->info('▶ CLEARING CONFIG CACHE');
+        $this->waitingLine('Dusting off cached config so Laravel reads the fresh notes.');
         if (! $this->runArtisanCommand('config:clear', [], 'config:clear')) {
             return self::FAILURE;
         }
         $this->line(str_repeat('.', 50));
 
         $this->info('▶ MIGRATIONS');
+        $this->waitingLine('Checking the database floorboards before anyone steps on them.');
         if (! $this->runArtisanCommand('migrate', ['--force' => true], 'Migrations')) {
             return self::FAILURE;
         }
         $this->line(str_repeat('.', 50));
 
         $this->info('▶ LICENCE BACKFILL');
+        $this->waitingLine('Matching licences with their users. Tiny paperwork parade.');
         if (! $this->runArtisanCommand('schooltool:backfill-school-user-licences', [], 'School user licence backfill')) {
             return self::FAILURE;
         }
         $this->line(str_repeat('.', 50));
 
         $this->info('▶ TEACHING WORK GROUP INDEX BACKFILL');
+        $this->waitingLine('Tidying teaching work group indexes so future searches feel snappy.');
         if (! $this->runArtisanCommand('schooltool:backfill-teaching-course-work-group-students', [], 'Teaching course work group student index backfill')) {
             return self::FAILURE;
         }
         $this->line(str_repeat('.', 50));
 
         $this->info('▶ CLEAR TEST-FILES');
+        $this->waitingLine('Clearing old test-file crumbs from the table.');
         $service->clearModels();
         $this->info('✅ Records in test-files deleted');
         $this->line(str_repeat('.', 50));
 
         $this->info('▶ ROLES AND RECORDS');
+        $this->waitingLine('Polishing roles and seed records. The boring bits are doing useful work.');
         $service->createRoles([
             'super_admin',
             'admin',
@@ -104,6 +113,7 @@ class AppUpdateCommand extends Command
 
         // ✅ Folders
         $this->info('▶ FOLDERS');
+        $this->waitingLine('Making sure every folder has a proper place to live.');
         $service->findOrCreateFolders();
         $this->info('✅ Folders checked');
         $cleanup = $service->pruneOrphanPrivateSchoolFolders();
@@ -115,15 +125,18 @@ class AppUpdateCommand extends Command
 
         // ✅ DEV-Debugbar
         $this->info('▶ DEV:DEBUGBAR');
+        $this->waitingLine('Emptying debug drawers before the next investigation.');
         $service->clearDebugbar();
         $this->info('✅ Debugbar cleared');
         $this->line(str_repeat('.', 50));
 
         $this->info('▶ CLEARING CACHES');
+        $this->waitingLine('Sweeping application caches. Fresh air for the next request.');
         if (! $this->runArtisanCommand('optimize:clear', [], 'optimize:clear')) {
             return self::FAILURE;
         }
         $this->info('▶ RESTARTING QUEUES');
+        $this->waitingLine('Giving queue workers a polite tap on the shoulder.');
         if (! $this->runArtisanCommand('queue:restart', [], 'queue:restart')) {
             return self::FAILURE;
         }
@@ -137,6 +150,7 @@ class AppUpdateCommand extends Command
     private function runPreflightChecks(): bool
     {
         $this->info('▶ PREFLIGHT VALIDATION');
+        $this->waitingLine('Checking the toolbox before we start turning screws.');
 
         $requiredFiles = [
             'package.json' => 'package.json is missing; app:update needs the frontend toolchain.',
@@ -181,12 +195,14 @@ class AppUpdateCommand extends Command
         }
 
         $this->info('▶ INSTALLING FRONTEND DEPENDENCIES');
+        $this->waitingLine('npm is arranging a very large drawer of tiny packages.');
         if (! $this->runNpmCi()) {
             return false;
         }
 
         $this->info('▶ BUILDING FRONTEND');
-        if (! $this->runProcess(['npm', 'run', 'build'], 'npm run build', 900, $this->frontendEnvironment())) {
+        $this->waitingLine('Vite is baking the frontend. Please enjoy the smell of compiled assets.');
+        if (! $this->runProcess(['npm', 'run', 'build'], 'npm run build', 900, $this->frontendEnvironment(), $this->viteBuildHeartbeatMessages())) {
             return false;
         }
 
@@ -195,13 +211,18 @@ class AppUpdateCommand extends Command
         return true;
     }
 
+    private function waitingLine(string $message): void
+    {
+        $this->line("   {$message}");
+    }
+
     private function runNpmCi(): bool
     {
         $attemptLimit = $this->npmCiAttemptLimit();
         $combinedOutput = '';
 
         for ($attempt = 1; $attempt <= $attemptLimit; $attempt++) {
-            $result = $this->executeProcess(['npm', 'ci'], 900, $this->frontendEnvironment());
+            $result = $this->executeProcess(['npm', 'ci'], 900, $this->frontendEnvironment(), $this->npmInstallHeartbeatMessages());
 
             if ($result->successful()) {
                 return true;
@@ -301,10 +322,11 @@ class AppUpdateCommand extends Command
     /**
      * @param  array<int, string>  $command
      * @param  array<string, string>  $environment
+     * @param  array<int, string>  $heartbeatMessages
      */
-    private function runProcess(array $command, string $description, int $timeoutSeconds, array $environment = []): bool
+    private function runProcess(array $command, string $description, int $timeoutSeconds, array $environment = [], array $heartbeatMessages = []): bool
     {
-        $result = $this->executeProcess($command, $timeoutSeconds, $environment);
+        $result = $this->executeProcess($command, $timeoutSeconds, $environment, $heartbeatMessages);
 
         if ($result->successful()) {
             return true;
@@ -322,8 +344,9 @@ class AppUpdateCommand extends Command
     /**
      * @param  array<int, string>  $command
      * @param  array<string, string>  $environment
+     * @param  array<int, string>  $heartbeatMessages
      */
-    private function executeProcess(array $command, int $timeoutSeconds, array $environment = []): ProcessResultContract
+    private function executeProcess(array $command, int $timeoutSeconds, array $environment = [], array $heartbeatMessages = []): ProcessResultContract
     {
         $process = Process::timeout($timeoutSeconds)
             ->path(base_path());
@@ -332,9 +355,90 @@ class AppUpdateCommand extends Command
             $process = $process->env($environment);
         }
 
+        if ($heartbeatMessages !== []) {
+            return $this->executeProcessWithHeartbeat($process, $command, $heartbeatMessages);
+        }
+
         return $process->run($command, function (string $type, string $buffer): void {
-            echo $buffer;
+            $this->output->write($buffer);
         });
+    }
+
+    /**
+     * @param  array<int, string>  $command
+     * @param  array<int, string>  $heartbeatMessages
+     */
+    private function executeProcessWithHeartbeat(PendingProcess $process, array $command, array $heartbeatMessages): ProcessResultContract
+    {
+        $lastOutputAt = microtime(true);
+        $nextHeartbeatAt = $lastOutputAt + $this->processHeartbeatIntervalSeconds();
+        $heartbeatMessageIndex = 0;
+
+        $runningProcess = $process->start($command, function (string $type, string $buffer) use (&$lastOutputAt): void {
+            $lastOutputAt = microtime(true);
+
+            $this->output->write($buffer);
+        });
+
+        while ($runningProcess->running()) {
+            if (method_exists($runningProcess, 'ensureNotTimedOut')) {
+                $runningProcess->ensureNotTimedOut();
+            }
+
+            $now = microtime(true);
+            if ($now >= $nextHeartbeatAt && $now - $lastOutputAt >= $this->processHeartbeatIntervalSeconds()) {
+                $this->waitingLine($heartbeatMessages[$heartbeatMessageIndex % count($heartbeatMessages)]);
+
+                $heartbeatMessageIndex++;
+                $nextHeartbeatAt = $now + $this->processHeartbeatIntervalSeconds();
+            }
+
+            $this->pauseBeforeProcessHeartbeatCheck();
+        }
+
+        return $runningProcess->wait();
+    }
+
+    protected function processHeartbeatIntervalSeconds(): int
+    {
+        if (app()->runningUnitTests()) {
+            return 0;
+        }
+
+        return self::PROCESS_HEARTBEAT_INTERVAL_SECONDS;
+    }
+
+    private function pauseBeforeProcessHeartbeatCheck(): void
+    {
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
+        sleep(1);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function npmInstallHeartbeatMessages(): array
+    {
+        return [
+            'Still installing dependencies. npm is sorting versions, scripts, and small opinions.',
+            'Still here. node_modules is getting rebuilt piece by piece.',
+            'Dependencies are still landing. This is the quiet part with the most tiny boxes.',
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function viteBuildHeartbeatMessages(): array
+    {
+        return [
+            'Still building. Vite is transforming modules and keeping count.',
+            'Still building. Rollup is packing the frontend suitcase.',
+            'Assets are being bundled, hashed, and folded into place.',
+        ];
     }
 
     /**
