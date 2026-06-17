@@ -611,7 +611,20 @@ describe('MaterialsSubjectsContentsTree', () => {
                             id: 1,
                             name: 'Mathematik',
                             materials: [],
-                            topics: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Grundlagen',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Dateien',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
                         },
                     ],
                     sharedObjectsForMe: [
@@ -703,7 +716,20 @@ describe('MaterialsSubjectsContentsTree', () => {
                             id: 1,
                             name: 'Mathematik',
                             materials: [],
-                            topics: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Grundlagen',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Dateien',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
                         },
                     ],
                     sharedObjectsForMe: [
@@ -964,6 +990,52 @@ describe('MaterialsSubjectsContentsTree', () => {
         await fireEvent.click(toggle)
 
         expect(screen.getByText('Unit Material')).toBeInTheDocument()
+    })
+
+    it('shows workspace unit material creation as a plus card', async () => {
+        const { emitted } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [
+                            {
+                                id: 21,
+                                name: 'Lineare Gleichungen',
+                                materials: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ], {
+            enableCreateButtons: true,
+        })
+
+        await openWorkspace()
+        await fireEvent.click(screen.getByRole('button', { name: 'Mathematik' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Algebra' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Lineare Gleichungen' }))
+
+        const createCard = screen.getByRole('button', { name: 'Neues Material in Bereich anlegen' })
+
+        expect(createCard.closest('.overview-material-card--create')).not.toBeNull()
+
+        await fireEvent.click(createCard)
+
+        const openCreateEvents = emitted('open-create') || []
+        expect(openCreateEvents).toHaveLength(1)
+        expect(openCreateEvents[0]?.[0]).toMatchObject({
+            level: 'unit',
+            subject: 'Mathematik',
+            topic: 'Algebra',
+            unit: 'Lineare Gleichungen',
+        })
     })
 
     it('collapses and expands a shared unit hierarchy', async () => {
@@ -2243,7 +2315,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         const sharedItem = container.querySelector('.overview-shared-item') as HTMLElement
         const subjectRow = screen.getByText('Informatik').closest('.overview-shared-hierarchy-node') as HTMLElement
         const topicRow = screen.getByText('Algebra').closest('.overview-shared-hierarchy-node') as HTMLElement
-        const unitRow = within(sharedItem).getByTitle('Neues Material in Unterpunkt anlegen').closest('.overview-shared-hierarchy-node') as HTMLElement
+        const unitRow = within(sharedItem).getByTitle('Neues Material in Bereich anlegen').closest('.overview-shared-hierarchy-node') as HTMLElement
 
         expect(subjectRow).not.toBeNull()
         expect(topicRow).not.toBeNull()
@@ -2255,7 +2327,11 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         expect(screen.queryByTitle('Neues Material in Fach anlegen')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Neues Material in Thema anlegen')).not.toBeInTheDocument()
-        expect(screen.getByTitle('Neues Material in Unterpunkt anlegen')).toBeInTheDocument()
+        await fireEvent.click(screen.getByRole('button', { name: 'Informatik' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Grundlagen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Dateien' }))
+
+        expect(screen.getByTitle('Neues Material in Bereich anlegen')).toBeInTheDocument()
 
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
 
@@ -2495,7 +2571,20 @@ describe('MaterialsSubjectsContentsTree', () => {
                             id: 10,
                             name: 'Informatik',
                             materials: [],
-                            topics: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Grundlagen',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Dateien',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
                         },
                     ],
                 },
@@ -2504,10 +2593,11 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Informatik' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Grundlagen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Dateien' }))
 
-        const addButton = screen.getByTitle('Neues Material in Fach anlegen')
-        const nodeMain = addButton.closest('.overview-shared-hierarchy-node-main')
-        expect(nodeMain).not.toBeNull()
+        expect(screen.getByTitle('Neues Material in Bereich anlegen')).toBeInTheDocument()
     })
 
     it('shows add-material action for shared READ/ADD permission', async () => {
@@ -2515,9 +2605,9 @@ describe('MaterialsSubjectsContentsTree', () => {
             sharedObjectsForMe: [
                 {
                     ruleId: 80,
-                    scopeType: 'subject',
-                    scopeObjectLabel: 'Informatik',
-                    scopePathLabel: 'Informatik',
+                    scopeType: 'unit',
+                    scopeObjectLabel: 'Dateien',
+                    scopePathLabel: 'Informatik - Grundlagen - Dateien',
                     permission: 'read_append',
                     permissionLabel: 'LESEN/HINZUFÜGEN',
                     fromUserLabel: 'Lehrer Vier',
@@ -2527,7 +2617,20 @@ describe('MaterialsSubjectsContentsTree', () => {
                             id: 10,
                             name: 'Informatik',
                             materials: [],
-                            topics: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Grundlagen',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Dateien',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
                         },
                     ],
                 },
@@ -2536,8 +2639,11 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Informatik' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Grundlagen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Dateien' }))
 
-        expect(screen.getByTitle('Neues Material in Fach anlegen')).toBeInTheDocument()
+        expect(screen.getByTitle('Neues Material in Bereich anlegen')).toBeInTheDocument()
     })
 
     it('shows Einordnen buttons on all shared tree levels and emits insert draft payload', async () => {
@@ -3070,8 +3176,9 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.queryByTitle('Thema hinzufügen')).not.toBeInTheDocument()
         expect(screen.getByText('Fachmaterial')).toBeInTheDocument()
         expect(screen.getByText('Themamaterial')).toBeInTheDocument()
-        expect(screen.getAllByTitle(/Neues Material in/i)).toHaveLength(5)
-        expect(screen.getAllByTitle('Neues Material in Fach anlegen')).toHaveLength(2)
+        expect(screen.getAllByTitle(/Neues Material in/i)).toHaveLength(1)
+        expect(screen.queryByTitle('Neues Material in Fach anlegen')).not.toBeInTheDocument()
+        expect(screen.queryByTitle('Neues Material in Thema anlegen')).not.toBeInTheDocument()
         const sharedItem = container.querySelector('.overview-shared-item') as HTMLElement
         expect(sharedItem).not.toBeNull()
         expect(within(sharedItem).queryByTitle('Teilen')).toBeNull()
@@ -3080,15 +3187,16 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.queryByTitle('Thema löschen')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Bereich löschen')).not.toBeInTheDocument()
 
-        await fireEvent.click(screen.getAllByTitle('Neues Material in Thema anlegen')[0])
+        await fireEvent.click(screen.getByTitle('Neues Material in Bereich anlegen'))
 
         const openCreateEvents = emitted('open-create') || []
         expect(openCreateEvents).toHaveLength(1)
         expect((openCreateEvents[0]?.[0] as any)?.sharedRuleId).toBe(93)
-        expect((openCreateEvents[0]?.[0] as any)?.sharedNodeLevel).toBe('topic')
-        expect((openCreateEvents[0]?.[0] as any)?.sharedNodeId).toBe(20)
+        expect((openCreateEvents[0]?.[0] as any)?.sharedNodeLevel).toBe('unit')
+        expect((openCreateEvents[0]?.[0] as any)?.sharedNodeId).toBe(30)
         expect((openCreateEvents[0]?.[0] as any)?.subject).toBe('Mathematik')
         expect((openCreateEvents[0]?.[0] as any)?.topic).toBe('Leeres Thema')
+        expect((openCreateEvents[0]?.[0] as any)?.unit).toBe('Leerer Bereich')
 
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
 

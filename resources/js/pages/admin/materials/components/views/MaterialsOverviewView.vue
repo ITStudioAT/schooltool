@@ -938,6 +938,7 @@
             :classification-editor-visible="createClassificationEditorVisible"
             :classification-toggleable="true"
             :classification-read-only="!!createSharedContext"
+            :require-unit-classification="true"
             :is-saving="isSavingCreate"
             form-title="Neues Material"
             :form-subline="createDialogSubline"
@@ -2078,7 +2079,7 @@ export default {
             return this.formatBytes(this.storageCapacityBytes)
         },
         canSaveCreate() {
-            return String(this.createForm.title || '').trim().length > 0
+            return String(this.createForm.title || '').trim().length > 0 && this.createClassificationsAreUnitLevel
         },
         canSaveEdit() {
             return String(this.editForm.title || '').trim().length > 0
@@ -2138,11 +2139,21 @@ export default {
         },
         createDialogSubline() {
             const rows = this.normalizeClassifications(this.createForm.classifications)
-            if (!rows.length) return 'Gib einen Titel ein, dann kann gespeichert werden.'
+            if (!rows.length) return 'Wähle einen Bereich aus, dann kann gespeichert werden.'
+            if (!this.createClassificationsAreUnitLevel) return 'Materialien können nur in Bereichen gespeichert werden.'
             const row = rows[0]
             const parts = [row.subject, row.topic, row.unit].filter((value) => String(value || '').trim() !== '')
             if (!parts.length) return 'Gib einen Titel ein, dann kann gespeichert werden.'
             return `Vorausgewählte Zuordnung: ${parts.join(' / ')}`
+        },
+        createClassificationsAreUnitLevel() {
+            const rows = this.normalizeClassifications(this.createForm.classifications)
+
+            return rows.length > 0 && rows.every((row) => {
+                return String(row?.subject || '').trim() !== ''
+                    && String(row?.topic || '').trim() !== ''
+                    && String(row?.unit || '').trim() !== ''
+            })
         },
         createSharedRuleCard() {
             const ruleId = Number(this.createSharedContext?.ruleId || 0)
@@ -3140,6 +3151,15 @@ export default {
             const subject = String(payload?.subject || '').trim()
             const topic = String(payload?.topic || '').trim()
             const unit = String(payload?.unit || '').trim()
+            if (!subject || !topic || !unit) {
+                useNotificationStore().notify({
+                    message: 'Materialien können nur in Bereichen erstellt werden.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return
+            }
+
             const sharedRuleId = Number(payload?.sharedRuleId || 0)
             const sharedNodeId = Number(payload?.sharedNodeId || 0)
             const sharedNodeLevel = String(payload?.sharedNodeLevel || '').trim()
@@ -3884,8 +3904,6 @@ export default {
             const level = String(context?.nodeLevel || '').trim()
             const nodeId = Number(context?.nodeId || 0)
             if (!Number.isFinite(nodeId) || nodeId <= 0) return ''
-            if (level === 'subject') return `/api/admin/materials/shares/inbox/subjects/${nodeId}/materials`
-            if (level === 'topic') return `/api/admin/materials/shares/inbox/topics/${nodeId}/materials`
             if (level === 'unit') return `/api/admin/materials/shares/inbox/units/${nodeId}/materials`
             return ''
         },
@@ -6438,6 +6456,16 @@ export default {
             this.isSavingCreate = true
             const title = String(this.createForm.title || '').trim()
             const classifications = this.normalizeClassifications(this.createForm.classifications)
+            if (!this.createClassificationsAreUnitLevel) {
+                useNotificationStore().notify({
+                    message: 'Materialien können nur in Bereichen erstellt werden.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                this.isSavingCreate = false
+                return
+            }
+
             const sharedCreateContext =
                 this.createSharedContext && Number(this.createSharedContext?.ruleId || 0) > 0 && Number(this.createSharedContext?.nodeId || 0) > 0
                     ? {

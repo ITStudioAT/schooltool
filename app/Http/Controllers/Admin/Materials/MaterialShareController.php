@@ -870,8 +870,7 @@ class MaterialShareController extends Controller
 
     public function storeInboxSubjectMaterial(
         Request $request,
-        MaterialSubject $material_subject,
-        MaterialService $service
+        MaterialSubject $material_subject
     ) {
         $authUser = $this->materialsShareUser();
         $this->abortIfShareTablesMissing();
@@ -882,27 +881,16 @@ class MaterialShareController extends Controller
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $context = $this->resolveInboxSubjectAccessContext($authUser, $ruleId, $material_subject);
-        $permission = (string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
 
         /** @var User $sourceOwner */
         $sourceOwner = $context['source_owner'];
-        $validated = $this->validateSharedQuickStorePayload($request, $sourceOwner);
-        $validated['classifications'] = $this->subjectClassificationPayload($material_subject);
-        $createdCard = $service->createCard(
-            $sourceOwner,
-            $validated,
-            (int) ($material_subject->workspace_id ?? 0)
-        );
-
-        return response()->json([
-            'data' => $this->serializeInboxMaterialDetail($createdCard, $ruleId, $permission),
-        ], 200);
+        $this->validateSharedQuickStorePayload($request, $sourceOwner);
+        $this->rejectNonUnitLevelMaterialCreation();
     }
 
     public function storeInboxTopicMaterial(
         Request $request,
-        MaterialTopic $material_topic,
-        MaterialService $service
+        MaterialTopic $material_topic
     ) {
         $authUser = $this->materialsShareUser();
         $this->abortIfShareTablesMissing();
@@ -913,7 +901,6 @@ class MaterialShareController extends Controller
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $context = $this->resolveInboxTopicAccessContext($authUser, $ruleId, $material_topic);
-        $permission = (string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
 
         $subject = $material_topic->subject()->first();
         if (! $subject instanceof MaterialSubject) {
@@ -922,17 +909,8 @@ class MaterialShareController extends Controller
 
         /** @var User $sourceOwner */
         $sourceOwner = $context['source_owner'];
-        $validated = $this->validateSharedQuickStorePayload($request, $sourceOwner);
-        $validated['classifications'] = $this->topicClassificationPayload($material_topic);
-        $createdCard = $service->createCard(
-            $sourceOwner,
-            $validated,
-            (int) ($subject->workspace_id ?? 0)
-        );
-
-        return response()->json([
-            'data' => $this->serializeInboxMaterialDetail($createdCard, $ruleId, $permission),
-        ], 200);
+        $this->validateSharedQuickStorePayload($request, $sourceOwner);
+        $this->rejectNonUnitLevelMaterialCreation();
     }
 
     public function storeInboxUnitMaterial(
@@ -3163,6 +3141,13 @@ class MaterialShareController extends Controller
         ]);
 
         return is_array($validated['data'] ?? null) ? $validated['data'] : [];
+    }
+
+    private function rejectNonUnitLevelMaterialCreation(): never
+    {
+        throw ValidationException::withMessages([
+            'data.classifications.0.unit' => 'Materialien können nur in Bereichen mit Fach und Thema erstellt werden.',
+        ]);
     }
 
     private function sharedQuickStoreTypeRules(User $sourceOwner): array

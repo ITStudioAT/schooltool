@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin\Materials;
 
+use App\Http\Requests\Admin\Materials\Concerns\ValidatesUnitLevelMaterialCreation;
 use App\Models\MaterialCard;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
@@ -11,6 +12,8 @@ use Illuminate\Validation\Rule;
 
 class MaterialCardStoreRequest extends FormRequest
 {
+    use ValidatesUnitLevelMaterialCreation;
+
     public function authorize(): bool
     {
         return Auth::check();

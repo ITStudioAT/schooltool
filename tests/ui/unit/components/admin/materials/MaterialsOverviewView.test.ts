@@ -2435,6 +2435,36 @@ describe('MaterialsOverviewView', () => {
         })
     })
 
+    it('does not open the create dialog for subject or topic level materials', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            readOnlyMaterialActions: false,
+            isLoading: false,
+            isSavingCreate: false,
+            isSavingEdit: false,
+            isDeletingId: null,
+            defaultStatusValue: 'inbox',
+            createForm: {},
+            createClassificationEditorVisible: false,
+            createDialogOpen: false,
+            createSharedContext: null,
+        }
+
+        methods.openCreateDialogFromTree.call(vm, {
+            level: 'topic',
+            subject: 'Mathematik',
+            topic: 'Algebra',
+            unit: '',
+        })
+
+        expect(vm.createDialogOpen).toBe(false)
+        expect(notificationNotifyMock).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Materialien können nur in Bereichen erstellt werden.',
+            type: 'warning',
+        }))
+    })
+
     it('allows attachment delete actions for shared inbox materials with full access', () => {
         const computed = MaterialsOverviewView?.computed || {}
         const vm = {
@@ -2633,6 +2663,7 @@ describe('MaterialsOverviewView', () => {
         const vm = {
             ...methods,
             canSaveCreate: true,
+            createClassificationsAreUnitLevel: true,
             isSavingCreate: false,
             isSavingEdit: false,
             isDeletingId: null,

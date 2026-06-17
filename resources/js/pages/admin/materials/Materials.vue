@@ -39,8 +39,8 @@
             </v-card>
 
             <MaterialsMenu v-model="main_action" :disabled="isMenuLocked || adminStore?.is_struktur_modus" />
-            <v-row class="w-100" dense>
-                <v-col cols="12" lg="10" xl="9">
+            <v-row class="w-100 ma-0" dense>
+                <v-col cols="12" class="materials-content-col">
                     <MaterialsOverviewView v-if="main_action === 'overview'" :disable-sharing-features="true" />
                     <MaterialsFreigabeView v-if="main_action === 'shared'" />
                     <MaterialsPermissionsView v-if="main_action === 'permissions'" />
@@ -344,6 +344,11 @@ export default {
 
 :deep(.subline) {
     color: #314d5d;
+}
+
+.materials-content-col {
+    max-width: none;
+    padding-inline: 0;
 }
 
 </style>

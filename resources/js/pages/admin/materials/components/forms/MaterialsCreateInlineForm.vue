@@ -122,7 +122,7 @@
 
         <div class="mt-2">
             <div class="d-flex align-center justify-space-between mb-1">
-                <div class="text-subtitle-2">Fach / Thema / Bereich (optional)</div>
+                <div class="text-subtitle-2">{{ classificationSectionLabel }}</div>
                 <div class="d-flex justify-end ga-2">
                     <v-btn
                         icon="mdi-plus"
@@ -673,6 +673,10 @@ export default {
             type: Boolean,
             default: false,
         },
+        requireUnitClassification: {
+            type: Boolean,
+            default: false,
+        },
         showContentTools: {
             type: Boolean,
             default: true,
@@ -814,9 +818,25 @@ export default {
         hasClassification() {
             return this.assignedClassificationItems.length > 0
         },
+        classificationSectionLabel() {
+            return this.requireUnitClassification ? 'Fach / Thema / Bereich' : 'Fach / Thema / Bereich (optional)'
+        },
+        hasUnitLevelClassification() {
+            const hasCompleteUnitRow = (row) => {
+                return this.normalizeText(row?.subject) !== ''
+                    && this.normalizeText(row?.topic) !== ''
+                    && this.normalizeText(row?.unit) !== ''
+            }
+            const rows = this.toClassificationRows(this.classifications)
+
+            return rows.some((row) => hasCompleteUnitRow(row))
+                || (this.classificationEditorVisible && hasCompleteUnitRow(this.normalizedClassificationDraft))
+        },
         canSave() {
             if (this.isReadOnly) return true
             const hasTitle = String(this.title || '').trim().length > 0
+            if (this.requireUnitClassification) return hasTitle && this.hasUnitLevelClassification
+
             const hasClassification = this.hasClassification || !!this.normalizedClassificationDraft.subject
             return hasTitle && hasClassification
         },

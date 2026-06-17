@@ -1414,6 +1414,8 @@ test('subject and material card are assigned to active workspace', function () {
             'classifications' => [
                 [
                     'subject' => 'Biologie',
+                    'topic' => 'Zellen',
+                    'unit' => 'Mikroskopie',
                 ],
             ],
         ],
@@ -1449,6 +1451,58 @@ test('quick store creates inbox card', function () {
             'title' => 'Merker Link',
             'status' => 'inbox',
         ]);
+});
+
+test('material card creation rejects subject and topic level classifications', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/materials/cards/quick_store', [
+        'data' => [
+            'title' => 'Nur Fach',
+            'classifications' => [
+                ['subject' => 'Mathematik'],
+            ],
+        ],
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['data.classifications.0.unit']);
+
+    $this->postJson('/api/admin/materials/cards/quick_store', [
+        'data' => [
+            'title' => 'Nur Thema',
+            'classifications' => [
+                ['subject' => 'Mathematik', 'topic' => 'Algebra'],
+            ],
+        ],
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['data.classifications.0.unit']);
+});
+
+test('material card creation accepts unit level classifications', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/cards/quick_store', [
+        'data' => [
+            'title' => 'Gleichungen Bereich',
+            'classifications' => [
+                ['subject' => 'Mathematik', 'topic' => 'Algebra', 'unit' => 'Gleichungen'],
+            ],
+        ],
+    ]);
+
+    $response->assertStatus(200)
+        ->assertJsonFragment([
+            'title' => 'Gleichungen Bereich',
+        ]);
+
+    $card = MaterialCard::query()
+        ->with(['classifications.subject', 'classifications.topic', 'classifications.unit'])
+        ->findOrFail((int) $response->json('id'));
+
+    expect((string) $card->classifications->first()?->subject?->name)->toBe('Mathematik')
+        ->and((string) $card->classifications->first()?->topic?->name)->toBe('Algebra')
+        ->and((string) $card->classifications->first()?->unit?->name)->toBe('Gleichungen');
 });
 
 test('teacher can only use own existing material types', function () {
