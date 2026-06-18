@@ -15,6 +15,10 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain("'automatic-step-change'")
         expect(componentSource).toContain('studentCode')
         expect(componentSource).toContain('syncExternalStudentSelection()')
+        expect(componentSource).toContain('overviewSelection')
+        expect(componentSource).toContain('syncExternalOverviewSelection()')
+        expect(componentSource).toContain('overviewCourseHistory')
+        expect(componentSource).toContain('embeddedOverviewCourseHistoryItems')
         expect(componentSource).toContain('class="robot-timetable-embedded-course-cards"')
         expect(componentSource).toContain('name="course-card-action"')
         expect(componentSource.match(/name="course-card-action"/g) ?? []).toHaveLength(2)
@@ -5521,6 +5525,124 @@ describe('Students timetable robot page', () => {
 
         expect(ctx.appliedStudentCode).toBe('200')
         expect(ctx.studentSelection).toEqual({ studentCode: '200' })
+    })
+
+    it('syncs the embedded robot selection from the overview selection', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            embeddedCourseCardsOnly: true,
+            overviewSelection: {
+                semester: 5,
+                religion: 'Rk',
+                language: 'S',
+                branch: 'gymnasial',
+                artsSubject: 'BE',
+            },
+            selection: {
+                semester: 1,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            selectionDraft: {
+                semester: 1,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            deselectedCourseKeys: ['D1'],
+            deselectedCourseGroupKeys: ['D1|A'],
+            additionalCourseSelectedKeys: ['D2'],
+            progressionAdditionalCourseKeys: ['D3'],
+            robotCourseSelectionRestoredFromState: true,
+        }
+
+        methods.syncExternalOverviewSelection.call(ctx)
+
+        expect(ctx.selection).toEqual({
+            semester: 5,
+            religion: 'Rk',
+            language: 'S',
+            branch: 'gymnasial',
+            artsSubject: 'BE',
+        })
+        expect(ctx.selectionDraft).toEqual(ctx.selection)
+        expect(ctx.deselectedCourseKeys).toEqual([])
+        expect(ctx.deselectedCourseGroupKeys).toEqual([])
+        expect(ctx.additionalCourseSelectedKeys).toEqual([])
+        expect(ctx.progressionAdditionalCourseKeys).toEqual([])
+        expect(ctx.robotCourseSelectionRestoredFromState).toBe(false)
+    })
+
+    it('uses overview no-student course history for embedded missing and planned course columns', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            embeddedCourseCardsOnly: true,
+            studentSelection: { studentCode: null },
+            robotStudents: [],
+            overviewCourseHistory: {
+                missing: [
+                    {
+                        key: 'INF1',
+                        code: 'INF1',
+                        name: 'Informatik 1',
+                        branch: 'alle',
+                        hours: 2,
+                    },
+                ],
+                planned: [
+                    {
+                        key: 'D2',
+                        code: 'D2',
+                        name: 'Deutsch 2',
+                        branch: 'alle',
+                        hours: 3,
+                    },
+                ],
+                additional: [
+                    {
+                        key: 'INF2',
+                        code: 'INF2',
+                        name: 'Informatik 2',
+                        branch: 'alle',
+                        hours: 2,
+                    },
+                ],
+            },
+        }
+        ;[
+            'selectedStudent',
+            'embeddedOverviewCourseHistoryAvailable',
+            'studentMissingCourses',
+            'studentPlannedCourses',
+            'studentAdditionalCourses',
+            'availableCourses',
+        ].forEach((key) => {
+            Object.defineProperty(ctx, key, {
+                get() {
+                    return computed[key].call(this)
+                },
+            })
+        })
+
+        expect(computed.regularCourseListTitle.call(ctx)).toBe('Fehlende Kurse + Vorgesehene Kurse')
+        expect(computed.regularCourseColumns.call(ctx).map((column: Record<string, any>) => ({
+            key: column.key,
+            title: column.title,
+            courses: column.courses.map((course: Record<string, string>) => course.code),
+        }))).toEqual([
+            { key: 'missing', title: 'Fehlende Kurse', courses: ['INF1'] },
+            { key: 'planned', title: 'Vorgesehene Kurse', courses: ['D2'] },
+        ])
+        expect(ctx.availableCourses.map((course: Record<string, string>) => course.code))
+            .toEqual(['D2', 'INF1'])
+        expect(ctx.studentAdditionalCourses.map((course: Record<string, string>) => course.code))
+            .toEqual(['INF2'])
     })
 
     it('marks embedded course cards ready only after courses are loaded', () => {

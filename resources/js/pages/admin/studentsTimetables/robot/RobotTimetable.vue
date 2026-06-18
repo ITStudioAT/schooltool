@@ -2743,6 +2743,14 @@ export default {
             type: [String, Number],
             default: null,
         },
+        overviewSelection: {
+            type: Object,
+            default: null,
+        },
+        overviewCourseHistory: {
+            type: Object,
+            default: null,
+        },
         evaluationCriteriaSettings: {
             type: Array,
             default: null,
@@ -2931,6 +2939,13 @@ export default {
         embeddedCourseSelectionLocked() {
             return this.embeddedCourseCardsOnly && Boolean(this.selectedRobotTimetable)
         },
+        embeddedOverviewCourseHistoryAvailable() {
+            if (!this.embeddedCourseCardsOnly) return false
+            if (!this.overviewCourseHistory || typeof this.overviewCourseHistory !== 'object') return false
+
+            return ['missing', 'planned', 'additional']
+                .some(key => Array.isArray(this.overviewCourseHistory?.[key]))
+        },
         embeddedGeneratorVisible() {
             return this.embeddedCourseCardsOnly
                 && (
@@ -3000,6 +3015,10 @@ export default {
             return this.selectedStudentPlanningSemesterValue()
         },
         studentPlannedCourses() {
+            if (this.embeddedOverviewCourseHistoryAvailable && !this.selectedStudent) {
+                return this.embeddedOverviewCourseHistoryItems('planned')
+            }
+
             const semester = this.selectedStudentPlanningSemesterValue()
             if (!semester) return []
 
@@ -3008,6 +3027,10 @@ export default {
             return this.studentPlannedCoursesForSemester(semester, completedCourseCodes)
         },
         studentMissingCourses() {
+            if (this.embeddedOverviewCourseHistoryAvailable && !this.selectedStudent) {
+                return this.embeddedOverviewCourseHistoryItems('missing')
+            }
+
             const semester = this.selectedStudentPlanningSemesterValue()
             if (!semester) return []
 
@@ -3017,6 +3040,12 @@ export default {
             return this.pendingStudentCoursesBeforeSemester(semester, completedCourseCodes, visitedCourseCodes)
         },
         studentAdditionalCourses() {
+            if (this.embeddedOverviewCourseHistoryAvailable && !this.selectedStudent) {
+                return this.additionalCoursesWithProgressionAdditionalCourses(
+                    this.embeddedOverviewCourseHistoryItems('additional'),
+                )
+            }
+
             const semester = this.selectedStudentPlanningSemesterValue()
             if (!semester) return []
 
@@ -3072,14 +3101,27 @@ export default {
             }]
         },
         regularCourseListTitle() {
-            return this.selectedStudent ? 'Fehlende Kurse + Vorgesehene Kurse' : 'Vorgesehene Kurse'
+            return this.selectedStudent || this.embeddedOverviewCourseHistoryAvailable
+                ? 'Fehlende Kurse + Vorgesehene Kurse'
+                : 'Vorgesehene Kurse'
         },
         regularCourseCountLabel() {
-            return this.selectedStudent
+            return this.selectedStudent || this.embeddedOverviewCourseHistoryAvailable
                 ? `${this.selectedCourses.length} / ${this.availableCourses.length}`
                 : this.availableCourses.length
         },
         availableCourses() {
+            if (this.embeddedOverviewCourseHistoryAvailable && !this.selectedStudent) {
+                return [
+                    ...this.studentMissingCourses,
+                    ...this.studentPlannedCourses,
+                ]
+                    .filter((course, index, courses) =>
+                        courses.findIndex(candidate => candidate.key === course.key) === index,
+                    )
+                    .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
+            }
+
             const semesterCourses = this.coursesForSemester(this.selection.semester)
             if (!this.selectedStudent) return semesterCourses
 
@@ -3110,6 +3152,21 @@ export default {
             return [this.availableCourses]
         },
         regularCourseColumns() {
+            if (this.embeddedOverviewCourseHistoryAvailable && !this.selectedStudent) {
+                return [
+                    {
+                        key: 'missing',
+                        title: 'Fehlende Kurse',
+                        courses: this.studentMissingCourses,
+                    },
+                    {
+                        key: 'planned',
+                        title: 'Vorgesehene Kurse',
+                        courses: this.studentPlannedCourses,
+                    },
+                ].filter(courseColumn => courseColumn.courses.length)
+            }
+
             if (!this.selectedStudent) {
                 return this.availableCourses.length
                     ? [{
@@ -3564,6 +3621,12 @@ export default {
         studentCode() {
             this.syncExternalStudentSelection()
         },
+        overviewSelection: {
+            deep: true,
+            handler() {
+                this.syncExternalOverviewSelection()
+            },
+        },
         selectedRobotTimetable: {
             immediate: true,
             handler(timetable) {
@@ -3655,6 +3718,7 @@ export default {
                 )
                 this.robotStudents = studentOptionsResponse.data?.data || []
                 this.restoreLastRobotState()
+                this.syncExternalOverviewSelection()
                 this.applyAutomaticRouteStep(this.automaticRouteStep)
                 this.syncExternalStudentSelection()
                 this.syncAvailableTimes()
@@ -3663,6 +3727,7 @@ export default {
                 })
                 if (this.robotCourseSelectionRestoredFromState) {
                     this.restoreLastRobotState()
+                    this.syncExternalOverviewSelection()
                     this.applyAutomaticRouteStep(this.automaticRouteStep)
                     this.syncAvailableTimes()
                 }
@@ -4017,6 +4082,53 @@ export default {
             if (this.normalizedStudentCode(this.studentSelection.studentCode) === nextStudentCode) return
 
             this.applyStudentSelection(nextStudentCode)
+        },
+        embeddedOverviewCourseHistoryItems(type) {
+            return (Array.isArray(this.overviewCourseHistory?.[type]) ? this.overviewCourseHistory[type] : [])
+                .map((course, index) => {
+                    const sourceCourse = course?.sourceCourse || course
+                    const code = String(sourceCourse?.code || course?.code || course?.label || '').trim()
+                    const name = String(sourceCourse?.name || course?.name || course?.title || code).trim()
+
+                    return {
+                        ...sourceCourse,
+                        key: sourceCourse?.key || course?.key || `${type}-${code || index}-${index}`,
+                        code,
+                        name,
+                        branch: sourceCourse?.branch || course?.branch || 'alle',
+                        hours: Number(sourceCourse?.hours ?? course?.hours ?? 0),
+                    }
+                })
+                .filter(course => course.code || course.name)
+        },
+        syncExternalOverviewSelection(options = {}) {
+            if (!this.embeddedCourseCardsOnly) return
+            if (!this.overviewSelection || typeof this.overviewSelection !== 'object') return
+
+            const nextSelection = this.normalizedOverviewSelection(this.overviewSelection)
+            if (this.selectionStateSnapshot(this.selection) === this.selectionStateSnapshot(nextSelection)) return
+
+            this.selection = nextSelection
+            this.selectionDraft = { ...nextSelection }
+
+            if (options?.resetCourseSelection !== false) {
+                this.deselectedCourseKeys = []
+                this.deselectedCourseGroupKeys = []
+                this.additionalCourseSelectedKeys = []
+                this.progressionAdditionalCourseKeys = []
+                this.robotCourseSelectionRestoredFromState = false
+            }
+        },
+        normalizedOverviewSelection(selection) {
+            const defaults = this.defaultRobotState().selection
+
+            return {
+                semester: this.numberOrDefault(selection?.semester, defaults.semester),
+                religion: selection?.religion || defaults.religion,
+                branch: selection?.branch || defaults.branch,
+                artsSubject: selection?.artsSubject || defaults.artsSubject,
+                language: selection?.language || defaults.language,
+            }
         },
         toggleStudentCompletedCourses() {
             if (!this.selectedStudent) return

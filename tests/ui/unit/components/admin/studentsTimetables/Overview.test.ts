@@ -2789,6 +2789,8 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('class="course-choice-panel"')
         expect(componentSource).toContain('icon="mdi-plus"')
         expect(componentSource).toContain(':student-code="transferredStudentContext?.student?.studentCode || null"')
+        expect(componentSource).toContain(':overview-selection="selection"')
+        expect(componentSource).toContain(':overview-course-history="transferredStudentContext ? null : noStudentRobotCourseHistory"')
         expect(componentSource).toContain('<v-dialog v-model="courseMenuDialog" persistent')
         expect(componentSource).toContain('allCourseChoiceMenus')
         expect(componentSource).toContain('selectedCourseMenu')
@@ -5456,6 +5458,23 @@ describe('Students timetable overview', () => {
         const ctx = {
             transferredStudentContext: null,
             noStudentCourseHistory,
+            noStudentTransferredCourseSections: [
+                {
+                    key: 'completion',
+                    title: 'Abgeschlossene/Fehlende',
+                    items: [],
+                },
+                {
+                    key: 'planned',
+                    title: 'Vorgesehene Kurse',
+                    items: noStudentCourseHistory.planned,
+                },
+                {
+                    key: 'additional',
+                    title: 'Zusätzliche Kurse',
+                    items: noStudentCourseHistory.additional,
+                },
+            ],
         }
         Object.defineProperty(ctx, 'transferredStudentCourseSections', {
             get() {
@@ -5464,10 +5483,12 @@ describe('Students timetable overview', () => {
         })
 
         expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.key))
-            .toEqual(['missing', 'planned', 'additional'])
+            .toEqual(['completion', 'planned', 'additional'])
+        expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, string>) => section.title))
+            .toEqual(['Abgeschlossene/Fehlende', 'Vorgesehene Kurse', 'Zusätzliche Kurse'])
         expect(computed.visibleTransferredStudentCourseSections.call(ctx).map((section: Record<string, any>) => section.items))
             .toEqual([
-                noStudentCourseHistory.missing,
+                ctx.noStudentTransferredCourseSections[0].items,
                 noStudentCourseHistory.planned,
                 noStudentCourseHistory.additional,
             ])
@@ -5623,10 +5644,57 @@ describe('Students timetable overview', () => {
                     hours_per_week: 4,
                 },
             ],
+            noStudentMissingCourseKeys: [],
+            noStudentFinishedCourseKeys: [],
         }
+        Object.defineProperty(ctx, 'noStudentCompletionCourses', {
+            get() {
+                return computed.noStudentCompletionCourses.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'noStudentCompletedCourses', {
+            get() {
+                return computed.noStudentCompletedCourses.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'noStudentMissingCourses', {
+            get() {
+                return computed.noStudentMissingCourses.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'noStudentCompletionCourseItems', {
+            get() {
+                return computed.noStudentCompletionCourseItems.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'noStudentPlannedCourses', {
+            get() {
+                return computed.noStudentPlannedCourses.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'noStudentFinishedCourses', {
+            get() {
+                return computed.noStudentFinishedCourses.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'noStudentCompletedCoursePayload', {
+            get() {
+                return computed.noStudentCompletedCoursePayload.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'noStudentAdditionalCourses', {
+            get() {
+                return computed.noStudentAdditionalCourses.call(this)
+            },
+        })
         Object.defineProperty(ctx, 'noStudentCourseHistory', {
             get() {
                 return computed.noStudentCourseHistory.call(this)
+            },
+        })
+        Object.defineProperty(ctx, 'noStudentTransferredCourseSections', {
+            get() {
+                return computed.noStudentTransferredCourseSections.call(this)
             },
         })
         Object.defineProperty(ctx, 'transferredStudentCourseSections', {
@@ -5638,12 +5706,222 @@ describe('Students timetable overview', () => {
         const sections = computed.visibleTransferredStudentCourseSections.call(ctx)
 
         expect(sections.map((section: Record<string, string>) => section.key))
-            .toEqual(['missing', 'planned', 'additional'])
-        expect(sections[0].items).toEqual([])
-        expect(sections[1].items.map((course: Record<string, string>) => `${course.label} ${course.meta}`))
-            .toEqual(['D1 3 Std.'])
+            .toEqual(['completion', 'planned', 'additional'])
+        expect(sections[0].title).toBe('Abgeschlossene/Fehlende')
+        expect(sections[0].items.map((course: Record<string, string>) => `${course.label} ${course.meta} ${course.state}`))
+            .toEqual([])
+        expect(sections[1].items.map((course: Record<string, string>) => `${course.label} ${course.meta} ${course.state}`))
+            .toEqual(['D1 3 Std. active'])
         expect(sections[2].items.map((course: Record<string, string>) => `${course.label} ${course.meta}`))
             .toEqual(['D2 3 Std.', 'GS1 4 Std.'])
+    })
+
+    it('toggles no-student courses between active and finished and recalculates additional courses', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            transferredStudentContext: null,
+            noStudentMissingCourseKeys: [],
+            noStudentFinishedCourseKeys: [],
+            selection: {
+                semester: 2,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            subjectRows: [
+                {
+                    id: 1,
+                    is_active: true,
+                    semester: 1,
+                    json_subject: 'D',
+                    json_code: 'D1',
+                    name: 'Deutsch 1',
+                    branch: 'common',
+                    hours_per_week: 3,
+                },
+                {
+                    id: 2,
+                    is_active: true,
+                    semester: 2,
+                    json_subject: 'D',
+                    json_code: 'D2',
+                    name: 'Deutsch 2',
+                    branch: 'common',
+                    hours_per_week: 3,
+                },
+                {
+                    id: 3,
+                    is_active: true,
+                    semester: 2,
+                    json_subject: 'GS',
+                    json_code: 'GS1',
+                    name: 'Geschichte 1',
+                    branch: 'common',
+                    hours_per_week: 4,
+                },
+                {
+                    id: 4,
+                    is_active: true,
+                    semester: 3,
+                    json_subject: 'D',
+                    json_code: 'D3',
+                    name: 'Deutsch 3',
+                    branch: 'common',
+                    hours_per_week: 3,
+                },
+                {
+                    id: 5,
+                    is_active: true,
+                    semester: 3,
+                    json_subject: 'GS',
+                    json_code: 'GS2',
+                    name: 'Geschichte 2',
+                    branch: 'common',
+                    hours_per_week: 4,
+                },
+            ],
+        }
+        ;[
+            'noStudentCompletionCourses',
+            'noStudentCompletedCourses',
+            'noStudentMissingCourses',
+            'noStudentCompletionCourseItems',
+            'noStudentPlannedCourses',
+            'noStudentFinishedCourses',
+            'noStudentCompletedCoursePayload',
+            'noStudentAdditionalCourses',
+            'noStudentRobotCourseHistory',
+            'noStudentCourseHistory',
+            'noStudentTransferredCourseSections',
+            'transferredStudentCourseSections',
+        ].forEach((key) => {
+            Object.defineProperty(ctx, key, {
+                get() {
+                    return computed[key].call(this)
+                },
+            })
+        })
+
+        expect(ctx.noStudentCompletionCourseItems.map((course: Record<string, string>) => course.state))
+            .toEqual(['finished'])
+        expect(ctx.noStudentCourseHistory.planned.map((course: Record<string, string>) => `${course.label} ${course.state}`))
+            .toEqual(['D2 active', 'GS1 active'])
+        expect(ctx.noStudentCourseHistory.additional.map((course: Record<string, string>) => course.label))
+            .toEqual(['D3', 'GS2'])
+
+        methods.toggleNoStudentCourseActiveState.call(ctx, ctx.noStudentCourseHistory.planned[1])
+
+        expect(ctx.noStudentCourseHistory.planned.map((course: Record<string, string>) => `${course.label} ${course.state}`))
+            .toEqual(['D2 active', 'GS1 finished'])
+        expect(ctx.noStudentCourseHistory.additional.map((course: Record<string, string>) => course.label))
+            .toEqual(['D3', 'GS2'])
+        expect(ctx.noStudentRobotCourseHistory.planned.map((course: Record<string, string>) => course.code))
+            .toEqual(['D2'])
+        expect(ctx.noStudentRobotCourseHistory.additional.map((course: Record<string, string>) => course.code))
+            .toEqual(['D3', 'GS2'])
+
+        methods.toggleNoStudentCourseActiveState.call(ctx, ctx.noStudentCourseHistory.planned[1])
+
+        expect(ctx.noStudentCourseHistory.planned.map((course: Record<string, string>) => `${course.label} ${course.state}`))
+            .toEqual(['D2 active', 'GS1 active'])
+        expect(ctx.noStudentCourseHistory.additional.map((course: Record<string, string>) => course.label))
+            .toEqual(['D3', 'GS2'])
+
+        methods.toggleNoStudentCourseActiveState.call(ctx, ctx.noStudentCompletionCourseItems[0])
+
+        expect(ctx.noStudentCompletionCourseItems.map((course: Record<string, string>) => course.state))
+            .toEqual(['active'])
+        expect(ctx.noStudentCourseHistory.missing.map((course: Record<string, string>) => course.label))
+            .toEqual(['D1'])
+        expect(ctx.noStudentCourseHistory.additional.map((course: Record<string, string>) => course.label))
+            .toEqual(['GS2'])
+    })
+
+    it('keeps second modules but hides third modules when the first completed module is toggled active', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            transferredStudentContext: null,
+            noStudentMissingCourseKeys: [],
+            noStudentFinishedCourseKeys: [],
+            selection: {
+                semester: 2,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            subjectRows: [
+                {
+                    id: 1,
+                    is_active: true,
+                    semester: 1,
+                    json_subject: 'INF',
+                    json_code: 'INF1',
+                    name: 'Informatik 1',
+                    branch: 'common',
+                    hours_per_week: 2,
+                },
+                {
+                    id: 2,
+                    is_active: true,
+                    semester: 3,
+                    json_subject: 'INF',
+                    json_code: 'INF2',
+                    name: 'Informatik 2',
+                    branch: 'common',
+                    hours_per_week: 2,
+                },
+                {
+                    id: 3,
+                    is_active: true,
+                    semester: 4,
+                    json_subject: 'INF',
+                    json_code: 'INF3',
+                    name: 'Informatik 3',
+                    branch: 'common',
+                    hours_per_week: 3,
+                },
+            ],
+        }
+        ;[
+            'noStudentCompletionCourses',
+            'noStudentCompletedCourses',
+            'noStudentMissingCourses',
+            'noStudentCompletionCourseItems',
+            'noStudentPlannedCourses',
+            'noStudentFinishedCourses',
+            'noStudentCompletedCoursePayload',
+            'noStudentAdditionalCourses',
+            'noStudentRobotCourseHistory',
+            'noStudentCourseHistory',
+        ].forEach((key) => {
+            Object.defineProperty(ctx, key, {
+                get() {
+                    return computed[key].call(this)
+                },
+            })
+        })
+
+        expect(ctx.noStudentCompletionCourseItems.map((course: Record<string, string>) => `${course.label} ${course.state}`))
+            .toEqual(['INF1 finished'])
+        expect(ctx.noStudentCourseHistory.additional.map((course: Record<string, string>) => course.label))
+            .toEqual(['INF2', 'INF3'])
+
+        methods.toggleNoStudentCourseActiveState.call(ctx, ctx.noStudentCompletionCourseItems[0])
+
+        expect(ctx.noStudentCompletionCourseItems.map((course: Record<string, string>) => `${course.label} ${course.state}`))
+            .toEqual(['INF1 active'])
+        expect(ctx.noStudentCourseHistory.additional.map((course: Record<string, string>) => course.label))
+            .toEqual(['INF2'])
+        expect(ctx.noStudentRobotCourseHistory.missing.map((course: Record<string, string>) => course.code))
+            .toEqual(['INF1'])
+        expect(ctx.noStudentRobotCourseHistory.additional.map((course: Record<string, string>) => course.code))
+            .toEqual(['INF2'])
     })
 
     it('derives missing planned and additional rows for a selected overview student', () => {

@@ -169,9 +169,13 @@
                                                     v-for="course in section.items"
                                                     :key="course.key"
                                                     size="x-small"
-                                                    :color="section.color"
-                                                    variant="tonal"
-                                                    class="transferred-student-course-chip">
+                                                    :color="course.color || section.color"
+                                                    :variant="course.variant || 'tonal'"
+                                                    :prepend-icon="course.icon"
+                                                    class="transferred-student-course-chip"
+                                                    :class="{ 'transferred-student-course-chip--toggleable': section.toggleable }"
+                                                    :title="course.title"
+                                                    @click="section.toggleable ? toggleNoStudentCourseCompletion(course) : null">
                                                     <span>{{ course.label }}</span>
                                                     <span v-if="course.meta" class="transferred-student-course-chip__meta">
                                                         {{ course.meta }}
@@ -258,9 +262,13 @@
                                         v-for="course in section.items"
                                         :key="course.key"
                                         size="x-small"
-                                        :color="section.color"
-                                        variant="tonal"
-                                        class="transferred-student-course-chip">
+                                        :color="course.color || section.color"
+                                        :variant="course.variant || 'tonal'"
+                                        :prepend-icon="course.icon"
+                                        class="transferred-student-course-chip"
+                                        :class="{ 'transferred-student-course-chip--toggleable': section.toggleable }"
+                                        :title="course.title"
+                                        @click="section.toggleable ? toggleNoStudentCourseActiveState(course) : null">
                                         <span>{{ course.label }}</span>
                                         <span v-if="course.meta" class="transferred-student-course-chip__meta">
                                             {{ course.meta }}
@@ -284,6 +292,8 @@
                         :evaluation-criteria-settings="evaluationCriteria"
                         :restore-generated-timetable="wizardTimetableResultRouteActive"
                         :student-code="transferredStudentContext?.student?.studentCode || null"
+                        :overview-selection="selection"
+                        :overview-course-history="transferredStudentContext ? null : noStudentRobotCourseHistory"
                         class="overview-wizard-course-cards"
                         @automatic-step-change="setAutomaticTimetableStep"
                         @generated-timetable-visibility-change="setWizardTimetableResultVisible"
@@ -1264,6 +1274,8 @@ export default {
             restrictCourseChoiceBySelection: false,
             courseChoiceRestrictionMode: COURSE_CHOICE_RESTRICTION_ALL,
             transferredStudentContext: null,
+            noStudentMissingCourseKeys: [],
+            noStudentFinishedCourseKeys: [],
             selectionDialogOpen: false,
             selection: {
                 semester: 1,
@@ -1751,6 +1763,10 @@ export default {
             return this.studentReligionMeta(this.transferredStudentReligion)
         },
         transferredStudentCourseSections() {
+            if (!this.transferredStudentContext) {
+                return this.noStudentTransferredCourseSections
+            }
+
             const courses = this.transferredStudentContext?.courses || this.noStudentCourseHistory
 
             return [
@@ -1810,11 +1826,160 @@ export default {
                 return []
             }
 
+            if (this.transferredStudentContext === null) {
+                return this.transferredStudentCourseSections
+            }
+
             return this.transferredStudentCourseSections
                 .filter(section => section.key !== 'completed')
         },
+        noStudentTransferredCourseSections() {
+            return [
+                {
+                    key: 'completion',
+                    title: 'Abgeschlossene/Fehlende',
+                    icon: 'mdi-check-circle-outline',
+                    color: OVERVIEW_SECTION_COLORS.completed,
+                    toggleable: true,
+                    items: this.noStudentCompletionCourseItems,
+                },
+                {
+                    key: 'planned',
+                    title: 'Vorgesehene Kurse',
+                    icon: 'mdi-format-list-checks',
+                    color: OVERVIEW_SECTION_COLORS.planned,
+                    toggleable: true,
+                    items: this.noStudentCourseHistory.planned || [],
+                },
+                {
+                    key: 'additional',
+                    title: 'Zusätzliche Kurse',
+                    icon: 'mdi-plus-circle-outline',
+                    color: OVERVIEW_SECTION_COLORS.additional,
+                    toggleable: true,
+                    items: this.noStudentCourseHistory.additional || [],
+                },
+            ]
+        },
+        noStudentCompletionCourseItems() {
+            return this.noStudentCompletionCourses
+                .map((course, index) => {
+                    return this.noStudentToggleableCourseItem(course, index, OVERVIEW_SECTION_COLORS.missing)
+                })
+        },
+        noStudentCompletionCourses() {
+            const semester = Number(this.selection?.semester || 0)
+            if (!semester) return []
+
+            return (Array.isArray(this.subjectRows) ? this.subjectRows : [])
+                .map(subject => Number(subject?.semester))
+                .filter(subjectSemester => Number.isFinite(subjectSemester) && subjectSemester < semester)
+                .filter((subjectSemester, index, subjectSemesters) => subjectSemesters.indexOf(subjectSemester) === index)
+                .sort((firstSemester, secondSemester) => firstSemester - secondSemester)
+                .flatMap(subjectSemester => this.coursesForSemester(subjectSemester))
+                .filter((course, index, courses) =>
+                    courses.findIndex(candidate => candidate.key === course.key) === index,
+                )
+                .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
+        },
+        noStudentCompletedCourses() {
+            return this.noStudentCompletionCourses
+                .filter(course => !this.noStudentCourseIsMissing(course))
+        },
+        noStudentMissingCourses() {
+            return this.noStudentCompletionCourses
+                .filter(course => this.noStudentCourseIsMissing(course))
+        },
+        noStudentPlannedCourses() {
+            return this.coursesForSemester(this.selection?.semester)
+        },
+        noStudentCompletedCoursePayload() {
+            return this.uniqueNoStudentCourses([
+                ...this.noStudentCompletedCourses,
+                ...this.noStudentFinishedCourses,
+            ]).map(course => ({
+                subject: course.code,
+                code: course.code,
+                label: course.code,
+                grade: 'B',
+            }))
+        },
+        noStudentFinishedCourses() {
+            const finishedCourseKeys = Array.isArray(this.noStudentFinishedCourseKeys)
+                ? this.noStudentFinishedCourseKeys
+                : []
+
+            if (!finishedCourseKeys.length) return []
+
+            return (Array.isArray(this.subjectRows) ? this.subjectRows : [])
+                .map(subject => Number(subject?.semester))
+                .filter(subjectSemester => Number.isFinite(subjectSemester))
+                .filter((subjectSemester, index, subjectSemesters) => subjectSemesters.indexOf(subjectSemester) === index)
+                .sort((firstSemester, secondSemester) => firstSemester - secondSemester)
+                .flatMap(subjectSemester => this.coursesForSemester(subjectSemester))
+                .filter(course => finishedCourseKeys.includes(this.noStudentCourseKey(course)))
+                .filter((course, index, courses) =>
+                    courses.findIndex(candidate => candidate.key === course.key) === index,
+                )
+                .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
+        },
+        noStudentAdditionalCourses() {
+            const semester = Number(this.selection?.semester || 0)
+            if (!semester) return []
+
+            const completedCourses = this.noStudentCompletedCoursePayload
+            const plannedCourses = this.noStudentPlannedCourses
+            const completedCourseCodes = this.studentCompletedCourseCodes(completedCourses)
+            const visitedCourseCodes = this.studentVisitedCourseCodes(completedCourses)
+            const plannedCourseCodes = this.studentPlannedCourseCodes([
+                ...plannedCourses,
+                ...this.noStudentMissingCourses,
+            ])
+            const unavailableAdditionalCourseCodes = this.studentUnavailableAdditionalCourseCodes(completedCourseCodes, [
+                ...this.noStudentMissingCourses,
+            ])
+            const afterSemesterCourses = semester ? this.coursesAfterSemester(semester) : []
+
+            return this.uniqueNoStudentCourses([
+                ...afterSemesterCourses
+                    .filter(course => !this.courseCompletedForStudentPlanning(course, unavailableAdditionalCourseCodes))
+                    .filter(course => this.coursePossibleAsStudentAdditional(
+                        course,
+                        completedCourseCodes,
+                        visitedCourseCodes,
+                        plannedCourseCodes,
+                    )),
+                ...this.noStudentFinishedCourses.filter(finishedCourse =>
+                    afterSemesterCourses.some(course =>
+                        this.noStudentCourseKey(course) === this.noStudentCourseKey(finishedCourse),
+                    ),
+                ),
+            ])
+        },
+        noStudentRobotCourseHistory() {
+            return {
+                missing: this.noStudentMissingCourses,
+                planned: this.noStudentPlannedCourses
+                    .filter(course => !this.noStudentCourseIsFinished(course)),
+                additional: (Array.isArray(this.noStudentAdditionalCourses) ? this.noStudentAdditionalCourses : [])
+                    .filter(course => !this.noStudentCourseIsFinished(course)),
+            }
+        },
         noStudentCourseHistory() {
-            return this.overviewStudentCourseHistory([])
+            const completedCourses = this.noStudentCompletedCoursePayload
+            const plannedCourses = this.noStudentPlannedCourses
+            const additionalCourses = Array.isArray(this.noStudentAdditionalCourses) ? this.noStudentAdditionalCourses : []
+
+            return {
+                completed: this.overviewCompletedCourseItems(completedCourses),
+                missing: this.overviewCourseItems(this.noStudentMissingCourses),
+                planned: plannedCourses.map((course, index) =>
+                    this.noStudentToggleableCourseItem(course, index, OVERVIEW_SECTION_COLORS.planned),
+                ),
+                additional: additionalCourses.map((course, index) =>
+                    this.noStudentToggleableCourseItem(course, index, OVERVIEW_SECTION_COLORS.additional),
+                ),
+            }
         },
         visibleCourseChoiceSemesters() {
             return this.semesters.filter((semester) => this.semesterCourseMenus(semester.value).length > 0)
@@ -1918,6 +2083,13 @@ export default {
     },
 
     watch: {
+        selection: {
+            deep: true,
+            handler() {
+                this.noStudentMissingCourseKeys = []
+                this.noStudentFinishedCourseKeys = []
+            },
+        },
         'config.selected_schoolyear.id'() {
             this.restoreLastTimetableState()
             this.applyTimetableOverviewModeFromRoute()
@@ -3472,6 +3644,87 @@ export default {
                     }
                 })
                 .filter(course => course.label)
+        },
+        noStudentCourseKey(course) {
+            return String(course?.key || course?.code || course?.label || course?.name || '').trim()
+        },
+        noStudentCourseIsMissing(course) {
+            const courseKey = this.noStudentCourseKey(course)
+            if (!courseKey) return false
+
+            return (Array.isArray(this.noStudentMissingCourseKeys) ? this.noStudentMissingCourseKeys : [])
+                .includes(courseKey)
+        },
+        noStudentCourseIsFinished(course) {
+            const courseKey = this.noStudentCourseKey(course)
+            if (!courseKey) return false
+
+            if ((Array.isArray(this.noStudentFinishedCourseKeys) ? this.noStudentFinishedCourseKeys : [])
+                .includes(courseKey)
+            ) return true
+
+            return this.noStudentCompletionCourses
+                .some(completionCourse =>
+                    this.noStudentCourseKey(completionCourse) === courseKey
+                    && !this.noStudentCourseIsMissing(completionCourse),
+                )
+        },
+        noStudentToggleableCourseItem(course, index, activeColor) {
+            const item = this.overviewCourseItems([course])[0] || {
+                key: course?.key || `course-${index}`,
+                code: course?.code || '',
+                label: course?.code || course?.name || '-',
+                meta: '',
+            }
+            const isFinished = this.noStudentCourseIsFinished(course)
+
+            return {
+                ...item,
+                sourceCourse: course,
+                color: isFinished ? OVERVIEW_SECTION_COLORS.completed : activeColor,
+                icon: isFinished ? 'mdi-check-circle-outline' : 'mdi-play-circle-outline',
+                state: isFinished ? 'finished' : 'active',
+                title: isFinished ? 'Als aktiv markieren' : 'Als abgeschlossen markieren',
+            }
+        },
+        uniqueNoStudentCourses(courses) {
+            return (Array.isArray(courses) ? courses : [])
+                .filter((course, index, allCourses) =>
+                    allCourses.findIndex(candidate => this.noStudentCourseKey(candidate) === this.noStudentCourseKey(course)) === index,
+                )
+        },
+        toggleNoStudentCourseCompletion(course) {
+            this.toggleNoStudentCourseActiveState(course)
+        },
+        toggleNoStudentCourseActiveState(course) {
+            if (this.transferredStudentContext) return
+
+            const sourceCourse = course?.sourceCourse || course
+            const courseKey = this.noStudentCourseKey(sourceCourse)
+            if (!courseKey) return
+
+            const missingCourseKeys = new Set(Array.isArray(this.noStudentMissingCourseKeys)
+                ? this.noStudentMissingCourseKeys
+                : [])
+            const finishedCourseKeys = new Set(Array.isArray(this.noStudentFinishedCourseKeys)
+                ? this.noStudentFinishedCourseKeys
+                : [])
+            const isCompletionCourse = this.noStudentCompletionCourses
+                .some(completionCourse => this.noStudentCourseKey(completionCourse) === courseKey)
+
+            if (this.noStudentCourseIsFinished(sourceCourse)) {
+                finishedCourseKeys.delete(courseKey)
+
+                if (isCompletionCourse) {
+                    missingCourseKeys.add(courseKey)
+                }
+            } else {
+                missingCourseKeys.delete(courseKey)
+                finishedCourseKeys.add(courseKey)
+            }
+
+            this.noStudentMissingCourseKeys = [...missingCourseKeys]
+            this.noStudentFinishedCourseKeys = [...finishedCourseKeys]
         },
         coursesForSemester(semester) {
             return (Array.isArray(this.subjectRows) ? this.subjectRows : [])
@@ -7207,6 +7460,14 @@ export default {
     min-height: 24px;
     font-size: 0.82rem;
     font-weight: 500;
+}
+
+.transferred-student-course-chip--toggleable {
+    cursor: pointer;
+}
+
+.transferred-student-course-chip--toggleable:hover {
+    filter: brightness(0.96);
 }
 
 .transferred-student-course-chip__meta {
