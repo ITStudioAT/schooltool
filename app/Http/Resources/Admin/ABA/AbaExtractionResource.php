@@ -23,6 +23,7 @@ class AbaExtractionResource extends JsonResource
             'failed_at' => $this->failed_at,
             'source_original_name' => $this->source_original_name,
             'source_mime_type' => $this->source_mime_type,
+            'engine' => data_get($summary, '_extraction_options.engine', 'conventional'),
             'extracted_sections_count' => (int) ($this->extracted_sections_count ?? 0),
             'extracted_figures_count' => (int) ($this->extracted_figures_count ?? 0),
             'text_length' => $this->text_length,

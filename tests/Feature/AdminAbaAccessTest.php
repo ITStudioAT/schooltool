@@ -305,10 +305,14 @@ it('ships an aba detail page with extraction access and back navigation', functi
         ->toContain('Hauptdokument')
         ->toContain('Weitere Dokumente')
         ->toContain('Extraktion starten')
+        ->toContain('Extraktion 2')
         ->toContain('await axios.get(`/api/admin/abas/${this.abaId}`)')
         ->toContain('await axios.get(`/api/admin/abas/${this.abaId}/extraction`)')
+        ->toContain('await axios.get(`/api/admin/abas/${this.abaId}/extraction/parsel`)')
+        ->toContain('await axios.get(`/api/admin/abas/${this.abaId}/extraction/compare`)')
         ->toContain('overwrite_existing_fields: this.overwriteExistingExtractionFields')
         ->toContain('await axios.post(`/api/admin/abas/${this.abaId}/extraction`, {')
+        ->toContain('await axios.post(`/api/admin/abas/${this.abaId}/extraction/parsel`)')
         ->toContain("\$router.push('/admin/aba')");
 });
 

@@ -184,7 +184,7 @@
                             inset
                             color="primary"
                             class="extraction-overwrite-switch"
-                            :disabled="isExtractionBusy">
+                            :disabled="isAnyExtractionBusy">
                             <template #label>
                                 <span class="extraction-overwrite-switch__label">Felder überschreiben</span>
                             </template>
@@ -194,9 +194,18 @@
                             color="primary"
                             prepend-icon="mdi-play-circle-outline"
                             :loading="isExtractionSubmitting"
-                            :disabled="isExtractionBusy"
+                            :disabled="isAnyExtractionBusy"
                             @click="startExtraction">
                             Extraktion starten
+                        </v-btn>
+                        <v-btn
+                            variant="tonal"
+                            color="secondary"
+                            prepend-icon="mdi-flask-outline"
+                            :loading="isParselExtractionSubmitting"
+                            :disabled="isAnyExtractionBusy"
+                            @click="startParselExtraction">
+                            Extraktion 2
                         </v-btn>
                         <v-chip
                             v-if="currentExtraction"
@@ -268,6 +277,71 @@
                             <div class="extraction-stat">
                                 <div class="extraction-stat__count">{{ uncertainMatchCount }}</div>
                                 <div class="extraction-stat__label">Unsicher</div>
+                            </div>
+                        </div>
+
+                        <div v-if="comparisonSummary" class="extraction-comparison mt-4">
+                            <div class="extraction-comparison__header">
+                                <div>
+                                    <div class="extraction-comparison__title">Vergleich</div>
+                                    <div class="extraction-comparison__subtitle">
+                                        Konventionelle Extraktion gegen Parsel
+                                    </div>
+                                </div>
+                                <v-chip
+                                    size="small"
+                                    variant="tonal"
+                                    :color="comparisonSummary.ready ? 'success' : 'warning'"
+                                    :prepend-icon="comparisonSummary.ready ? 'mdi-check-circle-outline' : 'mdi-alert-circle-outline'">
+                                    {{ comparisonSummary.ready ? 'Bereit' : 'UnvollstÃ¤ndig' }}
+                                </v-chip>
+                            </div>
+                            <div class="extraction-stats extraction-stats--comparison">
+                                <div class="extraction-stat">
+                                    <div class="extraction-stat__count">{{ comparisonSummary.conventional?.found_required_count ?? 0 }}</div>
+                                    <div class="extraction-stat__label">Pflicht Alt</div>
+                                </div>
+                                <div class="extraction-stat">
+                                    <div class="extraction-stat__count">{{ comparisonSummary.parsel?.found_required_count ?? 0 }}</div>
+                                    <div class="extraction-stat__label">Pflicht Parsel</div>
+                                </div>
+                                <div class="extraction-stat">
+                                    <div class="extraction-stat__count">{{ formatSignedNumber(comparisonSummary.delta?.required_found) }}</div>
+                                    <div class="extraction-stat__label">Delta Pflicht</div>
+                                </div>
+                                <div class="extraction-stat">
+                                    <div class="extraction-stat__count">{{ formatSignedNumber(comparisonSummary.delta?.text_length) }}</div>
+                                    <div class="extraction-stat__label">Delta Text</div>
+                                </div>
+                            </div>
+                            <v-alert
+                                v-for="warning in comparisonWarnings"
+                                :key="warning"
+                                type="warning"
+                                variant="tonal"
+                                density="compact"
+                                rounded="lg"
+                                class="mt-3 text-body-2">
+                                {{ warning }}
+                            </v-alert>
+                            <div v-if="comparisonSections.length" class="extraction-comparison__rows">
+                                <div
+                                    v-for="section in comparisonSections"
+                                    :key="section.key"
+                                    class="extraction-comparison__row">
+                                    <div>
+                                        <div class="extraction-comparison__row-title">{{ section.label }}</div>
+                                        <div class="extraction-comparison__row-meta">{{ section.key }}</div>
+                                    </div>
+                                    <div class="extraction-comparison__chips">
+                                        <v-chip size="x-small" :color="section.conventional_found ? 'success' : 'grey'" variant="tonal">
+                                            Alt
+                                        </v-chip>
+                                        <v-chip size="x-small" :color="section.parsel_found ? 'success' : 'grey'" variant="tonal">
+                                            Parsel
+                                        </v-chip>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -504,13 +578,18 @@ export default {
             adminStore: null,
             aba: null,
             extractionResult: null,
+            parselExtractionResult: null,
+            comparisonResult: null,
             isLoading: false,
             isExtractionLoading: false,
             isExtractionSubmitting: false,
+            isParselExtractionLoading: false,
+            isParselExtractionSubmitting: false,
             isTitlePageSaving: false,
             error: '',
             extractionLoadError: '',
             extractionPollTimer: null,
+            parselExtractionPollTimer: null,
             activeTab: 'basis',
             titlePageImageStyles: {},
             overwriteExistingExtractionFields: false,
@@ -533,6 +612,7 @@ export default {
 
     beforeUnmount() {
         this.clearExtractionPoll()
+        this.clearParselExtractionPoll()
     },
 
     watch: {
@@ -592,6 +672,22 @@ export default {
         },
         latestExtraction() {
             return this.aba?.latest_extraction || null
+        },
+        currentParselExtraction() {
+            return this.parselExtractionResult || this.comparisonResult?.parsel || null
+        },
+        comparisonSummary() {
+            return this.comparisonResult?.comparison || null
+        },
+        comparisonSections() {
+            const sections = this.comparisonSummary?.sections
+
+            return Array.isArray(sections) ? sections : []
+        },
+        comparisonWarnings() {
+            const warnings = this.comparisonSummary?.warnings
+
+            return Array.isArray(warnings) ? warnings : []
         },
         titlePageOverrides() {
             const overrides = this.aba?.title_page_overrides
@@ -655,8 +751,17 @@ export default {
         isExtractionBusy() {
             return this.isExtractionSubmitting || this.isExtractionLoading || this.isRunningExtraction
         },
+        isParselExtractionBusy() {
+            return this.isParselExtractionSubmitting || this.isParselExtractionLoading || this.isRunningParselExtraction
+        },
+        isAnyExtractionBusy() {
+            return this.isExtractionBusy || this.isParselExtractionBusy
+        },
         isRunningExtraction() {
             return ['started', 'running'].includes(this.currentExtraction?.status)
+        },
+        isRunningParselExtraction() {
+            return ['started', 'running'].includes(this.currentParselExtraction?.status)
         },
     },
 
@@ -732,9 +837,12 @@ export default {
         },
         handleAbaNavigationChange() {
             this.clearExtractionPoll()
+            this.clearParselExtractionPoll()
             this.error = ''
             this.extractionLoadError = ''
             this.extractionResult = null
+            this.parselExtractionResult = null
+            this.comparisonResult = null
             this.titlePageImageStyles = {}
             this.closeTitlePageEditDialog()
             this.loadAba()
@@ -766,6 +874,11 @@ export default {
             if (typeof value !== 'number') return '–'
             return value.toLocaleString('de-AT')
         },
+        formatSignedNumber(value) {
+            if (typeof value !== 'number') return 'â€“'
+
+            return value > 0 ? `+${this.formatNumber(value)}` : this.formatNumber(value)
+        },
         isTerminalExtractionStatus(status) {
             return ['completed', 'failed', 'aborted'].includes(status)
         },
@@ -773,6 +886,12 @@ export default {
             if (this.extractionPollTimer) {
                 clearTimeout(this.extractionPollTimer)
                 this.extractionPollTimer = null
+            }
+        },
+        clearParselExtractionPoll() {
+            if (this.parselExtractionPollTimer) {
+                clearTimeout(this.parselExtractionPollTimer)
+                this.parselExtractionPollTimer = null
             }
         },
         syncAbaLatestExtraction() {
@@ -809,6 +928,16 @@ export default {
                 this.loadExtraction(true)
             }, 2000)
         },
+        scheduleParselExtractionPoll() {
+            this.clearParselExtractionPoll()
+            if (!this.isRunningParselExtraction) {
+                return
+            }
+
+            this.parselExtractionPollTimer = setTimeout(() => {
+                this.loadParselExtraction(true)
+            }, 2000)
+        },
         async loadExtraction(silent = false) {
             if (!silent) {
                 this.isExtractionLoading = true
@@ -822,6 +951,7 @@ export default {
                 this.syncAbaLatestExtraction()
                 await this.refreshAbaAfterOverwriteExtractionIfNeeded()
                 this.scheduleExtractionPoll()
+                await this.loadExtractionComparison(true)
             } catch (error) {
                 this.extractionResult = null
                 this.clearExtractionPoll()
@@ -829,6 +959,46 @@ export default {
             } finally {
                 if (!silent) {
                     this.isExtractionLoading = false
+                }
+            }
+        },
+        async loadParselExtraction(silent = false) {
+            if (!silent) {
+                this.isParselExtractionLoading = true
+            }
+
+            this.extractionLoadError = ''
+
+            try {
+                const response = await axios.get(`/api/admin/abas/${this.abaId}/extraction/parsel`)
+                this.parselExtractionResult = response?.data?.data || null
+                this.scheduleParselExtractionPoll()
+                await this.loadExtractionComparison(true)
+            } catch (error) {
+                this.parselExtractionResult = null
+                this.clearParselExtractionPoll()
+                this.extractionLoadError = error?.response?.data?.message || 'Extraktionsdaten konnten nicht geladen werden.'
+            } finally {
+                if (!silent) {
+                    this.isParselExtractionLoading = false
+                }
+            }
+        },
+        async loadExtractionComparison(silent = false) {
+            if (!silent) {
+                this.isParselExtractionLoading = true
+            }
+
+            try {
+                const response = await axios.get(`/api/admin/abas/${this.abaId}/extraction/compare`)
+                this.comparisonResult = response?.data?.data || null
+            } catch (error) {
+                if (!silent) {
+                    this.extractionLoadError = error?.response?.data?.message || 'Extraktionsvergleich konnte nicht geladen werden.'
+                }
+            } finally {
+                if (!silent) {
+                    this.isParselExtractionLoading = false
                 }
             }
         },
@@ -874,6 +1044,42 @@ export default {
                 })
             } finally {
                 this.isExtractionSubmitting = false
+            }
+        },
+        async startParselExtraction() {
+            this.isParselExtractionSubmitting = true
+            this.extractionLoadError = ''
+
+            try {
+                const response = await axios.post(`/api/admin/abas/${this.abaId}/extraction/parsel`)
+                this.parselExtractionResult = response?.data?.data || null
+                this.scheduleParselExtractionPoll()
+                await this.loadExtractionComparison(true)
+
+                const successMessage = this.isRunningParselExtraction
+                    ? 'Extraktion 2 wurde gestartet.'
+                    : this.currentParselExtraction?.status === 'completed'
+                        ? 'Extraktion 2 abgeschlossen.'
+                        : this.currentParselExtraction?.status === 'failed'
+                            ? 'Extraktion 2 ist fehlgeschlagen.'
+                            : 'Extraktion 2 wurde aktualisiert.'
+
+                useNotificationStore().notify({
+                    message: successMessage,
+                    type: this.currentParselExtraction?.status === 'failed' ? 'error' : 'success',
+                    timeout: 3000,
+                })
+            } catch (error) {
+                const message = error?.response?.data?.message || 'Extraktion 2 konnte nicht gestartet werden.'
+                this.extractionLoadError = message
+                useNotificationStore().notify({
+                    status: error?.response?.status || 500,
+                    message,
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+            } finally {
+                this.isParselExtractionSubmitting = false
             }
         },
         sectionChipColor(section) {
@@ -1352,10 +1558,15 @@ export default {
                 const response = await axios.get(`/api/admin/abas/${this.abaId}`)
                 this.aba = response?.data?.data || response?.data || null
                 await this.loadExtraction(true)
+                await this.loadParselExtraction(true)
+                await this.loadExtractionComparison(true)
             } catch (error) {
                 this.aba = null
                 this.extractionResult = null
+                this.parselExtractionResult = null
+                this.comparisonResult = null
                 this.clearExtractionPoll()
+                this.clearParselExtractionPoll()
                 this.error = error?.response?.data?.message || 'ABA-Details konnten nicht geladen werden.'
             } finally {
                 this.isLoading = false
@@ -1716,6 +1927,10 @@ export default {
     gap: 12px;
 }
 
+.extraction-stats--comparison {
+    margin-top: 14px;
+}
+
 .extraction-stat {
     flex: 1;
     text-align: center;
@@ -1739,6 +1954,53 @@ export default {
     color: #64748b;
     text-transform: uppercase;
     letter-spacing: 0.3px;
+}
+
+.extraction-comparison {
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    border-radius: 14px;
+    padding: 14px;
+    background: rgba(15, 23, 42, 0.38);
+}
+
+.extraction-comparison__header,
+.extraction-comparison__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.extraction-comparison__title,
+.extraction-comparison__row-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.extraction-comparison__subtitle,
+.extraction-comparison__row-meta {
+    font-size: 0.74rem;
+    color: #94a3b8;
+    margin-top: 2px;
+}
+
+.extraction-comparison__rows {
+    display: grid;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.extraction-comparison__row {
+    padding: 10px 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.extraction-comparison__chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
 }
 
 .extraction-sections {

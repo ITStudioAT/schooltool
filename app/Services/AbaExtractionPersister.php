@@ -13,7 +13,7 @@ class AbaExtractionPersister
     /**
      * @param  array<string,mixed>  $summary
      */
-    public function startRun(User $user, Aba $aba, ?AbaAttachment $attachment, array $summary = []): AbaAnalysisRun
+    public function startRun(User $user, Aba $aba, ?AbaAttachment $attachment, array $summary = [], ?string $statusMessage = null): AbaAnalysisRun
     {
         return AbaAnalysisRun::query()->create([
             'aba_id' => $aba->id,
@@ -23,7 +23,7 @@ class AbaExtractionPersister
             'source_original_name' => $attachment?->original_name,
             'source_path' => $attachment?->path,
             'source_mime_type' => $attachment?->mime_type,
-            'status_message' => 'Extraktion wurde gestartet.',
+            'status_message' => $statusMessage ?: 'Extraktion wurde gestartet.',
             'started_at' => now(),
             'summary' => $summary !== [] ? $summary : null,
         ]);
@@ -38,7 +38,7 @@ class AbaExtractionPersister
 
         $run->forceFill([
             'status' => AbaAnalysisRun::STATUS_FAILED,
-            'status_message' => 'Extraktion fehlgeschlagen.',
+            'status_message' => $this->statusMessage($run, 'fehlgeschlagen.'),
             'error_message' => trim($message) !== '' ? $message : 'Unbekannter Fehler.',
             'failed_at' => now(),
             'running_at' => null,
@@ -99,7 +99,7 @@ class AbaExtractionPersister
 
             $run->forceFill([
                 'status' => AbaAnalysisRun::STATUS_COMPLETED,
-                'status_message' => 'Extraktion abgeschlossen.',
+                'status_message' => $this->statusMessage($run, 'abgeschlossen.'),
                 'error_message' => null,
                 'running_at' => null,
                 'completed_at' => now(),
@@ -123,7 +123,7 @@ class AbaExtractionPersister
     {
         $run->forceFill([
             'status' => AbaAnalysisRun::STATUS_RUNNING,
-            'status_message' => 'Extraktion läuft.',
+            'status_message' => $this->statusMessage($run, 'läuft.'),
             'running_at' => $run->running_at ?? now(),
             'failed_at' => null,
             'error_message' => null,
@@ -147,5 +147,14 @@ class AbaExtractionPersister
         }
 
         return mb_substr($normalized, 0, 255);
+    }
+
+    private function statusMessage(AbaAnalysisRun $run, string $suffix): string
+    {
+        $prefix = str_starts_with((string) $run->status_message, AbaAnalysisRun::PARSEL_EXTRACTION_STATUS_MESSAGE_PREFIX)
+            ? AbaAnalysisRun::PARSEL_EXTRACTION_STATUS_MESSAGE_PREFIX
+            : AbaAnalysisRun::EXTRACTION_STATUS_MESSAGE_PREFIX;
+
+        return "{$prefix} {$suffix}";
     }
 }

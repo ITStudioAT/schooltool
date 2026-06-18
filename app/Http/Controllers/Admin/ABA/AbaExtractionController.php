@@ -8,6 +8,8 @@ use App\Http\Resources\Admin\ABA\AbaExtractionResource;
 use App\Models\Aba;
 use App\Models\AbaAnalysisRun;
 use App\Services\AbaDocumentExtractionService;
+use App\Services\AbaExtractionRunComparisonService;
+use App\Services\AbaParselExtractionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -48,6 +50,67 @@ class AbaExtractionController extends Controller
         return response()->json([
             'data' => new AbaExtractionResource($run),
         ], $statusCode);
+    }
+
+    public function showParsel(Aba $aba, AbaParselExtractionService $extractionService): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['aba_teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if (! $this->canAccessAba($aba, (int) $authUser->id, (int) $authUser->school_id)) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $run = $extractionService->latest($aba);
+
+        return response()->json([
+            'data' => $run ? new AbaExtractionResource($run) : null,
+        ]);
+    }
+
+    public function storeParsel(Aba $aba, AbaParselExtractionService $extractionService): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['aba_teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if (! $this->canAccessAba($aba, (int) $authUser->id, (int) $authUser->school_id)) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $run = $extractionService->start($authUser, $aba);
+        $statusCode = in_array($run->status, ['started', 'running'], true) ? 202 : 200;
+
+        return response()->json([
+            'data' => new AbaExtractionResource($run),
+        ], $statusCode);
+    }
+
+    public function compare(
+        Aba $aba,
+        AbaDocumentExtractionService $documentExtractionService,
+        AbaParselExtractionService $parselExtractionService,
+        AbaExtractionRunComparisonService $comparisonService,
+    ): JsonResponse {
+        if (! $authUser = $this->userHasRole(['aba_teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if (! $this->canAccessAba($aba, (int) $authUser->id, (int) $authUser->school_id)) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $conventionalRun = $documentExtractionService->latest($aba);
+        $parselRun = $parselExtractionService->latest($aba);
+
+        return response()->json([
+            'data' => [
+                'conventional' => $conventionalRun ? new AbaExtractionResource($conventionalRun) : null,
+                'parsel' => $parselRun ? new AbaExtractionResource($parselRun) : null,
+                'comparison' => $comparisonService->compare($conventionalRun, $parselRun),
+            ],
+        ]);
     }
 
     public function titlePageAsset(Aba $aba, AbaAnalysisRun $run, int $assetIndex): StreamedResponse

@@ -14,6 +14,8 @@ class AbaAnalysisRun extends Model
 
     public const EXTRACTION_STATUS_MESSAGE_PREFIX = 'Extraktion';
 
+    public const PARSEL_EXTRACTION_STATUS_MESSAGE_PREFIX = 'Extraktion 2';
+
     public const STATUS_STARTED = 'started';
 
     public const STATUS_RUNNING = 'running';
@@ -85,6 +87,18 @@ class AbaAnalysisRun extends Model
     public function scopeExtraction(Builder $query): Builder
     {
         return $query->where('status_message', 'like', self::EXTRACTION_STATUS_MESSAGE_PREFIX.'%');
+    }
+
+    public function scopeConventionalExtraction(Builder $query): Builder
+    {
+        return $query
+            ->extraction()
+            ->where('status_message', 'not like', self::PARSEL_EXTRACTION_STATUS_MESSAGE_PREFIX.'%');
+    }
+
+    public function scopeParselExtraction(Builder $query): Builder
+    {
+        return $query->where('status_message', 'like', self::PARSEL_EXTRACTION_STATUS_MESSAGE_PREFIX.'%');
     }
 
     public static function statusLabel(string $status): string

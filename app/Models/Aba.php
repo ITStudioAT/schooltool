@@ -89,7 +89,7 @@ class Aba extends Model
     public function latestExtractionRun(): HasOne
     {
         return $this->hasOne(AbaAnalysisRun::class)
-            ->extraction()
+            ->conventionalExtraction()
             ->latestOfMany();
     }
 }

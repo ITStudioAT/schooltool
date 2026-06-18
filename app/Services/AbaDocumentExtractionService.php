@@ -22,7 +22,7 @@ class AbaDocumentExtractionService
     public function latest(Aba $aba): ?AbaAnalysisRun
     {
         return AbaAnalysisRun::query()
-            ->extraction()
+            ->conventionalExtraction()
             ->where('aba_id', $aba->id)
             ->latest('id')
             ->first();
@@ -31,7 +31,7 @@ class AbaDocumentExtractionService
     public function start(User $user, Aba $aba, bool $overwriteExistingFields = false): AbaAnalysisRun
     {
         $activeRun = AbaAnalysisRun::query()
-            ->extraction()
+            ->conventionalExtraction()
             ->where('aba_id', $aba->id)
             ->whereIn('status', [AbaAnalysisRun::STATUS_STARTED, AbaAnalysisRun::STATUS_RUNNING])
             ->latest('id')

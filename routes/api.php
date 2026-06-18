@@ -295,6 +295,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/abas/{aba}', [AbaController::class, 'destroy']);
         Route::get('/admin/abas/{aba}/extraction', [AbaExtractionController::class, 'show']);
         Route::post('/admin/abas/{aba}/extraction', [AbaExtractionController::class, 'store']);
+        Route::get('/admin/abas/{aba}/extraction/parsel', [AbaExtractionController::class, 'showParsel']);
+        Route::post('/admin/abas/{aba}/extraction/parsel', [AbaExtractionController::class, 'storeParsel']);
+        Route::get('/admin/abas/{aba}/extraction/compare', [AbaExtractionController::class, 'compare']);
         Route::get('/admin/abas/{aba}/extraction-runs/{run}/title-page-assets/{assetIndex}', [AbaExtractionController::class, 'titlePageAsset'])->whereNumber('assetIndex');
         Route::post('/admin/abas/{aba}/attachments/from-temp', [AbaAttachmentController::class, 'storeFromTemp']);
         Route::delete('/admin/abas/{aba}/attachments/{attachment}', [AbaAttachmentController::class, 'destroy']);
