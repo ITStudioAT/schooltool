@@ -4,7 +4,17 @@
             <div class="admin-card-head crud-head mb-4">
                 <div>
                     <div class="admin-card-eyebrow">Schülerstundenpläne</div>
-                    <h2 class="admin-card-title crud-title">{{ title }}</h2>
+                    <div class="d-flex align-center flex-wrap ga-2">
+                        <h2 class="admin-card-title crud-title">{{ title }}</h2>
+                        <v-chip
+                            v-if="roleChipText"
+                            size="x-small"
+                            variant="tonal"
+                            color="indigo-lighten-3"
+                            prepend-icon="mdi-shield-account-outline">
+                            {{ roleChipText }}
+                        </v-chip>
+                    </div>
                 </div>
 
                 <div class="admin-kpi-grid crud-kpis">
@@ -23,11 +33,8 @@
                         </div>
 
                         <div class="d-flex flex-wrap ga-2" :disabled="action != ''">
-                            <v-btn color="primary" variant="tonal" rounded="lg" class="text-caption" @click="selectAll">
-                                Alle auswählen [{{ Math.max(0, admin_users.length - selected_admin_users.length) }}]
-                            </v-btn>
                             <v-btn color="primary" variant="text" rounded="lg" class="text-caption" @click="unselectAll">
-                                Alle abwählen [{{ selected_admin_users.length }}]
+                                Auswahl aufheben
                             </v-btn>
                         </div>
                     </div>
@@ -57,7 +64,28 @@
                                                         {{ item.last_name }} {{ item.first_name }}<span v-if="item.short"> ({{ item.short }})</span>
                                                     </span>
                                                 </div>
-                                                <div class="person-roles">{{ item.email || '-' }}</div>
+                                                <div class="person-email-row">
+                                                    <span class="person-email">{{ item.email || '-' }}</span>
+                                                    <v-btn
+                                                        v-if="item.email"
+                                                        :icon="copiedEmailId === item.id ? 'mdi-check' : 'mdi-content-copy'"
+                                                        :color="copiedEmailId === item.id ? 'success' : undefined"
+                                                        variant="text"
+                                                        density="compact"
+                                                        size="x-small"
+                                                        class="person-email-copy"
+                                                        :aria-label="copiedEmailId === item.id ? `E-Mail-Adresse kopiert: ${item.email}` : `E-Mail-Adresse kopieren: ${item.email}`"
+                                                        :title="copiedEmailId === item.id ? 'Kopiert!' : `E-Mail-Adresse kopieren: ${item.email}`"
+                                                        @click.stop="copyEmail(item)" />
+                                                    <v-chip
+                                                        v-if="copiedEmailId === item.id"
+                                                        size="x-small"
+                                                        color="success"
+                                                        variant="tonal"
+                                                        class="person-email-copied-chip">
+                                                        Kopiert
+                                                    </v-chip>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -101,18 +129,7 @@
                                 </v-btn>
 
                                 <v-btn
-                                    v-if="selectedAdminUser(selected_admin_users[0])?.is_active"
-                                    block
-                                    color="error"
-                                    variant="tonal"
-                                    rounded="lg"
-                                    class="crud-action-btn-offset"
-                                    prepend-icon="mdi-lock"
-                                    @click="toggleIsActive(selected_admin_users[0])">
-                                    Sperren
-                                </v-btn>
-                                <v-btn
-                                    v-else
+                                    v-if="selectedAdminUser(selected_admin_users[0]) && !selectedAdminUser(selected_admin_users[0]).is_active"
                                     block
                                     color="success"
                                     variant="tonal"
@@ -183,6 +200,11 @@ import { useStudentsTimetablesAdminUserStore } from '@/stores/admin/studentsTime
 import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
 
+const roleChipLabels = {
+    admins: 'studentstimetables_admin',
+    moderators: 'studentstimetables_moderator',
+}
+
 export default {
     components: { Pagination, SearchField },
 
@@ -215,6 +237,14 @@ export default {
         return {
             adminUserStore: null,
             is_valid: false,
+            copiedEmailId: null,
+            copyEmailResetTimeout: null,
+        }
+    },
+
+    beforeUnmount() {
+        if (this.copyEmailResetTimeout) {
+            clearTimeout(this.copyEmailResetTimeout)
         }
     },
 
@@ -244,6 +274,17 @@ export default {
             const total = Number(this.meta?.total)
 
             return Number.isFinite(total) && total >= 0 ? total : this.admin_users.length
+        },
+        roleChipText() {
+            return roleChipLabels[this.roleKey] || this.roleKey
+        },
+    },
+
+    watch: {
+        selected_admin_users(selectedAdminUsers) {
+            if (!Array.isArray(selectedAdminUsers) || selectedAdminUsers.length <= 1) { return }
+
+            this.selected_admin_users = [selectedAdminUsers[selectedAdminUsers.length - 1]]
         },
     },
 
@@ -276,9 +317,6 @@ export default {
         abort() {
             this.action = ''
         },
-        selectAll() {
-            this.selected_admin_users = this.admin_users.map((item) => item.id)
-        },
         unselectAll() {
             this.selected_admin_users = []
         },
@@ -287,6 +325,47 @@ export default {
         },
         selectedAdminUser(adminUserId) {
             return this.admin_users.find((user) => user.id === adminUserId)
+        },
+        async copyEmail(adminUser) {
+            const emailAddress = (adminUser?.email || '').toString().trim()
+            if (!emailAddress) { return false }
+
+            const copied = await this.copyTextToClipboard(emailAddress)
+            if (!copied) { return false }
+
+            this.copiedEmailId = adminUser.id
+
+            if (this.copyEmailResetTimeout) {
+                clearTimeout(this.copyEmailResetTimeout)
+            }
+
+            this.copyEmailResetTimeout = setTimeout(() => {
+                this.copiedEmailId = null
+                this.copyEmailResetTimeout = null
+            }, 1500)
+
+            return true
+        },
+        async copyTextToClipboard(text) {
+            if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text)
+
+                return true
+            }
+
+            if (typeof document === 'undefined') { return false }
+
+            const textArea = document.createElement('textarea')
+            textArea.value = text
+            textArea.setAttribute('readonly', '')
+            textArea.style.position = 'fixed'
+            textArea.style.opacity = '0'
+            document.body.appendChild(textArea)
+            textArea.select()
+            const copied = document.execCommand('copy')
+            document.body.removeChild(textArea)
+
+            return copied
         },
         async toggleIsActive(userId) {
             await this.adminUserStore.toggleIsActive(userId, this.roleKey)
@@ -298,3 +377,30 @@ export default {
 
 <style scoped src="@/../css/admin-index-page.css"></style>
 <style scoped src="@/../css/admin-crud-panel.css"></style>
+<style scoped>
+.person-email-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+}
+
+.person-email {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.person-email-copy {
+    flex: 0 0 auto;
+    opacity: 0.72;
+}
+
+.person-email-copy:hover {
+    opacity: 1;
+}
+
+.person-email-copied-chip {
+    flex: 0 0 auto;
+}
+</style>
