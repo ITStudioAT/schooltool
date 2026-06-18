@@ -329,6 +329,7 @@ describe('CourseInfos course-specific definitions', () => {
         const saveSettings = vi.fn().mockResolvedValue(true)
         const ctx: Record<string, unknown> = {
             teachingStore: { saveSettings },
+            selected_course: { id: 6 },
             student_grade_visibility_show_sem1: true,
             student_grade_visibility_show_sem2: false,
             student_grade_visibility_show_year: true,
@@ -344,6 +345,7 @@ describe('CourseInfos course-specific definitions', () => {
         await methods.persistStudentGradeColumns.call(ctx)
 
         expect(saveSettings).toHaveBeenCalledWith({
+            teaching_course_id: 6,
             teaching_student_grade_columns: {
                 show_sem1: true,
                 show_sem2: false,
@@ -351,6 +353,11 @@ describe('CourseInfos course-specific definitions', () => {
             },
         }, {
             notifySuccess: false,
+        })
+        expect((ctx.selected_course as any).teaching_student_grade_columns).toEqual({
+            show_sem1: true,
+            show_sem2: false,
+            show_year: true,
         })
     })
 

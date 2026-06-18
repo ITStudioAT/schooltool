@@ -35,7 +35,7 @@ class TeachingCourseController extends Controller
         }
 
         $coursesQuery = TeachingCourse::with([
-            'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour',
+            'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour,teaching_student_grade_columns_by_schoolyear',
             'teachingCurriculum:id,school_id,schoolyear_id,user_id,title,description,semester_count',
             'teachingCourseDates' => fn ($q) => $q->orderBy('date')->orderByRaw('JSON_EXTRACT(hours, "$[0]")'),
             'teachingCourseDates.materials.attachments',
@@ -116,6 +116,7 @@ class TeachingCourseController extends Controller
             $course->setAttribute('teacher_teaching_behaviour', $this->teachingBehaviourForSchoolyear($courseActor, $course->schoolyear_id));
             $course->setAttribute('teacher_teaching_notifications', $this->teachingNotificationsForSchoolyear($courseActor, $course->schoolyear_id));
             $course->setAttribute('teacher_teaching_show_behaviour', (bool) ($courseActor->teaching_show_behaviour ?? true));
+            $course->setAttribute('teaching_student_grade_columns', $this->teachingStudentGradeColumnsForCourse($course, $courseActor));
         });
 
         $classes = Import116::where('school_id', $auth_user->school_id)
@@ -455,6 +456,46 @@ class TeachingCourseController extends Controller
         }
 
         return [];
+    }
+
+    /**
+     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool}
+     */
+    private function teachingStudentGradeColumnsForCourse(TeachingCourse $course, User $user): array
+    {
+        if (is_array($course->teaching_student_grade_columns)) {
+            return [
+                'show_sem1' => (bool) ($course->teaching_student_grade_columns['show_sem1'] ?? false),
+                'show_sem2' => (bool) ($course->teaching_student_grade_columns['show_sem2'] ?? false),
+                'show_year' => (bool) ($course->teaching_student_grade_columns['show_year'] ?? false),
+            ];
+        }
+
+        $bySchoolyear = $user->teaching_student_grade_columns_by_schoolyear;
+
+        if ($course->schoolyear_id === null || ! is_array($bySchoolyear)) {
+            return [
+                'show_sem1' => false,
+                'show_sem2' => false,
+                'show_year' => false,
+            ];
+        }
+
+        $columns = $bySchoolyear[(string) $course->schoolyear_id] ?? null;
+
+        if (! is_array($columns)) {
+            return [
+                'show_sem1' => false,
+                'show_sem2' => false,
+                'show_year' => false,
+            ];
+        }
+
+        return [
+            'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
+            'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
+            'show_year' => (bool) ($columns['show_year'] ?? false),
+        ];
     }
 
     private function serializeCourseStudent(

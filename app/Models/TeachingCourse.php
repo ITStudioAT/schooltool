@@ -33,11 +33,13 @@ class TeachingCourse extends Model
         'reminder',
         'teaching_schema_id',
         'teaching_curriculum_id',
+        'teaching_student_grade_columns',
     ];
 
     protected $casts = [
         'classes' => 'array',
         'reminder' => 'array',
+        'teaching_student_grade_columns' => 'array',
     ];
 
     protected static function booted(): void

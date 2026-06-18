@@ -418,6 +418,42 @@ test('show returns schoolyear scoped teacher grade column visibility', function 
         ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_year', true);
 });
 
+test('show prefers course scoped student grade column visibility', function () {
+    $this->teacher->forceFill([
+        'teaching_student_grade_columns_by_schoolyear' => [
+            (string) $this->activeSchoolyear->id => [
+                'show_sem1' => true,
+                'show_sem2' => true,
+                'show_year' => false,
+            ],
+        ],
+    ])->save();
+
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_student_grade_columns' => [
+            'show_sem1' => false,
+            'show_sem2' => false,
+            'show_year' => true,
+        ],
+        'students' => [
+            [
+                'id' => $this->studentA->id,
+            ],
+        ],
+    ]);
+
+    $response = $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}");
+
+    $response->assertOk()
+        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem1', false)
+        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem2', false)
+        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_year', true);
+});
+
 test('show returns student attachment urls and enrolled student can open visible attachment', function () {
     Storage::fake('local');
 

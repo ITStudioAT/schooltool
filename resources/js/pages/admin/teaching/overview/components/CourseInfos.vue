@@ -489,11 +489,10 @@ export default {
             }
         },
         persistedStudentGradeColumns() {
-            return this.teachingStore?.settings?.teaching_student_grade_columns || this.config?.user?.teaching_student_grade_columns || {
-                show_sem1: false,
-                show_sem2: false,
-                show_year: false,
-            }
+            return this.selected_course?.teaching_student_grade_columns
+                || this.teachingStore?.settings?.teaching_student_grade_columns
+                || this.config?.user?.teaching_student_grade_columns
+                || this.defaultGradeColumns()
         },
         anyGradeColumnVisible() {
             return this.infos_show_grade_sem1 || (this.hasTwoSemesters && (this.infos_show_grade_sem2 || this.infos_show_grade_year))
@@ -554,9 +553,11 @@ export default {
                     if (this.behaviourEntryStore) this.behaviourEntryStore.courseEntries = []
                     this.gradesDataLoaded = false
                     this.gradeEntries = []
+                    this.restoreStudentGradeColumns(this.defaultGradeColumns())
                     return
                 }
                 this.courseStore?.ensureCourseStudentCollections?.(course)
+                this.restoreStudentGradeColumns(this.persistedStudentGradeColumns)
                 await this.behaviourEntryStore?.indexByCourse(course.id)
                 if (this.anyGradeColumnVisible) {
                     await this.loadGradeData()
@@ -712,6 +713,13 @@ export default {
                 show_year: Boolean(this.infos_show_grade_year),
             }
         },
+        defaultGradeColumns() {
+            return {
+                show_sem1: false,
+                show_sem2: false,
+                show_year: false,
+            }
+        },
         restoreStudentGradeColumns(columns) {
             const normalizedColumns = {
                 show_sem1: Boolean(columns?.show_sem1),
@@ -763,11 +771,16 @@ export default {
                 return
             }
 
-            await this.teachingStore.saveSettings({
+            const saved = await this.teachingStore.saveSettings({
+                teaching_course_id: this.selected_course?.id || null,
                 teaching_student_grade_columns: columns,
             }, {
                 notifySuccess: false,
             })
+
+            if (saved && this.selected_course) {
+                this.selected_course.teaching_student_grade_columns = columns
+            }
         },
         syncGradeColumnsToRoute() {
             if (!this.$router || !this.$route) {

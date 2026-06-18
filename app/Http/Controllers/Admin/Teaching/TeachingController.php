@@ -190,6 +190,7 @@ class TeachingController extends Controller
             'teaching_student_grade_columns.show_sem1' => 'nullable|boolean',
             'teaching_student_grade_columns.show_sem2' => 'nullable|boolean',
             'teaching_student_grade_columns.show_year' => 'nullable|boolean',
+            'teaching_course_id' => 'nullable|integer',
         ]);
 
         if (isset($validated['teaching_schemas'])) {
@@ -254,11 +255,22 @@ class TeachingController extends Controller
             );
         }
         if (array_key_exists('teaching_student_grade_columns', $validated)) {
-            $this->storeTeachingStudentGradeColumnsForSchoolyear(
-                $auth_user,
-                $auth_user->schoolyear_id,
-                is_array($validated['teaching_student_grade_columns']) ? $validated['teaching_student_grade_columns'] : []
-            );
+            $studentGradeColumns = is_array($validated['teaching_student_grade_columns'])
+                ? $validated['teaching_student_grade_columns']
+                : [];
+
+            if (! empty($validated['teaching_course_id'])) {
+                $course = TeachingCourse::query()->findOrFail((int) $validated['teaching_course_id']);
+
+                $this->authorizeTeachingCourseAccess($course, $auth_user);
+                $this->storeTeachingStudentGradeColumnsForCourse($course, $studentGradeColumns);
+            } else {
+                $this->storeTeachingStudentGradeColumnsForSchoolyear(
+                    $auth_user,
+                    $auth_user->schoolyear_id,
+                    $studentGradeColumns
+                );
+            }
         }
         $auth_user->save();
 
@@ -748,6 +760,19 @@ class TeachingController extends Controller
 
     /**
      * @param  array<string, mixed>  $columns
+     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool}
+     */
+    private function normalizedTeachingGradeColumns(array $columns): array
+    {
+        return [
+            'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
+            'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
+            'show_year' => (bool) ($columns['show_year'] ?? false),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $columns
      */
     private function storeTeachingStudentGradeColumnsForSchoolyear(User $user, ?int $schoolyearId, array $columns): void
     {
@@ -759,13 +784,18 @@ class TeachingController extends Controller
             ? $user->teaching_student_grade_columns_by_schoolyear
             : [];
 
-        $bySchoolyear[(string) $schoolyearId] = [
-            'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
-            'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
-            'show_year' => (bool) ($columns['show_year'] ?? false),
-        ];
+        $bySchoolyear[(string) $schoolyearId] = $this->normalizedTeachingGradeColumns($columns);
 
         $user->teaching_student_grade_columns_by_schoolyear = $bySchoolyear;
+    }
+
+    /**
+     * @param  array<string, mixed>  $columns
+     */
+    private function storeTeachingStudentGradeColumnsForCourse(TeachingCourse $course, array $columns): void
+    {
+        $course->teaching_student_grade_columns = $this->normalizedTeachingGradeColumns($columns);
+        $course->save();
     }
 
     /**

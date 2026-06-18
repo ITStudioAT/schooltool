@@ -338,7 +338,7 @@ class CourseController extends Controller
             'teacher_teaching_notifications' => $this->teachingNotificationsForSchoolyear($course->user, $course->schoolyear_id),
             'teacher_teaching_behaviour' => $showBehaviour ? $this->teachingBehaviourForSchoolyear($course->user, $course->schoolyear_id) : [],
             'teacher_teaching_grade_columns' => $this->teachingGradeColumnsForSchoolyear($course->user, $course->schoolyear_id),
-            'teacher_teaching_student_grade_columns' => $this->teachingStudentGradeColumnsForSchoolyear($course->user, $course->schoolyear_id),
+            'teacher_teaching_student_grade_columns' => $this->teachingStudentGradeColumnsForCourse($course),
             'classes' => $course->classes,
             'students_count' => (int) ($course->active_students_count ?? 0),
             'stars' => $studentData->stars ?? [],
@@ -564,5 +564,21 @@ class CourseController extends Controller
             'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
             'show_year' => (bool) ($columns['show_year'] ?? false),
         ];
+    }
+
+    /**
+     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool}
+     */
+    private function teachingStudentGradeColumnsForCourse(TeachingCourse $course): array
+    {
+        if (is_array($course->teaching_student_grade_columns)) {
+            return [
+                'show_sem1' => (bool) ($course->teaching_student_grade_columns['show_sem1'] ?? false),
+                'show_sem2' => (bool) ($course->teaching_student_grade_columns['show_sem2'] ?? false),
+                'show_year' => (bool) ($course->teaching_student_grade_columns['show_year'] ?? false),
+            ];
+        }
+
+        return $this->teachingStudentGradeColumnsForSchoolyear($course->user, $course->schoolyear_id);
     }
 }

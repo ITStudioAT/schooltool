@@ -13,6 +13,7 @@
 use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
@@ -1581,6 +1582,65 @@ describe('settings and semester endpoints', function () {
             ->and(data_get($this->admin->teaching_student_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_sem1"))->toBeFalse()
             ->and(data_get($this->admin->teaching_student_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_sem2"))->toBeTrue()
             ->and(data_get($this->admin->teaching_student_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_year"))->toBeTrue();
+    });
+
+    test('save_settings persists teaching student grade column visibility by course', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'teaching_visible_admin' => true,
+            'teaching_visible_user' => true,
+        ]);
+
+        $firstCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'classes' => ['4A'],
+        ]);
+        $secondCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'classes' => ['4B'],
+        ]);
+
+        $firstPayload = validTeachingSettingsPayload('schema-student-grade-columns-first');
+        $firstPayload['teaching_course_id'] = $firstCourse->id;
+        $firstPayload['teaching_student_grade_columns'] = [
+            'show_sem1' => true,
+            'show_sem2' => false,
+            'show_year' => true,
+        ];
+
+        $this->postJson('/api/admin/teaching/save_settings', $firstPayload)
+            ->assertOk();
+
+        $secondPayload = validTeachingSettingsPayload('schema-student-grade-columns-second');
+        $secondPayload['teaching_course_id'] = $secondCourse->id;
+        $secondPayload['teaching_student_grade_columns'] = [
+            'show_sem1' => false,
+            'show_sem2' => true,
+            'show_year' => false,
+        ];
+
+        $this->postJson('/api/admin/teaching/save_settings', $secondPayload)
+            ->assertOk();
+
+        $firstCourse->refresh();
+        $secondCourse->refresh();
+        $this->admin->refresh();
+
+        expect($firstCourse->teaching_student_grade_columns)->toBe([
+            'show_sem1' => true,
+            'show_sem2' => false,
+            'show_year' => true,
+        ])->and($secondCourse->teaching_student_grade_columns)->toBe([
+            'show_sem1' => false,
+            'show_sem2' => true,
+            'show_year' => false,
+        ])->and($this->admin->teaching_student_grade_columns_by_schoolyear)->toBeNull();
     });
 
     test('save_settings persists category evaluation values inside schema grading', function () {
