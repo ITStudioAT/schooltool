@@ -46,12 +46,16 @@ beforeEach(function () {
     // Create school tools
     SchoolTool::create([
         'school_id' => $this->school1->id,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => true,
         'tutoring_student_must_be_confirmed' => false,
         'tutoring_max_offers_per_student' => 3,
     ]);
 
     SchoolTool::create([
         'school_id' => $this->school2->id,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => true,
         'tutoring_student_must_be_confirmed' => false,
         'tutoring_max_offers_per_student' => 3,
     ]);

@@ -75,7 +75,83 @@
         ],
         "test": [
             "@php artisan config:clear --ansi",
-            "@php artisan test"
+            "@php artisan test --compact tests/Unit/SchooltoolConfigTest.php tests/Unit/SanctumConfigTest.php tests/Feature/DatabaseSafetyTest.php"
+        ],
+        "test:php": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/SchooltoolConfigTest.php tests/Unit/SanctumConfigTest.php tests/Feature/DatabaseSafetyTest.php"
+        ],
+        "test:php:smoke": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/SchooltoolConfigTest.php tests/Unit/SanctumConfigTest.php tests/Feature/DatabaseSafetyTest.php"
+        ],
+        "test:php:config": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/SchooltoolConfigTest.php tests/Unit/SanctumConfigTest.php"
+        ],
+        "test:php:safety": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Feature/DatabaseSafetyTest.php"
+        ],
+        "test:php:import116": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/Import116ServiceTest.php"
+        ],
+        "test:php:install-update": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/InstallUpdateServiceTest.php"
+        ],
+        "test:php:models": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/ModelsTest.php"
+        ],
+        "test:php:access": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/ApiAllowedTest.php tests/Unit/WebAllowedTest.php tests/Unit/ToolLicensedMiddlewareTest.php tests/Unit/AccessScopeServiceTest.php tests/Unit/AdminNavigationServiceTest.php tests/Unit/HomepageRoutingServiceTest.php tests/Unit/CorsConfigTest.php"
+        ],
+        "test:php:auth-users": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/AuthServiceTest.php tests/Unit/UserServiceTest.php tests/Unit/RegisterUserServiceTest.php tests/Unit/Traits/UserTraitTest.php tests/Feature/Services/UserServiceTest.php tests/Feature/UserControllerTest.php tests/Feature/UserWithRoleControllerTest.php tests/Feature/UserHopperAccountControllerTest.php"
+        ],
+        "test:php:register-services": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/RegisterServiceTest.php tests/Unit/RegisterDateServiceTest.php tests/Unit/RegisterDateBookingServiceTest.php tests/Unit/RegisterUserServiceTest.php tests/Unit/RegisterTestRecordsServiceTest.php"
+        ],
+        "test:php:register-admin": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Feature/RegisterControllerTest.php tests/Feature/RegisterDateControllerTest.php tests/Feature/RegisterDateBookingControllerTest.php tests/Feature/RegisterUserControllerTest.php"
+        ],
+        "test:php:register-homepage": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Feature/Controllers/Homepage/RegisterControllerTest.php"
+        ],
+        "test:php:register-print": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/PrintRegisterServiceTest.php tests/Unit/PrintRegisterDateJobTest.php tests/Unit/PrintRegisterExcelJobTest.php tests/Unit/PrintRegisterSupervisorJobTest.php tests/Feature/RegisterPrintControllerTest.php"
+        ],
+        "test:php:register-requests": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Feature/Requests/Admin/RegisterRequestsTest.php tests/Feature/Requests/Admin/RegisterDateRequestsTest.php tests/Feature/Requests/Homepage/RegisterRequestsTest.php"
+        ],
+        "test:php:register-command": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Feature/Console/MakeRegisterTestRecordsCommandTest.php"
+        ],
+        "test:php:tutoring-admin": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/SubjectServiceTest.php tests/Unit/TutoringOfferServiceTest.php tests/Unit/TutoringServiceTest.php tests/Unit/TutoringTestDataSmallSeederTest.php tests/Feature/Controllers/Admin/Tutoring/OfferControllerTest.php tests/Feature/Controllers/Admin/Tutoring/SubjectControllerTest.php tests/Feature/Controllers/Admin/Tutoring/UserControllerTest.php"
+        ],
+        "test:php:tutoring-public": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Feature/TutoringControllerTest.php tests/Feature/TutoringSubjectControllerTest.php tests/Feature/TutoringUserControllerTest.php tests/Feature/Controllers/Tutoring/OfferControllerTest.php tests/Feature/Controllers/Tutoring/OfferRequestControllerTest.php tests/Feature/Controllers/Tutoring/SubjectControllerTest.php tests/Feature/Controllers/Tutoring/UserControllerTest.php"
+        ],
+        "test:php:resources": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Unit/Resources/AdminResourcesTest.php tests/Unit/Resources/HomepageResourcesTest.php tests/Unit/Resources/TutoringResourcesTest.php"
+        ],
+        "test:php:requests": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Feature/Requests/Admin/AuthRequestsTest.php tests/Feature/Requests/Admin/UserRequestsTest.php tests/Feature/Requests/Admin/RoleRequestsTest.php tests/Feature/Requests/Admin/SchoolRequestsTest.php tests/Feature/Requests/Admin/SchoolyearRequestsTest.php tests/Feature/Requests/Admin/SecurityRequestsTest.php tests/Feature/Requests/Admin/LicenceRequestsTest.php tests/Feature/Requests/Admin/RegisterRequestsTest.php tests/Feature/Requests/Admin/RegisterDateRequestsTest.php tests/Feature/Requests/Homepage/RegisterRequestsTest.php tests/Feature/Requests/Homepage/TutoringRequestsTest.php tests/Feature/Requests/Tutoring/TutoringRequestsTest.php"
         ],
         "check:encoding": [
             "@php scripts/check-encoding.php"

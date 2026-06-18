@@ -727,7 +727,7 @@ test('delete does not remove users with bookings', function () {
     ]);
 });
 
-test('delete does not remove users with multiple roles', function () {
+test('delete keeps users with multiple roles and removes register role', function () {
     $this->actingAs($this->adminUser);
 
     // Create user with multiple roles
@@ -739,8 +739,8 @@ test('delete does not remove users with multiple roles', function () {
     ]);
     $multiRoleUser->assignRole(['register_user', 'user']);
 
-    // Note: registerUser from beforeEach is deletable
-    $expectedCount = 1; // only registerUser from beforeEach
+    // Note: registerUser from beforeEach is deletable, while multiRoleUser is processed but kept
+    $expectedCount = 2;
 
     $response = $this->postJson('/api/admin/register_users/delete_register_users', [
         'register_id' => $this->register->id,
@@ -751,10 +751,13 @@ test('delete does not remove users with multiple roles', function () {
             'count' => $expectedCount,
         ]);
 
-    // Verify user was not deleted
+    // Verify user was not deleted and only the register_user role was removed
     $this->assertDatabaseHas('users', [
         'id' => $multiRoleUser->id,
     ]);
+
+    expect($multiRoleUser->fresh()->hasRole('register_user'))->toBeFalse()
+        ->and($multiRoleUser->fresh()->hasRole('user'))->toBeTrue();
 });
 
 test('delete only removes users from authenticated users school', function () {

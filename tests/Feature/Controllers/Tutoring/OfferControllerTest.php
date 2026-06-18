@@ -62,6 +62,8 @@ beforeEach(function () {
     // Create SchoolTool for tutoring configuration
     $this->schoolTool = SchoolTool::create([
         'school_id' => $this->school->id,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => true,
         'tutoring_student_must_be_confirmed' => false,
         'tutoring_confirmer_email' => null,
         'tutoring_max_offers_per_student' => 3,
@@ -69,6 +71,8 @@ beforeEach(function () {
 
     SchoolTool::create([
         'school_id' => $this->otherSchool->id,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => true,
         'tutoring_student_must_be_confirmed' => false,
         'tutoring_confirmer_email' => null,
         'tutoring_max_offers_per_student' => 5,

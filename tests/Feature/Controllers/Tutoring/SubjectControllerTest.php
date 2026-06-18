@@ -2,6 +2,7 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\TutoringSubject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -35,6 +36,18 @@ beforeEach(function () {
     ]);
     $this->otherSchool->licences()->attach($this->tutoringLicence->id, [
         'valid_until' => now()->addYear()->toDateString(),
+    ]);
+
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => true,
+    ]);
+
+    SchoolTool::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => true,
     ]);
 
     // Create test subjects for main school
@@ -211,12 +224,16 @@ describe('index', function () {
             'short_name' => 'EmptySchool',
             'long_name' => 'Empty School',
         ]);
-        $newSchool->licences()->attach($this->tutoringLicence->id, [
-            'valid_until' => now()->addYear()->toDateString(),
+        $newSchool->licences()->syncWithoutDetaching([
+            $this->tutoringLicence->id => [
+                'valid_until' => now()->addYear()->toDateString(),
+            ],
         ]);
 
-        $newSchool->licences()->attach($this->tutoringLicence->id, [
-            'valid_until' => now()->addYear()->toDateString(),
+        SchoolTool::factory()->create([
+            'school_id' => $newSchool->id,
+            'tutoring_visible_admin' => true,
+            'tutoring_visible_user' => true,
         ]);
 
         $newUser = User::factory()->create([

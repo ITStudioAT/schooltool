@@ -2,6 +2,7 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
@@ -26,6 +27,12 @@ beforeEach(function () {
     );
     $this->school->licences()->attach($tutoringLicence->id, [
         'valid_until' => now()->addYear()->toDateString(),
+    ]);
+
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => true,
     ]);
 
     // Create test user with tutoring_user role
