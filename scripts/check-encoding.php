@@ -12,7 +12,7 @@ if ($repositoryRoot === false) {
 
 chdir($repositoryRoot);
 
-$trackedFiles = shell_exec('git ls-files -z');
+$trackedFiles = shell_exec('git ls-files -z --cached --others --exclude-standard');
 
 if (! is_string($trackedFiles)) {
     fwrite(STDERR, "Unable to enumerate tracked files via git ls-files.\n");
@@ -58,46 +58,36 @@ $knownBinaryExtensions = [
     'zip',
 ];
 
-$suspiciousSequences = [
-    'Ã¤',
-    'Ã¶',
-    'Ã¼',
-    'ÃŸ',
-    'Ã„',
-    'Ã–',
-    'Ãœ',
-    'Ãƒ',
-    'Ã‚',
-    'Â·',
-    'â€“',
-    'â€”',
-    'â€œ',
-    'â€ž',
-    'â€™',
-    'â€˜',
-    'â€¦',
-    'â‚¬',
+$germanCharacters = [
+    mb_chr(0x00E4, 'UTF-8'),
+    mb_chr(0x00F6, 'UTF-8'),
+    mb_chr(0x00FC, 'UTF-8'),
+    mb_chr(0x00DF, 'UTF-8'),
+    mb_chr(0x00C4, 'UTF-8'),
+    mb_chr(0x00D6, 'UTF-8'),
+    mb_chr(0x00DC, 'UTF-8'),
 ];
 
-$allowedSuspiciousSequences = [
-    'AGENTS.md' => [
-        'Ã¤',
-        'Ã¶',
-        'Ã¼',
-        'ÃŸ',
-        'Ãƒ',
-    ],
-    '.codex/instructions.md' => [
-        'Ã¤',
-        'Ã¶',
-        'Ã¼',
-        'ÃŸ',
-    ],
-    'app/Services/RestaurantService.php' => [
-        'Ã–',
-    ],
-    'scripts/check-encoding.php' => $suspiciousSequences,
+$punctuationCharacters = [
+    mb_chr(0x00B7, 'UTF-8'),
+    mb_chr(0x2013, 'UTF-8'),
+    mb_chr(0x2014, 'UTF-8'),
+    mb_chr(0x201C, 'UTF-8'),
+    mb_chr(0x201E, 'UTF-8'),
+    mb_chr(0x2019, 'UTF-8'),
+    mb_chr(0x2018, 'UTF-8'),
+    mb_chr(0x2026, 'UTF-8'),
+    mb_chr(0x20AC, 'UTF-8'),
 ];
+
+$suspiciousSequences = [
+    ...suspiciousMojibakeSequences($germanCharacters),
+    ...suspiciousMojibakeSequences($punctuationCharacters),
+    mb_chr(0x00C3, 'UTF-8'),
+    mb_chr(0x00C2, 'UTF-8'),
+];
+
+$allowedSuspiciousSequences = [];
 
 $bomViolations = [];
 $utf16Violations = [];
@@ -138,7 +128,7 @@ foreach (array_filter(explode("\0", $trackedFiles)) as $relativePath) {
     }
 
     $unexpectedSequences = array_values(array_filter(
-        $suspiciousSequences,
+        array_unique($suspiciousSequences),
         static fn (string $sequence): bool => str_contains($contents, $sequence)
     ));
 
@@ -201,7 +191,6 @@ exit(1);
  */
 function shouldCheckFile(string $relativePath, string $contents, array $knownBinaryExtensions): bool
 {
-    $lowerPath = strtolower($relativePath);
     $extension = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION));
 
     if ($extension !== '' && in_array($extension, $knownBinaryExtensions, true)) {
@@ -213,4 +202,26 @@ function shouldCheckFile(string $relativePath, string $contents, array $knownBin
     }
 
     return true;
+}
+
+/**
+ * @param  array<int, string>  $characters
+ * @return array<int, string>
+ */
+function suspiciousMojibakeSequences(array $characters): array
+{
+    $sequences = [];
+
+    foreach ($characters as $character) {
+        $singleMojibake = mojibakeSequence($character);
+        $sequences[] = $singleMojibake;
+        $sequences[] = mojibakeSequence($singleMojibake);
+    }
+
+    return array_values(array_unique($sequences));
+}
+
+function mojibakeSequence(string $value): string
+{
+    return mb_convert_encoding($value, 'UTF-8', 'Windows-1252');
 }

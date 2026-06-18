@@ -1027,7 +1027,7 @@ it('stores filtered recognition csv uploads for the selected school', function (
     Queue::fake([ProcessRecognitionCsvImportJob::class]);
 
     $csv = implode("\n", [
-        'Studierende;SchÃ¼lerInnenkennzahl;Gegenstand;Note;Kolloquien;Modulwiederholungen;LehrerkÃ¼rzel',
+        'Studierende;SchülerInnenkennzahl;Gegenstand;Note;Kolloquien;Modulwiederholungen;Lehrerkürzel',
         'Max Muster;100;Deutsch;1;0;0/0;',
         'Ohne Wert;300;Mathematik;;0;0/0;',
         'Kolloq Wert;200;Englisch;N;1;0/0;',

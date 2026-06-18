@@ -1,113 +1,26 @@
 <template>
     <v-app>
-        <v-navigation-drawer v-model="show_navigation_drawer" color="primary" v-if="isAdminShellVisible">
-            <v-toolbar color="appbar">
-                <v-toolbar-title>
-                    <img :src="'/storage/images/' + config?.logo" alt="Logo" class="logo" height="24" />
-                </v-toolbar-title>
-                <v-spacer></v-spacer>
-                <v-btn icon="mdi-menu-close" @click="show_navigation_drawer = false" v-if="show_navigation_drawer" />
-            </v-toolbar>
-            <v-progress-linear v-if="is_loading > 0" indeterminate color="light-blue-lighten-3" />
-            <v-list>
-                <template v-for="(item, i) in config.menu" :key="i">
-                    <v-menu
-                        v-if="Array.isArray(item.children) && item.children.length > 0"
-                        location="end top"
-                        offset="8"
-                        :close-on-content-click="true">
-                        <template #activator="{ props: hopperMenuActivatorProps }">
-                            <v-list-item
-                                v-bind="hopperMenuActivatorProps"
-                                :title="item.title"
-                                :prepend-icon="item.icon"
-                                :disabled="isMenuInteractionDisabled || !item.is_active" />
-                        </template>
-                        <v-list density="comfortable" style="min-width: 280px;">
-                            <template v-for="(child, childIndex) in item.children" :key="`${i}-${childIndex}`">
-                                <v-list-item
-                                    v-if="child.to"
-                                    :exact="false"
-                                    :title="child.title"
-                                    :subtitle="child.subtitle"
-                                    :prepend-icon="child.icon"
-                                    v-bind="routeItemBindings(child)"
-                                    :disabled="isMenuInteractionDisabled || !child.is_active"
-                                    @click="navigateMenuRoute(child.to)">
-                                    <template v-if="child.status_icon" #append>
-                                        <v-icon :icon="child.status_icon" :color="child.status_color || 'warning'" :title="child.status_title || ''" size="small" />
-                                    </template>
-                                </v-list-item>
-                                <v-list-item
-                                    v-else-if="child.click"
-                                    :exact="false"
-                                    :title="child.title"
-                                    :subtitle="child.subtitle"
-                                    :prepend-icon="child.icon"
-                                    :disabled="isMenuInteractionDisabled || !child.is_active"
-                                    @click="callItemClick(child)" />
-                            </template>
-                        </v-list>
-                    </v-menu>
-                    <v-list-item
-                        v-else-if="item.href"
-                        :exact="false"
-                        :title="item.title"
-                        :prepend-icon="item.icon"
-                        :href="item.href"
-                        target="_blank"
-                        :disabled="isMenuInteractionDisabled || !item.is_active" />
-                    <v-list-item
-                        v-else-if="item.to"
-                        :exact="false"
-                        :title="item.title"
-                        :prepend-icon="item.icon"
-                        v-bind="routeItemBindings(item)"
-                        :disabled="isMenuInteractionDisabled || !item.is_active"
-                        @click="navigateMenuRoute(item.to)">
-                        <template v-if="item.status_icon" #append>
-                            <v-icon :icon="item.status_icon" :color="item.status_color || 'warning'" :title="item.status_title || ''" size="small" />
-                        </template>
-                    </v-list-item>
-                    <v-list-item
-                        v-else-if="item.click"
-                        :exact="false"
-                        :title="item.title"
-                        :prepend-icon="item.icon"
-                        :disabled="isMenuInteractionDisabled"
-                        @click="callItemClick(item)" />
-                </template>
-            </v-list>
-        </v-navigation-drawer>
+        <admin-navigation-drawer
+            v-model="show_navigation_drawer"
+            :is-visible="isAdminShellVisible"
+            :config="config"
+            :is-loading="is_loading"
+            :is-menu-interaction-disabled="isMenuInteractionDisabled"
+            @navigate-menu-route="navigateMenuRoute"
+            @call-item-click="callItemClick" />
 
-        <v-app-bar flat color="primary" v-if="isAdminShellVisible">
-            <template #prepend>
-                <v-btn icon="mdi-menu-open" v-if="!show_navigation_drawer" @click="show_navigation_drawer = true" />
-                <img
-                    :src="`${selectedSchoolLogoSrc}?t=${Date.now()}`"
-                    alt="Logo"
-                    height="60px"
-                    class="pl-2"
-                    v-if="selectedSchoolLogoSrc" />
-            </template>
-            <template #title>
-                {{ config?.selected_school?.long_name }}
-            </template>
-        </v-app-bar>
+        <admin-app-bar
+            v-model="show_navigation_drawer"
+            :is-visible="isAdminShellVisible"
+            :selected-school-logo-src="selectedSchoolLogoSrc"
+            :title="config?.selected_school?.long_name || ''" />
 
         <v-main class="bg-background" v-if="config">
-            <v-alert type="warning" variant="tonal" class="ma-2" v-if="isImpersonating">
-                <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-2">
-                    <div>
-                        Benutzer-Übernahme aktiv:
-                        <strong>{{ currentImpersonatedUserLabel }}</strong>
-                        <div class="text-caption mt-1">
-                            Ursprünglicher Benutzer: <strong>{{ impersonatorLabel }}</strong>. Mit "Zurück" wechseln Sie zu diesem Benutzer.
-                        </div>
-                    </div>
-                    <v-btn color="warning" flat tile @click="stopImpersonationAndReturn">Zurück</v-btn>
-                </div>
-            </v-alert>
+            <admin-impersonation-alert
+                :is-impersonating="isImpersonating"
+                :current-impersonated-user-label="currentImpersonatedUserLabel"
+                :impersonator-label="impersonatorLabel"
+                @stop="stopImpersonationAndReturn" />
             <router-view></router-view>
             <its-notification />
             <v-overlay :model-value="is_loading > 0" class="align-center justify-center" opacity="0.1">
@@ -124,9 +37,13 @@
 </template>
 
 <script>
-import axios from 'axios'
+import AdminAppBar from '@/pages/admin/components/AdminAppBar.vue'
+import AdminImpersonationAlert from '@/pages/admin/components/AdminImpersonationAlert.vue'
+import AdminNavigationDrawer from '@/pages/admin/components/AdminNavigationDrawer.vue'
 import ItsNotification from '@/pages/components/ItsNotification.vue'
 import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
+import { useAdminRouteNavigation } from '@/composables/useAdminRouteNavigation'
+import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolStore } from '@/stores/admin/SchoolStore'
 import { resolveAdminRouteAccess } from '../../../routes/admin.js'
@@ -134,6 +51,9 @@ import { mapWritableState } from 'pinia'
 
 export default {
     components: {
+        AdminAppBar,
+        AdminImpersonationAlert,
+        AdminNavigationDrawer,
         ItsNotification,
         LoadingAnimation,
     },
@@ -142,49 +62,21 @@ export default {
         return {
             adminStore: null,
             schoolStore: null,
+            routeNavigation: null,
             admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher', 'studentstimetables_admin', 'studentstimetables_moderator'],
-            is_route_navigation_pending: false,
-            routeNavigationLockFallbackTimer: null,
-            routeLoadingCount: 0,
-            routeLoadingFallbackTimer: null,
-            removeRouteBeforeEachHook: null,
-            removeRouteAfterEachHook: null,
-            removeRouteErrorHook: null,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'is_loading', 'show_navigation_drawer', 'is_navigation_locked', 'is_struktur_modus', 'load_config']),
         selectedSchoolLogoSrc() {
-            const logo = this.config?.selected_school?.logo
-            if (!logo) return null
-
-            const rawLogo = String(logo).trim().replace(/\\/g, '/')
-            if (!rawLogo) return null
-
-            if (rawLogo.startsWith('http://') || rawLogo.startsWith('https://') || rawLogo.startsWith('/storage/')) {
-                return rawLogo
-            }
-
-            const normalizedLogo = rawLogo.replace(/^\/+/, '')
-            if (!normalizedLogo) return null
-
-            if (normalizedLogo.startsWith('storage/')) {
-                return `/${normalizedLogo}`
-            }
-
-            if (normalizedLogo.startsWith('images/')) {
-                return `/storage/${normalizedLogo}`
-            }
-
-            if (normalizedLogo.startsWith('logos/')) {
-                return `/storage/images/${normalizedLogo}`
-            }
-
-            return `/storage/images/${normalizedLogo}`
+            return resolveSelectedSchoolLogoSrc(this.config?.selected_school?.logo)
         },
         isMenuInteractionDisabled() {
-            return this.is_navigation_locked || this.is_route_navigation_pending || this.is_struktur_modus
+            return this.is_navigation_locked || this.isRouteNavigationPending || this.is_struktur_modus
+        },
+        isRouteNavigationPending() {
+            return this.routeNavigation?.state?.isRouteNavigationPending || false
         },
         isImpersonating() {
             return !!this.config?.impersonation?.is_impersonating
@@ -219,7 +111,12 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.schoolStore = useSchoolStore()
-        this.registerRouteNavigationHooks()
+        this.routeNavigation = useAdminRouteNavigation({
+            router: this.$router,
+            getCurrentRoute: () => this.$route,
+            adminStore: this.adminStore,
+        })
+        this.routeNavigation.registerRouteNavigationHooks()
         this.adminStore.is_loading++
         this.adminStore.initialize(this.$router)
         if (!this.adminStore.config) {
@@ -228,11 +125,7 @@ export default {
         this.adminStore.is_loading--
     },
     unmounted() {
-        this.clearNavigationLockTimers()
-        this.clearRouteLoadingFallbackTimer()
-        if (typeof this.removeRouteBeforeEachHook === 'function') this.removeRouteBeforeEachHook()
-        if (typeof this.removeRouteAfterEachHook === 'function') this.removeRouteAfterEachHook()
-        if (typeof this.removeRouteErrorHook === 'function') this.removeRouteErrorHook()
+        this.routeNavigation?.unregisterRouteNavigationHooks()
     },
 
     methods: {
@@ -240,125 +133,8 @@ export default {
             return (this.$route?.path || '').replace(/\/+$/, '') === '/admin'
         },
 
-        registerRouteNavigationHooks() {
-            if (!this.$router) return
-            this.removeRouteBeforeEachHook = this.$router.beforeEach((to, from, next) => {
-                if (to.fullPath !== from.fullPath) {
-                    this.beginRouteLoading()
-                }
-                next()
-            })
-            this.removeRouteAfterEachHook = this.$router.afterEach(() => {
-                this.clearNavigationLock()
-                this.$nextTick(() => {
-                    this.finishRouteLoading()
-                })
-            })
-            this.removeRouteErrorHook = this.$router.onError(() => {
-                this.clearNavigationLock()
-                this.$nextTick(() => {
-                    this.finishRouteLoading()
-                })
-            })
-        },
         async navigateMenuRoute(target) {
-            if (this.isMenuInteractionDisabled) return
-            if (!this.$router) return
-
-            const resolvedTarget = this.$router?.resolve(target)?.fullPath || ''
-            const currentRoute = this.$route?.fullPath || ''
-            if (!resolvedTarget || resolvedTarget === currentRoute) return
-
-            this.startNavigationLock()
-
-            try {
-                await this.$router.push(target)
-            } catch (error) {
-                console.error('dashboard menu navigation failed:', error)
-            } finally {
-                this.clearNavigationLock()
-            }
-        },
-        startNavigationLock() {
-            this.clearNavigationLockTimers()
-            this.is_route_navigation_pending = true
-            this.routeNavigationLockFallbackTimer = window.setTimeout(() => {
-                this.clearNavigationLock()
-            }, 8000)
-        },
-        clearNavigationLock() {
-            this.clearNavigationLockTimers()
-            this.is_route_navigation_pending = false
-        },
-        clearNavigationLockTimers() {
-            if (this.routeNavigationLockFallbackTimer !== null) {
-                window.clearTimeout(this.routeNavigationLockFallbackTimer)
-                this.routeNavigationLockFallbackTimer = null
-            }
-        },
-        beginRouteLoading() {
-            if (!this.adminStore) return
-
-            this.routeLoadingCount++
-            this.adminStore.is_loading++
-            this.clearRouteLoadingFallbackTimer()
-            this.routeLoadingFallbackTimer = window.setTimeout(() => {
-                this.finishAllRouteLoading()
-            }, 15000)
-        },
-        finishRouteLoading() {
-            this.clearRouteLoadingFallbackTimer()
-            if (this.routeLoadingCount <= 0 || !this.adminStore) return
-
-            this.routeLoadingCount--
-            this.adminStore.is_loading = Math.max(0, Number(this.adminStore.is_loading || 0) - 1)
-        },
-        finishAllRouteLoading() {
-            const count = this.routeLoadingCount
-            this.routeLoadingCount = 0
-            this.clearRouteLoadingFallbackTimer()
-            this.clearNavigationLock()
-            if (!this.adminStore || count <= 0) return
-
-            this.adminStore.is_loading = Math.max(0, Number(this.adminStore.is_loading || 0) - count)
-        },
-        clearRouteLoadingFallbackTimer() {
-            if (this.routeLoadingFallbackTimer !== null) {
-                window.clearTimeout(this.routeLoadingFallbackTimer)
-                this.routeLoadingFallbackTimer = null
-            }
-        },
-        routeItemBindings(item) {
-            return Array.isArray(item?.active_paths) && item.active_paths.length > 0
-                ? { active: this.isMenuItemActive(item) }
-                : {}
-        },
-        isMenuItemActive(item) {
-            const activePaths = Array.isArray(item?.active_paths) ? item.active_paths : []
-
-            if (!activePaths.length) {
-                return false
-            }
-
-            const currentPath = this.normalizeAdminPath(this.$route?.path)
-            const exact = !!item.active_exact
-
-            return activePaths.some((activePath) => {
-                const normalizedActivePath = this.normalizeAdminPath(activePath)
-
-                if (exact) {
-                    return currentPath === normalizedActivePath
-                }
-
-                return currentPath === normalizedActivePath || currentPath.startsWith(`${normalizedActivePath}/`)
-            })
-        },
-        normalizeAdminPath(path) {
-            if (typeof path !== 'string') {
-                return ''
-            }
-
-            return path.replace(/\/+$/, '')
+            await this.routeNavigation?.navigateMenuRoute(target, this.isMenuInteractionDisabled)
         },
         async logout() {
             this.$router.replace({ path: '/admin/login', query: { logout: '1' } })

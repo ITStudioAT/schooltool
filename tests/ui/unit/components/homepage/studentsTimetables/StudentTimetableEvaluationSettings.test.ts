@@ -1739,7 +1739,7 @@ describe('Student timetable evaluation settings', () => {
             courseSections: [
                 {
                     key: 'additional',
-                    title: 'ZusÃ¤tzliche Kurse',
+                    title: 'Zusätzliche Kurse',
                     items: [
                         { key: 'additional-red', code: 'D2' },
                         { key: 'additional-green', code: 'M2' },

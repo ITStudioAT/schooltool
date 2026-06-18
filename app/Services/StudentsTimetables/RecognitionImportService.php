@@ -286,11 +286,27 @@ class RecognitionImportService
     {
         $normalized = Str::lower(trim((string) $header));
         $normalized = str_replace([' ', '-', '_'], '', $normalized);
-        $normalized = str_replace(['ä', 'Ã¤', 'ã¤'], 'ae', $normalized);
-        $normalized = str_replace(['ö', 'Ã¶', 'ã¶'], 'oe', $normalized);
-        $normalized = str_replace(['ü', 'Ã¼', 'ã¼'], 'ue', $normalized);
+        $normalized = str_replace(['ä', ...$this->legacyMojibakeVariants('ä')], 'ae', $normalized);
+        $normalized = str_replace(['ö', ...$this->legacyMojibakeVariants('ö')], 'oe', $normalized);
+        $normalized = str_replace(['ü', ...$this->legacyMojibakeVariants('ü')], 'ue', $normalized);
 
         return $normalized;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function legacyMojibakeVariants(string $character): array
+    {
+        $singleMojibake = mb_convert_encoding($character, 'UTF-8', 'Windows-1252');
+        $doubleMojibake = mb_convert_encoding($singleMojibake, 'UTF-8', 'Windows-1252');
+
+        return array_values(array_unique([
+            $singleMojibake,
+            Str::lower($singleMojibake),
+            $doubleMojibake,
+            Str::lower($doubleMojibake),
+        ]));
     }
 
     /**

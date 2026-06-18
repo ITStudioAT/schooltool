@@ -6,7 +6,7 @@ For any Laravel/project questions, DO NOT guess. Always inspect the real project
 
 - Treat the repository as UTF-8 without BOM.
 - Preserve German umlauts and other non-ASCII characters exactly as stored.
-- Never replace correct characters with `?`, `�`, `Ã¤`, `Ã¶`, `Ã¼`, `ÃŸ`, or similar mojibake.
+- Never replace correct characters with placeholders, replacement characters, or similar mojibake.
 - If text appears corrupted, only repair strings that are clearly reconstructable.
 
 Use Boost tools by default for:

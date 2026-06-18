@@ -845,11 +845,16 @@ class RestaurantService
     private function ingredientIconTitleVariants(string $title): array
     {
         return match ($title) {
-            'Österreich' => ['Österreich', 'Oesterreich', 'Ã–sterreich'],
+            'Österreich' => ['Österreich', 'Oesterreich', $this->legacyMojibake('Österreich')],
             'Rindfleisch' => ['Rindfleisch', 'Rind'],
             'Pilze' => ['Pilze', 'Pilz'],
             default => [$title],
         };
+    }
+
+    private function legacyMojibake(string $value): string
+    {
+        return mb_convert_encoding($value, 'UTF-8', 'Windows-1252');
     }
 
     private function ingredientIconImageUrlFromPath(string $path): ?string

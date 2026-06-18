@@ -293,7 +293,7 @@
                                     variant="tonal"
                                     :color="comparisonSummary.ready ? 'success' : 'warning'"
                                     :prepend-icon="comparisonSummary.ready ? 'mdi-check-circle-outline' : 'mdi-alert-circle-outline'">
-                                    {{ comparisonSummary.ready ? 'Bereit' : 'UnvollstÃ¤ndig' }}
+                                    {{ comparisonSummary.ready ? 'Bereit' : 'Unvollständig' }}
                                 </v-chip>
                             </div>
                             <div class="extraction-stats extraction-stats--comparison">
@@ -875,7 +875,7 @@ export default {
             return value.toLocaleString('de-AT')
         },
         formatSignedNumber(value) {
-            if (typeof value !== 'number') return 'â€“'
+            if (typeof value !== 'number') return '–'
 
             return value > 0 ? `+${this.formatNumber(value)}` : this.formatNumber(value)
         },

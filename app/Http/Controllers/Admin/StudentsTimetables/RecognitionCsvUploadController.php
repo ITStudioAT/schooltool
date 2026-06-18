@@ -466,12 +466,42 @@ class RecognitionCsvUploadController extends Controller
 
     private function studentNumberIdentifierExpression(): string
     {
-        return "NULLIF(TRIM(COALESCE(student_code, JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.schuelerinnenkennzahl')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schülerinnenkennzahl\"')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schã¼lerinnenkennzahl\"')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schÃ¼lerinnenkennzahl\"')))), '')";
+        $studentCodeExpressions = [
+            'student_code',
+            "JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.schuelerinnenkennzahl'))",
+            ...$this->rawDataJsonExpressions([
+                'schülerinnenkennzahl',
+                $this->legacyMojibake('schülerinnenkennzahl'),
+                mb_strtolower($this->legacyMojibake('schülerinnenkennzahl')),
+            ]),
+        ];
+
+        return sprintf(
+            "NULLIF(TRIM(COALESCE(%s)), '')",
+            implode(', ', array_values(array_unique($studentCodeExpressions))),
+        );
     }
 
     private function studentNameIdentifierExpression(): string
     {
         return "LOWER(NULLIF(TRIM(COALESCE(NULLIF(TRIM(COALESCE(student, '')), ''), NULLIF(TRIM(CONCAT_WS('|', NULLIF(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.familienname')), '')), ''), NULLIF(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.vorname')), '')), ''))), ''))), ''))";
+    }
+
+    /**
+     * @param  array<int, string>  $keys
+     * @return array<int, string>
+     */
+    private function rawDataJsonExpressions(array $keys): array
+    {
+        return array_map(
+            static fn (string $key): string => "JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"{$key}\"'))",
+            array_values(array_unique($keys)),
+        );
+    }
+
+    private function legacyMojibake(string $value): string
+    {
+        return mb_convert_encoding($value, 'UTF-8', 'Windows-1252');
     }
 
     private function isScientificNotationIdentifier(string $identifier): bool
