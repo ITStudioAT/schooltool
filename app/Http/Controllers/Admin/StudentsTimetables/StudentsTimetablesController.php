@@ -140,6 +140,7 @@ class StudentsTimetablesController extends Controller
             'selection.artsSubject' => ['nullable', 'string', 'max:20'],
             'selection.arts_subject' => ['nullable', 'string', 'max:20'],
             'selection.language' => ['nullable', 'string', 'max:20'],
+            'strict_selection' => ['sometimes', 'boolean'],
         ]);
 
         return response()->json([
@@ -147,6 +148,7 @@ class StudentsTimetablesController extends Controller
                 $authUser,
                 (string) $validated['student_code'],
                 $validated['selection'] ?? [],
+                (bool) ($validated['strict_selection'] ?? false),
             ),
         ]);
     }

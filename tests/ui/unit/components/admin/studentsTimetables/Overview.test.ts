@@ -5996,6 +5996,63 @@ describe('Students timetable overview', () => {
         expect(history.additional.map((course: Record<string, string>) => course.label)).toEqual(['INF2'])
     })
 
+    it('shows selected arts additional courses independently from the selected branch', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx = {
+            ...methods,
+            selection: {
+                semester: 6,
+                religion: 'ETH',
+                language: 'L',
+                branch: 'wirtschaftskundlich',
+                artsSubject: 'ME',
+            },
+            religionOptions: computed.religionOptions.call({}),
+            languageOptions: computed.languageOptions.call({}),
+            branchOptions: computed.branchOptions.call({}),
+            artsSubjectOptions: computed.artsSubjectOptions.call({}),
+            subjectRows: [
+                {
+                    id: 1,
+                    is_active: true,
+                    semester: 7,
+                    json_subject: 'ME',
+                    json_code: 'ME1',
+                    name: 'Musikerziehung 1',
+                    branch: 'gymnasial',
+                    hours_per_week: 2,
+                },
+                {
+                    id: 2,
+                    is_active: true,
+                    semester: 7,
+                    json_subject: 'ME',
+                    json_code: 'ME1',
+                    name: 'Musikerziehung 1',
+                    branch: 'wirtschaftskundlich',
+                    hours_per_week: 2,
+                },
+                {
+                    id: 3,
+                    is_active: true,
+                    semester: 7,
+                    json_subject: 'BE',
+                    json_code: 'BE1',
+                    name: 'Bildnerische Erziehung 1',
+                    branch: 'gymnasial',
+                    hours_per_week: 2,
+                },
+            ],
+        }
+
+        const history = methods.overviewStudentCourseHistory.call(ctx, [
+            { subject: 'D6', grade: '3' },
+        ])
+
+        expect(history.additional.map((course: Record<string, string>) => course.label)).toEqual(['ME1'])
+    })
+
     it('continues religion or ethics modules after completed alternate modules for overview students', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods

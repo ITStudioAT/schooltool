@@ -293,10 +293,11 @@ export default {
             return false
         },
         handleNavigation(key) {
-            this.main_action = key === 'imports' ? 'timetable' : key
+            this.main_action = ['automatic-timetable', 'imports'].includes(key) ? 'timetable' : key
             const paths = {
                 timetable: TIMETABLE_OVERVIEW_PATH,
                 'timetable-v2': TIMETABLE_V2_OVERVIEW_PATH,
+                'automatic-timetable': AUTOMATIC_TIMETABLE_OVERVIEW_PATH,
                 imports: '/admin/students-timetables/timetable/imports',
                 import: '/admin/students-timetables/import/overview',
                 'subjects-overview': '/admin/students-timetables/subjects-overview/subject-plan',

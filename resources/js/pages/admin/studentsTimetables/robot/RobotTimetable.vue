@@ -3117,7 +3117,7 @@ export default {
                     ...this.studentPlannedCourses,
                 ]
                     .filter((course, index, courses) =>
-                        courses.findIndex(candidate => candidate.key === course.key) === index,
+                        courses.findIndex(candidate => this.studentPlanningCourseUniqueKey(candidate) === this.studentPlanningCourseUniqueKey(course)) === index,
                     )
                     .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
             }
@@ -3142,7 +3142,7 @@ export default {
                 ...plannedCourses,
             ]
                 .filter((course, index, courses) =>
-                    courses.findIndex(candidate => candidate.key === course.key) === index,
+                    courses.findIndex(candidate => this.studentPlanningCourseUniqueKey(candidate) === this.studentPlanningCourseUniqueKey(course)) === index,
                 )
                 .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
         },
@@ -7082,7 +7082,10 @@ export default {
             const progressionAdditionalCourseKeys = this.progressionAdditionalCourseKeySet instanceof Set
                 ? this.progressionAdditionalCourseKeySet
                 : new Set(Array.isArray(this.progressionAdditionalCourseKeys) ? this.progressionAdditionalCourseKeys : [])
-            const courses = Array.isArray(additionalCourses) ? additionalCourses : []
+            const courses = (Array.isArray(additionalCourses) ? additionalCourses : [])
+                .filter((course, index, allCourses) =>
+                    allCourses.findIndex(candidate => this.studentPlanningCourseUniqueKey(candidate) === this.studentPlanningCourseUniqueKey(course)) === index,
+                )
 
             if (!progressionAdditionalCourseKeys.size) return courses
 
@@ -9751,7 +9754,7 @@ export default {
             return this.coursesForSemester(semester)
                 .filter(course => !this.courseCompletedForStudentPlanning(course, completedCourseCodes))
                 .filter((course, index, courses) =>
-                    courses.findIndex(candidate => candidate.key === course.key) === index,
+                    courses.findIndex(candidate => this.studentPlanningCourseUniqueKey(candidate) === this.studentPlanningCourseUniqueKey(course)) === index,
                 )
                 .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
         },
@@ -9765,9 +9768,14 @@ export default {
                 .filter(course => !this.courseCompletedForStudentPlanning(course, completedCourseCodes))
                 .filter(course => this.coursePossibleAsStudentMissing(course, completedCourseCodes, visitedCourseCodes))
                 .filter((course, index, courses) =>
-                    courses.findIndex(candidate => candidate.key === course.key) === index,
+                    courses.findIndex(candidate => this.studentPlanningCourseUniqueKey(candidate) === this.studentPlanningCourseUniqueKey(course)) === index,
                 )
                 .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
+        },
+        studentPlanningCourseUniqueKey(course) {
+            const code = this.normalizedCourseCode(course?.code || '')
+
+            return code || String(course?.key || '')
         },
         studentCompletedCourseCodes() {
             const completedCourses = Array.isArray(this.studentCompletedCourses)
@@ -9983,7 +9991,7 @@ export default {
         },
         subjectMatchesSelectedBranch(subject) {
             if (this.isArtsSubject(subject)) {
-                return subject.branch === 'gymnasial' && this.selection.branch === 'gymnasial'
+                return true
             }
 
             return !subject.branch || subject.branch === 'common' || subject.branch === this.selection.branch

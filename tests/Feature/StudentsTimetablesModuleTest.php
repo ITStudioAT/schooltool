@@ -1764,6 +1764,91 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.course_sections.2.items.0.code', 'D1');
 });
 
+it('does not propose choice courses when strict student overview selection is missing that choice', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '4S',
+        'school_level' => '09_1',
+        'student_code' => '100',
+        'last_name' => 'Schroll',
+        'first_name' => 'Lukas',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    collect([
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'R/ET1', 'json_subject' => 'R/ET', 'name' => 'Religion/Ethik', 'hours_per_week' => 2],
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1', 'hours_per_week' => 3],
+    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        ...$subjectRow,
+    ]));
+
+    $response = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/student-overview?student_code=100&strict_selection=1&selection[semester]=1')
+        ->assertSuccessful();
+
+    expect(collect($response->json('data.proposed_courses'))->pluck('code')->all())
+        ->toBe(['D1']);
+
+    $response = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/student-overview?student_code=100&strict_selection=1&selection[semester]=1&selection[religion]=ETH')
+        ->assertSuccessful();
+
+    expect(collect($response->json('data.proposed_courses'))->pluck('code')->all())
+        ->toBe(['D1', 'ETH1']);
+});
+
+it('offers selected arts courses independently from the selected branch', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '4S',
+        'school_level' => '09_1',
+        'student_code' => '100',
+        'last_name' => 'Schroll',
+        'first_name' => 'Lukas',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    collect([
+        ['semester' => 7, 'branch' => 'gymnasial', 'json_code' => 'ME1', 'json_subject' => 'ME', 'name' => 'Musikerziehung 1'],
+        ['semester' => 7, 'branch' => 'wirtschaftskundlich', 'json_code' => 'ME1', 'json_subject' => 'ME', 'name' => 'Musikerziehung 1'],
+        ['semester' => 7, 'branch' => 'gymnasial', 'json_code' => 'BE1', 'json_subject' => 'BE', 'name' => 'Bildnerische Erziehung 1'],
+    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        'hours_per_week' => 2,
+        ...$subjectRow,
+    ]));
+
+    $response = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/student-overview?student_code=100&strict_selection=1&selection[semester]=6&selection[branch]=wirtschaftskundlich&selection[artsSubject]=ME')
+        ->assertSuccessful();
+
+    expect(collect($response->json('data.additional_courses'))->pluck('code')->all())
+        ->toBe(['ME1']);
+});
+
 it('normalizes recognized completed course school semesters to subject plan modules', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([

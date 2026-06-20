@@ -6270,7 +6270,7 @@ describe('Students timetable robot page', () => {
         const courses = () => computed.availableCourses.call(ctx)
         const courseCodes = () => courses().map(course => course.code)
 
-        expect(courseCodes()).toEqual(['D1', 'ETH1', 'L1', 'WIK1'])
+        expect(courseCodes()).toEqual(['D1', 'ETH1', 'L1', 'ME1', 'WIK1'])
 
         ctx.selection.semester = 2
         expect(courseCodes()).toEqual(['D2'])
@@ -6595,6 +6595,16 @@ describe('Students timetable robot page', () => {
                     hours_per_week: 2,
                     is_active: true,
                 },
+                {
+                    id: 3,
+                    semester: 7,
+                    branch: 'wirtschaftskundlich',
+                    json_code: 'ME1',
+                    json_subject: 'ME',
+                    name: 'Musikerziehung 1',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
             ],
         }
 
@@ -6602,7 +6612,7 @@ describe('Students timetable robot page', () => {
 
         ctx.selection.branch = 'wirtschaftskundlich'
 
-        expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual([])
+        expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual(['ME1'])
     })
 
     it('shows unfinished earlier Spanish modules as missing courses and keeps planned courses semester-scoped', () => {
