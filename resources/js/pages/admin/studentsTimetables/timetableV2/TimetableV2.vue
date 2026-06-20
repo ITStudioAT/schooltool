@@ -363,10 +363,11 @@
                             </div>
                             <div
                                 v-if="selectedTimetableV2ConflictSummaryItems.length"
-                                class="students-timetable-v2-result-conflicts">
+                                class="students-timetable-v2-result-conflicts"
+                                :class="`students-timetable-v2-result-conflicts--${selectedTimetableV2ConflictSeverity}`">
                                 <div class="students-timetable-v2-result-conflicts__title">
-                                    <v-icon icon="mdi-alert-circle-outline" size="16" />
-                                    <span>Konflikte</span>
+                                    <v-icon :icon="selectedTimetableV2ConflictIcon" size="16" />
+                                    <span>{{ selectedTimetableV2ConflictTitle }}</span>
                                 </div>
                                 <ul class="students-timetable-v2-result-conflicts__list">
                                     <li
@@ -416,39 +417,55 @@
                                         :class="selectedTimetableV2CellClasses(weekday.value, time.value)">
                                         <div
                                             v-if="selectedTimetableV2Slot(weekday.value, time.value)"
-                                            class="students-timetable-v2-result-grid__content">
+                                            class="students-timetable-v2-result-grid__content"
+                                            :class="{ 'students-timetable-v2-result-grid__content--has-overlap-chip': selectedTimetableV2OccasionalOverlapChips(selectedTimetableV2Slot(weekday.value, time.value)).length }">
+                                            <div
+                                                v-if="selectedTimetableV2OccasionalOverlapChips(selectedTimetableV2Slot(weekday.value, time.value)).length"
+                                                class="students-timetable-v2-result-grid__overlap-chips">
+                                                <v-chip
+                                                    v-for="chip in selectedTimetableV2OccasionalOverlapChips(selectedTimetableV2Slot(weekday.value, time.value))"
+                                                    :key="chip.key"
+                                                    class="students-timetable-v2-result-grid__overlap-chip"
+                                                    color="warning"
+                                                    density="compact"
+                                                    label
+                                                    size="x-small"
+                                                    variant="flat">
+                                                    {{ chip.label }}
+                                                </v-chip>
+                                            </div>
                                             <div class="students-timetable-v2-result-grid__code">
-                                                <span>{{ selectedTimetableV2SlotTitle(selectedTimetableV2Slot(weekday.value, time.value)) }}</span>
+                                                <span>{{ selectedTimetableV2SlotTitle(selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value))) }}</span>
                                                 <sup
-                                                    v-if="selectedTimetableV2Slot(weekday.value, time.value).isDistanceLearningCourse"
+                                                    v-if="selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)).isDistanceLearningCourse"
                                                     class="students-timetable-v2-result-grid__badge">
                                                     FU
                                                 </sup>
                                                 <sup
-                                                    v-if="selectedTimetableV2Slot(weekday.value, time.value).isAdditionalCourse"
+                                                    v-if="selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)).isAdditionalCourse"
                                                     class="students-timetable-v2-result-grid__badge students-timetable-v2-result-grid__badge--additional">
                                                     Zusatz
                                                 </sup>
                                             </div>
                                             <div
-                                                v-if="selectedTimetableV2SlotDetails(selectedTimetableV2Slot(weekday.value, time.value))"
+                                                v-if="selectedTimetableV2SlotDetails(selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)))"
                                                 class="students-timetable-v2-result-grid__details">
-                                                {{ selectedTimetableV2SlotDetails(selectedTimetableV2Slot(weekday.value, time.value)) }}
+                                                {{ selectedTimetableV2SlotDetails(selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value))) }}
                                             </div>
                                             <div
-                                                v-if="selectedTimetableV2SlotRecurrenceLabel(selectedTimetableV2Slot(weekday.value, time.value))"
+                                                v-if="selectedTimetableV2SlotRecurrenceLabel(selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)))"
                                                 class="students-timetable-v2-result-grid__recurrence">
-                                                {{ selectedTimetableV2SlotRecurrenceLabel(selectedTimetableV2Slot(weekday.value, time.value)) }}
+                                                {{ selectedTimetableV2SlotRecurrenceLabel(selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value))) }}
                                             </div>
                                             <div
                                                 v-if="selectedTimetableV2SlotDateLabel(
-                                                    selectedTimetableV2Slot(weekday.value, time.value),
+                                                    selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)),
                                                     { showRegularRange: selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length > 0 },
                                                 )"
                                                 class="students-timetable-v2-result-grid__date">
                                                 {{
                                                     selectedTimetableV2SlotDateLabel(
-                                                        selectedTimetableV2Slot(weekday.value, time.value),
+                                                        selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)),
                                                         { showRegularRange: selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length > 0 },
                                                     )
                                                 }}
@@ -470,13 +487,13 @@
                                                 </div>
                                             </div>
                                             <div
-                                                v-if="selectedTimetableV2SlotConflicts(selectedTimetableV2Slot(weekday.value, time.value)).length"
+                                                v-if="selectedTimetableV2DisplayedSlotConflicts(selectedTimetableV2Slot(weekday.value, time.value)).length"
                                                 class="students-timetable-v2-result-grid__conflicts">
                                                 <div class="students-timetable-v2-result-grid__conflict-title">
                                                     Konflikt mit:
                                                 </div>
                                                 <div
-                                                    v-for="conflict in selectedTimetableV2SlotConflicts(selectedTimetableV2Slot(weekday.value, time.value))"
+                                                    v-for="conflict in selectedTimetableV2DisplayedSlotConflicts(selectedTimetableV2Slot(weekday.value, time.value))"
                                                     :key="selectedTimetableV2ConflictKey(conflict)"
                                                     class="students-timetable-v2-result-grid__conflict">
                                                     {{ selectedTimetableV2ConflictLabel(conflict) }}
@@ -1263,6 +1280,24 @@ export default {
                 ? 'Stundenplan mit Überschneidung'
                 : 'Gültiger Stundenplan'
         },
+        selectedTimetableV2ConflictSeverity() {
+            const conflictPairs = this.selectedTimetableV2ConflictPairs()
+
+            return conflictPairs.length > 0
+                && conflictPairs.every((pair) => this.selectedTimetableV2ConflictPairIsOccasional(pair))
+                ? 'warning'
+                : 'error'
+        },
+        selectedTimetableV2ConflictIcon() {
+            return this.selectedTimetableV2ConflictSeverity === 'warning'
+                ? 'mdi-alert-outline'
+                : 'mdi-alert-circle-outline'
+        },
+        selectedTimetableV2ConflictTitle() {
+            return this.selectedTimetableV2ConflictSeverity === 'warning'
+                ? 'Überschneidungen'
+                : 'Konflikte'
+        },
         selectedTimetableV2ConflictSummaryItems() {
             const slotConflictLabels = this.uniqueValues(this.selectedTimetableV2SlotEntries
                 .flatMap((entry) => this.selectedTimetableV2SlotConflicts(entry.slot)
@@ -1292,23 +1327,25 @@ export default {
         selectedTimetableV2ConflictResolutionOptions() {
             const optionsBySelectionKey = new Map()
 
-            this.selectedTimetableV2ConflictPairs().forEach((pair) => {
-                [pair.slot, pair.conflict].forEach((slot) => {
-                    const offeredCourse = this.selectedTimetableV2OfferedCourseForSlot(slot)
-                    const selectionKey = offeredCourse?.selectionKey || ''
-                    if (!selectionKey || !this.offeredCourseSelected(offeredCourse)) return
+            this.selectedTimetableV2ConflictPairs()
+                .filter((pair) => !this.selectedTimetableV2ConflictPairIsOccasional(pair))
+                .forEach((pair) => {
+                    [pair.slot, pair.conflict].forEach((slot) => {
+                        const offeredCourse = this.selectedTimetableV2OfferedCourseForSlot(slot)
+                        const selectionKey = offeredCourse?.selectionKey || ''
+                        if (!selectionKey || !this.offeredCourseSelected(offeredCourse)) return
 
-                    if (!optionsBySelectionKey.has(selectionKey)) {
-                        optionsBySelectionKey.set(selectionKey, {
-                            conflictKeys: new Set(),
-                            label: this.selectedTimetableV2CourseProblemLabel(slot) || offeredCourse.groupSelectionLabel || offeredCourse.name,
-                            selectionKey,
-                        })
-                    }
+                        if (!optionsBySelectionKey.has(selectionKey)) {
+                            optionsBySelectionKey.set(selectionKey, {
+                                conflictKeys: new Set(),
+                                label: this.selectedTimetableV2CourseProblemLabel(slot) || offeredCourse.groupSelectionLabel || offeredCourse.name,
+                                selectionKey,
+                            })
+                        }
 
-                    optionsBySelectionKey.get(selectionKey).conflictKeys.add(pair.key)
+                        optionsBySelectionKey.get(selectionKey).conflictKeys.add(pair.key)
+                    })
                 })
-            })
 
             return [...optionsBySelectionKey.values()]
                 .map((option) => {
@@ -1651,12 +1688,54 @@ export default {
         },
         selectedTimetableV2CellClasses(weekday, hour) {
             const slot = this.selectedTimetableV2Slot(weekday, hour)
+            const conflictSeverity = this.selectedTimetableV2SlotConflictSeverity(slot)
+            const displaySlot = this.selectedTimetableV2DisplaySlot(slot)
 
             return {
                 'students-timetable-v2-result-grid__cell--filled': Boolean(slot),
-                'students-timetable-v2-result-grid__cell--additional': slot?.isAdditionalCourse === true,
-                'students-timetable-v2-result-grid__cell--conflict': Array.isArray(slot?.conflicts) && slot.conflicts.length > 0,
+                'students-timetable-v2-result-grid__cell--additional': displaySlot?.isAdditionalCourse === true,
+                'students-timetable-v2-result-grid__cell--conflict': conflictSeverity === 'error',
             }
+        },
+        selectedTimetableV2DisplaySlot(slot) {
+            if (!this.selectedTimetableV2SlotIsOccasional(slot)) return slot
+
+            return this.selectedTimetableV2SlotConflicts(slot)
+                .find((conflict) => !this.selectedTimetableV2SlotIsOccasional(conflict)) || slot
+        },
+        selectedTimetableV2OccasionalOverlapChips(slot) {
+            if (!this.selectedTimetableV2SlotConflicts(slot).length) return []
+
+            const chipsByKey = new Map()
+            const overlapItems = [
+                slot,
+                ...this.selectedTimetableV2SlotConflicts(slot),
+            ]
+
+            overlapItems
+                .filter((item) => this.selectedTimetableV2SlotIsOccasional(item))
+                .forEach((item) => {
+                    const label = [
+                        this.selectedTimetableV2CourseProblemLabel(item),
+                        this.selectedTimetableV2SlotDateLabel(item),
+                    ].filter(Boolean).join(' ')
+                    const key = this.selectedTimetableV2SlotKey(item) || label
+
+                    if (!key || !label || chipsByKey.has(key)) return
+
+                    chipsByKey.set(key, {
+                        key,
+                        label,
+                    })
+                })
+
+            return [...chipsByKey.values()]
+        },
+        selectedTimetableV2DisplayedSlotConflicts(slot) {
+            if (this.selectedTimetableV2SlotConflictSeverity(slot) !== 'error') return []
+
+            return this.selectedTimetableV2SlotConflicts(slot)
+                .filter((conflict) => !this.selectedTimetableV2SlotIsOccasional(conflict))
         },
         selectedTimetableV2SlotTitle(slot) {
             return this.spacedCourseCode(slot?.code || slot?.sourceLabel || slot?.name || '')
@@ -1710,6 +1789,14 @@ export default {
         selectedTimetableV2SlotConflicts(slot) {
             return Array.isArray(slot?.conflicts) ? slot.conflicts : []
         },
+        selectedTimetableV2SlotConflictSeverity(slot) {
+            const conflicts = this.selectedTimetableV2SlotConflicts(slot)
+            if (!conflicts.length) return ''
+
+            return conflicts.every((conflict) => this.selectedTimetableV2ConflictPairIsOccasional({ slot, conflict }))
+                ? 'warning'
+                : 'error'
+        },
         selectedTimetableV2ConflictPairs() {
             const conflictPairsByKey = new Map()
 
@@ -1732,6 +1819,14 @@ export default {
             })
 
             return [...conflictPairsByKey.values()]
+        },
+        selectedTimetableV2ConflictPairIsOccasional(pair) {
+            return this.selectedTimetableV2SlotIsOccasional(pair?.slot)
+                || this.selectedTimetableV2SlotIsOccasional(pair?.conflict)
+        },
+        selectedTimetableV2SlotIsOccasional(slot) {
+            return slot?.isOccasional === true
+                || (Array.isArray(slot?.courseGroup?.dates) && slot.courseGroup.dates.length > 0)
         },
         selectedTimetableV2OfferedCourseForSlot(slot) {
             const slotLabels = this.selectedTimetableV2SlotMatchLabels(slot)
@@ -1785,6 +1880,13 @@ export default {
 
             const sharedDateLabels = this.selectedTimetableV2SharedDateLabels(slot, conflict)
             if (sharedDateLabels.length) return sharedDateLabels
+
+            if (this.selectedTimetableV2SlotIsOccasional(slot)) {
+                return this.selectedTimetableV2SlotDateLabel(slot)
+                    .split(',')
+                    .map((date) => date.trim())
+                    .filter(Boolean)
+            }
 
             return this.selectedTimetableV2SlotDateLabel(conflict)
                 .split(',')
@@ -4541,11 +4643,20 @@ export default {
 .students-timetable-v2-result-conflicts {
     display: grid;
     gap: 6px;
-    border: 1px solid rgba(220, 38, 38, 0.18);
     border-radius: 8px;
     padding: 9px 10px;
+}
+
+.students-timetable-v2-result-conflicts--error {
+    border: 1px solid rgba(220, 38, 38, 0.18);
     background: rgba(254, 226, 226, 0.96);
     color: #7f1d1d;
+}
+
+.students-timetable-v2-result-conflicts--warning {
+    border: 1px solid rgba(217, 119, 6, 0.22);
+    background: rgba(254, 243, 199, 0.96);
+    color: #78350f;
 }
 
 .students-timetable-v2-result-conflicts__title {
@@ -4624,9 +4735,36 @@ export default {
 }
 
 .students-timetable-v2-result-grid__content {
+    position: relative;
     display: grid;
     gap: 3px;
     min-width: 0;
+}
+
+.students-timetable-v2-result-grid__content--has-overlap-chip {
+    padding-top: 20px;
+}
+
+.students-timetable-v2-result-grid__overlap-chips {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+    max-width: 100%;
+    pointer-events: none;
+}
+
+.students-timetable-v2-result-grid__overlap-chip {
+    max-width: 100%;
+    font-weight: 800;
+}
+
+.students-timetable-v2-result-grid__overlap-chip :deep(.v-chip__content) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .students-timetable-v2-result-grid__code {

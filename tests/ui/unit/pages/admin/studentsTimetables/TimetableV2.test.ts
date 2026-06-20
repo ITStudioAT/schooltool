@@ -106,6 +106,21 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.selectedTimetableV2TitleLabel.call(context)
             },
         },
+        selectedTimetableV2ConflictSeverity: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2ConflictSeverity.call(context)
+            },
+        },
+        selectedTimetableV2ConflictIcon: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2ConflictIcon.call(context)
+            },
+        },
+        selectedTimetableV2ConflictTitle: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2ConflictTitle.call(context)
+            },
+        },
         selectedTimetableV2ConflictSummaryItems: {
             get() {
                 return TimetableV2.computed.selectedTimetableV2ConflictSummaryItems.call(context)
@@ -726,5 +741,84 @@ describe('TimetableV2 route steps', () => {
             }),
         }))
         expect(context.calculateTimetables).toHaveBeenCalled()
+    })
+
+    it('shows occasional-only timetable conflicts as warning overlaps without resolution options', () => {
+        const context = timetableV2Context({
+            selectedCourseItems: [
+                { code: 'D1', courseGroup: 'planned', key: 'D1', label: 'D1', selectionKey: 'planned:D1' },
+                { code: 'LPT', courseGroup: 'planned', key: 'LPT', label: 'LPT', selectionKey: 'planned:LPT' },
+                { code: 'M1', courseGroup: 'planned', key: 'M1', label: 'M1', selectionKey: 'planned:M1' },
+            ],
+            timetableCalculationResult: {
+                selected_timetable: {
+                    number: 1,
+                    type: 'green',
+                    statusMessage: 'Grüner Stundenplan mit Einzeltermin-Überschneidung',
+                    slots: {
+                        '1-1': {
+                            code: 'D1',
+                            sourceLabel: 'D1-1C-GOS',
+                            courseGroup: { weekday: 1, hour: 1, recurrence_interval: 1 },
+                            conflicts: [
+                                {
+                                    key: 'lpt-d1',
+                                    code: 'LPT',
+                                    sourceLabel: 'LPT-1CK-DREI',
+                                    courseGroup: { dates: ['2026-02-17'], weekday: 1, hour: 1 },
+                                    isOccasional: true,
+                                },
+                            ],
+                        },
+                        '2-1': {
+                            code: 'LPT',
+                            sourceLabel: 'LPT-1CK-DREI',
+                            courseGroup: { dates: ['2026-02-18'], weekday: 2, hour: 1 },
+                            isOccasional: true,
+                            conflicts: [
+                                {
+                                    key: 'm1-lpt',
+                                    code: 'M1',
+                                    sourceLabel: 'M1-1C-MAY',
+                                    courseGroup: { weekday: 2, hour: 1, recurrence_interval: 1 },
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+        })
+
+        expect(context.selectedTimetableV2ConflictSeverity).toBe('warning')
+        expect(context.selectedTimetableV2ConflictIcon).toBe('mdi-alert-outline')
+        expect(context.selectedTimetableV2ConflictTitle).toBe('Überschneidungen')
+        expect(context.selectedTimetableV2ConflictSummaryItems).toEqual([
+            'D1-1C-GOS überschneidet sich mit LPT-1CK-DREI (17.02.).',
+            'LPT-1CK-DREI überschneidet sich mit M1-1C-MAY (18.02.).',
+        ])
+        expect(context.selectedTimetableV2ConflictResolutionOptions).toEqual([])
+        expect(
+            TimetableV2.methods.selectedTimetableV2SlotTitle.call(
+                context,
+                TimetableV2.methods.selectedTimetableV2DisplaySlot.call(
+                    context,
+                    context.timetableCalculationResult.selected_timetable.slots['2-1'],
+                ),
+            ),
+        ).toBe('M 1')
+        expect(TimetableV2.methods.selectedTimetableV2OccasionalOverlapChips.call(
+            context,
+            context.timetableCalculationResult.selected_timetable.slots['2-1'],
+        )).toEqual([
+            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.' },
+        ])
+        expect(TimetableV2.methods.selectedTimetableV2DisplayedSlotConflicts.call(
+            context,
+            context.timetableCalculationResult.selected_timetable.slots['2-1'],
+        )).toEqual([])
+        expect(TimetableV2.methods.selectedTimetableV2CellClasses.call(context, 1, 1)).toMatchObject({
+            'students-timetable-v2-result-grid__cell--conflict': false,
+            'students-timetable-v2-result-grid__cell--filled': true,
+        })
     })
 })
