@@ -1764,6 +1764,52 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.course_sections.2.items.0.code', 'D1');
 });
 
+it('can return a slim robot student overview course history payload', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '4S',
+        'school_level' => '09_1',
+        'student_code' => '100',
+        'last_name' => 'Schroll',
+        'first_name' => 'Lukas',
+        'religion' => 'Rk',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    collect([
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1', 'hours_per_week' => 3],
+        ['semester' => 2, 'branch' => 'common', 'json_code' => 'D2', 'json_subject' => 'D', 'name' => 'Deutsch 2', 'hours_per_week' => 3],
+    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        ...$subjectRow,
+    ]));
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/student-overview?student_code=100&payload=course_history')
+        ->assertSuccessful()
+        ->assertJsonPath('data.student.student_code', '100')
+        ->assertJsonPath('data.student.religion', 'Rk')
+        ->assertJsonPath('data.proposed_courses.0.code', 'D1')
+        ->assertJsonPath('data.additional_courses.0.code', 'D2')
+        ->assertJsonMissingPath('data.manual_timetable')
+        ->assertJsonMissingPath('data.personal_timetable')
+        ->assertJsonMissingPath('data.published_timetable')
+        ->assertJsonMissingPath('data.school_hours')
+        ->assertJsonMissingPath('data.selection_options')
+        ->assertJsonMissingPath('data.selection_items');
+});
+
 it('does not propose choice courses when strict student overview selection is missing that choice', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([

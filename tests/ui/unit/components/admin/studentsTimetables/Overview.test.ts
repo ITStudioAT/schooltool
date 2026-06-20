@@ -3142,6 +3142,30 @@ describe('Students timetable overview', () => {
         expect(componentSource).not.toContain("axios.put('/api/admin/students-timetables/overview-selections'")
     })
 
+    it('orders planned courses from a transferred student summary ascending', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            compareCourses: methods.compareCourses,
+            formatHours: methods.formatHours,
+            overviewCompletedCourseItems: methods.overviewCompletedCourseItems,
+            overviewCourseItems: methods.overviewCourseItems,
+            sortCourseItemsAscending: methods.sortCourseItemsAscending,
+        }
+
+        const history = methods.overviewStudentCourseHistoryFromSummary.call(ctx, {
+            completed_courses: [],
+            proposed_courses: [
+                { code: 'M10', hours: 2 },
+                { code: 'D1', hours: 3 },
+                { code: 'M2', hours: 4 },
+                { label: 'BE1', hours: 1 },
+            ],
+        })
+
+        expect(history.planned.map((course: Record<string, string>) => course.label))
+            .toEqual(['BE1', 'D1', 'M2', 'M10'])
+    })
+
     it('marks adopted timetable cells with multiple displayed courses as warnings', () => {
         const methods = (Overview as any).methods
         const ctx = {

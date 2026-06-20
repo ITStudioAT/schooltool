@@ -164,15 +164,7 @@ class StudentTimetablesStudentOverviewService
     public function summaryForStudentCode(User $user, string $studentCode, array $selectionOverride = [], bool $strictSelectionOverride = false): array
     {
         $schoolyearId = $this->schoolyearIdForUser($user);
-        $student = Import116::query()
-            ->where('school_id', $user->school_id)
-            ->where('schoolyear_id', $schoolyearId)
-            ->where('student_code', $studentCode)
-            ->first();
-
-        if (! $student) {
-            abort(404, 'Student nicht gefunden.');
-        }
+        $student = $this->studentByCode($user, $schoolyearId, $studentCode);
 
         return $this->summaryForStudent($user, $schoolyearId, $student, $selectionOverride, $strictSelectionOverride);
     }
@@ -181,7 +173,38 @@ class StudentTimetablesStudentOverviewService
      * @param  array<string, mixed>  $selectionOverride
      * @return array<string, mixed>
      */
+    public function courseHistoryForStudentCode(User $user, string $studentCode, array $selectionOverride = [], bool $strictSelectionOverride = false): array
+    {
+        $schoolyearId = $this->schoolyearIdForUser($user);
+        $student = $this->studentByCode($user, $schoolyearId, $studentCode);
+
+        return $this->courseHistoryForStudent($user, $schoolyearId, $student, $selectionOverride, $strictSelectionOverride);
+    }
+
+    /**
+     * @param  array<string, mixed>  $selectionOverride
+     * @return array<string, mixed>
+     */
     private function summaryForStudent(User $user, int $schoolyearId, ?Import116 $student, array $selectionOverride = [], bool $strictSelectionOverride = false): array
+    {
+        $courseHistory = $this->courseHistoryForStudent($user, $schoolyearId, $student, $selectionOverride, $strictSelectionOverride);
+
+        return [
+            ...$courseHistory,
+            'selection_options' => $this->selectionOptions(),
+            'selection_items' => $this->selectionItems($courseHistory['selection'], $student?->religion),
+            'manual_timetable' => $this->manualTimetableSelection($user, $courseHistory['course_sections']),
+            'personal_timetable' => $this->personalTimetableForStudent($user, $schoolyearId, $student),
+            'published_timetable' => $this->publishedTimetableForStudent($user, $schoolyearId, $student),
+            'school_hours' => $this->schoolHoursForUser($user),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $selectionOverride
+     * @return array<string, mixed>
+     */
+    private function courseHistoryForStudent(User $user, int $schoolyearId, ?Import116 $student, array $selectionOverride = [], bool $strictSelectionOverride = false): array
     {
         $completedCourses = $this->completedCourses($user, $schoolyearId, $student?->student_code);
         $selection = $this->selectionForStudent($user, $schoolyearId, $student, $completedCourses);
@@ -205,18 +228,12 @@ class StudentTimetablesStudentOverviewService
             ],
             'selection' => $selection,
             'selection_override' => $selectionOverride,
-            'selection_options' => $this->selectionOptions(),
-            'selection_items' => $this->selectionItems($selection, $student?->religion),
             'completed_courses' => $completedCourses,
             'missing_courses' => $missingCourses,
             'proposed_courses' => $proposedCourses,
             'additional_courses' => $additionalCourses,
             'course_sections' => $courseSections,
             'automatic_course_selection' => $automaticCourseSelection,
-            'manual_timetable' => $this->manualTimetableSelection($user, $courseSections),
-            'personal_timetable' => $this->personalTimetableForStudent($user, $schoolyearId, $student),
-            'published_timetable' => $this->publishedTimetableForStudent($user, $schoolyearId, $student),
-            'school_hours' => $this->schoolHoursForUser($user),
             'counts' => [
                 'completed_courses' => count($completedCourses),
                 'missing_courses' => count($missingCourses),
@@ -224,6 +241,21 @@ class StudentTimetablesStudentOverviewService
                 'additional_courses' => count($additionalCourses),
             ],
         ];
+    }
+
+    private function studentByCode(User $user, int $schoolyearId, string $studentCode): Import116
+    {
+        $student = Import116::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('student_code', $studentCode)
+            ->first();
+
+        if (! $student) {
+            abort(404, 'Student nicht gefunden.');
+        }
+
+        return $student;
     }
 
     /**

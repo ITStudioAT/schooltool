@@ -141,15 +141,26 @@ class StudentsTimetablesController extends Controller
             'selection.arts_subject' => ['nullable', 'string', 'max:20'],
             'selection.language' => ['nullable', 'string', 'max:20'],
             'strict_selection' => ['sometimes', 'boolean'],
+            'payload' => ['sometimes', 'string', Rule::in(['full', 'course_history'])],
         ]);
 
-        return response()->json([
-            'data' => $service->summaryForStudentCode(
+        $payload = (string) ($validated['payload'] ?? 'full');
+        $data = $payload === 'course_history'
+            ? $service->courseHistoryForStudentCode(
                 $authUser,
                 (string) $validated['student_code'],
                 $validated['selection'] ?? [],
                 (bool) ($validated['strict_selection'] ?? false),
-            ),
+            )
+            : $service->summaryForStudentCode(
+                $authUser,
+                (string) $validated['student_code'],
+                $validated['selection'] ?? [],
+                (bool) ($validated['strict_selection'] ?? false),
+            );
+
+        return response()->json([
+            'data' => $data,
         ]);
     }
 

@@ -1209,6 +1209,22 @@ function normalizedCourseDisplayLabel(label) {
         .replace(/^OKON(?=\d|\s|-|$)/iu, 'ÖKO')
 }
 
+function courseSortValue(course) {
+    return String(course?.code || course?.label || course?.name || course?.subject || '')
+}
+
+function compareCourseItems(firstCourse, secondCourse) {
+    return courseSortValue(firstCourse).localeCompare(courseSortValue(secondCourse), 'de-AT', {
+        numeric: true,
+        sensitivity: 'base',
+    })
+}
+
+function sortedCourseItems(courses) {
+    return [...(Array.isArray(courses) ? courses : [])]
+        .sort((firstCourse, secondCourse) => compareCourseItems(firstCourse, secondCourse))
+}
+
 export default {
     name: 'StudentsTimetablesOverview',
     components: {
@@ -1789,7 +1805,7 @@ export default {
                     title: 'Vorgesehene Kurse',
                     icon: 'mdi-format-list-checks',
                     color: OVERVIEW_SECTION_COLORS.planned,
-                    items: courses.planned || [],
+                    items: sortedCourseItems(courses.planned || []),
                 },
                 {
                     key: 'additional',
@@ -1849,7 +1865,7 @@ export default {
                     icon: 'mdi-format-list-checks',
                     color: OVERVIEW_SECTION_COLORS.planned,
                     toggleable: true,
-                    items: this.noStudentCourseHistory.planned || [],
+                    items: sortedCourseItems(this.noStudentCourseHistory.planned || []),
                 },
                 {
                     key: 'additional',
@@ -1973,8 +1989,10 @@ export default {
             return {
                 completed: this.overviewCompletedCourseItems(completedCourses),
                 missing: this.overviewCourseItems(this.noStudentMissingCourses),
-                planned: plannedCourses.map((course, index) =>
-                    this.noStudentToggleableCourseItem(course, index, OVERVIEW_SECTION_COLORS.planned),
+                planned: sortedCourseItems(
+                    plannedCourses.map((course, index) =>
+                        this.noStudentToggleableCourseItem(course, index, OVERVIEW_SECTION_COLORS.planned),
+                    ),
                 ),
                 additional: additionalCourses.map((course, index) =>
                     this.noStudentToggleableCourseItem(course, index, OVERVIEW_SECTION_COLORS.additional),
@@ -3261,7 +3279,9 @@ export default {
             return {
                 completed: this.overviewCompletedCourseItems(overviewSummary?.completed_courses || []),
                 missing: this.overviewCourseItems(automaticMissingCourses || overviewSummary?.missing_courses || []),
-                planned: this.overviewCourseItems(automaticPlannedCourses || overviewSummary?.proposed_courses || []),
+                planned: sortedCourseItems(
+                    this.overviewCourseItems(automaticPlannedCourses || overviewSummary?.proposed_courses || []),
+                ),
                 additional: this.overviewCourseItems(overviewSummary?.additional_courses || []),
             }
         },
@@ -3619,7 +3639,7 @@ export default {
             return {
                 completed: this.overviewCompletedCourseItems(completedCourseItems),
                 missing: this.overviewCourseItems(missingCourses),
-                planned: this.overviewCourseItems(plannedCourses),
+                planned: sortedCourseItems(this.overviewCourseItems(plannedCourses)),
                 additional: this.overviewCourseItems(additionalCourses),
             }
         },
@@ -3634,8 +3654,8 @@ export default {
         overviewCourseItems(courses) {
             return (Array.isArray(courses) ? courses : [])
                 .map((course, index) => {
-                    const code = String(course?.code || course?.subject || '').trim()
-                    const name = String(course?.name || course?.title || '').trim()
+                    const code = String(course?.code || course?.subject || course?.label || '').trim()
+                    const name = String(course?.name || course?.title || course?.label || '').trim()
                     const hours = Number(course?.hours || 0)
 
                     return {
@@ -4082,10 +4102,10 @@ export default {
                 .join(' / ')
         },
         compareCourses(firstCourse, secondCourse) {
-            return String(firstCourse?.code || '').localeCompare(String(secondCourse?.code || ''), 'de-AT', {
-                numeric: true,
-                sensitivity: 'base',
-            })
+            return compareCourseItems(firstCourse, secondCourse)
+        },
+        sortCourseItemsAscending(courses) {
+            return sortedCourseItems(courses)
         },
         formatHours(value) {
             const hours = Number(value || 0)
@@ -4108,7 +4128,9 @@ export default {
                 courses: {
                     completed: this.normalizedTransferredStudentCourses(context.courses?.completed),
                     missing: this.normalizedTransferredStudentCourses(context.courses?.missing),
-                    planned: this.normalizedTransferredStudentCourses(context.courses?.planned),
+                    planned: sortedCourseItems(
+                        this.normalizedTransferredStudentCourses(context.courses?.planned),
+                    ),
                     additional: this.normalizedTransferredStudentCourses(context.courses?.additional),
                 },
             }
