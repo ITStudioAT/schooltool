@@ -16,6 +16,13 @@ describe('admin route access metadata', () => {
         })
     })
 
+    it('maps students timetable v2 routes to the students timetables capability', () => {
+        expect(resolveAdminRouteAccess('/admin/students-timetables/timetable-v2/overview')).toEqual({
+            public: false,
+            capability: 'students_timetables',
+        })
+    })
+
     it('treats removed aba legacy routes as unknown', () => {
         expect(resolveAdminRouteAccess('/admin/aba/results/1')).toBeNull()
         expect(resolveAdminRouteAccess('/admin/aba/ai-settings/seed-report/review')).toBeNull()

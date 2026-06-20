@@ -66,6 +66,9 @@
 
         <v-row class="w-100" dense>
             <Timetable v-if="main_action === 'timetable'" />
+            <v-col v-if="main_action === 'timetable-v2'" cols="12">
+                <TimetableV2 />
+            </v-col>
             <Import v-if="main_action === 'import'" />
             <SubjectsOverview v-if="main_action === 'subjects-overview'" />
         </v-row>
@@ -80,17 +83,20 @@ import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
 const Timetable = defineAsyncComponent(() => import('./timetable/Timetable.vue'))
+const TimetableV2 = defineAsyncComponent(() => import('./timetableV2/TimetableV2.vue'))
 const Import = defineAsyncComponent(() => import('./import/Import.vue'))
 const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/SubjectsOverview.vue'))
 
 const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'
+const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'
 const AUTOMATIC_TIMETABLE_OVERVIEW_PATH = `${TIMETABLE_OVERVIEW_PATH}/automatic`
-const mainSectionKeys = ['timetable', 'subjects-overview', 'import']
+const mainSectionKeys = ['timetable', 'timetable-v2', 'subjects-overview', 'import']
 
 export default {
     components: {
         AdminSectionHero,
         Timetable,
+        TimetableV2,
         Import,
         SubjectsOverview,
     },
@@ -131,6 +137,13 @@ export default {
                     label: 'Stundenplan',
                     meta: 'Center',
                     icon: 'mdi-calendar-clock-outline',
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
+                },
+                {
+                    key: 'timetable-v2',
+                    label: 'Stundenplan v2',
+                    meta: 'Neu',
+                    icon: 'mdi-calendar-edit-outline',
                     roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
                 },
                 {
@@ -177,6 +190,11 @@ export default {
                     label: 'Importe',
                     icon: 'mdi-import',
                     note: 'Stundenplan-Importe.',
+                },
+                'timetable-v2': {
+                    label: 'Stundenplan v2',
+                    icon: 'mdi-calendar-edit-outline',
+                    note: 'Neue Stundenplan-Version.',
                 },
                 import: {
                     label: 'Stundenplan',
@@ -278,6 +296,7 @@ export default {
             this.main_action = key === 'imports' ? 'timetable' : key
             const paths = {
                 timetable: TIMETABLE_OVERVIEW_PATH,
+                'timetable-v2': TIMETABLE_V2_OVERVIEW_PATH,
                 imports: '/admin/students-timetables/timetable/imports',
                 import: '/admin/students-timetables/import/overview',
                 'subjects-overview': '/admin/students-timetables/subjects-overview/subject-plan',

@@ -30,4 +30,11 @@ describe('admin routes', () => {
     it('registers the aba detail route', () => {
         expect(routes.some((route) => route.path === '/admin/aba/details/:abaId')).toBe(true)
     })
+
+    it('registers the students timetable v2 overview route through the module shell', () => {
+        const resolvedRoute = router.resolve('/admin/students-timetables/timetable-v2/overview')
+
+        expect(resolvedRoute.matched).toHaveLength(1)
+        expect(resolvedRoute.matched[0]?.path).toBe('/admin/students-timetables/:section?/:subsection?/:detail?/:action?')
+    })
 })
