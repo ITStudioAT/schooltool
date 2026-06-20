@@ -28,6 +28,17 @@
                 <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-selected-courses-card">
                     <v-card-title class="students-timetable-v2-selected-courses-card__title">
                         <span>Ausgewählte Kurse</span>
+                        <span v-if="selectedCourseItemsClickable" class="students-timetable-v2-selected-courses-card__filters">
+                            <v-btn
+                                v-for="option in offeredCourseBulkSelectionOptions"
+                                :key="option.key"
+                                size="small"
+                                variant="tonal"
+                                color="primary"
+                                @click="applyOfferedCourseBulkSelection(option.key)">
+                                {{ option.label }}
+                            </v-btn>
+                        </span>
                         <span class="students-timetable-v2-selected-courses-card__summary">
                             <v-chip size="x-small" color="primary" variant="tonal">
                                 {{ selectedCourseSummary.countLabel }}
@@ -44,14 +55,15 @@
                                 :key="course.selectionKey"
                                 size="small"
                                 color="success"
-                                :variant="selectedReviewCourseItem?.selectionKey === course.selectionKey ? 'flat' : 'tonal'"
+                                :variant="selectedCourseItemActive(course) ? 'flat' : 'tonal'"
                                 class="students-timetable-v2-selected-courses-card__course"
                                 :class="{
-                                    'students-timetable-v2-selected-courses-card__course--active': selectedReviewCourseItem?.selectionKey === course.selectionKey,
+                                    'students-timetable-v2-selected-courses-card__course--active': selectedCourseItemActive(course),
+                                    'students-timetable-v2-selected-courses-card__course--passive': !selectedCourseItemsClickable,
                                     'students-timetable-v2-selected-courses-card__course--offered-deselected': offeredCourseItemsAllDeselected(course),
                                 }"
-                                role="button"
-                                :aria-pressed="selectedReviewCourseItem?.selectionKey === course.selectionKey ? 'true' : 'false'"
+                                :role="selectedCourseItemsClickable ? 'button' : undefined"
+                                :aria-pressed="selectedCourseItemsClickable ? (selectedCourseItemActive(course) ? 'true' : 'false') : undefined"
                                 @click="selectReviewCourse(course)">
                                 <span>{{ course.label }}</span>
                                 <span v-if="course.meta" class="students-timetable-v2-selected-courses-card__meta">
@@ -166,7 +178,17 @@
 
             <v-col v-if="timetableCalculationVisible" cols="12" class="students-timetable-v2-card-column">
                 <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-calculation-card">
-                    <v-card-title>Stundenpläne</v-card-title>
+                    <v-card-title class="students-timetable-v2-calculation-card__title">
+                        <span>Stundenpläne</span>
+                        <v-btn
+                            size="small"
+                            color="primary"
+                            :variant="moreCoursesVisible ? 'flat' : 'tonal'"
+                            prepend-icon="mdi-plus-circle-outline"
+                            @click="toggleMoreCoursesCard">
+                            Mehr Kurse
+                        </v-btn>
+                    </v-card-title>
                     <v-card-text class="students-timetable-v2-calculation-card__content">
                         <v-progress-linear
                             v-if="timetableCalculationLoading"
@@ -189,18 +211,289 @@
                             {{ timetableCalculationError }}
                         </v-alert>
                         <v-alert
-                            v-else-if="timetableCalculationResult"
+                            v-else-if="timetableCalculationResult && !moreCoursesVisible"
                             type="success"
                             variant="tonal"
                             density="compact"
                             icon="mdi-check-circle-outline">
-                            Die Stundenpläne wurden erfolgreich erstellt.
+                            <div class="students-timetable-v2-calculation-card__success">
+                                <span>Die Stundenpläne wurden erfolgreich erstellt.</span>
+                                <span class="students-timetable-v2-calculation-card__summary">
+                                    <v-chip size="small" color="success" variant="tonal">
+                                        {{ timetableCalculationCountLabel }}
+                                    </v-chip>
+                                    <v-chip
+                                        v-for="countItem in timetableCalculationResultCountItems"
+                                        :key="countItem.key"
+                                        size="small"
+                                        :color="countItem.color"
+                                        variant="tonal">
+                                        {{ countItem.label }}
+                                    </v-chip>
+                                </span>
+                            </div>
                         </v-alert>
-                        <div v-if="timetableCalculationResult" class="students-timetable-v2-calculation-card__summary">
-                            <v-chip size="small" color="success" variant="tonal">
-                                {{ timetableCalculationCountLabel }}
-                            </v-chip>
+                        <v-card
+                            v-if="moreCoursesVisible"
+                            rounded="lg"
+                            variant="tonal"
+                            class="students-timetable-v2-more-courses-card">
+                            <v-card-title class="students-timetable-v2-more-courses-card__title">
+                                Mehr Kurse
+                            </v-card-title>
+                            <v-card-text>
+                                <div v-if="moreCoursesCardItems.length" class="students-timetable-v2-more-courses-card__list">
+                                    <v-chip
+                                        v-for="course in moreCoursesCardItems"
+                                        :key="course.selectionKey"
+                                        size="small"
+                                        color="primary"
+                                        :variant="selectedMoreCourseItem?.selectionKey === course.selectionKey ? 'flat' : 'tonal'"
+                                        class="students-timetable-v2-more-courses-card__course"
+                                        :class="{
+                                            'students-timetable-v2-more-courses-card__course--active': selectedMoreCourseItem?.selectionKey === course.selectionKey,
+                                        }"
+                                        role="button"
+                                        tabindex="0"
+                                        :aria-pressed="selectedMoreCourseItem?.selectionKey === course.selectionKey ? 'true' : 'false'"
+                                        @click="selectMoreCourse(course)"
+                                        @keydown.enter.prevent="selectMoreCourse(course)"
+                                        @keydown.space.prevent="selectMoreCourse(course)">
+                                        <span>{{ course.label }}</span>
+                                        <span v-if="course.meta" class="students-timetable-v2-more-courses-card__meta">
+                                            {{ course.meta }}
+                                        </span>
+                                        <span class="students-timetable-v2-more-courses-card__group">
+                                            {{ course.courseGroupLabel }}
+                                        </span>
+                                    </v-chip>
+                                </div>
+                                <v-alert v-else type="info" variant="tonal" density="compact">
+                                    Keine weiteren Kurse verfügbar.
+                                </v-alert>
+                            </v-card-text>
+                        </v-card>
+                        <v-card
+                            v-if="moreCoursesVisible && selectedMoreCourseItem"
+                            rounded="lg"
+                            variant="tonal"
+                            class="students-timetable-v2-more-courses-offered-card students-timetable-v2-offered-courses-card">
+                            <v-card-title class="students-timetable-v2-offered-courses-card__title">
+                                <span>Angebotene Kurse</span>
+                                <v-chip size="x-small" color="primary" variant="tonal">
+                                    {{ selectedMoreCourseItem.label }}
+                                </v-chip>
+                            </v-card-title>
+                            <v-card-text>
+                                <v-progress-linear
+                                    v-if="courseGroupsLoading"
+                                    indeterminate
+                                    color="primary"
+                                    class="students-timetable-v2-completed-courses__loading" />
+                                <v-alert v-else-if="courseGroupsError" type="error" variant="tonal" density="compact">
+                                    {{ courseGroupsError }}
+                                </v-alert>
+                                <div v-else-if="selectedMoreCourseOfferedCourseItems.length" class="students-timetable-v2-offered-courses-card__list">
+                                    <div
+                                        v-for="course in selectedMoreCourseOfferedCourseItems"
+                                        :key="course.key"
+                                        class="students-timetable-v2-offered-courses-card__item">
+                                        <span class="students-timetable-v2-offered-courses-card__name">
+                                            {{ course.name || course.code }}
+                                        </span>
+                                        <span v-if="offeredCourseCodeVisible(course)" class="students-timetable-v2-offered-courses-card__code">
+                                            {{ course.code }}
+                                        </span>
+                                        <v-chip v-if="course.scheduleLabel" size="x-small" color="primary" variant="tonal">
+                                            {{ course.scheduleLabel }}
+                                        </v-chip>
+                                        <v-chip v-if="course.recurrenceLabel" size="x-small" color="primary" variant="tonal">
+                                            {{ course.recurrenceLabel }}
+                                        </v-chip>
+                                        <v-chip
+                                            v-if="course.distanceLearning"
+                                            size="x-small"
+                                            color="warning"
+                                            variant="tonal"
+                                            title="Fernunterricht">
+                                            Fernunterricht
+                                        </v-chip>
+                                        <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
+                                            {{ course.roomsLabel }}
+                                        </v-chip>
+                                    </div>
+                                </div>
+                                <v-alert v-else type="info" variant="tonal" density="compact">
+                                    Keine angebotenen Kurse gefunden.
+                                </v-alert>
+                            </v-card-text>
+                        </v-card>
+                        <div
+                            v-if="selectedTimetableV2Result"
+                            class="students-timetable-v2-result">
+                            <div class="students-timetable-v2-result__header">
+                                <div class="students-timetable-v2-result__title">
+                                    <v-icon icon="mdi-calendar-check-outline" size="18" color="success" />
+                                    <span>{{ selectedTimetableV2TitleLabel }}</span>
+                                </div>
+                                <div class="students-timetable-v2-result__meta">
+                                    <v-btn
+                                        icon="mdi-chevron-left"
+                                        size="small"
+                                        variant="tonal"
+                                        color="primary"
+                                        :disabled="!selectedTimetableV2PreviousAvailable"
+                                        aria-label="Vorheriger Stundenplan"
+                                        @click="moveSelectedTimetableV2Result(-1)" />
+                                    <div class="students-timetable-v2-result__counter" aria-live="polite">
+                                        {{ selectedTimetableV2CounterLabel }}
+                                    </div>
+                                    <v-btn
+                                        icon="mdi-chevron-right"
+                                        size="small"
+                                        variant="tonal"
+                                        color="primary"
+                                        :disabled="!selectedTimetableV2NextAvailable"
+                                        aria-label="Nächster Stundenplan"
+                                        @click="moveSelectedTimetableV2Result(1)" />
+                                    <v-chip size="small" color="primary" variant="tonal">
+                                        Nr. {{ selectedTimetableV2Result.number || 1 }}
+                                    </v-chip>
+                                </div>
+                            </div>
+                            <div
+                                v-if="selectedTimetableV2ConflictSummaryItems.length"
+                                class="students-timetable-v2-result-conflicts">
+                                <div class="students-timetable-v2-result-conflicts__title">
+                                    <v-icon icon="mdi-alert-circle-outline" size="16" />
+                                    <span>Konflikte</span>
+                                </div>
+                                <ul class="students-timetable-v2-result-conflicts__list">
+                                    <li
+                                        v-for="conflict in selectedTimetableV2ConflictSummaryItems"
+                                        :key="conflict">
+                                        {{ conflict }}
+                                    </li>
+                                </ul>
+                                <div
+                                    v-if="selectedTimetableV2ConflictResolutionOptions.length"
+                                    class="students-timetable-v2-result-conflicts__actions">
+                                    <v-btn
+                                        v-for="option in selectedTimetableV2ConflictResolutionOptions"
+                                        :key="option.selectionKey"
+                                        size="small"
+                                        color="error"
+                                        variant="tonal"
+                                        prepend-icon="mdi-close-circle-outline"
+                                        @click="applySelectedTimetableV2ConflictResolution(option)">
+                                        {{ option.label }} entfernen · {{ option.countLabel }}
+                                    </v-btn>
+                                </div>
+                            </div>
+                            <div
+                                class="students-timetable-v2-result-grid"
+                                :style="{ '--students-timetable-v2-result-weekdays': selectedTimetableV2Weekdays.length }">
+                                <div class="students-timetable-v2-result-grid__cell students-timetable-v2-result-grid__cell--header">Std.</div>
+                                <div
+                                    v-for="weekday in selectedTimetableV2Weekdays"
+                                    :key="`timetable-v2-result-header-${weekday.value}`"
+                                    class="students-timetable-v2-result-grid__cell students-timetable-v2-result-grid__cell--header">
+                                    {{ weekday.shortTitle }}
+                                </div>
+
+                                <template
+                                    v-for="time in selectedTimetableV2Times"
+                                    :key="`timetable-v2-result-time-${time.value}`">
+                                    <div class="students-timetable-v2-result-grid__cell students-timetable-v2-result-grid__cell--time">
+                                        <span class="students-timetable-v2-result-grid__hour">{{ time.hourLabel }}</span>
+                                        <span v-if="time.timeFrom" class="students-timetable-v2-result-grid__time">{{ time.timeFrom }}</span>
+                                        <span v-if="time.timeUntil" class="students-timetable-v2-result-grid__time">{{ time.timeUntil }}</span>
+                                    </div>
+                                    <div
+                                        v-for="weekday in selectedTimetableV2Weekdays"
+                                        :key="`timetable-v2-result-${weekday.value}-${time.value}`"
+                                        class="students-timetable-v2-result-grid__cell"
+                                        :class="selectedTimetableV2CellClasses(weekday.value, time.value)">
+                                        <div
+                                            v-if="selectedTimetableV2Slot(weekday.value, time.value)"
+                                            class="students-timetable-v2-result-grid__content">
+                                            <div class="students-timetable-v2-result-grid__code">
+                                                <span>{{ selectedTimetableV2SlotTitle(selectedTimetableV2Slot(weekday.value, time.value)) }}</span>
+                                                <sup
+                                                    v-if="selectedTimetableV2Slot(weekday.value, time.value).isDistanceLearningCourse"
+                                                    class="students-timetable-v2-result-grid__badge">
+                                                    FU
+                                                </sup>
+                                                <sup
+                                                    v-if="selectedTimetableV2Slot(weekday.value, time.value).isAdditionalCourse"
+                                                    class="students-timetable-v2-result-grid__badge students-timetable-v2-result-grid__badge--additional">
+                                                    Zusatz
+                                                </sup>
+                                            </div>
+                                            <div
+                                                v-if="selectedTimetableV2SlotDetails(selectedTimetableV2Slot(weekday.value, time.value))"
+                                                class="students-timetable-v2-result-grid__details">
+                                                {{ selectedTimetableV2SlotDetails(selectedTimetableV2Slot(weekday.value, time.value)) }}
+                                            </div>
+                                            <div
+                                                v-if="selectedTimetableV2SlotRecurrenceLabel(selectedTimetableV2Slot(weekday.value, time.value))"
+                                                class="students-timetable-v2-result-grid__recurrence">
+                                                {{ selectedTimetableV2SlotRecurrenceLabel(selectedTimetableV2Slot(weekday.value, time.value)) }}
+                                            </div>
+                                            <div
+                                                v-if="selectedTimetableV2SlotDateLabel(
+                                                    selectedTimetableV2Slot(weekday.value, time.value),
+                                                    { showRegularRange: selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length > 0 },
+                                                )"
+                                                class="students-timetable-v2-result-grid__date">
+                                                {{
+                                                    selectedTimetableV2SlotDateLabel(
+                                                        selectedTimetableV2Slot(weekday.value, time.value),
+                                                        { showRegularRange: selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length > 0 },
+                                                    )
+                                                }}
+                                            </div>
+                                            <div
+                                                v-if="selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length"
+                                                class="students-timetable-v2-result-grid__same-slots">
+                                                <div
+                                                    v-for="sameSlotEntry in selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value))"
+                                                    :key="selectedTimetableV2SlotKey(sameSlotEntry)"
+                                                    class="students-timetable-v2-result-grid__same-slot">
+                                                    <span>{{ selectedTimetableV2SlotTitle(sameSlotEntry) }}</span>
+                                                    <span v-if="selectedTimetableV2SlotRecurrenceLabel(sameSlotEntry)">
+                                                        {{ selectedTimetableV2SlotRecurrenceLabel(sameSlotEntry) }}
+                                                    </span>
+                                                    <span v-if="selectedTimetableV2SlotDateLabel(sameSlotEntry, { showRegularRange: true })">
+                                                        {{ selectedTimetableV2SlotDateLabel(sameSlotEntry, { showRegularRange: true }) }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div
+                                                v-if="selectedTimetableV2SlotConflicts(selectedTimetableV2Slot(weekday.value, time.value)).length"
+                                                class="students-timetable-v2-result-grid__conflicts">
+                                                <div class="students-timetable-v2-result-grid__conflict-title">
+                                                    Konflikt mit:
+                                                </div>
+                                                <div
+                                                    v-for="conflict in selectedTimetableV2SlotConflicts(selectedTimetableV2Slot(weekday.value, time.value))"
+                                                    :key="selectedTimetableV2ConflictKey(conflict)"
+                                                    class="students-timetable-v2-result-grid__conflict">
+                                                    {{ selectedTimetableV2ConflictLabel(conflict) }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
                         </div>
+                        <v-alert
+                            v-else-if="timetableCalculationResult"
+                            type="info"
+                            variant="tonal"
+                            density="compact">
+                            {{ timetableCalculationUnavailableLabel }}
+                        </v-alert>
                     </v-card-text>
                 </v-card>
             </v-col>
@@ -668,6 +961,14 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:overview:last-timetable'
+const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'
+const TIMETABLE_V2_ROUTE_STEPS = ['selection', 'course-review', 'timetable-calculation']
+const TIMETABLE_V2_ROUTE_MODES = ['student', 'without-student']
+const OFFERED_COURSE_BULK_SELECTION_OPTIONS = [
+    { key: 'all', label: 'Alle' },
+    { key: 'distance-learning', label: 'Nur Fernunterricht' },
+    { key: 'without-distance-learning', label: 'Ohne Fernunterricht' },
+]
 
 export default {
     data() {
@@ -698,6 +999,9 @@ export default {
             timetableCalculationLoading: false,
             timetableCalculationRequestId: 0,
             timetableCalculationResult: null,
+            timetableCalculationSelectedNumber: 1,
+            moreCoursesVisible: false,
+            selectedMoreCourseKey: '',
             timetableStartMode: '',
             timetableV2Step: 'selection',
         }
@@ -716,6 +1020,12 @@ export default {
         },
         courseReviewVisible() {
             return this.timetableV2Step === 'course-review'
+        },
+        selectedCourseItemsClickable() {
+            return this.courseReviewVisible
+        },
+        offeredCourseBulkSelectionOptions() {
+            return OFFERED_COURSE_BULK_SELECTION_OPTIONS
         },
         timetableCalculationVisible() {
             return this.timetableV2Step === 'timetable-calculation'
@@ -841,6 +1151,25 @@ export default {
         selectedAdditionalCourseItems() {
             return this.storedAdditionalCourseItems.filter((course) => this.courseItemSelected(course, 'additional'))
         },
+        moreCoursesCardItems() {
+            return [
+                ...this.storedPlannedCourseItems
+                    .filter((course) => !this.courseItemSelected(course, 'planned'))
+                    .map((course) => this.moreCoursesCardItem(course, 'planned')),
+                ...this.storedAdditionalCourseItems
+                    .filter((course) => !this.courseItemSelected(course, 'additional'))
+                    .map((course) => this.moreCoursesCardItem(course, 'additional')),
+            ]
+        },
+        selectedMoreCourseItem() {
+            return this.moreCoursesCardItems.find((course) => course.selectionKey === this.selectedMoreCourseKey)
+                || null
+        },
+        selectedMoreCourseOfferedCourseItems() {
+            if (!this.selectedMoreCourseItem) return []
+
+            return this.offeredCourseItemsForSelectedCourse(this.selectedMoreCourseItem)
+        },
         selectedCourseItems() {
             return this.sortedCourseItems([
                 ...this.selectedMissingCourseCardItems.map((course) => this.selectedCourseListItem(course, 'missing')),
@@ -880,7 +1209,198 @@ export default {
         timetableCalculationCountLabel() {
             const count = Number(this.timetableCalculationResult?.timetable_variation_count || 0)
 
-            return `${this.formatNumber(count)} ${count === 1 ? 'Stundenplan' : 'Stundenpläne'}`
+            return `${this.formatNumber(count)} ${count === 1 ? 'Stundenplan' : 'Stundenpläne'} gesamt`
+        },
+        timetableCalculationResultCountItems() {
+            return [
+                {
+                    key: 'valid',
+                    color: 'success',
+                    count: this.timetableCalculationValidResultCount,
+                    singular: 'gültig',
+                    plural: 'gültig',
+                },
+                {
+                    key: 'conflict',
+                    color: 'error',
+                    count: Number(this.timetableCalculationResult?.conflict_timetable_count || this.timetableCalculationResult?.red_timetable_count || 0),
+                    singular: 'Konflikt',
+                    plural: 'Konflikte',
+                },
+            ].map((item) => ({
+                ...item,
+                label: `${this.formatNumber(item.count)} ${item.count === 1 ? item.singular : item.plural}`,
+            }))
+        },
+        timetableCalculationValidResultCount() {
+            return Number(this.timetableCalculationResult?.full_green_timetable_count || 0)
+                + Number(this.timetableCalculationResult?.green_timetable_count || 0)
+        },
+        timetableCalculationConflictResultCount() {
+            return Number(this.timetableCalculationResult?.conflict_timetable_count || this.timetableCalculationResult?.red_timetable_count || 0)
+        },
+        timetableCalculationUnavailableLabel() {
+            if (this.timetableCalculationValidResultCount <= 0 && this.timetableCalculationConflictResultCount > 0) {
+                return 'Es wurden nur Stundenpläne mit Überschneidung gefunden.'
+            }
+
+            return 'Es wurde kein gültiger Stundenplan gefunden.'
+        },
+        selectedTimetableV2Result() {
+            const selectedTimetable = this.timetableCalculationResult?.selected_timetable
+
+            return selectedTimetable && typeof selectedTimetable === 'object' && !Array.isArray(selectedTimetable)
+                ? selectedTimetable
+                : null
+        },
+        selectedTimetableV2ResultType() {
+            const type = String(this.selectedTimetableV2Result?.type || '').trim()
+
+            return ['full_green', 'green', 'conflict'].includes(type) ? type : 'full_green'
+        },
+        selectedTimetableV2TitleLabel() {
+            return this.selectedTimetableV2ResultType === 'conflict'
+                ? 'Stundenplan mit Überschneidung'
+                : 'Gültiger Stundenplan'
+        },
+        selectedTimetableV2ConflictSummaryItems() {
+            const slotConflictLabels = this.uniqueValues(this.selectedTimetableV2SlotEntries
+                .flatMap((entry) => this.selectedTimetableV2SlotConflicts(entry.slot)
+                    .map((conflict) => {
+                        const slotTitle = this.selectedTimetableV2CourseProblemLabel(entry.slot)
+                        const conflictTitle = this.selectedTimetableV2ConflictLabel(conflict, entry.slot)
+
+                        return slotTitle && conflictTitle
+                            ? `${slotTitle} überschneidet sich mit ${conflictTitle}.`
+                            : conflictTitle
+                    }))
+                .map((conflict) => String(conflict || '').trim())
+                .filter(Boolean))
+
+            if (slotConflictLabels.length) {
+                return slotConflictLabels
+            }
+
+            const problems = Array.isArray(this.selectedTimetableV2Result?.problems)
+                ? this.selectedTimetableV2Result.problems
+                : []
+
+            return this.uniqueValues(problems
+                .map((problem) => String(problem || '').trim())
+                .filter(Boolean))
+        },
+        selectedTimetableV2ConflictResolutionOptions() {
+            const optionsBySelectionKey = new Map()
+
+            this.selectedTimetableV2ConflictPairs().forEach((pair) => {
+                [pair.slot, pair.conflict].forEach((slot) => {
+                    const offeredCourse = this.selectedTimetableV2OfferedCourseForSlot(slot)
+                    const selectionKey = offeredCourse?.selectionKey || ''
+                    if (!selectionKey || !this.offeredCourseSelected(offeredCourse)) return
+
+                    if (!optionsBySelectionKey.has(selectionKey)) {
+                        optionsBySelectionKey.set(selectionKey, {
+                            conflictKeys: new Set(),
+                            label: this.selectedTimetableV2CourseProblemLabel(slot) || offeredCourse.groupSelectionLabel || offeredCourse.name,
+                            selectionKey,
+                        })
+                    }
+
+                    optionsBySelectionKey.get(selectionKey).conflictKeys.add(pair.key)
+                })
+            })
+
+            return [...optionsBySelectionKey.values()]
+                .map((option) => {
+                    const count = option.conflictKeys.size
+
+                    return {
+                        count,
+                        countLabel: `${this.formatNumber(count)} ${count === 1 ? 'Konflikt' : 'Konflikte'} lösen`,
+                        label: option.label,
+                        selectionKey: option.selectionKey,
+                    }
+                })
+                .filter((option) => option.count > 0)
+                .sort((firstOption, secondOption) => {
+                    if (firstOption.count !== secondOption.count) return secondOption.count - firstOption.count
+
+                    return firstOption.label.localeCompare(secondOption.label, 'de-AT', {
+                        numeric: true,
+                        sensitivity: 'base',
+                    })
+                })
+        },
+        selectedTimetableV2StatusLabel() {
+            return String(this.selectedTimetableV2Result?.statusMessage || '').trim() || 'Gültiger Stundenplan'
+        },
+        selectedTimetableV2ResultCount() {
+            const count = this.selectedTimetableV2ResultType === 'conflict'
+                ? this.timetableCalculationConflictResultCount
+                : this.timetableCalculationValidResultCount
+
+            return Math.max(0, Number(count || 0))
+        },
+        selectedTimetableV2CounterLabel() {
+            return `${this.formatNumber(this.timetableCalculationSelectedNumber)} / ${this.formatNumber(this.selectedTimetableV2ResultCount)} ${this.selectedTimetableV2ResultTypeCounterLabel}`
+        },
+        selectedTimetableV2ResultTypeCounterLabel() {
+            return this.selectedTimetableV2ResultType === 'conflict' ? 'Konflikte' : 'gültige'
+        },
+        selectedTimetableV2ResultCountLabel() {
+            if (this.selectedTimetableV2ResultCount <= 0) return ''
+
+            const singularLabel = this.selectedTimetableV2ResultType === 'conflict'
+                ? 'Stundenplan mit Überschneidung'
+                : 'gültiger Stundenplan'
+            const pluralLabel = this.selectedTimetableV2ResultType === 'conflict'
+                ? 'Stundenpläne mit Überschneidung'
+                : 'gültige Stundenpläne'
+
+            return `${this.formatNumber(this.selectedTimetableV2ResultCount)} ${this.selectedTimetableV2ResultCount === 1 ? singularLabel : pluralLabel}`
+        },
+        selectedTimetableV2PreviousAvailable() {
+            return !this.timetableCalculationLoading
+                && this.selectedTimetableV2ResultCount > 1
+                && this.timetableCalculationSelectedNumber > 1
+        },
+        selectedTimetableV2NextAvailable() {
+            return !this.timetableCalculationLoading
+                && this.selectedTimetableV2ResultCount > 1
+                && this.timetableCalculationSelectedNumber < this.selectedTimetableV2ResultCount
+        },
+        selectedTimetableV2SlotEntries() {
+            const slots = this.selectedTimetableV2Result?.slots || {}
+
+            return Object.entries(slots)
+                .map(([key, slot]) => this.selectedTimetableV2NormalizedSlotEntry(key, slot))
+                .filter((entry) => entry.weekday > 0 && entry.hour > 0)
+        },
+        selectedTimetableV2Weekdays() {
+            const hasSaturday = this.selectedTimetableV2SlotEntries.some((entry) => entry.weekday === 6)
+
+            return this.timetableV2WeekdayOptions().filter((weekday) => Number(weekday.value) <= 5 || hasSaturday)
+        },
+        selectedTimetableV2Times() {
+            const hours = this.uniqueValues(this.selectedTimetableV2SlotEntries
+                .map((entry) => entry.hour)
+                .filter((hour) => Number.isFinite(hour) && hour > 0))
+                .sort((firstHour, secondHour) => firstHour - secondHour)
+
+            if (!hours.length) return []
+
+            const firstHour = Math.min(...hours)
+            const lastHour = Math.max(...hours)
+            const configuredTimesByHour = new Map(this.timetableV2ConfiguredTimeOptions()
+                .map((time) => [Number(time.value), time]))
+
+            return Array.from({ length: (lastHour - firstHour) + 1 }, (_, index) => firstHour + index)
+                .map((hour) => configuredTimesByHour.get(hour) || {
+                    hourLabel: `${hour}.`,
+                    timeFrom: '',
+                    timeUntil: '',
+                    value: hour,
+                })
         },
         courseLimitPreselectionSignature() {
             const courseItems = [
@@ -1006,21 +1526,39 @@ export default {
         },
     },
 
+    watch: {
+        '$route.query.step'() {
+            this.applyTimetableV2RouteFromRoute()
+        },
+        '$route.query.mode'() {
+            this.applyTimetableV2RouteFromRoute()
+        },
+        '$route.query.tt'() {
+            this.applyTimetableV2RouteFromRoute()
+        },
+    },
+
     mounted() {
-        this.loadSubjectRows()
-        this.loadCourseGroups()
-        this.loadSchoolHours()
+        this.applyTimetableV2RouteFromRoute({ restoreEffects: false })
+        this.syncTimetableV2Route({ replace: true })
+        const subjectRowsPromise = this.loadSubjectRows()
+        const courseGroupsPromise = this.loadCourseGroups()
+        const schoolHoursPromise = this.loadSchoolHours()
         this.loadStoredStudentOverview(this.storedTimetableStudentCode)
+        this.restoreTimetableV2RouteStepEffects({
+            subjectRowsPromise,
+            courseGroupsPromise,
+            schoolHoursPromise,
+        })
     },
 
     methods: {
         startWithStudent() {
-            this.timetableV2Step = 'selection'
             this.selectedReviewCourseKey = ''
             this.timetableStartMode = 'student'
+            this.setTimetableV2Step('selection')
         },
         startWithoutStudent() {
-            this.timetableV2Step = 'selection'
             this.selectedReviewCourseKey = ''
             this.timetableStartMode = 'without-student'
             this.saveStoredTimetableState({
@@ -1030,14 +1568,15 @@ export default {
                 transferredStudentContext: null,
             })
             this.loadSubjectRows()
+            this.setTimetableV2Step('selection')
         },
         restartTimetableV2() {
-            this.timetableV2Step = 'selection'
             this.selectedReviewCourseKey = ''
             this.timetableStartMode = ''
             this.timetableCalculationError = ''
             this.timetableCalculationLoading = false
             this.timetableCalculationResult = null
+            this.timetableCalculationSelectedNumber = 1
             this.studentDialogOpen = false
             this.studentSearch = ''
             this.studentSelectionDraft = {
@@ -1051,6 +1590,7 @@ export default {
             this.studentOverviewLoadedRequestKey = ''
 
             this.saveStoredTimetableState(this.defaultStoredTimetableState())
+            this.setTimetableV2Step('selection')
         },
         openCourseReview() {
             if (this.selectedCourseLimitExceeded) return
@@ -1058,37 +1598,478 @@ export default {
             const selectedCourseItems = Array.isArray(this.selectedCourseItems) ? this.selectedCourseItems : []
 
             this.selectedReviewCourseKey = this.selectedReviewCourseItem?.selectionKey || selectedCourseItems[0]?.selectionKey || ''
-            this.timetableV2Step = 'course-review'
+            this.setTimetableV2Step('course-review')
             this.loadCourseGroups?.()
             this.loadSchoolHours?.()
         },
         openTimetableCalculation() {
-            this.timetableV2Step = 'timetable-calculation'
+            this.timetableCalculationSelectedNumber = 1
+            this.setTimetableV2Step('timetable-calculation')
             return this.calculateTimetables()
         },
         backToCourseReview() {
-            this.timetableV2Step = 'course-review'
+            this.setTimetableV2Step('course-review')
         },
         backToCourseSelection() {
             this.selectedReviewCourseKey = ''
-            this.timetableV2Step = 'selection'
+            this.setTimetableV2Step('selection')
+        },
+        timetableV2WeekdayOptions() {
+            return [
+                { shortTitle: 'Mo', value: 1 },
+                { shortTitle: 'Di', value: 2 },
+                { shortTitle: 'Mi', value: 3 },
+                { shortTitle: 'Do', value: 4 },
+                { shortTitle: 'Fr', value: 5 },
+                { shortTitle: 'Sa', value: 6 },
+            ]
+        },
+        timetableV2ConfiguredTimeOptions() {
+            return (Array.isArray(this.schoolHours) ? this.schoolHours : [])
+                .map((schoolHour) => ({
+                    hourLabel: `${Number(schoolHour.hour)}.`,
+                    timeFrom: this.formatTimeValue(schoolHour?.from),
+                    timeUntil: this.formatTimeValue(schoolHour?.until),
+                    value: Number(schoolHour.hour),
+                }))
+                .filter((time) => Number.isFinite(time.value))
+                .sort((firstTime, secondTime) => firstTime.value - secondTime.value)
+        },
+        selectedTimetableV2NormalizedSlotEntry(key, slot) {
+            const [keyWeekday, keyHour] = String(key || '').split('-')
+            const courseGroup = slot?.courseGroup || {}
+
+            return {
+                hour: Number(courseGroup.hour || keyHour || 0),
+                key,
+                slot,
+                weekday: Number(courseGroup.weekday || keyWeekday || 0),
+            }
+        },
+        selectedTimetableV2Slot(weekday, hour) {
+            return this.selectedTimetableV2Result?.slots?.[`${weekday}-${hour}`] || null
+        },
+        selectedTimetableV2CellClasses(weekday, hour) {
+            const slot = this.selectedTimetableV2Slot(weekday, hour)
+
+            return {
+                'students-timetable-v2-result-grid__cell--filled': Boolean(slot),
+                'students-timetable-v2-result-grid__cell--additional': slot?.isAdditionalCourse === true,
+                'students-timetable-v2-result-grid__cell--conflict': Array.isArray(slot?.conflicts) && slot.conflicts.length > 0,
+            }
+        },
+        selectedTimetableV2SlotTitle(slot) {
+            return this.spacedCourseCode(slot?.code || slot?.sourceLabel || slot?.name || '')
+        },
+        selectedTimetableV2SlotDetails(slot) {
+            const sourceLabel = String(slot?.sourceLabel || '').trim()
+            const title = String(slot?.code || '').trim()
+
+            if (!sourceLabel || sourceLabel === title) return ''
+
+            return sourceLabel
+        },
+        selectedTimetableV2SlotRecurrenceLabel(slot) {
+            const interval = this.courseGroupWeekInterval(slot?.courseGroup || slot)
+            if (Number.isInteger(interval) && interval > 1) return `${interval}-wöchig`
+
+            const recurrenceLabel = String(slot?.courseGroup?.recurrenceLabel || slot?.courseGroup?.recurrence_label || slot?.recurrenceLabel || slot?.recurrence_label || '').trim()
+            if (!recurrenceLabel || /^w[öo]chentlich$/iu.test(recurrenceLabel) || /^1\s*-\s*w[öo]chig$/iu.test(recurrenceLabel)) return ''
+
+            return recurrenceLabel
+        },
+        selectedTimetableV2SlotDateLabel(slot, options = {}) {
+            const dateRangeLabel = String(slot?.dateRangeLabel || '').trim()
+
+            if (slot?.isOccasional !== true) {
+                return options?.showRegularRange === true ? dateRangeLabel : ''
+            }
+
+            const exactDateLabels = this.selectedTimetableV2SlotExactDateLabels(slot)
+            if (exactDateLabels.length) return exactDateLabels.join(', ')
+
+            return options?.showRegularRange === true || !this.selectedTimetableV2DateLabelIsRange(dateRangeLabel)
+                ? dateRangeLabel
+                : ''
+        },
+        selectedTimetableV2SlotExactDateLabels(slot) {
+            if (!Array.isArray(slot?.courseGroup?.dates)) return []
+
+            return this.uniqueValues([...slot.courseGroup.dates]
+                .filter(Boolean)
+                .sort()
+                .map((date) => this.formatCompactDateValue(date))
+                .filter(Boolean))
+        },
+        selectedTimetableV2DateLabelIsRange(label) {
+            return /\d{1,2}\.\d{1,2}\.?\s*-\s*\d{1,2}\.\d{1,2}\.?/u.test(String(label || ''))
+        },
+        selectedTimetableV2SameSlotEntries(slot) {
+            return Array.isArray(slot?.sameSlotEntries) ? slot.sameSlotEntries : []
+        },
+        selectedTimetableV2SlotConflicts(slot) {
+            return Array.isArray(slot?.conflicts) ? slot.conflicts : []
+        },
+        selectedTimetableV2ConflictPairs() {
+            const conflictPairsByKey = new Map()
+
+            this.selectedTimetableV2SlotEntries.forEach((entry) => {
+                this.selectedTimetableV2SlotConflicts(entry.slot).forEach((conflict) => {
+                    const key = [
+                        this.selectedTimetableV2CourseProblemLabel(entry.slot),
+                        this.selectedTimetableV2CourseProblemLabel(conflict),
+                        this.selectedTimetableV2ConflictDateLabel(entry.slot, conflict),
+                    ].filter(Boolean).join('|')
+
+                    if (!key || conflictPairsByKey.has(key)) return
+
+                    conflictPairsByKey.set(key, {
+                        conflict,
+                        key,
+                        slot: entry.slot,
+                    })
+                })
+            })
+
+            return [...conflictPairsByKey.values()]
+        },
+        selectedTimetableV2OfferedCourseForSlot(slot) {
+            const slotLabels = this.selectedTimetableV2SlotMatchLabels(slot)
+            if (!slotLabels.length) return null
+
+            return this.allSelectedOfferedCourseItems()
+                .find((offeredCourse) => this.selectedTimetableV2OfferedCourseMatchesSlotLabels(offeredCourse, slotLabels)) || null
+        },
+        selectedTimetableV2SlotMatchLabels(slot) {
+            return this.uniqueValues([
+                slot?.sourceLabel,
+                ...(Array.isArray(slot?.alternativeLabels) ? slot.alternativeLabels : []),
+                slot?.courseGroup?.class_name,
+                slot?.courseGroup?.display_label,
+                slot?.courseGroup?.title,
+            ]
+                .map((label) => this.normalizedTimetableV2ConflictMatchLabel(label))
+                .filter(Boolean))
+        },
+        selectedTimetableV2OfferedCourseMatchesSlotLabels(offeredCourse, slotLabels) {
+            const offeredCourseLabels = [
+                offeredCourse?.groupSelectionLabel,
+                offeredCourse?.name,
+                offeredCourse?.backendSelectionKey,
+            ]
+                .map((label) => this.normalizedTimetableV2ConflictMatchLabel(label))
+                .filter(Boolean)
+
+            return offeredCourseLabels.some((label) => slotLabels.includes(label))
+        },
+        normalizedTimetableV2ConflictMatchLabel(label) {
+            return String(label || '')
+                .trim()
+                .toLocaleLowerCase('de-AT')
+        },
+        selectedTimetableV2ConflictLabel(conflict, slot = null) {
+            return [
+                this.selectedTimetableV2CourseProblemLabel(conflict),
+                this.selectedTimetableV2SlotRecurrenceLabel(conflict),
+                this.selectedTimetableV2ConflictDateLabel(slot, conflict),
+            ].filter(Boolean).join(' ')
+        },
+        selectedTimetableV2ConflictDateLabel(slot, conflict) {
+            const dateLabels = this.selectedTimetableV2ConflictDateLabels(slot, conflict)
+
+            return dateLabels.length ? `(${dateLabels.join(', ')})` : ''
+        },
+        selectedTimetableV2ConflictDateLabels(slot, conflict) {
+            const problemDateLabels = this.selectedTimetableV2ProblemDateLabels(slot, conflict)
+            if (problemDateLabels.length) return problemDateLabels
+
+            const sharedDateLabels = this.selectedTimetableV2SharedDateLabels(slot, conflict)
+            if (sharedDateLabels.length) return sharedDateLabels
+
+            return this.selectedTimetableV2SlotDateLabel(conflict)
+                .split(',')
+                .map((date) => date.trim())
+                .filter(Boolean)
+        },
+        selectedTimetableV2ProblemDateLabels(slot, conflict) {
+            const slotLabel = this.selectedTimetableV2CourseProblemLabel(slot)
+            const conflictLabel = this.selectedTimetableV2CourseProblemLabel(conflict)
+            if (!slotLabel || !conflictLabel) return []
+
+            const problems = Array.isArray(this.selectedTimetableV2Result?.problems)
+                ? this.selectedTimetableV2Result.problems
+                : []
+            const problem = problems
+                .map((item) => String(item || '').trim())
+                .find((item) => item.includes(slotLabel) && item.includes(conflictLabel))
+
+            return this.selectedTimetableV2DateLabelsFromText(problem)
+        },
+        selectedTimetableV2SharedDateLabels(slot, conflict) {
+            const slotDates = Array.isArray(slot?.courseGroup?.dates) ? slot.courseGroup.dates.filter(Boolean) : []
+            const conflictDates = Array.isArray(conflict?.courseGroup?.dates) ? conflict.courseGroup.dates.filter(Boolean) : []
+
+            if (!slotDates.length || !conflictDates.length) return []
+
+            const conflictDateSet = new Set(conflictDates)
+            const sharedDates = this.uniqueValues(slotDates.filter((date) => conflictDateSet.has(date))).sort()
+
+            return sharedDates.length <= 8
+                ? sharedDates.map((date) => this.formatCompactDateValue(date)).filter(Boolean)
+                : []
+        },
+        selectedTimetableV2DateLabelsFromText(text) {
+            const dateMatches = String(text || '').match(/\d{4}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}\.?/gu) || []
+
+            return this.uniqueValues(dateMatches
+                .map((date) => this.selectedTimetableV2CompactDateLabel(date))
+                .filter(Boolean))
+        },
+        selectedTimetableV2CompactDateLabel(value) {
+            const normalizedValue = String(value || '').trim()
+            const compactDateMatch = normalizedValue.match(/^(\d{1,2})\.(\d{1,2})\.?$/u)
+
+            if (compactDateMatch) {
+                return `${compactDateMatch[1].padStart(2, '0')}.${compactDateMatch[2].padStart(2, '0')}.`
+            }
+
+            return this.formatCompactDateValue(normalizedValue)
+        },
+        selectedTimetableV2CourseProblemLabel(item) {
+            const sourceLabel = String(item?.sourceLabel || '').trim()
+            if (sourceLabel) return sourceLabel
+
+            return this.uniqueValues([
+                this.spacedCourseCode(item?.code || ''),
+                String(item?.name || '').trim(),
+            ].filter(Boolean)).join(' ')
+        },
+        selectedTimetableV2ConflictKey(conflict) {
+            return [
+                conflict?.key,
+                conflict?.label,
+                conflict?.sourceLabel,
+                conflict?.dateRangeLabel,
+            ].filter(Boolean).join('|')
+        },
+        selectedTimetableV2SlotKey(slot) {
+            return [
+                slot?.key,
+                slot?.code,
+                slot?.sourceLabel,
+                slot?.dateRangeLabel,
+            ].filter(Boolean).join('|')
+        },
+        applySelectedTimetableV2ConflictResolution(option) {
+            const selectionKey = String(option?.selectionKey || '').trim()
+            if (!selectionKey) return null
+
+            this.saveOfferedCourseSelections({
+                ...this.offeredCourseSelectionOverrides,
+                [selectionKey]: false,
+            })
+            this.setSelectedTimetableV2Number(1, { replace: true })
+
+            return this.calculateTimetables()
+        },
+        selectedTimetableV2NumberLimit() {
+            return Math.max(1, this.selectedTimetableV2ResultCount || this.timetableCalculationSelectedNumber)
+        },
+        normalizedTimetableV2RouteTimetableNumber(number = this.$route?.query?.tt) {
+            const normalizedNumber = Number(number || 1)
+
+            return Number.isFinite(normalizedNumber) && normalizedNumber > 0
+                ? Math.trunc(normalizedNumber)
+                : 1
+        },
+        setSelectedTimetableV2Number(number, options = {}) {
+            this.timetableCalculationSelectedNumber = Math.min(
+                Math.max(this.normalizedTimetableV2RouteTimetableNumber(number), 1),
+                this.selectedTimetableV2NumberLimit(),
+            )
+
+            if (options?.syncRoute !== false) {
+                this.syncTimetableV2Route(options)
+            }
+        },
+        moveSelectedTimetableV2Result(direction) {
+            const nextNumber = this.timetableCalculationSelectedNumber + Number(direction || 0)
+
+            this.setSelectedTimetableV2Number(nextNumber)
+            return this.calculateTimetables()
+        },
+        normalizedTimetableV2RouteStep(step = this.$route?.query?.step) {
+            const normalizedStep = String(step || '').trim()
+
+            return TIMETABLE_V2_ROUTE_STEPS.includes(normalizedStep) ? normalizedStep : ''
+        },
+        normalizedTimetableV2Step(step = '') {
+            return this.normalizedTimetableV2RouteStep(step) || 'selection'
+        },
+        normalizedTimetableV2RouteMode(mode = this.$route?.query?.mode) {
+            const normalizedMode = String(mode || '').trim()
+
+            return TIMETABLE_V2_ROUTE_MODES.includes(normalizedMode) ? normalizedMode : ''
+        },
+        currentTimetableV2RouteMode() {
+            if (this.storedTimetableStudentContext || this.timetableStartMode === 'student') return 'student'
+            if (this.timetableStartMode === 'without-student') return 'without-student'
+
+            return ''
+        },
+        timetableV2RouteLocation(step = this.timetableV2Step, mode = this.currentTimetableV2RouteMode()) {
+            const normalizedStep = this.normalizedTimetableV2Step(step)
+            const normalizedMode = this.normalizedTimetableV2RouteMode(mode)
+            const query = { ...(this.$route?.query || {}) }
+
+            query.step = normalizedStep
+
+            if (normalizedStep === 'timetable-calculation') {
+                query.tt = String(this.timetableCalculationSelectedNumber)
+            } else {
+                delete query.tt
+            }
+
+            if (normalizedMode) {
+                query.mode = normalizedMode
+            } else {
+                delete query.mode
+            }
+
+            return {
+                path: TIMETABLE_V2_OVERVIEW_PATH,
+                query,
+            }
+        },
+        timetableV2RouteLocationMatches(location) {
+            return this.$route?.path === location.path
+                && this.normalizedTimetableV2RouteStep() === this.normalizedTimetableV2RouteStep(location?.query?.step)
+                && this.normalizedTimetableV2RouteMode() === this.normalizedTimetableV2RouteMode(location?.query?.mode)
+                && this.normalizedTimetableV2RouteTimetableNumber() === this.normalizedTimetableV2RouteTimetableNumber(location?.query?.tt)
+        },
+        syncTimetableV2Route(options = {}) {
+            const location = this.timetableV2RouteLocation()
+            if (this.timetableV2RouteLocationMatches(location)) return
+
+            const routerMethod = options?.replace === true && this.$router?.replace
+                ? this.$router.replace
+                : this.$router?.push
+            const navigation = routerMethod?.call(this.$router, location)
+            navigation?.catch?.(() => {})
+        },
+        setTimetableV2Step(step, options = {}) {
+            const normalizedStep = this.normalizedTimetableV2Step(step)
+
+            this.timetableV2Step = normalizedStep
+
+            if (options?.syncRoute !== false) {
+                this.syncTimetableV2Route(options)
+            }
+        },
+        applyTimetableV2RouteMode(mode) {
+            const normalizedMode = this.normalizedTimetableV2RouteMode(mode)
+            if (!normalizedMode) return
+
+            if (this.storedTimetableStudentContext) {
+                this.timetableStartMode = 'student'
+
+                return
+            }
+
+            this.timetableStartMode = normalizedMode
+
+            if (normalizedMode === 'without-student' && !this.noStudentSelectedSemester) {
+                this.saveStoredTimetableState({
+                    ...this.defaultStoredTimetableState(),
+                    ...this.storedTimetableStateForSaving(),
+                    timetableV2Selection: this.defaultNoStudentTimetableV2Selection(),
+                    transferredStudentContext: null,
+                })
+                this.loadSubjectRows()
+            }
+        },
+        applyTimetableV2RouteFromRoute(options = {}) {
+            const previousTimetableNumber = this.timetableCalculationSelectedNumber
+
+            this.applyTimetableV2RouteMode(this.$route?.query?.mode)
+            this.setSelectedTimetableV2Number(this.$route?.query?.tt, { syncRoute: false })
+            this.setTimetableV2Step(this.normalizedTimetableV2RouteStep(), { syncRoute: false })
+
+            if (options?.syncRoute !== false) {
+                this.syncTimetableV2Route({ replace: true })
+            }
+
+            if (
+                options?.restoreEffects !== false
+                && this.timetableCalculationVisible
+                && previousTimetableNumber !== this.timetableCalculationSelectedNumber
+                && this.timetableCalculationResult
+            ) {
+                this.calculateTimetables()
+
+                return
+            }
+
+            if (options?.restoreEffects !== false) {
+                this.restoreTimetableV2RouteStepEffects()
+            }
+        },
+        restoreTimetableV2RouteStepEffects(loadPromises = {}) {
+            if (this.courseReviewVisible || this.timetableCalculationVisible) {
+                const selectedCourseItems = Array.isArray(this.selectedCourseItems) ? this.selectedCourseItems : []
+                this.selectedReviewCourseKey = this.selectedReviewCourseItem?.selectionKey || selectedCourseItems[0]?.selectionKey || ''
+                this.loadCourseGroups?.()
+                this.loadSchoolHours?.()
+            }
+
+            if (!this.timetableCalculationVisible || this.timetableCalculationLoading || this.timetableCalculationResult) return
+
+            Promise.all([
+                loadPromises.subjectRowsPromise || this.loadSubjectRows?.(),
+                loadPromises.courseGroupsPromise || this.loadCourseGroups?.(),
+                loadPromises.schoolHoursPromise || this.loadSchoolHours?.(),
+            ]).then(() => {
+                if (!this.timetableCalculationVisible || this.timetableCalculationLoading || this.timetableCalculationResult) return
+
+                this.calculateTimetables()
+            })
         },
         async calculateTimetables() {
             const requestId = this.timetableCalculationRequestId + 1
             this.timetableCalculationRequestId = requestId
             this.timetableCalculationError = ''
             this.timetableCalculationLoading = true
+            const previousCalculationResult = this.timetableCalculationResult
+            const requestedTimetableNumber = this.timetableCalculationSelectedNumber
             this.timetableCalculationResult = null
 
             try {
-                const response = await axios.post(
-                    '/api/admin/students-timetables/robot/backend-timetable',
-                    this.timetableV2CalculationPayload(),
-                )
+                let response = await this.requestTimetableV2Calculation({
+                    calculationResult: previousCalculationResult,
+                    selectedTimetableNumber: requestedTimetableNumber,
+                })
 
                 if (requestId !== this.timetableCalculationRequestId) return
 
-                this.timetableCalculationResult = response.data?.data || {}
+                let calculationResult = response.data?.data || {}
+                const fallbackTimetableRequest = this.timetableV2FallbackSelectedTimetableRequest(
+                    calculationResult,
+                    requestedTimetableNumber,
+                )
+
+                if (fallbackTimetableRequest) {
+                    response = await this.requestTimetableV2Calculation(fallbackTimetableRequest)
+
+                    if (requestId !== this.timetableCalculationRequestId) return
+
+                    calculationResult = response.data?.data || calculationResult
+                }
+
+                this.timetableCalculationResult = calculationResult
+                this.setSelectedTimetableV2Number(
+                    this.selectedTimetableV2CombinedNumberFromResult(this.timetableCalculationResult) || requestedTimetableNumber,
+                    { replace: true },
+                )
             } catch (error) {
                 if (requestId !== this.timetableCalculationRequestId) return
 
@@ -1099,8 +2080,81 @@ export default {
                 }
             }
         },
-        timetableV2CalculationPayload() {
-            const selectedCourses = Array.isArray(this.selectedCourseItems) ? this.selectedCourseItems : []
+        requestTimetableV2Calculation(options = {}) {
+            return axios.post(
+                '/api/admin/students-timetables/robot/backend-timetable',
+                this.timetableV2CalculationPayload(options),
+            )
+        },
+        timetableV2FallbackSelectedTimetableRequest(calculationResult, selectedTimetableNumber = this.timetableCalculationSelectedNumber) {
+            const desiredRequest = this.timetableV2SelectedTimetableRequest({
+                calculationResult,
+                selectedTimetableNumber,
+            })
+            const selectedTimetable = calculationResult?.selected_timetable
+
+            if (
+                selectedTimetable
+                && selectedTimetable.type === desiredRequest.selectedTimetableType
+                && Number(selectedTimetable.number || 1) === desiredRequest.selectedTimetableNumber
+            ) {
+                return null
+            }
+
+            if (['full_green', 'green', 'conflict'].includes(desiredRequest.selectedTimetableType)) return desiredRequest
+
+            return null
+        },
+        timetableV2FallbackSelectedTimetableType(calculationResult) {
+            return this.timetableV2FallbackSelectedTimetableRequest(calculationResult)?.selectedTimetableType || ''
+        },
+        timetableV2SelectedTimetableRequest(options = {}) {
+            const calculationResult = options.calculationResult || this.timetableCalculationResult
+            const selectedTimetableNumber = this.normalizedTimetableV2RouteTimetableNumber(
+                options.selectedTimetableNumber || this.timetableCalculationSelectedNumber,
+            )
+            const fullGreenCount = Number(calculationResult?.full_green_timetable_count || 0)
+            const greenCount = Number(calculationResult?.green_timetable_count || 0)
+            const conflictCount = Number(calculationResult?.conflict_timetable_count || calculationResult?.red_timetable_count || 0)
+
+            if (calculationResult && selectedTimetableNumber > fullGreenCount && greenCount > 0) {
+                return {
+                    selectedTimetableType: 'green',
+                    selectedTimetableNumber: Math.min(selectedTimetableNumber - fullGreenCount, greenCount),
+                }
+            }
+
+            if (calculationResult && fullGreenCount <= 0 && greenCount <= 0 && conflictCount > 0) {
+                return {
+                    selectedTimetableType: 'conflict',
+                    selectedTimetableNumber: Math.min(selectedTimetableNumber, conflictCount),
+                }
+            }
+
+            return {
+                selectedTimetableType: 'full_green',
+                selectedTimetableNumber: selectedTimetableNumber,
+            }
+        },
+        selectedTimetableV2CombinedNumberFromResult(calculationResult) {
+            const selectedTimetable = calculationResult?.selected_timetable
+            const selectedTimetableNumber = Number(selectedTimetable?.number || 0)
+
+            if (!Number.isFinite(selectedTimetableNumber) || selectedTimetableNumber <= 0) return 0
+            if (selectedTimetable?.type === 'green') {
+                return Number(calculationResult?.full_green_timetable_count || 0) + selectedTimetableNumber
+            }
+
+            return selectedTimetableNumber
+        },
+        timetableV2CalculationPayload(options = {}) {
+            const selectedCourses = this.timetableV2CalculationSelectedCourses()
+            const selectedTimetableRequest = options.selectedTimetableType
+                ? {
+                    selectedTimetableType: options.selectedTimetableType,
+                    selectedTimetableNumber: options.selectedTimetableNumber || this.timetableCalculationSelectedNumber,
+                }
+                : this.timetableV2SelectedTimetableRequest(options)
 
             return {
                 selection: this.timetableV2CalculationSelection(),
@@ -1119,13 +2173,17 @@ export default {
                 deselected_course_keys: [],
                 deselected_course_group_keys: this.timetableV2DeselectedOfferedCourseGroupKeys(),
                 selected_additional_courses_required: false,
-                selected_timetable_type: 'full_green',
-                selected_timetable_number: 1,
+                selected_timetable_type: selectedTimetableRequest.selectedTimetableType,
+                selected_timetable_number: selectedTimetableRequest.selectedTimetableNumber,
                 selected_quality_criterion_keys: [],
                 selected_quality_criteria_required: false,
                 include_quality_counters: false,
                 evaluation_criteria: [],
             }
+        },
+        timetableV2CalculationSelectedCourses() {
+            return (Array.isArray(this.selectedCourseItems) ? this.selectedCourseItems : [])
+                .filter((course) => !this.offeredCourseItemsAllDeselected(course))
         },
         timetableV2CalculationSelection() {
             const selection = this.effectiveTimetableV2Selection || {}
@@ -1347,7 +2405,29 @@ export default {
                 meta: String(course?.meta || course?.hoursMeta || (hours ? `${this.formatHours(hours)} Std.` : '')).trim(),
             }
         },
+        moreCoursesCardItem(course, courseGroup) {
+            return {
+                ...this.selectedCourseListItem(course, courseGroup),
+                courseGroupLabel: courseGroup === 'additional' ? 'Zusätzliche Kurse' : 'Vorgesehene Kurse',
+            }
+        },
+        toggleMoreCoursesCard() {
+            this.moreCoursesVisible = !this.moreCoursesVisible
+
+            if (!this.moreCoursesVisible) {
+                this.selectedMoreCourseKey = ''
+            }
+        },
+        selectMoreCourse(course) {
+            this.selectedMoreCourseKey = course?.selectionKey || ''
+        },
+        selectedCourseItemActive(course) {
+            return this.selectedCourseItemsClickable
+                && this.selectedReviewCourseItem?.selectionKey === course?.selectionKey
+        },
         selectReviewCourse(course) {
+            if (!this.selectedCourseItemsClickable) return
+
             this.selectedReviewCourseKey = course?.selectionKey || ''
         },
         offeredCourseItemsAllDeselected(course) {
@@ -1409,7 +2489,6 @@ export default {
             const selectionKey = course?.selectionKey || this.offeredCourseSelectionKey(course)
             if (!selectionKey) return
 
-            const timetableV2Selection = { ...this.storedTimetableV2Selection }
             const offeredCourseSelections = { ...this.offeredCourseSelectionOverrides }
 
             if (this.offeredCourseSelected(course)) {
@@ -1417,6 +2496,43 @@ export default {
             } else {
                 delete offeredCourseSelections[selectionKey]
             }
+
+            this.saveOfferedCourseSelections(offeredCourseSelections)
+        },
+        applyOfferedCourseBulkSelection(optionKey) {
+            const offeredCourses = this.allSelectedOfferedCourseItems()
+            if (!offeredCourses.length) return
+
+            const offeredCourseSelections = { ...this.offeredCourseSelectionOverrides }
+
+            offeredCourses.forEach((course) => {
+                const selectionKey = course?.selectionKey || this.offeredCourseSelectionKey(course)
+                if (!selectionKey) return
+
+                if (this.offeredCourseExcludedByBulkSelection(optionKey, course)) {
+                    offeredCourseSelections[selectionKey] = false
+
+                    return
+                }
+
+                delete offeredCourseSelections[selectionKey]
+            })
+
+            this.saveOfferedCourseSelections(offeredCourseSelections)
+        },
+        allSelectedOfferedCourseItems() {
+            return (Array.isArray(this.selectedCourseItems) ? this.selectedCourseItems : [])
+                .flatMap((course) => this.offeredCourseItemsForSelectedCourse(course))
+        },
+        offeredCourseExcludedByBulkSelection(optionKey, course) {
+            if (optionKey === 'all') return false
+            if (optionKey === 'distance-learning') return course?.distanceLearning !== true
+            if (optionKey === 'without-distance-learning') return course?.distanceLearning === true
+
+            return false
+        },
+        saveOfferedCourseSelections(offeredCourseSelections) {
+            const timetableV2Selection = { ...this.storedTimetableV2Selection }
 
             if (Object.keys(offeredCourseSelections).length) {
                 timetableV2Selection.offeredCourseSelections = offeredCourseSelections
@@ -2027,7 +3143,6 @@ export default {
             const studentCode = this.normalizedStudentCode(this.studentSelectionDraft.studentCode)
             const selectedStudent = studentCode ? this.robotStudents.find((student) => String(student.student_code) === studentCode) : null
 
-            this.timetableV2Step = 'selection'
             this.selectedReviewCourseKey = ''
             this.saveStoredTimetableState({
                 ...this.defaultStoredTimetableState(),
@@ -2037,12 +3152,12 @@ export default {
                 transferredStudentContext: selectedStudent ? this.transferredStudentContextFromRobotStudent(selectedStudent) : null,
             })
             this.timetableStartMode = selectedStudent ? 'student' : ''
+            this.setTimetableV2Step('selection')
             this.closeStudentDialog()
             this.studentOverviewLoadedRequestKey = ''
             this.loadStoredStudentOverview(studentCode)
         },
         clearStoredTimetableStudent() {
-            this.timetableV2Step = 'selection'
             this.selectedReviewCourseKey = ''
             this.saveStoredTimetableState({
                 ...this.defaultStoredTimetableState(),
@@ -2054,12 +3169,13 @@ export default {
             this.studentOverviewActiveRequestKey = ''
             this.studentOverviewLoadedRequestKey = ''
             this.studentCompletedCoursesLoading = false
+            this.setTimetableV2Step('selection')
         },
         selectTimetableSelectionOption(key, value) {
             if (!this.selectionCardVisible) return
 
-            this.timetableV2Step = 'selection'
             this.selectedReviewCourseKey = ''
+            this.setTimetableV2Step('selection')
             const timetableV2Selection = { ...this.storedTimetableV2Selection }
             if (String(timetableV2Selection[key] || '') === String(value)) {
                 timetableV2Selection[key] = null
@@ -3249,6 +4365,13 @@ export default {
     gap: 8px;
 }
 
+.students-timetable-v2-selected-courses-card__filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
 .students-timetable-v2-selected-courses-card__title {
     display: flex;
     align-items: center;
@@ -3266,6 +4389,10 @@ export default {
 
 .students-timetable-v2-selected-courses-card__course {
     cursor: pointer;
+}
+
+.students-timetable-v2-selected-courses-card__course--passive {
+    cursor: default;
 }
 
 .students-timetable-v2-selected-courses-card__course--active {
@@ -3335,10 +4462,251 @@ export default {
     font-weight: 800;
 }
 
+.students-timetable-v2-calculation-card__success,
 .students-timetable-v2-calculation-card__summary {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    align-items: center;
+}
+
+.students-timetable-v2-calculation-card__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.students-timetable-v2-more-courses-card {
+    border: 1px solid rgba(37, 99, 235, 0.14);
+}
+
+.students-timetable-v2-more-courses-card__title {
+    font-size: 0.95rem;
+    font-weight: 900;
+}
+
+.students-timetable-v2-more-courses-card__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.students-timetable-v2-more-courses-card__course {
+    cursor: pointer;
+    max-width: 100%;
+}
+
+.students-timetable-v2-more-courses-card__course--active {
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.28);
+}
+
+.students-timetable-v2-more-courses-card__meta,
+.students-timetable-v2-more-courses-card__group {
+    margin-left: 6px;
+    font-weight: 800;
+}
+
+.students-timetable-v2-more-courses-card__group {
+    opacity: 0.72;
+}
+
+.students-timetable-v2-more-courses-offered-card {
+    border: 1px solid rgba(37, 99, 235, 0.14);
+}
+
+.students-timetable-v2-result {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.students-timetable-v2-result__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: space-between;
+}
+
+.students-timetable-v2-result__title,
+.students-timetable-v2-result__meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-weight: 800;
+}
+
+.students-timetable-v2-result-conflicts {
+    display: grid;
+    gap: 6px;
+    border: 1px solid rgba(220, 38, 38, 0.18);
+    border-radius: 8px;
+    padding: 9px 10px;
+    background: rgba(254, 226, 226, 0.96);
+    color: #7f1d1d;
+}
+
+.students-timetable-v2-result-conflicts__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.students-timetable-v2-result-conflicts__list {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding-left: 18px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.students-timetable-v2-result-conflicts__actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.students-timetable-v2-result-grid {
+    display: grid;
+    grid-template-columns: 58px repeat(var(--students-timetable-v2-result-weekdays, 5), minmax(96px, 1fr));
+    overflow-x: auto;
+    border: 1px solid rgba(14, 165, 233, 0.24);
+    border-radius: 8px;
+    background: #e2e8f0;
+    gap: 1px;
+}
+
+.students-timetable-v2-result-grid__cell {
+    min-height: 64px;
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.96);
+    padding: 7px;
+}
+
+.students-timetable-v2-result-grid__cell--header {
+    min-height: 34px;
+    background: #f0f9ff;
+    color: #075985;
+    font-size: 0.78rem;
+    font-weight: 900;
+    text-align: center;
+}
+
+.students-timetable-v2-result-grid__cell--time {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    min-height: 64px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.15;
+    text-align: center;
+}
+
+.students-timetable-v2-result-grid__cell--filled {
+    background: rgba(220, 252, 231, 0.94);
+}
+
+.students-timetable-v2-result-grid__cell--additional {
+    background: rgba(219, 234, 254, 0.94);
+}
+
+.students-timetable-v2-result-grid__cell--conflict {
+    background: rgba(254, 226, 226, 0.96);
+}
+
+.students-timetable-v2-result-grid__content {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.students-timetable-v2-result-grid__code {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    flex-wrap: wrap;
+    color: #0f172a;
+    font-size: 0.82rem;
+    font-weight: 900;
+    line-height: 1.15;
+}
+
+.students-timetable-v2-result-grid__details,
+.students-timetable-v2-result-grid__date,
+.students-timetable-v2-result-grid__recurrence,
+.students-timetable-v2-result-grid__same-slot {
+    color: #334155;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.students-timetable-v2-result-grid__recurrence {
+    color: #0f766e;
+}
+
+.students-timetable-v2-result-grid__date {
+    color: #0369a1;
+}
+
+.students-timetable-v2-result-grid__same-slots {
+    display: grid;
+    gap: 3px;
+    margin-top: 2px;
+}
+
+.students-timetable-v2-result-grid__same-slot {
+    border-top: 1px solid rgba(14, 165, 233, 0.18);
+    padding-top: 3px;
+}
+
+.students-timetable-v2-result-grid__conflicts {
+    display: grid;
+    gap: 2px;
+    margin-top: 4px;
+    border-top: 1px solid rgba(220, 38, 38, 0.22);
+    padding-top: 4px;
+    color: #991b1b;
+    font-size: 0.66rem;
+    font-weight: 800;
+    line-height: 1.18;
+}
+
+.students-timetable-v2-result-grid__conflict-title {
+    color: #7f1d1d;
+    font-weight: 900;
+}
+
+.students-timetable-v2-result-grid__badge {
+    border-radius: 999px;
+    padding: 1px 4px;
+    background: rgba(245, 158, 11, 0.18);
+    color: #92400e;
+    font-size: 0.56rem;
+    font-weight: 900;
+    line-height: 1.1;
+}
+
+.students-timetable-v2-result-grid__badge--additional {
+    background: rgba(37, 99, 235, 0.16);
+    color: #1d4ed8;
+}
+
+.students-timetable-v2-result-grid__hour {
+    font-size: 0.86rem;
+}
+
+.students-timetable-v2-result-grid__time {
+    display: block;
 }
 
 .students-timetable-v2-student-context {
