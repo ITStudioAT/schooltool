@@ -347,6 +347,7 @@ class RobotTimetableBackendSetupService
             $input['has_missing_options'],
             $input['additional_course_options'],
             $this->selectedBackendTimetableType($settings['selected_timetable_type'] ?? 'full_green') ?? 'full_green',
+            ($settings['selected_additional_courses_required'] ?? false) === true,
         );
         $qualityResult = $this->qualityResultForSelectedTimetableType(
             $input['course_options'],
@@ -467,6 +468,7 @@ class RobotTimetableBackendSetupService
         bool $hasMissingOptions,
         array $additionalCourseOptions,
         string $selectedTimetableType,
+        bool $selectedAdditionalCoursesRequired,
     ): array {
         if ($selectedCourses === []) {
             return [
@@ -494,9 +496,15 @@ class RobotTimetableBackendSetupService
         $typeCounts = $this->timetableTypeVariationCounts($courseOptions);
         $hasMissingAdditionalOptions = $additionalCourseOptions === []
             || collect($additionalCourseOptions)->contains(fn (array $options): bool => $options === []);
-        $additionalCourseTimetableCount = $hasMissingAdditionalOptions
-            ? 0
-            : $this->additionalCourseCompatibleTimetableCount($courseOptions, $additionalCourseOptions, $selectedTimetableType);
+        $additionalTypeCounts = $hasMissingAdditionalOptions
+            ? ['full_green' => 0, 'green' => 0, 'conflict' => 0]
+            : $this->requiredAdditionalCourseTimetableCounts($courseOptions, $additionalCourseOptions);
+        $additionalCourseTimetableCount = $additionalTypeCounts[$selectedTimetableType] ?? 0;
+
+        if ($selectedAdditionalCoursesRequired && ! $hasMissingAdditionalOptions) {
+            $typeCounts = $additionalTypeCounts;
+            $timetableVariationCount = array_sum($additionalTypeCounts);
+        }
 
         return [
             'timetable_variation_count' => $timetableVariationCount,
@@ -587,34 +595,39 @@ class RobotTimetableBackendSetupService
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
+     * @return array{full_green: int, green: int, conflict: int}
      */
-    private function additionalCourseCompatibleTimetableCount(
+    private function requiredAdditionalCourseTimetableCounts(
         array $courseOptions,
         array $additionalCourseOptions,
-        string $selectedType,
         int $courseIndex = 0,
         ?array $usedAllSummary = null,
         ?array $usedRegularDateSummary = null,
         ?array $usedRegularWeeklySlotSummary = null,
         bool $isFullGreenCandidate = true,
         bool $hasRegularConflict = false,
-    ): int {
+    ): array {
         if ($courseIndex >= count($courseOptions)) {
             $combinationType = $hasRegularConflict
                 ? 'conflict'
                 : ($isFullGreenCandidate ? 'full_green' : 'green');
-
-            if ($combinationType !== $selectedType) {
-                return 0;
-            }
-
-            return $this->additionalCoursesFitTimetable(
+            $acceptedSelectionCount = $this->acceptedAdditionalCourseSelectionCount(
                 $additionalCourseOptions,
                 $usedAllSummary ?? $this->emptyDateKeySummary(),
-            ) ? 1 : 0;
+            );
+
+            return [
+                'full_green' => $combinationType === 'full_green' ? $acceptedSelectionCount : 0,
+                'green' => $combinationType === 'green' ? $acceptedSelectionCount : 0,
+                'conflict' => $combinationType === 'conflict' ? $acceptedSelectionCount : 0,
+            ];
         }
 
-        $count = 0;
+        $counts = [
+            'full_green' => 0,
+            'green' => 0,
+            'conflict' => 0,
+        ];
         $usedAllSummary ??= $this->emptyDateKeySummary();
         $usedRegularDateSummary ??= $this->emptyDateKeySummary();
         $usedRegularWeeklySlotSummary ??= $this->emptyDateKeySummary();
@@ -629,10 +642,9 @@ class RobotTimetableBackendSetupService
                 $hasRegularConflict,
             );
 
-            $count += $this->additionalCourseCompatibleTimetableCount(
+            $nextCounts = $this->requiredAdditionalCourseTimetableCounts(
                 $courseOptions,
                 $additionalCourseOptions,
-                $selectedType,
                 $courseIndex + 1,
                 $nextState['used_all_summary'],
                 $nextState['used_regular_date_summary'],
@@ -640,23 +652,29 @@ class RobotTimetableBackendSetupService
                 $nextState['is_full_green_candidate'],
                 $nextState['has_regular_conflict'],
             );
+
+            $counts['full_green'] += $nextCounts['full_green'];
+            $counts['green'] += $nextCounts['green'];
+            $counts['conflict'] += $nextCounts['conflict'];
         }
 
-        return $count;
+        return $counts;
     }
 
     /**
      * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedAllSummary
      */
-    private function additionalCoursesFitTimetable(
+    private function acceptedAdditionalCourseSelectionCount(
         array $additionalCourseOptions,
         array $usedAllSummary,
         int $additionalCourseIndex = 0,
-    ): bool {
+    ): int {
         if ($additionalCourseIndex >= count($additionalCourseOptions)) {
-            return true;
+            return 1;
         }
+
+        $count = 0;
 
         foreach ($additionalCourseOptions[$additionalCourseIndex] as $option) {
             $allSummary = $option['all_date_summary'] ?? $this->dateKeySummary($option['date_keys'] ?? []);
@@ -665,16 +683,14 @@ class RobotTimetableBackendSetupService
                 continue;
             }
 
-            if ($this->additionalCoursesFitTimetable(
+            $count += $this->acceptedAdditionalCourseSelectionCount(
                 $additionalCourseOptions,
                 $this->mergeDateKeySummaries($usedAllSummary, $allSummary),
                 $additionalCourseIndex + 1,
-            )) {
-                return true;
-            }
+            );
         }
 
-        return false;
+        return $count;
     }
 
     /**

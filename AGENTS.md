@@ -67,6 +67,8 @@ Never perform destructive database mutations, especially deletes, without explic
 
 ## Multi-Agent Workflow
 
+Codex may use sub-agents whenever they are useful, without asking for confirmation first.
+
 Prefer multi-agent work for complex tasks when Codex subagents are available.
 If the operator asks to use sub-agents or says not to ask for routine development work, treat that as an explicit preference for future complex investigations and proceed without additional confirmation.
 

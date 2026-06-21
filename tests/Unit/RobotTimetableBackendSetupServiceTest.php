@@ -1079,6 +1079,17 @@ it('counts selected green timetables that can include additional courses', funct
                 'hours_per_week' => 1,
                 'is_active' => true,
             ],
+            [
+                'id' => 3,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'GS2',
+                'json_subject' => 'GS',
+                'name' => 'Geschichte 2',
+                'tt_subject' => 'GS',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
         ],
         subjectMappings: [],
         courseGroups: [
@@ -1115,6 +1126,17 @@ it('counts selected green timetables that can include additional courses', funct
                 'dates' => [],
                 'dates_count' => 0,
             ],
+            [
+                'weekday' => 3,
+                'hour' => 1,
+                'class_name' => 'GS2-A',
+                'display_label' => 'GS2-A',
+                'title' => 'GS2-A',
+                'course' => 'GS2',
+                'subject' => 'Geschichte',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
         ],
         settings: [
             'selection' => [
@@ -1134,6 +1156,7 @@ it('counts selected green timetables that can include additional courses', funct
             ],
             'selected_additional_course_keys' => [
                 '2|2|common|M2|M|Mathematik 2|M2',
+                '3|2|common|GS2|GS|Geschichte 2|GS2',
             ],
             'deselected_course_keys' => [],
             'deselected_course_group_keys' => [],
@@ -1144,14 +1167,16 @@ it('counts selected green timetables that can include additional courses', funct
     );
 
     expect($result['selected_course_count'])->toBe(1)
-        ->and($result['timetable_variation_count'])->toBe(2)
-        ->and($result['full_green_timetable_count'])->toBe(2)
+        ->and($result['timetable_variation_count'])->toBe(1)
+        ->and($result['full_green_timetable_count'])->toBe(1)
         ->and($result['additional_course_timetable_count'])->toBe(1)
         ->and($result['selected_timetable']['type'])->toBe('full_green')
         ->and($result['selected_timetable']['additionalCoursesAccepted'])->toBeTrue()
-        ->and($result['selected_timetable']['acceptedAdditionalCourseCount'])->toBe(1)
+        ->and($result['selected_timetable']['acceptedAdditionalCourseCount'])->toBe(2)
         ->and($result['selected_timetable']['slots']['2-1']['code'])->toBe('M2')
         ->and($result['selected_timetable']['slots']['2-1']['isAdditionalCourse'])->toBeTrue()
+        ->and($result['selected_timetable']['slots']['3-1']['code'])->toBe('GS2')
+        ->and($result['selected_timetable']['slots']['3-1']['isAdditionalCourse'])->toBeTrue()
         ->and($result['selected_timetable']['problems'])->toBeEmpty();
 });
 
