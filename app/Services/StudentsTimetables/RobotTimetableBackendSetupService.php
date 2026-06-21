@@ -69,6 +69,7 @@ class RobotTimetableBackendSetupService
             'selected_course_count' => $variationResult['selected_course_count'],
             'selected_additional_course_count' => count($this->stringList($settings['selected_additional_course_keys'] ?? [])),
             'additional_course_timetable_count' => $variationResult['additional_course_timetable_count'],
+            'no_saturday_timetable_count' => $variationResult['no_saturday_timetable_count'],
             'selected_timetable' => $variationResult['selected_timetable'],
             'quality_counters' => $variationResult['quality_counters'],
             'all_quality_criteria_count' => $variationResult['all_quality_criteria_count'],
@@ -320,7 +321,7 @@ class RobotTimetableBackendSetupService
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
-     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
+     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
      */
     public function calculateTimetableVariations(
         array $subjectRows,
@@ -460,7 +461,7 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $selectedCourses
      * @param  list<list<array<string, mixed>>>  $courseOptions
      * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
-     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int}
+     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}
      */
     private function timetableVariationCounts(
         array $selectedCourses,
@@ -478,6 +479,7 @@ class RobotTimetableBackendSetupService
                 'red_timetable_count' => 0,
                 'selected_course_count' => 0,
                 'additional_course_timetable_count' => 0,
+                'no_saturday_timetable_count' => 0,
             ];
         }
 
@@ -489,6 +491,7 @@ class RobotTimetableBackendSetupService
                 'red_timetable_count' => 0,
                 'selected_course_count' => count($selectedCourses),
                 'additional_course_timetable_count' => 0,
+                'no_saturday_timetable_count' => 0,
             ];
         }
 
@@ -505,6 +508,11 @@ class RobotTimetableBackendSetupService
             $typeCounts = $additionalTypeCounts;
             $timetableVariationCount = array_sum($additionalTypeCounts);
         }
+        $noSaturdayTimetableCount = $this->noSaturdayTimetableCount(
+            $courseOptions,
+            $additionalCourseOptions,
+            $selectedAdditionalCoursesRequired && ! $hasMissingAdditionalOptions,
+        );
 
         return [
             'timetable_variation_count' => $timetableVariationCount,
@@ -513,6 +521,7 @@ class RobotTimetableBackendSetupService
             'red_timetable_count' => $typeCounts['conflict'],
             'selected_course_count' => count($selectedCourses),
             'additional_course_timetable_count' => $additionalCourseTimetableCount,
+            'no_saturday_timetable_count' => $noSaturdayTimetableCount,
         ];
     }
 
@@ -523,6 +532,138 @@ class RobotTimetableBackendSetupService
     {
         return collect($courseOptions)
             ->reduce(fn (int $total, array $options): int => $total * count($options), 1);
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
+     * @param  array<string, mixed>|null  $qualityState
+     */
+    private function noSaturdayTimetableCount(
+        array $courseOptions,
+        array $additionalCourseOptions = [],
+        bool $selectedAdditionalCoursesRequired = false,
+        int $courseIndex = 0,
+        ?array $usedAllSummary = null,
+        ?array $usedRegularDateSummary = null,
+        ?array $usedRegularWeeklySlotSummary = null,
+        ?array $qualityState = null,
+        bool $hasRegularConflict = false,
+    ): int {
+        $qualityState ??= $this->emptyQualityState();
+
+        if (($qualityState['all_uses_saturday'] ?? false) === true) {
+            return 0;
+        }
+
+        if ($courseIndex >= count($courseOptions)) {
+            if ($hasRegularConflict) {
+                return 0;
+            }
+
+            if (! $selectedAdditionalCoursesRequired) {
+                return 1;
+            }
+
+            return $this->acceptedNoSaturdayAdditionalCourseSelectionCount(
+                $additionalCourseOptions,
+                $usedAllSummary ?? $this->emptyDateKeySummary(),
+                $usedRegularDateSummary ?? $this->emptyDateKeySummary(),
+                $usedRegularWeeklySlotSummary ?? $this->emptyDateKeySummary(),
+                $qualityState,
+            );
+        }
+
+        $count = 0;
+        $usedAllSummary ??= $this->emptyDateKeySummary();
+        $usedRegularDateSummary ??= $this->emptyDateKeySummary();
+        $usedRegularWeeklySlotSummary ??= $this->emptyDateKeySummary();
+
+        foreach ($courseOptions[$courseIndex] as $option) {
+            $nextState = $this->nextTimetableTypeState(
+                $option,
+                $usedAllSummary,
+                $usedRegularDateSummary,
+                $usedRegularWeeklySlotSummary,
+                true,
+                $hasRegularConflict,
+            );
+
+            $count += $this->noSaturdayTimetableCount(
+                $courseOptions,
+                $additionalCourseOptions,
+                $selectedAdditionalCoursesRequired,
+                $courseIndex + 1,
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $this->mergeQualityStates($qualityState, $option['quality_state'] ?? $this->qualityStateForOption($option)),
+                $nextState['has_regular_conflict'],
+            );
+        }
+
+        return $count;
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedRegularWeeklySlotSummary
+     * @param  array<string, mixed>  $qualityState
+     */
+    private function acceptedNoSaturdayAdditionalCourseSelectionCount(
+        array $additionalCourseOptions,
+        array $usedAllSummary,
+        array $usedRegularDateSummary,
+        array $usedRegularWeeklySlotSummary,
+        array $qualityState,
+        int $additionalCourseIndex = 0,
+    ): int {
+        if (($qualityState['all_uses_saturday'] ?? false) === true) {
+            return 0;
+        }
+
+        if ($additionalCourseIndex >= count($additionalCourseOptions)) {
+            return 1;
+        }
+
+        $count = 0;
+
+        foreach ($additionalCourseOptions[$additionalCourseIndex] as $option) {
+            $allSummary = $option['all_date_summary'] ?? $this->dateKeySummary($option['date_keys'] ?? []);
+
+            if ($allSummary['has_overlap'] || $this->dateKeySummariesOverlap($usedAllSummary, $allSummary)) {
+                continue;
+            }
+
+            $nextState = $this->nextTimetableTypeState(
+                $option,
+                $usedAllSummary,
+                $usedRegularDateSummary,
+                $usedRegularWeeklySlotSummary,
+                true,
+                false,
+            );
+
+            if ($nextState['has_regular_conflict']) {
+                continue;
+            }
+
+            $count += $this->acceptedNoSaturdayAdditionalCourseSelectionCount(
+                $additionalCourseOptions,
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $this->mergeQualityStates($qualityState, $option['quality_state'] ?? $this->qualityStateForOption($option)),
+                $additionalCourseIndex + 1,
+            );
+        }
+
+        return $count;
     }
 
     /**
@@ -1659,7 +1800,7 @@ class RobotTimetableBackendSetupService
      * @param  list<list<array<string, mixed>>>  $courseOptions
      * @param  array<string, mixed>  $settings
      * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
-     * @param  array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int}  $counts
+     * @param  array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}  $counts
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
      * @param  array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}|null  $selectedQualitySubset

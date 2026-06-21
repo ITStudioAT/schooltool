@@ -36,6 +36,11 @@ function timetableV2Context(overrides = {}) {
         timetableCalculationRequestId: 0,
         timetableCalculationResult: null,
         timetableCalculationSelectedNumber: 1,
+        initialTimetableCalculationSelectedNumber: 1,
+        initialTimetableCalculationSelection: null,
+        initialTimetableCalculationNoSaturdaySelected: false,
+        timetableNoSaturdayDraftSelected: false,
+        timetableNoSaturdaySelected: false,
         timetableOptionsCardVisible: false,
         moreCoursesCardVisible: false,
         selectedMoreCourseKey: '',
@@ -109,6 +114,31 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.selectedCourseItemsClickable.call(context)
             },
         },
+        noSaturdayTimetableCount: {
+            get() {
+                return TimetableV2.computed.noSaturdayTimetableCount.call(context)
+            },
+        },
+        noSaturdayTimetableCountFormatted: {
+            get() {
+                return TimetableV2.computed.noSaturdayTimetableCountFormatted.call(context)
+            },
+        },
+        timetableOptionsChanged: {
+            get() {
+                return TimetableV2.computed.timetableOptionsChanged.call(context)
+            },
+        },
+        timetableCalculationResetAvailable: {
+            get() {
+                return TimetableV2.computed.timetableCalculationResetAvailable.call(context)
+            },
+        },
+        selectedTimetableOptionItems: {
+            get() {
+                return TimetableV2.computed.selectedTimetableOptionItems.call(context)
+            },
+        },
         selectedCourseItems: {
             get() {
                 if (selectedCourseItemsOverride !== undefined) return selectedCourseItemsOverride
@@ -144,6 +174,11 @@ function timetableV2Context(overrides = {}) {
         storedTimetableV2Selection: {
             get() {
                 return TimetableV2.computed.storedTimetableV2Selection.call(context)
+            },
+        },
+        storedTimetableV2Options: {
+            get() {
+                return TimetableV2.computed.storedTimetableV2Options.call(context)
             },
         },
         courseSelectionOverrides: {
@@ -293,14 +328,275 @@ describe('TimetableV2 route steps', () => {
         const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
 
         expect(source).toMatch(/v-if="timetableOptionsCardVisible" class="students-timetable-v2-calculation-card__actions"[\s\S]*@click="closeTimetableOptionsCard">\s+Abbruch/u)
+        expect(source).toMatch(/color="success"\s+variant="flat"\s+append-icon="mdi-check"\s+:disabled="!timetableOptionsChanged \|\| timetableCalculationLoading"\s+@click="applyTimetableOptions">\s+Anwenden/u)
         expect(source).toMatch(/v-else-if="!moreCoursesVisible" class="students-timetable-v2-calculation-card__actions"/u)
-        expect(source).toMatch(/:color="moreCoursesButtonUnavailable \? 'error' : 'primary'"\s+variant="tonal"\s+prepend-icon="mdi-plus-circle-outline"\s+:disabled="timetableCalculationLoading \|\| moreCoursesButtonUnavailable"\s+@click="toggleMoreCoursesCard">\s+Mehr Kurse/u)
+        expect(source).toMatch(/class="students-timetable-v2-calculation-card__primary-actions"[\s\S]*:color="moreCoursesButtonUnavailable \? 'error' : 'primary'"\s+variant="tonal"\s+prepend-icon="mdi-plus-circle-outline"\s+:disabled="timetableCalculationLoading \|\| moreCoursesButtonUnavailable"\s+@click="toggleMoreCoursesCard">\s+Mehr Kurse/u)
         expect(source).toMatch(/color="info"\s+variant="tonal"\s+prepend-icon="mdi-cog-outline"\s+:disabled="timetableCalculationLoading"\s+:aria-expanded="timetableOptionsCardVisible \? 'true' : 'false'"\s+@click="toggleTimetableOptionsCard">\s+Optionen/u)
+        expect(source).toMatch(/color="warning"\s+variant="tonal"\s+prepend-icon="mdi-restore"\s+class="students-timetable-v2-calculation-card__reset-button"\s+:disabled="timetableCalculationLoading \|\| !timetableCalculationResetAvailable"\s+@click="resetTimetableCalculationChanges">\s+Zurücksetzen/u)
+        expect(source).toContain('students-timetable-v2-card-column students-timetable-v2-selected-courses-column')
+        expect(source).toMatch(/Ausgewählte Kurse[\s\S]*v-if="selectedTimetableOptionItems\.length"[\s\S]*class="students-timetable-v2-card students-timetable-v2-selected-options-card"[\s\S]*Optionen/u)
+        expect(source).toContain('v-for="option in selectedTimetableOptionItems"')
+        expect(source).toContain(':close-label="`Option ${option.label} entfernen`"')
+        expect(source).toContain('@click:close.stop="removeSelectedTimetableOption(option)"')
+        expect(source).toContain('{{ option.label }}')
         expect(source).toMatch(/v-else-if="timetableCalculationResult && !moreCoursesVisible && !timetableOptionsCardVisible"/u)
         expect(source).toMatch(/v-if="timetableOptionsCardVisible"[\s\S]*class="students-timetable-v2-options-card"[\s\S]*Optionen/u)
+        expect(source).toContain(":color=\"timetableNoSaturdayDraftSelected ? 'success' : undefined\"")
+        expect(source).toContain("'students-timetable-v2-options-card__option--selected': timetableNoSaturdayDraftSelected")
+        expect(source).toContain(":aria-pressed=\"timetableNoSaturdayDraftSelected ? 'true' : 'false'\"")
+        expect(source).toContain('@click="toggleNoSaturdayTimetableOption"')
+        expect(source).toContain('Kein Samstag')
+        expect(source).toContain('{{ noSaturdayTimetableCountFormatted }}')
         expect(source).toMatch(/v-else class="students-timetable-v2-calculation-card__more-course-actions"[\s\S]*Abbruch[\s\S]*Anwenden/u)
         expect(source).toMatch(/size="large"\s+color="warning"\s+variant="tonal"\s+prepend-icon="mdi-close"\s+@click="cancelMoreCoursesCard">\s+Abbruch/u)
         expect(source).toMatch(/append-icon="mdi-check"\s+:disabled="!moreCoursesSelectionChanged \|\| timetableCalculationLoading"\s+@click="applyMoreCoursesSelection">\s+Anwenden/u)
+    })
+
+    it('formats the no Saturday timetable count for the options card', () => {
+        const context = timetableV2Context({
+            timetableCalculationResult: {
+                no_saturday_timetable_count: 12,
+            },
+        })
+
+        expect(context.noSaturdayTimetableCount).toBe(12)
+        expect(context.noSaturdayTimetableCountFormatted).toBe('12')
+    })
+
+    it('shows selected timetable options below the selected courses card', () => {
+        expect(timetableV2Context().selectedTimetableOptionItems).toEqual([])
+
+        const context = timetableV2Context({
+            timetableNoSaturdayDraftSelected: true,
+            timetableNoSaturdaySelected: true,
+        })
+
+        expect(context.selectedTimetableOptionItems).toEqual([
+            {
+                key: 'no-saturday',
+                label: 'Kein Samstag',
+            },
+        ])
+    })
+
+    it('stages selected timetable option removal through the pending action row', () => {
+        const context = timetableV2Context({
+            timetableNoSaturdayDraftSelected: true,
+            timetableNoSaturdaySelected: true,
+        })
+
+        TimetableV2.methods.removeSelectedTimetableOption.call(context, {
+            key: 'no-saturday',
+        })
+
+        expect(context.moreCoursesVisible).toBe(true)
+        expect(context.moreCoursesCardVisible).toBe(false)
+        expect(context.timetableNoSaturdayDraftSelected).toBe(false)
+        expect(context.timetableNoSaturdaySelected).toBe(true)
+        expect(context.selectedTimetableOptionItems).toEqual([])
+        expect(context.moreCoursesSelectionChanged).toBe(true)
+    })
+
+    it('restores staged timetable option removal on cancel', () => {
+        const context = timetableV2Context({
+            timetableNoSaturdayDraftSelected: true,
+            timetableNoSaturdaySelected: true,
+        })
+
+        TimetableV2.methods.removeSelectedTimetableOption.call(context, {
+            key: 'no-saturday',
+        })
+        TimetableV2.methods.cancelMoreCoursesCard.call(context)
+
+        expect(context.moreCoursesVisible).toBe(false)
+        expect(context.moreCoursesCardVisible).toBe(false)
+        expect(context.timetableNoSaturdayDraftSelected).toBe(true)
+        expect(context.timetableNoSaturdaySelected).toBe(true)
+        expect(context.selectedTimetableOptionItems).toEqual([
+            {
+                key: 'no-saturday',
+                label: 'Kein Samstag',
+            },
+        ])
+    })
+
+    it('applies staged timetable option removal and recalculates', () => {
+        const calculateTimetables = vi.fn()
+        const context = timetableV2Context({
+            calculateTimetables,
+            timetableCalculationSelectedNumber: 4,
+            timetableNoSaturdayDraftSelected: true,
+            timetableNoSaturdaySelected: true,
+        })
+
+        TimetableV2.methods.removeSelectedTimetableOption.call(context, {
+            key: 'no-saturday',
+        })
+        TimetableV2.methods.applyMoreCoursesSelection.call(context)
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(context.moreCoursesVisible).toBe(false)
+        expect(context.moreCoursesCardVisible).toBe(false)
+        expect(context.timetableCalculationSelectedNumber).toBe(1)
+        expect(context.timetableNoSaturdayDraftSelected).toBe(false)
+        expect(context.timetableNoSaturdaySelected).toBe(false)
+        expect(context.selectedTimetableOptionItems).toEqual([])
+        expect(payload.constraints.availableWeekdays).toEqual([1, 2, 3, 4, 5, 6])
+        expect(calculateTimetables).toHaveBeenCalledOnce()
+    })
+
+    it('marks timetable calculation reset available only when calculation state changed', () => {
+        const initialTimetableV2Selection = {
+            courseSelections: {
+                'planned:D1': false,
+            },
+        }
+        const context = timetableV2Context({
+            initialTimetableCalculationSelectedNumber: 1,
+            initialTimetableCalculationNoSaturdaySelected: false,
+            initialTimetableCalculationSelection: initialTimetableV2Selection,
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: initialTimetableV2Selection,
+                transferredStudentContext: null,
+            },
+            timetableCalculationSelectedNumber: 1,
+            timetableCalculationVisible: true,
+            timetableNoSaturdaySelected: false,
+        })
+
+        expect(context.timetableCalculationResetAvailable).toBe(false)
+
+        context.timetableCalculationSelectedNumber = 2
+        expect(context.timetableCalculationResetAvailable).toBe(true)
+
+        context.timetableCalculationSelectedNumber = 1
+        context.timetableNoSaturdaySelected = true
+        expect(context.timetableCalculationResetAvailable).toBe(true)
+
+        context.timetableNoSaturdaySelected = false
+        context.storedTimetableState = {
+            selection: {},
+            timetableV2Selection: {
+                courseSelections: {
+                    'planned:D1': false,
+                    'additional:INF2': true,
+                },
+            },
+            transferredStudentContext: null,
+        }
+        expect(context.timetableCalculationResetAvailable).toBe(true)
+    })
+
+    it('does not reset timetable calculation changes when there is nothing to reset', () => {
+        const calculateTimetables = vi.fn()
+        const saveStoredTimetableState = vi.fn()
+        const initialTimetableV2Selection = {
+            courseSelections: {
+                'planned:D1': false,
+            },
+        }
+        const context = timetableV2Context({
+            calculateTimetables,
+            initialTimetableCalculationSelectedNumber: 1,
+            initialTimetableCalculationNoSaturdaySelected: false,
+            initialTimetableCalculationSelection: initialTimetableV2Selection,
+            saveStoredTimetableState,
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: initialTimetableV2Selection,
+                transferredStudentContext: null,
+            },
+            timetableCalculationSelectedNumber: 1,
+            timetableCalculationVisible: true,
+            timetableNoSaturdaySelected: false,
+        })
+
+        TimetableV2.methods.resetTimetableCalculationChanges.call(context)
+
+        expect(context.timetableCalculationResetAvailable).toBe(false)
+        expect(saveStoredTimetableState).not.toHaveBeenCalled()
+        expect(calculateTimetables).not.toHaveBeenCalled()
+    })
+
+    it('resets timetable calculation course changes to the initial calculation state', () => {
+        let context: ReturnType<typeof timetableV2Context>
+        const calculateTimetables = vi.fn()
+        const saveStoredTimetableState = vi.fn((state) => {
+            context.storedTimetableState = state
+        })
+        const initialTimetableV2Selection = {
+            courseSelections: {
+                'planned:D1': false,
+                'additional:INF2': true,
+            },
+            offeredCourseSelections: {
+                'planned:D1::D1-A': false,
+            },
+        }
+
+        context = timetableV2Context({
+            calculateTimetables,
+            initialTimetableCalculationSelectedNumber: 1,
+            initialTimetableCalculationNoSaturdaySelected: false,
+            initialTimetableCalculationSelection: initialTimetableV2Selection,
+            moreCourseAvailabilityByKey: {
+                'additional:INF2': false,
+            },
+            moreCourseAvailabilitySignature: 'changed',
+            moreCoursesVisible: true,
+            moreCoursesCardVisible: true,
+            saveStoredTimetableState,
+            selectedMoreCourseKey: 'additional:INF2',
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    courseSelections: {
+                        'planned:D1': false,
+                        'additional:INF2': true,
+                        'additional:GS1': true,
+                    },
+                    offeredCourseSelections: {
+                        'planned:D1::D1-A': false,
+                        'additional:GS1::GS1-A': false,
+                    },
+                    moreOfferedCourseSelections: {
+                        'additional:GS1::GS1-B': true,
+                    },
+                },
+                transferredStudentContext: null,
+            },
+            storedTimetableStateForSaving() {
+                return context.storedTimetableState
+            },
+            timetableCalculationSelectedNumber: 4,
+            timetableCalculationVisible: true,
+            timetableNoSaturdayDraftSelected: true,
+            timetableNoSaturdaySelected: true,
+            timetableOptionsCardVisible: true,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        TimetableV2.methods.resetTimetableCalculationChanges.call(context)
+
+        expect(saveStoredTimetableState).toHaveBeenCalledWith({
+            selection: {},
+            timetableV2Selection: initialTimetableV2Selection,
+            timetableV2Options: {
+                noSaturday: false,
+            },
+            transferredStudentContext: null,
+        })
+        expect(context.moreCoursesVisible).toBe(false)
+        expect(context.moreCoursesCardVisible).toBe(false)
+        expect(context.timetableOptionsCardVisible).toBe(false)
+        expect(context.selectedMoreCourseKey).toBe('')
+        expect(context.moreCourseAvailabilityByKey).toEqual({})
+        expect(context.timetableCalculationSelectedNumber).toBe(1)
+        expect(context.timetableNoSaturdayDraftSelected).toBe(false)
+        expect(context.timetableNoSaturdaySelected).toBe(false)
+        expect(calculateTimetables).toHaveBeenCalledOnce()
     })
 
     it('does not render checkbox controls in the more courses chips', () => {
@@ -1426,6 +1722,132 @@ describe('TimetableV2 route steps', () => {
         expect(payload.selected_additional_courses_required).toBe(true)
         expect(payload.selected_timetable_type).toBe('full_green')
         expect(payload.selected_timetable_number).toBe(1)
+    })
+
+    it('applies the no Saturday option to timetable and more course availability payloads', () => {
+        const context = timetableV2Context({
+            selectedCourseItems: [
+                { courseGroup: 'planned', key: 'D1', selectionKey: 'planned:D1' },
+            ],
+            storedAdditionalCourseItems: [
+                { code: 'INF2', hours: 2, key: 'INF2', label: 'INF2' },
+            ],
+            timetableNoSaturdaySelected: true,
+        })
+        const moreCourse = context.moreCoursesCardItems.find((course) => course.key === 'INF2')
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+        const moreCoursePayload = TimetableV2.methods.timetableV2CalculationPayloadForMoreCourseAvailability.call(
+            context,
+            moreCourse,
+        )
+
+        expect(payload.constraints.availableWeekdays).toEqual([1, 2, 3, 4, 5])
+        expect(moreCoursePayload.constraints.availableWeekdays).toEqual([1, 2, 3, 4, 5])
+    })
+
+    it('stages the no Saturday option without recalculating timetables', () => {
+        const calculateTimetables = vi.fn()
+        const context = timetableV2Context({
+            calculateTimetables,
+            moreCourseAvailabilityByKey: {
+                'additional:INF2': true,
+            },
+            moreCourseAvailabilitySignature: 'previous',
+            timetableCalculationSelectedNumber: 4,
+            timetableNoSaturdayDraftSelected: false,
+            timetableNoSaturdaySelected: false,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        TimetableV2.methods.toggleNoSaturdayTimetableOption.call(context)
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(context.timetableNoSaturdayDraftSelected).toBe(true)
+        expect(context.timetableNoSaturdaySelected).toBe(false)
+        expect(context.timetableOptionsChanged).toBe(true)
+        expect(context.timetableCalculationSelectedNumber).toBe(4)
+        expect(context.moreCourseAvailabilityByKey).toEqual({
+            'additional:INF2': true,
+        })
+        expect(context.moreCourseAvailabilitySignature).toBe('previous')
+        expect(payload.constraints.availableWeekdays).toEqual([1, 2, 3, 4, 5, 6])
+        expect(calculateTimetables).not.toHaveBeenCalled()
+    })
+
+    it('applies staged timetable options and recalculates more course availability', () => {
+        const calculateTimetables = vi.fn()
+        const saveStoredTimetableState = vi.fn()
+        const context = timetableV2Context({
+            calculateTimetables,
+            moreCourseAvailabilityByKey: {
+                'additional:INF2': true,
+            },
+            moreCourseAvailabilitySignature: 'previous',
+            saveStoredTimetableState,
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {},
+                timetableV2Options: {
+                    noSaturday: false,
+                },
+                transferredStudentContext: null,
+            },
+            storedTimetableStateForSaving() {
+                return context.storedTimetableState
+            },
+            timetableCalculationSelectedNumber: 4,
+            timetableNoSaturdayDraftSelected: true,
+            timetableNoSaturdaySelected: false,
+            timetableOptionsCardVisible: true,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        TimetableV2.methods.applyTimetableOptions.call(context)
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(context.timetableNoSaturdayDraftSelected).toBe(true)
+        expect(context.timetableNoSaturdaySelected).toBe(true)
+        expect(context.timetableOptionsChanged).toBe(false)
+        expect(context.timetableOptionsCardVisible).toBe(false)
+        expect(context.timetableCalculationSelectedNumber).toBe(1)
+        expect(context.moreCourseAvailabilityByKey).toEqual({})
+        expect(context.moreCourseAvailabilitySignature).toBe('')
+        expect(payload.constraints.availableWeekdays).toEqual([1, 2, 3, 4, 5])
+        expect(saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
+            timetableV2Options: {
+                noSaturday: true,
+            },
+        }))
+        expect(calculateTimetables).toHaveBeenCalledOnce()
+    })
+
+    it('restores stored timetable options after a page refresh', () => {
+        const context = timetableV2Context({
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {},
+                timetableV2Options: {
+                    noSaturday: true,
+                },
+                transferredStudentContext: null,
+            },
+            timetableNoSaturdayDraftSelected: false,
+            timetableNoSaturdaySelected: false,
+        })
+
+        TimetableV2.methods.syncStoredTimetableOptions.call(context)
+
+        expect(context.timetableNoSaturdaySelected).toBe(true)
+        expect(context.timetableNoSaturdayDraftSelected).toBe(true)
+        expect(context.selectedTimetableOptionItems).toEqual([
+            {
+                key: 'no-saturday',
+                label: 'Kein Samstag',
+            },
+        ])
     })
 
     it('does not require additional courses when none are selected for calculation', () => {

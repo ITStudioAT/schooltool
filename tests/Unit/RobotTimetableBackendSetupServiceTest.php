@@ -103,7 +103,109 @@ it('counts all selected course variations and the overlap free full green variat
         ->and($result['timetable_variation_count'])->toBe(4)
         ->and($result['full_green_timetable_count'])->toBe(3)
         ->and($result['green_timetable_count'])->toBe(0)
-        ->and($result['red_timetable_count'])->toBe(1);
+        ->and($result['red_timetable_count'])->toBe(1)
+        ->and($result['no_saturday_timetable_count'])->toBe(3);
+});
+
+it('counts timetable variations without Saturday appointments', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'M1',
+                'json_subject' => 'M',
+                'name' => 'Mathematik 1',
+                'tt_subject' => 'M',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'D1-Mo',
+                'display_label' => 'D1-Mo',
+                'title' => 'D1-Mo',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 6,
+                'hour' => 1,
+                'class_name' => 'D1-Sa',
+                'display_label' => 'D1-Sa',
+                'title' => 'D1-Sa',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 1,
+                'class_name' => 'M1-Di',
+                'display_label' => 'M1-Di',
+                'title' => 'M1-Di',
+                'course' => 'M1',
+                'subject' => 'Mathematik',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 6,
+                'hour' => 2,
+                'class_name' => 'M1-Sa',
+                'display_label' => 'M1-Sa',
+                'title' => 'M1-Sa',
+                'course' => 'M1',
+                'subject' => 'Mathematik',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 3, 4, 5],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '1|1|common|D1|D|Deutsch 1|D1',
+                '2|1|common|M1|M|Mathematik 1|M1',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+        ],
+    );
+
+    expect($result['timetable_variation_count'])->toBe(4)
+        ->and($result['no_saturday_timetable_count'])->toBe(1);
 });
 
 it('marks backend selected half-load timetable slots as distance learning', function () {
