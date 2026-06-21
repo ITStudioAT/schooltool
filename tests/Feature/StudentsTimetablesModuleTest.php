@@ -996,11 +996,30 @@ it('returns the canonical LPT subject name in subjects overview settings', funct
         'source' => 'json',
     ]);
 
+    StudentTimetableSubjectMapping::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'json_subject' => 'LPT',
+        'tt_subject' => 'LPT',
+        'note' => null,
+        'is_active' => true,
+        'sort_order' => 0,
+        'source' => 'json',
+    ]);
+
     $settingsResponse = $this->actingAs($user)
         ->getJson('/api/admin/students-timetables/subjects-overview-settings')
         ->assertSuccessful()
         ->assertJsonPath('data.subjects.0.json_code', 'LPT')
         ->assertJsonPath('data.subjects.0.name', 'Lern- und Präsentationstechniken');
+
+    expect($settingsResponse->json('data.mappings.0.json_subject'))->toBe('LPT');
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/subjects-overview-settings?subjects_only=1')
+        ->assertSuccessful()
+        ->assertJsonPath('data.subjects.0.json_code', 'LPT')
+        ->assertJsonMissingPath('data.mappings');
 
     $this->actingAs($user)
         ->putJson('/api/admin/students-timetables/subjects-overview-settings/subjects', [

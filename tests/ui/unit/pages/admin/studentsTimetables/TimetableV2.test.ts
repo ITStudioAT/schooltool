@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import TimetableV2 from '@/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue'
 
@@ -15,15 +16,24 @@ function timetableV2Context(overrides = {}) {
         timetableV2Step: 'selection',
         timetableStartMode: '',
         schoolHours: [],
+        subjectRows: [],
+        studentCompletedCoursesLoading: false,
+        subjectRowsLoading: false,
+        courseGroupsLoading: false,
+        schoolHoursLoading: false,
         storedTimetableStudentContext: null,
         storedTimetableState: null,
+        storedAdditionalCourseItems: [],
+        storedPlannedCourseItems: [],
         noStudentSelectedSemester: 1,
         selectedCourseItems: [],
-        selectedReviewCourseItem: null,
+        selectedReviewCourseKey: '',
         timetableCalculationLoading: false,
         timetableCalculationResult: null,
         timetableCalculationSelectedNumber: 1,
         selectedMoreCourseKey: '',
+        moreOfferedCourseSelectionSnapshot: '',
+        moreOfferedCourseSelectionSnapshotSelections: {},
         formatNumber: TimetableV2.methods.formatNumber,
         formatTimeValue: TimetableV2.methods.formatTimeValue,
         spacedCourseCode: TimetableV2.methods.spacedCourseCode,
@@ -33,6 +43,7 @@ function timetableV2Context(overrides = {}) {
         loadCourseGroups: vi.fn(),
         loadSchoolHours: vi.fn(),
         loadSubjectRows: vi.fn(),
+        loadStoredStudentOverview: vi.fn(),
         saveStoredTimetableState: vi.fn(),
         defaultStoredTimetableState: () => ({
             selection: {},
@@ -76,14 +87,34 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.selectedCourseItemsClickable.call(context)
             },
         },
+        selectedReviewCourseItem: {
+            get() {
+                return TimetableV2.computed.selectedReviewCourseItem.call(context)
+            },
+        },
         storedTimetableV2Selection: {
             get() {
                 return TimetableV2.computed.storedTimetableV2Selection.call(context)
             },
         },
+        storedTimetableStudentCode: {
+            get() {
+                return TimetableV2.computed.storedTimetableStudentCode.call(context)
+            },
+        },
+        courseGroupsByCourseCode: {
+            get() {
+                return TimetableV2.computed.courseGroupsByCourseCode.call(context)
+            },
+        },
         offeredCourseSelectionOverrides: {
             get() {
                 return TimetableV2.computed.offeredCourseSelectionOverrides.call(context)
+            },
+        },
+        moreOfferedCourseSelectionOverrides: {
+            get() {
+                return TimetableV2.computed.moreOfferedCourseSelectionOverrides.call(context)
             },
         },
         selectedTimetableV2ResultCount: {
@@ -146,6 +177,11 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.selectedMoreCourseOfferedCourseItems.call(context)
             },
         },
+        moreOfferedCourseSelectionChanged: {
+            get() {
+                return TimetableV2.computed.moreOfferedCourseSelectionChanged.call(context)
+            },
+        },
         selectedTimetableV2CounterLabel: {
             get() {
                 return TimetableV2.computed.selectedTimetableV2CounterLabel.call(context)
@@ -187,7 +223,25 @@ function timetableV2Context(overrides = {}) {
 }
 
 describe('TimetableV2 route steps', () => {
-    it('lists unselected planned and additional courses in the more courses card', () => {
+    it('disables the more courses button while timetables are loading', () => {
+        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+
+        expect(source).toMatch(/v-if="!moreCoursesVisible"\s+size="large"\s+color="primary"\s+variant="tonal"\s+prepend-icon="mdi-plus-circle-outline"\s+:disabled="timetableCalculationLoading"\s+@click="toggleMoreCoursesCard"/u)
+        expect(source).toMatch(/v-else class="students-timetable-v2-calculation-card__more-course-actions"[\s\S]*Abbruch[\s\S]*Anwenden/u)
+        expect(source).toMatch(/size="large"\s+color="warning"\s+variant="tonal"\s+prepend-icon="mdi-close"\s+@click="cancelMoreCoursesCard">\s+Abbruch/u)
+        expect(source).toMatch(/append-icon="mdi-check"\s+:disabled="!moreOfferedCourseSelectionChanged \|\| timetableCalculationLoading"\s+@click="applyMoreCoursesSelection">\s+Anwenden/u)
+    })
+
+    it('does not render checkbox controls in the more courses chips', () => {
+        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+
+        expect(source).not.toContain('<v-checkbox-btn')
+        expect(source).toMatch(/color="success"\s+:variant="selectedMoreCourseItem\?\.selectionKey === course\.selectionKey \? 'flat' : 'tonal'"\s+class="students-timetable-v2-selected-courses-card__course students-timetable-v2-more-courses-card__course"/u)
+        expect(source).toContain("'students-timetable-v2-selected-courses-card__course--active': selectedMoreCourseItem?.selectionKey === course.selectionKey")
+        expect(source).toMatch(/@click="toggleMoreCourseOffers\(course\)"/u)
+    })
+
+    it('lists only courses that are not already selected in the more courses card', () => {
         const context = timetableV2Context({
             courseSelectionOverrides: {
                 'planned:GW1': false,
@@ -214,19 +268,146 @@ describe('TimetableV2 route steps', () => {
             meta: course.meta,
         }))).toEqual([
             { courseGroupLabel: 'Vorgesehene Kurse', label: 'GW1', meta: '4 Std.' },
-            { courseGroupLabel: 'Zusätzliche Kurse', label: 'GS1', meta: '4 Std.' },
+            { courseGroupLabel: 'Zusätzlich', label: 'GS1', meta: '4 Std.' },
         ])
 
         TimetableV2.methods.toggleMoreCoursesCard.call(context)
 
         expect(context.moreCoursesVisible).toBe(true)
+        expect(context.moreOfferedCourseSelectionChanged).toBe(false)
+        const defaultAdditionalCourse = context.moreCoursesCardItems.find((course) => course.label === 'GS1')
 
-        TimetableV2.methods.selectMoreCourse.call(context, context.moreCoursesCardItems[0])
+        expect(TimetableV2.methods.moreCourseOfferedCourseItemsAllDeselected.call(context, defaultAdditionalCourse)).toBe(true)
+
+        TimetableV2.methods.toggleMoreCourseOffers.call(context, defaultAdditionalCourse)
+
+        expect(context.selectedMoreCourseItem?.label).toBe('GS1')
+        expect(context.saveStoredTimetableState).not.toHaveBeenCalled()
+
+        TimetableV2.methods.toggleMoreCourseOffers.call(context, defaultAdditionalCourse)
+
+        expect(context.selectedMoreCourseItem).toBeNull()
+
+        TimetableV2.methods.toggleMoreCourseOffers.call(context, context.moreCoursesCardItems[0])
 
         expect(context.selectedMoreCourseItem?.label).toBe('GW1')
         expect(context.selectedMoreCourseOfferedCourseItems.map((course) => course.groupSelectionLabel)).toEqual([
             'GW1-1C-HÖF',
         ])
+
+        const offeredCourse = context.selectedMoreCourseOfferedCourseItems[0]
+
+        expect(TimetableV2.methods.moreCourseOfferedCourseItemsAllDeselected.call(context, context.selectedMoreCourseItem)).toBe(true)
+        expect(TimetableV2.methods.moreCourseOfferedCourseItemsAnySelected.call(context, context.selectedMoreCourseItem)).toBe(false)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, offeredCourse)).toBe(false)
+
+        TimetableV2.methods.toggleMoreOfferedCourseItem.call(context, offeredCourse)
+
+        context.storedTimetableState = context.saveStoredTimetableState.mock.calls.at(-1)[0]
+
+        expect(context.moreOfferedCourseSelectionChanged).toBe(true)
+        expect(TimetableV2.methods.moreCourseOfferedCourseItemsAllDeselected.call(context, context.selectedMoreCourseItem)).toBe(false)
+        expect(TimetableV2.methods.moreCourseOfferedCourseItemsAnySelected.call(context, context.selectedMoreCourseItem)).toBe(true)
+        expect(context.saveStoredTimetableState).toHaveBeenLastCalledWith(expect.objectContaining({
+            timetableV2Selection: expect.objectContaining({
+                moreOfferedCourseSelections: expect.objectContaining({
+                    [offeredCourse.selectionKey]: true,
+                }),
+            }),
+        }))
+
+        TimetableV2.methods.cancelMoreCoursesCard.call(context)
+
+        const restoredState = context.saveStoredTimetableState.mock.calls.at(-1)[0]
+
+        expect(restoredState.timetableV2Selection.moreOfferedCourseSelections).toBeUndefined()
+        expect(context.moreCoursesVisible).toBe(false)
+        expect(context.selectedMoreCourseKey).toBe('')
+        expect(context.moreOfferedCourseSelectionSnapshot).toBe('')
+        expect(context.moreOfferedCourseSelectionSnapshotSelections).toEqual({})
+    })
+
+    it('restores the previous more course offered selections when cancelling', () => {
+        const context = timetableV2Context({
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    moreOfferedCourseSelections: {
+                        'planned:GW1:old-offer': true,
+                    },
+                },
+                transferredStudentContext: null,
+            },
+        })
+
+        TimetableV2.methods.toggleMoreCoursesCard.call(context)
+
+        expect(context.moreOfferedCourseSelectionChanged).toBe(false)
+
+        TimetableV2.methods.saveMoreOfferedCourseSelections.call(context, {
+            ...context.moreOfferedCourseSelectionOverrides,
+            'planned:GW1:new-offer': true,
+        })
+
+        context.storedTimetableState = context.saveStoredTimetableState.mock.calls.at(-1)[0]
+
+        expect(context.moreOfferedCourseSelectionChanged).toBe(true)
+
+        TimetableV2.methods.cancelMoreCoursesCard.call(context)
+
+        expect(context.saveStoredTimetableState).toHaveBeenLastCalledWith(expect.objectContaining({
+            timetableV2Selection: expect.objectContaining({
+                moreOfferedCourseSelections: {
+                    'planned:GW1:old-offer': true,
+                },
+            }),
+        }))
+    })
+
+    it('applies more course selection changes by closing the card and recalculating', () => {
+        const calculateTimetables = vi.fn()
+        const context = timetableV2Context({
+            calculateTimetables,
+            timetableCalculationSelectedNumber: 3,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        TimetableV2.methods.toggleMoreCoursesCard.call(context)
+
+        context.storedTimetableState = {
+            selection: {},
+            timetableV2Selection: {
+                moreOfferedCourseSelections: {
+                    'additional:INF2::INF2-A': true,
+                },
+            },
+            transferredStudentContext: null,
+        }
+
+        TimetableV2.methods.applyMoreCoursesSelection.call(context)
+
+        expect(context.moreCoursesVisible).toBe(false)
+        expect(context.selectedMoreCourseKey).toBe('')
+        expect(context.moreOfferedCourseSelectionSnapshot).toBe('')
+        expect(context.moreOfferedCourseSelectionSnapshotSelections).toEqual({})
+        expect(context.timetableCalculationSelectedNumber).toBe(1)
+        expect(calculateTimetables).toHaveBeenCalledOnce()
+    })
+
+    it('indexes offered course groups by normalized course code', () => {
+        const context = timetableV2Context({
+            courseGroups: [
+                { class_name: 'GW1-1C-HOF', course: 'GW1', hour: 12, title: 'GW1', weekday: 3 },
+                { class_name: 'GS1-2A-PLOC', course: 'GS1', hour: 13, title: 'GS1', weekday: 4 },
+            ],
+        })
+
+        expect(context.courseGroupsByCourseCode.get('GW1')).toHaveLength(1)
+        expect(TimetableV2.methods.courseGroupsForCourseAliases.call(context, ['GW1'])).toEqual([
+            context.courseGroups[0],
+        ])
+        expect(TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, { code: 'GW1' }))
+            .toHaveLength(1)
     })
 
     it('pushes the current step and mode into the route query', () => {
@@ -266,6 +447,55 @@ describe('TimetableV2 route steps', () => {
         expect(context.timetableV2Step).toBe('course-review')
     })
 
+    it('opens course review without pre-selecting the first selected course', () => {
+        const context = timetableV2Context({
+            selectedCourseItems: [
+                { label: 'D1', selectionKey: 'planned:D1' },
+                { label: 'GW1', selectionKey: 'planned:GW1' },
+            ],
+        })
+
+        TimetableV2.methods.openCourseReview.call(context)
+
+        expect(context.timetableV2Step).toBe('course-review')
+        expect(context.selectedReviewCourseKey).toBe('')
+        expect(context.selectedReviewCourseItem).toBeNull()
+        expect(context.loadCourseGroups).toHaveBeenCalledOnce()
+        expect(context.loadSchoolHours).toHaveBeenCalledOnce()
+    })
+
+    it('restores course review without pre-selecting the first selected course', () => {
+        const context = timetableV2Context({
+            courseReviewVisible: true,
+            selectedCourseItems: [
+                { label: 'D1', selectionKey: 'planned:D1' },
+                { label: 'GW1', selectionKey: 'planned:GW1' },
+            ],
+        })
+
+        TimetableV2.methods.restoreTimetableV2RouteStepEffects.call(context)
+
+        expect(context.selectedReviewCourseKey).toBe('')
+        expect(context.selectedReviewCourseItem).toBeNull()
+        expect(context.loadCourseGroups).toHaveBeenCalledOnce()
+        expect(context.loadSchoolHours).toHaveBeenCalledOnce()
+    })
+
+    it('selects a review course only after the course chip is clicked', () => {
+        const context = timetableV2Context({
+            courseReviewVisible: true,
+            selectedCourseItems: [
+                { label: 'D1', selectionKey: 'planned:D1' },
+                { label: 'GW1', selectionKey: 'planned:GW1' },
+            ],
+        })
+
+        TimetableV2.methods.selectReviewCourse.call(context, context.selectedCourseItems[1])
+
+        expect(context.selectedReviewCourseKey).toBe('planned:GW1')
+        expect(context.selectedReviewCourseItem).toEqual(context.selectedCourseItems[1])
+    })
+
     it('replaces invalid route step values with the selection step', () => {
         const context = timetableV2Context({
             $route: {
@@ -288,6 +518,63 @@ describe('TimetableV2 route steps', () => {
                 step: 'selection',
             },
         })
+    })
+
+    it('does not preload review-only data while mounted on the selection step', () => {
+        const context = timetableV2Context({
+            loadSubjectRows: vi.fn(() => Promise.resolve()),
+        })
+
+        TimetableV2.mounted.call(context)
+
+        expect(context.loadSubjectRows).toHaveBeenCalledOnce()
+        expect(context.loadStoredStudentOverview).toHaveBeenCalledWith(null)
+        expect(context.loadCourseGroups).not.toHaveBeenCalled()
+        expect(context.loadSchoolHours).not.toHaveBeenCalled()
+    })
+
+    it('keeps review-only loaders out of the selection page loading state', () => {
+        const context = timetableV2Context({
+            courseGroupsLoading: true,
+            schoolHoursLoading: true,
+        })
+
+        expect(TimetableV2.computed.timetableV2PageLoading.call(context)).toBe(false)
+
+        context.courseReviewVisible = true
+
+        expect(TimetableV2.computed.timetableV2PageLoading.call(context)).toBe(true)
+    })
+
+    it('loads only subject rows from the overview settings endpoint', async () => {
+        const axiosMock = {
+            get: vi.fn().mockResolvedValueOnce({
+                data: {
+                    data: {
+                        subjects: [
+                            { json_code: 'D1', name: 'Deutsch 1' },
+                        ],
+                    },
+                },
+            }),
+        }
+        globalThis.axios = axiosMock
+
+        const context = timetableV2Context({
+            applyCourseLimitPreselection: vi.fn(),
+            loadSubjectRows: TimetableV2.methods.loadSubjectRows,
+        })
+
+        await TimetableV2.methods.loadSubjectRows.call(context)
+
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/students-timetables/subjects-overview-settings', {
+            params: {
+                subjects_only: 1,
+            },
+        })
+        expect(context.subjectRows).toEqual([
+            { json_code: 'D1', name: 'Deutsch 1' },
+        ])
     })
 
     it('keeps the selected calculation timetable number in the route and payload', () => {
@@ -506,7 +793,55 @@ describe('TimetableV2 route steps', () => {
 
         expect(payload.selected_course_keys).toEqual(['D1'])
         expect(payload.selected_additional_course_keys).toEqual(['ZUSATZ1'])
+        expect(payload.selected_additional_courses_required).toBe(true)
         expect(payload.deselected_course_group_keys).toEqual(['INF1|A', 'INF1|B'])
+    })
+
+    it('calculates timetables with selected more courses and only their checked offered courses', () => {
+        const context = timetableV2Context({
+            selectedCourseItems: [
+                { courseGroup: 'planned', key: 'D1', selectionKey: 'planned:D1' },
+            ],
+            storedAdditionalCourseItems: [
+                { code: 'INF2', hours: 2, key: 'INF2', label: 'INF2' },
+            ],
+            courseGroups: [
+                { class_name: 'D1-A', course: 'D1', hour: 1, title: 'D1', weekday: 1 },
+                { class_name: 'INF2-A', course: 'INF2', hour: 2, title: 'INF2', weekday: 2 },
+                { class_name: 'INF2-B', course: 'INF2', hour: 3, title: 'INF2', weekday: 3 },
+            ],
+        })
+        const moreCourse = context.moreCoursesCardItems.find((course) => course.key === 'INF2')
+        const [selectedOffer, deselectedOffer] = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, moreCourse)
+
+        context.storedTimetableState = {
+            selection: {},
+            timetableV2Selection: {
+                moreOfferedCourseSelections: {
+                    [selectedOffer.selectionKey]: true,
+                },
+            },
+            transferredStudentContext: null,
+        }
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(payload.selected_course_keys).toEqual(['D1'])
+        expect(payload.selected_additional_course_keys).toEqual(['INF2'])
+        expect(payload.selected_additional_courses_required).toBe(true)
+        expect(payload.deselected_course_group_keys).toEqual([deselectedOffer.backendSelectionKey])
+    })
+
+    it('does not require additional courses when none are selected for calculation', () => {
+        const context = timetableV2Context({
+            selectedCourseItems: [
+                { courseGroup: 'planned', key: 'D1', selectionKey: 'planned:D1' },
+            ],
+        })
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(payload.selected_additional_course_keys).toEqual([])
+        expect(payload.selected_additional_courses_required).toBe(false)
     })
 
     it('selects only offered distance-learning courses through the selected course bulk option', () => {
@@ -809,6 +1144,77 @@ describe('TimetableV2 route steps', () => {
         expect(TimetableV2.methods.selectedTimetableV2OccasionalOverlapChips.call(
             context,
             context.timetableCalculationResult.selected_timetable.slots['2-1'],
+        )).toEqual([
+            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.' },
+        ])
+        expect(TimetableV2.methods.selectedTimetableV2OccasionalOverlapChips.call(
+            context,
+            {
+                code: 'GWB1',
+                sourceLabel: 'GWB1-1C-HÖF',
+                courseGroup: { dates: ['2026-02-18'], weekday: 2, hour: 1 },
+                isOccasional: true,
+                conflicts: [
+                    {
+                        code: 'GW1',
+                        sourceLabel: 'GWB1-1C-HÖF',
+                        courseGroup: { weekday: 2, hour: 1 },
+                    },
+                    {
+                        code: 'LPT',
+                        sourceLabel: 'LPT-1CK-DREI',
+                        courseGroup: { dates: ['2026-02-18'], weekday: 2, hour: 1 },
+                        isOccasional: true,
+                    },
+                ],
+            },
+        )).toEqual([
+            { key: 'GWB1|GWB1-1C-HÖF', label: 'GWB1-1C-HÖF 18.02.' },
+            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.' },
+        ])
+        const oneDayLptAgainstRegularM1 = {
+            code: 'LPT',
+            sourceLabel: 'LPT-1CK-DREI',
+            courseGroup: { dates: ['2026-02-18'], weekday: 2, hour: 1 },
+            conflicts: [
+                {
+                    code: 'M1',
+                    sourceLabel: 'M1-1C-MAY',
+                    courseGroup: {
+                        dates: ['2026-02-18', '2026-02-25', '2026-03-04'],
+                        weekday: 2,
+                        hour: 1,
+                    },
+                },
+            ],
+        }
+
+        expect(TimetableV2.methods.selectedTimetableV2SlotTitle.call(
+            context,
+            TimetableV2.methods.selectedTimetableV2DisplaySlot.call(context, oneDayLptAgainstRegularM1),
+        )).toBe('M 1')
+        expect(TimetableV2.methods.selectedTimetableV2OccasionalOverlapChips.call(
+            context,
+            oneDayLptAgainstRegularM1,
+        )).toEqual([
+            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.' },
+        ])
+        expect(TimetableV2.methods.selectedTimetableV2OccasionalOverlapChips.call(
+            context,
+            {
+                code: 'GW1',
+                sourceLabel: 'GWB1-1C-HÖF',
+                courseGroup: { dates: ['2026-02-18'], weekday: 2, hour: 1 },
+                isOccasional: true,
+                conflicts: [
+                    {
+                        code: 'LPT',
+                        sourceLabel: 'LPT-1CK-DREI',
+                        courseGroup: { dates: ['2026-02-18'], weekday: 2, hour: 1 },
+                        isOccasional: true,
+                    },
+                ],
+            },
         )).toEqual([
             { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.' },
         ])

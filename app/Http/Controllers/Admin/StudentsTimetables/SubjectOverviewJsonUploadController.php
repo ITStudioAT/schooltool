@@ -78,7 +78,7 @@ class SubjectOverviewJsonUploadController extends Controller
         ]);
     }
 
-    public function settings(): JsonResponse
+    public function settings(Request $request): JsonResponse
     {
         if (! $authUser = $this->userHasRole(self::MODERATOR_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
@@ -89,7 +89,7 @@ class SubjectOverviewJsonUploadController extends Controller
         $this->seedEditableDataFromLatestImportIfMissing($authUser);
 
         return response()->json([
-            'data' => $this->editableSettingsData($authUser),
+            'data' => $this->editableSettingsData($authUser, $request->boolean('subjects_only')),
         ]);
     }
 
@@ -1377,11 +1377,11 @@ class SubjectOverviewJsonUploadController extends Controller
     }
 
     /**
-     * @return array{subjects: list<array<string, mixed>>, mappings: list<array<string, mixed>>}
+     * @return array{subjects: list<array<string, mixed>>, mappings?: list<array<string, mixed>>}
      */
-    private function editableSettingsData(mixed $authUser): array
+    private function editableSettingsData(mixed $authUser, bool $subjectsOnly = false): array
     {
-        return [
+        $settingsData = [
             'subjects' => StudentTimetableSubjectRow::query()
                 ->where('school_id', $authUser->school_id)
                 ->where('schoolyear_id', $authUser->schoolyear_id)
@@ -1402,23 +1402,30 @@ class SubjectOverviewJsonUploadController extends Controller
                 ])
                 ->values()
                 ->all(),
-            'mappings' => StudentTimetableSubjectMapping::query()
-                ->where('school_id', $authUser->school_id)
-                ->where('schoolyear_id', $authUser->schoolyear_id)
-                ->orderBy('json_subject')
-                ->orderBy('tt_subject')
-                ->get()
-                ->map(fn (StudentTimetableSubjectMapping $mapping): array => [
-                    'id' => $mapping->id,
-                    'json_subject' => $mapping->json_subject,
-                    'tt_subject' => $mapping->tt_subject,
-                    'note' => $mapping->note,
-                    'is_active' => $mapping->is_active,
-                    'source' => $mapping->source,
-                ])
-                ->values()
-                ->all(),
         ];
+
+        if ($subjectsOnly) {
+            return $settingsData;
+        }
+
+        $settingsData['mappings'] = StudentTimetableSubjectMapping::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->orderBy('json_subject')
+            ->orderBy('tt_subject')
+            ->get()
+            ->map(fn (StudentTimetableSubjectMapping $mapping): array => [
+                'id' => $mapping->id,
+                'json_subject' => $mapping->json_subject,
+                'tt_subject' => $mapping->tt_subject,
+                'note' => $mapping->note,
+                'is_active' => $mapping->is_active,
+                'source' => $mapping->source,
+            ])
+            ->values()
+            ->all();
+
+        return $settingsData;
     }
 
     private function emptyToNull(mixed $value): ?string

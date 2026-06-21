@@ -18,7 +18,9 @@ class StudentTimetableOverviewService
 {
     private const BLOCK_EDGE_TOLERANCE_DAYS = 14;
 
-    private const CACHE_TTL_MINUTES = 30;
+    private const CACHE_FRESH_SECONDS = 30 * 60;
+
+    private const CACHE_STALE_SECONDS = 120 * 60;
 
     private const CACHE_VERSION = 3;
 
@@ -32,9 +34,9 @@ class StudentTimetableOverviewService
             ->where('school_id', $authUser->school_id)
             ->findOrFail($schoolyearId);
 
-        return Cache::remember(
+        return Cache::flexible(
             self::cacheKey((int) $authUser->school_id, $schoolyearId),
-            now()->addMinutes(self::CACHE_TTL_MINUTES),
+            [self::CACHE_FRESH_SECONDS, self::CACHE_STALE_SECONDS],
             fn (): array => $this->buildCourseGroups((int) $authUser->school_id, $schoolyearId, $schoolyear),
         );
     }
