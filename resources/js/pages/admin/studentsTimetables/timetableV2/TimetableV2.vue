@@ -154,24 +154,24 @@
                             @click="restartTimetableV2">
                             Neustart
                         </v-btn>
-                        <v-btn
-                            color="primary"
-                            variant="tonal"
-                            size="large"
-                            class="students-timetable-v2-restart-card__automatic-button"
-                            prepend-icon="mdi-arrow-left"
-                            @click="backToCourseSelection">
-                            Zurück
-                        </v-btn>
-                        <v-btn
-                            color="success"
-                            variant="tonal"
-                            size="large"
-                            class="students-timetable-v2-restart-card__automatic-button"
-                            append-icon="mdi-arrow-right"
-                            @click="openTimetableCalculation">
-                            Weiter
-                        </v-btn>
+                        <div class="students-timetable-v2-restart-card__navigation-actions">
+                            <v-btn
+                                color="primary"
+                                variant="tonal"
+                                size="large"
+                                prepend-icon="mdi-arrow-left"
+                                @click="backToCourseSelection">
+                                Zurück
+                            </v-btn>
+                            <v-btn
+                                color="success"
+                                variant="tonal"
+                                size="large"
+                                append-icon="mdi-arrow-right"
+                                @click="openTimetableCalculation">
+                                Weiter
+                            </v-btn>
+                        </div>
                     </v-card-text>
                 </v-card>
             </v-col>
@@ -4429,6 +4429,13 @@ export default {
 }
 
 .students-timetable-v2-restart-card__automatic-button {
+    margin-left: auto;
+}
+
+.students-timetable-v2-restart-card__navigation-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
     margin-left: auto;
 }
 
