@@ -57,16 +57,17 @@
                                 color="success"
                                 :variant="selectedCourseItemActive(course) ? 'flat' : 'tonal'"
                                 :closable="selectedCourseItemsDeletable"
+                                :disabled="selectedTimetableSummaryChipsDisabled"
                                 :close-label="`Kurs ${course.label} entfernen`"
                                 close-icon="mdi-close"
                                 class="students-timetable-v2-selected-courses-card__course"
                                 :class="{
                                     'students-timetable-v2-selected-courses-card__course--active': selectedCourseItemActive(course),
-                                    'students-timetable-v2-selected-courses-card__course--passive': !selectedCourseItemsClickable,
+                                    'students-timetable-v2-selected-courses-card__course--passive': !selectedCourseItemsClickable || selectedTimetableSummaryChipsDisabled,
                                     'students-timetable-v2-selected-courses-card__course--offered-deselected': offeredCourseItemsAllDeselected(course),
                                 }"
-                                :role="selectedCourseItemsClickable ? 'button' : undefined"
-                                :aria-pressed="selectedCourseItemsClickable ? (selectedCourseItemActive(course) ? 'true' : 'false') : undefined"
+                                :role="selectedCourseItemsClickable && !selectedTimetableSummaryChipsDisabled ? 'button' : undefined"
+                                :aria-pressed="selectedCourseItemsClickable && !selectedTimetableSummaryChipsDisabled ? (selectedCourseItemActive(course) ? 'true' : 'false') : undefined"
                                 @click:close.stop="removeSelectedCourseItem(course)"
                                 @click="selectReviewCourse(course)">
                                 <span>{{ course.label }}</span>
@@ -96,7 +97,8 @@
                                 color="success"
                                 variant="tonal"
                                 prepend-icon="mdi-check"
-                                closable
+                                :closable="selectedTimetableOptionItemsDeletable"
+                                :disabled="selectedTimetableSummaryChipsDisabled"
                                 :close-label="`Option ${option.label} entfernen`"
                                 close-icon="mdi-close"
                                 @click:close.stop="removeSelectedTimetableOption(option)">
@@ -208,7 +210,18 @@
             <v-col v-if="timetableCalculationVisible" cols="12" class="students-timetable-v2-card-column">
                 <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-calculation-card">
                     <v-card-title class="students-timetable-v2-calculation-card__title">
-                        <span>Stundenpläne</span>
+                        <span class="students-timetable-v2-calculation-card__heading">
+                            <span>Stundenpläne</span>
+                            <v-progress-circular
+                                v-if="moreCourseAvailabilityLoading"
+                                indeterminate
+                                size="18"
+                                width="2"
+                                color="primary"
+                                class="students-timetable-v2-calculation-card__availability-loader"
+                                title="Mehr Kurse werden geprüft"
+                                aria-label="Mehr Kurse werden geprüft" />
+                        </span>
                         <span v-if="timetableOptionsCardVisible" class="students-timetable-v2-calculation-card__actions">
                             <v-btn
                                 size="large"
@@ -235,7 +248,7 @@
                                     :color="moreCoursesButtonUnavailable ? 'error' : 'primary'"
                                     variant="tonal"
                                     prepend-icon="mdi-plus-circle-outline"
-                                    :disabled="timetableCalculationLoading || moreCoursesButtonUnavailable"
+                                    :disabled="timetableCalculationLoading || moreCourseAvailabilityLoading || moreCoursesButtonUnavailable"
                                     @click="toggleMoreCoursesCard">
                                     Mehr Kurse
                                 </v-btn>
@@ -244,7 +257,7 @@
                                     color="info"
                                     variant="tonal"
                                     prepend-icon="mdi-cog-outline"
-                                    :disabled="timetableCalculationLoading"
+                                    :disabled="timetableCalculationLoading || moreCourseAvailabilityLoading"
                                     :aria-expanded="timetableOptionsCardVisible ? 'true' : 'false'"
                                     @click="toggleTimetableOptionsCard">
                                     Optionen
@@ -334,31 +347,60 @@
                                 Optionen
                             </v-card-title>
                             <v-card-text>
-                                <v-card
-                                    rounded="lg"
-                                    density="compact"
-                                    variant="tonal"
-                                    :color="timetableNoSaturdayDraftSelected ? 'success' : undefined"
-                                    :disabled="timetableCalculationLoading"
-                                    :class="[
-                                        'students-timetable-v2-options-card__option',
-                                        { 'students-timetable-v2-options-card__option--selected': timetableNoSaturdayDraftSelected },
-                                    ]"
-                                    role="button"
-                                    tabindex="0"
-                                    :aria-pressed="timetableNoSaturdayDraftSelected ? 'true' : 'false'"
-                                    @click="toggleNoSaturdayTimetableOption"
-                                    @keydown.enter.prevent="toggleNoSaturdayTimetableOption"
-                                    @keydown.space.prevent="toggleNoSaturdayTimetableOption">
-                                    <v-card-title class="students-timetable-v2-options-card__option-title">
-                                        Kein Samstag
-                                    </v-card-title>
-                                    <v-card-text class="students-timetable-v2-options-card__option-content">
-                                        <span class="students-timetable-v2-options-card__option-count">
-                                            {{ noSaturdayTimetableCountFormatted }}
-                                        </span>
-                                    </v-card-text>
-                                </v-card>
+                                <div class="students-timetable-v2-options-card__list">
+                                    <v-card
+                                        v-if="!timetableNoSaturdaySelected"
+                                        rounded="lg"
+                                        density="compact"
+                                        variant="tonal"
+                                        :color="timetableNoSaturdayDraftSelected ? 'success' : undefined"
+                                        :disabled="timetableCalculationLoading"
+                                        :class="[
+                                            'students-timetable-v2-options-card__option',
+                                            { 'students-timetable-v2-options-card__option--selected': timetableNoSaturdayDraftSelected },
+                                        ]"
+                                        role="button"
+                                        tabindex="0"
+                                        :aria-pressed="timetableNoSaturdayDraftSelected ? 'true' : 'false'"
+                                        @click="toggleNoSaturdayTimetableOption"
+                                        @keydown.enter.prevent="toggleNoSaturdayTimetableOption"
+                                        @keydown.space.prevent="toggleNoSaturdayTimetableOption">
+                                        <v-card-title class="students-timetable-v2-options-card__option-title">
+                                            Kein Samstag
+                                        </v-card-title>
+                                        <v-card-text class="students-timetable-v2-options-card__option-content">
+                                            <span class="students-timetable-v2-options-card__option-count">
+                                                {{ noSaturdayTimetableCountFormatted }}
+                                            </span>
+                                        </v-card-text>
+                                    </v-card>
+                                    <v-card
+                                        v-if="!timetableMaxFreeDaysSelected"
+                                        rounded="lg"
+                                        density="compact"
+                                        variant="tonal"
+                                        :color="timetableMaxFreeDaysSelected ? 'success' : undefined"
+                                        :disabled="timetableCalculationLoading || timetableMaxFreeDaysSelected || maxFreeDaysTimetableCount <= 0"
+                                        :class="[
+                                            'students-timetable-v2-options-card__option',
+                                            { 'students-timetable-v2-options-card__option--selected': timetableMaxFreeDaysSelected },
+                                        ]"
+                                        role="button"
+                                        tabindex="0"
+                                        :aria-pressed="timetableMaxFreeDaysSelected ? 'true' : 'false'"
+                                        @click="applyMaxFreeDaysTimetableOption"
+                                        @keydown.enter.prevent="applyMaxFreeDaysTimetableOption"
+                                        @keydown.space.prevent="applyMaxFreeDaysTimetableOption">
+                                        <v-card-title class="students-timetable-v2-options-card__option-title">
+                                            Max freie Tage
+                                        </v-card-title>
+                                        <v-card-text class="students-timetable-v2-options-card__option-content">
+                                            <span class="students-timetable-v2-options-card__option-count">
+                                                {{ maxFreeDaysTimetableCountFormatted }}
+                                            </span>
+                                        </v-card-text>
+                                    </v-card>
+                                </div>
                             </v-card-text>
                         </v-card>
                         <v-card
@@ -509,9 +551,24 @@
                                         :disabled="!selectedTimetableV2NextAvailable"
                                         aria-label="Nächster Stundenplan"
                                         @click="moveSelectedTimetableV2Result(1)" />
-                                    <v-chip size="small" color="primary" variant="tonal">
-                                        Nr. {{ selectedTimetableV2Result.number || 1 }}
-                                    </v-chip>
+                                    <v-text-field
+                                        :model-value="timetableCalculationNumberDraft"
+                                        type="number"
+                                        min="1"
+                                        :max="selectedTimetableV2NumberLimit()"
+                                        density="comfortable"
+                                        variant="solo-filled"
+                                        flat
+                                        hide-spin-buttons
+                                        hide-details
+                                        single-line
+                                        prefix="Nr."
+                                        :disabled="timetableCalculationLoading"
+                                        class="students-timetable-v2-result__number-input"
+                                        aria-label="Stundenplan Nummer"
+                                        @update:model-value="updateTimetableV2NumberDraft"
+                                        @keydown.enter.prevent="commitSelectedTimetableV2Number"
+                                        @blur="commitSelectedTimetableV2Number" />
                                 </div>
                             </div>
                             <div
@@ -1126,6 +1183,8 @@ const TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:overview:last-timetabl
 const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'
 const TIMETABLE_V2_ROUTE_STEPS = ['selection', 'course-review', 'timetable-calculation']
 const TIMETABLE_V2_ROUTE_MODES = ['student', 'without-student']
+const TIMETABLE_MAX_FREE_DAYS_CRITERION_KEY = 'free_days'
+const TIMETABLE_SATURDAY_FREE_CRITERION_KEY = 'saturday_free'
 const OFFERED_COURSE_BULK_SELECTION_OPTIONS = [
     { key: 'all', label: 'Alle' },
     { key: 'distance-learning', label: 'Nur Fernunterricht' },
@@ -1161,12 +1220,16 @@ export default {
             timetableCalculationLoading: false,
             timetableCalculationRequestId: 0,
             timetableCalculationResult: null,
+            timetableCalculationNumberDraft: '1',
             timetableCalculationSelectedNumber: 1,
             initialTimetableCalculationSelectedNumber: 1,
             initialTimetableCalculationSelection: null,
             initialTimetableCalculationNoSaturdaySelected: false,
+            initialTimetableCalculationMaxFreeDaysSelected: false,
             timetableNoSaturdayDraftSelected: false,
             timetableNoSaturdaySelected: false,
+            timetableMaxFreeDaysDraftSelected: false,
+            timetableMaxFreeDaysSelected: false,
             timetableOptionsCardVisible: false,
             moreCoursesVisible: false,
             moreCoursesCardVisible: false,
@@ -1202,8 +1265,16 @@ export default {
         selectedCourseItemsClickable() {
             return this.courseReviewVisible
         },
+        selectedTimetableSummaryChipsDisabled() {
+            return this.moreCoursesVisible || this.timetableOptionsCardVisible
+        },
         selectedCourseItemsDeletable() {
-            return this.timetableCalculationVisible && !this.timetableCalculationLoading
+            return this.timetableCalculationVisible
+                && !this.timetableCalculationLoading
+                && !this.selectedTimetableSummaryChipsDisabled
+        },
+        selectedTimetableOptionItemsDeletable() {
+            return !this.timetableCalculationLoading && !this.selectedTimetableSummaryChipsDisabled
         },
         offeredCourseBulkSelectionOptions() {
             return OFFERED_COURSE_BULK_SELECTION_OPTIONS
@@ -1421,18 +1492,49 @@ export default {
             return this.selectedCourseSummary.count > 10 || this.selectedCourseSummary.hours > 30
         },
         timetableCalculationCountLabel() {
-            const count = Number(this.timetableCalculationResult?.timetable_variation_count || 0)
+            const count = this.timetableCalculationDisplayTotalCount
 
             return `${this.formatNumber(count)} ${count === 1 ? 'Stundenplan' : 'Stundenpläne'} gesamt`
         },
+        timetableCalculationDisplayTotalCount() {
+            if (this.timetableQualityCriteriaRequired) return this.selectedTimetableV2ResultCount
+
+            return Number(this.timetableCalculationResult?.timetable_variation_count || 0)
+        },
+        timetableQualityCriteriaRequired() {
+            return this.timetableMaxFreeDaysSelected === true
+        },
         noSaturdayTimetableCount() {
+            if (this.timetableQualityCriteriaRequired && this.saturdayFreeQualityCounter) {
+                return Number(this.saturdayFreeQualityCounter.count || 0)
+            }
+
             return Number(this.timetableCalculationResult?.no_saturday_timetable_count || 0)
         },
         noSaturdayTimetableCountFormatted() {
             return this.formatNumber(this.noSaturdayTimetableCount)
         },
+        saturdayFreeQualityCounter() {
+            return (Array.isArray(this.timetableCalculationResult?.quality_counters)
+                ? this.timetableCalculationResult.quality_counters
+                : []
+            ).find((counter) => counter?.key === TIMETABLE_SATURDAY_FREE_CRITERION_KEY) || null
+        },
+        maxFreeDaysQualityCounter() {
+            return (Array.isArray(this.timetableCalculationResult?.quality_counters)
+                ? this.timetableCalculationResult.quality_counters
+                : []
+            ).find((counter) => counter?.key === TIMETABLE_MAX_FREE_DAYS_CRITERION_KEY) || null
+        },
+        maxFreeDaysTimetableCount() {
+            return Number(this.maxFreeDaysQualityCounter?.count || 0)
+        },
+        maxFreeDaysTimetableCountFormatted() {
+            return this.formatNumber(this.maxFreeDaysTimetableCount)
+        },
         timetableOptionsChanged() {
             return this.timetableNoSaturdayDraftSelected !== this.timetableNoSaturdaySelected
+                || this.timetableMaxFreeDaysDraftSelected !== this.timetableMaxFreeDaysSelected
         },
         timetableCalculationResetAvailable() {
             if (!this.timetableCalculationVisible) return false
@@ -1441,17 +1543,28 @@ export default {
                 !== this.timetableCalculationSelectionSnapshot(this.initialTimetableCalculationSelection || {})
                 || Number(this.timetableCalculationSelectedNumber || 1) !== Number(this.initialTimetableCalculationSelectedNumber || 1)
                 || this.timetableNoSaturdaySelected !== this.initialTimetableCalculationNoSaturdaySelected
+                || this.timetableMaxFreeDaysSelected !== this.initialTimetableCalculationMaxFreeDaysSelected
         },
         selectedTimetableOptionItems() {
             const options = []
             const noSaturdaySelected = this.moreCoursesVisible && !this.moreCoursesCardVisible && this.timetableOptionsChanged
                 ? this.timetableNoSaturdayDraftSelected
                 : this.timetableNoSaturdaySelected
+            const maxFreeDaysSelected = this.moreCoursesVisible && !this.moreCoursesCardVisible && this.timetableOptionsChanged
+                ? this.timetableMaxFreeDaysDraftSelected
+                : this.timetableMaxFreeDaysSelected
 
             if (noSaturdaySelected) {
                 options.push({
                     key: 'no-saturday',
                     label: 'Kein Samstag',
+                })
+            }
+
+            if (maxFreeDaysSelected) {
+                options.push({
+                    key: 'max-free-days',
+                    label: 'Max freie Tage',
                 })
             }
 
@@ -1462,14 +1575,14 @@ export default {
                 {
                     key: 'valid',
                     color: 'success',
-                    count: this.timetableCalculationValidResultCount,
+                    count: this.timetableCalculationDisplayValidResultCount,
                     singular: 'gültig',
                     plural: 'gültig',
                 },
                 {
                     key: 'conflict',
                     color: 'error',
-                    count: Number(this.timetableCalculationResult?.conflict_timetable_count || this.timetableCalculationResult?.red_timetable_count || 0),
+                    count: this.timetableCalculationDisplayConflictResultCount,
                     singular: 'Konflikt',
                     plural: 'Konflikte',
                 },
@@ -1485,8 +1598,18 @@ export default {
         timetableCalculationConflictResultCount() {
             return Number(this.timetableCalculationResult?.conflict_timetable_count || this.timetableCalculationResult?.red_timetable_count || 0)
         },
+        timetableCalculationDisplayValidResultCount() {
+            if (!this.timetableQualityCriteriaRequired) return this.timetableCalculationValidResultCount
+
+            return this.selectedTimetableV2ResultType === 'conflict' ? 0 : this.selectedTimetableV2ResultCount
+        },
+        timetableCalculationDisplayConflictResultCount() {
+            if (!this.timetableQualityCriteriaRequired) return this.timetableCalculationConflictResultCount
+
+            return this.selectedTimetableV2ResultType === 'conflict' ? this.selectedTimetableV2ResultCount : 0
+        },
         timetableCalculationUnavailableLabel() {
-            if (this.timetableCalculationValidResultCount <= 0 && this.timetableCalculationConflictResultCount > 0) {
+            if (this.timetableCalculationDisplayValidResultCount <= 0 && this.timetableCalculationDisplayConflictResultCount > 0) {
                 return 'Es wurden nur Stundenpläne mit Überschneidung gefunden.'
             }
 
@@ -1530,14 +1653,7 @@ export default {
         selectedTimetableV2ConflictSummaryItems() {
             const slotConflictLabels = this.uniqueValues(this.selectedTimetableV2SlotEntries
                 .flatMap((entry) => this.selectedTimetableV2SlotConflicts(entry.slot)
-                    .map((conflict) => {
-                        const slotTitle = this.selectedTimetableV2CourseProblemLabel(entry.slot)
-                        const conflictTitle = this.selectedTimetableV2ConflictLabel(conflict, entry.slot)
-
-                        return slotTitle && conflictTitle
-                            ? `${slotTitle} überschneidet sich mit ${conflictTitle}.`
-                            : conflictTitle
-                    }))
+                    .map((conflict) => this.selectedTimetableV2ConflictSummaryLabel(entry.slot, conflict)))
                 .map((conflict) => String(conflict || '').trim())
                 .filter(Boolean))
 
@@ -1601,6 +1717,10 @@ export default {
             return String(this.selectedTimetableV2Result?.statusMessage || '').trim() || 'Gültiger Stundenplan'
         },
         selectedTimetableV2ResultCount() {
+            if (this.timetableQualityCriteriaRequired) {
+                return Math.max(0, Number(this.timetableCalculationResult?.selected_quality_criteria_count || 0))
+            }
+
             const count = this.selectedTimetableV2ResultType === 'conflict'
                 ? this.timetableCalculationConflictResultCount
                 : this.timetableCalculationValidResultCount
@@ -2088,6 +2208,18 @@ export default {
             return this.selectedTimetableV2SlotIsOccasional(pair?.slot)
                 || this.selectedTimetableV2SlotIsOccasional(pair?.conflict)
         },
+        selectedTimetableV2ConflictSummaryLabel(slot, conflict) {
+            const oneDayCourseFirst = this.selectedTimetableV2SlotIsOccasional(conflict)
+                && !this.selectedTimetableV2SlotIsOccasional(slot)
+            const firstItem = oneDayCourseFirst ? conflict : slot
+            const secondItem = oneDayCourseFirst ? slot : conflict
+            const firstTitle = this.selectedTimetableV2CourseProblemLabel(firstItem)
+            const secondTitle = this.selectedTimetableV2ConflictLabel(secondItem, firstItem)
+
+            return firstTitle && secondTitle
+                ? `${firstTitle} überschneidet sich mit ${secondTitle}.`
+                : secondTitle
+        },
         selectedTimetableV2SlotIsOccasional(slot) {
             return slot?.isOccasional === true
                 || (Array.isArray(slot?.courseGroup?.dates) && slot.courseGroup.dates.filter(Boolean).length === 1)
@@ -2253,10 +2385,29 @@ export default {
                 Math.max(this.normalizedTimetableV2RouteTimetableNumber(number), 1),
                 this.selectedTimetableV2NumberLimit(),
             )
+            this.syncTimetableV2NumberDraft()
 
             if (options?.syncRoute !== false) {
                 this.syncTimetableV2Route(options)
             }
+        },
+        syncTimetableV2NumberDraft() {
+            this.timetableCalculationNumberDraft = String(this.timetableCalculationSelectedNumber || 1)
+        },
+        updateTimetableV2NumberDraft(value) {
+            this.timetableCalculationNumberDraft = String(value || '')
+        },
+        commitSelectedTimetableV2Number() {
+            if (this.timetableCalculationLoading) return null
+
+            const previousNumber = this.timetableCalculationSelectedNumber
+
+            this.setSelectedTimetableV2Number(this.timetableCalculationNumberDraft)
+            this.syncTimetableV2NumberDraft()
+
+            if (this.timetableCalculationSelectedNumber === previousNumber) return null
+
+            return this.calculateTimetables()
         },
         moveSelectedTimetableV2Result(direction) {
             const nextNumber = this.timetableCalculationSelectedNumber + Number(direction || 0)
@@ -2406,8 +2557,11 @@ export default {
                 this.initialTimetableCalculationSelection = null
                 this.initialTimetableCalculationSelectedNumber = 1
                 this.initialTimetableCalculationNoSaturdaySelected = false
+                this.initialTimetableCalculationMaxFreeDaysSelected = false
                 this.timetableNoSaturdayDraftSelected = false
                 this.timetableNoSaturdaySelected = false
+                this.timetableMaxFreeDaysDraftSelected = false
+                this.timetableMaxFreeDaysSelected = false
 
                 return
             }
@@ -2417,6 +2571,7 @@ export default {
             this.initialTimetableCalculationSelection = this.clonedTimetableV2Selection(this.storedTimetableV2Selection)
             this.initialTimetableCalculationSelectedNumber = this.timetableCalculationSelectedNumber
             this.initialTimetableCalculationNoSaturdaySelected = this.timetableNoSaturdaySelected
+            this.initialTimetableCalculationMaxFreeDaysSelected = this.timetableMaxFreeDaysSelected
         },
         clonedTimetableV2Selection(selection = {}) {
             return JSON.parse(JSON.stringify(selection && typeof selection === 'object' && !Array.isArray(selection) ? selection : {}))
@@ -2447,6 +2602,7 @@ export default {
 
             this.closeMoreCoursesCard()
             this.timetableNoSaturdaySelected = this.initialTimetableCalculationNoSaturdaySelected
+            this.timetableMaxFreeDaysSelected = this.initialTimetableCalculationMaxFreeDaysSelected
             this.closeTimetableOptionsCard()
             this.resetMoreCourseAvailability()
             this.saveStoredTimetableState({
@@ -2597,6 +2753,12 @@ export default {
                     selectedTimetableNumber: options.selectedTimetableNumber || this.timetableCalculationSelectedNumber,
                 }
                 : this.timetableV2SelectedTimetableRequest(options)
+            const maxFreeDaysSelected = this.timetableQualityCriteriaRequired
+            const includeQualityCounters = options?.includeQualityCounters !== false
+            const selectedQualityCriterionKeys = maxFreeDaysSelected ? [TIMETABLE_MAX_FREE_DAYS_CRITERION_KEY] : []
+            const evaluationCriteria = includeQualityCounters || maxFreeDaysSelected
+                ? this.timetableV2QualityCriteriaPayload()
+                : []
 
             return {
                 selection: this.timetableV2CalculationSelection(),
@@ -2611,14 +2773,31 @@ export default {
                 selected_additional_courses_required: selectedAdditionalCourseKeys.length > 0,
                 selected_timetable_type: selectedTimetableRequest.selectedTimetableType,
                 selected_timetable_number: selectedTimetableRequest.selectedTimetableNumber,
-                selected_quality_criterion_keys: [],
-                selected_quality_criteria_required: false,
-                include_quality_counters: false,
-                evaluation_criteria: [],
+                selected_quality_criterion_keys: selectedQualityCriterionKeys,
+                selected_quality_criteria_required: maxFreeDaysSelected,
+                include_quality_counters: includeQualityCounters,
+                evaluation_criteria: evaluationCriteria,
             }
+        },
+        timetableV2QualityCriteriaPayload() {
+            return [
+                {
+                    key: TIMETABLE_MAX_FREE_DAYS_CRITERION_KEY,
+                    enabled: true,
+                    priority: 1,
+                    option: null,
+                },
+                {
+                    key: TIMETABLE_SATURDAY_FREE_CRITERION_KEY,
+                    enabled: true,
+                    priority: 2,
+                    option: null,
+                },
+            ]
         },
         timetableV2CalculationPayloadForMoreCourseAvailability(course) {
             const payload = this.timetableV2CalculationPayload({
+                includeQualityCounters: false,
                 selectedTimetableType: 'full_green',
                 selectedTimetableNumber: 1,
             })
@@ -2945,6 +3124,7 @@ export default {
             this.moreCoursesCardVisible = false
             this.timetableOptionsCardVisible = false
             this.timetableNoSaturdayDraftSelected = this.timetableNoSaturdaySelected
+            this.timetableMaxFreeDaysDraftSelected = this.timetableMaxFreeDaysSelected
             this.moreCoursesSelectionSnapshot = this.moreCoursesSelectionSignature()
             this.courseSelectionSnapshotSelections = { ...this.courseSelectionOverrides }
             this.offeredCourseSelectionSnapshotSelections = { ...this.offeredCourseSelectionOverrides }
@@ -2968,6 +3148,7 @@ export default {
             const timetableOptionsChanged = this.timetableOptionsChanged
 
             this.timetableNoSaturdaySelected = this.timetableNoSaturdayDraftSelected
+            this.timetableMaxFreeDaysSelected = this.timetableMaxFreeDaysDraftSelected
             if (timetableOptionsChanged) {
                 this.saveTimetableV2Options()
             }
@@ -3037,6 +3218,7 @@ export default {
             this.moreOfferedCourseSelectionSnapshot = ''
             this.moreOfferedCourseSelectionSnapshotSelections = {}
             this.timetableNoSaturdayDraftSelected = this.timetableNoSaturdaySelected
+            this.timetableMaxFreeDaysDraftSelected = this.timetableMaxFreeDaysSelected
         },
         toggleTimetableOptionsCard() {
             if (this.timetableCalculationLoading) return
@@ -3048,21 +3230,36 @@ export default {
             }
 
             this.timetableNoSaturdayDraftSelected = this.timetableNoSaturdaySelected
+            this.timetableMaxFreeDaysDraftSelected = this.timetableMaxFreeDaysSelected
             this.timetableOptionsCardVisible = true
         },
         closeTimetableOptionsCard() {
             this.timetableOptionsCardVisible = false
             this.timetableNoSaturdayDraftSelected = this.timetableNoSaturdaySelected
+            this.timetableMaxFreeDaysDraftSelected = this.timetableMaxFreeDaysSelected
         },
         toggleNoSaturdayTimetableOption() {
             if (this.timetableCalculationLoading) return null
 
             this.timetableNoSaturdayDraftSelected = !this.timetableNoSaturdayDraftSelected
         },
+        applyMaxFreeDaysTimetableOption() {
+            if (this.timetableCalculationLoading || this.timetableMaxFreeDaysSelected || this.maxFreeDaysTimetableCount <= 0) return null
+
+            this.timetableMaxFreeDaysDraftSelected = true
+            this.timetableMaxFreeDaysSelected = true
+            this.saveTimetableV2Options()
+            this.setSelectedTimetableV2Number(1, { replace: true })
+            this.resetMoreCourseAvailability()
+            this.closeTimetableOptionsCard()
+
+            return this.calculateTimetables()
+        },
         applyTimetableOptions() {
             if (!this.timetableOptionsChanged || this.timetableCalculationLoading) return null
 
             this.timetableNoSaturdaySelected = this.timetableNoSaturdayDraftSelected
+            this.timetableMaxFreeDaysSelected = this.timetableMaxFreeDaysDraftSelected
             this.saveTimetableV2Options()
             this.setSelectedTimetableV2Number(1, { replace: true })
             this.resetMoreCourseAvailability()
@@ -3071,15 +3268,21 @@ export default {
             return this.calculateTimetables()
         },
         removeSelectedTimetableOption(option) {
-            if (this.timetableCalculationLoading) return
+            if (!this.selectedTimetableOptionItemsDeletable) return
 
-            if (option?.key !== 'no-saturday') return
+            if (!['no-saturday', 'max-free-days'].includes(option?.key)) return
 
             if (!this.moreCoursesVisible) {
                 this.openMoreCoursesPendingActions()
             }
 
-            this.timetableNoSaturdayDraftSelected = false
+            if (option?.key === 'no-saturday') {
+                this.timetableNoSaturdayDraftSelected = false
+            }
+
+            if (option?.key === 'max-free-days') {
+                this.timetableMaxFreeDaysDraftSelected = false
+            }
         },
         toggleMoreCourseOffers(course) {
             if (this.moreCourseDisabled(course)) return
@@ -3124,6 +3327,7 @@ export default {
             return JSON.stringify({
                 candidateCourseKeys,
                 courseSelections: this.selectionSignatureEntries(this.courseSelectionOverrides),
+                maxFreeDaysSelected: this.timetableMaxFreeDaysSelected === true,
                 offeredCourseSelections: this.selectionSignatureEntries(this.offeredCourseSelectionOverrides),
                 noSaturdaySelected: this.timetableNoSaturdaySelected === true,
             })
@@ -3174,8 +3378,7 @@ export default {
             try {
                 const response = await this.requestMoreCourseAvailability(course)
                 const result = response.data?.data || {}
-                const validTimetableCount = Number(result.full_green_timetable_count || 0)
-                    + Number(result.green_timetable_count || 0)
+                const validTimetableCount = this.validTimetableCountForActiveOptions(result)
 
                 this.setMoreCourseAvailability(availabilityKey, validTimetableCount > 0, requestId)
             } catch {
@@ -3183,6 +3386,14 @@ export default {
 
                 this.setMoreCourseAvailability(availabilityKey, false, requestId)
             }
+        },
+        validTimetableCountForActiveOptions(result = {}) {
+            if (this.timetableQualityCriteriaRequired) {
+                return Number(result?.selected_quality_criteria_count || 0)
+            }
+
+            return Number(result?.full_green_timetable_count || 0)
+                + Number(result?.green_timetable_count || 0)
         },
         setMoreCourseAvailability(availabilityKey, available, requestId = this.moreCourseAvailabilityRequestId) {
             if (requestId !== this.moreCourseAvailabilityRequestId) return
@@ -3338,7 +3549,11 @@ export default {
         selectReviewCourse(course) {
             if (!this.selectedCourseItemsClickable) return
 
-            this.selectedReviewCourseKey = course?.selectionKey || ''
+            const selectionKey = course?.selectionKey || ''
+
+            this.selectedReviewCourseKey = this.selectedReviewCourseKey === selectionKey
+                ? ''
+                : selectionKey
         },
         removeSelectedCourseItem(course) {
             if (!this.selectedCourseItemsDeletable) return
@@ -4315,9 +4530,12 @@ export default {
         syncStoredTimetableOptions() {
             this.timetableNoSaturdaySelected = this.storedTimetableV2Options.noSaturday === true
             this.timetableNoSaturdayDraftSelected = this.timetableNoSaturdaySelected
+            this.timetableMaxFreeDaysSelected = this.storedTimetableV2Options.maxFreeDays === true
+            this.timetableMaxFreeDaysDraftSelected = this.timetableMaxFreeDaysSelected
         },
         timetableV2OptionsForSaving() {
             return {
+                maxFreeDays: this.timetableMaxFreeDaysSelected === true,
                 noSaturday: this.timetableNoSaturdaySelected === true,
             }
         },
@@ -4339,6 +4557,7 @@ export default {
                 },
                 timetableV2Selection: {},
                 timetableV2Options: {
+                    maxFreeDays: false,
                     noSaturday: false,
                 },
                 transferredStudentContext: null,
@@ -5502,6 +5721,17 @@ export default {
     flex-wrap: wrap;
 }
 
+.students-timetable-v2-calculation-card__heading {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+}
+
+.students-timetable-v2-calculation-card__availability-loader {
+    flex: 0 0 auto;
+}
+
 .students-timetable-v2-calculation-card__actions {
     display: flex;
     gap: 8px;
@@ -5535,8 +5765,15 @@ export default {
     font-weight: 900;
 }
 
+.students-timetable-v2-options-card__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 .students-timetable-v2-options-card__option {
     border: 1px solid rgba(14, 165, 233, 0.18);
+    flex: 0 1 220px;
     cursor: pointer;
     max-width: 220px;
 }
@@ -5634,6 +5871,44 @@ export default {
     gap: 8px;
     flex-wrap: wrap;
     font-weight: 800;
+}
+
+.students-timetable-v2-result__number-input {
+    flex: 0 0 112px;
+    width: 112px;
+}
+
+.students-timetable-v2-result__number-input :deep(.v-field) {
+    min-height: 40px;
+}
+
+.students-timetable-v2-result__number-input :deep(.v-field__field) {
+    align-items: center;
+    min-height: 40px;
+}
+
+.students-timetable-v2-result__number-input :deep(.v-field__input) {
+    align-items: center;
+    flex-wrap: nowrap;
+    line-height: 1.25rem;
+    min-height: 40px;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.students-timetable-v2-result__number-input :deep(.v-text-field__prefix) {
+    align-items: center;
+    line-height: 1.25rem;
+    min-height: 40px;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.students-timetable-v2-result__number-input :deep(input) {
+    text-align: center;
+    font-size: 0.95rem;
+    font-weight: 800;
+    line-height: 1.25rem;
 }
 
 .students-timetable-v2-result-conflicts {

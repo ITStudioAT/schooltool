@@ -35,12 +35,16 @@ function timetableV2Context(overrides = {}) {
         timetableCalculationLoading: false,
         timetableCalculationRequestId: 0,
         timetableCalculationResult: null,
+        timetableCalculationNumberDraft: '1',
         timetableCalculationSelectedNumber: 1,
         initialTimetableCalculationSelectedNumber: 1,
         initialTimetableCalculationSelection: null,
         initialTimetableCalculationNoSaturdaySelected: false,
+        initialTimetableCalculationMaxFreeDaysSelected: false,
         timetableNoSaturdayDraftSelected: false,
         timetableNoSaturdaySelected: false,
+        timetableMaxFreeDaysDraftSelected: false,
+        timetableMaxFreeDaysSelected: false,
         timetableOptionsCardVisible: false,
         moreCoursesCardVisible: false,
         selectedMoreCourseKey: '',
@@ -114,9 +118,19 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.selectedCourseItemsClickable.call(context)
             },
         },
+        selectedTimetableSummaryChipsDisabled: {
+            get() {
+                return TimetableV2.computed.selectedTimetableSummaryChipsDisabled.call(context)
+            },
+        },
         noSaturdayTimetableCount: {
             get() {
                 return TimetableV2.computed.noSaturdayTimetableCount.call(context)
+            },
+        },
+        saturdayFreeQualityCounter: {
+            get() {
+                return TimetableV2.computed.saturdayFreeQualityCounter.call(context)
             },
         },
         noSaturdayTimetableCountFormatted: {
@@ -124,9 +138,44 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.noSaturdayTimetableCountFormatted.call(context)
             },
         },
+        maxFreeDaysQualityCounter: {
+            get() {
+                return TimetableV2.computed.maxFreeDaysQualityCounter.call(context)
+            },
+        },
+        maxFreeDaysTimetableCount: {
+            get() {
+                return TimetableV2.computed.maxFreeDaysTimetableCount.call(context)
+            },
+        },
+        maxFreeDaysTimetableCountFormatted: {
+            get() {
+                return TimetableV2.computed.maxFreeDaysTimetableCountFormatted.call(context)
+            },
+        },
         timetableOptionsChanged: {
             get() {
                 return TimetableV2.computed.timetableOptionsChanged.call(context)
+            },
+        },
+        timetableCalculationDisplayTotalCount: {
+            get() {
+                return TimetableV2.computed.timetableCalculationDisplayTotalCount.call(context)
+            },
+        },
+        timetableCalculationDisplayValidResultCount: {
+            get() {
+                return TimetableV2.computed.timetableCalculationDisplayValidResultCount.call(context)
+            },
+        },
+        timetableCalculationDisplayConflictResultCount: {
+            get() {
+                return TimetableV2.computed.timetableCalculationDisplayConflictResultCount.call(context)
+            },
+        },
+        timetableQualityCriteriaRequired: {
+            get() {
+                return TimetableV2.computed.timetableQualityCriteriaRequired.call(context)
             },
         },
         timetableCalculationResetAvailable: {
@@ -164,6 +213,11 @@ function timetableV2Context(overrides = {}) {
         selectedCourseItemsDeletable: {
             get() {
                 return TimetableV2.computed.selectedCourseItemsDeletable.call(context)
+            },
+        },
+        selectedTimetableOptionItemsDeletable: {
+            get() {
+                return TimetableV2.computed.selectedTimetableOptionItemsDeletable.call(context)
             },
         },
         selectedReviewCourseItem: {
@@ -328,25 +382,47 @@ describe('TimetableV2 route steps', () => {
         const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
 
         expect(source).toMatch(/v-if="timetableOptionsCardVisible" class="students-timetable-v2-calculation-card__actions"[\s\S]*@click="closeTimetableOptionsCard">\s+Abbruch/u)
+        expect(source).toMatch(/class="students-timetable-v2-calculation-card__heading"[\s\S]*Stundenpläne[\s\S]*v-if="moreCourseAvailabilityLoading"[\s\S]*indeterminate[\s\S]*title="Mehr Kurse werden geprüft"/u)
+        expect(source).toMatch(/\.students-timetable-v2-calculation-card__heading \{[\s\S]*display: inline-flex;[\s\S]*align-items: center;/u)
         expect(source).toMatch(/color="success"\s+variant="flat"\s+append-icon="mdi-check"\s+:disabled="!timetableOptionsChanged \|\| timetableCalculationLoading"\s+@click="applyTimetableOptions">\s+Anwenden/u)
+        expect(source).toMatch(/<v-text-field[\s\S]*:model-value="timetableCalculationNumberDraft"[\s\S]*type="number"[\s\S]*density="comfortable"[\s\S]*hide-spin-buttons[\s\S]*prefix="Nr\."[\s\S]*@keydown\.enter\.prevent="commitSelectedTimetableV2Number"[\s\S]*@blur="commitSelectedTimetableV2Number"/u)
+        expect(source).toMatch(/\.students-timetable-v2-result__number-input \{[\s\S]*width: 112px;/u)
+        expect(source).toMatch(/\.students-timetable-v2-result__number-input :deep\(\.v-field\) \{[\s\S]*min-height: 40px;/u)
+        expect(source).toMatch(/\.students-timetable-v2-result__number-input :deep\(\.v-field__field\) \{[\s\S]*align-items: center;[\s\S]*min-height: 40px;/u)
+        expect(source).toMatch(/\.students-timetable-v2-result__number-input :deep\(\.v-text-field__prefix\) \{[\s\S]*align-items: center;[\s\S]*padding-top: 0;[\s\S]*padding-bottom: 0;/u)
         expect(source).toMatch(/v-else-if="!moreCoursesVisible" class="students-timetable-v2-calculation-card__actions"/u)
-        expect(source).toMatch(/class="students-timetable-v2-calculation-card__primary-actions"[\s\S]*:color="moreCoursesButtonUnavailable \? 'error' : 'primary'"\s+variant="tonal"\s+prepend-icon="mdi-plus-circle-outline"\s+:disabled="timetableCalculationLoading \|\| moreCoursesButtonUnavailable"\s+@click="toggleMoreCoursesCard">\s+Mehr Kurse/u)
-        expect(source).toMatch(/color="info"\s+variant="tonal"\s+prepend-icon="mdi-cog-outline"\s+:disabled="timetableCalculationLoading"\s+:aria-expanded="timetableOptionsCardVisible \? 'true' : 'false'"\s+@click="toggleTimetableOptionsCard">\s+Optionen/u)
+        expect(source).toMatch(/class="students-timetable-v2-calculation-card__primary-actions"[\s\S]*:color="moreCoursesButtonUnavailable \? 'error' : 'primary'"\s+variant="tonal"\s+prepend-icon="mdi-plus-circle-outline"\s+:disabled="timetableCalculationLoading \|\| moreCourseAvailabilityLoading \|\| moreCoursesButtonUnavailable"\s+@click="toggleMoreCoursesCard">\s+Mehr Kurse/u)
+        expect(source).toMatch(/color="info"\s+variant="tonal"\s+prepend-icon="mdi-cog-outline"\s+:disabled="timetableCalculationLoading \|\| moreCourseAvailabilityLoading"\s+:aria-expanded="timetableOptionsCardVisible \? 'true' : 'false'"\s+@click="toggleTimetableOptionsCard">\s+Optionen/u)
         expect(source).toMatch(/color="warning"\s+variant="tonal"\s+prepend-icon="mdi-restore"\s+class="students-timetable-v2-calculation-card__reset-button"\s+:disabled="timetableCalculationLoading \|\| !timetableCalculationResetAvailable"\s+@click="resetTimetableCalculationChanges">\s+Zurücksetzen/u)
         expect(source).toContain('students-timetable-v2-card-column students-timetable-v2-selected-courses-column')
         expect(source).toMatch(/Ausgewählte Kurse[\s\S]*v-if="selectedTimetableOptionItems\.length"[\s\S]*class="students-timetable-v2-card students-timetable-v2-selected-options-card"[\s\S]*Optionen/u)
         expect(source).toContain('v-for="option in selectedTimetableOptionItems"')
+        expect(source).toContain(':closable="selectedTimetableOptionItemsDeletable"')
+        expect(source).toContain(':disabled="selectedTimetableSummaryChipsDisabled"')
         expect(source).toContain(':close-label="`Option ${option.label} entfernen`"')
         expect(source).toContain('@click:close.stop="removeSelectedTimetableOption(option)"')
         expect(source).toContain('{{ option.label }}')
+        expect(source).toContain(':closable="selectedCourseItemsDeletable"')
+        expect(source).toContain(":role=\"selectedCourseItemsClickable && !selectedTimetableSummaryChipsDisabled ? 'button' : undefined\"")
         expect(source).toMatch(/v-else-if="timetableCalculationResult && !moreCoursesVisible && !timetableOptionsCardVisible"/u)
         expect(source).toMatch(/v-if="timetableOptionsCardVisible"[\s\S]*class="students-timetable-v2-options-card"[\s\S]*Optionen/u)
+        expect(source).toContain('class="students-timetable-v2-options-card__list"')
+        expect(source).toMatch(/\.students-timetable-v2-options-card__list \{[\s\S]*display: flex;[\s\S]*flex-wrap: wrap;/u)
+        expect(source).toMatch(/<v-card\s+v-if="!timetableNoSaturdaySelected"[\s\S]*@click="toggleNoSaturdayTimetableOption"/u)
         expect(source).toContain(":color=\"timetableNoSaturdayDraftSelected ? 'success' : undefined\"")
         expect(source).toContain("'students-timetable-v2-options-card__option--selected': timetableNoSaturdayDraftSelected")
         expect(source).toContain(":aria-pressed=\"timetableNoSaturdayDraftSelected ? 'true' : 'false'\"")
         expect(source).toContain('@click="toggleNoSaturdayTimetableOption"')
         expect(source).toContain('Kein Samstag')
         expect(source).toContain('{{ noSaturdayTimetableCountFormatted }}')
+        expect(source).toMatch(/<v-card\s+v-if="!timetableMaxFreeDaysSelected"[\s\S]*@click="applyMaxFreeDaysTimetableOption"/u)
+        expect(source).toContain(":color=\"timetableMaxFreeDaysSelected ? 'success' : undefined\"")
+        expect(source).toContain(":disabled=\"timetableCalculationLoading || timetableMaxFreeDaysSelected || maxFreeDaysTimetableCount <= 0\"")
+        expect(source).toContain("'students-timetable-v2-options-card__option--selected': timetableMaxFreeDaysSelected")
+        expect(source).toContain(":aria-pressed=\"timetableMaxFreeDaysSelected ? 'true' : 'false'\"")
+        expect(source).toContain('@click="applyMaxFreeDaysTimetableOption"')
+        expect(source).toContain('Max freie Tage')
+        expect(source).toContain('{{ maxFreeDaysTimetableCountFormatted }}')
         expect(source).toMatch(/v-else class="students-timetable-v2-calculation-card__more-course-actions"[\s\S]*Abbruch[\s\S]*Anwenden/u)
         expect(source).toMatch(/size="large"\s+color="warning"\s+variant="tonal"\s+prepend-icon="mdi-close"\s+@click="cancelMoreCoursesCard">\s+Abbruch/u)
         expect(source).toMatch(/append-icon="mdi-check"\s+:disabled="!moreCoursesSelectionChanged \|\| timetableCalculationLoading"\s+@click="applyMoreCoursesSelection">\s+Anwenden/u)
@@ -363,14 +439,199 @@ describe('TimetableV2 route steps', () => {
         expect(context.noSaturdayTimetableCountFormatted).toBe('12')
     })
 
+    it('formats the max free days timetable count for the options card', () => {
+        const context = timetableV2Context({
+            timetableCalculationResult: {
+                quality_counters: [
+                    {
+                        key: 'free_days',
+                        count: 7,
+                        best_label: '4 freie Tage',
+                    },
+                ],
+            },
+        })
+
+        expect(context.maxFreeDaysQualityCounter).toEqual({
+            key: 'free_days',
+            count: 7,
+            best_label: '4 freie Tage',
+        })
+        expect(context.maxFreeDaysTimetableCount).toBe(7)
+        expect(context.maxFreeDaysTimetableCountFormatted).toBe('7')
+    })
+
+    it('uses the filtered Saturday-free counter when max free days is selected', () => {
+        const context = timetableV2Context({
+            timetableCalculationResult: {
+                no_saturday_timetable_count: 12,
+                quality_counters: [
+                    {
+                        key: 'saturday_free',
+                        count: 5,
+                    },
+                ],
+            },
+            timetableMaxFreeDaysSelected: true,
+        })
+
+        expect(context.saturdayFreeQualityCounter).toEqual({
+            key: 'saturday_free',
+            count: 5,
+        })
+        expect(context.noSaturdayTimetableCount).toBe(5)
+        expect(context.noSaturdayTimetableCountFormatted).toBe('5')
+    })
+
+    it('requests the max free days counter with timetable calculations', () => {
+        const context = timetableV2Context()
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(payload.include_quality_counters).toBe(true)
+        expect(payload.selected_quality_criteria_required).toBe(false)
+        expect(payload.selected_quality_criterion_keys).toEqual([])
+        expect(payload.evaluation_criteria).toEqual([
+            {
+                key: 'free_days',
+                enabled: true,
+                priority: 1,
+                option: null,
+            },
+            {
+                key: 'saturday_free',
+                enabled: true,
+                priority: 2,
+                option: null,
+            },
+        ])
+    })
+
+    it('applies the max free days option immediately and recalculates', () => {
+        const calculateTimetables = vi.fn()
+        const saveStoredTimetableState = vi.fn()
+        const context = timetableV2Context({
+            calculateTimetables,
+            moreCourseAvailabilityByKey: {
+                'additional:INF2': true,
+            },
+            moreCourseAvailabilitySignature: 'previous',
+            saveStoredTimetableState,
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {},
+                timetableV2Options: {
+                    maxFreeDays: false,
+                    noSaturday: false,
+                },
+                transferredStudentContext: null,
+            },
+            storedTimetableStateForSaving() {
+                return context.storedTimetableState
+            },
+            timetableCalculationResult: {
+                selected_quality_criteria_count: 3,
+                quality_counters: [
+                    {
+                        key: 'free_days',
+                        count: 3,
+                    },
+                ],
+            },
+            timetableCalculationSelectedNumber: 4,
+            timetableOptionsCardVisible: true,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        TimetableV2.methods.applyMaxFreeDaysTimetableOption.call(context)
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(context.timetableMaxFreeDaysDraftSelected).toBe(true)
+        expect(context.timetableMaxFreeDaysSelected).toBe(true)
+        expect(context.timetableOptionsChanged).toBe(false)
+        expect(context.timetableOptionsCardVisible).toBe(false)
+        expect(context.timetableCalculationSelectedNumber).toBe(1)
+        expect(context.moreCourseAvailabilityByKey).toEqual({})
+        expect(context.moreCourseAvailabilitySignature).toBe('')
+        expect(context.selectedTimetableV2ResultCount).toBe(3)
+        expect(payload.selected_quality_criteria_required).toBe(true)
+        expect(payload.selected_quality_criterion_keys).toEqual(['free_days'])
+        expect(payload.evaluation_criteria).toEqual([
+            {
+                key: 'free_days',
+                enabled: true,
+                priority: 1,
+                option: null,
+            },
+            {
+                key: 'saturday_free',
+                enabled: true,
+                priority: 2,
+                option: null,
+            },
+        ])
+        expect(saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
+            timetableV2Options: {
+                maxFreeDays: true,
+                noSaturday: false,
+            },
+        }))
+        expect(calculateTimetables).toHaveBeenCalledOnce()
+    })
+
     it('shows selected timetable options below the selected courses card', () => {
         expect(timetableV2Context().selectedTimetableOptionItems).toEqual([])
 
         const context = timetableV2Context({
+            timetableMaxFreeDaysDraftSelected: true,
+            timetableMaxFreeDaysSelected: true,
             timetableNoSaturdayDraftSelected: true,
             timetableNoSaturdaySelected: true,
         })
 
+        expect(context.selectedTimetableOptionItems).toEqual([
+            {
+                key: 'no-saturday',
+                label: 'Kein Samstag',
+            },
+            {
+                key: 'max-free-days',
+                label: 'Max freie Tage',
+            },
+        ])
+    })
+
+    it('disables selected course and option chips while more courses or options are open', () => {
+        const moreCoursesContext = timetableV2Context({
+            moreCoursesVisible: true,
+            timetableCalculationVisible: true,
+        })
+        const optionsContext = timetableV2Context({
+            timetableCalculationVisible: true,
+            timetableOptionsCardVisible: true,
+        })
+
+        expect(moreCoursesContext.selectedTimetableSummaryChipsDisabled).toBe(true)
+        expect(moreCoursesContext.selectedCourseItemsDeletable).toBe(false)
+        expect(moreCoursesContext.selectedTimetableOptionItemsDeletable).toBe(false)
+        expect(optionsContext.selectedTimetableSummaryChipsDisabled).toBe(true)
+        expect(optionsContext.selectedCourseItemsDeletable).toBe(false)
+        expect(optionsContext.selectedTimetableOptionItemsDeletable).toBe(false)
+    })
+
+    it('does not stage selected option removal while more courses or options are open', () => {
+        const context = timetableV2Context({
+            moreCoursesVisible: true,
+            timetableNoSaturdayDraftSelected: true,
+            timetableNoSaturdaySelected: true,
+        })
+
+        TimetableV2.methods.removeSelectedTimetableOption.call(context, {
+            key: 'no-saturday',
+        })
+
+        expect(context.moreCoursesVisible).toBe(true)
+        expect(context.timetableNoSaturdayDraftSelected).toBe(true)
         expect(context.selectedTimetableOptionItems).toEqual([
             {
                 key: 'no-saturday',
@@ -381,19 +642,28 @@ describe('TimetableV2 route steps', () => {
 
     it('stages selected timetable option removal through the pending action row', () => {
         const context = timetableV2Context({
+            timetableMaxFreeDaysDraftSelected: true,
+            timetableMaxFreeDaysSelected: true,
             timetableNoSaturdayDraftSelected: true,
             timetableNoSaturdaySelected: true,
         })
 
         TimetableV2.methods.removeSelectedTimetableOption.call(context, {
-            key: 'no-saturday',
+            key: 'max-free-days',
         })
 
         expect(context.moreCoursesVisible).toBe(true)
         expect(context.moreCoursesCardVisible).toBe(false)
-        expect(context.timetableNoSaturdayDraftSelected).toBe(false)
+        expect(context.timetableNoSaturdayDraftSelected).toBe(true)
         expect(context.timetableNoSaturdaySelected).toBe(true)
-        expect(context.selectedTimetableOptionItems).toEqual([])
+        expect(context.timetableMaxFreeDaysDraftSelected).toBe(false)
+        expect(context.timetableMaxFreeDaysSelected).toBe(true)
+        expect(context.selectedTimetableOptionItems).toEqual([
+            {
+                key: 'no-saturday',
+                label: 'Kein Samstag',
+            },
+        ])
         expect(context.moreCoursesSelectionChanged).toBe(true)
     })
 
@@ -584,6 +854,7 @@ describe('TimetableV2 route steps', () => {
             selection: {},
             timetableV2Selection: initialTimetableV2Selection,
             timetableV2Options: {
+                maxFreeDays: false,
                 noSaturday: false,
             },
             transferredStudentContext: null,
@@ -786,6 +1057,38 @@ describe('TimetableV2 route steps', () => {
 
         await TimetableV2.methods.loadMoreCourseAvailabilityForCourse.call(context, moreCourse, 1)
 
+        expect(context.requestMoreCourseAvailability).toHaveBeenCalledWith(moreCourse)
+        expect(context.moreCourseAvailabilityByKey).toEqual({
+            [moreCourse.selectionKey]: false,
+        })
+    })
+
+    it('loads more course availability from active option filtered counts', async () => {
+        const context = timetableV2Context({
+            courseGroups: [
+                { class_name: 'INF2-A', course: 'INF2', hour: 2, title: 'INF2', weekday: 2 },
+            ],
+            moreCourseAvailabilityRequestId: 1,
+            requestMoreCourseAvailability: vi.fn(() => Promise.resolve({
+                data: {
+                    data: {
+                        full_green_timetable_count: 8,
+                        green_timetable_count: 0,
+                        selected_quality_criteria_count: 0,
+                    },
+                },
+            })),
+            storedAdditionalCourseItems: [
+                { code: 'INF2', hours: 2, key: 'INF2', label: 'INF2' },
+            ],
+            timetableMaxFreeDaysSelected: true,
+        })
+        const moreCourse = context.moreCoursesCardItems[0]
+        const availabilitySignature = TimetableV2.methods.moreCourseAvailabilityCurrentSignature.call(context)
+
+        await TimetableV2.methods.loadMoreCourseAvailabilityForCourse.call(context, moreCourse, 1)
+
+        expect(availabilitySignature).toContain('"maxFreeDaysSelected":true')
         expect(context.requestMoreCourseAvailability).toHaveBeenCalledWith(moreCourse)
         expect(context.moreCourseAvailabilityByKey).toEqual({
             [moreCourse.selectionKey]: false,
@@ -1367,6 +1670,26 @@ describe('TimetableV2 route steps', () => {
         expect(context.selectedReviewCourseItem).toEqual(context.selectedCourseItems[1])
     })
 
+    it('closes the offered courses card when the active review course is clicked again', () => {
+        const context = timetableV2Context({
+            courseReviewVisible: true,
+            selectedCourseItems: [
+                { label: 'D1', selectionKey: 'planned:D1' },
+                { label: 'INF1', selectionKey: 'planned:INF1' },
+            ],
+        })
+
+        TimetableV2.methods.selectReviewCourse.call(context, context.selectedCourseItems[1])
+
+        expect(context.selectedReviewCourseKey).toBe('planned:INF1')
+        expect(context.selectedReviewCourseItem).toEqual(context.selectedCourseItems[1])
+
+        TimetableV2.methods.selectReviewCourse.call(context, context.selectedCourseItems[1])
+
+        expect(context.selectedReviewCourseKey).toBe('')
+        expect(context.selectedReviewCourseItem).toBeNull()
+    })
+
     it('replaces invalid route step values with the selection step', () => {
         const context = timetableV2Context({
             $route: {
@@ -1559,6 +1882,32 @@ describe('TimetableV2 route steps', () => {
         expect(payload.selected_timetable_number).toBe(2)
     })
 
+    it('shows filtered calculation counts when max free days is selected', () => {
+        const context = timetableV2Context({
+            timetableCalculationResult: {
+                timetable_variation_count: 440,
+                full_green_timetable_count: 340,
+                green_timetable_count: 0,
+                conflict_timetable_count: 100,
+                selected_quality_criteria_count: 7,
+                selected_timetable: {
+                    number: 1,
+                    type: 'full_green',
+                    slots: {},
+                },
+            },
+            timetableMaxFreeDaysSelected: true,
+        })
+
+        expect(context.timetableQualityCriteriaRequired).toBe(true)
+        expect(context.timetableCalculationDisplayTotalCount).toBe(7)
+        expect(TimetableV2.computed.timetableCalculationCountLabel.call(context)).toBe('7 Stundenpläne gesamt')
+        expect(context.timetableCalculationResultCountItems.map((item) => item.label)).toEqual([
+            '7 gültig',
+            '0 Konflikte',
+        ])
+    })
+
     it('shows conflict timetable results when no valid timetable is available', () => {
         const context = timetableV2Context({
             timetableCalculationResult: {
@@ -1609,6 +1958,62 @@ describe('TimetableV2 route steps', () => {
                 tt: '2',
             },
         })
+        expect(calculateTimetables).toHaveBeenCalledOnce()
+    })
+
+    it('shows a concrete timetable number after entering it directly', () => {
+        const calculateTimetables = vi.fn()
+        const context = timetableV2Context({
+            calculateTimetables,
+            timetableCalculationNumberDraft: '1',
+            timetableCalculationResult: {
+                full_green_timetable_count: 4,
+                selected_timetable: {
+                    number: 1,
+                    type: 'full_green',
+                    slots: {},
+                },
+            },
+            timetableCalculationSelectedNumber: 1,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        TimetableV2.methods.updateTimetableV2NumberDraft.call(context, '3')
+        TimetableV2.methods.commitSelectedTimetableV2Number.call(context)
+
+        expect(context.timetableCalculationSelectedNumber).toBe(3)
+        expect(context.timetableCalculationNumberDraft).toBe('3')
+        expect(context.$router.push).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/timetable-v2/overview',
+            query: {
+                step: 'timetable-calculation',
+                tt: '3',
+            },
+        })
+        expect(calculateTimetables).toHaveBeenCalledOnce()
+    })
+
+    it('clamps a directly entered timetable number to the available range', () => {
+        const calculateTimetables = vi.fn()
+        const context = timetableV2Context({
+            calculateTimetables,
+            timetableCalculationNumberDraft: '99',
+            timetableCalculationResult: {
+                full_green_timetable_count: 4,
+                selected_timetable: {
+                    number: 1,
+                    type: 'full_green',
+                    slots: {},
+                },
+            },
+            timetableCalculationSelectedNumber: 1,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        TimetableV2.methods.commitSelectedTimetableV2Number.call(context)
+
+        expect(context.timetableCalculationSelectedNumber).toBe(4)
+        expect(context.timetableCalculationNumberDraft).toBe('4')
         expect(calculateTimetables).toHaveBeenCalledOnce()
     })
 
@@ -1790,6 +2195,7 @@ describe('TimetableV2 route steps', () => {
                 selection: {},
                 timetableV2Selection: {},
                 timetableV2Options: {
+                    maxFreeDays: false,
                     noSaturday: false,
                 },
                 transferredStudentContext: null,
@@ -1818,6 +2224,7 @@ describe('TimetableV2 route steps', () => {
         expect(payload.constraints.availableWeekdays).toEqual([1, 2, 3, 4, 5])
         expect(saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
             timetableV2Options: {
+                maxFreeDays: false,
                 noSaturday: true,
             },
         }))
@@ -1830,22 +2237,31 @@ describe('TimetableV2 route steps', () => {
                 selection: {},
                 timetableV2Selection: {},
                 timetableV2Options: {
+                    maxFreeDays: true,
                     noSaturday: true,
                 },
                 transferredStudentContext: null,
             },
             timetableNoSaturdayDraftSelected: false,
             timetableNoSaturdaySelected: false,
+            timetableMaxFreeDaysDraftSelected: false,
+            timetableMaxFreeDaysSelected: false,
         })
 
         TimetableV2.methods.syncStoredTimetableOptions.call(context)
 
         expect(context.timetableNoSaturdaySelected).toBe(true)
         expect(context.timetableNoSaturdayDraftSelected).toBe(true)
+        expect(context.timetableMaxFreeDaysSelected).toBe(true)
+        expect(context.timetableMaxFreeDaysDraftSelected).toBe(true)
         expect(context.selectedTimetableOptionItems).toEqual([
             {
                 key: 'no-saturday',
                 label: 'Kein Samstag',
+            },
+            {
+                key: 'max-free-days',
+                label: 'Max freie Tage',
             },
         ])
     })
@@ -2147,7 +2563,7 @@ describe('TimetableV2 route steps', () => {
         expect(context.selectedTimetableV2ConflictIcon).toBe('mdi-alert-outline')
         expect(context.selectedTimetableV2ConflictTitle).toBe('Überschneidungen')
         expect(context.selectedTimetableV2ConflictSummaryItems).toEqual([
-            'D1-1C-GOS überschneidet sich mit LPT-1CK-DREI (17.02.).',
+            'LPT-1CK-DREI überschneidet sich mit D1-1C-GOS (17.02.).',
             'LPT-1CK-DREI überschneidet sich mit M1-1C-MAY (18.02.).',
         ])
         expect(context.selectedTimetableV2ConflictResolutionOptions).toEqual([])
