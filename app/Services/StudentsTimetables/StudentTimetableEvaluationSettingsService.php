@@ -32,6 +32,11 @@ class StudentTimetableEvaluationSettingsService
             'key' => 'avoid_distance_learning',
             'label' => 'Kein Fernunterricht bevorzugt',
             'description' => 'Stundenpläne mit weniger Fernunterricht-Kursen werden höher gereiht.',
+            'options' => [
+                ['value' => 'fewest', 'label' => 'Möglichst wenig Fernunterricht'],
+                ['value' => 'none', 'label' => 'Kein Fernunterricht'],
+            ],
+            'default_option' => 'fewest',
         ],
         [
             'key' => 'free_days',

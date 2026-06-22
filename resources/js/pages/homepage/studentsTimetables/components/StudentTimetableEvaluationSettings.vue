@@ -801,7 +801,7 @@ export default {
             return Number(this.courseSummary?.total || this.proposedCourses.length || 0)
         },
         courseSummaryTitle() {
-            return this.courseSummary?.title || 'Fehlende Kurse + Vorgesehene Kurse'
+            return this.courseSummary?.title || 'Negative Kurse + Vorgesehene Kurse'
         },
         displayedCourseSections() {
             return Array.isArray(this.courseSections) ? this.courseSections : []

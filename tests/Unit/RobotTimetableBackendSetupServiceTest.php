@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\User;
 use App\Services\StudentsTimetables\RobotTimetableBackendSetupService;
+use Illuminate\Support\Facades\Cache;
 
 it('counts all selected course variations and the overlap free full green variations', function () {
     $service = app(RobotTimetableBackendSetupService::class);
@@ -105,6 +107,155 @@ it('counts all selected course variations and the overlap free full green variat
         ->and($result['green_timetable_count'])->toBe(0)
         ->and($result['red_timetable_count'])->toBe(1)
         ->and($result['no_saturday_timetable_count'])->toBe(3);
+});
+
+it('reuses the cached timetable calculation base when only the selected timetable number changes', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $authUser = new User([
+        'school_id' => 1,
+        'schoolyear_id' => 1,
+    ]);
+
+    $subjectRows = [
+        [
+            'id' => 1,
+            'semester' => 1,
+            'branch' => 'common',
+            'json_code' => 'D1',
+            'json_subject' => 'D',
+            'name' => 'Deutsch 1',
+            'tt_subject' => 'D',
+            'hours_per_week' => 1,
+            'is_active' => true,
+        ],
+        [
+            'id' => 2,
+            'semester' => 1,
+            'branch' => 'common',
+            'json_code' => 'M1',
+            'json_subject' => 'M',
+            'name' => 'Mathematik 1',
+            'tt_subject' => 'M',
+            'hours_per_week' => 1,
+            'is_active' => true,
+        ],
+    ];
+    $courseGroups = [
+        [
+            'weekday' => 1,
+            'hour' => 1,
+            'class_name' => 'D1-A',
+            'display_label' => 'D1-A',
+            'title' => 'D1-A',
+            'course' => 'D1',
+            'subject' => 'Deutsch',
+            'dates' => [],
+            'dates_count' => 0,
+        ],
+        [
+            'weekday' => 2,
+            'hour' => 1,
+            'class_name' => 'D1-B',
+            'display_label' => 'D1-B',
+            'title' => 'D1-B',
+            'course' => 'D1',
+            'subject' => 'Deutsch',
+            'dates' => [],
+            'dates_count' => 0,
+        ],
+        [
+            'weekday' => 1,
+            'hour' => 1,
+            'class_name' => 'M1-A',
+            'display_label' => 'M1-A',
+            'title' => 'M1-A',
+            'course' => 'M1',
+            'subject' => 'Mathematik',
+            'dates' => [],
+            'dates_count' => 0,
+        ],
+        [
+            'weekday' => 3,
+            'hour' => 1,
+            'class_name' => 'M1-B',
+            'display_label' => 'M1-B',
+            'title' => 'M1-B',
+            'course' => 'M1',
+            'subject' => 'Mathematik',
+            'dates' => [],
+            'dates_count' => 0,
+        ],
+    ];
+    $settings = [
+        'selection' => [
+            'semester' => 1,
+            'branch' => '',
+            'artsSubject' => 'ME',
+            'language' => 'L',
+            'religion' => 'ETH',
+        ],
+        'constraints' => [
+            'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+            'availableTimes' => [1, 2, 3, 4, 5],
+            'excludedWeekdayTimes' => [],
+        ],
+        'selected_course_keys' => [
+            '1|1|common|D1|D|Deutsch 1|D1',
+            '2|1|common|M1|M|Mathematik 1|M1',
+        ],
+        'deselected_course_keys' => [],
+        'deselected_course_group_keys' => [],
+        'selected_timetable_type' => 'full_green',
+        'selected_timetable_number' => 1,
+    ];
+
+    $rememberedKeys = [];
+    $rememberedValues = [];
+
+    Cache::shouldReceive('remember')
+        ->andReturnUsing(function (string $key, mixed $ttl, Closure $callback) use (&$rememberedKeys, &$rememberedValues): mixed {
+            $rememberedKeys[] = $key;
+
+            if (! array_key_exists($key, $rememberedValues)) {
+                $rememberedValues[$key] = $callback();
+            }
+
+            return $rememberedValues[$key];
+        });
+
+    $firstResult = $service->calculateCachedTimetableVariationsForUser(
+        authUser: $authUser,
+        subjectRows: $subjectRows,
+        subjectMappings: [],
+        courseGroups: $courseGroups,
+        settings: $settings,
+    );
+    $secondResult = $service->calculateCachedTimetableVariationsForUser(
+        authUser: $authUser,
+        subjectRows: $subjectRows,
+        subjectMappings: [],
+        courseGroups: $courseGroups,
+        settings: [
+            ...$settings,
+            'selected_timetable_number' => 2,
+        ],
+    );
+
+    $baseKeys = array_values(array_filter(
+        $rememberedKeys,
+        fn (string $key): bool => str_starts_with($key, 'students-timetables:timetable-v2:base:'),
+    ));
+    $selectedTimetableKeys = array_values(array_filter(
+        $rememberedKeys,
+        fn (string $key): bool => str_starts_with($key, 'students-timetables:timetable-v2:selected:'),
+    ));
+
+    expect($firstResult['selected_timetable']['number'])->toBe(1)
+        ->and($secondResult['selected_timetable']['number'])->toBe(2)
+        ->and($baseKeys)->toHaveCount(2)
+        ->and($baseKeys[0])->toBe($baseKeys[1])
+        ->and($selectedTimetableKeys)->toHaveCount(2)
+        ->and($selectedTimetableKeys[0])->not->toBe($selectedTimetableKeys[1]);
 });
 
 it('counts timetable variations without Saturday appointments', function () {
@@ -711,6 +862,103 @@ it('prefers timetables without distance learning while ignoring single date only
         ->total->toBe(3)
         ->best_value->toBe(0)
         ->best_label->toBe('0 FU-Kurse');
+});
+
+it('requires timetables without distance learning when the none option is selected', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D1',
+                'hours_per_week' => 2,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'D1-FU',
+                'display_label' => 'D1-FU',
+                'title' => 'D1-FU',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 1,
+                'class_name' => 'D1-GOS',
+                'display_label' => 'D1-GOS',
+                'title' => 'D1-GOS',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 2,
+                'class_name' => 'D1-GOS',
+                'display_label' => 'D1-GOS',
+                'title' => 'D1-GOS',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '1|1|common|D1|D|Deutsch 1|D1',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+            'selected_quality_criteria_required' => true,
+        ],
+        evaluationCriteria: [
+            [
+                'key' => 'avoid_distance_learning',
+                'label' => 'Kein Fernunterricht',
+                'enabled' => true,
+                'priority' => 1,
+                'option' => 'none',
+            ],
+        ],
+        selectedQualityCriterionKeys: ['avoid_distance_learning'],
+    );
+
+    expect($result['selected_quality_criteria_count'])->toBe(1)
+        ->and($result['selected_timetable']['metrics']['distance_learning_count'])->toBe(0)
+        ->and($result['quality_counters'][0]['key'])->toBe('avoid_distance_learning')
+        ->and($result['quality_counters'][0]['selected_value'])->toBeTrue()
+        ->and($result['quality_counters'][0]['selected_reached'])->toBeTrue()
+        ->and($result['quality_counters'][0]['count'])->toBe(1)
+        ->and($result['quality_counters'][0]['best_value'])->toBeTrue()
+        ->and($result['quality_counters'][0]['best_label'])->toBe('erfüllt');
 });
 
 it('counts quality criteria inside the selected quality criteria subset', function () {

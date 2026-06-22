@@ -220,7 +220,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/robot/students')")
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/robot/student-completed-courses'")
         expect(componentSource).toContain('Abgeschlossene Kurse')
-        expect(componentSource).toContain('Fehlende Kurse')
+        expect(componentSource).toContain('Negative Kurse')
         expect(componentSource).toContain('Vorgesehene Kurse')
         expect(componentSource).toContain('Zusätzliche Kurse')
         expect(componentSource).toContain('robot-course-panel--additional')
@@ -284,7 +284,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('regularCourseColumns()')
         expect(componentSource).toContain('class="robot-regular-course-column-title"')
         expect(componentSource).toContain('v-for="course in courseColumn.courses"')
-        expect(componentSource).toContain("Fehlende Kurse + Vorgesehene Kurse")
+        expect(componentSource).toContain("Negative Kurse + Vorgesehene Kurse")
         expect(componentSource).toContain('applyStudentPlannedCourseSelection()')
         expect(componentSource).toContain('courseMatchesStudentPlannedCourse(course, plannedCourseCodes)')
         expect(componentSource).toContain('selectAllAvailableCourses()')
@@ -5630,13 +5630,13 @@ describe('Students timetable robot page', () => {
             })
         })
 
-        expect(computed.regularCourseListTitle.call(ctx)).toBe('Fehlende Kurse + Vorgesehene Kurse')
+        expect(computed.regularCourseListTitle.call(ctx)).toBe('Negative Kurse + Vorgesehene Kurse')
         expect(computed.regularCourseColumns.call(ctx).map((column: Record<string, any>) => ({
             key: column.key,
             title: column.title,
             courses: column.courses.map((course: Record<string, string>) => course.code),
         }))).toEqual([
-            { key: 'missing', title: 'Fehlende Kurse', courses: ['INF1'] },
+            { key: 'missing', title: 'Negative Kurse', courses: ['INF1'] },
             { key: 'planned', title: 'Vorgesehene Kurse', courses: ['D2'] },
         ])
         expect(ctx.availableCourses.map((course: Record<string, string>) => course.code))
@@ -6121,7 +6121,7 @@ describe('Students timetable robot page', () => {
             title: courseColumn.title,
             courses: courseColumn.courses.map(course => course.code),
         }))).toEqual([
-            { title: 'Fehlende Kurse', courses: ['D1', 'E1'] },
+            { title: 'Negative Kurse', courses: ['D1', 'E1'] },
             { title: 'Vorgesehene Kurse', courses: ['M2'] },
         ])
     })
@@ -6488,7 +6488,7 @@ describe('Students timetable robot page', () => {
 
         expect(computed.studentPlannedCourses.call(ctx).map(course => course.code)).toEqual(['D2'])
         expect(computed.availableCourses.call(ctx).map(course => course.code)).toEqual(['D2'])
-        expect(computed.regularCourseListTitle.call(ctx)).toBe('Fehlende Kurse + Vorgesehene Kurse')
+        expect(computed.regularCourseListTitle.call(ctx)).toBe('Negative Kurse + Vorgesehene Kurse')
         expect(computed.studentAdditionalCourses.call(ctx).map(course => course.code)).toEqual(['INF2', 'INF3', 'E4', 'GW4', 'M4'])
         expect(methods.completedCourseCountsAsDone.call(ctx, '4')).toBe(true)
         expect(methods.completedCourseCountsAsDone.call(ctx, 'B')).toBe(true)

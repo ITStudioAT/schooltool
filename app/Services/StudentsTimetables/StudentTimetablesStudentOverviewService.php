@@ -509,11 +509,11 @@ class StudentTimetablesStudentOverviewService
             ],
             [
                 'key' => 'missing',
-                'title' => 'Fehlende Kurse',
+                'title' => 'Negative Kurse',
                 'icon' => 'mdi-alert-circle-outline',
                 'color' => self::COURSE_SECTION_COLOR_MAP['missing'],
                 'items' => $missingCourses,
-                'empty' => 'Keine fehlenden Kurse erkannt.',
+                'empty' => 'Keine negativen Kurse erkannt.',
             ],
             [
                 'key' => 'proposed',
@@ -551,7 +551,7 @@ class StudentTimetablesStudentOverviewService
         $hours = $this->courseHoursTotal($courses->all());
 
         return [
-            'title' => 'Fehlende Kurse + Vorgesehene Kurse',
+            'title' => 'Negative Kurse + Vorgesehene Kurse',
             'sections' => $sections,
             'courses' => $courses->all(),
             'total' => $courses->count(),

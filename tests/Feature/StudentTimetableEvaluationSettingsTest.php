@@ -60,6 +60,9 @@ it('returns default timetable evaluation settings for the active schoolyear', fu
         ->assertJsonPath('data.criteria.0.options', [])
         ->assertJsonPath('data.criteria.1.key', 'prefer_distance_learning')
         ->assertJsonPath('data.criteria.2.key', 'avoid_distance_learning')
+        ->assertJsonPath('data.criteria.2.option', 'fewest')
+        ->assertJsonPath('data.criteria.2.options.0.value', 'fewest')
+        ->assertJsonPath('data.criteria.2.options.1.value', 'none')
         ->assertJsonPath('data.criteria.6.key', 'ends_by_period_13');
 });
 
@@ -140,7 +143,8 @@ it('persists timetable evaluation settings with priorities and options', functio
             fn ($criterion) => $criterion
                 ->key->toBe('avoid_distance_learning')
                 ->enabled->toBeFalse()
-                ->priority->toBe(4),
+                ->priority->toBe(4)
+                ->option->toBe('fewest'),
             fn ($criterion) => $criterion
                 ->key->toBe('free_days')
                 ->enabled->toBeTrue()
@@ -326,6 +330,7 @@ it('keeps distance learning preference criteria mutually exclusive', function ()
             ->key->toBe('avoid_distance_learning')
             ->label->toBe('Kein Fernunterricht bevorzugt')
             ->enabled->toBeTrue()
+            ->option->toBe('fewest')
             ->priority->toBe(2));
 });
 

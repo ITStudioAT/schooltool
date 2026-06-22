@@ -455,7 +455,7 @@
                                     class="robot-student-course-section robot-student-course-section--missing">
                                     <div class="robot-student-course-section__title">
                                         <v-icon icon="mdi-alert-circle-outline" />
-                                        <span>Fehlende Kurse</span>
+                                        <span>Negative Kurse</span>
                                         <v-chip size="x-small" color="primary" variant="tonal">
                                             {{ studentMissingCourses.length }}
                                         </v-chip>
@@ -466,7 +466,7 @@
                                         variant="tonal"
                                         density="compact"
                                         class="mt-3 mb-0">
-                                        Keine fehlenden Kurse aus früheren Semestern gefunden.
+                                        Keine negativen Kurse aus früheren Semestern gefunden.
                                     </v-alert>
                                     <div v-else class="robot-student-completed-course-list">
                                         <div
@@ -3102,7 +3102,7 @@ export default {
         },
         regularCourseListTitle() {
             return this.selectedStudent || this.embeddedOverviewCourseHistoryAvailable
-                ? 'Fehlende Kurse + Vorgesehene Kurse'
+                ? 'Negative Kurse + Vorgesehene Kurse'
                 : 'Vorgesehene Kurse'
         },
         regularCourseCountLabel() {
@@ -3156,7 +3156,7 @@ export default {
                 return [
                     {
                         key: 'missing',
-                        title: 'Fehlende Kurse',
+                        title: 'Negative Kurse',
                         courses: this.studentMissingCourses,
                     },
                     {
@@ -3180,7 +3180,7 @@ export default {
             return [
                 {
                     key: 'missing',
-                    title: 'Fehlende Kurse',
+                    title: 'Negative Kurse',
                     courses: this.studentMissingCourses,
                 },
                 {
@@ -5633,7 +5633,7 @@ export default {
 
             const rankedCombinations = this.visibleTimetableCombinations(this.rankTimetableCombinations(combinations))
             if (!rankedCombinations.length) {
-                this.generationError = 'Es gibt keinen Stundenplan ohne fehlende Kurse.'
+                this.generationError = 'Es gibt keinen Stundenplan ohne negative Kurse.'
 
                 return
             }

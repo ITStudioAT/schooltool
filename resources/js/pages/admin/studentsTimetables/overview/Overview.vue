@@ -1504,7 +1504,7 @@ export default {
         },
         courseChoiceRestrictionOptions() {
             return [
-                { value: COURSE_CHOICE_RESTRICTION_MISSING, label: 'Fehlende Kurse' },
+                { value: COURSE_CHOICE_RESTRICTION_MISSING, label: 'Negative Kurse' },
                 { value: COURSE_CHOICE_RESTRICTION_PLANNED, label: 'Vorgesehene Kurse' },
                 { value: COURSE_CHOICE_RESTRICTION_ADDITIONAL, label: 'Zusätzliche Kurse' },
                 { value: COURSE_CHOICE_RESTRICTION_ALL, label: 'Offene Kurse' },
@@ -1795,7 +1795,7 @@ export default {
                 },
                 {
                     key: 'missing',
-                    title: 'Fehlende Kurse',
+                    title: 'Negative Kurse',
                     icon: 'mdi-alert-circle-outline',
                     color: OVERVIEW_SECTION_COLORS.missing,
                     items: courses.missing || [],

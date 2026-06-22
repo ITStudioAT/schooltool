@@ -889,7 +889,7 @@ export default {
         },
         studentCoursePickerTabs() {
             return [
-                { value: 'missing', label: 'Fehlende Kurse' },
+                { value: 'missing', label: 'Negative Kurse' },
                 { value: 'proposed', label: 'Vorgesehene Kurse' },
                 { value: 'additional', label: 'Zusätzliche Kurse' },
                 { value: 'open', label: 'Offene Kurse' },

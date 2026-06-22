@@ -2804,7 +2804,7 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('restrictCourseChoiceBySelection')
         expect(componentSource).toContain('courseChoiceRestrictionMode')
         expect(componentSource).toContain('courseChoiceRestrictionOptions')
-        expect(componentSource).toContain('Fehlende Kurse')
+        expect(componentSource).toContain('Negative Kurse')
         expect(componentSource).toContain('Vorgesehene Kurse')
         expect(componentSource).toContain('Zusätzliche Kurse')
         expect(componentSource).toContain('Offene Kurse')
@@ -3114,7 +3114,7 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));')
         expect(componentSource).toContain('Abgeschlossene Kurse')
         expect(componentSource).toContain('mdi-check-circle-outline')
-        expect(componentSource).toContain('Fehlende Kurse')
+        expect(componentSource).toContain('Negative Kurse')
         expect(componentSource).toContain('mdi-alert-circle-outline')
         expect(componentSource).toContain('Vorgesehene Kurse')
         expect(componentSource).toContain('mdi-format-list-checks')
@@ -3556,7 +3556,7 @@ describe('Students timetable overview', () => {
 
         expect(computed.visibleCourseChoiceRestrictionMode.call(ctx)).toBe('additional')
         expect(computed.courseChoiceRestrictionOptions.call(ctx)).toEqual([
-            { value: 'missing', label: 'Fehlende Kurse' },
+            { value: 'missing', label: 'Negative Kurse' },
             { value: 'planned', label: 'Vorgesehene Kurse' },
             { value: 'additional', label: 'Zusätzliche Kurse' },
             { value: 'all', label: 'Offene Kurse' },
@@ -5256,7 +5256,7 @@ describe('Students timetable overview', () => {
             manualPanelOpen: false,
             transferredStudentCourseSections: [
                 { key: 'completed', title: 'Abgeschlossene Kurse' },
-                { key: 'missing', title: 'Fehlende Kurse' },
+                { key: 'missing', title: 'Negative Kurse' },
                 { key: 'planned', title: 'Vorgesehene Kurse' },
                 { key: 'additional', title: 'Zusätzliche Kurse' },
             ],
@@ -5305,7 +5305,7 @@ describe('Students timetable overview', () => {
         const ctx = {
             transferredStudentCourseSections: [
                 completedSection,
-                { key: 'missing', title: 'Fehlende Kurse', items: [] },
+                { key: 'missing', title: 'Negative Kurse', items: [] },
             ],
         }
 
@@ -5324,7 +5324,7 @@ describe('Students timetable overview', () => {
             },
             transferredStudentCourseSections: [
                 { key: 'completed', title: 'Abgeschlossene Kurse', items: [] },
-                { key: 'missing', title: 'Fehlende Kurse', items: [{ code: 'D1', label: 'D1' }] },
+                { key: 'missing', title: 'Negative Kurse', items: [{ code: 'D1', label: 'D1' }] },
             ],
         }
 

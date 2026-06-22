@@ -2318,7 +2318,9 @@ class RobotTimetableGeneratorService
             'starts_from_period_10' => (bool) ($metrics['starts_from_period_10'] ?? false),
             'ends_by_period_13' => (bool) ($metrics['ends_by_period_13'] ?? false),
             'prefer_distance_learning' => (int) ($metrics['distance_learning_count'] ?? 0),
-            'avoid_distance_learning' => (int) ($metrics['distance_learning_count'] ?? 0),
+            'avoid_distance_learning' => $option === 'none'
+                ? (int) ($metrics['distance_learning_count'] ?? 0) === 0
+                : (int) ($metrics['distance_learning_count'] ?? 0),
             default => false,
         };
     }

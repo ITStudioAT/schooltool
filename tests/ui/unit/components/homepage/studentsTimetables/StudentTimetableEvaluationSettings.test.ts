@@ -64,7 +64,7 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('v-model="studentCoursePickerDialogOpen" persistent max-width="760"')
         expect(source).toContain('Kurs wählen')
         expect(source).toContain('studentCoursePickerTabs')
-        expect(source).toContain('Fehlende Kurse')
+        expect(source).toContain('Negative Kurse')
         expect(source).toContain('Vorgesehene Kurse')
         expect(source).toContain('Zusätzliche Kurse')
         expect(source).toContain('Offene Kurse')
@@ -1129,7 +1129,7 @@ describe('Student timetable evaluation settings', () => {
         ])
         expect(methods.savedTimetableCourseChipBadgeLabel(ctx.savedTimetableCourseChips[0])).toBe('F')
         expect(ctx.studentCoursePickerTabs).toEqual([
-            { value: 'missing', label: 'Fehlende Kurse' },
+            { value: 'missing', label: 'Negative Kurse' },
             { value: 'proposed', label: 'Vorgesehene Kurse' },
             { value: 'additional', label: 'Zusätzliche Kurse' },
             { value: 'open', label: 'Offene Kurse' },
@@ -1497,7 +1497,7 @@ describe('Student timetable evaluation settings', () => {
             courseSections: [
                 {
                     key: 'missing',
-                    title: 'Fehlende Kurse',
+                    title: 'Negative Kurse',
                     items: [selectedCourse, unselectedCourse],
                 },
                 {
@@ -1523,7 +1523,7 @@ describe('Student timetable evaluation settings', () => {
         expect(computed.readOnlySelectedCourseSections.call(ctx)).toEqual([
             {
                 key: 'missing',
-                title: 'Fehlende Kurse',
+                title: 'Negative Kurse',
                 items: [selectedCourse],
             },
         ])

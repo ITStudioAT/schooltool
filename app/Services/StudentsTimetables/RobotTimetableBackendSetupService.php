@@ -6,11 +6,16 @@ use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
 class RobotTimetableBackendSetupService
 {
     private const MAX_BACKEND_TIMETABLE_VARIATIONS = 200000;
+
+    private const TIMETABLE_VARIATION_CACHE_VERSION = 1;
+
+    private const TIMETABLE_VARIATION_CACHE_TTL_MINUTES = 20;
 
     /**
      * @param  array<string, mixed>  $settings
@@ -43,10 +48,13 @@ class RobotTimetableBackendSetupService
             ->map(fn (StudentTimetableSubjectMapping $mapping): array => $mapping->toArray())
             ->all();
 
-        $variationResult = $this->calculateTimetableVariations(
+        $courseGroups = $overviewService->courseGroupsForUser($authUser);
+
+        $variationResult = $this->calculateCachedTimetableVariationsForUser(
+            authUser: $authUser,
             subjectRows: $subjectRows,
             subjectMappings: $subjectMappings,
-            courseGroups: $courseGroups = $overviewService->courseGroupsForUser($authUser),
+            courseGroups: $courseGroups,
             settings: $settings,
             evaluationCriteria: $evaluationCriteria,
             selectedQualityCriterionKeys: $selectedQualityCriterionKeys,
@@ -480,6 +488,94 @@ class RobotTimetableBackendSetupService
         array $evaluationCriteria = [],
         array $selectedQualityCriterionKeys = [],
     ): array {
+        return $this->calculateTimetableVariationsFromBase(
+            $this->timetableVariationBase(
+                $subjectRows,
+                $subjectMappings,
+                $courseGroups,
+                $settings,
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
+            ),
+            $settings,
+            $evaluationCriteria,
+        );
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
+     */
+    public function calculateCachedTimetableVariationsForUser(
+        User $authUser,
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+        array $evaluationCriteria = [],
+        array $selectedQualityCriterionKeys = [],
+    ): array {
+        $baseCacheKey = $this->timetableVariationBaseCacheKey(
+            $authUser,
+            $subjectRows,
+            $subjectMappings,
+            $courseGroups,
+            $settings,
+            $evaluationCriteria,
+            $selectedQualityCriterionKeys,
+        );
+
+        $base = Cache::remember(
+            $baseCacheKey,
+            now()->addMinutes(self::TIMETABLE_VARIATION_CACHE_TTL_MINUTES),
+            fn (): array => $this->timetableVariationBase(
+                $subjectRows,
+                $subjectMappings,
+                $courseGroups,
+                $settings,
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
+            ),
+        );
+
+        $selectedTimetableCacheKey = $this->selectedTimetableCacheKey($baseCacheKey, $settings);
+        $selectedTimetable = Cache::remember(
+            $selectedTimetableCacheKey,
+            now()->addMinutes(self::TIMETABLE_VARIATION_CACHE_TTL_MINUTES),
+            fn (): ?array => $this->selectedTimetableFromBase($base, $settings, $evaluationCriteria),
+        );
+
+        return $this->calculateTimetableVariationsFromBase(
+            $base,
+            $settings,
+            $evaluationCriteria,
+            $selectedTimetable,
+            true,
+        );
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @return array{course_options: list<list<array<string, mixed>>>, additional_course_options: list<list<array<string, mixed>>>, counts: array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}, quality_summary: array<string, mixed>, quality_combination_counts: array<string, int>, selected_quality_criterion_keys: list<string>, selected_quality_subset: array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}, all_quality_criteria_count: int, selected_quality_criteria_count: int}
+     */
+    private function timetableVariationBase(
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+        array $evaluationCriteria = [],
+        array $selectedQualityCriterionKeys = [],
+    ): array {
         $input = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
 
         if ($this->timetableVariationLimitExceeded($input['selected_courses'], $input['course_options'], $input['has_missing_options'])) {
@@ -515,27 +611,15 @@ class RobotTimetableBackendSetupService
             $evaluationCriteria,
             $selectedQualityCriterionKeys,
         );
-        $selectedTimetable = $this->selectedTimetable(
-            $input['course_options'],
-            $input['additional_course_options'],
-            $settings,
-            $counts,
-            $evaluationCriteria,
-            $selectedQualityCriterionKeys,
-            $selectedQualitySubset,
-        );
 
         return [
-            ...$counts,
-            'selected_timetable' => $selectedTimetable,
-            'quality_counters' => $this->qualityCountersFromSummary(
-                $qualityResult['summary'],
-                $selectedTimetable['metrics'] ?? null,
-                $qualityResult['combination_counts'],
-                $evaluationCriteria,
-                $selectedQualityCriterionKeys,
-                $selectedQualitySubset,
-            ),
+            'course_options' => $input['course_options'],
+            'additional_course_options' => $input['additional_course_options'],
+            'counts' => $counts,
+            'quality_summary' => $qualityResult['summary'],
+            'quality_combination_counts' => $qualityResult['combination_counts'],
+            'selected_quality_criterion_keys' => $selectedQualityCriterionKeys,
+            'selected_quality_subset' => $selectedQualitySubset,
             'all_quality_criteria_count' => $this->allQualityCriteriaCount(
                 $qualityResult['combination_counts'],
                 $qualityResult['summary'],
@@ -544,6 +628,123 @@ class RobotTimetableBackendSetupService
                 ? 0
                 : $selectedQualitySubset['total'],
         ];
+    }
+
+    /**
+     * @param  array{course_options: list<list<array<string, mixed>>>, additional_course_options: list<list<array<string, mixed>>>, counts: array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}, quality_summary: array<string, mixed>, quality_combination_counts: array<string, int>, selected_quality_criterion_keys: list<string>, selected_quality_subset: array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}, all_quality_criteria_count: int, selected_quality_criteria_count: int}  $base
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
+     */
+    private function calculateTimetableVariationsFromBase(
+        array $base,
+        array $settings,
+        array $evaluationCriteria = [],
+        ?array $selectedTimetable = null,
+        bool $selectedTimetableResolved = false,
+    ): array {
+        if (! $selectedTimetableResolved) {
+            $selectedTimetable = $this->selectedTimetableFromBase($base, $settings, $evaluationCriteria);
+        }
+
+        return [
+            ...$base['counts'],
+            'selected_timetable' => $selectedTimetable,
+            'quality_counters' => $this->qualityCountersFromSummary(
+                $base['quality_summary'],
+                $selectedTimetable['metrics'] ?? null,
+                $base['quality_combination_counts'],
+                $evaluationCriteria,
+                $base['selected_quality_criterion_keys'],
+                $base['selected_quality_subset'],
+            ),
+            'all_quality_criteria_count' => $base['all_quality_criteria_count'],
+            'selected_quality_criteria_count' => $base['selected_quality_criteria_count'],
+        ];
+    }
+
+    /**
+     * @param  array{course_options: list<list<array<string, mixed>>>, additional_course_options: list<list<array<string, mixed>>>, counts: array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}, selected_quality_criterion_keys: list<string>, selected_quality_subset: array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}}  $base
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @return ?array<string, mixed>
+     */
+    private function selectedTimetableFromBase(
+        array $base,
+        array $settings,
+        array $evaluationCriteria = [],
+    ): ?array {
+        return $this->selectedTimetable(
+            $base['course_options'],
+            $base['additional_course_options'],
+            $settings,
+            $base['counts'],
+            $evaluationCriteria,
+            $base['selected_quality_criterion_keys'],
+            $base['selected_quality_subset'],
+        );
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     */
+    private function timetableVariationBaseCacheKey(
+        User $authUser,
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+        array $evaluationCriteria,
+        array $selectedQualityCriterionKeys,
+    ): string {
+        $cacheSettings = $settings;
+        unset($cacheSettings['selected_timetable_number'], $cacheSettings['include_quality_counters']);
+
+        return 'students-timetables:timetable-v2:base:'.hash('sha256', json_encode($this->canonicalCacheValue([
+            'version' => self::TIMETABLE_VARIATION_CACHE_VERSION,
+            'user_id' => $authUser->id,
+            'school_id' => $authUser->school_id,
+            'schoolyear_id' => $authUser->schoolyear_id,
+            'subject_rows' => $subjectRows,
+            'subject_mappings' => $subjectMappings,
+            'course_groups' => $courseGroups,
+            'settings' => $cacheSettings,
+            'evaluation_criteria' => $evaluationCriteria,
+            'selected_quality_criterion_keys' => $selectedQualityCriterionKeys,
+        ]), JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function selectedTimetableCacheKey(string $baseCacheKey, array $settings): string
+    {
+        return 'students-timetables:timetable-v2:selected:'.hash('sha256', json_encode($this->canonicalCacheValue([
+            'base' => $baseCacheKey,
+            'selected_timetable_type' => $settings['selected_timetable_type'] ?? 'full_green',
+            'selected_timetable_number' => (int) ($settings['selected_timetable_number'] ?? 1),
+            'selected_additional_courses_required' => ($settings['selected_additional_courses_required'] ?? false) === true,
+        ]), JSON_THROW_ON_ERROR));
+    }
+
+    private function canonicalCacheValue(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        if (array_is_list($value)) {
+            return array_map(fn (mixed $item): mixed => $this->canonicalCacheValue($item), $value);
+        }
+
+        ksort($value);
+
+        return array_map(fn (mixed $item): mixed => $this->canonicalCacheValue($item), $value);
     }
 
     /**
@@ -1870,7 +2071,9 @@ class RobotTimetableBackendSetupService
             'starts_from_period_10' => (bool) ($metrics['starts_from_period_10'] ?? false),
             'ends_by_period_13' => (bool) ($metrics['ends_by_period_13'] ?? false),
             'prefer_distance_learning' => (int) ($metrics['distance_learning_count'] ?? 0),
-            'avoid_distance_learning' => (int) ($metrics['distance_learning_count'] ?? 0),
+            'avoid_distance_learning' => $option === 'none'
+                ? (int) ($metrics['distance_learning_count'] ?? 0) === 0
+                : (int) ($metrics['distance_learning_count'] ?? 0),
             default => false,
         };
     }
