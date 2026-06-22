@@ -152,6 +152,59 @@ it('returns a backend ready setup for the new robot timetable logic', function (
         ->assertJsonPath('data.selected_timetable', null);
 });
 
+it('returns backend timetable availability for candidate courses', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $response = $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable-availability', [
+            'selection' => [
+                'semester' => 6,
+                'religion' => 'ETH',
+                'branch' => 'Wirtschaftskundlicher Zweig',
+                'artsSubject' => 'ME',
+                'language' => 'S',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5],
+                'availableTimes' => [7, 8, 9, 10],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => ['D6', 'ETH3'],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+            'candidate_courses' => [
+                [
+                    'availability_key' => 'additional:INF2',
+                    'course_key' => 'INF2',
+                    'course_group' => 'additional',
+                ],
+            ],
+        ]);
+
+    $response->assertSuccessful();
+
+    expect($response->json('data.availability'))
+        ->toHaveKey('additional:INF2')
+        ->and($response->json('data.availability.additional:INF2'))
+        ->toMatchArray([
+            'available' => false,
+            'valid_timetable_count' => 0,
+        ]);
+});
+
 it('uses selected quality criteria when refreshing robot quality counters', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $schoolyear = Schoolyear::factory()->create([

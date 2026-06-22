@@ -218,6 +218,155 @@ class RobotTimetableBackendSetupService
     }
 
     /**
+     * @param  array<string, mixed>  $settings
+     * @param  list<array{availability_key: string, course_key: string, course_group: string}>  $candidateCourses
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @return array<string, array{available: bool, valid_timetable_count: int}>
+     */
+    public function courseAvailabilityForUser(
+        User $authUser,
+        array $settings,
+        array $candidateCourses,
+        StudentTimetableOverviewService $overviewService,
+        array $evaluationCriteria = [],
+        array $selectedQualityCriterionKeys = [],
+    ): array {
+        $subjectRows = StudentTimetableSubjectRow::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (StudentTimetableSubjectRow $row): array => $row->toArray())
+            ->all();
+
+        $subjectMappings = StudentTimetableSubjectMapping::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->orderBy('json_subject')
+            ->orderBy('tt_subject')
+            ->get()
+            ->map(fn (StudentTimetableSubjectMapping $mapping): array => $mapping->toArray())
+            ->all();
+
+        $courseGroups = $overviewService->courseGroupsForUser($authUser);
+        $availability = [];
+
+        foreach ($candidateCourses as $candidateCourse) {
+            $availabilityKey = (string) $candidateCourse['availability_key'];
+            $validTimetableCount = $this->validTimetableCountForAvailability(
+                $subjectRows,
+                $subjectMappings,
+                $courseGroups,
+                $this->settingsWithAvailabilityCandidate($settings, $candidateCourse),
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
+            );
+
+            $availability[$availabilityKey] = [
+                'available' => $validTimetableCount > 0,
+                'valid_timetable_count' => $validTimetableCount,
+            ];
+        }
+
+        return $availability;
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     * @param  array{availability_key: string, course_key: string, course_group: string}  $candidateCourse
+     * @return array<string, mixed>
+     */
+    private function settingsWithAvailabilityCandidate(array $settings, array $candidateCourse): array
+    {
+        $courseKey = trim((string) $candidateCourse['course_key']);
+        if ($courseKey === '') {
+            return $settings;
+        }
+
+        if ($candidateCourse['course_group'] === 'additional') {
+            return [
+                ...$settings,
+                'selected_additional_course_keys' => $this->uniqueStrings([
+                    ...$this->stringList($settings['selected_additional_course_keys'] ?? []),
+                    $courseKey,
+                ]),
+                'selected_additional_courses_required' => true,
+            ];
+        }
+
+        return [
+            ...$settings,
+            'selected_course_keys' => $this->uniqueStrings([
+                ...$this->stringList($settings['selected_course_keys'] ?? []),
+                $courseKey,
+            ]),
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     */
+    private function validTimetableCountForAvailability(
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+        array $evaluationCriteria,
+        array $selectedQualityCriterionKeys,
+    ): int {
+        $input = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
+
+        if ($this->timetableVariationLimitExceeded($input['selected_courses'], $input['course_options'], $input['has_missing_options'])) {
+            throw ValidationException::withMessages([
+                'selected_course_keys' => sprintf(
+                    'Diese Auswahl erzeugt zu viele Stundenplan-Variationen. Bitte weniger Kurse auswÃ¤hlen oder die Auswahl einschrÃ¤nken. Maximum: %s Variationen.',
+                    number_format(self::MAX_BACKEND_TIMETABLE_VARIATIONS, 0, ',', '.'),
+                ),
+            ]);
+        }
+
+        $selectedQualityCriterionKeys = $this->selectedQualityCriterionKeys(
+            $selectedQualityCriterionKeys,
+            $evaluationCriteria,
+        );
+
+        if ($selectedQualityCriterionKeys !== []) {
+            $qualityResult = $this->qualityResultForSelectedTimetableType(
+                $input['course_options'],
+                $input['additional_course_options'],
+                $settings,
+                $evaluationCriteria,
+            );
+            $selectedQualitySubset = $this->selectedQualityCriteriaSubset(
+                $qualityResult['combination_counts'],
+                $qualityResult['summary'],
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
+            );
+
+            return $selectedQualitySubset['total'];
+        }
+
+        $counts = $this->timetableVariationCounts(
+            $input['selected_courses'],
+            $input['course_options'],
+            $input['has_missing_options'],
+            $input['additional_course_options'],
+            $this->selectedBackendTimetableType($settings['selected_timetable_type'] ?? 'full_green') ?? 'full_green',
+            ($settings['selected_additional_courses_required'] ?? false) === true,
+        );
+
+        return $counts['full_green_timetable_count'] + $counts['green_timetable_count'];
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $subjectRows
      * @param  list<array<string, mixed>>  $subjectMappings
      * @param  list<array<string, mixed>>  $courseGroups

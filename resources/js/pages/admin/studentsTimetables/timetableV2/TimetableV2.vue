@@ -375,6 +375,32 @@
                                         </v-card-text>
                                     </v-card>
                                     <v-card
+                                        v-if="!timetableStartsFromPeriod10Selected"
+                                        rounded="lg"
+                                        density="compact"
+                                        variant="tonal"
+                                        :color="timetableStartsFromPeriod10DraftSelected ? 'success' : undefined"
+                                        :disabled="timetableCalculationLoading || startsFromPeriod10TimetableCount <= 0"
+                                        :class="[
+                                            'students-timetable-v2-options-card__option',
+                                            { 'students-timetable-v2-options-card__option--selected': timetableStartsFromPeriod10DraftSelected },
+                                        ]"
+                                        role="button"
+                                        tabindex="0"
+                                        :aria-pressed="timetableStartsFromPeriod10DraftSelected ? 'true' : 'false'"
+                                        @click="toggleStartsFromPeriod10TimetableOption"
+                                        @keydown.enter.prevent="toggleStartsFromPeriod10TimetableOption"
+                                        @keydown.space.prevent="toggleStartsFromPeriod10TimetableOption">
+                                        <v-card-title class="students-timetable-v2-options-card__option-title">
+                                            Erst ab 10. Stunde
+                                        </v-card-title>
+                                        <v-card-text class="students-timetable-v2-options-card__option-content">
+                                            <span class="students-timetable-v2-options-card__option-count">
+                                                {{ startsFromPeriod10TimetableCountFormatted }}
+                                            </span>
+                                        </v-card-text>
+                                    </v-card>
+                                    <v-card
                                         v-if="!timetableMaxFreeDaysSelected"
                                         rounded="lg"
                                         density="compact"
@@ -467,6 +493,20 @@
                                 <v-chip size="x-small" color="primary" variant="tonal">
                                     {{ selectedMoreCourseItem.label }}
                                 </v-chip>
+                                <span
+                                    v-if="selectedMoreCourseOfferedCourseItems.length"
+                                    class="students-timetable-v2-offered-courses-card__actions">
+                                    <v-btn
+                                        icon="mdi-checkbox-blank-outline"
+                                        size="x-small"
+                                        density="compact"
+                                        variant="tonal"
+                                        color="secondary"
+                                        title="Alle angebotenen Kurse abwählen"
+                                        aria-label="Alle angebotenen Kurse abwählen"
+                                        :disabled="courseGroupsLoading || !!courseGroupsError || moreCourseOfferedCourseItemsAllDeselected(selectedMoreCourseItem)"
+                                        @click.stop="deselectSelectedMoreCourseOfferedCourses" />
+                                </span>
                             </v-card-title>
                             <v-card-text>
                                 <v-progress-linear
@@ -1185,6 +1225,7 @@ const TIMETABLE_V2_ROUTE_STEPS = ['selection', 'course-review', 'timetable-calcu
 const TIMETABLE_V2_ROUTE_MODES = ['student', 'without-student']
 const TIMETABLE_MAX_FREE_DAYS_CRITERION_KEY = 'free_days'
 const TIMETABLE_SATURDAY_FREE_CRITERION_KEY = 'saturday_free'
+const TIMETABLE_STARTS_FROM_PERIOD_10_CRITERION_KEY = 'starts_from_period_10'
 const OFFERED_COURSE_BULK_SELECTION_OPTIONS = [
     { key: 'all', label: 'Alle' },
     { key: 'distance-learning', label: 'Nur Fernunterricht' },
@@ -1226,10 +1267,13 @@ export default {
             initialTimetableCalculationSelection: null,
             initialTimetableCalculationNoSaturdaySelected: false,
             initialTimetableCalculationMaxFreeDaysSelected: false,
+            initialTimetableCalculationStartsFromPeriod10Selected: false,
             timetableNoSaturdayDraftSelected: false,
             timetableNoSaturdaySelected: false,
             timetableMaxFreeDaysDraftSelected: false,
             timetableMaxFreeDaysSelected: false,
+            timetableStartsFromPeriod10DraftSelected: false,
+            timetableStartsFromPeriod10Selected: false,
             timetableOptionsCardVisible: false,
             moreCoursesVisible: false,
             moreCoursesCardVisible: false,
@@ -1242,6 +1286,7 @@ export default {
             moreCourseAvailabilityByKey: {},
             moreCourseAvailabilityRequestId: 0,
             moreCourseAvailabilitySignature: '',
+            restorableMoreCourseAvailabilitySignatures: {},
             selectedMoreCourseKey: '',
             timetableStartMode: '',
             timetableV2Step: 'selection',
@@ -1526,15 +1571,28 @@ export default {
                 : []
             ).find((counter) => counter?.key === TIMETABLE_MAX_FREE_DAYS_CRITERION_KEY) || null
         },
+        startsFromPeriod10QualityCounter() {
+            return (Array.isArray(this.timetableCalculationResult?.quality_counters)
+                ? this.timetableCalculationResult.quality_counters
+                : []
+            ).find((counter) => counter?.key === TIMETABLE_STARTS_FROM_PERIOD_10_CRITERION_KEY) || null
+        },
         maxFreeDaysTimetableCount() {
             return Number(this.maxFreeDaysQualityCounter?.count || 0)
         },
         maxFreeDaysTimetableCountFormatted() {
             return this.formatNumber(this.maxFreeDaysTimetableCount)
         },
+        startsFromPeriod10TimetableCount() {
+            return Number(this.startsFromPeriod10QualityCounter?.count || 0)
+        },
+        startsFromPeriod10TimetableCountFormatted() {
+            return this.formatNumber(this.startsFromPeriod10TimetableCount)
+        },
         timetableOptionsChanged() {
             return this.timetableNoSaturdayDraftSelected !== this.timetableNoSaturdaySelected
                 || this.timetableMaxFreeDaysDraftSelected !== this.timetableMaxFreeDaysSelected
+                || this.timetableStartsFromPeriod10DraftSelected !== this.timetableStartsFromPeriod10Selected
         },
         timetableCalculationResetAvailable() {
             if (!this.timetableCalculationVisible) return false
@@ -1542,8 +1600,9 @@ export default {
             return this.timetableCalculationSelectionSnapshot(this.storedTimetableV2Selection)
                 !== this.timetableCalculationSelectionSnapshot(this.initialTimetableCalculationSelection || {})
                 || Number(this.timetableCalculationSelectedNumber || 1) !== Number(this.initialTimetableCalculationSelectedNumber || 1)
-                || this.timetableNoSaturdaySelected !== this.initialTimetableCalculationNoSaturdaySelected
-                || this.timetableMaxFreeDaysSelected !== this.initialTimetableCalculationMaxFreeDaysSelected
+                || this.timetableNoSaturdaySelected
+                || this.timetableMaxFreeDaysSelected
+                || this.timetableStartsFromPeriod10Selected
         },
         selectedTimetableOptionItems() {
             const options = []
@@ -1553,11 +1612,21 @@ export default {
             const maxFreeDaysSelected = this.moreCoursesVisible && !this.moreCoursesCardVisible && this.timetableOptionsChanged
                 ? this.timetableMaxFreeDaysDraftSelected
                 : this.timetableMaxFreeDaysSelected
+            const startsFromPeriod10Selected = this.moreCoursesVisible && !this.moreCoursesCardVisible && this.timetableOptionsChanged
+                ? this.timetableStartsFromPeriod10DraftSelected
+                : this.timetableStartsFromPeriod10Selected
 
             if (noSaturdaySelected) {
                 options.push({
                     key: 'no-saturday',
                     label: 'Kein Samstag',
+                })
+            }
+
+            if (startsFromPeriod10Selected) {
+                options.push({
+                    key: 'starts-from-period-10',
+                    label: 'Erst ab 10. Stunde',
                 })
             }
 
@@ -2558,10 +2627,13 @@ export default {
                 this.initialTimetableCalculationSelectedNumber = 1
                 this.initialTimetableCalculationNoSaturdaySelected = false
                 this.initialTimetableCalculationMaxFreeDaysSelected = false
+                this.initialTimetableCalculationStartsFromPeriod10Selected = false
                 this.timetableNoSaturdayDraftSelected = false
                 this.timetableNoSaturdaySelected = false
                 this.timetableMaxFreeDaysDraftSelected = false
                 this.timetableMaxFreeDaysSelected = false
+                this.timetableStartsFromPeriod10DraftSelected = false
+                this.timetableStartsFromPeriod10Selected = false
 
                 return
             }
@@ -2572,6 +2644,7 @@ export default {
             this.initialTimetableCalculationSelectedNumber = this.timetableCalculationSelectedNumber
             this.initialTimetableCalculationNoSaturdaySelected = this.timetableNoSaturdaySelected
             this.initialTimetableCalculationMaxFreeDaysSelected = this.timetableMaxFreeDaysSelected
+            this.initialTimetableCalculationStartsFromPeriod10Selected = this.timetableStartsFromPeriod10Selected
         },
         clonedTimetableV2Selection(selection = {}) {
             return JSON.parse(JSON.stringify(selection && typeof selection === 'object' && !Array.isArray(selection) ? selection : {}))
@@ -2601,8 +2674,9 @@ export default {
             const timetableV2Selection = this.clonedTimetableV2Selection(this.initialTimetableCalculationSelection || {})
 
             this.closeMoreCoursesCard()
-            this.timetableNoSaturdaySelected = this.initialTimetableCalculationNoSaturdaySelected
-            this.timetableMaxFreeDaysSelected = this.initialTimetableCalculationMaxFreeDaysSelected
+            this.timetableNoSaturdaySelected = false
+            this.timetableMaxFreeDaysSelected = false
+            this.timetableStartsFromPeriod10Selected = false
             this.closeTimetableOptionsCard()
             this.resetMoreCourseAvailability()
             this.saveStoredTimetableState({
@@ -2653,7 +2727,7 @@ export default {
                     this.selectedTimetableV2CombinedNumberFromResult(this.timetableCalculationResult) || requestedTimetableNumber,
                     { replace: true },
                 )
-                this.startMoreCourseAvailabilityCheck()
+                this.ensureMoreCourseAvailability()
             } catch (error) {
                 if (requestId !== this.timetableCalculationRequestId) return
 
@@ -2670,10 +2744,10 @@ export default {
                 this.timetableV2CalculationPayload(options),
             )
         },
-        requestMoreCourseAvailability(course) {
+        requestMoreCourseAvailability(courses) {
             return axios.post(
-                '/api/admin/students-timetables/robot/backend-timetable',
-                this.timetableV2CalculationPayloadForMoreCourseAvailability(course),
+                '/api/admin/students-timetables/robot/backend-timetable-availability',
+                this.timetableV2CalculationPayloadForMoreCourseAvailability(courses),
             )
         },
         timetableV2FallbackSelectedTimetableRequest(calculationResult, selectedTimetableNumber = this.timetableCalculationSelectedNumber) {
@@ -2793,30 +2867,29 @@ export default {
                     priority: 2,
                     option: null,
                 },
+                {
+                    key: TIMETABLE_STARTS_FROM_PERIOD_10_CRITERION_KEY,
+                    enabled: true,
+                    priority: 3,
+                    option: null,
+                },
             ]
         },
-        timetableV2CalculationPayloadForMoreCourseAvailability(course) {
+        timetableV2CalculationPayloadForMoreCourseAvailability(courses = []) {
             const payload = this.timetableV2CalculationPayload({
                 includeQualityCounters: false,
                 selectedTimetableType: 'full_green',
                 selectedTimetableNumber: 1,
             })
-            const courseKey = this.timetableV2CalculationCourseKey(course)
+            const candidateCourses = (Array.isArray(courses) ? courses : [courses])
+                .map((course) => ({
+                    availability_key: this.moreCourseAvailabilityKey(course),
+                    course_group: course?.courseGroup || '',
+                    course_key: this.timetableV2CalculationCourseKey(course),
+                }))
+                .filter((course) => course.availability_key && course.course_group && course.course_key)
 
-            if (!courseKey) return payload
-
-            if (course?.courseGroup === 'additional') {
-                payload.selected_additional_course_keys = this.uniqueValues([
-                    ...(payload.selected_additional_course_keys || []),
-                    courseKey,
-                ])
-                payload.selected_additional_courses_required = true
-            } else {
-                payload.selected_course_keys = this.uniqueValues([
-                    ...(payload.selected_course_keys || []),
-                    courseKey,
-                ])
-            }
+            payload.candidate_courses = candidateCourses
 
             return payload
         },
@@ -2880,10 +2953,13 @@ export default {
             const schoolHourValues = (Array.isArray(this.schoolHours) ? this.schoolHours : [])
                 .map((schoolHour) => Number(schoolHour?.hour))
                 .filter((hour) => Number.isInteger(hour) && hour > 0)
-
-            return schoolHourValues.length
+            const availableTimes = schoolHourValues.length
                 ? this.uniqueValues(schoolHourValues).sort((firstHour, secondHour) => firstHour - secondHour)
                 : Array.from({ length: 20 }, (_, index) => index + 1)
+
+            return this.timetableStartsFromPeriod10Selected
+                ? availableTimes.filter((hour) => hour >= 10)
+                : availableTimes
         },
         timetableV2CalculationCourseKey(course) {
             return String(course?.key || course?.code || course?.label || '').trim()
@@ -3125,6 +3201,7 @@ export default {
             this.timetableOptionsCardVisible = false
             this.timetableNoSaturdayDraftSelected = this.timetableNoSaturdaySelected
             this.timetableMaxFreeDaysDraftSelected = this.timetableMaxFreeDaysSelected
+            this.timetableStartsFromPeriod10DraftSelected = this.timetableStartsFromPeriod10Selected
             this.moreCoursesSelectionSnapshot = this.moreCoursesSelectionSignature()
             this.courseSelectionSnapshotSelections = { ...this.courseSelectionOverrides }
             this.offeredCourseSelectionSnapshotSelections = { ...this.offeredCourseSelectionOverrides }
@@ -3149,6 +3226,7 @@ export default {
 
             this.timetableNoSaturdaySelected = this.timetableNoSaturdayDraftSelected
             this.timetableMaxFreeDaysSelected = this.timetableMaxFreeDaysDraftSelected
+            this.timetableStartsFromPeriod10Selected = this.timetableStartsFromPeriod10DraftSelected
             if (timetableOptionsChanged) {
                 this.saveTimetableV2Options()
             }
@@ -3207,6 +3285,8 @@ export default {
 
                 delete selections.moreOfferedCourseSelections[offeredCourseSelectionKey]
             })
+
+            this.clearRestorableMoreCourse(course)
         },
         closeMoreCoursesCard() {
             this.moreCoursesVisible = false
@@ -3219,6 +3299,7 @@ export default {
             this.moreOfferedCourseSelectionSnapshotSelections = {}
             this.timetableNoSaturdayDraftSelected = this.timetableNoSaturdaySelected
             this.timetableMaxFreeDaysDraftSelected = this.timetableMaxFreeDaysSelected
+            this.timetableStartsFromPeriod10DraftSelected = this.timetableStartsFromPeriod10Selected
         },
         toggleTimetableOptionsCard() {
             if (this.timetableCalculationLoading) return
@@ -3231,17 +3312,24 @@ export default {
 
             this.timetableNoSaturdayDraftSelected = this.timetableNoSaturdaySelected
             this.timetableMaxFreeDaysDraftSelected = this.timetableMaxFreeDaysSelected
+            this.timetableStartsFromPeriod10DraftSelected = this.timetableStartsFromPeriod10Selected
             this.timetableOptionsCardVisible = true
         },
         closeTimetableOptionsCard() {
             this.timetableOptionsCardVisible = false
             this.timetableNoSaturdayDraftSelected = this.timetableNoSaturdaySelected
             this.timetableMaxFreeDaysDraftSelected = this.timetableMaxFreeDaysSelected
+            this.timetableStartsFromPeriod10DraftSelected = this.timetableStartsFromPeriod10Selected
         },
         toggleNoSaturdayTimetableOption() {
             if (this.timetableCalculationLoading) return null
 
             this.timetableNoSaturdayDraftSelected = !this.timetableNoSaturdayDraftSelected
+        },
+        toggleStartsFromPeriod10TimetableOption() {
+            if (this.timetableCalculationLoading || this.startsFromPeriod10TimetableCount <= 0) return null
+
+            this.timetableStartsFromPeriod10DraftSelected = !this.timetableStartsFromPeriod10DraftSelected
         },
         applyMaxFreeDaysTimetableOption() {
             if (this.timetableCalculationLoading || this.timetableMaxFreeDaysSelected || this.maxFreeDaysTimetableCount <= 0) return null
@@ -3260,6 +3348,7 @@ export default {
 
             this.timetableNoSaturdaySelected = this.timetableNoSaturdayDraftSelected
             this.timetableMaxFreeDaysSelected = this.timetableMaxFreeDaysDraftSelected
+            this.timetableStartsFromPeriod10Selected = this.timetableStartsFromPeriod10DraftSelected
             this.saveTimetableV2Options()
             this.setSelectedTimetableV2Number(1, { replace: true })
             this.resetMoreCourseAvailability()
@@ -3270,7 +3359,7 @@ export default {
         removeSelectedTimetableOption(option) {
             if (!this.selectedTimetableOptionItemsDeletable) return
 
-            if (!['no-saturday', 'max-free-days'].includes(option?.key)) return
+            if (!['no-saturday', 'max-free-days', 'starts-from-period-10'].includes(option?.key)) return
 
             if (!this.moreCoursesVisible) {
                 this.openMoreCoursesPendingActions()
@@ -3283,6 +3372,10 @@ export default {
             if (option?.key === 'max-free-days') {
                 this.timetableMaxFreeDaysDraftSelected = false
             }
+
+            if (option?.key === 'starts-from-period-10') {
+                this.timetableStartsFromPeriod10DraftSelected = false
+            }
         },
         toggleMoreCourseOffers(course) {
             if (this.moreCourseDisabled(course)) return
@@ -3293,9 +3386,6 @@ export default {
 
             this.selectedMoreCourseKey = selectionKey
             this.saveMoreOfferedCourseSelections(this.moreOfferedCourseSelectionsForSingleCourse(course))
-        },
-        startMoreCourseAvailabilityCheck() {
-            return this.ensureMoreCourseAvailability()
         },
         ensureMoreCourseAvailability() {
             const availabilitySignature = this.moreCourseAvailabilityCurrentSignature()
@@ -3330,6 +3420,7 @@ export default {
                 maxFreeDaysSelected: this.timetableMaxFreeDaysSelected === true,
                 offeredCourseSelections: this.selectionSignatureEntries(this.offeredCourseSelectionOverrides),
                 noSaturdaySelected: this.timetableNoSaturdaySelected === true,
+                startsFromPeriod10Selected: this.timetableStartsFromPeriod10Selected === true,
             })
         },
         moreCourseAvailabilityComplete(availabilitySignature = this.moreCourseAvailabilityCurrentSignature()) {
@@ -3356,44 +3447,90 @@ export default {
                 return Promise.resolve([])
             }
 
-            return Promise.allSettled(courses.map((course) => this.loadMoreCourseAvailabilityForCourse(course, requestId)))
-                .then((results) => {
+            const coursesToCheck = courses.filter((course) => this.prepareMoreCourseAvailability(course, requestId))
+
+            if (!coursesToCheck.length) {
+                this.moreCourseAvailabilityLoading = false
+
+                return Promise.resolve([])
+            }
+
+            return this.requestMoreCourseAvailability(coursesToCheck)
+                .then((response) => {
+                    if (requestId !== this.moreCourseAvailabilityRequestId) return []
+
+                    const availability = response.data?.data?.availability || {}
+
+                    coursesToCheck.forEach((course) => {
+                        const availabilityKey = this.moreCourseAvailabilityKey(course)
+
+                        this.setMoreCourseAvailability(
+                            availabilityKey,
+                            this.moreCourseAvailabilityResultAvailable(availability[availabilityKey]),
+                            requestId,
+                        )
+                    })
+
+                    return availability
+                })
+                .catch(() => {
+                    if (requestId !== this.moreCourseAvailabilityRequestId) return []
+
+                    coursesToCheck.forEach((course) => {
+                        this.setMoreCourseAvailability(this.moreCourseAvailabilityKey(course), false, requestId)
+                    })
+
+                    return []
+                })
+                .finally(() => {
                     if (requestId === this.moreCourseAvailabilityRequestId) {
                         this.moreCourseAvailabilityLoading = false
                     }
-
-                    return results
                 })
+        },
+        prepareMoreCourseAvailability(course, requestId) {
+            const availabilityKey = this.moreCourseAvailabilityKey(course)
+            if (!availabilityKey) return false
+
+            if (this.moreCourseRestorable(course)) {
+                this.setMoreCourseAvailability(availabilityKey, true, requestId)
+
+                return false
+            }
+
+            if (!this.offeredCourseItemsForSelectedCourse(course).length) {
+                this.setMoreCourseAvailability(availabilityKey, false, requestId)
+
+                return false
+            }
+
+            return true
         },
         async loadMoreCourseAvailabilityForCourse(course, requestId) {
             const availabilityKey = this.moreCourseAvailabilityKey(course)
             if (!availabilityKey) return
 
-            if (!this.offeredCourseItemsForSelectedCourse(course).length) {
-                this.setMoreCourseAvailability(availabilityKey, false, requestId)
-
-                return
-            }
+            if (!this.prepareMoreCourseAvailability(course, requestId)) return
 
             try {
-                const response = await this.requestMoreCourseAvailability(course)
-                const result = response.data?.data || {}
-                const validTimetableCount = this.validTimetableCountForActiveOptions(result)
+                const response = await this.requestMoreCourseAvailability([course])
+                const availability = response.data?.data?.availability || {}
 
-                this.setMoreCourseAvailability(availabilityKey, validTimetableCount > 0, requestId)
+                this.setMoreCourseAvailability(
+                    availabilityKey,
+                    this.moreCourseAvailabilityResultAvailable(availability[availabilityKey]),
+                    requestId,
+                )
             } catch {
                 if (requestId !== this.moreCourseAvailabilityRequestId) return
 
                 this.setMoreCourseAvailability(availabilityKey, false, requestId)
             }
         },
-        validTimetableCountForActiveOptions(result = {}) {
-            if (this.timetableQualityCriteriaRequired) {
-                return Number(result?.selected_quality_criteria_count || 0)
-            }
+        moreCourseAvailabilityResultAvailable(result = {}) {
+            if (typeof result === 'boolean') return result
 
-            return Number(result?.full_green_timetable_count || 0)
-                + Number(result?.green_timetable_count || 0)
+            return result?.available === true
         },
         setMoreCourseAvailability(availabilityKey, available, requestId = this.moreCourseAvailabilityRequestId) {
             if (requestId !== this.moreCourseAvailabilityRequestId) return
@@ -3411,7 +3548,45 @@ export default {
         moreCourseAvailabilityKey(course) {
             return course?.selectionKey || this.courseSelectionKey(course, course?.courseGroup)
         },
+        moreCourseRestorable(course) {
+            const availabilityKey = this.moreCourseAvailabilityKey(course)
+            if (!availabilityKey) return false
+
+            return this.restorableMoreCourseAvailabilitySignatures?.[availabilityKey]
+                === this.moreCourseAvailabilityCurrentSignature()
+                || this.moreCourseInitiallySelected(course)
+        },
+        moreCourseInitiallySelected(course) {
+            const courseGroup = course?.courseGroup
+            if (!courseGroup || this.courseItemSelected(course, courseGroup)) return false
+
+            return this.courseSelectedBySelections(
+                course,
+                courseGroup,
+                this.initialTimetableCalculationSelection?.courseSelections || {},
+            )
+        },
+        markMoreCourseRestorable(course) {
+            const availabilityKey = this.moreCourseAvailabilityKey(course)
+            if (!availabilityKey) return
+
+            this.restorableMoreCourseAvailabilitySignatures = {
+                ...(this.restorableMoreCourseAvailabilitySignatures || {}),
+                [availabilityKey]: this.moreCourseAvailabilityCurrentSignature(),
+            }
+        },
+        clearRestorableMoreCourse(course) {
+            const availabilityKey = this.moreCourseAvailabilityKey(course)
+            if (!availabilityKey || !this.restorableMoreCourseAvailabilitySignatures?.[availabilityKey]) return
+
+            const restorableMoreCourseAvailabilitySignatures = { ...this.restorableMoreCourseAvailabilitySignatures }
+            delete restorableMoreCourseAvailabilitySignatures[availabilityKey]
+
+            this.restorableMoreCourseAvailabilitySignatures = restorableMoreCourseAvailabilitySignatures
+        },
         moreCourseUnavailable(course) {
+            if (this.moreCourseRestorable(course)) return false
+
             const availabilityKey = this.moreCourseAvailabilityKey(course)
             if (!availabilityKey) return false
 
@@ -3507,6 +3682,22 @@ export default {
 
             this.saveMoreOfferedCourseSelections(moreOfferedCourseSelections)
         },
+        deselectSelectedMoreCourseOfferedCourses() {
+            const offeredCourses = this.selectedMoreCourseOfferedCourseItems
+            if (!offeredCourses.length) return
+            if (offeredCourses.every((course) => !this.moreOfferedCourseSelected(course))) return
+
+            const moreOfferedCourseSelections = { ...this.moreOfferedCourseSelectionOverrides }
+
+            offeredCourses.forEach((course) => {
+                const selectionKey = course?.selectionKey || this.offeredCourseSelectionKey(course, this.selectedMoreCourseItem)
+                if (!selectionKey) return
+
+                delete moreOfferedCourseSelections[selectionKey]
+            })
+
+            this.saveMoreOfferedCourseSelections(moreOfferedCourseSelections)
+        },
         saveMoreOfferedCourseSelections(moreOfferedCourseSelections) {
             this.saveMoreCoursesSelectionState({
                 courseSelections: { ...this.courseSelectionOverrides },
@@ -3563,6 +3754,7 @@ export default {
             }
 
             this.saveCourseItemSelection(course, false)
+            this.markMoreCourseRestorable(course)
         },
         saveCourseItemSelection(course, selected) {
             const courseGroup = course?.courseGroup
@@ -4532,11 +4724,14 @@ export default {
             this.timetableNoSaturdayDraftSelected = this.timetableNoSaturdaySelected
             this.timetableMaxFreeDaysSelected = this.storedTimetableV2Options.maxFreeDays === true
             this.timetableMaxFreeDaysDraftSelected = this.timetableMaxFreeDaysSelected
+            this.timetableStartsFromPeriod10Selected = this.storedTimetableV2Options.startsFromPeriod10 === true
+            this.timetableStartsFromPeriod10DraftSelected = this.timetableStartsFromPeriod10Selected
         },
         timetableV2OptionsForSaving() {
             return {
                 maxFreeDays: this.timetableMaxFreeDaysSelected === true,
                 noSaturday: this.timetableNoSaturdaySelected === true,
+                startsFromPeriod10: this.timetableStartsFromPeriod10Selected === true,
             }
         },
         saveTimetableV2Options() {
@@ -4559,6 +4754,7 @@ export default {
                 timetableV2Options: {
                     maxFreeDays: false,
                     noSaturday: false,
+                    startsFromPeriod10: false,
                 },
                 transferredStudentContext: null,
             }
@@ -5657,6 +5853,13 @@ export default {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+.students-timetable-v2-offered-courses-card__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
 }
 
 .students-timetable-v2-offered-courses-card__list {

@@ -41,10 +41,13 @@ function timetableV2Context(overrides = {}) {
         initialTimetableCalculationSelection: null,
         initialTimetableCalculationNoSaturdaySelected: false,
         initialTimetableCalculationMaxFreeDaysSelected: false,
+        initialTimetableCalculationStartsFromPeriod10Selected: false,
         timetableNoSaturdayDraftSelected: false,
         timetableNoSaturdaySelected: false,
         timetableMaxFreeDaysDraftSelected: false,
         timetableMaxFreeDaysSelected: false,
+        timetableStartsFromPeriod10DraftSelected: false,
+        timetableStartsFromPeriod10Selected: false,
         timetableOptionsCardVisible: false,
         moreCoursesCardVisible: false,
         selectedMoreCourseKey: '',
@@ -57,6 +60,7 @@ function timetableV2Context(overrides = {}) {
         moreCourseAvailabilityByKey: {},
         moreCourseAvailabilityRequestId: 0,
         moreCourseAvailabilitySignature: '',
+        restorableMoreCourseAvailabilitySignatures: {},
         formatNumber: TimetableV2.methods.formatNumber,
         formatTimeValue: TimetableV2.methods.formatTimeValue,
         spacedCourseCode: TimetableV2.methods.spacedCourseCode,
@@ -67,14 +71,20 @@ function timetableV2Context(overrides = {}) {
         loadSchoolHours: vi.fn(),
         loadSubjectRows: vi.fn(),
         loadStoredStudentOverview: vi.fn(),
-        requestMoreCourseAvailability: vi.fn(() => Promise.resolve({
-            data: {
+        requestMoreCourseAvailability: vi.fn((courses = []) => {
+            const candidateCourses = Array.isArray(courses) ? courses : [courses]
+            const availability = Object.fromEntries(candidateCourses
+                .map((course) => [course.selectionKey, { available: true, valid_timetable_count: 1 }])
+                .filter(([selectionKey]) => selectionKey))
+
+            return Promise.resolve({
                 data: {
-                    full_green_timetable_count: 1,
-                    green_timetable_count: 0,
+                    data: {
+                        availability,
+                    },
                 },
-            },
-        })),
+            })
+        }),
         saveStoredTimetableState: vi.fn(),
         defaultStoredTimetableState: () => ({
             selection: {},
@@ -143,6 +153,11 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.maxFreeDaysQualityCounter.call(context)
             },
         },
+        startsFromPeriod10QualityCounter: {
+            get() {
+                return TimetableV2.computed.startsFromPeriod10QualityCounter.call(context)
+            },
+        },
         maxFreeDaysTimetableCount: {
             get() {
                 return TimetableV2.computed.maxFreeDaysTimetableCount.call(context)
@@ -151,6 +166,16 @@ function timetableV2Context(overrides = {}) {
         maxFreeDaysTimetableCountFormatted: {
             get() {
                 return TimetableV2.computed.maxFreeDaysTimetableCountFormatted.call(context)
+            },
+        },
+        startsFromPeriod10TimetableCount: {
+            get() {
+                return TimetableV2.computed.startsFromPeriod10TimetableCount.call(context)
+            },
+        },
+        startsFromPeriod10TimetableCountFormatted: {
+            get() {
+                return TimetableV2.computed.startsFromPeriod10TimetableCountFormatted.call(context)
             },
         },
         timetableOptionsChanged: {
@@ -415,6 +440,14 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain('@click="toggleNoSaturdayTimetableOption"')
         expect(source).toContain('Kein Samstag')
         expect(source).toContain('{{ noSaturdayTimetableCountFormatted }}')
+        expect(source).toMatch(/<v-card\s+v-if="!timetableStartsFromPeriod10Selected"[\s\S]*@click="toggleStartsFromPeriod10TimetableOption"/u)
+        expect(source).toContain(":color=\"timetableStartsFromPeriod10DraftSelected ? 'success' : undefined\"")
+        expect(source).toContain(":disabled=\"timetableCalculationLoading || startsFromPeriod10TimetableCount <= 0\"")
+        expect(source).toContain("'students-timetable-v2-options-card__option--selected': timetableStartsFromPeriod10DraftSelected")
+        expect(source).toContain(":aria-pressed=\"timetableStartsFromPeriod10DraftSelected ? 'true' : 'false'\"")
+        expect(source).toContain('@click="toggleStartsFromPeriod10TimetableOption"')
+        expect(source).toContain('Erst ab 10. Stunde')
+        expect(source).toContain('{{ startsFromPeriod10TimetableCountFormatted }}')
         expect(source).toMatch(/<v-card\s+v-if="!timetableMaxFreeDaysSelected"[\s\S]*@click="applyMaxFreeDaysTimetableOption"/u)
         expect(source).toContain(":color=\"timetableMaxFreeDaysSelected ? 'success' : undefined\"")
         expect(source).toContain(":disabled=\"timetableCalculationLoading || timetableMaxFreeDaysSelected || maxFreeDaysTimetableCount <= 0\"")
@@ -461,6 +494,26 @@ describe('TimetableV2 route steps', () => {
         expect(context.maxFreeDaysTimetableCountFormatted).toBe('7')
     })
 
+    it('formats the starts-from-period-10 timetable count for the options card', () => {
+        const context = timetableV2Context({
+            timetableCalculationResult: {
+                quality_counters: [
+                    {
+                        key: 'starts_from_period_10',
+                        count: 6,
+                    },
+                ],
+            },
+        })
+
+        expect(context.startsFromPeriod10QualityCounter).toEqual({
+            key: 'starts_from_period_10',
+            count: 6,
+        })
+        expect(context.startsFromPeriod10TimetableCount).toBe(6)
+        expect(context.startsFromPeriod10TimetableCountFormatted).toBe('6')
+    })
+
     it('uses the filtered Saturday-free counter when max free days is selected', () => {
         const context = timetableV2Context({
             timetableCalculationResult: {
@@ -503,6 +556,12 @@ describe('TimetableV2 route steps', () => {
                 priority: 2,
                 option: null,
             },
+            {
+                key: 'starts_from_period_10',
+                enabled: true,
+                priority: 3,
+                option: null,
+            },
         ])
     })
 
@@ -522,6 +581,7 @@ describe('TimetableV2 route steps', () => {
                 timetableV2Options: {
                     maxFreeDays: false,
                     noSaturday: false,
+                    startsFromPeriod10: false,
                 },
                 transferredStudentContext: null,
             },
@@ -569,11 +629,18 @@ describe('TimetableV2 route steps', () => {
                 priority: 2,
                 option: null,
             },
+            {
+                key: 'starts_from_period_10',
+                enabled: true,
+                priority: 3,
+                option: null,
+            },
         ])
         expect(saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
             timetableV2Options: {
                 maxFreeDays: true,
                 noSaturday: false,
+                startsFromPeriod10: false,
             },
         }))
         expect(calculateTimetables).toHaveBeenCalledOnce()
@@ -587,12 +654,18 @@ describe('TimetableV2 route steps', () => {
             timetableMaxFreeDaysSelected: true,
             timetableNoSaturdayDraftSelected: true,
             timetableNoSaturdaySelected: true,
+            timetableStartsFromPeriod10DraftSelected: true,
+            timetableStartsFromPeriod10Selected: true,
         })
 
         expect(context.selectedTimetableOptionItems).toEqual([
             {
                 key: 'no-saturday',
                 label: 'Kein Samstag',
+            },
+            {
+                key: 'starts-from-period-10',
+                label: 'Erst ab 10. Stunde',
             },
             {
                 key: 'max-free-days',
@@ -759,6 +832,35 @@ describe('TimetableV2 route steps', () => {
         expect(context.timetableCalculationResetAvailable).toBe(true)
     })
 
+    it('allows resetting when max free days is already active', () => {
+        const context = timetableV2Context({
+            initialTimetableCalculationMaxFreeDaysSelected: true,
+            initialTimetableCalculationSelectedNumber: 1,
+            initialTimetableCalculationSelection: {},
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {},
+                timetableV2Options: {
+                    maxFreeDays: true,
+                    noSaturday: false,
+                    startsFromPeriod10: false,
+                },
+                transferredStudentContext: null,
+            },
+            timetableCalculationSelectedNumber: 1,
+            timetableCalculationVisible: true,
+            timetableMaxFreeDaysSelected: true,
+        })
+
+        expect(context.selectedTimetableOptionItems).toEqual([
+            {
+                key: 'max-free-days',
+                label: 'Max freie Tage',
+            },
+        ])
+        expect(context.timetableCalculationResetAvailable).toBe(true)
+    })
+
     it('does not reset timetable calculation changes when there is nothing to reset', () => {
         const calculateTimetables = vi.fn()
         const saveStoredTimetableState = vi.fn()
@@ -856,6 +958,7 @@ describe('TimetableV2 route steps', () => {
             timetableV2Options: {
                 maxFreeDays: false,
                 noSaturday: false,
+                startsFromPeriod10: false,
             },
             transferredStudentContext: null,
         })
@@ -870,6 +973,63 @@ describe('TimetableV2 route steps', () => {
         expect(calculateTimetables).toHaveBeenCalledOnce()
     })
 
+    it('removes active timetable options when resetting calculation changes', () => {
+        let context: ReturnType<typeof timetableV2Context>
+        const calculateTimetables = vi.fn()
+        const saveStoredTimetableState = vi.fn((state) => {
+            context.storedTimetableState = state
+        })
+
+        context = timetableV2Context({
+            calculateTimetables,
+            initialTimetableCalculationMaxFreeDaysSelected: true,
+            initialTimetableCalculationNoSaturdaySelected: true,
+            initialTimetableCalculationSelectedNumber: 1,
+            initialTimetableCalculationSelection: {},
+            saveStoredTimetableState,
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {},
+                timetableV2Options: {
+                    maxFreeDays: true,
+                    noSaturday: true,
+                    startsFromPeriod10: true,
+                },
+                transferredStudentContext: null,
+            },
+            storedTimetableStateForSaving() {
+                return context.storedTimetableState
+            },
+            timetableCalculationSelectedNumber: 1,
+            timetableCalculationVisible: true,
+            timetableMaxFreeDaysDraftSelected: true,
+            timetableMaxFreeDaysSelected: true,
+            timetableNoSaturdayDraftSelected: true,
+            timetableNoSaturdaySelected: true,
+            timetableStartsFromPeriod10DraftSelected: true,
+            timetableStartsFromPeriod10Selected: true,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        TimetableV2.methods.resetTimetableCalculationChanges.call(context)
+
+        expect(context.timetableMaxFreeDaysSelected).toBe(false)
+        expect(context.timetableMaxFreeDaysDraftSelected).toBe(false)
+        expect(context.timetableNoSaturdaySelected).toBe(false)
+        expect(context.timetableNoSaturdayDraftSelected).toBe(false)
+        expect(context.timetableStartsFromPeriod10Selected).toBe(false)
+        expect(context.timetableStartsFromPeriod10DraftSelected).toBe(false)
+        expect(context.timetableCalculationResetAvailable).toBe(false)
+        expect(saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
+            timetableV2Options: {
+                maxFreeDays: false,
+                noSaturday: false,
+                startsFromPeriod10: false,
+            },
+        }))
+        expect(calculateTimetables).toHaveBeenCalledOnce()
+    })
+
     it('does not render checkbox controls in the more courses chips', () => {
         const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
 
@@ -879,6 +1039,15 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain("'students-timetable-v2-selected-courses-card__course--offered-deselected': moreCourseOfferedCourseItemsAllDeselected(course)")
         expect(source).toContain("'students-timetable-v2-more-courses-card__course--unavailable': moreCourseUnavailable(course)")
         expect(source).toMatch(/@click="toggleMoreCourseOffers\(course\)"/u)
+    })
+
+    it('renders a deselect-all button for offered courses in the more courses card', () => {
+        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+
+        expect(source).toMatch(/v-if="selectedMoreCourseOfferedCourseItems\.length"[\s\S]*title="Alle angebotenen Kurse abwählen"/u)
+        expect(source).toContain('aria-label="Alle angebotenen Kurse abwählen"')
+        expect(source).toContain(':disabled="courseGroupsLoading || !!courseGroupsError || moreCourseOfferedCourseItemsAllDeselected(selectedMoreCourseItem)"')
+        expect(source).toMatch(/@click\.stop="deselectSelectedMoreCourseOfferedCourses"/u)
     })
 
     it('lists only courses that are not already selected in the more courses card', async () => {
@@ -983,6 +1152,43 @@ describe('TimetableV2 route steps', () => {
         expect(context.moreOfferedCourseSelectionSnapshotSelections).toEqual({})
     })
 
+    it('deselects all offered courses for the selected more course', async () => {
+        const context = timetableV2Context({
+            courseGroups: [
+                { class_name: 'M2-2Q-FUCH', course: 'M2', hour: 13, title: 'M2', weekday: 1 },
+                { class_name: 'M2-2A-ALT', course: 'M2', hour: 13, title: 'M2', weekday: 2 },
+            ],
+            storedAdditionalCourseItems: [
+                { code: 'M2', hours: 3, label: 'M2' },
+            ],
+        })
+
+        await TimetableV2.methods.toggleMoreCoursesCard.call(context)
+
+        const moreCourse = context.moreCoursesCardItems.find((course) => course.label === 'M2')
+
+        TimetableV2.methods.toggleMoreCourseOffers.call(context, moreCourse)
+
+        let savedState = context.saveStoredTimetableState.mock.calls.at(-1)[0]
+        context.storedTimetableState = savedState
+
+        const offeredCourses = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, moreCourse)
+
+        expect(offeredCourses).toHaveLength(2)
+        expect(savedState.timetableV2Selection.moreOfferedCourseSelections).toEqual(Object.fromEntries(
+            offeredCourses.map((course) => [course.selectionKey, true])
+        ))
+        expect(TimetableV2.methods.moreCourseOfferedCourseItemsAnySelected.call(context, moreCourse)).toBe(true)
+
+        TimetableV2.methods.deselectSelectedMoreCourseOfferedCourses.call(context)
+
+        savedState = context.saveStoredTimetableState.mock.calls.at(-1)[0]
+        context.storedTimetableState = savedState
+
+        expect(savedState.timetableV2Selection.moreOfferedCourseSelections).toBeUndefined()
+        expect(TimetableV2.methods.moreCourseOfferedCourseItemsAllDeselected.call(context, moreCourse)).toBe(true)
+    })
+
     it('marks impossible more courses red and prevents opening their offers', () => {
         const context = timetableV2Context({
             courseGroups: [
@@ -1034,18 +1240,21 @@ describe('TimetableV2 route steps', () => {
         expect(context.moreCoursesButtonUnavailable).toBe(false)
     })
 
-    it('loads more course availability from valid timetable counts', async () => {
+    it('loads more course availability from the batch result', async () => {
         const context = timetableV2Context({
             courseGroups: [
                 { class_name: 'INF2-A', course: 'INF2', hour: 2, title: 'INF2', weekday: 2 },
             ],
             moreCourseAvailabilityRequestId: 1,
-            requestMoreCourseAvailability: vi.fn(() => Promise.resolve({
+            requestMoreCourseAvailability: vi.fn((courses) => Promise.resolve({
                 data: {
                     data: {
-                        conflict_timetable_count: 5,
-                        full_green_timetable_count: 0,
-                        green_timetable_count: 0,
+                        availability: {
+                            [courses[0].selectionKey]: {
+                                available: false,
+                                valid_timetable_count: 0,
+                            },
+                        },
                     },
                 },
             })),
@@ -1057,24 +1266,27 @@ describe('TimetableV2 route steps', () => {
 
         await TimetableV2.methods.loadMoreCourseAvailabilityForCourse.call(context, moreCourse, 1)
 
-        expect(context.requestMoreCourseAvailability).toHaveBeenCalledWith(moreCourse)
+        expect(context.requestMoreCourseAvailability).toHaveBeenCalledWith([moreCourse])
         expect(context.moreCourseAvailabilityByKey).toEqual({
             [moreCourse.selectionKey]: false,
         })
     })
 
-    it('loads more course availability from active option filtered counts', async () => {
+    it('keeps active options in the batch availability signature', async () => {
         const context = timetableV2Context({
             courseGroups: [
                 { class_name: 'INF2-A', course: 'INF2', hour: 2, title: 'INF2', weekday: 2 },
             ],
             moreCourseAvailabilityRequestId: 1,
-            requestMoreCourseAvailability: vi.fn(() => Promise.resolve({
+            requestMoreCourseAvailability: vi.fn((courses) => Promise.resolve({
                 data: {
                     data: {
-                        full_green_timetable_count: 8,
-                        green_timetable_count: 0,
-                        selected_quality_criteria_count: 0,
+                        availability: {
+                            [courses[0].selectionKey]: {
+                                available: false,
+                                valid_timetable_count: 0,
+                            },
+                        },
                     },
                 },
             })),
@@ -1089,7 +1301,7 @@ describe('TimetableV2 route steps', () => {
         await TimetableV2.methods.loadMoreCourseAvailabilityForCourse.call(context, moreCourse, 1)
 
         expect(availabilitySignature).toContain('"maxFreeDaysSelected":true')
-        expect(context.requestMoreCourseAvailability).toHaveBeenCalledWith(moreCourse)
+        expect(context.requestMoreCourseAvailability).toHaveBeenCalledWith([moreCourse])
         expect(context.moreCourseAvailabilityByKey).toEqual({
             [moreCourse.selectionKey]: false,
         })
@@ -1121,8 +1333,12 @@ describe('TimetableV2 route steps', () => {
         resolveAvailabilityRequest({
             data: {
                 data: {
-                    full_green_timetable_count: 1,
-                    green_timetable_count: 0,
+                    availability: {
+                        [moreCourse.selectionKey]: {
+                            available: true,
+                            valid_timetable_count: 1,
+                        },
+                    },
                 },
             },
         })
@@ -1135,12 +1351,16 @@ describe('TimetableV2 route steps', () => {
         expect(TimetableV2.methods.moreCourseDisabled.call(context, moreCourse)).toBe(false)
     })
 
-    it('starts more course availability checks immediately after calculating timetables', async () => {
-        const requestMoreCourseAvailability = vi.fn(() => Promise.resolve({
+    it('starts batched more course availability immediately after calculating timetables', async () => {
+        const requestMoreCourseAvailability = vi.fn((courses) => Promise.resolve({
             data: {
                 data: {
-                    full_green_timetable_count: 2,
-                    green_timetable_count: 0,
+                    availability: {
+                        [courses[0].selectionKey]: {
+                            available: true,
+                            valid_timetable_count: 2,
+                        },
+                    },
                 },
             },
         }))
@@ -1179,14 +1399,18 @@ describe('TimetableV2 route steps', () => {
             setTimeout(resolve, 0)
         })
 
-        expect(requestMoreCourseAvailability).toHaveBeenCalledWith(moreCourse)
+        expect(requestMoreCourseAvailability).toHaveBeenCalledWith([moreCourse])
         expect(context.moreCourseAvailabilityLoading).toBe(false)
         expect(context.moreCourseAvailabilityByKey).toEqual({
             [moreCourse.selectionKey]: true,
         })
+
+        await TimetableV2.methods.openMoreCoursesCard.call(context)
+
+        expect(requestMoreCourseAvailability).toHaveBeenCalledOnce()
     })
 
-    it('reuses completed background more course availability when opening the card', async () => {
+    it('reuses completed more course availability when opening the card', async () => {
         const requestMoreCourseAvailability = vi.fn()
         const context = timetableV2Context({
             courseGroups: [
@@ -1210,6 +1434,79 @@ describe('TimetableV2 route steps', () => {
         expect(context.moreCourseAvailabilityByKey).toEqual({
             [moreCourse.selectionKey]: true,
         })
+    })
+
+    it('keeps a removed selected course restorable when availability marks all more courses unavailable', async () => {
+        let context: ReturnType<typeof timetableV2Context>
+        const requestMoreCourseAvailability = vi.fn(() => Promise.resolve({
+            data: {
+                data: {
+                    availability: {},
+                },
+            },
+        }))
+        const saveStoredTimetableState = vi.fn((state) => {
+            context.storedTimetableState = state
+        })
+
+        context = timetableV2Context({
+            courseGroups: [
+                { class_name: 'M1-A', course: 'M1', hour: 1, title: 'M1', weekday: 1 },
+                { class_name: 'GW2-A', course: 'GW2', hour: 2, title: 'GW2', weekday: 2 },
+                { class_name: 'GS1-A', course: 'GS1', hour: 3, title: 'GS1', weekday: 3 },
+            ],
+            requestMoreCourseAvailability,
+            saveStoredTimetableState,
+            storedAdditionalCourseItems: [
+                { code: 'GS1', hours: 4, key: 'GS1', label: 'GS1' },
+            ],
+            storedPlannedCourseItems: [
+                { code: 'D1', hours: 3, key: 'D1', label: 'D1' },
+                { code: 'M1', hours: 4, key: 'M1', label: 'M1' },
+                { code: 'GW2', hours: 4, key: 'GW2', label: 'GW2' },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    courseSelections: {
+                        'planned:GW2': false,
+                    },
+                },
+                transferredStudentContext: null,
+            },
+            storedTimetableStateForSaving() {
+                return context.storedTimetableState
+            },
+            timetableCalculationVisible: true,
+            timetableMaxFreeDaysSelected: true,
+        })
+        const selectedCourse = TimetableV2.methods.selectedCourseListItem.call(
+            context,
+            context.storedPlannedCourseItems[1],
+            'planned',
+        )
+
+        TimetableV2.methods.removeSelectedCourseItem.call(context, selectedCourse)
+
+        const removedMoreCourse = context.moreCoursesCardItems.find((course) => course.key === 'M1')
+        const unavailableMoreCourse = context.moreCoursesCardItems.find((course) => course.key === 'GS1')
+        context.moreCourseAvailabilitySignature = TimetableV2.methods.moreCourseAvailabilityCurrentSignature.call(context)
+        context.moreCourseAvailabilityByKey = Object.fromEntries(
+            context.moreCoursesCardItems.map((course) => [course.selectionKey, false])
+        )
+        context.restorableMoreCourseAvailabilitySignatures = {}
+
+        expect(TimetableV2.methods.moreCourseRestorable.call(context, removedMoreCourse)).toBe(true)
+        expect(TimetableV2.methods.moreCourseUnavailable.call(context, removedMoreCourse)).toBe(false)
+        expect(TimetableV2.methods.moreCourseUnavailable.call(context, unavailableMoreCourse)).toBe(true)
+        expect(context.moreCoursesButtonUnavailable).toBe(false)
+
+        context.moreCourseAvailabilityRequestId = 1
+
+        await TimetableV2.methods.loadMoreCourseAvailabilityForCourse.call(context, removedMoreCourse, 1)
+
+        expect(requestMoreCourseAvailability).not.toHaveBeenCalled()
+        expect(context.moreCourseAvailabilityByKey[removedMoreCourse.selectionKey]).toBe(true)
     })
 
     it('restores the previous more course offered selections when cancelling', () => {
@@ -2109,7 +2406,7 @@ describe('TimetableV2 route steps', () => {
         expect(payload.deselected_course_group_keys).toEqual([deselectedOffer.backendSelectionKey])
     })
 
-    it('checks more course availability by requiring the candidate course', () => {
+    it('checks more course availability with candidate courses', () => {
         const context = timetableV2Context({
             selectedCourseItems: [
                 { courseGroup: 'planned', key: 'D1', selectionKey: 'planned:D1' },
@@ -2123,13 +2420,20 @@ describe('TimetableV2 route steps', () => {
         const payload = TimetableV2.methods.timetableV2CalculationPayloadForMoreCourseAvailability.call(context, moreCourse)
 
         expect(payload.selected_course_keys).toEqual(['D1'])
-        expect(payload.selected_additional_course_keys).toEqual(['INF2'])
-        expect(payload.selected_additional_courses_required).toBe(true)
+        expect(payload.selected_additional_course_keys).toEqual([])
+        expect(payload.selected_additional_courses_required).toBe(false)
         expect(payload.selected_timetable_type).toBe('full_green')
         expect(payload.selected_timetable_number).toBe(1)
+        expect(payload.candidate_courses).toEqual([
+            {
+                availability_key: moreCourse.selectionKey,
+                course_group: 'additional',
+                course_key: 'INF2',
+            },
+        ])
     })
 
-    it('applies the no Saturday option to timetable and more course availability payloads', () => {
+    it('applies the no Saturday option to timetable and availability payloads', () => {
         const context = timetableV2Context({
             selectedCourseItems: [
                 { courseGroup: 'planned', key: 'D1', selectionKey: 'planned:D1' },
@@ -2197,6 +2501,7 @@ describe('TimetableV2 route steps', () => {
                 timetableV2Options: {
                     maxFreeDays: false,
                     noSaturday: false,
+                    startsFromPeriod10: false,
                 },
                 transferredStudentContext: null,
             },
@@ -2226,6 +2531,67 @@ describe('TimetableV2 route steps', () => {
             timetableV2Options: {
                 maxFreeDays: false,
                 noSaturday: true,
+                startsFromPeriod10: false,
+            },
+        }))
+        expect(calculateTimetables).toHaveBeenCalledOnce()
+    })
+
+    it('applies the starts from period 10 option to timetable constraints', () => {
+        const calculateTimetables = vi.fn()
+        const saveStoredTimetableState = vi.fn()
+        const context = timetableV2Context({
+            calculateTimetables,
+            saveStoredTimetableState,
+            schoolHours: [
+                { hour: 8 },
+                { hour: 9 },
+                { hour: 10 },
+                { hour: 11 },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {},
+                timetableV2Options: {
+                    maxFreeDays: false,
+                    noSaturday: false,
+                    startsFromPeriod10: false,
+                },
+                transferredStudentContext: null,
+            },
+            storedTimetableStateForSaving() {
+                return context.storedTimetableState
+            },
+            timetableCalculationSelectedNumber: 3,
+            timetableCalculationResult: {
+                quality_counters: [
+                    {
+                        key: 'starts_from_period_10',
+                        count: 4,
+                    },
+                ],
+            },
+            timetableOptionsCardVisible: true,
+            timetableStartsFromPeriod10DraftSelected: false,
+            timetableStartsFromPeriod10Selected: false,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        TimetableV2.methods.toggleStartsFromPeriod10TimetableOption.call(context)
+        TimetableV2.methods.applyTimetableOptions.call(context)
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(context.timetableStartsFromPeriod10DraftSelected).toBe(true)
+        expect(context.timetableStartsFromPeriod10Selected).toBe(true)
+        expect(context.timetableOptionsChanged).toBe(false)
+        expect(context.timetableCalculationSelectedNumber).toBe(1)
+        expect(payload.constraints.availableTimes).toEqual([10, 11])
+        expect(saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
+            timetableV2Options: {
+                maxFreeDays: false,
+                noSaturday: false,
+                startsFromPeriod10: true,
             },
         }))
         expect(calculateTimetables).toHaveBeenCalledOnce()
@@ -2239,6 +2605,7 @@ describe('TimetableV2 route steps', () => {
                 timetableV2Options: {
                     maxFreeDays: true,
                     noSaturday: true,
+                    startsFromPeriod10: true,
                 },
                 transferredStudentContext: null,
             },
@@ -2246,6 +2613,8 @@ describe('TimetableV2 route steps', () => {
             timetableNoSaturdaySelected: false,
             timetableMaxFreeDaysDraftSelected: false,
             timetableMaxFreeDaysSelected: false,
+            timetableStartsFromPeriod10DraftSelected: false,
+            timetableStartsFromPeriod10Selected: false,
         })
 
         TimetableV2.methods.syncStoredTimetableOptions.call(context)
@@ -2254,10 +2623,16 @@ describe('TimetableV2 route steps', () => {
         expect(context.timetableNoSaturdayDraftSelected).toBe(true)
         expect(context.timetableMaxFreeDaysSelected).toBe(true)
         expect(context.timetableMaxFreeDaysDraftSelected).toBe(true)
+        expect(context.timetableStartsFromPeriod10Selected).toBe(true)
+        expect(context.timetableStartsFromPeriod10DraftSelected).toBe(true)
         expect(context.selectedTimetableOptionItems).toEqual([
             {
                 key: 'no-saturday',
                 label: 'Kein Samstag',
+            },
+            {
+                key: 'starts-from-period-10',
+                label: 'Erst ab 10. Stunde',
             },
             {
                 key: 'max-free-days',
