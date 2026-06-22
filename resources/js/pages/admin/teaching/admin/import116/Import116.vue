@@ -17,7 +17,7 @@
 
                     <div v-if="!is_upload_finished">
                         <FileUpload
-                            path="/api/admin/teaching_upload/116"
+                            :path="uploadPath"
                             fileLabel
                             :allowedFileTypes="['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']"
                             :refreshFilePond="refresh_file_pond"
@@ -186,6 +186,11 @@ import FileUpload from '@/pages/components/FileUpload.vue'
 export default {
     components: { ItsGridBox, FileUpload },
 
+    props: {
+        uploadPath: { type: String, default: '/api/admin/teaching_upload/116' },
+        apiBasePath: { type: String, default: '/api/admin/teaching/import116' },
+    },
+
     async beforeMount() {
         this.adminStore = useAdminStore()
         await this.loadRuns()
@@ -282,7 +287,7 @@ export default {
             this.run_tracking_error = ''
             this.run_action_error = ''
             try {
-                const response = await axios.get('/api/admin/teaching/import116/runs')
+                const response = await axios.get(`${this.apiBasePath}/runs`)
                 this.runs = response?.data?.data || []
                 this.runs_meta = response?.data?.meta || { reset_max_runs: 0, available_reset_runs: 0, history_limit: 0 }
                 if (!this.restorableImports.some((item) => Number(item?.id) === Number(this.selected_restore_target_id || 0))) {
@@ -320,7 +325,7 @@ export default {
             this.loading_run_id = runId
             this.run_action_error = ''
             try {
-                const response = await axios.get(`/api/admin/teaching/import116/runs/${runId}`)
+                const response = await axios.get(`${this.apiBasePath}/runs/${runId}`)
                 this.run_details = {
                     ...this.run_details,
                     [runId]: response?.data || null,
@@ -351,7 +356,7 @@ export default {
             this.run_action_message = ''
             this.run_action_error = ''
             try {
-                const response = await axios.post('/api/admin/teaching/import116/runs/reset', { target_import_id: this.selected_restore_target_id })
+                const response = await axios.post(`${this.apiBasePath}/runs/reset`, { target_import_id: this.selected_restore_target_id })
                 this.run_action_message = response?.data?.message || 'Importe wurden zurückgesetzt.'
                 this.run_details = {}
                 this.expanded_run_ids = {}
@@ -373,7 +378,7 @@ export default {
             this.run_action_message = ''
             this.run_action_error = ''
             try {
-                const response = await axios.delete(`/api/admin/teaching/import116/runs/${id}`)
+                const response = await axios.delete(`${this.apiBasePath}/runs/${id}`)
                 this.run_action_message = response?.data?.message || `Import #${id} wurde gelöscht.`
                 if (Number(this.selected_restore_target_id || 0) === id) {
                     this.selected_restore_target_id = null

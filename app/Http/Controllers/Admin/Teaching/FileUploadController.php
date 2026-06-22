@@ -13,7 +13,7 @@ class FileUploadController extends Controller
 {
     public function upload(Request $request, FileUploadService $fileUploadService, string $slug)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'studentstimetables_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -26,7 +26,7 @@ class FileUploadController extends Controller
 
     public function uploadNext(Request $request, FileUploadService $fileUploadService, string $slug)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'studentstimetables_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

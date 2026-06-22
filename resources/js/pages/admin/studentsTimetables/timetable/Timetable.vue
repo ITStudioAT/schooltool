@@ -29,6 +29,194 @@
             </v-card-text>
         </v-card>
 
+        <template v-else-if="subAction === 'imports' && activeImportPage === 'import116'">
+            <v-card rounded="xl" class="st-dummy-card">
+                <v-card-title class="st-import-page-title pt-4 px-4">
+                    <v-icon color="primary" size="22" icon="mdi-account-school-outline" />
+                    <span class="st-import-page-title__content">
+                        <span class="st-import-page-title__label">Sokrates 116</span>
+                        <span class="st-import-page-title__meta">Schüler- und Elterndaten synchronisieren</span>
+                    </span>
+                    <v-btn
+                        size="small"
+                        variant="tonal"
+                        color="primary"
+                        prepend-icon="mdi-arrow-left"
+                        class="st-import-back-button"
+                        @click="closeImportPage">
+                        Zurück
+                    </v-btn>
+                </v-card-title>
+                <v-card-text class="px-4 pb-4">
+                    <v-alert type="info" variant="tonal" class="mb-3">
+                        <div class="mb-2">Hier können die Schüler- und Elterndaten aus Sokrates-Bund übernommen werden.</div>
+                        <div class="text-decoration-underline">Folgende Datei ist zu importieren:</div>
+                        <div>Sokrates Bund ➜ Auswertungen ➜ Dynamische Suche ➜ Name der Abfrage: 116 ➜</div>
+                        <div>Alle auswählen > Ausführen ➜ Exportieren (XLSX)</div>
+                    </v-alert>
+
+                    <div class="text-caption">Es muss sich um eine Excel-Datei (*.xlsx) handeln.</div>
+                    <div v-if="import116LastImportDisplay" class="text-caption">
+                        Letzter Import: {{ import116LastImportDisplay }}
+                    </div>
+
+                    <div v-if="!import116UploadFinished">
+                        <FileUpload
+                            path="/api/admin/students-timetables/import116-upload/116"
+                            fileLabel
+                            :allowedFileTypes="['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']"
+                            :refreshFilePond="import116RefreshFilePond"
+                            class="mt-2"
+                            @fileUploadFinished="import116FileUploadFinished"
+                            @uploadStart="import116OnUploadStart"
+                            @error="import116UploadError" />
+                    </div>
+
+                    <v-alert v-if="import116Importing" type="info" variant="tonal" class="mt-2">
+                        <div class="d-flex flex-row align-center ga-2">
+                            <v-progress-circular indeterminate size="26" width="3" color="primary" />
+                            <div>Datei hochgeladen. Die Verarbeitung läuft – Sie erhalten eine Meldung, sobald der Import abgeschlossen ist.</div>
+                        </div>
+                    </v-alert>
+                    <v-alert v-if="import116UploadHasError" type="error" variant="tonal" class="mt-2">Upload fehlgeschlagen.</v-alert>
+                    <v-btn v-if="import116UploadFinished || import116UploadHasError" color="warning" variant="flat" class="mt-2" @click="import116ResetUpload">Neu hochladen</v-btn>
+
+                    <v-divider class="my-4" />
+
+                    <div class="d-flex flex-row align-center justify-space-between ga-2">
+                        <div class="text-subtitle-2">Importe</div>
+                        <v-btn size="small" variant="flat" color="secondary" :loading="import116LoadingRuns" @click="import116LoadRuns">Aktualisieren</v-btn>
+                    </div>
+
+                    <v-alert v-if="import116RunActionMessage" type="success" class="mt-2" density="compact">{{ import116RunActionMessage }}</v-alert>
+                    <v-alert v-if="import116RunActionError" type="error" class="mt-2" density="compact">{{ import116RunActionError }}</v-alert>
+                    <v-alert v-if="import116RunTrackingError" type="warning" class="mt-2" density="compact">{{ import116RunTrackingError }}</v-alert>
+
+                    <div v-if="!import116RunTrackingError" class="mt-2">
+                        <div class="d-flex flex-row align-end ga-2">
+                            <v-btn
+                                color="warning"
+                                variant="flat"
+                                :disabled="!import116CanRestoreSelection"
+                                :loading="import116ResettingRuns"
+                                @click="import116ResetRecentRuns">
+                                Import zurücksetzen
+                            </v-btn>
+                        </div>
+                        <div class="text-caption mt-1">
+                            Maximal {{ import116RunsMeta.reset_max_runs || 0 }} Importdateien gespeichert. Verfügbar: {{ import116RunsMeta.available_reset_runs || 0 }}
+                        </div>
+                        <div class="text-caption" v-if="import116SelectedRestoreTargetId">
+                            Ziel: Import #{{ import116SelectedRestoreTargetId }}
+                        </div>
+                        <div class="text-caption" v-else>
+                            Klicken Sie auf einen Import in der Liste, um ihn als Ziel für das Zurücksetzen auszuwählen.
+                        </div>
+                    </div>
+
+                    <div v-if="!import116LoadingRuns && !import116RunTrackingError && import116Runs.length === 0" class="text-caption mt-3">
+                        Noch keine Importe protokolliert.
+                    </div>
+
+                    <div class="mt-3 d-flex flex-column ga-2" v-if="import116Runs.length > 0" style="max-height: 62vh; overflow: auto; padding-right: 2px;">
+                        <v-card
+                            v-for="run in import116Runs"
+                            :key="run.id"
+                            variant="outlined"
+                            @click="import116SelectRestoreTarget(run)">
+                            <v-card-text class="pa-3">
+                                <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-2">
+                                    <div>
+                                        <div class="text-subtitle-2 d-flex align-center ga-2">
+                                            <span>Import #{{ run.id }}</span>
+                                            <v-chip v-if="import116IsSelectedRestoreTarget(run)" size="x-small" color="warning" variant="flat">Ziel</v-chip>
+                                            <v-chip
+                                                v-if="import116CanSelectAsRestoreTarget(run)"
+                                                size="x-small"
+                                                color="success"
+                                                variant="flat">
+                                                zurücksetzbar
+                                            </v-chip>
+                                            <v-chip
+                                                v-else-if="import116IsActiveImport(run)"
+                                                size="x-small"
+                                                color="warning"
+                                                variant="flat">
+                                                nicht zurücksetzbar
+                                            </v-chip>
+                                        </div>
+                                        <div class="text-caption">
+                                            {{ import116FormatDateTime(run.finished_at || run.started_at) }}
+                                            <span v-if="run.undone_at"> | zurückgesetzt</span>
+                                            <span v-else-if="run.status"> | {{ run.status }}</span>
+                                        </div>
+                                        <div class="text-caption" v-if="run.source_name">
+                                            Datei: {{ run.source_name }}
+                                        </div>
+                                    </div>
+                                    <div class="d-flex flex-row flex-wrap ga-1">
+                                        <v-chip size="x-small" color="success" variant="tonal">+ {{ run.counts?.inserted || 0 }}</v-chip>
+                                        <v-chip size="x-small" color="info" variant="tonal">~ {{ run.counts?.updated || 0 }}</v-chip>
+                                        <v-chip size="x-small" color="error" variant="tonal">- {{ run.counts?.deleted || 0 }}</v-chip>
+                                    </div>
+                                </div>
+
+                                <div class="text-caption mt-2">
+                                    Zeilen: {{ run.counts?.processed_rows || 0 }}, Änderungen gesamt: {{ run.counts?.changes_total || 0 }}
+                                </div>
+
+                                <div class="d-flex flex-row ga-2 mt-2">
+                                    <v-btn size="small" variant="text" @click.stop="import116ToggleRunDetails(run.id)">
+                                        {{ import116ExpandedRunIds[run.id] ? 'Details ausblenden' : 'Details anzeigen' }}
+                                    </v-btn>
+                                    <v-btn
+                                        size="small"
+                                        color="error"
+                                        variant="text"
+                                        :loading="import116DeletingImportId === run.id"
+                                        @click.stop="import116DeleteImport(run)">
+                                        Import löschen
+                                    </v-btn>
+                                </div>
+
+                                <v-progress-linear v-if="import116LoadingRunId === run.id" indeterminate class="mt-2" />
+
+                                <div v-if="import116ExpandedRunIds[run.id]" class="mt-2">
+                                    <div v-if="!import116RunDetails[run.id]" class="text-caption">Details werden geladen ...</div>
+                                    <div v-else class="d-flex flex-column ga-3">
+                                        <div v-for="type in ['inserted', 'updated', 'deleted']" :key="`${run.id}-${type}`">
+                                            <div class="d-flex align-center justify-space-between ga-2">
+                                                <div class="text-body-2 font-weight-medium">
+                                                    {{ import116ChangeTypeLabel(type) }} ({{ import116RunDetails[run.id]?.changes?.[type]?.length || 0 }})
+                                                </div>
+                                                <v-btn
+                                                    size="x-small"
+                                                    variant="text"
+                                                    @click.stop="import116ToggleChangeGroup(run.id, type)">
+                                                    {{ import116ExpandedChangeGroups[`${run.id}:${type}`] ? 'Schließen' : 'Öffnen' }}
+                                                </v-btn>
+                                            </div>
+                                            <template v-if="import116ExpandedChangeGroups[`${run.id}:${type}`]">
+                                                <v-list density="compact" class="py-0" v-if="(import116RunDetails[run.id]?.changes?.[type] || []).length > 0">
+                                                    <v-list-item v-for="item in import116RunDetails[run.id].changes[type]" :key="`${run.id}-${type}-${item.id}`" class="px-0">
+                                                        <v-list-item-title>
+                                                            {{ item.name || '-' }}
+                                                            <span class="text-caption">({{ item.student_code }}<span v-if="item.class">, {{ item.class }}</span>)</span>
+                                                        </v-list-item-title>
+                                                    </v-list-item>
+                                                </v-list>
+                                                <div v-else class="text-caption">Keine</div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </v-card-text>
+                        </v-card>
+                    </div>
+                </v-card-text>
+            </v-card>
+        </template>
+
         <template v-else-if="subAction === 'imports' && activeImportButton && activeImportSubPage !== 'import'">
             <v-card rounded="xl" class="st-dummy-card">
                 <v-card-title class="st-import-page-title pt-4 px-4">
@@ -1191,6 +1379,25 @@ export default {
             uploadedFilename: '',
             refreshFilePond: 0,
             uploadError: '',
+            import116UploadFinished: false,
+            import116UploadHasError: false,
+            import116RefreshFilePond: false,
+            import116Importing: false,
+            import116OnImportFinished: null,
+            import116LastImportAt: null,
+            import116Runs: [],
+            import116RunsMeta: { reset_max_runs: 0, available_reset_runs: 0, history_limit: 0 },
+            import116RunDetails: {},
+            import116ExpandedRunIds: {},
+            import116ExpandedChangeGroups: {},
+            import116LoadingRuns: false,
+            import116LoadingRunId: null,
+            import116ResettingRuns: false,
+            import116DeletingImportId: null,
+            import116SelectedRestoreTargetId: null,
+            import116RunTrackingError: '',
+            import116RunActionMessage: '',
+            import116RunActionError: '',
         }
     },
     computed: {
@@ -1200,6 +1407,30 @@ export default {
         },
         canManageTimetableImports() {
             return ['super_admin', 'admin', 'studentstimetables_admin'].some(roleName => this.configuredRoleNames.includes(roleName))
+        },
+        import116LastImportDisplay() {
+            const value = this.import116LastImportAt || this.config?.teaching?.last_import_116_at
+            if (!value) return null
+            const date = new Date(value)
+            if (Number.isNaN(date.getTime())) return value
+            return new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+        },
+        import116RestorableImports() {
+            const active = (this.import116Runs || []).filter((item) => this.import116IsActiveImport(item))
+            const max = Number(this.import116RunsMeta?.reset_max_runs || 0)
+            return max > 0 ? active.slice(0, max) : []
+        },
+        import116SelectedRestoreDepth() {
+            const targetId = Number(this.import116SelectedRestoreTargetId || 0)
+            if (!targetId) return 0
+            const idx = this.import116RestorableImports.findIndex((item) => Number(item?.id) === targetId)
+            return idx >= 0 ? idx + 1 : 0
+        },
+        import116CanRestoreSelection() {
+            if (this.import116RunTrackingError) return false
+            if (!this.import116SelectedRestoreTargetId) return false
+            if (this.import116SelectedRestoreDepth <= 0) return false
+            return this.import116SelectedRestoreDepth <= Number(this.import116RunsMeta?.reset_max_runs || 0)
         },
         importButtons() {
             return [
@@ -1224,6 +1455,13 @@ export default {
                     meta: this.importButtonDateMeta(this.importButtonInfo.recognitions?.uploaded_at),
                     detail: this.recognitionImportDetail,
                 },
+                {
+                    key: 'import116',
+                    label: 'Sokrates 116',
+                    icon: 'mdi-account-school-outline',
+                    meta: this.importButtonDateMeta(this.config?.teaching?.last_import_116_at),
+                    detail: 'Schüler- und Elterndaten',
+                },
             ]
         },
         activeImportPage() {
@@ -1236,18 +1474,22 @@ export default {
             return this.activeImportPage ? this.importSubPage : ''
         },
         activeImportUploadIcon() {
+            if (this.activeImportPage === 'import116') return 'mdi-file-table-outline'
             if (this.activeImportPage === 'anrechnungen') return 'mdi-file-delimited-outline'
             return this.activeImportPage === 'faecher' ? 'mdi-code-json' : 'mdi-upload'
         },
         activeImportUploadTitle() {
+            if (this.activeImportPage === 'import116') return 'XLSX-Datei importieren'
             if (this.activeImportPage === 'anrechnungen') return 'CSV-Datei importieren'
             return this.activeImportPage === 'faecher' ? 'JSON-Datei importieren' : 'TXT-Datei importieren'
         },
         activeImportUploadMeta() {
+            if (this.activeImportPage === 'import116') return 'Sokrates 116 · Schüler- und Elterndaten'
             if (this.activeImportPage === 'anrechnungen') return 'Anrechnungen · Sokrates Bund'
             return this.activeImportPage === 'faecher' ? 'Fächer · JSON-Import' : 'Stundenplan · Untis-Export'
         },
         activeImportUploadDetail() {
+            if (this.activeImportPage === 'import116') return 'XLSX-Datei (.xlsx), Sokrates Bund Abfrage 116'
             if (this.activeImportPage === 'anrechnungen') return 'CSV-Datei (.csv), mit Studierenden, Fächern und Noten'
 
             return this.activeImportPage === 'faecher'
@@ -1255,6 +1497,9 @@ export default {
                 : 'TXT-Datei (.txt), tabulatorgetrennt, mit TT-Einträgen'
         },
         activeImportUploadPath() {
+            if (this.activeImportPage === 'import116') {
+                return '/api/admin/students-timetables/import116-upload/116'
+            }
             if (this.activeImportPage === 'anrechnungen') {
                 return '/api/admin/students-timetables/recognitions-csv'
             }
@@ -1264,6 +1509,7 @@ export default {
                 : '/api/admin/students-timetables/upload'
         },
         activeImportAllowedFileTypes() {
+            if (this.activeImportPage === 'import116') return ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
             if (this.activeImportPage === 'anrechnungen') return ['text/csv', 'application/csv', 'application/vnd.ms-excel']
 
             return this.activeImportPage === 'faecher' ? ['application/json'] : ['text/plain']
@@ -1587,10 +1833,23 @@ export default {
         this.redirectLegacyRobotRoute()
         this.redirectUnauthorizedImportRoute()
         this.loadImportButtonInfo()
+        this.import116OnImportFinished = async (event) => {
+            this.import116Importing = false
+            this.import116LastImportAt = new Date().toISOString()
+            const payload = event?.detail?.data || {}
+            if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
+                this.import116RunActionMessage = `Import abgeschlossen: +${payload.created ?? 0} / ~${payload.updated ?? 0} / -${payload.deleted ?? 0}`
+            }
+            await this.import116LoadRuns()
+        }
+        window.addEventListener('import116-finished', this.import116OnImportFinished)
     },
     unmounted() {
         this.clearPolling()
         this.clearSingleDateActivationSaveTimer()
+        if (this.import116OnImportFinished) {
+            window.removeEventListener('import116-finished', this.import116OnImportFinished)
+        }
     },
     methods: {
         normalizedSubAction(subsection) {
@@ -1603,7 +1862,7 @@ export default {
         normalizedImportPage(detail) {
             if (!this.canManageTimetableImports) return ''
 
-            const allowed = ['stundenplan', 'faecher', 'anrechnungen']
+            const allowed = ['stundenplan', 'faecher', 'anrechnungen', 'import116']
 
             return allowed.includes(detail) ? detail : ''
         },
@@ -2268,6 +2527,157 @@ export default {
                 hour: '2-digit',
                 minute: '2-digit',
             })
+        },
+        import116IsActiveImport(run) {
+            return !!run && run.status === 'completed' && !run.undone_at
+        },
+        import116CanSelectAsRestoreTarget(run) {
+            if (!this.import116IsActiveImport(run)) return false
+            return this.import116RestorableImports.some((item) => Number(item?.id) === Number(run?.id))
+        },
+        async import116LoadRuns() {
+            this.import116LoadingRuns = true
+            this.import116RunTrackingError = ''
+            this.import116RunActionError = ''
+            try {
+                const response = await axios.get('/api/admin/students-timetables/import116/runs')
+                this.import116Runs = response?.data?.data || []
+                this.import116RunsMeta = response?.data?.meta || { reset_max_runs: 0, available_reset_runs: 0, history_limit: 0 }
+                if (!this.import116RestorableImports.some((item) => Number(item?.id) === Number(this.import116SelectedRestoreTargetId || 0))) {
+                    this.import116SelectedRestoreTargetId = null
+                }
+            } catch (error) {
+                this.import116Runs = []
+                this.import116RunsMeta = { reset_max_runs: 0, available_reset_runs: 0, history_limit: 0 }
+                this.import116RunTrackingError = error?.response?.data?.message || 'Import-Protokolle konnten nicht geladen werden.'
+            } finally {
+                this.import116LoadingRuns = false
+            }
+        },
+        import116SelectRestoreTarget(run) {
+            if (!this.import116CanSelectAsRestoreTarget(run)) return
+            const id = Number(run.id || 0)
+            if (!id) return
+            this.import116SelectedRestoreTargetId = this.import116SelectedRestoreTargetId === id ? null : id
+            this.import116RunActionError = ''
+            this.import116RunActionMessage = ''
+        },
+        import116IsSelectedRestoreTarget(run) {
+            return Number(this.import116SelectedRestoreTargetId || 0) > 0 && Number(run?.id || 0) === Number(this.import116SelectedRestoreTargetId)
+        },
+        async import116ToggleRunDetails(runId) {
+            const isOpen = !!this.import116ExpandedRunIds[runId]
+            if (isOpen) {
+                this.import116ExpandedRunIds = { ...this.import116ExpandedRunIds, [runId]: false }
+                return
+            }
+
+            this.import116ExpandedRunIds = { ...this.import116ExpandedRunIds, [runId]: true }
+            if (this.import116RunDetails[runId]) return
+
+            this.import116LoadingRunId = runId
+            this.import116RunActionError = ''
+            try {
+                const response = await axios.get(`/api/admin/students-timetables/import116/runs/${runId}`)
+                this.import116RunDetails = {
+                    ...this.import116RunDetails,
+                    [runId]: response?.data || null,
+                }
+            } catch (error) {
+                this.import116RunActionError = error?.response?.data?.message || 'Import-Details konnten nicht geladen werden.'
+                this.import116ExpandedRunIds = { ...this.import116ExpandedRunIds, [runId]: false }
+            } finally {
+                this.import116LoadingRunId = null
+            }
+        },
+        import116ToggleChangeGroup(runId, type) {
+            const key = `${runId}:${type}`
+            this.import116ExpandedChangeGroups = {
+                ...this.import116ExpandedChangeGroups,
+                [key]: !this.import116ExpandedChangeGroups[key],
+            }
+        },
+        async import116ResetRecentRuns() {
+            if (!this.import116CanRestoreSelection) return
+            this.import116ResettingRuns = true
+            this.import116RunActionMessage = ''
+            this.import116RunActionError = ''
+            try {
+                const response = await axios.post('/api/admin/students-timetables/import116/runs/reset', { target_import_id: this.import116SelectedRestoreTargetId })
+                this.import116RunActionMessage = response?.data?.message || 'Importe wurden zurückgesetzt.'
+                this.import116RunDetails = {}
+                this.import116ExpandedRunIds = {}
+                this.import116ExpandedChangeGroups = {}
+                this.import116SelectedRestoreTargetId = null
+                await this.import116LoadRuns()
+            } catch (error) {
+                this.import116RunActionError = error?.response?.data?.message || 'Import konnte nicht zurückgesetzt werden.'
+            } finally {
+                this.import116ResettingRuns = false
+            }
+        },
+        async import116DeleteImport(run) {
+            const id = Number(run?.id || 0)
+            if (!id) return
+
+            this.import116DeletingImportId = id
+            this.import116RunActionMessage = ''
+            this.import116RunActionError = ''
+            try {
+                const response = await axios.delete(`/api/admin/students-timetables/import116/runs/${id}`)
+                this.import116RunActionMessage = response?.data?.message || `Import #${id} wurde gelöscht.`
+                if (Number(this.import116SelectedRestoreTargetId || 0) === id) {
+                    this.import116SelectedRestoreTargetId = null
+                }
+                if (this.import116RunDetails[id]) {
+                    const copy = { ...this.import116RunDetails }
+                    delete copy[id]
+                    this.import116RunDetails = copy
+                }
+                this.import116ExpandedChangeGroups = Object.fromEntries(
+                    Object.entries(this.import116ExpandedChangeGroups).filter(([key]) => !key.startsWith(`${id}:`))
+                )
+                await this.import116LoadRuns()
+            } catch (error) {
+                this.import116RunActionError = error?.response?.data?.message || 'Import konnte nicht gelöscht werden.'
+            } finally {
+                this.import116DeletingImportId = null
+            }
+        },
+        import116FormatDateTime(value) {
+            if (!value) return '-'
+            const date = new Date(value)
+            if (Number.isNaN(date.getTime())) return String(value)
+            return new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+        },
+        import116ChangeTypeLabel(type) {
+            if (type === 'inserted') return 'Eingefügt'
+            if (type === 'updated') return 'Aktualisiert'
+            if (type === 'deleted') return 'Gelöscht'
+            return type
+        },
+        import116OnUploadStart() {
+            this.import116UploadFinished = false
+            this.import116UploadHasError = false
+            this.import116RunActionMessage = ''
+            this.import116RunActionError = ''
+            const adminStore = useAdminStore()
+            if (this.config?.is_auth) adminStore.initializeEcho()
+            this.import116Importing = true
+        },
+        import116FileUploadFinished() {
+            this.import116UploadFinished = true
+        },
+        import116UploadError() {
+            this.import116UploadHasError = true
+            this.import116RefreshFilePond = !this.import116RefreshFilePond
+            this.import116Importing = false
+        },
+        import116ResetUpload() {
+            this.import116UploadFinished = false
+            this.import116UploadHasError = false
+            this.import116RefreshFilePond = !this.import116RefreshFilePond
+            this.import116Importing = false
         },
     },
 }

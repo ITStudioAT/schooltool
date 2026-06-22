@@ -212,6 +212,13 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/students-timetables/imports/single-date-appointments', [TimetableImportController::class, 'updateSingleDateAppointments']);
         Route::get('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'show']);
         Route::delete('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'destroy']);
+
+        Route::post('/admin/students-timetables/import116-upload/{slug}', [FileUploadController::class, 'upload'])->whereIn('slug', ['116']);
+        Route::patch('/admin/students-timetables/import116-upload/{slug}', [FileUploadController::class, 'uploadNext'])->whereIn('slug', ['116']);
+        Route::get('/admin/students-timetables/import116/runs', [Import116Controller::class, 'runs']);
+        Route::get('/admin/students-timetables/import116/runs/{import116_run}', [Import116Controller::class, 'runDetails']);
+        Route::post('/admin/students-timetables/import116/runs/reset', [Import116Controller::class, 'resetRuns']);
+        Route::delete('/admin/students-timetables/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);
     });
 
     Route::post('/admin/login_step_email', [AdminController::class, 'loginStepEmail']);

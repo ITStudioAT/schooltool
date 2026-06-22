@@ -15,7 +15,7 @@ class Import116Controller extends Controller
 {
     public function loadClassStudents(Request $request)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher', 'studentstimetables_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -63,7 +63,7 @@ class Import116Controller extends Controller
 
     public function runs(Request $request)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher', 'studentstimetables_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -102,7 +102,7 @@ class Import116Controller extends Controller
 
     public function runDetails(Request $request, Import116Run $import116_run)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher', 'studentstimetables_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -137,7 +137,7 @@ class Import116Controller extends Controller
 
     public function resetRuns(Request $request)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'studentstimetables_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -236,7 +236,7 @@ class Import116Controller extends Controller
 
     public function destroyRun(Request $request, Import116Run $import116_run)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'studentstimetables_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
