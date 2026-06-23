@@ -17,11 +17,14 @@ describe('Students timetable timetable page', () => {
         expect(componentSource).not.toContain("{ key: 'robot', label: 'Wizzard' }")
         expect(componentSource).not.toContain("{ key: 'imports', label: 'Importe' }")
         expect(componentSource).toContain("const allowed = this.canManageTimetableImports")
+        expect(componentSource).toContain('configuredRolesLoaded()')
+        expect(componentSource).toContain('syncRouteStateFromParams()')
         expect(componentSource).toContain("['overview', 'imports']")
         expect(componentSource).toContain("['overview']")
         expect(componentSource).toContain('redirectUnauthorizedImportRoute()')
         expect(componentSource).toContain('redirectLegacyOverviewRoute()')
         expect(componentSource).toContain('redirectLegacyRobotRoute()')
+        expect(componentSource).toContain('mounted() {\n        this.syncRouteStateFromParams()')
         expect(componentSource).toContain("this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })")
         expect(componentSource).not.toContain("this.$router.replace({ path: '/admin/students-timetables' })")
         expect(componentSource).toContain("this.$router.replace({ path: '/admin/students-timetables/timetable/overview/automatic' })")
@@ -54,6 +57,94 @@ describe('Students timetable timetable page', () => {
         expect(ctx.importPage).toBe('')
         expect(ctx.importSubPage).toBe('')
         expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable/overview' })
+    })
+
+    it('keeps the imports route active while role config is still loading', () => {
+        const methods = (Timetable as any).methods
+        const replace = vi.fn()
+        const ctx: any = {
+            $route: {
+                params: {
+                    subsection: 'imports',
+                },
+            },
+            $router: {
+                replace,
+            },
+            canManageTimetableImports: false,
+            configuredRolesLoaded: false,
+            subAction: 'imports',
+            importPage: '',
+            importSubPage: '',
+        }
+
+        methods.redirectUnauthorizedImportRoute.call(ctx)
+
+        expect(ctx.subAction).toBe('imports')
+        expect(replace).not.toHaveBeenCalled()
+    })
+
+    it('restores the direct imports route after admin roles load', () => {
+        const methods = (Timetable as any).methods
+        const roleWatcher = (Timetable as any).watch.configuredRoleNames
+        const ctx: any = {
+            ...methods,
+            $route: {
+                params: {
+                    section: 'timetable',
+                    subsection: 'imports',
+                    detail: 'stundenplan',
+                    action: 'import',
+                },
+            },
+            $router: {
+                replace: vi.fn(),
+            },
+            canManageTimetableImports: true,
+            configuredRolesLoaded: true,
+            subAction: 'overview',
+            importPage: '',
+            importSubPage: '',
+            loadImportButtonInfo: vi.fn(),
+        }
+
+        roleWatcher.call(ctx)
+
+        expect(ctx.subAction).toBe('imports')
+        expect(ctx.importPage).toBe('stundenplan')
+        expect(ctx.importSubPage).toBe('import')
+        expect(ctx.loadImportButtonInfo).toHaveBeenCalledOnce()
+        expect(ctx.$router.replace).not.toHaveBeenCalled()
+    })
+
+    it('restores the direct imports route when the component mounts with roles already loaded', () => {
+        const methods = (Timetable as any).methods
+        const ctx: any = {
+            ...methods,
+            $route: {
+                params: {
+                    section: 'timetable',
+                    subsection: 'imports',
+                },
+            },
+            $router: {
+                replace: vi.fn(),
+            },
+            canManageTimetableImports: true,
+            configuredRolesLoaded: true,
+            subAction: 'overview',
+            importPage: '',
+            importSubPage: '',
+            loadImportButtonInfo: vi.fn(),
+        }
+
+        methods.syncRouteStateFromParams.call(ctx)
+
+        expect(ctx.subAction).toBe('imports')
+        expect(ctx.importPage).toBe('')
+        expect(ctx.importSubPage).toBe('')
+        expect(ctx.loadImportButtonInfo).toHaveBeenCalledOnce()
+        expect(ctx.$router.replace).not.toHaveBeenCalled()
     })
 
     it('shows import buttons that open import subpages', () => {

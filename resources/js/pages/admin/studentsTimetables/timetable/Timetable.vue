@@ -1405,6 +1405,9 @@ export default {
         configuredRoleNames() {
             return Array.isArray(this.config?.roles) ? this.config.roles : []
         },
+        configuredRolesLoaded() {
+            return Array.isArray(this.config?.roles)
+        },
         canManageTimetableImports() {
             return ['super_admin', 'admin', 'studentstimetables_admin'].some(roleName => this.configuredRoleNames.includes(roleName))
         },
@@ -1807,6 +1810,9 @@ export default {
         'config.selected_schoolyear.id'() {
             this.loadImportButtonInfo()
         },
+        configuredRoleNames() {
+            this.syncRouteStateFromParams()
+        },
         '$route.params.subsection'(subsection) {
             this.subAction = this.normalizedSubAction(subsection)
             if (this.redirectLegacyOverviewRoute()) {
@@ -1829,10 +1835,7 @@ export default {
         },
     },
     mounted() {
-        this.redirectLegacyOverviewRoute()
-        this.redirectLegacyRobotRoute()
-        this.redirectUnauthorizedImportRoute()
-        this.loadImportButtonInfo()
+        this.syncRouteStateFromParams()
         this.import116OnImportFinished = async (event) => {
             this.import116Importing = false
             this.import116LastImportAt = new Date().toISOString()
@@ -1875,11 +1878,25 @@ export default {
         },
         redirectUnauthorizedImportRoute() {
             if (this.$route.params.subsection !== 'imports' || this.canManageTimetableImports) return
+            if (!this.configuredRolesLoaded) return
 
             this.subAction = 'overview'
             this.importPage = ''
             this.importSubPage = ''
             this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
+        },
+        syncRouteStateFromParams() {
+            this.subAction = this.normalizedSubAction(this.$route.params.subsection)
+            this.importPage = this.normalizedImportPage(this.$route.params.detail)
+            this.importSubPage = this.normalizedImportSubPage(this.$route.params.action)
+
+            if (this.redirectLegacyOverviewRoute()) {
+                return
+            }
+
+            this.redirectLegacyRobotRoute()
+            this.redirectUnauthorizedImportRoute()
+            this.loadImportButtonInfo()
         },
         redirectLegacyOverviewRoute() {
             if (
