@@ -17,6 +17,7 @@ function timetableV2Context(overrides = {}) {
         },
         timetableV2Step: 'selection',
         timetableStartMode: '',
+        robotStudents: [],
         schoolHours: [],
         subjectRows: [],
         studentCompletedCoursesLoading: false,
@@ -47,6 +48,12 @@ function timetableV2Context(overrides = {}) {
         adoptedTimetableCalculationSelectionSnapshot: null,
         adoptedTimetableSelectionSnapshot: null,
         adoptedTimetableStudentContextSnapshot: null,
+        pdfExporting: false,
+        publishedTimetableSaving: false,
+        adoptedPublishedTimetableReport: {
+            type: 'success',
+            message: '',
+        },
         timetableCalculationNumberDraft: '1',
         timetableCalculationSelectedNumber: 1,
         initialTimetableCalculationSelectedNumber: 1,
@@ -80,6 +87,7 @@ function timetableV2Context(overrides = {}) {
         conflictResolutionRecommendationLoading: false,
         conflictResolutionRecommendationRequestId: 0,
         conflictResolutionRecommendationSignature: '',
+        activeMoreExistingCourseBaseKey: '',
         formatNumber: TimetableV2.methods.formatNumber,
         formatTimeValue: TimetableV2.methods.formatTimeValue,
         spacedCourseCode: TimetableV2.methods.spacedCourseCode,
@@ -135,6 +143,26 @@ function timetableV2Context(overrides = {}) {
         adoptedTimetableNumberLabel: {
             get() {
                 return TimetableV2.computed.adoptedTimetableNumberLabel.call(context)
+            },
+        },
+        courseReviewStudentLabel: {
+            get() {
+                return TimetableV2.computed.courseReviewStudentLabel.call(context)
+            },
+        },
+        adoptedPublishedTimetableStudentCode: {
+            get() {
+                return TimetableV2.computed.adoptedPublishedTimetableStudentCode.call(context)
+            },
+        },
+        adoptedPublishedTimetableStudentName: {
+            get() {
+                return TimetableV2.computed.adoptedPublishedTimetableStudentName.call(context)
+            },
+        },
+        adoptedTimetableSaveVisible: {
+            get() {
+                return TimetableV2.computed.adoptedTimetableSaveVisible.call(context)
             },
         },
         adoptSelectedTimetableV2ButtonLabel: {
@@ -456,6 +484,11 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.selectedTimetableV2ConflictSeverity.call(context)
             },
         },
+        selectedTimetableV2HasErrorConflicts: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2HasErrorConflicts.call(context)
+            },
+        },
         selectedTimetableV2ConflictIcon: {
             get() {
                 return TimetableV2.computed.selectedTimetableV2ConflictIcon.call(context)
@@ -504,6 +537,16 @@ function timetableV2Context(overrides = {}) {
         moreAdoptedCourseItems: {
             get() {
                 return TimetableV2.computed.moreAdoptedCourseItems.call(context)
+            },
+        },
+        moreAdoptedCourseTopLevelItems: {
+            get() {
+                return TimetableV2.computed.moreAdoptedCourseTopLevelItems.call(context)
+            },
+        },
+        selectedMoreExistingCourseBaseItem: {
+            get() {
+                return TimetableV2.computed.selectedMoreExistingCourseBaseItem.call(context)
             },
         },
         selectedMoreAdoptedCourseItem: {
@@ -648,17 +691,20 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain('v-if="!activeMoreAdoptedCourseCard"')
         expect(source).toContain('v-for="card in moreAdoptedCourseCards"')
         expect(source).toContain('{{ card.title }}')
+        expect(source).toContain(':disabled="moreAdoptedCourseCardDisabled(card)"')
+        expect(source).toContain("'students-timetable-v2-more-adopted-courses-card__category--disabled': moreAdoptedCourseCardDisabled(card)")
         expect(source).toContain('@click="openMoreAdoptedCourseCard(card)"')
         expect(source).toContain('class="students-timetable-v2-more-adopted-courses-card__back-card"')
         expect(source).toContain('@click="closeMoreAdoptedCourseCard"')
         expect(source).toContain('v-for="course in moreAdoptedCourseItems"')
         expect(source).toMatch(/<v-card[\s\S]*v-for="course in moreAdoptedCourseItems"[\s\S]*class="students-timetable-v2-more-adopted-courses-card__course"/u)
         expect(source).toContain('class="students-timetable-v2-more-adopted-courses-card__course-label"')
-        expect(source).toContain('@click="openMoreAdoptedCourseOffers(course)"')
+        expect(source).toContain('@click="openMoreAdoptedCourseItem(course)"')
         expect(source).toContain('v-if="selectedMoreAdoptedCourseItem"')
         expect(source).toContain('v-for="course in selectedMoreAdoptedCourseOfferedCourseItems"')
         expect(source).toContain('@click="insertMoreAdoptedCourseOfferIntoTimetable(course)"')
         expect(source).toMatch(/\.students-timetable-v2-more-adopted-courses-card__grid \{[\s\S]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/u)
+        expect(source).toContain('.students-timetable-v2-more-adopted-courses-card__category--disabled')
         expect(source).toMatch(/\.students-timetable-v2-more-adopted-courses-card__category-title \{[\s\S]*overflow-wrap: anywhere;[\s\S]*hyphens: auto;/u)
         expect(source).toMatch(/@media \(max-width: 640px\) \{[\s\S]*\.students-timetable-v2-more-adopted-courses-card__grid \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);[\s\S]*\.students-timetable-v2-more-adopted-courses-card__category \{[\s\S]*min-height: 64px;[\s\S]*\.students-timetable-v2-more-adopted-courses-card__category-title \{[\s\S]*font-size: 0\.82rem;/u)
         expect(source).toMatch(/\.students-timetable-v2-more-adopted-courses-card__course-list \{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(116px, 1fr\)\);/u)
@@ -731,7 +777,7 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain('Kein Fernunterricht')
         expect(source).toContain('{{ noDistanceLearningTimetableCountFormatted }}')
         expect(source.match(/Die Auswahl kann später noch verändert werden!/gu)).toHaveLength(2)
-        expect(source).toMatch(/Zusätzliche Kurse[\s\S]*Die Auwahl kann später hinzugefügt werden!/u)
+        expect(source).toMatch(/Zusätzliche Kurse[\s\S]*Die Auswahl kann später hinzugefügt werden!/u)
         expect(source).toContain('students-timetable-v2-course-card-footer')
         expect(source).toMatch(/\.students-timetable-v2-options-card__option \{[\s\S]*background: rgba\(248, 250, 252, 0\.96\);/u)
         expect(source).toMatch(/\.students-timetable-v2-options-card__option--unavailable \{[\s\S]*background: rgba\(241, 245, 249, 0\.96\);/u)
@@ -741,6 +787,9 @@ describe('TimetableV2 route steps', () => {
         expect(source).toMatch(/append-icon="mdi-check"\s+:disabled="!moreCoursesSelectionChanged \|\| timetableCalculationLoading"\s+@click="applyMoreCoursesSelection">\s+Anwenden/u)
         expect(source).toMatch(/v-else-if="adoptedTimetableCourseRemovalPendingVisible"[\s\S]*@click="cancelMoreCoursesCard">\s+Abbruch[\s\S]*:disabled="!moreCoursesSelectionChanged"[\s\S]*@click="applyAdoptedTimetableCourseRemoval">\s+Anwenden/u)
         expect(source).toMatch(/<span>\{\{ adoptedTimetableVisible \? 'Übernommener Stundenplan' : 'Stundenpläne' \}\}<\/span>/u)
+        expect(source).toMatch(/v-else-if="adoptedTimetableVisible" class="students-timetable-v2-calculation-card__actions"[\s\S]*prepend-icon="mdi-file-pdf-box"[\s\S]*:loading="pdfExporting"[\s\S]*@click="downloadAdoptedTimetablePdf">\s+PDF/u)
+        expect(source).toMatch(/v-if="adoptedTimetableSaveVisible"[\s\S]*prepend-icon="mdi-content-save-outline"[\s\S]*:loading="publishedTimetableSaving"[\s\S]*@click="saveAdoptedPublishedStudentTimetable"[\s\S]*Speichern für/u)
+        expect(source).toContain('class="students-timetable-v2-published-timetable-report"')
         expect(source).toContain('{{ adoptSelectedTimetableV2ButtonLabel }}')
         expect(source).not.toContain('Stundenplan übernehmen')
         expect(source).toContain("@click=\"adoptCurrentTimetableV2Result\"")
@@ -1165,6 +1214,86 @@ describe('TimetableV2 route steps', () => {
         context.timetableCalculationResult.quality_counters[0].count = 2
 
         expect(context.timetableOptionsButtonUnavailable).toBe(false)
+    })
+
+    it('rolls back max free days when the recalculated timetable contains a regular overlap', async () => {
+        const previousCalculationResult = {
+            full_green_timetable_count: 4,
+            green_timetable_count: 0,
+            conflict_timetable_count: 0,
+            selected_timetable: {
+                number: 4,
+                type: 'full_green',
+                slots: {
+                    '1-10': {
+                        code: 'S2',
+                        sourceLabel: 'SPA2-3C-WIR',
+                        courseGroup: {
+                            weekday: 1,
+                            hour: 10,
+                        },
+                    },
+                },
+            },
+        }
+        const overlappingCalculationResult = {
+            full_green_timetable_count: 2,
+            green_timetable_count: 0,
+            conflict_timetable_count: 0,
+            selected_quality_criteria_count: 2,
+            selected_timetable: {
+                number: 1,
+                type: 'full_green',
+                slots: {
+                    '2-13': {
+                        code: 'CH2',
+                        sourceLabel: 'CH2-5K-PLA',
+                        dateRangeLabel: '24.02.-30.6.',
+                        courseGroup: {
+                            weekday: 2,
+                            hour: 13,
+                        },
+                        sameSlotEntries: [
+                            {
+                                code: 'M5',
+                                sourceLabel: 'M5-5K-DOM',
+                                dateRangeLabel: '17.02.-7.7.',
+                                courseGroup: {
+                                    weekday: 2,
+                                    hour: 13,
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        }
+        const context = timetableV2Context({
+            calculateTimetables: vi.fn(async () => {
+                context.timetableCalculationResult = overlappingCalculationResult
+
+                return overlappingCalculationResult
+            }),
+            timetableCalculationResult: previousCalculationResult,
+            timetableCalculationSelectedNumber: 4,
+            timetableMaxFreeDaysDraftSelected: true,
+            timetableOptionsCardVisible: true,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        const result = await TimetableV2.methods.applyTimetableOptions.call(context)
+
+        expect(result).toBeNull()
+        expect(context.timetableMaxFreeDaysSelected).toBe(false)
+        expect(context.timetableMaxFreeDaysDraftSelected).toBe(false)
+        expect(context.timetableCalculationResult).toBe(previousCalculationResult)
+        expect(context.timetableCalculationSelectedNumber).toBe(4)
+        expect(context.timetableCalculationError).toBe('Die Option wurde nicht übernommen, weil sie zu Überschneidungen führt.')
+        expect(context.saveStoredTimetableState).toHaveBeenLastCalledWith(expect.objectContaining({
+            timetableV2Options: expect.objectContaining({
+                maxFreeDays: false,
+            }),
+        }))
     })
 
     it('shows selected timetable options below the selected courses card', () => {
@@ -1643,6 +1772,23 @@ describe('TimetableV2 route steps', () => {
         ])
     })
 
+    it('does not open adopted course category cards without available courses', () => {
+        const context = timetableV2Context({
+            activeMoreAdoptedCourseCardKey: '',
+            storedMissingCourseCardItems: [],
+            storedPlannedCourseItems: [],
+            storedAdditionalCourseItems: [],
+            timetableV2Step: 'timetable-adoption',
+        })
+        const [missingCard] = context.moreAdoptedCourseCards
+
+        expect(TimetableV2.methods.moreAdoptedCourseCardDisabled.call(context, missingCard)).toBe(true)
+
+        TimetableV2.methods.openMoreAdoptedCourseCard.call(context, missingCard)
+
+        expect(context.activeMoreAdoptedCourseCardKey).toBe('')
+    })
+
     it('opens adopted course categories with courses that are not in the timetable', () => {
         const context = timetableV2Context({
             activeMoreAdoptedCourseCardKey: '',
@@ -1682,6 +1828,172 @@ describe('TimetableV2 route steps', () => {
 
         expect(context.activeMoreAdoptedCourseCard).toBeNull()
         expect(context.moreAdoptedCoursesTitle).toBe('Weitere Kurse')
+    })
+
+    it('lists only uncategorized existing courses in the adopted more category', () => {
+        const context = timetableV2Context({
+            activeMoreAdoptedCourseCardKey: 'more',
+            courseGroups: [
+                { class_name: 'BU1-1A-FUCH', course: 'BU1', hour: 1, title: 'BU1', weekday: 1 },
+                { class_name: 'D1-1A-FUCH', course: 'D1', hour: 2, title: 'D1', weekday: 1 },
+                { class_name: 'GS1-1A-FUCH', course: 'GS1', hour: 3, title: 'GS1', weekday: 1 },
+                { class_name: 'INF2-1A-FUCH', course: 'INF2', hour: 4, title: 'INF2', weekday: 1 },
+                { class_name: 'INF3-1A-FUCH', course: 'INF3', hour: 5, title: 'INF3', weekday: 1 },
+                { class_name: 'L1-2A-UNT', course: 'L', hour: 6, module_code: 'L1', title: 'L1', weekday: 1 },
+                { class_name: 'L2-3C-WE', course: 'L', hour: 7, module_code: 'L2', title: 'L2', weekday: 1 },
+                { class_name: 'L-UNT', course: 'L', hour: 8, title: 'L', weekday: 1 },
+                { class_name: 'CH1-4F-KOW', course: 'CH', hour: 9, module_code: 'CH1', title: 'CH1', weekday: 1 },
+                { class_name: 'CH2-5C-KOW', course: 'CH', hour: 10, module_code: 'CH2', title: 'CH2', weekday: 1 },
+                { class_name: 'CH-KOW', course: 'CH', hour: 11, title: 'CH', weekday: 1 },
+                { class_name: 'M1-2A-UNT', course: 'M', hour: 12, module_code: 'M1', title: 'M1', weekday: 1 },
+                { class_name: 'M2-3C-WE', course: 'M', hour: 13, module_code: 'M2', title: 'M2', weekday: 1 },
+                { class_name: 'PH2-1A-FUCH', course: 'PH2', hour: 5, title: 'PH2', weekday: 1 },
+                { class_name: 'PH-1A-REN', course: 'PH', display_label: 'PH - REN', hour: 6, title: 'PH REN', weekday: 1 },
+                { class_name: 'ÖKO1-1A-FUCH', course: 'ÖKO1', hour: 7, title: 'ÖKO1', weekday: 1 },
+                { class_name: 'ÖKO2-1A-FUCH', course: 'ÖKO2', hour: 8, title: 'ÖKO2', weekday: 1 },
+                { class_name: 'ÖKO3-1A-FUCH', course: 'ÖKO3', hour: 9, title: 'ÖKO3', weekday: 1 },
+                { class_name: 'OKON-1A-FUCH', course: 'OKON', hour: 10, title: 'OKON', weekday: 1 },
+                { class_name: 'S1-1A-FUCH', course: 'S1', hour: 11, title: 'S1', weekday: 1 },
+                { class_name: 'S2-1A-FUCH', course: 'S2', hour: 12, title: 'S2', weekday: 1 },
+                { class_name: 'SPA-1A-FUCH', course: 'SPA', hour: 13, title: 'SPA', weekday: 1 },
+            ],
+            storedAdditionalCourseItems: [
+                { code: 'GS1', hours: 4, label: 'GS1' },
+            ],
+            storedMissingCourseCardItems: [
+                { code: 'BU1', hours: 3, label: 'BU1' },
+            ],
+            storedPlannedCourseItems: [
+                { code: 'D1', hours: 3, label: 'D1' },
+            ],
+            timetableV2Step: 'timetable-adoption',
+        })
+
+        expect(context.moreAdoptedCoursesTitle).toBe('Weitere Kurse: Weitere')
+        expect(context.moreAdoptedCourseCandidateItems.map((course) => course.label)).toEqual([
+            'CH1',
+            'CH2',
+            'INF2',
+            'INF3',
+            'L1',
+            'L2',
+            'M1',
+            'M2',
+            'OEKO1',
+            'OEKO2',
+            'OEKO3',
+            'PH',
+            'PH2',
+            'S1',
+            'S2',
+        ])
+        expect(context.moreAdoptedCourseCandidateItems.map((course) => course.label)).not.toContain('REN')
+        expect(context.moreAdoptedCourseCandidateItems.map((course) => course.label)).not.toContain('CH')
+        expect(context.moreAdoptedCourseCandidateItems.map((course) => course.label)).not.toContain('L')
+        expect(context.moreAdoptedCourseCandidateItems.map((course) => course.label)).not.toContain('M')
+        expect(context.moreAdoptedCourseCandidateItems.map((course) => course.label)).not.toContain('OKON')
+        expect(context.moreAdoptedCourseCandidateItems.map((course) => course.label)).not.toContain('SPA')
+        expect(context.moreAdoptedCourseItems.map((course) => ({
+            label: course.label,
+            meta: course.meta,
+        }))).toEqual([
+            { label: 'CH', meta: '2 Kurse' },
+            { label: 'INF', meta: '2 Kurse' },
+            { label: 'L', meta: '2 Kurse' },
+            { label: 'M', meta: '2 Kurse' },
+            { label: 'OEKO', meta: '3 Kurse' },
+            { label: 'PH', meta: '2 Kurse' },
+            { label: 'S', meta: '2 Kurse' },
+        ])
+        expect(context.moreAdoptedCourseItems.map((course) => course.courseGroup)).toEqual([
+            'more-base',
+            'more-base',
+            'more-base',
+            'more-base',
+            'more-base',
+            'more-base',
+            'more-base',
+        ])
+
+        TimetableV2.methods.openMoreAdoptedCourseItem.call(
+            context,
+            context.moreAdoptedCourseItems.find((course) => course.label === 'INF'),
+        )
+
+        expect(context.activeMoreExistingCourseBaseKey).toBe('INF')
+        expect(context.moreAdoptedCoursesTitle).toBe('Weitere Kurse: Weitere: INF')
+        expect(context.moreAdoptedCourseItems.map((course) => course.label)).toEqual(['INF2', 'INF3'])
+    })
+
+    it('drills from adopted more top-level courses to concrete courses and then offers', () => {
+        const context = timetableV2Context({
+            activeMoreAdoptedCourseCardKey: 'more',
+            courseGroups: [
+                { class_name: 'INF2-1A-FUCH', course: 'INF2', hour: 1, title: 'INF2', weekday: 1 },
+                { class_name: 'INF2-1B-MAIR', course: 'INF2', hour: 2, title: 'INF2', weekday: 2 },
+                { class_name: 'INF3-1A-FUCH', course: 'INF3', hour: 3, title: 'INF3', weekday: 3 },
+            ],
+            timetableV2Step: 'timetable-adoption',
+        })
+        const [topLevelCourse] = context.moreAdoptedCourseItems
+
+        expect(topLevelCourse).toMatchObject({
+            isTopLevelCourseGroup: true,
+            label: 'INF',
+            meta: '2 Kurse',
+        })
+
+        TimetableV2.methods.openMoreAdoptedCourseItem.call(context, topLevelCourse)
+
+        expect(context.moreAdoptedCoursesTitle).toBe('Weitere Kurse: Weitere: INF')
+        expect(context.moreAdoptedCourseItems.map((course) => course.label)).toEqual(['INF2', 'INF3'])
+
+        TimetableV2.methods.openMoreAdoptedCourseItem.call(context, context.moreAdoptedCourseItems[0])
+
+        expect(context.selectedMoreAdoptedCourseItem?.label).toBe('INF2')
+        expect(context.moreAdoptedCoursesTitle).toBe('Weitere Kurse: Weitere: INF: INF2')
+        expect(context.selectedMoreAdoptedCourseOfferedCourseItems.map((offer) => offer.name)).toEqual([
+            'INF 2 - 1A - FUCH',
+            'INF 2 - 1B - MAIR',
+        ])
+
+        TimetableV2.methods.closeMoreAdoptedCourseCard.call(context)
+
+        expect(context.activeMoreAdoptedCourseCard?.title).toBe('Weitere')
+        expect(context.activeMoreExistingCourseBaseKey).toBe('')
+        expect(context.moreAdoptedCourseItems.map((course) => course.label)).toEqual(['INF'])
+    })
+
+    it('does not show aggregate language offers after selecting a concrete adopted language course', () => {
+        const context = timetableV2Context({
+            activeMoreAdoptedCourseCardKey: 'more',
+            courseGroups: [
+                { class_name: 'L1-2A-UNT', course: 'L', hour: 14, module_code: 'L1', title: 'L1', weekday: 1 },
+                { class_name: 'L1-1RU+2F-UNT', course: 'L', hour: 14, module_code: 'L1', title: 'L1', weekday: 5 },
+                { class_name: 'L2-3C-WE', course: 'L', hour: 10, module_code: 'L2', title: 'L2', weekday: 1 },
+                { class_name: 'L3-4A-UNT', course: 'L', hour: 10, module_code: 'L3', title: 'L3', weekday: 1 },
+                { class_name: 'L-WE', course: 'L', hour: 10, title: 'L', weekday: 5 },
+            ],
+            timetableV2Step: 'timetable-adoption',
+        })
+
+        expect(context.moreAdoptedCourseCandidateItems.map((course) => course.label)).toEqual(['L1', 'L2', 'L3'])
+        expect(context.moreAdoptedCourseCandidateItems.map((course) => course.label)).not.toContain('L')
+
+        TimetableV2.methods.openMoreAdoptedCourseItem.call(context, context.moreAdoptedCourseItems[0])
+
+        expect(context.moreAdoptedCourseItems.map((course) => course.label)).toEqual(['L1', 'L2', 'L3'])
+
+        TimetableV2.methods.openMoreAdoptedCourseItem.call(context, context.moreAdoptedCourseItems[0])
+
+        expect(context.selectedMoreAdoptedCourseItem?.label).toBe('L1')
+        expect(context.selectedMoreAdoptedCourseOfferedCourseItems.map((offer) => offer.code)).toEqual(['L 1', 'L 1'])
+        expect(context.selectedMoreAdoptedCourseOfferedCourseItems.map((offer) => offer.name)).toEqual([
+            'L 1 - 2A - UNT',
+            'L 1 - 1RU+2F - UNT',
+        ])
+        expect(context.selectedMoreAdoptedCourseOfferedCourseItems.map((offer) => offer.name).join('|')).not.toContain('L2')
+        expect(context.selectedMoreAdoptedCourseOfferedCourseItems.map((offer) => offer.name).join('|')).not.toContain('L3')
     })
 
     it('shows selected course hours instead of grades in the course chip meta', () => {
@@ -3564,6 +3876,316 @@ describe('TimetableV2 route steps', () => {
         expect(context.timetableV2Step).toBe('timetable-calculation')
     })
 
+    it('builds the adopted timetable PDF payload from the selected V2 timetable', () => {
+        const context = timetableV2Context({
+            timetableV2Step: 'timetable-adoption',
+            selectedSchoolyear: {
+                name: 'Schuljahr 2025/26',
+            },
+            schoolHours: [
+                {
+                    hour: 10,
+                    from: '17:05:00',
+                    until: '18:35:00',
+                },
+            ],
+            adoptedTimetableSelectedNumber: 2,
+            adoptedTimetableSelectionSnapshot: {
+                semester: 5,
+            },
+            adoptedTimetableStudentContextSnapshot: {
+                student: {
+                    label: '5K · SOLLEDER Luis · Semester 5',
+                    semesterLabel: 'Semester 5',
+                },
+            },
+            adoptedTimetableCalculationResult: {
+                selected_timetable: {
+                    selected_number: 2,
+                    valid_count: 1,
+                    type: 'valid',
+                    slots: {
+                        '1-10': {
+                            code: 'INF2',
+                            sourceLabel: 'INF2 - 1 - 5K - WE',
+                            dateRangeLabel: '20.02. - 24.04.',
+                            courseGroup: {
+                                weekday: 1,
+                                hour: 10,
+                                dates: ['2026-02-20'],
+                                recurrence_interval: 2,
+                            },
+                            sameSlotEntries: [
+                                {
+                                    code: 'INF3',
+                                    sourceLabel: 'INF3 - 1 - 5K - WE',
+                                    dateRangeLabel: '20.02. - 24.04.',
+                                    courseGroup: {
+                                        weekday: 1,
+                                        hour: 10,
+                                        dates: ['2026-03-06'],
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+        })
+
+        const payload = context.adoptedTimetablePdfPayload()
+
+        expect(payload.title).toBe('Stundenplan')
+        expect(payload.subtitle).toBe('')
+        expect(payload.schoolyear).toBe('Schuljahr 2025/26')
+        expect(payload.student).toBe('5K · SOLLEDER Luis · Semester 5')
+        expect(payload.weekdays).toEqual([
+            { label: 'Mo' },
+            { label: 'Di' },
+            { label: 'Mi' },
+            { label: 'Do' },
+            { label: 'Fr' },
+        ])
+        expect(payload.semesters[0].label).toBe('Semester 5')
+        expect(payload.semesters[0].weeks[0].hours[0]).toMatchObject({
+            hour: 10,
+            from: '17:05',
+            until: '18:35',
+        })
+        expect(payload.semesters[0].weeks[0].hours[0].cells[0]).toMatchObject({
+            status: 'warning',
+            courses: [
+                {
+                    label: 'INF 2',
+                    details: 'INF2 - 1 - 5K - WE · 2-wöchig: 20.02.',
+                    dates: ['20.02.'],
+                },
+                {
+                    label: 'INF 3',
+                    details: 'INF3 - 1 - 5K - WE · 06.03.',
+                    dates: ['06.03.'],
+                },
+            ],
+        })
+    })
+
+    it('exports one-day overlaps as PDF marker chips instead of normal courses', () => {
+        const context = timetableV2Context({
+            timetableV2Step: 'timetable-adoption',
+            schoolHours: [
+                {
+                    hour: 7,
+                    from: '14:45:00',
+                    until: '15:30:00',
+                },
+            ],
+            adoptedTimetableSelectionSnapshot: {
+                semester: 5,
+            },
+            adoptedTimetableCalculationResult: {
+                selected_timetable: {
+                    type: 'valid',
+                    slots: {
+                        '5-7': {
+                            code: 'D1',
+                            sourceLabel: 'D1 - 1 - 5K - UNT',
+                            dateRangeLabel: '20.02. - 24.04.',
+                            courseGroup: {
+                                weekday: 5,
+                                hour: 7,
+                            },
+                            conflicts: [
+                                {
+                                    code: 'E7',
+                                    sourceLabel: 'E7 - 1 - 5K - ONE',
+                                    courseGroup: {
+                                        weekday: 5,
+                                        hour: 7,
+                                        dates: ['2026-03-06'],
+                                    },
+                                    isOccasional: true,
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+        })
+
+        const payload = context.adoptedTimetablePdfPayload()
+        const fridayCell = payload.semesters[0].weeks[0].hours[0].cells[4]
+
+        expect(fridayCell).toMatchObject({
+            status: 'filled',
+            courses: [
+                {
+                    label: 'D 1',
+                    details: 'D1 - 1 - 5K - UNT',
+                },
+            ],
+            markers: [
+                {
+                    label: 'E 7',
+                    title: 'E7 - 1 - 5K - ONE 06.03.',
+                },
+            ],
+        })
+    })
+
+    it('saves the adopted V2 timetable as a published student timetable', async () => {
+        const previousAxios = globalThis.axios
+        const axiosMock = {
+            post: vi.fn(() => Promise.resolve({
+                data: {
+                    message: 'Stundenplan für GEHMACHER Ella wurde gespeichert.',
+                    data: {
+                        id: 42,
+                        student_code: '1001',
+                        published_at: '2026-06-23T12:00:00+00:00',
+                    },
+                },
+            })),
+        }
+        globalThis.axios = axiosMock
+
+        const context = timetableV2Context({
+            timetableV2Step: 'timetable-adoption',
+            selectedSchoolyear: {
+                name: 'Schuljahr 2025/26',
+            },
+            robotStudents: [
+                {
+                    student_code: '1001',
+                    first_name: 'Ella',
+                    last_name: 'GEHMACHER',
+                },
+            ],
+            schoolHours: [
+                {
+                    hour: 1,
+                    from: '08:00:00',
+                    until: '08:50:00',
+                },
+            ],
+            adoptedTimetableSelectedNumber: 4,
+            adoptedTimetableSelectionSnapshot: {
+                language: 'L',
+                semester: 5,
+            },
+            adoptedTimetableCalculationOptionsSnapshot: {
+                maxFreeDays: true,
+                noDistanceLearning: false,
+                noSaturday: true,
+                startsFromPeriod10: false,
+            },
+            adoptedTimetableStudentContextSnapshot: {
+                student: {
+                    label: '5K · GEHMACHER Ella · Semester 5',
+                    semesterLabel: 'Semester 5',
+                    studentCode: '1001',
+                },
+            },
+            adoptedTimetableCalculationResult: {
+                selected_timetable: {
+                    selected_number: 4,
+                    type: 'valid',
+                    slots: {
+                        '1-1': {
+                            code: 'D1',
+                            sourceLabel: 'D1 - 1 - 5K - UNT',
+                            courseGroup: {
+                                weekday: 1,
+                                hour: 1,
+                            },
+                        },
+                    },
+                },
+            },
+        })
+
+        try {
+            expect(context.adoptedTimetableSaveVisible).toBe(true)
+
+            await context.saveAdoptedPublishedStudentTimetable()
+
+            expect(axiosMock.post).toHaveBeenCalledWith(
+                '/api/admin/students-timetables/overview/student-timetable',
+                expect.objectContaining({
+                    student_code: '1001',
+                    student_label: 'GEHMACHER Ella',
+                    timetable: expect.objectContaining({
+                        title: 'Stundenplan',
+                        subtitle: '',
+                    }),
+                    state: expect.objectContaining({
+                        source: 'timetable-v2',
+                        timetableV2Step: 'timetable-adoption',
+                        timetableV2SelectedNumber: 4,
+                        timetableV2Selection: {
+                            language: 'L',
+                            semester: 5,
+                        },
+                    }),
+                }),
+            )
+            expect(context.adoptedPublishedTimetableReport).toEqual({
+                type: 'success',
+                message: 'Stundenplan für GEHMACHER Ella wurde gespeichert.',
+            })
+            expect(context.robotStudents[0]).toMatchObject({
+                has_published_timetable: true,
+                published_timetable_id: 42,
+                published_timetable_at: '2026-06-23T12:00:00+00:00',
+            })
+        } finally {
+            globalThis.axios = previousAxios
+        }
+    })
+
+    it('clears the adopted timetable save report on restart', () => {
+        const context = timetableV2Context({
+            adoptedPublishedTimetableReport: {
+                type: 'success',
+                message: 'Stundenplan für SOLLEDER Luis wurde gespeichert.',
+            },
+        })
+
+        TimetableV2.methods.restartTimetableV2.call(context)
+
+        expect(context.adoptedPublishedTimetableReport).toEqual({
+            type: 'success',
+            message: '',
+        })
+    })
+
+    it('clears the adopted timetable save report when another student is selected', () => {
+        const context = timetableV2Context({
+            adoptedPublishedTimetableReport: {
+                type: 'success',
+                message: 'Stundenplan für SOLLEDER Luis wurde gespeichert.',
+            },
+            robotStudents: [
+                {
+                    student_code: '1001',
+                    first_name: 'Ella',
+                    last_name: 'GEHMACHER',
+                    class: '1C',
+                    school_level: 1,
+                },
+            ],
+            studentSelectionDraft: {
+                studentCode: '1001',
+            },
+        })
+
+        TimetableV2.methods.updateStudentSelection.call(context)
+
+        expect(context.adoptedPublishedTimetableReport).toEqual({
+            type: 'success',
+            message: '',
+        })
+    })
+
     it('restores the adopted timetable result from the route after refresh', async () => {
         let context: ReturnType<typeof timetableV2Context>
         const calculateTimetables = vi.fn(() => {
@@ -4757,7 +5379,7 @@ describe('TimetableV2 route steps', () => {
 
         expect(TimetableV2.computed.selectedTimetableV2Result.call(context)?.number).toBe(1)
         expect(TimetableV2.computed.selectedTimetableV2StatusLabel.call(context)).toBe('Voller grüner Stundenplan')
-        expect(TimetableV2.computed.selectedTimetableV2TitleLabel.call(context)).toBe('')
+        expect(TimetableV2.computed.selectedTimetableV2TitleLabel.call(context)).toBe('Stundenplan mit Überschneidung')
         expect(TimetableV2.computed.selectedTimetableV2RestartButtonInHeaderVisible.call(context)).toBe(true)
         expect(TimetableV2.computed.selectedTimetableV2Weekdays.call(context).map((weekday) => weekday.value)).toEqual([1, 2, 3, 4, 5, 6])
         expect(TimetableV2.computed.selectedTimetableV2Times.call(context)).toEqual([
@@ -5114,6 +5736,60 @@ describe('TimetableV2 route steps', () => {
         )).toEqual([])
         expect(TimetableV2.methods.selectedTimetableV2CellClasses.call(context, 1, 1)).toMatchObject({
             'students-timetable-v2-result-grid__cell--conflict': false,
+            'students-timetable-v2-result-grid__cell--filled': true,
+        })
+    })
+
+    it('shows regular same-slot entries with overlapping date ranges as red conflicts', () => {
+        const context = timetableV2Context({
+            selectedCourseItems: [
+                { code: 'CH2', courseGroup: 'planned', key: 'CH2', label: 'CH2', selectionKey: 'planned:CH2' },
+                { code: 'M5', courseGroup: 'planned', key: 'M5', label: 'M5', selectionKey: 'planned:M5' },
+            ],
+            timetableCalculationResult: {
+                selected_timetable: {
+                    number: 1,
+                    type: 'full_green',
+                    slots: {
+                        '5-9': {
+                            code: 'CH2',
+                            sourceLabel: 'CH2-5K-PLA',
+                            dateRangeLabel: '24.02.-30.6.',
+                            courseGroup: {
+                                weekday: 5,
+                                hour: 9,
+                                dates: ['2026-02-24', '2026-03-10', '2026-03-24', '2026-04-07', '2026-04-21', '2026-05-05', '2026-05-19', '2026-06-02', '2026-06-16', '2026-06-30'],
+                            },
+                            sameSlotEntries: [
+                                {
+                                    code: 'M5',
+                                    sourceLabel: 'M5-3R-SCHM',
+                                    dateRangeLabel: '17.02.-7.7.',
+                                    courseGroup: {
+                                        weekday: 5,
+                                        hour: 9,
+                                        dates: ['2026-02-17', '2026-03-03', '2026-03-17', '2026-03-31', '2026-04-14', '2026-04-28', '2026-05-12', '2026-05-26', '2026-06-09', '2026-06-23', '2026-07-07'],
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+        })
+        const slot = context.timetableCalculationResult.selected_timetable.slots['5-9']
+
+        expect(TimetableV2.methods.selectedTimetableV2SlotConflictSeverity.call(context, slot)).toBe('error')
+        expect(context.selectedTimetableV2ConflictSeverity).toBe('error')
+        expect(context.selectedTimetableV2HasErrorConflicts).toBe(true)
+        expect(context.selectedTimetableV2ResultType).toBe('conflict')
+        expect(context.timetableCalculationDisplayValidResultCount).toBe(0)
+        expect(context.timetableCalculationDisplayConflictResultCount).toBe(1)
+        expect(TimetableV2.methods.timetableOptionUnavailable.call(context, 'max-free-days')).toBe(true)
+        expect(context.selectedTimetableV2ConflictTitle).toBe('Konflikte')
+        expect(TimetableV2.methods.selectedTimetableV2DisplayedSlotConflicts.call(context, slot).map((conflict) => conflict.code)).toEqual(['M5'])
+        expect(TimetableV2.methods.selectedTimetableV2CellClasses.call(context, 5, 9)).toMatchObject({
+            'students-timetable-v2-result-grid__cell--conflict': true,
             'students-timetable-v2-result-grid__cell--filled': true,
         })
     })

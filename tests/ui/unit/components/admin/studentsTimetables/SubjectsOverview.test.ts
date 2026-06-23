@@ -142,19 +142,19 @@ describe('Students timetable subjects overview', () => {
         expect(grandTotals.map(total => total.value)).toEqual(['2'])
     })
 
-    it('adds the subjects overview menu item to the module shell', () => {
+    it('keeps the module shell navigation focused on timetable v2', () => {
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue',
             'utf8',
         )
 
+        expect(componentSource).not.toContain("key: 'timetable'")
         expect(componentSource).toContain("key: 'subjects-overview'")
         expect(componentSource).toContain("key: 'imports'")
         expect(componentSource).toContain("roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator']")
         expect(componentSource).toContain("roles: ['super_admin', 'admin', 'studentstimetables_admin']")
         expect(componentSource).toContain('canAccessNavigationItem(item)')
-        expect(componentSource).toContain("label: 'Stundenplan'")
-        expect(componentSource).toContain("meta: 'Center'")
+        expect(componentSource).not.toContain("meta: 'Center'")
         expect(componentSource).toContain("label: 'Stundenplan v2'")
         expect(componentSource).toContain("meta: 'Neu'")
         expect(componentSource).toContain("label: 'Importe'")
@@ -175,6 +175,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("redirectMissingSection()")
         expect(componentSource).toContain("redirectLegacySection(section)")
         expect(componentSource).toContain("this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })")
+        expect(componentSource).toContain("this.$router.replace({ path: TIMETABLE_V2_OVERVIEW_PATH })")
         expect(componentSource).not.toContain("this.$router.replace({ path: '/admin/students-timetables' })")
         expect(componentSource).toContain('const AUTOMATIC_TIMETABLE_OVERVIEW_PATH = `${TIMETABLE_OVERVIEW_PATH}/automatic`')
         expect(componentSource).toContain('this.$router.replace({ path: AUTOMATIC_TIMETABLE_OVERVIEW_PATH })')
@@ -192,8 +193,6 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain("RobotTimetable v-if=\"main_action === 'robot'\"")
         expect(componentSource).toContain("SubjectsOverview v-if=\"main_action === 'subjects-overview'\"")
         expect(componentSource).not.toContain("Overview v-if=\"main_action === 'overview'\"")
-        expect(componentSource.indexOf("key: 'timetable'"))
-            .toBeLessThan(componentSource.indexOf("key: 'timetable-v2'"))
         expect(componentSource.indexOf("key: 'timetable-v2'"))
             .toBeLessThan(componentSource.indexOf("key: 'imports'"))
         expect(componentSource.indexOf("key: 'imports'"))
@@ -219,7 +218,7 @@ describe('Students timetable subjects overview', () => {
         expect(computed.automaticTimetableRouteActive.call(ctx)).toBe(false)
     })
 
-    it('writes the default module timetable step into the URL', () => {
+    it('writes the default module timetable v2 step into the URL', () => {
         const methods = (StudentsTimetables as any).methods
         const replace = vi.fn()
         const ctx: any = {
@@ -233,8 +232,8 @@ describe('Students timetable subjects overview', () => {
         }
 
         expect(methods.redirectMissingSection.call(ctx)).toBe(true)
-        expect(ctx.main_action).toBe('timetable')
-        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable/overview' })
+        expect(ctx.main_action).toBe('timetable-v2')
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v2/overview' })
     })
 
     it('opens the timetable navigation on the canonical overview URL', () => {

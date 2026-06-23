@@ -1846,6 +1846,100 @@ it('keeps dated saturday courses green when their actual dates do not overlap', 
         ->and($result['selected_timetable']['problems'])->toBeEmpty();
 });
 
+it('treats regular same-slot courses with overlapping date ranges as conflicts', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 1,
+                'semester' => 5,
+                'branch' => 'common',
+                'json_code' => 'CH2',
+                'json_subject' => 'CH',
+                'name' => 'Chemie 2',
+                'tt_subject' => 'CH',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 5,
+                'branch' => 'common',
+                'json_code' => 'M5',
+                'json_subject' => 'M',
+                'name' => 'Mathematik 5',
+                'tt_subject' => 'M',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 5,
+                'hour' => 9,
+                'class_name' => 'CH2-5K-PLA',
+                'display_label' => 'CH2-5K-PLA',
+                'title' => 'CH2-5K-PLA',
+                'course' => 'CH2',
+                'subject' => 'CH',
+                'dates' => ['2026-02-24', '2026-03-10', '2026-03-24', '2026-04-07', '2026-04-21', '2026-05-05', '2026-05-19', '2026-06-02', '2026-06-16', '2026-06-30'],
+                'dates_count' => 10,
+            ],
+            [
+                'weekday' => 5,
+                'hour' => 9,
+                'class_name' => 'M5-3R-SCHM',
+                'display_label' => 'M5-3R-SCHM',
+                'title' => 'M5-3R-SCHM',
+                'course' => 'M5',
+                'subject' => 'M',
+                'dates' => ['2026-02-17', '2026-03-03', '2026-03-17', '2026-03-31', '2026-04-14', '2026-04-28', '2026-05-12', '2026-05-26', '2026-06-09', '2026-06-23', '2026-07-07'],
+                'dates_count' => 11,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 5,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 3, 4, 5, 6, 7, 8, 9],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                '1|5|common|CH2|CH|Chemie 2|CH2',
+                '2|5|common|M5|M|Mathematik 5|M5',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_timetable_type' => 'conflict',
+            'selected_timetable_number' => 1,
+        ],
+        evaluationCriteria: [
+            [
+                'key' => 'free_days',
+                'label' => 'Anzahl freie Tage',
+                'enabled' => true,
+                'priority' => 1,
+            ],
+        ],
+    );
+
+    expect($result['full_green_timetable_count'])->toBe(0)
+        ->and($result['green_timetable_count'])->toBe(0)
+        ->and($result['red_timetable_count'])->toBe(1)
+        ->and($result['quality_counters'][0]['count'])->toBe(1)
+        ->and($result['selected_timetable']['type'])->toBe('conflict')
+        ->and($result['selected_timetable']['slots']['5-9']['conflicts'][0]['code'])->toBe('M5')
+        ->and($result['selected_timetable']['slots']['5-9']['sameSlotEntries'] ?? [])->toBeEmpty();
+});
+
 it('counts green backend timetables when only one-off appointments overlap', function () {
     $service = app(RobotTimetableBackendSetupService::class);
 

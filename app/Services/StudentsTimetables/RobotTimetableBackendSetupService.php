@@ -3067,12 +3067,40 @@ class RobotTimetableBackendSetupService
      */
     private function courseGroupsDateSlotOverlap(array $firstCourseGroup, array $secondCourseGroup): bool
     {
+        if ($this->courseGroupsRegularDateRangeOverlap($firstCourseGroup, $secondCourseGroup)) {
+            return true;
+        }
+
         $firstSummary = $this->dateKeySummary($this->courseGroupDateSlotKeysForGroup($firstCourseGroup));
         $secondSummary = $this->dateKeySummary($this->courseGroupDateSlotKeysForGroup($secondCourseGroup));
 
         return $firstSummary['has_overlap']
             || $secondSummary['has_overlap']
             || $this->dateKeySummariesOverlap($firstSummary, $secondSummary);
+    }
+
+    /**
+     * @param  array<string, mixed>  $firstCourseGroup
+     * @param  array<string, mixed>  $secondCourseGroup
+     */
+    private function courseGroupsRegularDateRangeOverlap(array $firstCourseGroup, array $secondCourseGroup): bool
+    {
+        if (! $this->courseGroupsShareWeekdayTime($firstCourseGroup, $secondCourseGroup)) {
+            return false;
+        }
+
+        if ($this->isOccasionalCourseGroup($firstCourseGroup) || $this->isOccasionalCourseGroup($secondCourseGroup)) {
+            return false;
+        }
+
+        $firstDates = $this->courseGroupDates($firstCourseGroup);
+        $secondDates = $this->courseGroupDates($secondCourseGroup);
+
+        if ($firstDates === [] || $secondDates === []) {
+            return false;
+        }
+
+        return max($firstDates[0], $secondDates[0]) <= min($firstDates[count($firstDates) - 1], $secondDates[count($secondDates) - 1]);
     }
 
     /**
@@ -3837,9 +3865,25 @@ class RobotTimetableBackendSetupService
             return ["weekly|{$weekday}|{$hour}"];
         }
 
-        return collect($dates)
+        $dateKeys = collect($dates)
             ->map(fn (string $date): string => "date|{$date}|{$weekday}|{$hour}")
             ->all();
+
+        if ($this->isOccasionalCourseGroup($courseGroup)) {
+            return $dateKeys;
+        }
+
+        $rangeStart = $this->dateMonthDayOrdinal($dates[0] ?? '');
+        $rangeEnd = $this->dateMonthDayOrdinal($dates[count($dates) - 1] ?? '');
+
+        if ($rangeStart === null || $rangeEnd === null) {
+            return $dateKeys;
+        }
+
+        return [
+            ...$dateKeys,
+            "range|{$rangeStart}|{$rangeEnd}|{$weekday}|{$hour}",
+        ];
     }
 
     /**
@@ -3888,6 +3932,29 @@ class RobotTimetableBackendSetupService
             }
 
             if (($parts[0] ?? '') !== 'date') {
+                if (($parts[0] ?? '') !== 'range') {
+                    continue;
+                }
+
+                $rangeStart = (int) ($parts[1] ?? 0);
+                $rangeEnd = (int) ($parts[2] ?? 0);
+                $weekdaySlot = ($parts[3] ?? '').'|'.($parts[4] ?? '');
+
+                if ($rangeStart <= 0 || $rangeEnd <= 0 || $weekdaySlot === '|') {
+                    continue;
+                }
+
+                foreach ($summary['ranges'][$weekdaySlot] ?? [] as $range) {
+                    $summary['has_overlap'] = $summary['has_overlap']
+                        || max($rangeStart, $range['start']) <= min($rangeEnd, $range['end']);
+                }
+
+                $summary['has_overlap'] = $summary['has_overlap'] || isset($summary['weekly'][$weekdaySlot]);
+                $summary['ranges'][$weekdaySlot][] = [
+                    'start' => $rangeStart,
+                    'end' => $rangeEnd,
+                ];
+
                 continue;
             }
 
@@ -3899,7 +3966,8 @@ class RobotTimetableBackendSetupService
         }
 
         $summary['has_overlap'] = $summary['has_overlap']
-            || $this->stringSetsIntersect($summary['weekly'], $summary['dated_weekly']);
+            || $this->stringSetsIntersect($summary['weekly'], $summary['dated_weekly'])
+            || $this->weeklyKeysOverlapRanges($summary['weekly'], $summary['ranges']);
 
         return $summary;
     }
@@ -3913,6 +3981,7 @@ class RobotTimetableBackendSetupService
             'weekly' => [],
             'dated' => [],
             'dated_weekly' => [],
+            'ranges' => [],
             'has_overlap' => false,
         ];
     }
@@ -3926,7 +3995,10 @@ class RobotTimetableBackendSetupService
         return $this->stringSetsIntersect($firstSummary['weekly'], $secondSummary['weekly'])
             || $this->stringSetsIntersect($firstSummary['dated'], $secondSummary['dated'])
             || $this->stringSetsIntersect($firstSummary['weekly'], $secondSummary['dated_weekly'])
-            || $this->stringSetsIntersect($firstSummary['dated_weekly'], $secondSummary['weekly']);
+            || $this->stringSetsIntersect($firstSummary['dated_weekly'], $secondSummary['weekly'])
+            || $this->weeklyKeysOverlapRanges($firstSummary['weekly'], $secondSummary['ranges'] ?? [])
+            || $this->weeklyKeysOverlapRanges($secondSummary['weekly'], $firstSummary['ranges'] ?? [])
+            || $this->dateRangeSummariesOverlap($firstSummary['ranges'] ?? [], $secondSummary['ranges'] ?? []);
     }
 
     /**
@@ -3940,10 +4012,62 @@ class RobotTimetableBackendSetupService
             'weekly' => $firstSummary['weekly'] + $secondSummary['weekly'],
             'dated' => $firstSummary['dated'] + $secondSummary['dated'],
             'dated_weekly' => $firstSummary['dated_weekly'] + $secondSummary['dated_weekly'],
+            'ranges' => $this->mergeDateRangeSummaries($firstSummary['ranges'] ?? [], $secondSummary['ranges'] ?? []),
             'has_overlap' => $firstSummary['has_overlap']
                 || $secondSummary['has_overlap']
                 || $this->dateKeySummariesOverlap($firstSummary, $secondSummary),
         ];
+    }
+
+    /**
+     * @param  array<string, true>  $weekly
+     * @param  array<string, list<array{start: int, end: int}>>  $ranges
+     */
+    private function weeklyKeysOverlapRanges(array $weekly, array $ranges): bool
+    {
+        foreach ($weekly as $slot => $_) {
+            if (($ranges[$slot] ?? []) !== []) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, list<array{start: int, end: int}>>  $firstRanges
+     * @param  array<string, list<array{start: int, end: int}>>  $secondRanges
+     */
+    private function dateRangeSummariesOverlap(array $firstRanges, array $secondRanges): bool
+    {
+        foreach ($firstRanges as $slot => $ranges) {
+            foreach ($ranges as $firstRange) {
+                foreach ($secondRanges[$slot] ?? [] as $secondRange) {
+                    if (max($firstRange['start'], $secondRange['start']) <= min($firstRange['end'], $secondRange['end'])) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, list<array{start: int, end: int}>>  $firstRanges
+     * @param  array<string, list<array{start: int, end: int}>>  $secondRanges
+     * @return array<string, list<array{start: int, end: int}>>
+     */
+    private function mergeDateRangeSummaries(array $firstRanges, array $secondRanges): array
+    {
+        foreach ($secondRanges as $slot => $ranges) {
+            $firstRanges[$slot] = [
+                ...($firstRanges[$slot] ?? []),
+                ...$ranges,
+            ];
+        }
+
+        return $firstRanges;
     }
 
     /**
@@ -3963,6 +4087,19 @@ class RobotTimetableBackendSetupService
         }
 
         return false;
+    }
+
+    private function dateMonthDayOrdinal(string $date): ?int
+    {
+        if (preg_match('/^(?:\d{4}-)?(?<month>\d{1,2})-(?<day>\d{1,2})$/u', $date, $match) === 1) {
+            return ((int) $match['month'] * 31) + (int) $match['day'];
+        }
+
+        if (preg_match('/^(?<day>\d{1,2})\.(?<month>\d{1,2})\.?$/u', $date, $match) === 1) {
+            return ((int) $match['month'] * 31) + (int) $match['day'];
+        }
+
+        return null;
     }
 
     /**

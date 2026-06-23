@@ -95,7 +95,17 @@
                 array_pad(preg_split('/\s*[–-]\s*/u', (string) ($slot['time'] ?? ''), 2) ?: [], 2, ''),
             );
         };
-        $mergeCourseOverviewSlots = function ($slots) use ($slotTimeParts) {
+        $mergeSlotDetails = function (string $leftDetails = '', string $rightDetails = ''): string {
+            return collect([$leftDetails, $rightDetails])
+                ->flatMap(fn (string $details): array => preg_split('/\s*·\s*/u', $details) ?: [])
+                ->map(fn (string $detail): string => trim($detail))
+                ->filter()
+                ->unique()
+                ->values()
+                ->implode(' · ');
+        };
+
+        $mergeCourseOverviewSlots = function ($slots) use ($slotTimeParts, $mergeSlotDetails) {
             $mergedSlots = collect();
 
             $slots
@@ -104,11 +114,10 @@
                     $slot['semester'] ?? '',
                     $slot['weekday'] ?? '',
                     $slot['label'] ?? '',
-                    $slot['details'] ?? '',
                     $slot['status'] ?? '',
                     !empty($slot['is_fu']) ? 'fu' : 'regular',
                 ]))
-                ->each(function ($groupedSlots) use ($mergedSlots, $slotTimeParts): void {
+                ->each(function ($groupedSlots) use ($mergedSlots, $slotTimeParts, $mergeSlotDetails): void {
                     $currentSlot = null;
                     $previousHour = null;
                     $until = '';
@@ -146,6 +155,10 @@
                         }
 
                         if ($hour === (int) $previousHour + 1) {
+                            $currentSlot['details'] = $mergeSlotDetails(
+                                (string) ($currentSlot['details'] ?? ''),
+                                (string) ($slot['details'] ?? ''),
+                            );
                             $previousHour = $hour;
                             $until = $slotUntil !== '' ? $slotUntil : $until;
 
@@ -333,10 +346,6 @@
         }
 
         .header {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 3mm;
             margin-bottom: 1.5mm;
         }
 
@@ -348,12 +357,12 @@
         }
 
         .meta {
-            max-width: 60%;
+            max-width: 100%;
             margin-top: 0.5mm;
             color: #475569;
             font-size: 8.5pt;
             line-height: 1.2;
-            text-align: right;
+            text-align: left;
         }
 
         .semesters {
@@ -773,10 +782,19 @@
                                                 @endif
                                             </td>
                                             @foreach($hour['cells'] ?? [] as $cell)
-                                                <td class="cell-{{ $cell['status'] ?? 'empty' }}">
+                                                @php
+                                                    $cellStatus = $cell['status'] ?? 'empty';
+                                                    $cellCourses = collect($cell['courses'] ?? []);
+                                                    $cellMarkers = collect($cell['markers'] ?? []);
+
+                                                    if ($cellStatus === 'warning' && $cellMarkers->isNotEmpty() && $cellCourses->count() <= 1) {
+                                                        $cellStatus = 'filled';
+                                                    }
+                                                @endphp
+                                                <td class="cell-{{ $cellStatus }}">
                                                     <div class="cell-content">
                                                         @php
-                                                            $courses = collect($cell['courses'] ?? []);
+                                                            $courses = $cellCourses;
                                                             $hasDenseCourses = $courses->count() > 1;
                                                             $courseLimitForCell = $courses->count() > $visibleCourseLimit ? max(1, $visibleCourseLimit - 1) : $visibleCourseLimit;
                                                             $shownCourses = $courses->take($courseLimitForCell);
@@ -803,9 +821,9 @@
                                                             </div>
                                                         @endif
 
-                                                        @if(! empty($cell['markers']))
+                                                        @if($cellMarkers->isNotEmpty())
                                                             <div class="markers">
-                                                                @foreach($cell['markers'] as $marker)
+                                                                @foreach($cellMarkers as $marker)
                                                                     <span class="marker" title="{{ $marker['title'] ?? '' }}">{{ $marker['label'] ?? '' }}</span>
                                                                 @endforeach
                                                             </div>

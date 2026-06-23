@@ -102,7 +102,7 @@ export default {
     },
     data() {
         return {
-            main_action: 'timetable',
+            main_action: 'timetable-v2',
         }
     },
     computed: {
@@ -132,13 +132,6 @@ export default {
         },
         allNavigationItems() {
             return [
-                {
-                    key: 'timetable',
-                    label: 'Stundenplan',
-                    meta: 'Center',
-                    icon: 'mdi-calendar-clock-outline',
-                    roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
-                },
                 {
                     key: 'timetable-v2',
                     label: 'Stundenplan v2',
@@ -207,7 +200,7 @@ export default {
                     note: 'Fächer, Import und Zuordnung.',
                 },
             }
-            return sections[this.activeNavigationKey] || sections.timetable
+            return sections[this.activeNavigationKey] || sections['timetable-v2']
         },
     },
     created() {
@@ -243,7 +236,7 @@ export default {
                 return
             }
 
-            this.main_action = 'timetable'
+            this.main_action = 'timetable-v2'
             this.redirectUnauthorizedSection()
         },
         '$route.params.subsection'() {
@@ -260,8 +253,8 @@ export default {
         redirectMissingSection() {
             if (this.$route.params.section) return false
 
-            this.main_action = 'timetable'
-            this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })
+            this.main_action = 'timetable-v2'
+            this.$router.replace({ path: TIMETABLE_V2_OVERVIEW_PATH })
 
             return true
         },
@@ -271,8 +264,8 @@ export default {
                 && this.$route.params.subsection === 'imports'
                 && !this.canManageStudentsTimetables
             ) {
-                this.main_action = 'timetable'
-                this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })
+                this.main_action = 'timetable-v2'
+                this.$router.replace({ path: TIMETABLE_V2_OVERVIEW_PATH })
             }
         },
         redirectLegacySection(section) {
