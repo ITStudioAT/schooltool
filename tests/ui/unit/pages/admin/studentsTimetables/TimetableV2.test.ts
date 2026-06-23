@@ -150,6 +150,16 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.courseReviewStudentLabel.call(context)
             },
         },
+        courseReviewStudentCode: {
+            get() {
+                return TimetableV2.computed.courseReviewStudentCode.call(context)
+            },
+        },
+        courseReviewStudentEmail: {
+            get() {
+                return TimetableV2.computed.courseReviewStudentEmail.call(context)
+            },
+        },
         adoptedPublishedTimetableStudentCode: {
             get() {
                 return TimetableV2.computed.adoptedPublishedTimetableStudentCode.call(context)
@@ -439,6 +449,11 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.storedTimetableStudentCode.call(context)
             },
         },
+        storedTimetableStudentEmail: {
+            get() {
+                return TimetableV2.computed.storedTimetableStudentEmail.call(context)
+            },
+        },
         courseGroupsByCourseCode: {
             get() {
                 return TimetableV2.computed.courseGroupsByCourseCode.call(context)
@@ -645,6 +660,111 @@ function timetableV2Context(overrides = {}) {
 }
 
 describe('TimetableV2 route steps', () => {
+    it('shows a copyable student email in the selected student card, review header, and student search results', () => {
+        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+
+        expect(source).toContain('class="students-timetable-v2-review-card__student-email"')
+        expect(source).toContain('@click.stop="copyCourseReviewStudentEmail"')
+        expect(source).toContain('class="students-timetable-v2-student-context__student-email"')
+        expect(source).toContain('@click.stop="copyStoredTimetableStudentEmail"')
+        expect(source).toContain('class="students-timetable-v2-student-search-results__email"')
+        expect(source).toContain('@click.stop="copyStudentEmail(student)"')
+        expect(source).toContain("copiedStudentEmailCode === normalizedStudentCode(student.student_code) ? 'mdi-check' : 'mdi-content-copy'")
+        expect(source).toContain('E-Mail-Adresse kopieren')
+        expect(source).toContain('Kopiert')
+    })
+
+    it('copies a student email and clears the copied state after feedback', async () => {
+        vi.useFakeTimers()
+
+        try {
+            const methods = TimetableV2.methods
+            const context = {
+                copiedStudentEmailCode: null,
+                copyStudentEmailResetTimeout: null,
+                studentEmail: methods.studentEmail,
+                normalizedStudentCode: methods.normalizedStudentCode,
+                copyTextToClipboard: vi.fn().mockResolvedValue(true),
+                clearCopyStudentEmailResetTimeout: methods.clearCopyStudentEmailResetTimeout,
+            }
+
+            await expect(methods.copyStudentEmail.call(context, {
+                student_code: ' 100 ',
+                email: ' isabella.zadra@example.test ',
+            })).resolves.toBe(true)
+
+            expect(context.copyTextToClipboard).toHaveBeenCalledWith('isabella.zadra@example.test')
+            expect(context.copiedStudentEmailCode).toBe('100')
+
+            vi.advanceTimersByTime(1800)
+
+            expect(context.copiedStudentEmailCode).toBeNull()
+            expect(context.copyStudentEmailResetTimeout).toBeNull()
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('copies the stored student email through the shared student email copy flow', async () => {
+        const methods = TimetableV2.methods
+        const context = {
+            storedTimetableStudentCode: '100',
+            storedTimetableStudentEmail: 'isabella.zadra@example.test',
+            copyStudentEmail: vi.fn().mockResolvedValue(true),
+        }
+
+        await expect(methods.copyStoredTimetableStudentEmail.call(context)).resolves.toBe(true)
+
+        expect(context.copyStudentEmail).toHaveBeenCalledWith({
+            student_code: '100',
+            email: 'isabella.zadra@example.test',
+        })
+    })
+
+    it('copies the review student email through the shared student email copy flow', async () => {
+        const methods = TimetableV2.methods
+        const context = {
+            courseReviewStudentCode: '100',
+            courseReviewStudentEmail: 'isabella.zadra@example.test',
+            copyStudentEmail: vi.fn().mockResolvedValue(true),
+        }
+
+        await expect(methods.copyCourseReviewStudentEmail.call(context)).resolves.toBe(true)
+
+        expect(context.copyStudentEmail).toHaveBeenCalledWith({
+            student_code: '100',
+            email: 'isabella.zadra@example.test',
+        })
+    })
+
+    it('resolves the review student email for course review and adoption steps', () => {
+        const reviewContext = timetableV2Context({
+            timetableV2Step: 'course-review',
+            storedTimetableStudentContext: {
+                student: {
+                    studentCode: '100',
+                    label: '5K · SOLLEDER Luis · Semester 5',
+                    email: 'luis.solleder@example.test',
+                },
+            },
+        })
+        const adoptedContext = timetableV2Context({
+            timetableV2Step: 'timetable-adoption',
+            robotStudents: [
+                { student_code: '200', email: 'adopted.student@example.test' },
+            ],
+            adoptedTimetableStudentContextSnapshot: {
+                student: {
+                    studentCode: '200',
+                    label: '5K · SOLLEDER Luis · Semester 5',
+                },
+            },
+        })
+
+        expect(TimetableV2.computed.courseReviewStudentEmail.call(reviewContext)).toBe('luis.solleder@example.test')
+        expect(TimetableV2.computed.courseReviewStudentEmail.call(adoptedContext)).toBe('adopted.student@example.test')
+    })
+
     it('shows calculation action buttons and disables them while timetables are loading', () => {
         const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
 
@@ -2113,12 +2233,23 @@ describe('TimetableV2 route steps', () => {
         expect(additionalCourseCardSource).toContain('color="info"')
         expect(additionalCourseCardSource).toContain('variant="outlined"')
         expect(additionalCourseCardSource).toContain('students-timetable-v2-completed-courses__item--static')
+        expect(additionalCourseCardSource).toContain('storedAdditionalCourseSummary.countLabel')
+        expect(additionalCourseCardSource).toContain('storedAdditionalCourseSummary.hoursLabel')
         expect(additionalCourseCardSource).not.toContain("setCourseGroupSelection('additional'")
         expect(additionalCourseCardSource).not.toContain("toggleCourseItem(course, 'additional')")
         expect(additionalCourseCardSource).not.toContain("courseItemSelected(course, 'additional')")
-        expect(additionalCourseCardSource).not.toContain('storedAdditionalCourseSummary.countLabel')
-        expect(additionalCourseCardSource).not.toContain('storedAdditionalCourseSummary.hoursLabel')
         expect(additionalCourseCardSource).not.toContain('students-timetable-v2-completed-courses__item--deselected')
+
+        const context = timetableV2Context({
+            storedAdditionalCourseItems: [
+                { code: 'INF2', hours: 4, label: 'INF2' },
+                { code: 'GS1', hours: 3, label: 'GS1' },
+            ],
+        })
+        const summary = TimetableV2.computed.storedAdditionalCourseSummary.call(context)
+
+        expect(summary.countLabel).toBe('2 Kurse')
+        expect(summary.hoursLabel).toBe('7 Std.')
     })
 
     it('shows the imported student religion below the student title', () => {
@@ -2132,17 +2263,33 @@ describe('TimetableV2 route steps', () => {
             },
             storedTimetableStudentContext: {
                 student: {
+                    studentCode: '100',
                     label: '5K · SOLLEDER Luis · Semester 5',
                     religion: 'Rk',
                     semesterLabel: '1. Semester',
+                    email: 'luis.solleder@example.test',
+                },
+            },
+        })
+        const fallbackEmailContext = timetableV2Context({
+            robotStudents: [
+                { student_code: '200', email: 'stale.context@example.test' },
+            ],
+            storedTimetableStudentContext: {
+                student: {
+                    studentCode: '200',
+                    label: '5K · SOLLEDER Luis · Semester 5',
                 },
             },
         })
         const religionSummaryItem = context.storedTimetableSelectionSummary.find((item) => item.key === 'religion')
 
         expect(source).toContain('class="students-timetable-v2-student-context__student-religion"')
+        expect(source).toContain('class="students-timetable-v2-student-context__student-email"')
         expect(source).toContain('{{ storedTimetableStudentReligionMeta() }}')
         expect(TimetableV2.computed.storedTimetableStudentLabel.call(context)).toBe('5K · SOLLEDER Luis · Semester 5')
+        expect(TimetableV2.computed.storedTimetableStudentEmail.call(context)).toBe('luis.solleder@example.test')
+        expect(TimetableV2.computed.storedTimetableStudentEmail.call(fallbackEmailContext)).toBe('stale.context@example.test')
         expect(TimetableV2.methods.storedTimetableStudentReligionMeta.call(context)).toBe('Religion: Rk')
         expect(religionSummaryItem).toMatchObject({
             key: 'religion',

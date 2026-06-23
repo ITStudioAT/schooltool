@@ -1295,12 +1295,253 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('icon="mdi-pencil"')
         expect(source).toContain('@click="openSelectionDialog(item)"')
         expect(source).toContain('restoreSelectionDefaults')
+        expect(source).toContain('class="overview-selection__reset ml-auto"')
+        expect(source).toContain('Zurücksetzen')
+        expect(source).toContain(':disabled="!hasSelectionOverride"')
         expect(source).toContain('selectionOverridePayload()')
         expect(source).toContain('this.studentTimetablesStore.updateProfileSelection')
         expect(source).toContain('this.studentTimetablesStore.restoreProfileSelection')
         expect(source).toContain('this.overview?.selection_override')
+        expect(source).not.toContain('overview-selection__restore')
         expect(source).not.toContain('localStorage')
         expect(source).not.toContain('studentReligionMeta(religion)')
+    })
+
+    it('shows the student religion in the overview header', () => {
+        const overviewPath = resolve(
+            process.cwd(),
+            'resources/js/pages/homepage/studentsTimetables/overview/Overview.vue',
+        )
+        const source = readFileSync(overviewPath, 'utf8')
+
+        expect(source).toContain('<span v-if="studentReligionLabel" class="hero-badge">{{ studentReligionLabel }}</span>')
+
+        expect(Overview.computed.studentReligionLabel.call({
+            overview: {
+                student: { religion: 'Rk' },
+            },
+            selectionItems: [
+                { key: 'semester', value: '8. Semester' },
+                { key: 'religion', value: 'Ethik', meta: 'Rk' },
+            ],
+            user: {},
+        })).toBe('Rk')
+
+        expect(Overview.computed.studentReligionLabel.call({
+            selectionItems: [
+                { key: 'religion', value: 'Ethik', meta: 'Religion: Rk' },
+            ],
+            user: {},
+        })).toBe('Rk')
+
+        expect(Overview.computed.studentReligionLabel.call({
+            selectionItems: [
+                { key: 'religion', value: 'Ethik', meta: '' },
+            ],
+            user: {},
+        })).toBe('Ethik')
+    })
+
+    it('shows completed and negative course summaries in the overview header', () => {
+        const overviewPath = resolve(
+            process.cwd(),
+            'resources/js/pages/homepage/studentsTimetables/overview/Overview.vue',
+        )
+        const source = readFileSync(overviewPath, 'utf8')
+
+        expect(source).toContain('class="hero-course-history"')
+        expect(source).toContain('heroCourseHistorySections')
+        expect(source).toContain('Abgeschlossene Kurse')
+        expect(source).toContain('Keine abgeschlossenen Kurse gefunden.')
+        expect(source).toContain('Negative Kurse')
+        expect(source).toContain('Keine negativen Kurse gefunden.')
+
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx: any = {
+            overview: {
+                completed_courses: [
+                    { code: 'ETH1', name: 'Ethik', grade: '2' },
+                ],
+                missing_courses: [
+                    { code: 'D1', name: 'Deutsch', grade: '5' },
+                ],
+                course_sections: [
+                    {
+                        key: 'completed',
+                        items: [
+                            { code: 'ETH1', name: 'Ethik', grade: '2' },
+                        ],
+                    },
+                    {
+                        key: 'missing',
+                        items: [],
+                    },
+                ],
+            },
+            courseHistoryItems: methods.courseHistoryItems,
+        }
+
+        ctx.courseSections = computed.courseSections.call(ctx)
+
+        expect(computed.heroCourseHistorySections.call(ctx)).toEqual([
+            expect.objectContaining({
+                key: 'completed',
+                title: 'Abgeschlossene Kurse',
+                empty: 'Keine abgeschlossenen Kurse gefunden.',
+                items: [
+                    { code: 'ETH1', name: 'Ethik', grade: '2' },
+                ],
+            }),
+            expect.objectContaining({
+                key: 'missing',
+                title: 'Negative Kurse',
+                empty: 'Keine negativen Kurse gefunden.',
+                items: [],
+            }),
+        ])
+        expect(methods.courseHistoryCourseLabel({ code: 'ETH1', name: 'Ethik' })).toBe('ETH1 - Ethik')
+        expect(methods.courseHistoryCourseMeta({ grade: '2' })).toBe('2')
+    })
+
+    it('shows selectable negative planned and additional course cards in the overview data card', () => {
+        const overviewPath = resolve(
+            process.cwd(),
+            'resources/js/pages/homepage/studentsTimetables/overview/Overview.vue',
+        )
+        const source = readFileSync(overviewPath, 'utf8')
+
+        expect(source).toContain('class="overview-course-selection"')
+        expect(source).toContain('overviewCourseSelectionVisible && !showEvaluationSettings && !showManualTimetable')
+        expect(source).toContain('overviewCourseSelectionSections')
+        expect(source).toContain('Negative Kurse')
+        expect(source).toContain('Vorgesehene Kurse')
+        expect(source).toContain('Zusätzliche Kurse')
+        expect(source).toContain('Ausgewählt')
+        expect(source).toContain('Maximal 10/30')
+        expect(source).toContain('setOverviewCourseGroupSelection(section.key, true)')
+        expect(source).toContain('toggleOverviewCourseItem(course, section.key)')
+        expect(source).toContain("const noAutomaticTimetableCourseValue = '__none'")
+
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx: any = {
+            ...methods,
+            $route: { query: {} },
+            overview: {
+                course_sections: [
+                    {
+                        key: 'missing',
+                        items: [
+                            { key: 'missing-d1', code: 'D1', name: 'Deutsch', hours: 3 },
+                        ],
+                    },
+                    {
+                        key: 'proposed',
+                        items: [
+                            { key: 'planned-m1', code: 'M1', name: 'Mathematik', hours: 4 },
+                        ],
+                    },
+                    {
+                        key: 'additional',
+                        items: [
+                            { key: 'additional-bu2', code: 'BU2', name: 'Biologie', hours: 2 },
+                        ],
+                    },
+                ],
+            },
+        }
+
+        ctx.courseSections = computed.courseSections.call(ctx)
+        ctx.overviewDefaultSelectedCourseKeys = computed.overviewDefaultSelectedCourseKeys.call(ctx)
+        ctx.automaticTimetableCourseKeys = computed.automaticTimetableCourseKeys.call(ctx)
+        ctx.overviewSelectedCourseLimitItems = computed.overviewSelectedCourseLimitItems.call(ctx)
+
+        expect(ctx.automaticTimetableCourseKeys).toEqual(['missing-d1', 'planned-m1'])
+        expect(computed.overviewSelectedCourseLimitSummary.call(ctx)).toEqual({
+            count: 2,
+            hours: 7,
+            countLabel: '2 Kurse',
+            hoursLabel: '7 Std.',
+        })
+        expect(computed.overviewCourseSelectionSections.call(ctx)).toEqual([
+            expect.objectContaining({
+                key: 'missing',
+                selectedItems: [
+                    expect.objectContaining({ key: 'missing-d1' }),
+                ],
+            }),
+            expect.objectContaining({
+                key: 'planned',
+                bulkSelectable: true,
+                selectedItems: [
+                    expect.objectContaining({ key: 'planned-m1' }),
+                ],
+            }),
+            expect.objectContaining({
+                key: 'additional',
+                selectable: false,
+                selectedItems: [
+                    expect.objectContaining({ key: 'additional-bu2' }),
+                ],
+            }),
+        ])
+
+        ctx.$route = { query: { automatic_timetable_courses: '__none' } }
+        expect(computed.automaticTimetableCourseKeys.call(ctx)).toEqual([])
+
+        const partialCtx: any = {
+            ...methods,
+            $route: { query: {} },
+            overview: {
+                course_sections: [
+                    {
+                        key: 'missing',
+                        items: [],
+                    },
+                    {
+                        key: 'proposed',
+                        items: [
+                            { key: 'planned-m1', code: 'M1', name: 'Mathematik', hours: 4 },
+                        ],
+                    },
+                    {
+                        key: 'additional',
+                        items: [],
+                    },
+                ],
+            },
+        }
+
+        partialCtx.courseSections = computed.courseSections.call(partialCtx)
+        partialCtx.overviewDefaultSelectedCourseKeys = computed.overviewDefaultSelectedCourseKeys.call(partialCtx)
+        partialCtx.automaticTimetableCourseKeys = computed.automaticTimetableCourseKeys.call(partialCtx)
+
+        partialCtx.overviewCourseSelectionSections = computed.overviewCourseSelectionSections.call(partialCtx)
+
+        expect(partialCtx.overviewCourseSelectionSections.map(section => section.key)).toEqual(['planned'])
+        expect(computed.overviewCourseSelectionVisible.call(partialCtx)).toBe(true)
+
+        const emptyCtx: any = {
+            ...methods,
+            $route: { query: {} },
+            overview: {
+                course_sections: [
+                    { key: 'missing', items: [] },
+                    { key: 'proposed', items: [] },
+                    { key: 'additional', items: [] },
+                ],
+            },
+        }
+
+        emptyCtx.courseSections = computed.courseSections.call(emptyCtx)
+        emptyCtx.overviewDefaultSelectedCourseKeys = computed.overviewDefaultSelectedCourseKeys.call(emptyCtx)
+        emptyCtx.automaticTimetableCourseKeys = computed.automaticTimetableCourseKeys.call(emptyCtx)
+
+        emptyCtx.overviewCourseSelectionSections = computed.overviewCourseSelectionSections.call(emptyCtx)
+
+        expect(emptyCtx.overviewCourseSelectionSections).toEqual([])
+        expect(computed.overviewCourseSelectionVisible.call(emptyCtx)).toBe(false)
     })
 
     it('uses a back action instead of a reset action', () => {
@@ -1321,6 +1562,8 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('v-else-if="currentStep === \'result\'" class="student-generated-timetable"')
         expect(source).toContain('student-generated-timetable__back-button')
         expect(source).toContain('student-evaluation-settings__automatic-card')
+        expect(source).not.toContain('student-evaluation-settings__summary-card')
+        expect(source).not.toContain('student-evaluation-settings__summary-title')
         expect(source).toContain('color="primary"')
         expect(source).toContain('color="success"')
         expect(source).toContain('readOnlySelectedCourseSections')

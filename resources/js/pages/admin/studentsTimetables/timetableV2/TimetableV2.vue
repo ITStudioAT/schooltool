@@ -8,6 +8,25 @@
                             <div class="students-timetable-v2-review-card__identity">
                                 <v-icon :icon="reviewFlowStudentIcon" size="20" color="primary" />
                                 <strong>{{ courseReviewStudentLabel }}</strong>
+                                <button
+                                    v-if="courseReviewStudentEmail"
+                                    type="button"
+                                    class="students-timetable-v2-review-card__student-email"
+                                    :class="{ 'students-timetable-v2-review-card__student-email--copied': copiedStudentEmailCode === courseReviewStudentCode }"
+                                    :aria-label="copiedStudentEmailCode === courseReviewStudentCode ? `E-Mail-Adresse kopiert: ${courseReviewStudentEmail}` : `E-Mail-Adresse kopieren: ${courseReviewStudentEmail}`"
+                                    :title="copiedStudentEmailCode === courseReviewStudentCode ? 'Kopiert!' : `E-Mail-Adresse kopieren: ${courseReviewStudentEmail}`"
+                                    @click.stop="copyCourseReviewStudentEmail">
+                                    <v-icon icon="mdi-email-outline" size="14" />
+                                    <span>{{ courseReviewStudentEmail }}</span>
+                                    <v-icon
+                                        :icon="copiedStudentEmailCode === courseReviewStudentCode ? 'mdi-check' : 'mdi-content-copy'"
+                                        size="13" />
+                                    <span
+                                        v-if="copiedStudentEmailCode === courseReviewStudentCode"
+                                        class="students-timetable-v2-review-card__student-email-copied">
+                                        Kopiert
+                                    </span>
+                                </button>
                             </div>
                             <div class="students-timetable-v2-review-card__selection">
                                 <v-chip
@@ -1138,8 +1157,29 @@
                             <div class="students-timetable-v2-student-context__title">
                                 <v-icon icon="mdi-account-school-outline" size="18" color="primary" />
                                 <span class="students-timetable-v2-student-context__student-text">
-                                    <span class="students-timetable-v2-student-context__student-label">
-                                        {{ storedTimetableStudentLabel }}
+                                    <span class="students-timetable-v2-student-context__student-main">
+                                        <span class="students-timetable-v2-student-context__student-label">
+                                            {{ storedTimetableStudentLabel }}
+                                        </span>
+                                        <button
+                                            v-if="storedTimetableStudentEmail"
+                                            type="button"
+                                            class="students-timetable-v2-student-context__student-email"
+                                            :class="{ 'students-timetable-v2-student-context__student-email--copied': copiedStudentEmailCode === storedTimetableStudentCode }"
+                                            :aria-label="copiedStudentEmailCode === storedTimetableStudentCode ? `E-Mail-Adresse kopiert: ${storedTimetableStudentEmail}` : `E-Mail-Adresse kopieren: ${storedTimetableStudentEmail}`"
+                                            :title="copiedStudentEmailCode === storedTimetableStudentCode ? 'Kopiert!' : `E-Mail-Adresse kopieren: ${storedTimetableStudentEmail}`"
+                                            @click.stop="copyStoredTimetableStudentEmail">
+                                            <v-icon icon="mdi-email-outline" size="14" />
+                                            <span>{{ storedTimetableStudentEmail }}</span>
+                                            <v-icon
+                                                :icon="copiedStudentEmailCode === storedTimetableStudentCode ? 'mdi-check' : 'mdi-content-copy'"
+                                                size="13" />
+                                            <span
+                                                v-if="copiedStudentEmailCode === storedTimetableStudentCode"
+                                                class="students-timetable-v2-student-context__student-email-copied">
+                                                Kopiert
+                                            </span>
+                                        </button>
                                     </span>
                                     <span v-if="storedTimetableStudentReligionMeta()" class="students-timetable-v2-student-context__student-religion">
                                         {{ storedTimetableStudentReligionMeta() }}
@@ -1398,6 +1438,14 @@
                 <v-card rounded="lg" class="students-timetable-v2-card">
                     <v-card-title class="students-timetable-v2-course-card-title">
                         <span>Zusätzliche Kurse</span>
+                        <span class="students-timetable-v2-course-card-title__chips">
+                            <v-chip size="x-small" color="info" variant="tonal">
+                                {{ storedAdditionalCourseSummary.countLabel }}
+                            </v-chip>
+                            <v-chip size="x-small" color="info" variant="tonal">
+                                {{ storedAdditionalCourseSummary.hoursLabel }}
+                            </v-chip>
+                        </span>
                     </v-card-title>
                     <v-card-text>
                         <v-progress-linear v-if="studentCompletedCoursesLoading" indeterminate color="primary" class="students-timetable-v2-completed-courses__loading" />
@@ -1526,13 +1574,41 @@
                             <v-btn
                                 v-for="student in filteredStudentResults"
                                 :key="student.student_code"
+                                tag="div"
+                                role="button"
+                                tabindex="0"
                                 size="small"
                                 variant="tonal"
                                 :color="String(studentSelectionDraft.studentCode) === String(student.student_code) ? 'primary' : 'secondary'"
                                 class="students-timetable-v2-student-search-results__item"
                                 block
-                                @click="selectStudentDraft(student.student_code)">
-                                {{ studentOptionTitle(student) }}
+                                @click="selectStudentDraft(student.student_code)"
+                                @keydown.enter.prevent="selectStudentDraft(student.student_code)"
+                                @keydown.space.prevent="selectStudentDraft(student.student_code)">
+                                <span class="students-timetable-v2-student-search-results__item-content">
+                                    <span class="students-timetable-v2-student-search-results__name">
+                                        {{ studentOptionTitle(student) }}
+                                    </span>
+                                    <button
+                                        v-if="studentEmail(student)"
+                                        type="button"
+                                        class="students-timetable-v2-student-search-results__email"
+                                        :class="{ 'students-timetable-v2-student-search-results__email--copied': copiedStudentEmailCode === normalizedStudentCode(student.student_code) }"
+                                        :aria-label="copiedStudentEmailCode === normalizedStudentCode(student.student_code) ? `E-Mail-Adresse kopiert: ${studentEmail(student)}` : `E-Mail-Adresse kopieren: ${studentEmail(student)}`"
+                                        :title="copiedStudentEmailCode === normalizedStudentCode(student.student_code) ? 'Kopiert!' : `E-Mail-Adresse kopieren: ${studentEmail(student)}`"
+                                        @click.stop="copyStudentEmail(student)">
+                                        <v-icon icon="mdi-email-outline" size="14" />
+                                        <span>{{ studentEmail(student) }}</span>
+                                        <v-icon
+                                            :icon="copiedStudentEmailCode === normalizedStudentCode(student.student_code) ? 'mdi-check' : 'mdi-content-copy'"
+                                            size="13" />
+                                        <span
+                                            v-if="copiedStudentEmailCode === normalizedStudentCode(student.student_code)"
+                                            class="students-timetable-v2-student-search-results__email-copied">
+                                            Kopiert
+                                        </span>
+                                    </button>
+                                </span>
                             </v-btn>
                             <div v-if="!filteredStudentResults.length" class="students-timetable-v2-student-search-results__empty">Keine Schüler gefunden</div>
                         </template>
@@ -1581,6 +1657,8 @@ export default {
             studentCompletedCoursesRequestId: 0,
             studentOptionsLoading: false,
             studentSearch: '',
+            copiedStudentEmailCode: null,
+            copyStudentEmailResetTimeout: null,
             studentSelectionDraft: {
                 studentCode: null,
             },
@@ -1761,6 +1839,18 @@ export default {
 
             return label
         },
+        storedTimetableStudentEmail() {
+            const storedEmail = String(this.storedTimetableStudentContext?.student?.email || '').trim()
+            if (storedEmail) return storedEmail
+
+            const studentCode = this.storedTimetableStudentCode
+            const selectedStudent = studentCode
+                ? (Array.isArray(this.robotStudents) ? this.robotStudents : [])
+                    .find((student) => this.normalizedStudentCode(student?.student_code) === studentCode)
+                : null
+
+            return this.studentEmail(selectedStudent)
+        },
         courseReviewStudentLabel() {
             if (!this.adoptedTimetableVisible) {
                 return this.storedTimetableStudentContext ? this.storedTimetableStudentLabel : 'Ohne Studierenden'
@@ -1769,6 +1859,33 @@ export default {
             const label = String(this.adoptedTimetableStudentContextSnapshot?.student?.label || '').trim()
 
             return label || 'Ohne Studierenden'
+        },
+        courseReviewStudentCode() {
+            if (!this.adoptedTimetableVisible) return this.storedTimetableStudentCode
+
+            return this.normalizedStudentCode(
+                this.adoptedTimetableStudentContextSnapshot?.student?.studentCode
+                    || this.storedTimetableStudentContext?.student?.studentCode,
+            )
+        },
+        courseReviewStudentEmail() {
+            const contextEmail = this.adoptedTimetableVisible
+                ? String(
+                    this.adoptedTimetableStudentContextSnapshot?.student?.email
+                        || this.storedTimetableStudentContext?.student?.email
+                        || '',
+                ).trim()
+                : this.storedTimetableStudentEmail
+
+            if (contextEmail) return contextEmail
+
+            const studentCode = this.courseReviewStudentCode
+            const selectedStudent = studentCode
+                ? (Array.isArray(this.robotStudents) ? this.robotStudents : [])
+                    .find((student) => this.normalizedStudentCode(student?.student_code) === studentCode)
+                : null
+
+            return this.studentEmail(selectedStudent)
         },
         adoptedPublishedTimetableStudentCode() {
             return this.normalizedStudentCode(
@@ -2050,7 +2167,7 @@ export default {
             return this.courseItemsSummary(this.selectedPlannedCourseItems)
         },
         storedAdditionalCourseSummary() {
-            return this.courseItemsSummary(this.selectedAdditionalCourseItems)
+            return this.courseItemsSummary(this.storedAdditionalCourseItems)
         },
         selectedCourseSummary() {
             return this.courseItemsSummary([
@@ -2593,7 +2710,10 @@ export default {
         filteredStudentResults() {
             if (!this.studentSearchReady) return []
 
-            return this.robotStudents.filter((student) => this.studentOptionTitle(student).toLowerCase().includes(this.normalizedStudentSearch))
+            return this.robotStudents.filter((student) => [
+                this.studentOptionTitle(student),
+                this.studentEmail(student),
+            ].join(' ').toLowerCase().includes(this.normalizedStudentSearch))
         },
         studentTotalCountLabel() {
             const count = Array.isArray(this.robotStudents) ? this.robotStudents.length : 0
@@ -2711,6 +2831,7 @@ export default {
 
     beforeUnmount() {
         this.clearTimetableCalculationProgressTimers()
+        this.clearCopyStudentEmailResetTimeout()
     },
 
     methods: {
@@ -7845,6 +7966,80 @@ export default {
 
             return [schoolClass, name, semester].filter(Boolean).join(' · ')
         },
+        studentEmail(student) {
+            return String(student?.email || '').trim()
+        },
+        async copyStudentEmail(student) {
+            const emailAddress = this.studentEmail(student)
+            if (!emailAddress) return false
+
+            const copied = await this.copyTextToClipboard(emailAddress)
+            if (!copied) return false
+
+            this.copiedStudentEmailCode = this.normalizedStudentCode(student?.student_code)
+            this.clearCopyStudentEmailResetTimeout()
+            this.copyStudentEmailResetTimeout = globalThis.setTimeout(() => {
+                this.copiedStudentEmailCode = null
+                this.copyStudentEmailResetTimeout = null
+            }, 1800)
+
+            if (typeof this.copyStudentEmailResetTimeout?.unref === 'function') {
+                this.copyStudentEmailResetTimeout.unref()
+            }
+
+            return true
+        },
+        copyStoredTimetableStudentEmail() {
+            return this.copyStudentEmail({
+                student_code: this.storedTimetableStudentCode,
+                email: this.storedTimetableStudentEmail,
+            })
+        },
+        copyCourseReviewStudentEmail() {
+            return this.copyStudentEmail({
+                student_code: this.courseReviewStudentCode,
+                email: this.courseReviewStudentEmail,
+            })
+        },
+        clearCopyStudentEmailResetTimeout() {
+            if (!this.copyStudentEmailResetTimeout) return
+
+            globalThis.clearTimeout(this.copyStudentEmailResetTimeout)
+            this.copyStudentEmailResetTimeout = null
+        },
+        async copyTextToClipboard(value) {
+            const text = String(value || '').trim()
+            if (!text) return false
+
+            if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
+                try {
+                    await navigator.clipboard.writeText(text)
+
+                    return true
+                } catch {
+                    // Fall back to the textarea copy path below.
+                }
+            }
+
+            if (typeof document === 'undefined') return false
+
+            try {
+                const textarea = document.createElement('textarea')
+                textarea.value = text
+                textarea.setAttribute('readonly', '')
+                textarea.style.position = 'fixed'
+                textarea.style.left = '-9999px'
+                document.body.appendChild(textarea)
+                textarea.select()
+                textarea.setSelectionRange(0, text.length)
+                const copied = document.execCommand('copy')
+                document.body.removeChild(textarea)
+
+                return copied
+            } catch {
+                return false
+            }
+        },
         studentSemesterLabel(student) {
             const semester = this.studentSemester(student)
 
@@ -8889,10 +9084,22 @@ export default {
 .students-timetable-v2-student-context__student-text {
     display: grid;
     min-width: 0;
-    gap: 1px;
+    gap: 3px;
+}
+
+.students-timetable-v2-student-context__student-main {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
 }
 
 .students-timetable-v2-student-context__student-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 1.08rem;
     line-height: 1.3;
 }
@@ -9035,6 +9242,75 @@ export default {
 .students-timetable-v2-student-search-results__item {
     justify-content: flex-start;
     min-height: 32px;
+}
+
+.students-timetable-v2-student-search-results__item-content {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+    width: 100%;
+    text-align: left;
+}
+
+.students-timetable-v2-student-search-results__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.students-timetable-v2-review-card__student-email,
+.students-timetable-v2-student-context__student-email,
+.students-timetable-v2-student-search-results__email {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    gap: 4px;
+    border: 1px solid rgba(37, 99, 235, 0.22);
+    border-radius: 999px;
+    padding: 1px 7px;
+    background: rgba(219, 234, 254, 0.82);
+    color: #1d4ed8;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0;
+}
+
+.students-timetable-v2-review-card__student-email span,
+.students-timetable-v2-student-context__student-email span,
+.students-timetable-v2-student-search-results__email span {
+    overflow: hidden;
+    min-width: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.students-timetable-v2-review-card__student-email:hover,
+.students-timetable-v2-review-card__student-email:focus-visible,
+.students-timetable-v2-student-context__student-email:hover,
+.students-timetable-v2-student-context__student-email:focus-visible,
+.students-timetable-v2-student-search-results__email:hover,
+.students-timetable-v2-student-search-results__email:focus-visible {
+    background: rgba(191, 219, 254, 0.96);
+    outline: none;
+}
+
+.students-timetable-v2-review-card__student-email--copied,
+.students-timetable-v2-student-context__student-email--copied,
+.students-timetable-v2-student-search-results__email--copied {
+    border-color: rgba(22, 163, 74, 0.28);
+    background: rgba(220, 252, 231, 0.92);
+    color: #15803d;
+}
+
+.students-timetable-v2-review-card__student-email-copied,
+.students-timetable-v2-student-context__student-email-copied,
+.students-timetable-v2-student-search-results__email-copied {
+    color: #15803d;
 }
 
 .students-timetable-v2-student-search-results__empty {

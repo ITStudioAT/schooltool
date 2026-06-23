@@ -8,7 +8,7 @@
             <div class="student-evaluation-settings__title-label">
                 <v-icon icon="mdi-auto-fix" />
                 <div>
-                    <p>Automatischer Stundenplan</p>
+                    <p>Neuer Stundenplan</p>
                     <h3>{{ currentStepTitle }}</h3>
                 </div>
             </div>
@@ -17,48 +17,13 @@
         <template v-else-if="currentStep === 'criteria'">
             <div class="student-evaluation-settings__automatic-card">
                 <v-icon icon="mdi-calendar-clock" size="22" />
-                <h2>Automatischer Stundenplan</h2>
+                <h2>Neuer Stundenplan</h2>
                 <span class="student-evaluation-settings__automatic-stars" aria-hidden="true">
                     <v-icon icon="mdi-star-four-points" size="10" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--1" />
                     <v-icon icon="mdi-star-four-points" size="14" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--2" />
                     <v-icon icon="mdi-star-four-points" size="8" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--3" />
                 </span>
             </div>
-            <div class="student-evaluation-settings__summary-card">
-                <div class="student-evaluation-settings__summary-header">
-                    <div class="student-evaluation-settings__summary-title">
-                        <v-icon icon="mdi-tune-variant" size="18" />
-                        Bewertungskriterien
-                    </div>
-                    <v-btn
-                        class="student-evaluation-settings__summary-cog"
-                        icon="mdi-cog-outline"
-                        variant="text"
-                        density="comfortable"
-                        color="primary"
-                        title="Einstellungen"
-                        aria-label="Einstellungen"
-                        @click="criteriaEditorDialogOpen = true" />
-                </div>
-
-            <v-skeleton-loader v-if="loading" type="list-item-three-line" />
-            <div v-else-if="activeCriteria.length" class="student-evaluation-settings__summary-list">
-                <span
-                    v-for="(criterion, index) in activeCriteria"
-                    :key="criterion.key"
-                    class="student-evaluation-settings__summary-item">
-                    <span class="student-evaluation-settings__summary-rank">{{ index + 1 }}</span>
-                    <span class="student-evaluation-settings__summary-label">{{ criterion.label }}</span>
-                    <span v-if="criterionOptionLabel(criterion)" class="student-evaluation-settings__summary-option">
-                        {{ criterionOptionLabel(criterion) }}
-                    </span>
-                </span>
-            </div>
-            <div v-else class="student-evaluation-settings__summary-empty">
-                Keine Bewertungskriterien aktiv
-            </div>
-            </div>
-
             <div class="student-evaluation-settings__course-panel">
                 <div class="student-evaluation-settings__course-panel-head">
                     <div class="student-evaluation-settings__course-panel-title">
@@ -228,7 +193,7 @@
                 <div>
                     <div class="student-course-selection__label">Vorgesehene Kurse</div>
                     <div class="student-course-selection__description">
-                        Wählen Sie die Kurse aus, die für den automatischen Stundenplan berücksichtigt werden sollen.
+                        Wählen Sie die Kurse aus, die für den neuen Stundenplan berücksichtigt werden sollen.
                     </div>
                 </div>
                 <v-chip size="small" color="info" variant="tonal">
@@ -273,7 +238,7 @@
         <div v-else-if="currentStep === 'result'" class="student-generated-timetable">
             <div class="student-evaluation-settings__automatic-card">
                 <v-icon icon="mdi-calendar-clock" size="22" />
-                <h2>Automatischer Stundenplan</h2>
+                <h2>Neuer Stundenplan</h2>
                 <span class="student-evaluation-settings__automatic-stars" aria-hidden="true">
                     <v-icon icon="mdi-star-four-points" size="10" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--1" />
                     <v-icon icon="mdi-star-four-points" size="14" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--2" />
@@ -2227,18 +2192,6 @@ export default {
     font-size: 1.05rem;
 }
 
-.student-evaluation-settings__summary-card {
-    display: grid;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid rgba(59, 130, 246, 0.16);
-    border-radius: 8px;
-    background:
-        linear-gradient(135deg, rgba(239, 246, 255, 0.94), rgba(248, 250, 252, 0.9)),
-        radial-gradient(circle at top left, rgba(59, 130, 246, 0.14), transparent 34%);
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
-}
-
 .student-evaluation-settings__automatic-card {
     display: flex;
     align-items: center;
@@ -2281,83 +2234,6 @@ export default {
 
 .student-evaluation-settings__automatic-star--3 {
     animation-delay: 1.1s;
-}
-
-.student-evaluation-settings__summary-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.student-evaluation-settings__summary-title {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: #172554;
-    font-size: 0.82rem;
-    font-weight: 900;
-}
-
-.student-evaluation-settings__summary-cog {
-    color: #2563eb !important;
-}
-
-.student-evaluation-settings__summary-cog :deep(.v-icon) {
-    color: #2563eb !important;
-}
-
-.student-evaluation-settings__summary-list {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.student-evaluation-settings__summary-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    min-height: 24px;
-    padding: 3px 8px 3px 4px;
-    border: 1px solid rgba(37, 99, 235, 0.2);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.86);
-    color: #0f172a;
-    font-size: 0.68rem;
-    font-weight: 850;
-    line-height: 1.1;
-}
-
-.student-evaluation-settings__summary-rank {
-    display: inline-grid;
-    place-items: center;
-    width: 18px;
-    height: 18px;
-    border-radius: 999px;
-    background: #2563eb;
-    color: #ffffff;
-    font-size: 0.66rem;
-    font-weight: 900;
-}
-
-.student-evaluation-settings__summary-label,
-.student-evaluation-settings__summary-option {
-    overflow-wrap: anywhere;
-}
-
-.student-evaluation-settings__summary-option {
-    color: #475569;
-}
-
-.student-evaluation-settings__summary-option::before {
-    content: "· ";
-}
-
-.student-evaluation-settings__summary-empty {
-    color: #475569;
-    font-size: 0.72rem;
-    font-weight: 750;
 }
 
 .student-evaluation-settings__course-summary {

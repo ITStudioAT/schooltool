@@ -191,7 +191,7 @@ class StudentTimetablesStudentOverviewService
 
         return [
             ...$courseHistory,
-            'selection_options' => $this->selectionOptions(),
+            'selection_options' => $this->selectionOptions($student?->religion),
             'selection_items' => $this->selectionItems($courseHistory['selection'], $student?->religion),
             'manual_timetable' => $this->manualTimetableSelection($user, $courseHistory['course_sections']),
             'personal_timetable' => $this->personalTimetableForStudent($user, $schoolyearId, $student),
@@ -479,10 +479,10 @@ class StudentTimetablesStudentOverviewService
     /**
      * @return array<string, list<array{title: string, value: mixed}>>
      */
-    private function selectionOptions(): array
+    private function selectionOptions(?string $studentReligion): array
     {
         return [
-            'religion' => $this->religionOptions(),
+            'religion' => $this->religionOptionsForStudent($studentReligion),
             'language' => $this->languageOptions(),
             'branch' => $this->branchOptions(),
             'arts_subject' => $this->artsSubjectOptions(),
@@ -804,6 +804,85 @@ class StudentTimetablesStudentOverviewService
     /**
      * @return list<array{title: string, value: string}>
      */
+    private function religionOptionsForStudent(?string $studentReligion): array
+    {
+        $religion = $this->nonEmptyString($studentReligion);
+
+        if (! $religion || $this->studentReligionMatchesNoConfession($religion)) {
+            return $this->religionOptions();
+        }
+
+        $allowedValues = collect(['ETH', $this->studentReligionOptionValue($religion)])
+            ->filter()
+            ->values()
+            ->all();
+
+        return collect($this->religionOptions())
+            ->filter(fn (array $option): bool => in_array($option['value'], $allowedValues, true))
+            ->values()
+            ->all();
+    }
+
+    private function studentReligionMatchesNoConfession(string $religion): bool
+    {
+        return in_array($this->normalizedStudentReligion($religion), [
+            'ob',
+            'ohnebekenntnis',
+            'ohnebekenntniss',
+            'keinbekenntnis',
+            'keinbekenntniss',
+            'konfessionslos',
+        ], true);
+    }
+
+    private function studentReligionOptionValue(string $religion): ?string
+    {
+        $normalizedReligion = $this->normalizedStudentReligion($religion);
+
+        foreach ($this->studentReligionOptionAliases() as $optionValue => $aliases) {
+            foreach ($aliases as $alias) {
+                if (
+                    $normalizedReligion === $alias
+                    || (mb_strlen($alias) >= 4 && str_contains($normalizedReligion, $alias))
+                    || (mb_strlen($normalizedReligion) >= 4 && str_contains($alias, $normalizedReligion))
+                ) {
+                    return $optionValue;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizedStudentReligion(string $religion): string
+    {
+        $normalizedReligion = mb_strtolower(trim($religion), 'UTF-8');
+        $normalizedReligion = strtr($normalizedReligion, [
+            'ä' => 'a',
+            'ö' => 'o',
+            'ü' => 'u',
+            'ß' => 'ss',
+        ]);
+
+        return preg_replace('/[^a-z0-9]/u', '', $normalizedReligion) ?: '';
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private function studentReligionOptionAliases(): array
+    {
+        return [
+            'Rev' => ['rev', 'ev', 'evang', 'evangelisch', 'evangab', 'evangelischab'],
+            'Ris' => ['ris', 'islam', 'islamisch', 'muslim', 'moslem'],
+            'Rk' => ['rk', 'kath', 'katholisch', 'romkath', 'roemkath', 'roemischkatholisch'],
+            'Ror' => ['ror', 'orth', 'orthodox', 'griechorth', 'griechischorthodox'],
+        ];
+    }
+
+    /**
+     * @return list<array{title: string, value: string}>
+     */
     private function languageOptions(): array
     {
         return [
@@ -911,10 +990,11 @@ class StudentTimetablesStudentOverviewService
 
         return [
             'semester' => $studentSemester ?? $this->currentSemesterFromCompletedCourses($completedCourses),
-            'religion' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->religionSelectionCourseAliases()) ?? 'ETH',
-            'language' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->languageSelectionCourseAliases()) ?? 'L',
+            'religion' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->religionSelectionCourseAliases())
+                ?? $this->studentReligionOptionValue((string) $student?->religion),
+            'language' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->languageSelectionCourseAliases()),
             'branch' => $this->branchFromCompletedCourses($user, $schoolyearId, $completedCodes, $student),
-            'arts_subject' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->artsSelectionCourseAliases()) ?? 'ME',
+            'arts_subject' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->artsSelectionCourseAliases()),
         ];
     }
 
@@ -935,7 +1015,7 @@ class StudentTimetablesStudentOverviewService
         return $semesterBySchoolLevel[$schoolLevel] ?? null;
     }
 
-    private function studentBranch(?Import116 $student): string
+    private function studentBranch(?Import116 $student): ?string
     {
         $schoolLevel = mb_strtolower(trim((string) $student?->school_level), 'UTF-8');
 
@@ -947,7 +1027,7 @@ class StudentTimetablesStudentOverviewService
             return self::DEFAULT_BRANCH;
         }
 
-        return self::DEFAULT_BRANCH;
+        return null;
     }
 
     private function studentSchoolLevelKey(?Import116 $student): string

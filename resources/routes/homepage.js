@@ -14,6 +14,7 @@ import StudentProfile from '@/pages/homepage/student/profile/Profile.vue'
 import StudentCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
 import StudentTimetables from '@/pages/homepage/studentsTimetables/StudentTimetables.vue'
 import StudentTimetablesOverview from '@/pages/homepage/studentsTimetables/overview/Overview.vue'
+import StudentTimetablesOverviewV2 from '@/pages/homepage/studentsTimetables/overviewV2/OverviewV2.vue'
 import StudentTimetablesPassword from '@/pages/homepage/studentsTimetables/password/Password.vue'
 import StudentTimetablesProfile from '@/pages/homepage/studentsTimetables/profile/Profile.vue'
 import Cashier from '@/pages/homepage/cashier/Cashier.vue'
@@ -40,6 +41,7 @@ const routes = [
     { path: '/homepage/students-timetables', component: StudentTimetables },
     { path: '/students-timetables', component: StudentTimetables },
     { path: '/students-timetables/overview', component: StudentTimetablesOverview },
+    { path: '/students-timetables/overview-v2', component: StudentTimetablesOverviewV2 },
     { path: '/students-timetables/password', component: StudentTimetablesPassword },
     { path: '/students-timetables/profile', component: StudentTimetablesProfile },
     { path: '/homepage/cashier', component: Cashier },

@@ -20,6 +20,37 @@
                     <span class="hero-badge dark">{{ dateLabel }}</span>
                     <span v-if="user" class="hero-badge">{{ user.first_name }} {{ user.last_name }}</span>
                     <span v-if="user?.schoolclass" class="hero-badge dark">{{ user.schoolclass }}</span>
+                    <span v-if="studentReligionLabel" class="hero-badge">{{ studentReligionLabel }}</span>
+                </div>
+
+                <div class="hero-course-history">
+                    <div
+                        v-for="section in heroCourseHistorySections"
+                        :key="section.key"
+                        class="hero-course-history__section">
+                        <div class="hero-course-history__title">
+                            <v-icon :icon="section.icon" size="18" :color="section.color" />
+                            <span>{{ section.title }}</span>
+                            <v-chip size="x-small" :color="section.color" variant="tonal">
+                                {{ section.items.length }}
+                            </v-chip>
+                        </div>
+                        <div v-if="section.items.length" class="hero-course-history__list">
+                            <span
+                                v-for="course in section.items"
+                                :key="courseKey(section.key, course)"
+                                class="hero-course-history__item"
+                                :class="`hero-course-history__item--${section.key}`">
+                                <span>{{ courseHistoryCourseLabel(course) }}</span>
+                                <v-chip v-if="courseHistoryCourseMeta(course)" size="x-small" :color="section.color" variant="tonal">
+                                    {{ courseHistoryCourseMeta(course) }}
+                                </v-chip>
+                            </span>
+                        </div>
+                        <div v-else class="hero-course-history__empty">
+                            {{ section.empty }}
+                        </div>
+                    </div>
                 </div>
 
                 <div class="hero-logout-row">
@@ -33,6 +64,18 @@
                 <div class="content-head">
                     <v-icon size="26">mdi-calendar-clock-outline</v-icon>
                     <h2>Ihre Daten</h2>
+                    <v-btn
+                        v-if="!showEvaluationSettings && !showManualTimetable"
+                        class="overview-selection__reset ml-auto"
+                        prepend-icon="mdi-restore"
+                        variant="tonal"
+                        color="primary"
+                        density="comfortable"
+                        size="large"
+                        :disabled="!hasSelectionOverride"
+                        @click="restoreSelectionDefaults">
+                        Zurücksetzen
+                    </v-btn>
                 </div>
 
                 <div class="overview-selection">
@@ -59,16 +102,6 @@
                             <div class="overview-selected-card__value">{{ item.value || '-' }}</div>
                         </div>
                     </div>
-                    <v-btn
-                        v-if="hasSelectionOverride && !showEvaluationSettings && !showManualTimetable"
-                        class="overview-selection__restore"
-                        icon="mdi-restore"
-                        variant="tonal"
-                        color="primary"
-                        density="comfortable"
-                        title="Auswahl wiederherstellen"
-                        aria-label="Auswahl wiederherstellen"
-                        @click="restoreSelectionDefaults" />
                 </div>
 
                 <v-expansion-panels
@@ -271,44 +304,110 @@
                     </v-card>
                 </v-dialog>
 
-                <v-expansion-panels
-                    v-if="!showEvaluationSettings && !showManualTimetable"
-                    v-model="expandedCourseSections"
-                    class="summary-grid summary-panels"
-                    multiple
-                    flat>
-                    <v-expansion-panel v-for="section in courseSections" :key="section.key" :value="section.key" class="summary-panel">
-                        <v-expansion-panel-title class="summary-head">
-                            <v-icon size="22">{{ section.icon }}</v-icon>
-                            <h3>{{ section.title }}</h3>
-                            <v-chip size="small" variant="flat" :color="section.color">{{ section.items.length }}</v-chip>
-                        </v-expansion-panel-title>
-
-                        <v-expansion-panel-text>
-                            <div v-if="section.items.length" class="course-list">
-                                <div v-for="course in section.items" :key="courseKey(section.key, course)" class="course-row">
-                                    <div>
-                                        <strong>{{ course.code || course.name || '-' }}</strong>
-                                        <span v-if="course.name && course.name !== course.code">{{ course.name }}</span>
-                                    </div>
-                                    <div class="course-meta">
-                                        <v-chip v-if="courseHoursLabel(course)" size="x-small" color="primary" variant="tonal">
-                                            {{ courseHoursLabel(course) }}
-                                        </v-chip>
-                                        <v-chip v-if="course.semester" size="x-small" variant="tonal">S{{ course.semester }}</v-chip>
-                                        <v-chip v-if="course.grade" size="x-small" color="success" variant="tonal">{{ course.grade }}</v-chip>
-                                        <v-chip v-if="course.branch && course.branch !== 'common'" size="x-small" variant="tonal">{{ course.branch }}</v-chip>
-                                    </div>
-                                </div>
+                <div
+                    v-if="overviewCourseSelectionVisible && !showEvaluationSettings && !showManualTimetable"
+                    class="overview-course-selection">
+                    <v-card
+                        v-for="section in overviewCourseSelectionSections"
+                        :key="section.key"
+                        rounded="lg"
+                        variant="flat"
+                        class="overview-course-selection__card">
+                        <v-card-title class="overview-course-selection__title">
+                            <span>{{ section.title }}</span>
+                            <span class="overview-course-selection__title-meta">
+                                <span class="overview-course-selection__chips">
+                                    <v-chip size="x-small" :color="section.color" variant="tonal">
+                                        {{ courseItemsSummary(section.selectedItems).countLabel }}
+                                    </v-chip>
+                                    <v-chip size="x-small" :color="section.color" variant="tonal">
+                                        {{ courseItemsSummary(section.selectedItems).hoursLabel }}
+                                    </v-chip>
+                                </span>
+                                <span v-if="section.bulkSelectable" class="overview-course-selection__actions">
+                                    <v-btn
+                                        icon="mdi-checkbox-marked-outline"
+                                        size="x-small"
+                                        density="compact"
+                                        variant="tonal"
+                                        color="success"
+                                        title="Alle vorgesehenen Kurse auswählen"
+                                        :disabled="!section.items.length || overviewCourseGroupAllSelected(section.key) || overviewCourseGroupSelectionWouldExceedLimit(section.key)"
+                                        @click.stop="setOverviewCourseGroupSelection(section.key, true)" />
+                                    <v-btn
+                                        icon="mdi-checkbox-blank-outline"
+                                        size="x-small"
+                                        density="compact"
+                                        variant="tonal"
+                                        color="secondary"
+                                        title="Alle vorgesehenen Kurse abwählen"
+                                        :disabled="!section.items.length || overviewCourseGroupNoneSelected(section.key)"
+                                        @click.stop="setOverviewCourseGroupSelection(section.key, false)" />
+                                </span>
+                            </span>
+                        </v-card-title>
+                        <v-card-text>
+                            <div class="overview-course-selection__list">
+                                <v-chip
+                                    v-for="course in section.items"
+                                    :key="overviewCourseSelectionKey(course)"
+                                    size="small"
+                                    :color="overviewCourseItemColor(course, section.key)"
+                                    :variant="overviewCourseItemSelected(course, section.key) || overviewCourseItemSelectionDisabled(course, section.key) ? 'tonal' : 'outlined'"
+                                    class="overview-course-selection__item"
+                                    :class="{
+                                        'overview-course-selection__item--selected': overviewCourseItemSelected(course, section.key),
+                                        'overview-course-selection__item--deselected': section.selectable && !overviewCourseItemSelected(course, section.key),
+                                        'overview-course-selection__item--static': !section.selectable,
+                                        'overview-course-selection__item--limit-disabled': overviewCourseItemSelectionDisabled(course, section.key),
+                                    }"
+                                    :role="section.selectable ? 'button' : undefined"
+                                    :aria-pressed="section.selectable ? (overviewCourseItemSelected(course, section.key) ? 'true' : 'false') : undefined"
+                                    :aria-disabled="overviewCourseItemSelectionDisabled(course, section.key) ? 'true' : undefined"
+                                    :title="overviewCourseItemSelectionDisabledLabel(course, section.key)"
+                                    @click="toggleOverviewCourseItem(course, section.key)">
+                                    <v-icon v-if="overviewCourseItemSelected(course, section.key)" icon="mdi-check" size="14" />
+                                    <span>{{ overviewCourseItemLabel(course) }}</span>
+                                    <span v-if="overviewCourseItemMeta(course)" class="overview-course-selection__item-meta">
+                                        {{ overviewCourseItemMeta(course) }}
+                                    </span>
+                                </v-chip>
                             </div>
+                        </v-card-text>
+                        <v-card-actions class="overview-course-selection__footer">
+                            {{ section.footer }}
+                        </v-card-actions>
+                    </v-card>
 
-                            <div v-else class="empty-state">
-                                <v-icon size="20">mdi-information-outline</v-icon>
-                                <span>{{ section.empty }}</span>
-                            </div>
-                        </v-expansion-panel-text>
-                    </v-expansion-panel>
-                </v-expansion-panels>
+                    <v-alert
+                        type="info"
+                        variant="tonal"
+                        density="compact"
+                        icon="mdi-counter"
+                        class="overview-course-selection__summary">
+                        <div class="overview-course-selection__summary-content">
+                            <span>Ausgewählt</span>
+                            <v-chip size="x-small" color="primary" variant="tonal">
+                                {{ overviewSelectedCourseLimitSummary.countLabel }}
+                            </v-chip>
+                            <v-chip size="x-small" color="primary" variant="tonal">
+                                {{ overviewSelectedCourseLimitSummary.hoursLabel }}
+                            </v-chip>
+                            <span>Maximal 10/30</span>
+                        </div>
+                    </v-alert>
+
+                    <v-alert
+                        v-if="overviewSelectedCourseLimitReached"
+                        type="info"
+                        variant="tonal"
+                        density="compact"
+                        icon="mdi-information-outline"
+                        class="overview-course-selection__limit-alert">
+                        <div>Maximum erreicht: Negative Kurse und Vorgesehene Kurse dürfen zusammen höchstens 10 Kurse und 30 Stunden ergeben.</div>
+                        <div>Wählen Sie einen Kurs ab, um einen anderen Kurs auszuwählen.</div>
+                    </v-alert>
+                </div>
 
                 <div v-if="!showEvaluationSettings && !showManualTimetable" class="timetable-actions">
                     <v-btn
@@ -316,7 +415,7 @@
                         variant="flat"
                         prepend-icon="mdi-auto-fix"
                         @click="openAutomaticTimetable">
-                        <span>Automatischer Stundenplan</span>
+                        <span>Neuer Stundenplan</span>
                         <span class="timetable-actions__stars" aria-hidden="true">
                             <v-icon icon="mdi-star-four-points" size="10" class="timetable-star timetable-star--1" />
                             <v-icon icon="mdi-star-four-points" size="14" class="timetable-star timetable-star--2" />
@@ -661,6 +760,7 @@ import StudentTimetableEvaluationSettings from '../components/StudentTimetableEv
 import StudentTimetablesNavigationDrawer from '../components/StudentTimetablesNavigationDrawer.vue'
 import '../../../../../css/student.css'
 
+const noAutomaticTimetableCourseValue = '__none'
 const noAutomaticTimetableQualityCriteriaValue = '__none'
 const studentOverviewEditableSelectionKeys = ['religion', 'language', 'branch', 'arts_subject']
 const studentOverviewSelectionOptionValues = {
@@ -726,10 +826,20 @@ export default {
         },
         automaticTimetableCourseKeys() {
             const courseKeys = this.$route.query.automatic_timetable_courses
+            const courseKeyList = Array.isArray(courseKeys) ? courseKeys : [courseKeys]
 
-            return (Array.isArray(courseKeys) ? courseKeys : [courseKeys])
+            if (courseKeyList.includes(noAutomaticTimetableCourseValue)) {
+                return []
+            }
+
+            const selectedCourseKeys = courseKeyList
                 .map(courseKey => String(courseKey || ''))
+                .filter(courseKey => courseKey !== noAutomaticTimetableCourseValue)
                 .filter(Boolean)
+
+            return selectedCourseKeys.length || Object.prototype.hasOwnProperty.call(this.$route.query, 'automatic_timetable_courses')
+                ? selectedCourseKeys
+                : this.overviewDefaultSelectedCourseKeys
         },
         automaticTimetableQualityCriterionKeys() {
             const criterionKeys = this.$route.query.automatic_timetable_criteria
@@ -756,6 +866,19 @@ export default {
         selectionItems() {
             return Array.isArray(this.overview?.selection_items) ? this.overview.selection_items : []
         },
+        studentReligionLabel() {
+            const religionItem = this.selectionItems.find(item => String(item?.key || '') === 'religion')
+            const storedReligion = String(this.overview?.student?.religion || this.user?.religion || '').trim()
+
+            if (storedReligion) {
+                return storedReligion
+            }
+
+            const religionMeta = String(religionItem?.meta || '').replace(/^Religion:\s*/i, '').trim()
+            const religionLabel = String(religionMeta || religionItem?.value || '').trim()
+
+            return religionLabel || null
+        },
         selectionDraftOptions() {
             return this.selectionOptionsForKey(this.selectionDraftKey)
         },
@@ -764,6 +887,95 @@ export default {
         },
         courseSections() {
             return Array.isArray(this.overview?.course_sections) ? this.overview.course_sections : []
+        },
+        overviewCourseSelectionSections() {
+            const sections = [
+                {
+                    key: 'missing',
+                    title: 'Negative Kurse',
+                    color: 'error',
+                    items: this.overviewCourseGroupItems('missing'),
+                    selectedItems: this.overviewSelectedCourseItemsForGroup('missing'),
+                    footer: 'Die Auswahl kann später noch verändert werden!',
+                    selectable: true,
+                    bulkSelectable: false,
+                },
+                {
+                    key: 'planned',
+                    title: 'Vorgesehene Kurse',
+                    color: 'success',
+                    items: this.overviewCourseGroupItems('planned'),
+                    selectedItems: this.overviewSelectedCourseItemsForGroup('planned'),
+                    footer: 'Die Auswahl kann später noch verändert werden!',
+                    selectable: true,
+                    bulkSelectable: true,
+                },
+                {
+                    key: 'additional',
+                    title: 'Zusätzliche Kurse',
+                    color: 'info',
+                    items: this.overviewCourseGroupItems('additional'),
+                    selectedItems: this.overviewCourseGroupItems('additional'),
+                    footer: 'Die Auswahl kann später hinzugefügt werden!',
+                    selectable: false,
+                    bulkSelectable: false,
+                },
+            ]
+
+            return sections.filter(section => section.items.length > 0)
+        },
+        overviewCourseSelectionVisible() {
+            return this.overviewCourseSelectionSections.length > 0
+        },
+        overviewDefaultSelectedCourseKeys() {
+            const selectedCourseKeys = []
+            const defaultCourseItems = [
+                ...this.overviewCourseGroupItems('missing').map(course => ({ course, courseGroup: 'missing' })),
+                ...this.overviewCourseGroupItems('planned').map(course => ({ course, courseGroup: 'planned' })),
+            ]
+
+            defaultCourseItems.forEach(({ course, courseGroup }) => {
+                if (!this.overviewCourseItemDefaultSelected(course, courseGroup)) {
+                    return
+                }
+
+                if (this.overviewCourseSelectionWouldExceedLimit(course, courseGroup, selectedCourseKeys)) {
+                    return
+                }
+
+                selectedCourseKeys.push(this.overviewCourseSelectionKey(course))
+            })
+
+            return selectedCourseKeys
+        },
+        overviewSelectedCourseLimitItems() {
+            return this.overviewSelectedCourseItemsForKeys(this.automaticTimetableCourseKeys)
+        },
+        overviewSelectedCourseLimitSummary() {
+            return this.courseItemsSummary(this.overviewSelectedCourseLimitItems)
+        },
+        overviewSelectedCourseLimitReached() {
+            return this.overviewSelectedCourseLimitSummary.count >= 10 || this.overviewSelectedCourseLimitSummary.hours >= 30
+        },
+        heroCourseHistorySections() {
+            return [
+                {
+                    key: 'completed',
+                    title: 'Abgeschlossene Kurse',
+                    icon: 'mdi-school-outline',
+                    color: 'success',
+                    empty: 'Keine abgeschlossenen Kurse gefunden.',
+                    items: this.courseHistoryItems('completed', this.overview?.completed_courses),
+                },
+                {
+                    key: 'missing',
+                    title: 'Negative Kurse',
+                    icon: 'mdi-alert-circle-outline',
+                    color: 'error',
+                    empty: 'Keine negativen Kurse gefunden.',
+                    items: this.courseHistoryItems('missing', this.overview?.missing_courses),
+                },
+            ]
         },
         courseSectionTotalCount() {
             return this.courseSections.reduce((courseCount, section) => (
@@ -1313,7 +1525,7 @@ export default {
             if (selectedCourseKeys.length) {
                 query.automatic_timetable_courses = selectedCourseKeys
             } else {
-                delete query.automatic_timetable_courses
+                query.automatic_timetable_courses = noAutomaticTimetableCourseValue
             }
 
             this.$router.push({
@@ -2577,8 +2789,396 @@ export default {
 
             return normalizedSelection
         },
+        overviewCourseGroupItems(courseGroup) {
+            const sectionKey = courseGroup === 'planned' ? 'proposed' : courseGroup
+            const fallbackCourses = this.overviewCourseGroupFallbackCourses(courseGroup)
+
+            return this.sortedCourseItems(this.uniqueCourseItems(
+                this.courseHistoryItems(sectionKey, fallbackCourses).map(course => this.normalizedOverviewCourseItem(course))
+            ))
+        },
+        overviewCourseGroupFallbackCourses(courseGroup) {
+            if (courseGroup === 'missing') {
+                return this.overview?.missing_courses
+            }
+
+            if (courseGroup === 'planned') {
+                return this.overview?.proposed_courses
+            }
+
+            if (courseGroup === 'additional') {
+                return this.overview?.additional_courses
+            }
+
+            return []
+        },
+        normalizedOverviewCourseItem(course) {
+            const code = String(course?.code || '').trim()
+            const name = String(course?.name || '').trim()
+            const label = String(course?.label || code || name || '').trim()
+            const hours = this.courseHoursNumber(course)
+            const meta = String(course?.hoursMeta || course?.meta || course?.hours_label || (hours ? `${this.formatHours(hours)} Std.` : '') || course?.grade || '').trim()
+
+            return {
+                ...course,
+                key: String(course?.key || [code, name, course?.semester || '', hours || ''].join('|')).trim(),
+                code,
+                name,
+                label,
+                hours,
+                meta,
+                hoursMeta: hours ? `${this.formatHours(hours)} Std.` : '',
+            }
+        },
+        uniqueCourseItems(courses) {
+            const courseItemsByKey = new Map()
+            const courseItems = Array.isArray(courses) ? courses : []
+
+            courseItems.forEach((course) => {
+                const key = this.overviewCourseSelectionKey(course)
+
+                if (key && !courseItemsByKey.has(key)) {
+                    courseItemsByKey.set(key, course)
+                }
+            })
+
+            return Array.from(courseItemsByKey.values())
+        },
+        sortedCourseItems(courses) {
+            return [...(Array.isArray(courses) ? courses : [])].sort((firstCourse, secondCourse) => {
+                const firstSemester = Number(firstCourse?.semester || 0)
+                const secondSemester = Number(secondCourse?.semester || 0)
+
+                if (firstSemester !== secondSemester) {
+                    return firstSemester - secondSemester
+                }
+
+                return this.overviewCourseItemLabel(firstCourse).localeCompare(this.overviewCourseItemLabel(secondCourse), 'de-AT', {
+                    sensitivity: 'base',
+                })
+            })
+        },
+        overviewCourseSelectionKey(course) {
+            return String(course?.key || [
+                course?.code || '',
+                course?.name || '',
+                course?.semester || '',
+                course?.hours ?? course?.hours_per_week ?? '',
+            ].join('|')).trim()
+        },
+        overviewCourseItemLabel(course) {
+            const explicitLabel = String(course?.label || '').trim()
+
+            if (explicitLabel) {
+                return explicitLabel
+            }
+
+            return [
+                String(course?.code || '').trim(),
+                String(course?.name || '').trim(),
+            ].filter(Boolean).join(' - ') || '-'
+        },
+        overviewCourseItemMeta(course) {
+            return String(course?.hoursMeta || course?.meta || '').trim()
+        },
+        overviewCourseItemColor(course, courseGroup) {
+            if (this.overviewCourseItemSelectionDisabled(course, courseGroup)) {
+                return 'error'
+            }
+
+            if (courseGroup === 'missing') {
+                return 'error'
+            }
+
+            if (courseGroup === 'additional') {
+                return 'info'
+            }
+
+            return 'success'
+        },
+        overviewCourseItemSelected(course, courseGroup) {
+            if (!['missing', 'planned'].includes(courseGroup)) {
+                return false
+            }
+
+            return this.automaticTimetableCourseKeys.includes(this.overviewCourseSelectionKey(course))
+        },
+        overviewSelectedCourseItemsForGroup(courseGroup) {
+            return this.overviewCourseGroupItems(courseGroup)
+                .filter(course => this.overviewCourseItemSelected(course, courseGroup))
+        },
+        overviewSelectedCourseItemsForKeys(courseKeys) {
+            const selectedCourseKeys = new Set((Array.isArray(courseKeys) ? courseKeys : []).map(courseKey => String(courseKey || '')))
+
+            return [
+                ...this.overviewCourseGroupItems('missing'),
+                ...this.overviewCourseGroupItems('planned'),
+            ].filter(course => selectedCourseKeys.has(this.overviewCourseSelectionKey(course)))
+        },
+        overviewCourseGroupAllSelected(courseGroup) {
+            const courseItems = this.overviewCourseGroupItems(courseGroup)
+
+            return courseItems.length > 0 && courseItems.every(course => this.overviewCourseItemSelected(course, courseGroup))
+        },
+        overviewCourseGroupNoneSelected(courseGroup) {
+            const courseItems = this.overviewCourseGroupItems(courseGroup)
+
+            return courseItems.length > 0 && courseItems.every(course => !this.overviewCourseItemSelected(course, courseGroup))
+        },
+        overviewCourseGroupSelectionWouldExceedLimit(courseGroup) {
+            const courseItems = this.overviewCourseGroupItems(courseGroup)
+            const selectedCourseKeys = [...this.automaticTimetableCourseKeys]
+
+            return courseItems
+                .filter(course => !selectedCourseKeys.includes(this.overviewCourseSelectionKey(course)))
+                .some((course) => {
+                    if (this.overviewCourseSelectionWouldExceedLimit(course, courseGroup, selectedCourseKeys)) {
+                        return true
+                    }
+
+                    selectedCourseKeys.push(this.overviewCourseSelectionKey(course))
+
+                    return false
+                })
+        },
+        setOverviewCourseGroupSelection(courseGroup, selected) {
+            const selectedCourseKeys = [...this.automaticTimetableCourseKeys]
+
+            this.overviewCourseGroupItems(courseGroup).forEach((course) => {
+                const courseKey = this.overviewCourseSelectionKey(course)
+
+                if (!courseKey) {
+                    return
+                }
+
+                const selectedIndex = selectedCourseKeys.indexOf(courseKey)
+
+                if (!selected) {
+                    if (selectedIndex !== -1) {
+                        selectedCourseKeys.splice(selectedIndex, 1)
+                    }
+
+                    return
+                }
+
+                if (selectedIndex !== -1 || this.overviewCourseItemSelectionDisabled(course, courseGroup, selectedCourseKeys)) {
+                    return
+                }
+
+                selectedCourseKeys.push(courseKey)
+            })
+
+            this.setAutomaticTimetableCourseKeys(selectedCourseKeys)
+        },
+        toggleOverviewCourseItem(course, courseGroup) {
+            if (!['missing', 'planned'].includes(courseGroup)) {
+                return
+            }
+
+            if (this.overviewCourseItemSelectionDisabled(course, courseGroup)) {
+                return
+            }
+
+            const courseKey = this.overviewCourseSelectionKey(course)
+
+            if (!courseKey) {
+                return
+            }
+
+            const selectedCourseKeys = [...this.automaticTimetableCourseKeys]
+            const selectedIndex = selectedCourseKeys.indexOf(courseKey)
+
+            if (selectedIndex !== -1) {
+                selectedCourseKeys.splice(selectedIndex, 1)
+            } else {
+                selectedCourseKeys.push(courseKey)
+            }
+
+            this.setAutomaticTimetableCourseKeys(selectedCourseKeys)
+        },
+        overviewCourseItemSelectionDisabled(course, courseGroup, selectedCourseKeys = this.automaticTimetableCourseKeys) {
+            if (!['missing', 'planned'].includes(courseGroup)) {
+                return false
+            }
+
+            const courseKey = this.overviewCourseSelectionKey(course)
+
+            if (courseKey && selectedCourseKeys.includes(courseKey)) {
+                return false
+            }
+
+            if (!this.overviewCourseItemDefaultSelectable(course, courseGroup)) {
+                return true
+            }
+
+            return this.overviewCourseSelectionWouldExceedLimit(course, courseGroup, selectedCourseKeys)
+        },
+        overviewCourseItemSelectionDisabledLabel(course, courseGroup) {
+            if (!this.overviewCourseItemSelectionDisabled(course, courseGroup)) {
+                return undefined
+            }
+
+            if (!this.overviewCourseItemDefaultSelectable(course, courseGroup)) {
+                return 'Durch Kursreihenfolge gesperrt'
+            }
+
+            return 'Maximum von 10 Kursen oder 30 Stunden erreicht'
+        },
+        overviewCourseSelectionWouldExceedLimit(course, courseGroup, selectedCourseKeys = this.automaticTimetableCourseKeys) {
+            if (!['missing', 'planned'].includes(courseGroup)) {
+                return false
+            }
+
+            const courseKey = this.overviewCourseSelectionKey(course)
+
+            if (!courseKey || selectedCourseKeys.includes(courseKey)) {
+                return false
+            }
+
+            const selectedCourseItems = this.overviewSelectedCourseItemsForKeys(selectedCourseKeys)
+            const selectedCourseHours = selectedCourseItems.reduce((hours, courseItem) => hours + this.courseHoursNumber(courseItem), 0)
+
+            return selectedCourseItems.length + 1 > 10
+                || selectedCourseHours + this.courseHoursNumber(course) > 30
+        },
+        overviewCourseItemDefaultSelected(course, courseGroup) {
+            return ['missing', 'planned'].includes(courseGroup)
+                && this.overviewCourseItemDefaultSelectable(course, courseGroup)
+        },
+        overviewCourseItemDefaultSelectable(course, courseGroup) {
+            if (courseGroup === 'missing') {
+                return !this.negativeCourseBlockedByLowerModule(course)
+            }
+
+            if (courseGroup === 'planned') {
+                return !this.plannedCourseBlockedByNegativeCourse(course)
+            }
+
+            return false
+        },
+        negativeCourseBlockedByLowerModule(course) {
+            const courseBaseCode = this.courseBaseCode(course)
+            const courseModuleNumber = this.courseModuleNumber(course)
+
+            if (!courseBaseCode || !courseModuleNumber || courseBaseCode.length <= 1) {
+                return false
+            }
+
+            return this.overviewCourseGroupItems('missing').some(otherCourse =>
+                this.courseBaseCode(otherCourse) === courseBaseCode
+                    && this.courseModuleNumber(otherCourse) > 0
+                    && this.courseModuleNumber(otherCourse) < courseModuleNumber)
+        },
+        plannedCourseBlockedByNegativeCourse(course) {
+            const courseBaseCode = this.courseBaseCode(course)
+            const courseModuleNumber = this.courseModuleNumber(course)
+
+            if (!courseBaseCode || !courseModuleNumber) {
+                return false
+            }
+
+            return this.overviewCourseGroupItems('missing').some(negativeCourse =>
+                this.courseBaseCode(negativeCourse) === courseBaseCode
+                    && this.courseModuleNumber(negativeCourse) > 0
+                    && this.courseModuleNumber(negativeCourse) < courseModuleNumber)
+        },
+        courseModuleNumber(course) {
+            const module = Number(this.courseCodeModuleParts(course?.code || course?.label || course?.name || '').module || 0)
+
+            return Number.isFinite(module) && module > 0 ? module : 0
+        },
+        courseBaseCode(course) {
+            const parts = this.courseCodeModuleParts(course?.code || course?.label || course?.name || '')
+
+            return parts.module ? parts.base : this.normalizedCourseCode(course?.code || course?.label || course?.name || '')
+        },
+        courseCodeModuleParts(value) {
+            const normalizedValue = this.normalizedCourseCode(value)
+            const match = normalizedValue.match(/^([A-Z]+)([0-9]*)$/u)
+                || normalizedValue.match(/^([A-Z]+)([0-9]+)[A-Z]+$/u)
+
+            if (!match) {
+                return {
+                    base: normalizedValue,
+                    module: '',
+                }
+            }
+
+            return {
+                base: match[1],
+                module: match[2] || '',
+            }
+        },
+        normalizedCourseCode(value) {
+            return String(value || '')
+                .trim()
+                .toLocaleUpperCase('de-AT')
+                .replace(/Ä/gu, 'AE')
+                .replace(/Ö/gu, 'OE')
+                .replace(/Ü/gu, 'UE')
+                .replace(/ß/gu, 'SS')
+                .replace(/[^A-Z0-9]/gu, '')
+        },
+        courseItemsSummary(courses) {
+            const courseItems = Array.isArray(courses) ? courses : []
+            const hours = courseItems.reduce((sum, course) => sum + this.courseHoursNumber(course), 0)
+
+            return {
+                count: courseItems.length,
+                hours,
+                countLabel: `${this.formatNumber(courseItems.length)} ${courseItems.length === 1 ? 'Kurs' : 'Kurse'}`,
+                hoursLabel: `${this.formatHours(hours)} Std.`,
+            }
+        },
+        courseHoursNumber(course) {
+            const numericHours = Number(course?.hours ?? course?.hours_per_week ?? 0)
+
+            if (Number.isFinite(numericHours) && numericHours > 0) {
+                return numericHours
+            }
+
+            const hoursMatch = String(course?.meta || course?.hours_label || '').match(/(\d+(?:[,.]\d+)?)\s*Std/iu)
+
+            return hoursMatch ? Number(hoursMatch[1].replace(',', '.')) : 0
+        },
+        formatNumber(value) {
+            return Number(value || 0).toLocaleString('de-AT')
+        },
+        formatHours(value) {
+            const hours = Number(value || 0)
+
+            if (!Number.isFinite(hours)) {
+                return '0'
+            }
+
+            return Number.isInteger(hours) ? String(hours) : hours.toLocaleString('de-AT', { maximumFractionDigits: 2 })
+        },
         courseKey(sectionKey, course) {
             return [sectionKey, course.code || '', course.name || '', course.semester || '', course.grade || ''].join('|')
+        },
+        courseHistoryItems(sectionKey, fallbackCourses) {
+            const section = this.courseSections.find(courseSection => String(courseSection?.key || '') === sectionKey)
+
+            if (Array.isArray(section?.items)) {
+                return section.items
+            }
+
+            return Array.isArray(fallbackCourses) ? fallbackCourses : []
+        },
+        courseHistoryCourseLabel(course) {
+            const explicitLabel = String(course?.label || '').trim()
+
+            if (explicitLabel) {
+                return explicitLabel
+            }
+
+            return [
+                String(course?.code || '').trim(),
+                String(course?.name || '').trim(),
+            ].filter(Boolean).join(' - ')
+        },
+        courseHistoryCourseMeta(course) {
+            return String(course?.meta || course?.grade || '').trim()
         },
         courseHoursLabel(course) {
             const hours = course.hours ?? course.hours_per_week
@@ -2616,6 +3216,74 @@ export default {
     color: #1d4ed8;
     background: rgba(37, 99, 235, 0.2);
     border-color: rgba(37, 99, 235, 0.5);
+}
+
+.hero-course-history {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.hero-course-history__section {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid rgba(23, 45, 64, 0.16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.hero-course-history__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #10263a;
+    font-size: 0.88rem;
+    font-weight: 850;
+}
+
+.hero-course-history__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.hero-course-history__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    padding: 4px 8px;
+    border: 1px solid rgba(14, 165, 233, 0.18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.78);
+    color: #10263a;
+    font-size: 0.74rem;
+    font-weight: 760;
+    line-height: 1.2;
+}
+
+.hero-course-history__item > span:first-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.hero-course-history__item--completed {
+    border-color: rgba(22, 163, 74, 0.24);
+    background: rgba(240, 253, 244, 0.82);
+}
+
+.hero-course-history__item--missing {
+    border-color: rgba(220, 38, 38, 0.22);
+    background: rgba(254, 242, 242, 0.82);
+}
+
+.hero-course-history__empty {
+    color: rgba(16, 38, 58, 0.72);
+    font-size: 0.76rem;
+    font-weight: 760;
 }
 
 .hero-logout-row {
@@ -2682,8 +3350,117 @@ export default {
     overflow-wrap: anywhere;
 }
 
-.overview-selection__restore {
+.overview-selection__reset {
     flex: 0 0 auto;
+    min-height: 42px;
+    padding-inline: 18px;
+    font-weight: 900;
+}
+
+.overview-course-selection {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.overview-course-selection__card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.overview-course-selection__title {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 12px 12px 8px;
+    color: #10263a;
+    font-size: 0.94rem;
+    font-weight: 900;
+    line-height: 1.15;
+}
+
+.overview-course-selection__title-meta {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+}
+
+.overview-course-selection__chips,
+.overview-course-selection__actions,
+.overview-course-selection__summary-content {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.overview-course-selection__card :deep(.v-card-text) {
+    flex: 1;
+    padding: 4px 12px 10px;
+}
+
+.overview-course-selection__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.overview-course-selection__item {
+    max-width: 100%;
+    border-radius: 999px;
+    font-weight: 760;
+}
+
+.overview-course-selection__item span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.overview-course-selection__item--deselected {
+    background: rgba(255, 255, 255, 0.86);
+}
+
+.overview-course-selection__item--static {
+    cursor: default;
+}
+
+.overview-course-selection__item--limit-disabled {
+    cursor: not-allowed;
+    border-color: rgba(14, 116, 144, 0.42);
+    background: rgba(236, 254, 255, 0.96);
+    color: #155e75;
+}
+
+.overview-course-selection__item-meta {
+    border-radius: 999px;
+    padding: 1px 6px;
+    background: rgba(255, 255, 255, 0.72);
+    font-size: 0.7rem;
+    font-weight: 850;
+}
+
+.overview-course-selection__footer {
+    min-height: 0;
+    padding: 0 12px 10px;
+    color: rgba(16, 38, 58, 0.62);
+    font-size: 0.72rem;
+    font-weight: 760;
+}
+
+.overview-course-selection__summary,
+.overview-course-selection__limit-alert {
+    grid-column: 1 / -1;
+}
+
+.overview-course-selection__summary-content {
+    font-weight: 850;
 }
 
 .manual-overview-course-card {
@@ -3500,6 +4277,12 @@ export default {
     }
 }
 
+@media (max-width: 980px) {
+    .overview-course-selection {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
 @media (max-width: 520px) {
     .student-manual-timetable__toolbar {
         align-items: flex-start;
@@ -3513,6 +4296,18 @@ export default {
 
     .overview-selected-cards {
         grid-template-columns: 1fr;
+    }
+
+    .hero-course-history {
+        grid-template-columns: 1fr;
+    }
+
+    .overview-course-selection {
+        grid-template-columns: 1fr;
+    }
+
+    .overview-course-selection__title {
+        flex-direction: column;
     }
 
     .overview-selection {
