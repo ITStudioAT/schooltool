@@ -439,6 +439,18 @@
                 <div
                     v-if="overviewCourseSelectionVisible && !showEvaluationSettings && !showManualTimetable"
                     class="overview-course-selection">
+                    <div class="overview-course-selection__toolbar">
+                        <v-btn
+                            color="primary"
+                            variant="tonal"
+                            size="large"
+                            prepend-icon="mdi-tune-variant"
+                            :disabled="!automaticTimetableCoursePreselectionResetAvailable"
+                            @click="resetAutomaticTimetableCoursePreselection">
+                            Vorauswahl zurücksetzen
+                        </v-btn>
+                    </div>
+
                     <v-card
                         v-for="section in overviewCourseSelectionSections"
                         :key="section.key"
@@ -490,6 +502,7 @@
                                     :class="{
                                         'overview-course-selection__item--selected': overviewCourseItemSelected(course, section.key),
                                         'overview-course-selection__item--deselected': section.selectable && !overviewCourseItemSelected(course, section.key),
+                                        [`overview-course-selection__item--${section.key}`]: true,
                                         'overview-course-selection__item--static': !section.selectable,
                                         'overview-course-selection__item--limit-disabled': overviewCourseItemSelectionDisabled(course, section.key),
                                     }"
@@ -976,6 +989,7 @@ export default {
             selectionDraftValue: null,
             selectedAutomaticReviewCourseKey: '',
             automaticOfferedCourseSelectionOverrides: {},
+            automaticTimetableInitialRouteCourseKeys: [],
         }
     },
 
@@ -1019,6 +1033,15 @@ export default {
         },
         automaticTimetableQualityCriteriaSelectionExplicit() {
             return Object.prototype.hasOwnProperty.call(this.$route.query, 'automatic_timetable_criteria')
+        },
+        automaticTimetableCoursePreselectionKeys() {
+            return this.overviewDefaultSelectedCourseKeys
+        },
+        automaticTimetableCoursePreselectionResetAvailable() {
+            const currentCourseKeys = JSON.stringify(this.sortedAutomaticTimetableCourseKeys(this.automaticTimetableCourseKeys))
+            const preselectedCourseKeys = JSON.stringify(this.sortedAutomaticTimetableCourseKeys(this.automaticTimetableCoursePreselectionKeys))
+
+            return currentCourseKeys !== preselectedCourseKeys
         },
         automaticTimetableDeselectedCourseGroupKeys() {
             return this.automaticSelectedCourseItems
@@ -1682,6 +1705,7 @@ export default {
     methods: {
         async loadOverview() {
             await this.studentTimetablesStore.loadOverview()
+            this.rememberAutomaticTimetableRouteCourseKeys()
             this.syncSelectionOverrideFromOverview()
             this.applyCurrentManualTimetableSelection()
         },
@@ -1751,6 +1775,13 @@ export default {
                 path: this.$route.path,
                 query,
             })
+        },
+        resetAutomaticTimetableCoursePreselection() {
+            if (!this.automaticTimetableCoursePreselectionResetAvailable) {
+                return
+            }
+
+            this.setAutomaticTimetableCourseKeys(this.automaticTimetableCoursePreselectionKeys)
         },
         automaticSelectedCourseItem(course) {
             const hours = this.courseHoursNumber(course)
@@ -3298,10 +3329,91 @@ export default {
         overviewCourseGroupItems(courseGroup) {
             const sectionKey = courseGroup === 'planned' ? 'proposed' : courseGroup
             const fallbackCourses = this.overviewCourseGroupFallbackCourses(courseGroup)
+            const courseItems = this.courseHistoryItems(sectionKey, fallbackCourses)
+                .map(course => this.normalizedOverviewCourseItem(course))
+            const routeCourseItems = courseGroup === 'planned'
+                ? this.automaticTimetableRouteCourseItems()
+                : []
+            const negativeCourseCodes = courseGroup === 'planned'
+                ? this.overviewNegativeCourseCodes()
+                : new Set()
 
             return this.sortedCourseItems(this.uniqueCourseItems(
-                this.courseHistoryItems(sectionKey, fallbackCourses).map(course => this.normalizedOverviewCourseItem(course))
+                [
+                    ...courseItems,
+                    ...routeCourseItems,
+                ].filter(course => !negativeCourseCodes.has(this.normalizedCourseCode(course?.code || course?.label)))
             ))
+        },
+        overviewNegativeCourseCodes() {
+            return new Set(this.overviewCourseGroupItems('missing')
+                .map(course => this.normalizedCourseCode(course?.code || course?.label))
+                .filter(Boolean))
+        },
+        automaticTimetableRouteCourseItems() {
+            const initialRouteCourseKeys = Array.isArray(this.automaticTimetableInitialRouteCourseKeys)
+                ? this.automaticTimetableInitialRouteCourseKeys
+                : []
+            const courseKeyList = initialRouteCourseKeys.length
+                ? initialRouteCourseKeys
+                : this.serializedAutomaticTimetableCourseKeysFromQuery(this.$route?.query || {})
+
+            return courseKeyList
+                .map(courseKey => this.overviewCourseItemFromSerializedSelectionKey(courseKey))
+                .filter(Boolean)
+        },
+        rememberAutomaticTimetableRouteCourseKeys() {
+            if (Array.isArray(this.automaticTimetableInitialRouteCourseKeys) && this.automaticTimetableInitialRouteCourseKeys.length) {
+                return
+            }
+
+            this.automaticTimetableInitialRouteCourseKeys = this.serializedAutomaticTimetableCourseKeysFromQuery(this.$route?.query || {})
+        },
+        serializedAutomaticTimetableCourseKeysFromQuery(query) {
+            if (!Object.prototype.hasOwnProperty.call(query, 'automatic_timetable_courses')) {
+                return []
+            }
+
+            const courseKeys = query.automatic_timetable_courses
+            const courseKeyList = Array.isArray(courseKeys) ? courseKeys : [courseKeys]
+
+            if (courseKeyList.includes(noAutomaticTimetableCourseValue)) {
+                return []
+            }
+
+            return courseKeyList
+                .map(courseKey => String(courseKey || '').trim())
+                .filter(courseKey => courseKey && courseKey !== noAutomaticTimetableCourseValue)
+                .filter(courseKey => courseKey.split('|').length >= 7)
+        },
+        overviewCourseItemFromSerializedSelectionKey(courseKey) {
+            const selectionKey = String(courseKey || '').trim()
+
+            if (!selectionKey || selectionKey === noAutomaticTimetableCourseValue) {
+                return null
+            }
+
+            const parts = selectionKey.split('|')
+
+            if (parts.length < 7) {
+                return null
+            }
+
+            const [sourceId, semester, branch, jsonCode, jsonSubject] = parts
+            const selectedCode = String(parts[parts.length - 1] || '').trim()
+            const name = parts.slice(5, -1).join('|').trim()
+            const semesterNumber = Number(semester)
+
+            return this.normalizedOverviewCourseItem({
+                key: selectionKey,
+                code: selectedCode,
+                name,
+                semester: Number.isFinite(semesterNumber) ? semesterNumber : null,
+                branch,
+                json_code: jsonCode,
+                json_subject: jsonSubject,
+                source_id: sourceId,
+            })
         },
         overviewCourseGroupFallbackCourses(courseGroup) {
             if (courseGroup === 'missing') {
@@ -3349,6 +3461,15 @@ export default {
             })
 
             return Array.from(courseItemsByKey.values())
+        },
+        sortedAutomaticTimetableCourseKeys(courseKeys) {
+            return (Array.isArray(courseKeys) ? courseKeys : [])
+                .map(courseKey => String(courseKey || '').trim())
+                .filter(Boolean)
+                .sort((firstCourseKey, secondCourseKey) => firstCourseKey.localeCompare(secondCourseKey, 'de-AT', {
+                    numeric: true,
+                    sensitivity: 'base',
+                }))
         },
         sortedCourseSections(sections) {
             return (Array.isArray(sections) ? sections : []).map(section => ({
@@ -3399,10 +3520,6 @@ export default {
             return String(course?.hoursMeta || course?.meta || '').trim()
         },
         overviewCourseItemColor(course, courseGroup) {
-            if (this.overviewCourseItemSelectionDisabled(course, courseGroup)) {
-                return 'error'
-            }
-
             if (courseGroup === 'missing') {
                 return 'error'
             }
@@ -3524,19 +3641,11 @@ export default {
                 return false
             }
 
-            if (!this.overviewCourseItemDefaultSelectable(course, courseGroup)) {
-                return true
-            }
-
             return this.overviewCourseSelectionWouldExceedLimit(course, courseGroup, selectedCourseKeys)
         },
         overviewCourseItemSelectionDisabledLabel(course, courseGroup) {
             if (!this.overviewCourseItemSelectionDisabled(course, courseGroup)) {
                 return undefined
-            }
-
-            if (!this.overviewCourseItemDefaultSelectable(course, courseGroup)) {
-                return 'Durch Kursreihenfolge gesperrt'
             }
 
             return 'Maximum von 10 Kursen oder 30 Stunden erreicht'
@@ -3926,6 +4035,18 @@ export default {
     margin-bottom: 18px;
 }
 
+.overview-course-selection__toolbar {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    min-width: 0;
+}
+
+.overview-course-selection__toolbar :deep(.v-btn) {
+    font-weight: 900;
+    letter-spacing: 0;
+}
+
 .overview-course-selection__card {
     display: flex;
     flex-direction: column;
@@ -3976,8 +4097,18 @@ export default {
 
 .overview-course-selection__item {
     max-width: 100%;
-    border-radius: 999px;
-    font-weight: 760;
+    border-radius: 8px;
+    font-weight: 700;
+}
+
+.overview-course-selection__item--missing {
+    border-color: rgba(220, 38, 38, 0.18);
+    background: rgba(254, 242, 242, 0.78);
+}
+
+.overview-course-selection__item--additional {
+    border-color: rgba(2, 136, 209, 0.18);
+    background: rgba(240, 249, 255, 0.78);
 }
 
 .overview-course-selection__item span {

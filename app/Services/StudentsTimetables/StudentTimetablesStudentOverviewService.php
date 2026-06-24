@@ -206,14 +206,15 @@ class StudentTimetablesStudentOverviewService
      */
     private function courseHistoryForStudent(User $user, int $schoolyearId, ?Import116 $student, array $selectionOverride = [], bool $strictSelectionOverride = false): array
     {
-        $completedCourses = $this->completedCourses($user, $schoolyearId, $student?->student_code);
+        $recognizedCourses = $this->completedCourses($user, $schoolyearId, $student?->student_code);
+        $completedCourses = $this->positiveCourses($recognizedCourses);
         $selection = $this->selectionForStudent($user, $schoolyearId, $student, $completedCourses);
         $selection = $this->selectionWithOverrides($selection, $selectionOverride, $strictSelectionOverride);
         $subjectCourses = $this->subjectCourses($user, $schoolyearId, $selection);
         $completedCourseCodes = $this->studentCompletedCourseCodes($completedCourses);
-        $visitedCourseCodes = $this->studentVisitedCourseCodes($completedCourses);
-        $proposedCourses = $this->plannedCoursesForSemester($subjectCourses, $selection, $completedCourseCodes);
-        $missingCourses = $this->pendingCoursesBeforeSemester($subjectCourses, $selection, $completedCourseCodes, $visitedCourseCodes);
+        $visitedCourseCodes = $this->studentVisitedCourseCodes($recognizedCourses);
+        $missingCourses = $this->negativeCourses($recognizedCourses);
+        $proposedCourses = $this->plannedCoursesForSemester($subjectCourses, $selection, $completedCourseCodes, $visitedCourseCodes, $missingCourses);
         $additionalCourses = $this->additionalCourses($subjectCourses, $selection, $completedCourseCodes, $visitedCourseCodes, $missingCourses, $proposedCourses);
         $courseSections = $this->courseSections($completedCourses, $missingCourses, $proposedCourses, $additionalCourses);
         $automaticCourseSelection = $this->automaticCourseSelection($courseSections);
@@ -1460,11 +1461,14 @@ class StudentTimetablesStudentOverviewService
     }
 
     /**
-     * @param  list<array<string, mixed>>  $proposedCourses
-     * @param  list<array<string, mixed>>  $completedCourses
+     * @param  Collection<int, array<string, mixed>>  $subjectCourses
+     * @param  array<string, mixed>  $selection
+     * @param  list<string>  $completedCourseCodes
+     * @param  list<string>  $visitedCourseCodes
+     * @param  list<array<string, mixed>>  $missingCourses
      * @return list<array<string, mixed>>
      */
-    private function plannedCoursesForSemester(Collection $subjectCourses, array $selection, array $completedCourseCodes): array
+    private function plannedCoursesForSemester(Collection $subjectCourses, array $selection, array $completedCourseCodes, array $visitedCourseCodes, array $missingCourses): array
     {
         $semester = $this->integerOrNull($selection['semester'] ?? null);
 
@@ -1472,31 +1476,46 @@ class StudentTimetablesStudentOverviewService
             return [];
         }
 
+        $missingCourseCodes = $this->studentPlannedCourseCodes($missingCourses);
+
         return $subjectCourses
-            ->filter(fn (array $course): bool => (int) ($course['semester'] ?? 0) === $semester)
+            ->filter(fn (array $course): bool => (int) ($course['semester'] ?? 0) <= $semester)
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $completedCourseCodes))
+            ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $missingCourseCodes))
+            ->filter(fn (array $course): bool => (int) ($course['semester'] ?? 0) === $semester
+                || $this->coursePossibleAsStudentMissing($course, $completedCourseCodes, $visitedCourseCodes))
             ->unique(fn (array $course): string => $this->studentPlanningCourseUniqueKey($course))
-            ->sort(fn (array $firstCourse, array $secondCourse): int => strnatcasecmp((string) $firstCourse['code'], (string) $secondCourse['code']))
+            ->sort(function (array $firstCourse, array $secondCourse): int {
+                $semesterComparison = (int) ($firstCourse['semester'] ?? 0) <=> (int) ($secondCourse['semester'] ?? 0);
+
+                return $semesterComparison !== 0
+                    ? $semesterComparison
+                    : strnatcasecmp((string) $firstCourse['code'], (string) $secondCourse['code']);
+            })
             ->values()
             ->all();
     }
 
     /**
+     * @param  list<array<string, mixed>>  $recognizedCourses
      * @return list<array<string, mixed>>
      */
-    private function pendingCoursesBeforeSemester(Collection $subjectCourses, array $selection, array $completedCourseCodes, array $visitedCourseCodes): array
+    private function positiveCourses(array $recognizedCourses): array
     {
-        $semester = $this->integerOrNull($selection['semester'] ?? null);
+        return collect($recognizedCourses)
+            ->filter(fn (array $course): bool => $this->completedCourseCountsAsDone((string) ($course['grade'] ?? '')))
+            ->values()
+            ->all();
+    }
 
-        if (! $semester) {
-            return [];
-        }
-
-        return $subjectCourses
-            ->filter(fn (array $course): bool => (int) ($course['semester'] ?? 0) < $semester)
-            ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $completedCourseCodes))
-            ->filter(fn (array $course): bool => $this->coursePossibleAsStudentMissing($course, $completedCourseCodes, $visitedCourseCodes))
-            ->unique(fn (array $course): string => $this->studentPlanningCourseUniqueKey($course))
+    /**
+     * @param  list<array<string, mixed>>  $recognizedCourses
+     * @return list<array<string, mixed>>
+     */
+    private function negativeCourses(array $recognizedCourses): array
+    {
+        return collect($recognizedCourses)
+            ->filter(fn (array $course): bool => $this->courseCountsAsNegative((string) ($course['grade'] ?? '')))
             ->sort(fn (array $firstCourse, array $secondCourse): int => strnatcasecmp((string) $firstCourse['code'], (string) $secondCourse['code']))
             ->values()
             ->all();
@@ -1588,6 +1607,11 @@ class StudentTimetablesStudentOverviewService
         $normalizedGrade = mb_strtoupper(trim($grade), 'UTF-8');
 
         return $normalizedGrade === 'B' || in_array($normalizedGrade, ['1', '2', '3', '4'], true);
+    }
+
+    private function courseCountsAsNegative(string $grade): bool
+    {
+        return in_array(mb_strtoupper(trim($grade), 'UTF-8'), ['5', 'N'], true);
     }
 
     /**

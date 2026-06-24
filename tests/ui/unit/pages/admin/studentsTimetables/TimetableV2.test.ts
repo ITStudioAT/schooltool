@@ -667,6 +667,8 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain('@click.stop="copyCourseReviewStudentEmail"')
         expect(source).toContain('class="students-timetable-v2-student-context__student-email"')
         expect(source).toContain('@click.stop="copyStoredTimetableStudentEmail"')
+        expect(source).toMatch(/\.students-timetable-v2-student-context__student-main\s*\{\s*display: grid;/)
+        expect(source).toMatch(/\.students-timetable-v2-student-context__student-email\s*\{\s*justify-self: start;/)
         expect(source).toContain('class="students-timetable-v2-student-search-results__email"')
         expect(source).toContain('@click.stop="copyStudentEmail(student)"')
         expect(source).toContain("copiedStudentEmailCode === normalizedStudentCode(student.student_code) ? 'mdi-check' : 'mdi-content-copy'")
@@ -4574,6 +4576,24 @@ describe('TimetableV2 route steps', () => {
         expect(context.loadStoredStudentOverview).toHaveBeenCalledWith(null)
         expect(context.loadCourseGroups).not.toHaveBeenCalled()
         expect(context.loadSchoolHours).not.toHaveBeenCalled()
+    })
+
+    it('loads robot students on mount when a restored selected student is missing email data', () => {
+        const context = timetableV2Context({
+            loadRobotStudents: vi.fn(() => Promise.resolve()),
+            loadSubjectRows: vi.fn(() => Promise.resolve()),
+            storedTimetableStudentContext: {
+                student: {
+                    studentCode: '200',
+                    label: '5C · ZADRA Isabella · Semester 5',
+                },
+            },
+        })
+
+        TimetableV2.mounted.call(context)
+
+        expect(context.loadRobotStudents).toHaveBeenCalledOnce()
+        expect(context.loadStoredStudentOverview).toHaveBeenCalledWith('200')
     })
 
     it('keeps review-only loaders out of the selection page loading state', () => {

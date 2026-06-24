@@ -2820,6 +2820,9 @@ export default {
         const schoolHoursPromise = this.courseReviewVisible || this.timetableCalculationVisible || this.adoptedTimetableVisible
             ? this.loadSchoolHours()
             : null
+        if (this.storedTimetableStudentCode && !this.storedTimetableStudentEmail) {
+            this.loadRobotStudents()
+        }
         this.loadStoredStudentOverview(this.storedTimetableStudentCode)
         this.restoreTimetableV2RouteStepEffects({
             subjectRowsPromise,
@@ -9088,10 +9091,9 @@ export default {
 }
 
 .students-timetable-v2-student-context__student-main {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
+    display: grid;
+    align-items: start;
+    gap: 4px;
     min-width: 0;
 }
 
@@ -9278,6 +9280,10 @@ export default {
     font-size: 0.74rem;
     font-weight: 800;
     letter-spacing: 0;
+}
+
+.students-timetable-v2-student-context__student-email {
+    justify-self: start;
 }
 
 .students-timetable-v2-review-card__student-email span,

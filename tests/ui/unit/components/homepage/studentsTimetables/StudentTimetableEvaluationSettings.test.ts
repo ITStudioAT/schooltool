@@ -1429,6 +1429,11 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('setOverviewCourseGroupSelection(section.key, true)')
         expect(source).toContain('toggleOverviewCourseItem(course, section.key)')
         expect(source).toContain("const noAutomaticTimetableCourseValue = '__none'")
+        expect(source).toContain('class="overview-course-selection__toolbar"')
+        expect(source).toContain('Vorauswahl zurücksetzen')
+        expect(source).toContain(':disabled="!automaticTimetableCoursePreselectionResetAvailable"')
+        expect(source).toContain('@click="resetAutomaticTimetableCoursePreselection"')
+        expect(source).toContain('[`overview-course-selection__item--${section.key}`]: true')
 
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
@@ -1549,6 +1554,218 @@ describe('Student timetable evaluation settings', () => {
 
         expect(emptyCtx.overviewCourseSelectionSections).toEqual([])
         expect(computed.overviewCourseSelectionVisible.call(emptyCtx)).toBe(false)
+    })
+
+    it('hydrates explicit automatic timetable route courses into planned overview courses', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const serializedCourses = [
+            '26|4|common|BU2|BU|Biologie 2|BU2',
+            '27|4|common|CH1|CH|Chemie 1|CH1',
+            '24|3|common|R/ET3|R/ET|Religion/Ethik 3|ETH3',
+            '21|3|common|GS2|GS|Geschichte 2|GS2',
+            '12|2|common|GW2|GW|Geografie 2|GW2',
+            '32|4|common|M4|M|Mathematik 4|M4',
+            '36|5|common|D5|D|Deutsch 5|D5',
+            '37|5|common|E5|E|Englisch 5|E5',
+            '23|3|common|M3|M|Mathematik 3|M3',
+        ]
+        const ctx: any = {
+            ...methods,
+            automaticTimetableInitialRouteCourseKeys: serializedCourses,
+            $route: {
+                query: {
+                    automatic_timetable_courses: serializedCourses,
+                },
+            },
+            overview: {
+                course_sections: [
+                    {
+                        key: 'missing',
+                        items: [],
+                    },
+                    {
+                        key: 'proposed',
+                        items: [],
+                    },
+                    {
+                        key: 'additional',
+                        items: [],
+                    },
+                ],
+            },
+        }
+
+        ctx.courseSections = computed.courseSections.call(ctx)
+        ctx.automaticTimetableCourseKeys = computed.automaticTimetableCourseKeys.call(ctx)
+        ctx.overviewDefaultSelectedCourseKeys = computed.overviewDefaultSelectedCourseKeys.call(ctx)
+        ctx.automaticTimetableCoursePreselectionKeys = computed.automaticTimetableCoursePreselectionKeys.call(ctx)
+
+        const plannedCourseItems = methods.overviewCourseGroupItems.call(ctx, 'planned')
+        const selectedCourseItems = computed.overviewSelectedCourseLimitItems.call(ctx)
+
+        expect(plannedCourseItems.map((course: Record<string, string>) => course.key)).toEqual([
+            serializedCourses[0],
+            serializedCourses[1],
+            serializedCourses[6],
+            serializedCourses[7],
+            serializedCourses[2],
+            serializedCourses[3],
+            serializedCourses[4],
+            serializedCourses[8],
+            serializedCourses[5],
+        ])
+        expect(selectedCourseItems.map((course: Record<string, string>) => course.code)).toEqual([
+            'BU2',
+            'CH1',
+            'D5',
+            'E5',
+            'ETH3',
+            'GS2',
+            'GW2',
+            'M3',
+            'M4',
+        ])
+        expect(selectedCourseItems.map((course: Record<string, string>) => course.name)).toEqual([
+            'Biologie 2',
+            'Chemie 1',
+            'Deutsch 5',
+            'Englisch 5',
+            'Religion/Ethik 3',
+            'Geschichte 2',
+            'Geografie 2',
+            'Mathematik 3',
+            'Mathematik 4',
+        ])
+        expect(computed.automaticTimetableCoursePreselectionResetAvailable.call(ctx)).toBe(false)
+    })
+
+    it('matches admin grouping for negative and planned automatic timetable courses', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const serializedCourses = [
+            '26|4|common|BU2|BU|Biologie 2|BU2',
+            '27|4|common|CH1|CH|Chemie 1|CH1',
+            '35|5|common|CH2|CH|Chemie 2|CH2',
+        ]
+        const ctx: any = {
+            ...methods,
+            automaticTimetableInitialRouteCourseKeys: serializedCourses,
+            $route: {
+                query: {
+                    automatic_timetable_courses: serializedCourses,
+                },
+            },
+            overview: {
+                course_sections: [
+                    {
+                        key: 'missing',
+                        items: [
+                            { key: 'negative-ch1', code: 'CH1', name: 'Chemie 1', grade: '5', hours: 3 },
+                        ],
+                    },
+                    {
+                        key: 'proposed',
+                        items: [],
+                    },
+                    {
+                        key: 'additional',
+                        items: [],
+                    },
+                ],
+            },
+        }
+
+        ctx.courseSections = computed.courseSections.call(ctx)
+        ctx.automaticTimetableCourseKeys = computed.automaticTimetableCourseKeys.call(ctx)
+
+        const missingCourseItems = methods.overviewCourseGroupItems.call(ctx, 'missing')
+        const plannedCourseItems = methods.overviewCourseGroupItems.call(ctx, 'planned')
+        const plannedCodes = plannedCourseItems.map((course: Record<string, string>) => course.code)
+        const chemie2Course = plannedCourseItems.find((course: Record<string, string>) => course.code === 'CH2')
+
+        expect(missingCourseItems.map((course: Record<string, string>) => course.code)).toEqual(['CH1'])
+        expect(plannedCodes).toEqual(['BU2', 'CH2'])
+        expect(plannedCodes).not.toContain('CH1')
+        expect(methods.overviewCourseItemDefaultSelected.call(ctx, chemie2Course, 'planned')).toBe(false)
+        expect(methods.overviewCourseItemSelectionDisabled.call(ctx, chemie2Course, 'planned')).toBe(false)
+        expect(methods.overviewCourseItemColor.call(ctx, chemie2Course, 'planned')).toBe('success')
+    })
+
+    it('resets the automatic timetable course preselection to the imported course defaults', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const serializedCourses = [
+            '26|4|common|BU2|BU|Biologie 2|BU2',
+            '27|4|common|CH1|CH|Chemie 1|CH1',
+            '36|5|common|D5|D|Deutsch 5|D5',
+        ]
+        const push = vi.fn()
+        const ctx: any = {
+            ...methods,
+            automaticTimetableInitialRouteCourseKeys: serializedCourses,
+            $route: {
+                path: '/students-timetables/overview',
+                query: {
+                    automatic_timetable: 'courses',
+                    automatic_timetable_courses: [serializedCourses[0], serializedCourses[2]],
+                    manual_timetable: '1',
+                },
+            },
+            $router: {
+                push,
+            },
+            overview: {
+                course_sections: [
+                    { key: 'missing', items: [] },
+                    { key: 'proposed', items: [] },
+                    { key: 'additional', items: [] },
+                ],
+            },
+            get courseSections() {
+                return computed.courseSections.call(ctx)
+            },
+            get automaticTimetableCourseKeys() {
+                return computed.automaticTimetableCourseKeys.call(ctx)
+            },
+            get overviewDefaultSelectedCourseKeys() {
+                return computed.overviewDefaultSelectedCourseKeys.call(ctx)
+            },
+            get automaticTimetableCoursePreselectionKeys() {
+                return computed.automaticTimetableCoursePreselectionKeys.call(ctx)
+            },
+            get automaticTimetableCoursePreselectionResetAvailable() {
+                return computed.automaticTimetableCoursePreselectionResetAvailable.call(ctx)
+            },
+        }
+
+        expect(ctx.automaticTimetableCoursePreselectionResetAvailable).toBe(true)
+
+        methods.resetAutomaticTimetableCoursePreselection.call(ctx)
+
+        expect(push).toHaveBeenCalledWith({
+            path: '/students-timetables/overview',
+            query: {
+                automatic_timetable: 'courses',
+                automatic_timetable_courses: serializedCourses,
+                manual_timetable: '1',
+            },
+        })
+
+        push.mockClear()
+        ctx.$route = {
+            path: '/students-timetables/overview',
+            query: {
+                automatic_timetable: 'courses',
+                automatic_timetable_courses: serializedCourses,
+            },
+        }
+
+        expect(ctx.automaticTimetableCoursePreselectionResetAvailable).toBe(false)
+
+        methods.resetAutomaticTimetableCoursePreselection.call(ctx)
+
+        expect(push).not.toHaveBeenCalled()
     })
 
     it('orders overview courses ascending in all student course lists', () => {

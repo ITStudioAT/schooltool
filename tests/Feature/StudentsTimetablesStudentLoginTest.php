@@ -532,6 +532,150 @@ it('returns exact completed course modules sorted by course name in the student 
         ->assertJsonPath('data.course_sections.0.items.2.code', 'E3');
 });
 
+it('lists only N and 5 recognition rows as negative courses in the student overview', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $import116->forceFill([
+        'school_level' => '10_1',
+        'attendance_year' => null,
+    ])->save();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    foreach ([
+        ['semester' => 1, 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1'],
+        ['semester' => 2, 'json_code' => 'D2', 'json_subject' => 'D', 'name' => 'Deutsch 2'],
+        ['semester' => 1, 'json_code' => 'CH1', 'json_subject' => 'CH', 'name' => 'Chemie 1'],
+        ['semester' => 1, 'json_code' => 'M1', 'json_subject' => 'M', 'name' => 'Mathematik 1'],
+    ] as $index => $subjectRow) {
+        StudentTimetableSubjectRow::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'branch' => 'common',
+            'is_active' => true,
+            'sort_order' => $index + 1,
+            ...$subjectRow,
+        ]);
+    }
+
+    $recognitionImport = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'recognitions.csv',
+        'stored_filename' => 'recognitions.csv',
+        'file_path' => 'recognitions.csv',
+        'imported_at' => now(),
+    ]);
+
+    foreach ([
+        ['subject' => 'D', 'grade' => 'B', 'semester' => '1'],
+        ['subject' => 'CH', 'grade' => '5', 'semester' => '1'],
+        ['subject' => 'M', 'grade' => 'N', 'semester' => '1'],
+    ] as $index => $course) {
+        StudentTimetableRecognitionRow::query()->create([
+            'student_timetable_recognition_import_id' => $recognitionImport->id,
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'row_number' => $index + 1,
+            'student_code' => $import116->student_code,
+            'student' => 'Mustermann Max',
+            'subject' => $course['subject'],
+            'grade' => $course['grade'],
+            'raw_data' => ['semester' => $course['semester']],
+        ]);
+    }
+
+    $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful()
+        ->assertJsonPath('data.completed_courses.0.code', 'D1')
+        ->assertJsonPath('data.completed_courses.0.grade', 'B')
+        ->assertJsonCount(1, 'data.completed_courses')
+        ->assertJsonPath('data.missing_courses.0.code', 'CH1')
+        ->assertJsonPath('data.missing_courses.0.grade', '5')
+        ->assertJsonPath('data.missing_courses.1.code', 'M1')
+        ->assertJsonPath('data.missing_courses.1.grade', 'N')
+        ->assertJsonCount(2, 'data.missing_courses')
+        ->assertJsonMissingPath('data.missing_courses.2')
+        ->assertJsonPath('data.course_sections.1.items.0.code', 'CH1')
+        ->assertJsonPath('data.course_sections.1.items.1.code', 'M1');
+});
+
+it('includes pending earlier semester courses in the public proposed courses', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $import116->forceFill([
+        'school_level' => '11_1',
+        'attendance_year' => null,
+    ])->save();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    foreach ([
+        ['semester' => 1, 'json_code' => 'BU1', 'json_subject' => 'BU', 'name' => 'Biologie 1'],
+        ['semester' => 4, 'json_code' => 'BU2', 'json_subject' => 'BU', 'name' => 'Biologie 2'],
+        ['semester' => 4, 'json_code' => 'CH1', 'json_subject' => 'CH', 'name' => 'Chemie 1'],
+        ['semester' => 5, 'json_code' => 'D5', 'json_subject' => 'D', 'name' => 'Deutsch 5'],
+    ] as $index => $subjectRow) {
+        StudentTimetableSubjectRow::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'branch' => 'common',
+            'is_active' => true,
+            'sort_order' => $index + 1,
+            ...$subjectRow,
+        ]);
+    }
+
+    $recognitionImport = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'recognitions.csv',
+        'stored_filename' => 'recognitions.csv',
+        'file_path' => 'recognitions.csv',
+        'imported_at' => now(),
+    ]);
+
+    foreach ([
+        ['subject' => 'BU', 'grade' => '2', 'semester' => '1'],
+        ['subject' => 'CH', 'grade' => '5', 'semester' => '1'],
+    ] as $index => $course) {
+        StudentTimetableRecognitionRow::query()->create([
+            'student_timetable_recognition_import_id' => $recognitionImport->id,
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'row_number' => $index + 1,
+            'student_code' => $import116->student_code,
+            'student' => 'Mustermann Max',
+            'subject' => $course['subject'],
+            'grade' => $course['grade'],
+            'raw_data' => ['semester' => $course['semester']],
+        ]);
+    }
+
+    $response = $this->actingAs($user)
+        ->getJson('/api/homepage/students-timetables/overview')
+        ->assertSuccessful()
+        ->assertJsonPath('data.missing_courses.0.code', 'CH1');
+
+    expect(collect($response->json('data.proposed_courses'))->pluck('code')->all())
+        ->toBe(['BU2', 'D5']);
+});
+
 it('creates the first automatic timetable for the authenticated student', function () {
     [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
     $import116->forceFill([
