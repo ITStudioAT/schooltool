@@ -302,9 +302,9 @@
                 </v-card-actions>
             </v-card>
 
-            <div class="student-evaluation-settings__automatic-card">
+            <div v-if="!generatingTimetable" class="student-evaluation-settings__automatic-card">
                 <v-icon icon="mdi-calendar-clock" size="22" />
-                <h2>Neuer Stundenplan</h2>
+                <h2>Stundenplan</h2>
                 <span class="student-evaluation-settings__automatic-stars" aria-hidden="true">
                     <v-icon icon="mdi-star-four-points" size="10" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--1" />
                     <v-icon icon="mdi-star-four-points" size="14" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--2" />
@@ -1139,7 +1139,7 @@ export default {
             return this.currentStep === 'result' ? 'Schließen' : 'Weiter'
         },
         selectedCourseCount() {
-            return this.selectedCourseKeys.length
+            return this.selectedCoursesForSummary().length
         },
         allCoursesSelectedByDefault() {
             return this.selectedCourseKeys.length === 0
@@ -1149,7 +1149,7 @@ export default {
                 return true
             }
 
-            return this.proposedCourses.every(course => this.selectedCourseKeys.includes(this.courseSelectionKey(course)))
+            return this.proposedCourses.every(course => this.courseSelected(course))
         },
         effectiveSelectedCourseCount() {
             return this.selectedCourseKeys.length || this.effectiveCourseSummaryTotal
@@ -1193,9 +1193,10 @@ export default {
                 : []
         },
         selectedVisibleAdditionalCourseKeys() {
-            const visibleAdditionalCourseKeys = new Set(this.additionalCourses.map(course => this.courseSelectionKey(course)))
-
-            return this.selectedAdditionalCourseKeys.filter(courseKey => visibleAdditionalCourseKeys.has(courseKey))
+            return this.additionalCourses
+                .filter(course => this.courseSelectedFromKeys(course, this.selectedAdditionalCourseKeys))
+                .map(course => this.backendCourseSelectionKey(course))
+                .filter(Boolean)
         },
         hiddenGeneratedAdditionalCourseKeySet() {
             return new Set([
@@ -1250,7 +1251,9 @@ export default {
             const pendingRemovedCourseKeys = new Set(this.pendingRemovedSelectedCourseKeys)
 
             return this.selectedCoursesForSummary()
-                .filter(course => !pendingRemovedCourseKeys.has(this.courseSelectionKey(course)))
+                .filter(course => typeof this.courseSelectedFromKeys === 'function'
+                    ? !this.courseSelectedFromKeys(course, [...pendingRemovedCourseKeys])
+                    : !pendingRemovedCourseKeys.has(this.courseSelectionKey(course)))
         },
         resultSelectedCourseRemovalPending() {
             return this.pendingRemovedSelectedCourseKeys.length > 0
@@ -1284,7 +1287,7 @@ export default {
             const initialSelectedCourseKeys = this.normalizedCourseKeys(this.initialSelectedCourseKeys)
 
             return initialSelectedCourseKeys.length
-                ? initialSelectedCourseKeys
+                ? this.selectedCourseKeysForCourses(this.proposedCourses, initialSelectedCourseKeys)
                 : this.proposedCourses.map(course => this.courseSelectionKey(course)).filter(Boolean)
         },
         resultCalculationResetAvailable() {
@@ -1292,7 +1295,14 @@ export default {
                 return false
             }
 
-            return !this.normalizedCourseKeyListsEqual(this.selectedCourseKeys, this.resultInitialSelectedCourseKeys)
+            const currentSelectedCourseKeys = typeof this.selectedCourseKeysForCourses === 'function'
+                ? this.selectedCourseKeysForCourses(this.proposedCourses, this.selectedCourseKeys)
+                : this.selectedCourseKeys
+
+            return !this.normalizedCourseKeyListsEqual(
+                currentSelectedCourseKeys,
+                this.resultInitialSelectedCourseKeys,
+            )
                 || !this.normalizedCourseKeyListsEqual(this.selectedQualityCriterionKeys, this.initialSelectedQualityCriterionKeys)
                 || this.selectedAdditionalCourseKeys.length > 0
                 || this.pendingRemovedSelectedCourseKeys.length > 0
@@ -1301,7 +1311,7 @@ export default {
                 || Number(this.selectedTimetableNumber || 1) !== 1
         },
         selectedCourses() {
-            return this.proposedCourses.filter(course => this.courseSelected(course))
+            return this.selectedCoursesForSummary()
         },
         generatedTimetableWeekdays() {
             const weekdaysWithSlots = new Set(
@@ -1762,6 +1772,22 @@ export default {
         },
 
         courseSelectionKey(course) {
+            const courseGroup = typeof this.courseSelectionGroup === 'function'
+                ? this.courseSelectionGroup(course)
+                : 'planned'
+            const normalizedCode = typeof this.normalizedCourseCode === 'function'
+                ? this.normalizedCourseCode(course?.code || course?.label || '')
+                : String(course?.code || course?.label || '').trim().toUpperCase().replace(/\s+/g, '')
+
+            if (courseGroup && normalizedCode) {
+                return `${courseGroup}:${normalizedCode}`
+            }
+
+            return typeof this.backendCourseSelectionKey === 'function'
+                ? this.backendCourseSelectionKey(course)
+                : String(course?.key || course?.code || course?.label || '')
+        },
+        backendCourseSelectionKey(course) {
             return String(course?.key || [
                 course?.code || '',
                 course?.name || '',
@@ -1769,6 +1795,118 @@ export default {
                 course?.branch || '',
                 course?.hours ?? course?.hours_per_week ?? '',
             ].join('|'))
+        },
+        courseSelectionGroup(course) {
+            const explicitCourseGroup = this.normalizedCourseSelectionGroupKey(
+                course?.courseGroup || course?.course_group || course?.sectionKey || course?.section_key || '',
+            )
+
+            if (explicitCourseGroup) {
+                return explicitCourseGroup
+            }
+
+            const backendKey = this.backendCourseSelectionKey(course)
+            const normalizedCode = this.normalizedCourseCode(course?.code || course?.label || '')
+            const displayedCourseSections = Array.isArray(this.displayedCourseSections)
+                ? this.displayedCourseSections
+                : []
+            const section = displayedCourseSections.find(currentSection => (
+                Array.isArray(currentSection?.items)
+                    && currentSection.items.some(sectionCourse => (
+                        this.backendCourseSelectionKey(sectionCourse) === backendKey
+                            || (
+                                normalizedCode
+                                && this.normalizedCourseCode(sectionCourse?.code || sectionCourse?.label || '') === normalizedCode
+                            )
+                    ))
+            ))
+            const sectionCourseGroup = this.normalizedCourseSelectionGroupKey(section?.key || '')
+
+            if (sectionCourseGroup) {
+                return sectionCourseGroup
+            }
+
+            const additionalCourses = Array.isArray(this.additionalCourses) ? this.additionalCourses : []
+            const matchesAdditionalCourse = additionalCourses.some(additionalCourse => (
+                this.backendCourseSelectionKey(additionalCourse) === backendKey
+                    || (
+                        normalizedCode
+                        && this.normalizedCourseCode(additionalCourse?.code || additionalCourse?.label || '') === normalizedCode
+                    )
+            ))
+
+            return matchesAdditionalCourse ? 'additional' : 'planned'
+        },
+        normalizedCourseSelectionGroupKey(courseGroup) {
+            const normalizedCourseGroup = String(courseGroup || '').trim()
+
+            if (normalizedCourseGroup === 'proposed') {
+                return 'planned'
+            }
+
+            return ['missing', 'planned', 'additional'].includes(normalizedCourseGroup)
+                ? normalizedCourseGroup
+                : ''
+        },
+        courseSelectedFromKeys(course, courseKeys) {
+            return this.normalizedCourseKeys(courseKeys)
+                .some(courseKey => this.selectionKeyMatchesCourse(courseKey, course))
+        },
+        selectedCourseKeysForCourses(courses, courseKeys) {
+            const selectedCourseKeys = this.normalizedCourseKeys(courseKeys)
+
+            return (Array.isArray(courses) ? courses : [])
+                .filter(course => selectedCourseKeys.some(courseKey => this.selectionKeyMatchesCourse(courseKey, course)))
+                .map(course => this.courseSelectionKey(course))
+                .filter(Boolean)
+                .filter((courseKey, index, courseKeyList) => courseKeyList.indexOf(courseKey) === index)
+        },
+        selectedBackendCourseKeys() {
+            return this.selectedCoursesForSummary()
+                .map(course => this.backendCourseSelectionKey(course))
+                .filter(Boolean)
+                .filter((courseKey, index, courseKeys) => courseKeys.indexOf(courseKey) === index)
+        },
+        selectionKeyMatchesCourse(selectionKey, course) {
+            const value = String(selectionKey || '').trim()
+
+            if (!value) {
+                return false
+            }
+
+            if (value === this.courseSelectionKey(course) || value === this.backendCourseSelectionKey(course)) {
+                return true
+            }
+
+            const compactMatch = value.match(/^(missing|planned|proposed|additional):(.+)$/u)
+
+            if (compactMatch) {
+                const courseGroup = this.normalizedCourseSelectionGroupKey(compactMatch[1])
+                const normalizedCode = this.normalizedCourseCode(compactMatch[2])
+
+                return courseGroup === this.courseSelectionGroup(course)
+                    && normalizedCode !== ''
+                    && normalizedCode === this.normalizedCourseCode(course?.code || course?.label || '')
+            }
+
+            const serializedParts = value.split('|')
+
+            if (serializedParts.length >= 7) {
+                const selectedCode = serializedParts[serializedParts.length - 1]
+
+                return this.courseSelectionGroup(course) === 'planned'
+                    && this.normalizedCourseCode(selectedCode) === this.normalizedCourseCode(course?.code || course?.label || '')
+            }
+
+            const normalizedValue = this.normalizedCourseCode(value)
+
+            return normalizedValue !== ''
+                && [
+                    course?.code,
+                    course?.label,
+                    course?.name,
+                    course?.json_code,
+                ].some(courseValue => this.normalizedCourseCode(courseValue) === normalizedValue)
         },
         sortedCourseItems(courses) {
             return [...(Array.isArray(courses) ? courses : [])]
@@ -2373,7 +2511,16 @@ export default {
         },
 
         courseSelected(course) {
-            return this.selectedCourseKeys.includes(this.courseSelectionKey(course))
+            if (typeof this.courseSelectedFromKeys !== 'function') {
+                const backendCourseKey = typeof this.backendCourseSelectionKey === 'function'
+                    ? this.backendCourseSelectionKey(course)
+                    : String(course?.key || '')
+
+                return this.selectedCourseKeys.includes(this.courseSelectionKey(course))
+                    || (backendCourseKey && this.selectedCourseKeys.includes(backendCourseKey))
+            }
+
+            return this.courseSelectedFromKeys(course, this.selectedCourseKeys)
         },
         courseSelectedByDefault(course) {
             return this.allCoursesSelectedByDefault || this.courseSelected(course)
@@ -2386,7 +2533,7 @@ export default {
 
             const courseKey = this.courseSelectionKey(course)
 
-            if (selected === true && !this.selectedCourseKeys.includes(courseKey)) {
+            if (selected === true && !this.courseSelected(course)) {
                 this.selectedCourseKeys = [...this.selectedCourseKeys, courseKey]
 
                 return
@@ -2397,13 +2544,25 @@ export default {
                     ? this.selectedCourseKeys
                     : this.proposedCourses.map(proposedCourse => this.courseSelectionKey(proposedCourse))
 
-                this.selectedCourseKeys = selectedCourseKeys.filter(selectedCourseKey => selectedCourseKey !== courseKey)
+                this.selectedCourseKeys = selectedCourseKeys
+                    .filter(selectedCourseKey => typeof this.selectionKeyMatchesCourse === 'function'
+                        ? !this.selectionKeyMatchesCourse(selectedCourseKey, course)
+                        : selectedCourseKey !== courseKey)
             }
 
             this.emitCourseSelectionChange()
         },
         additionalCourseSelected(course) {
-            return this.selectedAdditionalCourseKeys.includes(this.courseSelectionKey(course))
+            if (typeof this.courseSelectedFromKeys !== 'function') {
+                const backendCourseKey = typeof this.backendCourseSelectionKey === 'function'
+                    ? this.backendCourseSelectionKey(course)
+                    : String(course?.key || '')
+
+                return this.selectedAdditionalCourseKeys.includes(this.courseSelectionKey(course))
+                    || (backendCourseKey && this.selectedAdditionalCourseKeys.includes(backendCourseKey))
+            }
+
+            return this.courseSelectedFromKeys(course, this.selectedAdditionalCourseKeys)
         },
         setAdditionalCourseSelected(course, selected) {
             if (this.currentStep !== 'result' || !this.generatedTimetable || this.additionalCourseSelectionLocked) {
@@ -2412,13 +2571,19 @@ export default {
 
             const courseKey = this.courseSelectionKey(course)
 
-            if (selected === true && !this.selectedAdditionalCourseKeys.includes(courseKey)) {
+            const additionalCourseSelected = typeof this.additionalCourseSelected === 'function'
+                ? this.additionalCourseSelected(course)
+                : this.selectedAdditionalCourseKeys.includes(courseKey)
+
+            if (selected === true && !additionalCourseSelected) {
                 this.selectedAdditionalCourseKeys = [...this.selectedAdditionalCourseKeys, courseKey]
             }
 
             if (selected !== true) {
                 this.selectedAdditionalCourseKeys = this.selectedAdditionalCourseKeys
-                    .filter(selectedCourseKey => selectedCourseKey !== courseKey)
+                    .filter(selectedCourseKey => typeof this.selectionKeyMatchesCourse === 'function'
+                        ? !this.selectionKeyMatchesCourse(selectedCourseKey, course)
+                        : selectedCourseKey !== courseKey)
             }
 
             this.commitAdditionalCourseSelectionChange()
@@ -2525,11 +2690,11 @@ export default {
 
             try {
                 const response = await axios.post('/api/homepage/students-timetables/automatic-timetable', {
-                    selected_course_keys: this.selectedCourseKeys,
+                    selected_course_keys: this.selectedBackendCourseKeys(),
                     deselected_course_group_keys: this.deselectedCourseGroupKeys,
                     selected_additional_course_keys: this.selectedVisibleAdditionalCourseKeys,
                     selected_additional_courses_required: this.selectedVisibleAdditionalCourseKeys.length > 0,
-                    selected_quality_criterion_keys: this.selectedActiveQualityCriterionKeys,
+                    selected_quality_criterion_keys: [],
                     selected_timetable_type: this.selectedTimetableType,
                     selected_timetable_number: this.selectedTimetableNumber,
                     selection: this.selectionOverride,

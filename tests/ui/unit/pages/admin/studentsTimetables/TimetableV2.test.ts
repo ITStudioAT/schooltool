@@ -37,6 +37,7 @@ function timetableV2Context(overrides = {}) {
         timetableCalculationLoading: false,
         timetableCalculationLoadingMode: 'calculation',
         timetableCalculationProgress: 0,
+        timetableCalculationProgressCompletionPending: false,
         timetableCalculationProgressResetTimer: null,
         timetableCalculationProgressSource: '',
         timetableCalculationProgressTimer: null,
@@ -3130,9 +3131,6 @@ describe('TimetableV2 route steps', () => {
             expect(context.timetableCalculationProgressSource).toBe('more-courses')
             expect(context.timetableCalculationProgressValue).toBeGreaterThan(0)
             expect(context.timetableCalculationProgressVisible).toBe(true)
-
-            await vi.advanceTimersByTimeAsync(1500)
-
             expect(context.timetableCalculationProgressValue).toBe(100)
             expect(context.timetableCalculationProgressLabel).toBe('100%')
 
@@ -3143,6 +3141,36 @@ describe('TimetableV2 route steps', () => {
             await TimetableV2.methods.calculateTimetables.call(context, { progressContext: 'options' })
 
             expect(context.timetableCalculationProgressSource).toBe('options')
+
+            TimetableV2.methods.clearTimetableCalculationProgressTimers.call(context)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('completes calculation progress after pending more course availability checks finish', async () => {
+        vi.useFakeTimers()
+
+        try {
+            const context = timetableV2Context({
+                moreCourseAvailabilityLoading: true,
+                timetableCalculationProgress: 95,
+                timetableCalculationProgressSource: 'more-courses',
+                timetableCalculationVisible: true,
+                timetableV2Step: 'timetable-calculation',
+            })
+
+            TimetableV2.methods.completeTimetableCalculationProgress.call(context)
+
+            expect(context.timetableCalculationProgressCompletionPending).toBe(true)
+            expect(context.timetableCalculationProgressValue).toBe(95)
+
+            context.moreCourseAvailabilityLoading = false
+            TimetableV2.methods.completeTimetableCalculationProgress.call(context)
+
+            expect(context.timetableCalculationProgressCompletionPending).toBe(false)
+            expect(context.timetableCalculationProgressValue).toBe(100)
+            expect(context.timetableCalculationProgressLabel).toBe('100%')
 
             TimetableV2.methods.clearTimetableCalculationProgressTimers.call(context)
         } finally {
@@ -3897,6 +3925,40 @@ describe('TimetableV2 route steps', () => {
         ])
         expect(TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, { code: 'GW1' }))
             .toHaveLength(1)
+    })
+
+    it('does not infer the wirtschaftskundlich branch from completed INF1 courses', () => {
+        const context = timetableV2Context()
+
+        expect(TimetableV2.methods.inferredBranchFromCourseCodes.call(context, new Set(['INF1']))).toBe('')
+    })
+
+    it('infers the wirtschaftskundlich branch from completed INF2 or INF3 courses', () => {
+        const context = timetableV2Context()
+
+        expect(TimetableV2.methods.inferredBranchFromCourseCodes.call(context, new Set(['INF2']))).toBe('wirtschaftskundlich')
+        expect(TimetableV2.methods.inferredBranchFromCourseCodes.call(context, new Set(['INF3']))).toBe('wirtschaftskundlich')
+    })
+
+    it('infers the gymnasial branch from completed language courses', () => {
+        const context = timetableV2Context()
+
+        expect(TimetableV2.methods.inferredBranchFromCourseCodes.call(context, new Set(['L1']))).toBe('gymnasial')
+        expect(TimetableV2.methods.inferredBranchFromCourseCodes.call(context, new Set(['S1']))).toBe('gymnasial')
+    })
+
+    it('infers the gymnasial branch from language courses when only INF1 is completed', () => {
+        const context = timetableV2Context()
+
+        expect(TimetableV2.methods.inferredBranchFromCourseCodes.call(context, new Set(['INF1', 'L1', 'L2']))).toBe('gymnasial')
+        expect(TimetableV2.methods.timetableV2SelectionWithCourseDefaults.call(context, {}, [
+            { code: 'INF1' },
+            { code: 'L1' },
+            { code: 'L2' },
+        ])).toMatchObject({
+            branch: 'gymnasial',
+            language: 'L',
+        })
     })
 
     it('pushes the current step and mode into the route query', () => {

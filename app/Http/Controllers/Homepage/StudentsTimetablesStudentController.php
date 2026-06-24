@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\LicenceService;
 use App\Services\SchoolHourService;
 use App\Services\StudentsTimetables\RobotTimetableBackendSetupService;
+use App\Services\StudentsTimetables\StudentTimetableCalculationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
@@ -258,6 +259,7 @@ class StudentsTimetablesStudentController extends Controller
         StudentTimetablesStudentOverviewService $studentOverviewService,
         StudentTimetableOverviewService $overviewService,
         RobotTimetableBackendSetupService $backendSetupService,
+        StudentTimetableCalculationSettingsService $calculationSettingsService,
         StudentTimetableEvaluationSettingsService $evaluationSettingsService,
         SchoolHourService $schoolHourService,
     ): JsonResponse {
@@ -283,19 +285,16 @@ class StudentsTimetablesStudentController extends Controller
         $this->ensureSchoolyearForUser($authUser);
 
         $summary = $studentOverviewService->summaryForUser($authUser, $validated['selection'] ?? []);
-        $selectedCourseKeys = $this->selectedAutomaticCourseKeys(
+        $deselectedCourseGroupKeys = $calculationSettingsService->stringList($validated['deselected_course_group_keys'] ?? []);
+        $selectedCourseKeys = $calculationSettingsService->selectedCourseKeysWithActiveCourseGroups(
             $validated['selected_course_keys'],
-            $summary['automatic_course_selection']['courses'] ?? [],
+            $calculationSettingsService->automaticCourses($summary),
+            $deselectedCourseGroupKeys,
         );
-        $deselectedCourseGroupKeys = collect($validated['deselected_course_group_keys'] ?? [])
-            ->map(fn (mixed $courseGroupKey): string => (string) $courseGroupKey)
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-        $selectedAdditionalCourseKeys = $this->selectedAutomaticCourseKeys(
+        $selectedAdditionalCourseKeys = $calculationSettingsService->selectedCourseKeysWithActiveCourseGroups(
             $validated['selected_additional_course_keys'] ?? [],
-            $summary['additional_courses'] ?? [],
+            $calculationSettingsService->additionalCourses($summary),
+            $deselectedCourseGroupKeys,
         );
         $selectedAdditionalCoursesRequired = $selectedAdditionalCourseKeys !== []
             && ($validated['selected_additional_courses_required'] ?? false) === true;
@@ -305,10 +304,10 @@ class StudentsTimetablesStudentController extends Controller
         }
 
         $evaluationCriteria = $evaluationSettingsService->activeCriteriaForUser($authUser);
-        $settings = $this->automaticTimetableSettings(
+        $settings = $calculationSettingsService->settingsFromStudentSummary(
             $summary,
             $selectedCourseKeys,
-            $this->availableTimesForAutomaticTimetable($overviewService->courseGroupsForUser($authUser)),
+            $calculationSettingsService->availableTimes($overviewService->courseGroupsForUser($authUser)),
             $validated['selected_quality_criterion_keys'] ?? [],
             $deselectedCourseGroupKeys,
             $selectedAdditionalCourseKeys,
@@ -408,103 +407,6 @@ class StudentsTimetablesStudentController extends Controller
             'selection.arts_subject' => ['sometimes', 'nullable', 'string', Rule::in(['ME', 'BE'])],
             'selection.artsSubject' => ['sometimes', 'nullable', 'string', Rule::in(['ME', 'BE'])],
         ];
-    }
-
-    /**
-     * @param  list<string>  $selectedCourseKeys
-     * @param  list<array<string, mixed>>  $automaticCourses
-     * @return list<string>
-     */
-    private function selectedAutomaticCourseKeys(array $selectedCourseKeys, array $automaticCourses): array
-    {
-        $allowedCourseKeys = collect($automaticCourses)
-            ->pluck('key')
-            ->map(fn (mixed $courseKey): string => (string) $courseKey)
-            ->filter()
-            ->flip();
-
-        return collect($selectedCourseKeys)
-            ->map(fn (mixed $courseKey): string => (string) $courseKey)
-            ->filter(fn (string $courseKey): bool => $allowedCourseKeys->has($courseKey))
-            ->unique()
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @param  array<string, mixed>  $summary
-     * @param  list<string>  $selectedCourseKeys
-     * @param  list<int>  $availableTimes
-     * @param  list<string>  $selectedQualityCriterionKeys
-     * @param  list<string>  $deselectedCourseGroupKeys
-     * @param  list<string>  $selectedAdditionalCourseKeys
-     * @return array<string, mixed>
-     */
-    private function automaticTimetableSettings(
-        array $summary,
-        array $selectedCourseKeys,
-        array $availableTimes,
-        array $selectedQualityCriterionKeys,
-        array $deselectedCourseGroupKeys,
-        array $selectedAdditionalCourseKeys,
-        bool $selectedAdditionalCoursesRequired,
-        ?string $selectedTimetableType,
-        int $selectedTimetableNumber,
-    ): array {
-        $selection = $summary['selection'] ?? [];
-
-        return [
-            'selection' => [
-                'semester' => (int) ($selection['semester'] ?? 1),
-                'religion' => $selection['religion'] ?? 'ETH',
-                'branch' => $selection['branch'] ?? null,
-                'artsSubject' => $selection['arts_subject'] ?? 'ME',
-                'language' => $selection['language'] ?? 'L',
-            ],
-            'constraints' => [
-                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
-                'availableTimes' => $availableTimes,
-                'excludedWeekdayTimes' => [],
-            ],
-            'student' => [
-                'studentCode' => $summary['student']['student_code'] ?? null,
-            ],
-            'selected_course_keys' => $selectedCourseKeys,
-            'deselected_course_keys' => [],
-            'deselected_course_group_keys' => $deselectedCourseGroupKeys,
-            'available_additional_course_keys' => collect($summary['additional_courses'] ?? [])
-                ->pluck('key')
-                ->map(fn (mixed $courseKey): string => (string) $courseKey)
-                ->filter()
-                ->values()
-                ->all(),
-            'selected_additional_course_keys' => $selectedAdditionalCourseKeys,
-            'selected_additional_courses_required' => $selectedAdditionalCoursesRequired && $selectedAdditionalCourseKeys !== [],
-            'selected_timetable_type' => $selectedTimetableType ?? 'full_green',
-            'selected_timetable_number' => $selectedTimetableNumber,
-            'include_quality_counters' => true,
-            'selected_quality_criteria_required' => $selectedQualityCriterionKeys !== [],
-        ];
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $courseGroups
-     * @return list<int>
-     */
-    private function availableTimesForAutomaticTimetable(array $courseGroups): array
-    {
-        $availableTimes = collect($courseGroups)
-            ->pluck('hour')
-            ->map(fn (mixed $hour): int => (int) $hour)
-            ->filter(fn (int $hour): bool => $hour > 0)
-            ->unique()
-            ->sort()
-            ->values()
-            ->all();
-
-        return $availableTimes === []
-            ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-            : $availableTimes;
     }
 
     /**

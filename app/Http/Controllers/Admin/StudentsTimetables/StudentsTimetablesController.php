@@ -12,6 +12,7 @@ use App\Services\SchoolyearService;
 use App\Services\StudentsTimetables\RobotTimetableBackendSetupService;
 use App\Services\StudentsTimetables\RobotTimetableGeneratorService;
 use App\Services\StudentsTimetables\StudentsTimetablesService;
+use App\Services\StudentsTimetables\StudentTimetableCalculationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableCompletedCourseHistoryService;
 use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
@@ -210,44 +211,11 @@ class StudentsTimetablesController extends Controller
         RobotTimetableGeneratorService $generatorService,
         StudentTimetableOverviewService $overviewService,
         StudentTimetableEvaluationSettingsService $evaluationSettingsService,
+        StudentTimetableCalculationSettingsService $calculationSettingsService,
     ): JsonResponse {
         $authUser = $this->studentsTimetablesUser();
 
-        $validated = $request->validate([
-            'selection' => ['required', 'array'],
-            'selection.semester' => ['required', 'integer', 'between:1,20'],
-            'selection.religion' => ['nullable', 'string', 'max:20'],
-            'selection.branch' => ['nullable', 'string', 'max:80'],
-            'selection.artsSubject' => ['nullable', 'string', 'max:20'],
-            'selection.language' => ['nullable', 'string', 'max:20'],
-            'constraints' => ['required', 'array'],
-            'constraints.availableWeekdays' => ['array'],
-            'constraints.availableWeekdays.*' => ['integer', 'between:1,7'],
-            'constraints.availableTimes' => ['array'],
-            'constraints.availableTimes.*' => ['integer', 'between:1,20'],
-            'constraints.excludedWeekdayTimes' => ['array'],
-            'constraints.excludedWeekdayTimes.*' => ['string', 'max:20'],
-            'student' => ['nullable', 'array'],
-            'student.studentCode' => ['nullable', 'string', 'max:255'],
-            'selected_course_keys' => ['array'],
-            'selected_course_keys.*' => ['string', 'max:255'],
-            'deselected_course_keys' => ['array'],
-            'deselected_course_keys.*' => ['string', 'max:255'],
-            'deselected_course_group_keys' => ['array'],
-            'deselected_course_group_keys.*' => ['string', 'max:255'],
-            'selected_additional_course_keys' => ['array'],
-            'selected_additional_course_keys.*' => ['string', 'max:255'],
-            'selected_additional_courses_required' => ['sometimes', 'boolean'],
-            'selected_timetable_type' => ['nullable', 'string', 'in:full_green,green,conflict'],
-            'selected_timetable_number' => ['nullable', 'integer', 'min:1', 'max:1000000'],
-            'selected_quality_criterion_keys' => ['sometimes', 'array'],
-            'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
-            'evaluation_criteria' => ['sometimes', 'array'],
-            'evaluation_criteria.*.key' => ['required_with:evaluation_criteria', 'string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
-            'evaluation_criteria.*.enabled' => ['required_with:evaluation_criteria', 'boolean'],
-            'evaluation_criteria.*.priority' => ['required_with:evaluation_criteria', 'integer', 'between:1,'.count($evaluationSettingsService->criterionKeys()), 'distinct'],
-            'evaluation_criteria.*.option' => ['nullable', 'string', Rule::in($evaluationSettingsService->optionValues())],
-        ]);
+        $validated = $request->validate($calculationSettingsService->qualityCounterRules($evaluationSettingsService));
 
         $evaluationCriteria = array_key_exists('evaluation_criteria', $validated)
             ? $evaluationSettingsService->activeCriteriaForRun($validated['evaluation_criteria'])
@@ -271,10 +239,14 @@ class StudentsTimetablesController extends Controller
         RobotTimetableBackendSetupService $backendSetupService,
         StudentTimetableOverviewService $overviewService,
         StudentTimetableEvaluationSettingsService $evaluationSettingsService,
+        StudentTimetableCalculationSettingsService $calculationSettingsService,
     ): JsonResponse {
         $authUser = $this->studentsTimetablesUser();
 
-        $validated = $request->validate($this->robotBackendTimetableRules($evaluationSettingsService));
+        $validated = $request->validate($calculationSettingsService->backendTimetableRules(
+            $evaluationSettingsService,
+            includeQualityCounterFlags: true,
+        ));
 
         $usesQualityCriteria = ($request->boolean('include_quality_counters') || $request->boolean('selected_quality_criteria_required'))
             && array_key_exists('evaluation_criteria', $validated);
@@ -299,11 +271,15 @@ class StudentsTimetablesController extends Controller
         RobotTimetableBackendSetupService $backendSetupService,
         StudentTimetableOverviewService $overviewService,
         StudentTimetableEvaluationSettingsService $evaluationSettingsService,
+        StudentTimetableCalculationSettingsService $calculationSettingsService,
     ): JsonResponse {
         $authUser = $this->studentsTimetablesUser();
 
         $validated = $request->validate([
-            ...$this->robotBackendTimetableRules($evaluationSettingsService),
+            ...$calculationSettingsService->backendTimetableRules(
+                $evaluationSettingsService,
+                includeQualityCounterFlags: true,
+            ),
             'candidate_courses' => ['required', 'array', 'min:1', 'max:100'],
             'candidate_courses.*.availability_key' => ['required', 'string', 'max:255', 'distinct:strict'],
             'candidate_courses.*.course_key' => ['required', 'string', 'max:255'],
@@ -336,10 +312,11 @@ class StudentsTimetablesController extends Controller
         RobotTimetableBackendSetupService $backendSetupService,
         StudentTimetableOverviewService $overviewService,
         StudentTimetableEvaluationSettingsService $evaluationSettingsService,
+        StudentTimetableCalculationSettingsService $calculationSettingsService,
     ): JsonResponse {
         $authUser = $this->studentsTimetablesUser();
 
-        $validated = $request->validate($this->robotQualityCounterRules($evaluationSettingsService));
+        $validated = $request->validate($calculationSettingsService->qualityCounterRules($evaluationSettingsService));
 
         $evaluationCriteria = array_key_exists('evaluation_criteria', $validated)
             ? $evaluationSettingsService->activeCriteriaForRun($validated['evaluation_criteria'])
@@ -354,92 +331,6 @@ class StudentsTimetablesController extends Controller
                 $validated['selected_quality_criterion_keys'] ?? [],
             ),
         ]);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function robotQualityCounterRules(StudentTimetableEvaluationSettingsService $evaluationSettingsService): array
-    {
-        return [
-            'selection' => ['required', 'array'],
-            'selection.semester' => ['required', 'integer', 'between:1,20'],
-            'selection.religion' => ['nullable', 'string', 'max:20'],
-            'selection.branch' => ['nullable', 'string', 'max:80'],
-            'selection.artsSubject' => ['nullable', 'string', 'max:20'],
-            'selection.language' => ['nullable', 'string', 'max:20'],
-            'constraints' => ['required', 'array'],
-            'constraints.availableWeekdays' => ['array'],
-            'constraints.availableWeekdays.*' => ['integer', 'between:1,7'],
-            'constraints.availableTimes' => ['array'],
-            'constraints.availableTimes.*' => ['integer', 'between:1,20'],
-            'constraints.excludedWeekdayTimes' => ['array'],
-            'constraints.excludedWeekdayTimes.*' => ['string', 'max:20'],
-            'student' => ['nullable', 'array'],
-            'student.studentCode' => ['nullable', 'string', 'max:255'],
-            'selected_course_keys' => ['array'],
-            'selected_course_keys.*' => ['string', 'max:255'],
-            'deselected_course_keys' => ['array'],
-            'deselected_course_keys.*' => ['string', 'max:255'],
-            'deselected_course_group_keys' => ['array'],
-            'deselected_course_group_keys.*' => ['string', 'max:255'],
-            'selected_additional_course_keys' => ['array'],
-            'selected_additional_course_keys.*' => ['string', 'max:255'],
-            'selected_additional_courses_required' => ['sometimes', 'boolean'],
-            'selected_timetable_type' => ['nullable', 'string', 'in:full_green,green,conflict'],
-            'selected_timetable_number' => ['nullable', 'integer', 'min:1', 'max:1000000'],
-            'selected_quality_criterion_keys' => ['sometimes', 'array'],
-            'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
-            'evaluation_criteria' => ['sometimes', 'array'],
-            'evaluation_criteria.*.key' => ['required_with:evaluation_criteria', 'string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
-            'evaluation_criteria.*.enabled' => ['required_with:evaluation_criteria', 'boolean'],
-            'evaluation_criteria.*.priority' => ['required_with:evaluation_criteria', 'integer', 'between:1,'.count($evaluationSettingsService->criterionKeys()), 'distinct'],
-            'evaluation_criteria.*.option' => ['nullable', 'string', Rule::in($evaluationSettingsService->optionValues())],
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function robotBackendTimetableRules(StudentTimetableEvaluationSettingsService $evaluationSettingsService): array
-    {
-        return [
-            'selection' => ['required', 'array'],
-            'selection.semester' => ['required', 'integer', 'between:1,20'],
-            'selection.religion' => ['nullable', 'string', 'max:20'],
-            'selection.branch' => ['nullable', 'string', 'max:80'],
-            'selection.artsSubject' => ['nullable', 'string', 'max:20'],
-            'selection.language' => ['nullable', 'string', 'max:20'],
-            'constraints' => ['required', 'array'],
-            'constraints.availableWeekdays' => ['array'],
-            'constraints.availableWeekdays.*' => ['integer', 'between:1,7'],
-            'constraints.availableTimes' => ['array'],
-            'constraints.availableTimes.*' => ['integer', 'between:1,20'],
-            'constraints.excludedWeekdayTimes' => ['array'],
-            'constraints.excludedWeekdayTimes.*' => ['string', 'max:20'],
-            'student' => ['nullable', 'array'],
-            'student.studentCode' => ['nullable', 'string', 'max:255'],
-            'selected_course_keys' => ['array'],
-            'selected_course_keys.*' => ['string', 'max:255'],
-            'deselected_course_keys' => ['array'],
-            'deselected_course_keys.*' => ['string', 'max:255'],
-            'deselected_course_group_keys' => ['array'],
-            'deselected_course_group_keys.*' => ['string', 'max:255'],
-            'selected_additional_course_keys' => ['array'],
-            'selected_additional_course_keys.*' => ['string', 'max:255'],
-            'selected_additional_courses_required' => ['sometimes', 'boolean'],
-            'selected_timetable_type' => ['nullable', 'string', 'in:full_green,green,conflict'],
-            'selected_timetable_number' => ['nullable', 'integer', 'min:1', 'max:1000000'],
-            'include_quality_counters' => ['sometimes', 'boolean'],
-            'selected_quality_criterion_keys' => ['sometimes', 'array'],
-            'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
-            'selected_quality_criteria_required' => ['sometimes', 'boolean'],
-            'evaluation_criteria' => ['sometimes', 'array'],
-            'evaluation_criteria.*.key' => ['required_with:evaluation_criteria', 'string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
-            'evaluation_criteria.*.enabled' => ['required_with:evaluation_criteria', 'boolean'],
-            'evaluation_criteria.*.priority' => ['required_with:evaluation_criteria', 'integer', 'between:1,'.count($evaluationSettingsService->criterionKeys()), 'distinct'],
-            'evaluation_criteria.*.option' => ['nullable', 'string', Rule::in($evaluationSettingsService->optionValues())],
-        ];
     }
 
     public function overviewSelections(StudentTimetableOverviewService $service): JsonResponse

@@ -1675,6 +1675,7 @@ export default {
             timetableCalculationLoading: false,
             timetableCalculationLoadingMode: 'calculation',
             timetableCalculationProgress: 0,
+            timetableCalculationProgressCompletionPending: false,
             timetableCalculationProgressResetTimer: null,
             timetableCalculationProgressSource: '',
             timetableCalculationProgressTimer: null,
@@ -4078,6 +4079,7 @@ export default {
         },
         startTimetableCalculationProgress(progressSource = '') {
             this.clearTimetableCalculationProgressTimers()
+            this.timetableCalculationProgressCompletionPending = false
             this.timetableCalculationProgressSource = progressSource
             this.timetableCalculationProgress = 0
 
@@ -4100,33 +4102,22 @@ export default {
         },
         completeTimetableCalculationProgress() {
             if (!this.timetableCalculationProgressSource) return
-            if (this.moreCourseAvailabilityLoading) return
+            if (this.moreCourseAvailabilityLoading) {
+                this.timetableCalculationProgressCompletionPending = true
 
-            this.clearTimetableCalculationProgressTimer()
-            this.timetableCalculationProgress = Math.max(1, this.timetableCalculationProgressValue)
-            this.timetableCalculationProgressTimer = globalThis.setInterval(() => {
-                const currentProgress = this.timetableCalculationProgressValue
-                const nextProgress = Math.min(
-                    100,
-                    currentProgress + Math.max(5, Math.ceil((100 - currentProgress) / 3)),
-                )
-
-                this.timetableCalculationProgress = nextProgress
-
-                if (nextProgress < 100) return
-
-                this.clearTimetableCalculationProgressTimer()
-                this.scheduleTimetableCalculationProgressReset()
-            }, 120)
-
-            if (typeof this.timetableCalculationProgressTimer?.unref === 'function') {
-                this.timetableCalculationProgressTimer.unref()
+                return
             }
+
+            this.timetableCalculationProgressCompletionPending = false
+            this.clearTimetableCalculationProgressTimer()
+            this.timetableCalculationProgress = 100
+            this.scheduleTimetableCalculationProgressReset()
         },
         scheduleTimetableCalculationProgressReset() {
             this.clearTimetableCalculationProgressResetTimer()
             this.timetableCalculationProgressResetTimer = globalThis.setTimeout(() => {
                 this.timetableCalculationProgress = 0
+                this.timetableCalculationProgressCompletionPending = false
                 this.timetableCalculationProgressSource = ''
                 this.timetableCalculationProgressResetTimer = null
             }, 900)
@@ -5502,6 +5493,7 @@ export default {
 
             this.clearTimetableCalculationProgressTimers()
             this.timetableCalculationProgress = 0
+            this.timetableCalculationProgressCompletionPending = false
             this.timetableCalculationProgressSource = ''
         },
         moreCourseAvailabilityCurrentSignature() {
@@ -7722,7 +7714,16 @@ export default {
             const branchAliases = [
                 {
                     value: 'wirtschaftskundlich',
-                    aliases: ['INF', 'OKO', 'OEKO', 'OEK', 'WIKU', 'BWL', 'RW', 'WR'],
+                    aliases: ['INF'],
+                    minimumModule: 2,
+                },
+                {
+                    value: 'wirtschaftskundlich',
+                    aliases: ['OKO', 'OEKO', 'OEK', 'WIKU', 'BWL', 'RW', 'WR'],
+                },
+                {
+                    value: 'gymnasial',
+                    aliases: ['L', 'F', 'S'],
                 },
             ]
             const matchingBranch = branchAliases
@@ -7731,7 +7732,7 @@ export default {
                     branchIndex,
                     match: this.bestSelectionAliasesCourseCodeMatch(branch.aliases, courseCodes),
                 }))
-                .filter(({ match }) => match)
+                .filter(({ branch, match }) => match && Number(match.module || 0) >= Number(branch.minimumModule || 0))
                 .sort(
                     (firstBranch, secondBranch) =>
                         secondBranch.match.module - firstBranch.match.module ||
