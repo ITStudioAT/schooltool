@@ -661,6 +661,15 @@ it('creates the first automatic timetable for the authenticated student', functi
         ->assertJsonPath('data.selected_timetable.slots.1-11.code', 'D1')
         ->assertJsonPath('data.selected_timetable.slots.1-12.code', 'D2')
         ->assertJsonPath('data.selected_timetable.slots.1-11.courseGroup.teacher', 'MUE');
+
+    $this->actingAs($user)
+        ->postJson('/api/homepage/students-timetables/automatic-timetable', [
+            'selected_course_keys' => [$selectedCourseKey],
+            'deselected_course_group_keys' => ["{$selectedCourseKey}|D1 - 4A - MUE"],
+            'selected_quality_criterion_keys' => ['saturday_free'],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.selected_timetable', null);
 });
 
 it('returns a published timetable for the authenticated student overview', function () {

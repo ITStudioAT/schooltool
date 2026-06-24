@@ -334,7 +334,7 @@ class RobotTimetableBackendSetupService
         if ($this->timetableVariationLimitExceeded($input['selected_courses'], $input['course_options'], $input['has_missing_options'])) {
             throw ValidationException::withMessages([
                 'selected_course_keys' => sprintf(
-                    'Diese Auswahl erzeugt zu viele Stundenplan-Variationen. Bitte weniger Kurse auswÃ¤hlen oder die Auswahl einschrÃ¤nken. Maximum: %s Variationen.',
+                    'Diese Auswahl erzeugt zu viele Stundenplan-Variationen. Bitte weniger Kurse auswählen oder die Auswahl einschränken. Maximum: %s Variationen.',
                     number_format(self::MAX_BACKEND_TIMETABLE_VARIATIONS, 0, ',', '.'),
                 ),
             ]);

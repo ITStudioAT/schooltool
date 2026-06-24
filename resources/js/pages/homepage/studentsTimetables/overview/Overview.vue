@@ -61,7 +61,7 @@
 
         <section class="content-cover">
             <div class="content-card">
-                <div class="content-head">
+                <div v-if="!automaticTimetableCriteriaReviewVisible" class="content-head">
                     <v-icon size="26">mdi-calendar-clock-outline</v-icon>
                     <h2>Ihre Daten</h2>
                     <v-btn
@@ -78,7 +78,139 @@
                     </v-btn>
                 </div>
 
-                <div class="overview-selection">
+                <v-card
+                    v-if="automaticTimetableCoursesLoadingVisible"
+                    rounded="lg"
+                    class="automatic-course-loading-card">
+                    <v-card-text class="automatic-course-loading-card__content">
+                        <v-progress-circular indeterminate color="primary" size="34" width="4" />
+                        <div class="automatic-course-loading-card__copy">
+                            <div class="automatic-course-loading-card__title">Kurse werden geladen</div>
+                            <div class="automatic-course-loading-card__subtitle">
+                                Die ausgewählten Kurse und angebotenen Kurse werden vorbereitet.
+                            </div>
+                        </div>
+                    </v-card-text>
+                </v-card>
+
+                <v-card
+                    v-else-if="automaticTimetableCriteriaReviewVisible"
+                    rounded="lg"
+                    class="automatic-course-review-card">
+                    <v-card-title class="automatic-course-review-card__title">
+                        <span>Ausgewählte Kurse</span>
+                        <span class="automatic-course-review-card__filters">
+                            <v-btn
+                                v-for="option in automaticCourseBulkSelectionOptions"
+                                :key="option.key"
+                                size="small"
+                                variant="tonal"
+                                color="primary"
+                                @click="applyAutomaticCourseBulkSelection(option.key)">
+                                {{ option.label }}
+                            </v-btn>
+                        </span>
+                        <span class="automatic-course-review-card__summary">
+                            <v-chip size="x-small" color="primary" variant="tonal">
+                                {{ overviewSelectedCourseLimitSummary.countLabel }}
+                            </v-chip>
+                            <v-chip size="x-small" color="primary" variant="tonal">
+                                {{ overviewSelectedCourseLimitSummary.hoursLabel }}
+                            </v-chip>
+                        </span>
+                    </v-card-title>
+                    <v-card-text>
+                        <div v-if="automaticSelectedCourseItems.length" class="automatic-course-review-card__list">
+                            <v-chip
+                                v-for="course in automaticSelectedCourseItems"
+                                :key="course.selectionKey"
+                                size="small"
+                                color="success"
+                                :variant="automaticReviewCourseActive(course) ? 'flat' : 'tonal'"
+                                class="automatic-course-review-card__course"
+                                :class="{
+                                    'automatic-course-review-card__course--active': automaticReviewCourseActive(course),
+                                    'automatic-course-review-card__course--distance-learning': course.distanceLearning,
+                                    'automatic-course-review-card__course--offered-partial': automaticOfferedCourseItemsPartlySelected(course),
+                                    'automatic-course-review-card__course--offered-deselected': automaticOfferedCourseItemsAllDeselected(course),
+                                }"
+                                role="button"
+                                :aria-pressed="automaticReviewCourseActive(course) ? 'true' : 'false'"
+                                @click="selectAutomaticReviewCourse(course)">
+                                <span>{{ course.label }}</span>
+                                <span v-if="course.meta" class="automatic-course-review-card__meta">
+                                    {{ course.meta }}
+                                </span>
+                            </v-chip>
+                        </div>
+                        <v-alert v-else type="info" variant="tonal" density="compact">
+                            Keine Kurse ausgewählt.
+                        </v-alert>
+                    </v-card-text>
+                    <v-card-actions class="automatic-course-review-card__footer">
+                        Hier können einzelne Kurse (z.B. Fernunterricht) abgewählt werden.
+                    </v-card-actions>
+                </v-card>
+
+                <v-card
+                    v-if="automaticTimetableCriteriaReviewVisible && selectedAutomaticReviewCourse"
+                    rounded="lg"
+                    class="automatic-offered-courses-card">
+                    <v-card-title class="automatic-offered-courses-card__title">
+                        <span>Angebotene Kurse</span>
+                        <v-chip size="x-small" color="primary" variant="tonal">
+                            {{ selectedAutomaticReviewCourse.label }}
+                        </v-chip>
+                    </v-card-title>
+                    <v-card-text>
+                        <div v-if="selectedAutomaticReviewOfferedCourseItems.length" class="automatic-offered-courses-card__list">
+                            <div
+                                v-for="course in selectedAutomaticReviewOfferedCourseItems"
+                                :key="course.selectionKey"
+                                class="automatic-offered-courses-card__item automatic-offered-courses-card__item--toggle"
+                                :class="{
+                                    'automatic-offered-courses-card__item--selected': automaticOfferedCourseSelected(course),
+                                    'automatic-offered-courses-card__item--deselected': !automaticOfferedCourseSelected(course),
+                                }"
+                                role="button"
+                                tabindex="0"
+                                :aria-pressed="automaticOfferedCourseSelected(course) ? 'true' : 'false'"
+                                @click="toggleAutomaticOfferedCourse(course)"
+                                @keydown.enter.prevent="toggleAutomaticOfferedCourse(course)"
+                                @keydown.space.prevent="toggleAutomaticOfferedCourse(course)">
+                                <v-icon v-if="automaticOfferedCourseSelected(course)" icon="mdi-check" size="16" color="success" />
+                                <span class="automatic-offered-courses-card__name">
+                                    {{ course.name || course.code }}
+                                </span>
+                                <span v-if="automaticOfferedCourseCodeVisible(course)" class="automatic-offered-courses-card__code">
+                                    {{ course.code }}
+                                </span>
+                                <v-chip v-if="course.scheduleLabel" size="x-small" color="primary" variant="tonal">
+                                    {{ course.scheduleLabel }}
+                                </v-chip>
+                                <v-chip v-if="course.recurrenceLabel" size="x-small" color="primary" variant="tonal">
+                                    {{ course.recurrenceLabel }}
+                                </v-chip>
+                                <v-chip
+                                    v-if="course.distanceLearning"
+                                    size="x-small"
+                                    color="warning"
+                                    variant="tonal"
+                                    title="Fernunterricht">
+                                    Fernunterricht
+                                </v-chip>
+                                <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
+                                    {{ course.roomsLabel }}
+                                </v-chip>
+                            </div>
+                        </div>
+                        <v-alert v-else type="info" variant="tonal" density="compact">
+                            Keine angebotenen Kurse gefunden.
+                        </v-alert>
+                    </v-card-text>
+                </v-card>
+
+                <div v-if="!automaticTimetableCriteriaReviewVisible" class="overview-selection">
                     <div class="overview-selected-cards">
                         <div
                             v-for="item in selectionItems"
@@ -734,9 +866,10 @@
                 </section>
 
                 <StudentTimetableEvaluationSettings
-                    v-if="showEvaluationSettings"
+                    v-if="showEvaluationSettings && !automaticTimetableCriteriaReviewVisible"
                     :initial-step="automaticTimetableStep"
                     :initial-selected-course-keys="automaticTimetableCourseKeys"
+                    :initial-deselected-course-group-keys="automaticTimetableDeselectedCourseGroupKeys"
                     :initial-selected-quality-criterion-keys="automaticTimetableQualityCriterionKeys"
                     :default-quality-criterion-selection="!automaticTimetableQualityCriteriaSelectionExplicit"
                     :proposed-courses="automaticTimetableSelectableCourses"
@@ -748,6 +881,29 @@
                     @courses-selected="finishAutomaticTimetable"
                     @quality-criteria-selection-change="setAutomaticTimetableQualityCriterionKeys"
                     @step-change="setAutomaticTimetableStep" />
+
+                <v-card
+                    v-if="automaticTimetableCriteriaReviewVisible"
+                    rounded="lg"
+                    class="automatic-course-review-actions">
+                    <v-card-actions>
+                        <v-btn variant="tonal" color="secondary" prepend-icon="mdi-restart" @click="restartAutomaticTimetable">
+                            Neustart
+                        </v-btn>
+                        <v-btn variant="tonal" color="primary" prepend-icon="mdi-arrow-left" @click="goBackFromAutomaticCourseReview">
+                            Zurück
+                        </v-btn>
+                        <v-spacer />
+                        <v-btn
+                            variant="flat"
+                            append-icon="mdi-arrow-right"
+                            class="automatic-course-review-next-button"
+                            :disabled="!automaticSelectedCourseItems.length"
+                            @click="continueAutomaticCourseReview">
+                            Weiter
+                        </v-btn>
+                    </v-card-actions>
+                </v-card>
             </div>
         </section>
     </div>
@@ -762,6 +918,11 @@ import '../../../../../css/student.css'
 
 const noAutomaticTimetableCourseValue = '__none'
 const noAutomaticTimetableQualityCriteriaValue = '__none'
+const automaticCourseBulkSelectionOptions = [
+    { key: 'all', label: 'Alle' },
+    { key: 'distance-learning', label: 'Nur Fernunterricht' },
+    { key: 'without-distance-learning', label: 'Ohne Fernunterricht' },
+]
 const studentOverviewEditableSelectionKeys = ['religion', 'language', 'branch', 'arts_subject']
 const studentOverviewSelectionOptionValues = {
     religion: ['ETH', 'Rev', 'Ris', 'Rk', 'Ror'],
@@ -813,6 +974,8 @@ export default {
             selectionDraftKey: '',
             selectionDraftLabel: '',
             selectionDraftValue: null,
+            selectedAutomaticReviewCourseKey: '',
+            automaticOfferedCourseSelectionOverrides: {},
         }
     },
 
@@ -857,6 +1020,23 @@ export default {
         automaticTimetableQualityCriteriaSelectionExplicit() {
             return Object.prototype.hasOwnProperty.call(this.$route.query, 'automatic_timetable_criteria')
         },
+        automaticTimetableDeselectedCourseGroupKeys() {
+            return this.automaticSelectedCourseItems
+                .flatMap(course => this.automaticOfferedCourseItemsForSelectedCourse(course)
+                    .filter(offeredCourse => !this.automaticOfferedCourseSelected(offeredCourse))
+                    .map(offeredCourse => offeredCourse.backendSelectionKey))
+                .filter(Boolean)
+                .filter((courseGroupKey, index, courseGroupKeys) => courseGroupKeys.indexOf(courseGroupKey) === index)
+        },
+        automaticCourseBulkSelectionOptions() {
+            return automaticCourseBulkSelectionOptions
+        },
+        automaticTimetableCriteriaReviewVisible() {
+            return this.automaticTimetableStep === 'criteria' && this.showEvaluationSettings
+        },
+        automaticTimetableCoursesLoadingVisible() {
+            return this.automaticTimetableCriteriaReviewVisible && !this.overview
+        },
         weekdayLabel() {
             return new Intl.DateTimeFormat('de-AT', { weekday: 'long' }).format(new Date())
         },
@@ -886,7 +1066,7 @@ export default {
             return Object.keys(this.selectionOverride || {}).length > 0
         },
         courseSections() {
-            return Array.isArray(this.overview?.course_sections) ? this.overview.course_sections : []
+            return this.sortedCourseSections(this.overview?.course_sections)
         },
         overviewCourseSelectionSections() {
             const sections = [
@@ -951,6 +1131,21 @@ export default {
         overviewSelectedCourseLimitItems() {
             return this.overviewSelectedCourseItemsForKeys(this.automaticTimetableCourseKeys)
         },
+        automaticSelectedCourseItems() {
+            return this.overviewSelectedCourseLimitItems.map(course => this.automaticSelectedCourseItem(course))
+        },
+        selectedAutomaticReviewCourse() {
+            return this.automaticSelectedCourseItems
+                .find(course => course.selectionKey === this.selectedAutomaticReviewCourseKey)
+                || null
+        },
+        selectedAutomaticReviewOfferedCourseItems() {
+            if (!this.selectedAutomaticReviewCourse) {
+                return []
+            }
+
+            return this.automaticOfferedCourseItemsForSelectedCourse(this.selectedAutomaticReviewCourse)
+        },
         overviewSelectedCourseLimitSummary() {
             return this.courseItemsSummary(this.overviewSelectedCourseLimitItems)
         },
@@ -993,15 +1188,29 @@ export default {
                 : []
         },
         automaticTimetableAllCourseSections() {
-            const automaticSectionKeys = this.automaticTimetableCourseSections
-                .map(section => String(section?.key || ''))
-                .filter(Boolean)
+            const automaticAdditionalCourseSection = this.automaticTimetableCourseSections
+                .find(section => String(section?.key || '') === 'additional')
             const additionalCourseSections = this.courseSections
                 .filter(section => String(section?.key || '') === 'additional')
-                .filter(section => !automaticSectionKeys.includes(String(section?.key || '')))
             const additionalCourses = Array.isArray(this.overview?.additional_courses)
                 ? this.overview.additional_courses
                 : []
+            const additionalCourseItems = this.uniqueCourseItems([
+                ...(Array.isArray(automaticAdditionalCourseSection?.items) ? automaticAdditionalCourseSection.items : []),
+                ...additionalCourseSections.flatMap(section => Array.isArray(section?.items) ? section.items : []),
+                ...additionalCourses,
+            ])
+            const mergedAdditionalCourseSection = additionalCourseItems.length
+                ? {
+                    ...(automaticAdditionalCourseSection || additionalCourseSections[0]),
+                    key: 'additional',
+                    title: automaticAdditionalCourseSection?.title || additionalCourseSections[0]?.title || 'Zusätzliche Kurse',
+                    icon: automaticAdditionalCourseSection?.icon || additionalCourseSections[0]?.icon || 'mdi-plus-circle-outline',
+                    color: automaticAdditionalCourseSection?.color || additionalCourseSections[0]?.color || 'warning',
+                    empty: automaticAdditionalCourseSection?.empty || additionalCourseSections[0]?.empty || 'Keine zusätzlichen Kurse erkannt.',
+                    items: additionalCourseItems,
+                }
+                : null
             const syntheticAdditionalCourseSections = additionalCourseSections.length || !additionalCourses.length
                 ? []
                 : [{
@@ -1014,15 +1223,16 @@ export default {
                 }]
 
             return [
-                ...this.automaticTimetableCourseSections,
-                ...additionalCourseSections,
-                ...syntheticAdditionalCourseSections,
-            ]
+                ...this.automaticTimetableCourseSections
+                    .filter(section => String(section?.key || '') !== 'additional'),
+                ...(mergedAdditionalCourseSection ? [mergedAdditionalCourseSection] : syntheticAdditionalCourseSections),
+            ].map(section => ({
+                ...section,
+                items: this.sortedCourseItems(section?.items),
+            }))
         },
         automaticTimetableSelectableCourses() {
-            return Array.isArray(this.automaticTimetableCourseSelection.courses)
-                ? this.automaticTimetableCourseSelection.courses
-                : []
+            return this.sortedCourseItems(this.automaticTimetableCourseSelection.courses)
         },
         automaticTimetableCourseSummary() {
             return this.automaticTimetableCourseSelection
@@ -1376,9 +1586,7 @@ export default {
                 : []
         },
         manualTimetableCourseSections() {
-            return Array.isArray(this.manualTimetableSelection.sections)
-                ? this.manualTimetableSelection.sections
-                : []
+            return this.sortedCourseSections(this.manualTimetableSelection.sections)
         },
         manualTimetableCourses() {
             return this.manualTimetableCourseSections
@@ -1457,6 +1665,10 @@ export default {
             immediate: true,
             handler(step) {
                 this.showEvaluationSettings = this.isAutomaticTimetableStep(step)
+
+                if (String(step || '') === 'criteria') {
+                    this.removeAutomaticTimetableCriteriaQuery()
+                }
             },
         },
         '$route.query.manual_timetable': {
@@ -1505,6 +1717,10 @@ export default {
             delete query.manual_timetable
             query.automatic_timetable = step
 
+            if (step === 'criteria') {
+                delete query.automatic_timetable_criteria
+            }
+
             this.$router.push({
                 path: this.$route.path,
                 query,
@@ -1521,6 +1737,9 @@ export default {
             }
 
             const query = { ...this.$route.query }
+            if (this.automaticTimetableStep === 'criteria') {
+                delete query.automatic_timetable_criteria
+            }
 
             if (selectedCourseKeys.length) {
                 query.automatic_timetable_courses = selectedCourseKeys
@@ -1533,7 +1752,294 @@ export default {
                 query,
             })
         },
+        automaticSelectedCourseItem(course) {
+            const hours = this.courseHoursNumber(course)
+            const label = this.overviewCourseItemLabel(course)
+
+            return {
+                ...course,
+                selectionKey: this.overviewCourseSelectionKey(course),
+                label,
+                meta: this.overviewCourseItemMeta(course) || (hours ? `${this.formatHours(hours)} Std.` : ''),
+                distanceLearning: this.automaticCourseItemIsDistanceLearning(course),
+            }
+        },
+        applyAutomaticCourseBulkSelection(optionKey) {
+            const offeredCourseSelections = { ...this.automaticOfferedCourseSelectionOverrides }
+
+            this.automaticSelectedCourseItems
+                .flatMap(course => this.automaticOfferedCourseItemsForSelectedCourse(course))
+                .forEach((course) => {
+                    if (this.automaticOfferedCourseExcludedByBulkSelection(optionKey, course)) {
+                        offeredCourseSelections[course.selectionKey] = false
+
+                        return
+                    }
+
+                    delete offeredCourseSelections[course.selectionKey]
+                })
+
+            this.automaticOfferedCourseSelectionOverrides = offeredCourseSelections
+        },
+        automaticOfferedCourseExcludedByBulkSelection(optionKey, course) {
+            if (optionKey === 'all') {
+                return false
+            }
+
+            if (optionKey === 'distance-learning') {
+                return course?.distanceLearning !== true
+            }
+
+            if (optionKey === 'without-distance-learning') {
+                return course?.distanceLearning === true
+            }
+
+            return false
+        },
+        selectAutomaticReviewCourse(course) {
+            const selectionKey = course?.selectionKey || ''
+
+            this.selectedAutomaticReviewCourseKey = this.selectedAutomaticReviewCourseKey === selectionKey
+                ? ''
+                : selectionKey
+        },
+        automaticReviewCourseActive(course) {
+            return this.selectedAutomaticReviewCourse?.selectionKey === course?.selectionKey
+        },
+        automaticOfferedCourseSelected(course) {
+            return this.automaticOfferedCourseSelectionOverrides[course?.selectionKey] !== false
+        },
+        toggleAutomaticOfferedCourse(course) {
+            const selectionKey = course?.selectionKey || ''
+            if (!selectionKey) {
+                return
+            }
+
+            const offeredCourseSelections = { ...this.automaticOfferedCourseSelectionOverrides }
+
+            if (this.automaticOfferedCourseSelected(course)) {
+                offeredCourseSelections[selectionKey] = false
+            } else {
+                delete offeredCourseSelections[selectionKey]
+            }
+
+            this.automaticOfferedCourseSelectionOverrides = offeredCourseSelections
+        },
+        automaticOfferedCourseItemsAllDeselected(course) {
+            const offeredCourses = this.automaticOfferedCourseItemsForSelectedCourse(course)
+
+            return offeredCourses.length > 0 && offeredCourses.every(offeredCourse => !this.automaticOfferedCourseSelected(offeredCourse))
+        },
+        automaticOfferedCourseItemsPartlySelected(course) {
+            const offeredCourses = this.automaticOfferedCourseItemsForSelectedCourse(course)
+            if (offeredCourses.length <= 1) {
+                return false
+            }
+
+            const selectedOfferedCourseCount = offeredCourses
+                .filter(offeredCourse => this.automaticOfferedCourseSelected(offeredCourse))
+                .length
+
+            return selectedOfferedCourseCount > 0 && selectedOfferedCourseCount < offeredCourses.length
+        },
+        automaticOfferedCourseItemsForSelectedCourse(course) {
+            const courseGroups = this.automaticCourseGroupsForSelectedCourse(course)
+            const offeredCourseItems = courseGroups
+                .map(courseGroup => this.automaticOfferedCourseGroupItem(courseGroup, course))
+                .sort((firstCourse, secondCourse) => this.compareAutomaticOfferedCourseItems(firstCourse, secondCourse))
+
+            return this.uniqueAutomaticOfferedCourseItems(offeredCourseItems, course)
+        },
+        automaticCourseGroupsForSelectedCourse(course) {
+            const directCourseGroups = Array.isArray(course?.course_groups) ? course.course_groups : []
+
+            if (directCourseGroups.length) {
+                return directCourseGroups
+            }
+
+            return this.manualTimetableCourses
+                .filter(manualCourse => this.automaticCoursesMatch(manualCourse, course))
+                .flatMap(manualCourse => this.manualCourseGroups(manualCourse))
+        },
+        automaticCoursesMatch(manualCourse, selectedCourse) {
+            const manualCourseCodes = this.automaticCourseAliases(manualCourse)
+            const selectedCourseCodes = this.automaticCourseAliases(selectedCourse)
+
+            if (!manualCourseCodes.length || !selectedCourseCodes.length) {
+                return false
+            }
+
+            return selectedCourseCodes.some(selectedCourseCode => manualCourseCodes.includes(selectedCourseCode))
+        },
+        automaticCourseAliases(course) {
+            return [
+                course?.code,
+                course?.ttCode,
+                ...(Array.isArray(course?.ttCodes) ? course.ttCodes : []),
+                course?.label,
+            ]
+                .flatMap(courseCode => String(courseCode || '').split('/'))
+                .map(courseCode => this.normalizedCourseCode(courseCode))
+                .filter(Boolean)
+                .filter((courseCode, index, courseCodes) => courseCodes.indexOf(courseCode) === index)
+        },
+        automaticOfferedCourseGroupItem(courseGroup, selectedCourse) {
+            const code = String(courseGroup?.course || courseGroup?.subject || courseGroup?.title || selectedCourse?.code || '').trim()
+            const scheduleLabel = this.manualCourseGroupScheduleLabel(courseGroup)
+            const groupSelectionLabel = this.automaticOfferedCourseGroupSelectionLabel(courseGroup)
+
+            return {
+                key: this.manualCourseGroupKey(courseGroup),
+                selectionKey: [
+                    selectedCourse?.selectionKey || this.overviewCourseSelectionKey(selectedCourse),
+                    this.manualCourseGroupKey(courseGroup),
+                ].filter(Boolean).join('::'),
+                code,
+                name: this.automaticOfferedCourseName(courseGroup, code),
+                groupSelectionLabel,
+                backendSelectionKey: [
+                    selectedCourse?.key || selectedCourse?.selectionKey || this.overviewCourseSelectionKey(selectedCourse),
+                    groupSelectionLabel,
+                ].filter(Boolean).join('|'),
+                weekday: Number(courseGroup?.weekday || 0) || null,
+                hour: Number(courseGroup?.hour || 0) || null,
+                courseGroups: [courseGroup],
+                scheduleLabel,
+                recurrenceLabel: this.manualCourseGroupWeekMarker(courseGroup).replace(/[()]/gu, '').trim(),
+                roomsLabel: (Array.isArray(courseGroup?.rooms) ? courseGroup.rooms : []).filter(Boolean).join(', '),
+                distanceLearning: this.automaticOfferedCourseIsDistanceLearning([courseGroup], selectedCourse),
+            }
+        },
+        uniqueAutomaticOfferedCourseItems(courseItems, selectedCourse) {
+            const courseItemsByIdentity = new Map()
+            const offeredCourseItems = Array.isArray(courseItems) ? courseItems : []
+
+            offeredCourseItems.forEach((courseItem) => {
+                const identityKey = this.automaticOfferedCourseIdentityKey(courseItem)
+                const existingCourseItem = courseItemsByIdentity.get(identityKey)
+
+                if (!existingCourseItem) {
+                    courseItemsByIdentity.set(identityKey, { ...courseItem })
+
+                    return
+                }
+
+                const courseGroups = [
+                    ...(Array.isArray(existingCourseItem.courseGroups) ? existingCourseItem.courseGroups : []),
+                    ...(Array.isArray(courseItem.courseGroups) ? courseItem.courseGroups : []),
+                ]
+
+                courseItemsByIdentity.set(identityKey, {
+                    ...existingCourseItem,
+                    courseGroups,
+                    scheduleLabel: this.automaticMergedLabelList(existingCourseItem.scheduleLabel, courseItem.scheduleLabel),
+                    recurrenceLabel: this.automaticMergedLabelList(existingCourseItem.recurrenceLabel, courseItem.recurrenceLabel),
+                    roomsLabel: this.automaticMergedLabelList(existingCourseItem.roomsLabel, courseItem.roomsLabel),
+                    distanceLearning: this.automaticOfferedCourseIsDistanceLearning(courseGroups, selectedCourse),
+                })
+            })
+
+            return Array.from(courseItemsByIdentity.values())
+        },
+        automaticOfferedCourseIdentityKey(courseItem) {
+            return [
+                this.normalizedCourseCode(courseItem?.code),
+                this.normalizedCourseCode(courseItem?.name),
+            ].join('|')
+        },
+        automaticMergedLabelList(firstLabel, secondLabel) {
+            return [
+                ...String(firstLabel || '').split(','),
+                ...String(secondLabel || '').split(','),
+            ]
+                .map(label => label.trim())
+                .filter(Boolean)
+                .filter((label, index, labels) => labels.indexOf(label) === index)
+                .join(', ')
+        },
+        automaticOfferedCourseName(courseGroup, code) {
+            return [
+                code,
+                courseGroup?.student_group || courseGroup?.class_name || courseGroup?.display_label,
+                courseGroup?.teacher,
+            ]
+                .filter(Boolean)
+                .filter((value, index, values) => values.indexOf(value) === index)
+                .join(' - ')
+                || courseGroup?.display_label
+                || courseGroup?.title
+                || 'Ohne Bezeichnung'
+        },
+        automaticOfferedCourseGroupSelectionLabel(courseGroup) {
+            return String(
+                courseGroup?.class_name
+                || courseGroup?.display_label
+                || courseGroup?.title
+                || courseGroup?.course
+                || courseGroup?.subject
+                || '',
+            ).trim()
+        },
+        automaticOfferedCourseIsDistanceLearning(courseGroups, selectedCourse) {
+            const requiredSlotCount = Math.max(1, Math.round(this.courseHoursNumber(selectedCourse)))
+            const scheduledWeeklyLoad = this.courseGroupsScheduledWeeklyLoad(courseGroups)
+
+            return requiredSlotCount >= 2
+                && scheduledWeeklyLoad > 0
+                && Math.abs((scheduledWeeklyLoad * 2) - requiredSlotCount) < 0.001
+        },
+        compareAutomaticOfferedCourseItems(firstCourse, secondCourse) {
+            const firstSlot = Number(firstCourse?.weekday || 0) * 100 + Number(firstCourse?.hour || 0)
+            const secondSlot = Number(secondCourse?.weekday || 0) * 100 + Number(secondCourse?.hour || 0)
+
+            if (firstSlot !== secondSlot) {
+                return firstSlot - secondSlot
+            }
+
+            return String(firstCourse?.name || firstCourse?.code || '').localeCompare(
+                String(secondCourse?.name || secondCourse?.code || ''),
+                'de-AT',
+                {
+                    numeric: true,
+                    sensitivity: 'base',
+                },
+            )
+        },
+        automaticOfferedCourseCodeVisible(course) {
+            const code = String(course?.code || '').trim()
+            const name = String(course?.name || '').trim()
+
+            return Boolean(code && name && code !== name && !name.startsWith(`${code} -`))
+        },
+        restartAutomaticTimetable() {
+            this.clearAutomaticTimetableStep()
+        },
+        goBackFromAutomaticCourseReview() {
+            this.closeAutomaticTimetable()
+        },
+        continueAutomaticCourseReview() {
+            this.setAutomaticTimetableStep('result')
+        },
+        removeAutomaticTimetableCriteriaQuery() {
+            if (!Object.prototype.hasOwnProperty.call(this.$route.query, 'automatic_timetable_criteria')) {
+                return
+            }
+
+            const query = { ...this.$route.query }
+            delete query.automatic_timetable_criteria
+
+            this.$router.push({
+                path: this.$route.path,
+                query,
+            })
+        },
         setAutomaticTimetableQualityCriterionKeys(criterionKeys) {
+            if (this.automaticTimetableStep === 'criteria') {
+                this.removeAutomaticTimetableCriteriaQuery()
+
+                return
+            }
+
             const selectedCriterionKeys = Array.isArray(criterionKeys)
                 ? criterionKeys.map(criterionKey => String(criterionKey || '')).filter(Boolean)
                 : []
@@ -2844,19 +3350,30 @@ export default {
 
             return Array.from(courseItemsByKey.values())
         },
+        sortedCourseSections(sections) {
+            return (Array.isArray(sections) ? sections : []).map(section => ({
+                ...section,
+                items: this.sortedCourseItems(section?.items),
+            }))
+        },
         sortedCourseItems(courses) {
-            return [...(Array.isArray(courses) ? courses : [])].sort((firstCourse, secondCourse) => {
-                const firstSemester = Number(firstCourse?.semester || 0)
-                const secondSemester = Number(secondCourse?.semester || 0)
-
-                if (firstSemester !== secondSemester) {
-                    return firstSemester - secondSemester
-                }
-
-                return this.overviewCourseItemLabel(firstCourse).localeCompare(this.overviewCourseItemLabel(secondCourse), 'de-AT', {
-                    sensitivity: 'base',
-                })
+            return [...(Array.isArray(courses) ? courses : [])]
+                .sort((firstCourse, secondCourse) => this.compareCourseItems(firstCourse, secondCourse))
+        },
+        compareCourseItems(firstCourse, secondCourse) {
+            const labelComparison = this.overviewCourseItemLabel(firstCourse).localeCompare(this.overviewCourseItemLabel(secondCourse), 'de-AT', {
+                numeric: true,
+                sensitivity: 'base',
             })
+
+            if (labelComparison !== 0) {
+                return labelComparison
+            }
+
+            const firstSemester = Number(firstCourse?.semester || 0)
+            const secondSemester = Number(secondCourse?.semester || 0)
+
+            return firstSemester - secondSemester
         },
         overviewCourseSelectionKey(course) {
             return String(course?.key || [
@@ -3119,6 +3636,51 @@ export default {
                 .replace(/ß/gu, 'SS')
                 .replace(/[^A-Z0-9]/gu, '')
         },
+        automaticCourseItemIsDistanceLearning(course) {
+            if (
+                course?.distanceLearning === true
+                || course?.distance_learning === true
+                || course?.isDistanceLearningCourse === true
+                || course?.is_distance_learning_course === true
+            ) {
+                return true
+            }
+
+            const courseGroups = Array.isArray(course?.course_groups)
+                ? course.course_groups
+                : []
+            const requiredSlotCount = Math.max(1, Math.round(this.courseHoursNumber(course)))
+            const scheduledWeeklyLoad = this.courseGroupsScheduledWeeklyLoad(courseGroups)
+
+            return requiredSlotCount >= 2
+                && scheduledWeeklyLoad > 0
+                && Math.abs((scheduledWeeklyLoad * 2) - requiredSlotCount) < 0.001
+        },
+        courseGroupsScheduledWeeklyLoad(courseGroups) {
+            return (Array.isArray(courseGroups) ? courseGroups : [])
+                .filter(courseGroup => !this.courseGroupIsOccasional(courseGroup))
+                .reduce((load, courseGroup) => load + (1 / this.courseGroupWeekInterval(courseGroup)), 0)
+        },
+        courseGroupIsOccasional(courseGroup) {
+            const recurrenceType = String(courseGroup?.recurrence_type || '').toLowerCase()
+
+            return recurrenceType === 'single'
+                || recurrenceType === 'block'
+                || Number(courseGroup?.dates_count || 0) === 1
+        },
+        courseGroupWeekInterval(courseGroup) {
+            const explicitInterval = Number(courseGroup?.recurrence_interval)
+            if (Number.isInteger(explicitInterval) && explicitInterval > 0) {
+                return explicitInterval
+            }
+
+            const labelMatch = String(courseGroup?.recurrence_label || '').match(/(\d+)\s*-\s*w/iu)
+            if (labelMatch) {
+                return Number(labelMatch[1])
+            }
+
+            return 1
+        },
         courseItemsSummary(courses) {
             const courseItems = Array.isArray(courses) ? courses : []
             const hours = courseItems.reduce((sum, course) => sum + this.courseHoursNumber(course), 0)
@@ -3359,7 +3921,7 @@ export default {
 
 .overview-course-selection {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
     margin-bottom: 18px;
 }
@@ -3461,6 +4023,218 @@ export default {
 
 .overview-course-selection__summary-content {
     font-weight: 850;
+}
+
+.automatic-course-review-card {
+    border: 1px solid rgba(14, 165, 233, 0.16);
+    background: #ffffff;
+}
+
+.automatic-course-review-card__title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 16px 20px 8px;
+    color: #0f172a;
+    font-size: 1.25rem;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.automatic-course-review-card__filters {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.automatic-course-review-card__filters :deep(.v-btn) {
+    min-width: 72px;
+    font-weight: 900;
+    letter-spacing: 0;
+}
+
+.automatic-course-review-card__summary {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.automatic-course-review-card__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.automatic-course-loading-card {
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    background: rgba(255, 255, 255, 0.96);
+}
+
+.automatic-course-loading-card__content {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 96px;
+}
+
+.automatic-course-loading-card__copy {
+    display: grid;
+    gap: 4px;
+}
+
+.automatic-course-loading-card__title {
+    color: #0f172a;
+    font-size: 1rem;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.automatic-course-loading-card__subtitle {
+    color: rgba(15, 23, 42, 0.68);
+    font-size: 0.86rem;
+    font-weight: 750;
+    line-height: 1.35;
+}
+
+.automatic-course-review-card__course {
+    cursor: pointer;
+    font-weight: 850;
+}
+
+.automatic-course-review-card__course--active {
+    box-shadow: 0 0 0 1px rgba(0, 137, 123, 0.26);
+}
+
+.automatic-course-review-card__course--distance-learning {
+    border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+.automatic-course-review-card__course--offered-partial {
+    border: 1px solid rgba(217, 119, 6, 0.36);
+    background: rgba(255, 251, 235, 0.96) !important;
+    color: #92400e !important;
+}
+
+.automatic-course-review-card__course--offered-deselected {
+    border: 1px solid rgba(220, 38, 38, 0.42);
+    background: rgba(254, 226, 226, 0.96) !important;
+    color: #991b1b !important;
+}
+
+.automatic-course-review-card__meta {
+    margin-left: 6px;
+    font-weight: 900;
+}
+
+.automatic-course-review-card__footer {
+    min-height: 0;
+    padding: 4px 20px 18px;
+    color: rgba(15, 23, 42, 0.68);
+    font-size: 0.82rem;
+    font-weight: 850;
+}
+
+.automatic-offered-courses-card {
+    margin-top: 12px;
+    border: 1px solid rgba(14, 165, 233, 0.16);
+    background: #ffffff;
+}
+
+.automatic-offered-courses-card__title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 16px 20px 8px;
+    color: #0f172a;
+    font-size: 1.04rem;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.automatic-offered-courses-card__list {
+    display: grid;
+    gap: 8px;
+}
+
+.automatic-offered-courses-card__item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    border: 1px solid rgba(71, 85, 105, 0.2);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: #ffffff;
+}
+
+.automatic-offered-courses-card__item--toggle {
+    cursor: pointer;
+}
+
+.automatic-offered-courses-card__item--selected {
+    border-color: rgba(22, 163, 74, 0.36);
+    background: rgba(220, 252, 231, 0.9);
+    box-shadow: inset 0 0 0 1px rgba(22, 163, 74, 0.12);
+}
+
+.automatic-offered-courses-card__item--deselected {
+    border-color: rgba(220, 38, 38, 0.28);
+    background: rgba(254, 242, 242, 0.9);
+    color: #7f1d1d;
+}
+
+.automatic-offered-courses-card__item--deselected .automatic-offered-courses-card__name {
+    color: #7f1d1d;
+}
+
+.automatic-offered-courses-card__name {
+    color: #0f172a;
+    font-weight: 800;
+}
+
+.automatic-offered-courses-card__code {
+    color: rgba(15, 23, 42, 0.62);
+    font-weight: 800;
+}
+
+.automatic-course-review-actions {
+    margin-top: 12px;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: #ffffff;
+}
+
+.automatic-course-review-actions :deep(.v-card-actions) {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 14px 20px;
+}
+
+.automatic-course-review-actions :deep(.automatic-course-review-next-button) {
+    min-width: 162px;
+    min-height: 53px;
+    border-radius: 4px;
+    background: #dcefee !important;
+    color: #00877f !important;
+    font-weight: 800;
+    letter-spacing: 2px;
+}
+
+.automatic-course-review-actions :deep(.automatic-course-review-next-button .v-btn__append) {
+    margin-left: 16px;
+}
+
+.automatic-course-review-actions :deep(.automatic-course-review-next-button .v-icon) {
+    font-size: 25px;
+}
+
+.automatic-course-review-actions :deep(.automatic-course-review-next-button.v-btn--disabled) {
+    background: #edf5f4 !important;
+    color: rgba(0, 135, 127, 0.52) !important;
 }
 
 .manual-overview-course-card {
@@ -4308,6 +5082,23 @@ export default {
 
     .overview-course-selection__title {
         flex-direction: column;
+    }
+
+    .automatic-course-review-card__title {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .automatic-course-review-card__summary {
+        margin-left: 0;
+    }
+
+    .automatic-course-review-actions :deep(.v-spacer) {
+        display: none;
+    }
+
+    .automatic-course-review-actions :deep(.v-btn) {
+        flex: 1 1 100%;
     }
 
     .overview-selection {

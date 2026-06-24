@@ -792,7 +792,6 @@
                                         class="students-timetable-v2-selected-courses-card__course students-timetable-v2-more-courses-card__course"
                                         :class="{
                                             'students-timetable-v2-selected-courses-card__course--active': selectedMoreCourseItem?.selectionKey === course.selectionKey,
-                                            'students-timetable-v2-selected-courses-card__course--offered-deselected': moreCourseOfferedCourseItemsAllDeselected(course),
                                             'students-timetable-v2-more-courses-card__course--unavailable': moreCourseUnavailable(course),
                                         }"
                                         :role="moreCourseDisabled(course) ? undefined : 'button'"
@@ -8326,8 +8325,9 @@ export default {
 }
 
 .students-timetable-v2-selected-courses-card__course--offered-deselected {
-    border: 1px solid rgba(22, 163, 74, 0.42);
-    background: rgba(255, 255, 255, 0.86) !important;
+    border: 1px solid rgba(220, 38, 38, 0.42);
+    background: rgba(254, 226, 226, 0.96) !important;
+    color: #991b1b !important;
 }
 
 .students-timetable-v2-selected-courses-card__meta {
@@ -8572,13 +8572,13 @@ export default {
 }
 
 .students-timetable-v2-offered-courses-card__item--deselected {
-    border-color: rgba(71, 85, 105, 0.48);
-    background: rgba(248, 250, 252, 0.92);
-    color: #64748b;
+    border-color: rgba(220, 38, 38, 0.28);
+    background: rgba(254, 242, 242, 0.9);
+    color: #7f1d1d;
 }
 
 .students-timetable-v2-offered-courses-card__item--deselected .students-timetable-v2-offered-courses-card__name {
-    color: #64748b;
+    color: #7f1d1d;
 }
 
 .students-timetable-v2-offered-courses-card__name {

@@ -1849,7 +1849,7 @@ describe('TimetableV2 route steps', () => {
         expect(source).not.toContain('<v-checkbox-btn')
         expect(source).toMatch(/:color="moreCourseChipColor\(course\)"\s+:variant="selectedMoreCourseItem\?\.selectionKey === course\.selectionKey && !moreCourseUnavailable\(course\) \? 'flat' : 'tonal'"\s+:disabled="moreCourseDisabled\(course\)"/u)
         expect(source).toContain("'students-timetable-v2-selected-courses-card__course--active': selectedMoreCourseItem?.selectionKey === course.selectionKey")
-        expect(source).toContain("'students-timetable-v2-selected-courses-card__course--offered-deselected': moreCourseOfferedCourseItemsAllDeselected(course)")
+        expect(source).not.toContain("'students-timetable-v2-selected-courses-card__course--offered-deselected': moreCourseOfferedCourseItemsAllDeselected(course)")
         expect(source).toContain("'students-timetable-v2-more-courses-card__course--unavailable': moreCourseUnavailable(course)")
         expect(source).toMatch(/@click="toggleMoreCourseOffers\(course\)"/u)
     })
@@ -5384,6 +5384,8 @@ describe('TimetableV2 route steps', () => {
 
         expect(source).toContain("'students-timetable-v2-selected-courses-card__course--offered-partial': offeredCourseItemsPartlySelected(course)")
         expect(source).toMatch(/\.students-timetable-v2-selected-courses-card__course--offered-partial \{[\s\S]*background: rgba\(255, 251, 235, 0\.96\)/u)
+        expect(source).toContain("'students-timetable-v2-selected-courses-card__course--offered-deselected': offeredCourseItemsAllDeselected(course)")
+        expect(source).toMatch(/\.students-timetable-v2-selected-courses-card__course--offered-deselected \{[\s\S]*background: rgba\(254, 226, 226, 0\.96\) !important;[\s\S]*color: #991b1b !important;/u)
         expect(context.offeredCourseItemsPartlySelected(fullySelectedCourse)).toBe(false)
         expect(context.offeredCourseItemsAllDeselected(fullySelectedCourse)).toBe(false)
         expect(context.offeredCourseItemsPartlySelected(partlySelectedCourse)).toBe(true)

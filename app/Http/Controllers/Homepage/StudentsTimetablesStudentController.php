@@ -268,6 +268,8 @@ class StudentsTimetablesStudentController extends Controller
         $validated = $request->validate([
             'selected_course_keys' => ['required', 'array', 'min:1'],
             'selected_course_keys.*' => ['required', 'string', 'max:255'],
+            'deselected_course_group_keys' => ['sometimes', 'array'],
+            'deselected_course_group_keys.*' => ['string', 'max:255', 'distinct'],
             'selected_additional_course_keys' => ['sometimes', 'array'],
             'selected_additional_course_keys.*' => ['string', 'max:255', 'distinct'],
             'selected_additional_courses_required' => ['sometimes', 'boolean'],
@@ -285,6 +287,12 @@ class StudentsTimetablesStudentController extends Controller
             $validated['selected_course_keys'],
             $summary['automatic_course_selection']['courses'] ?? [],
         );
+        $deselectedCourseGroupKeys = collect($validated['deselected_course_group_keys'] ?? [])
+            ->map(fn (mixed $courseGroupKey): string => (string) $courseGroupKey)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
         $selectedAdditionalCourseKeys = $this->selectedAutomaticCourseKeys(
             $validated['selected_additional_course_keys'] ?? [],
             $summary['additional_courses'] ?? [],
@@ -302,6 +310,7 @@ class StudentsTimetablesStudentController extends Controller
             $selectedCourseKeys,
             $this->availableTimesForAutomaticTimetable($overviewService->courseGroupsForUser($authUser)),
             $validated['selected_quality_criterion_keys'] ?? [],
+            $deselectedCourseGroupKeys,
             $selectedAdditionalCourseKeys,
             $selectedAdditionalCoursesRequired,
             $validated['selected_timetable_type'] ?? null,
@@ -427,6 +436,7 @@ class StudentsTimetablesStudentController extends Controller
      * @param  list<string>  $selectedCourseKeys
      * @param  list<int>  $availableTimes
      * @param  list<string>  $selectedQualityCriterionKeys
+     * @param  list<string>  $deselectedCourseGroupKeys
      * @param  list<string>  $selectedAdditionalCourseKeys
      * @return array<string, mixed>
      */
@@ -435,6 +445,7 @@ class StudentsTimetablesStudentController extends Controller
         array $selectedCourseKeys,
         array $availableTimes,
         array $selectedQualityCriterionKeys,
+        array $deselectedCourseGroupKeys,
         array $selectedAdditionalCourseKeys,
         bool $selectedAdditionalCoursesRequired,
         ?string $selectedTimetableType,
@@ -460,7 +471,7 @@ class StudentsTimetablesStudentController extends Controller
             ],
             'selected_course_keys' => $selectedCourseKeys,
             'deselected_course_keys' => [],
-            'deselected_course_group_keys' => [],
+            'deselected_course_group_keys' => $deselectedCourseGroupKeys,
             'available_additional_course_keys' => collect($summary['additional_courses'] ?? [])
                 ->pluck('key')
                 ->map(fn (mixed $courseKey): string => (string) $courseKey)
