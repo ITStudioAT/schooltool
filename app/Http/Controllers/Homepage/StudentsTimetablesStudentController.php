@@ -267,20 +267,7 @@ class StudentsTimetablesStudentController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $validated = $request->validate([
-            'selected_course_keys' => ['required', 'array', 'min:1'],
-            'selected_course_keys.*' => ['required', 'string', 'max:255'],
-            'deselected_course_group_keys' => ['sometimes', 'array'],
-            'deselected_course_group_keys.*' => ['string', 'max:255', 'distinct'],
-            'selected_additional_course_keys' => ['sometimes', 'array'],
-            'selected_additional_course_keys.*' => ['string', 'max:255', 'distinct'],
-            'selected_additional_courses_required' => ['sometimes', 'boolean'],
-            'selected_quality_criterion_keys' => ['sometimes', 'array'],
-            'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
-            'selected_timetable_type' => ['nullable', 'string', Rule::in(['full_green', 'green', 'conflict'])],
-            'selected_timetable_number' => ['nullable', 'integer', 'min:1'],
-            ...$this->studentOverviewSelectionRules(),
-        ]);
+        $validated = $request->validate($this->automaticTimetableRules($evaluationSettingsService));
 
         $this->ensureSchoolyearForUser($authUser);
 
@@ -333,6 +320,53 @@ class StudentsTimetablesStudentController extends Controller
         ]);
     }
 
+    public function automaticTimetableAvailability(
+        Request $request,
+        StudentTimetablesStudentOverviewService $studentOverviewService,
+        StudentTimetableOverviewService $overviewService,
+        RobotTimetableBackendSetupService $backendSetupService,
+        StudentTimetableCalculationSettingsService $calculationSettingsService,
+        StudentTimetableEvaluationSettingsService $evaluationSettingsService,
+    ): JsonResponse {
+        if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            ...$this->automaticTimetableRules($evaluationSettingsService),
+            'availability_only' => ['sometimes', 'boolean'],
+            'candidate_courses' => ['required', 'array', 'min:1', 'max:100'],
+            'candidate_courses.*.availability_key' => ['required', 'string', 'max:255', 'distinct:strict'],
+            'candidate_courses.*.course_key' => ['required', 'string', 'max:255'],
+            'candidate_courses.*.course_group' => ['required', 'string', 'in:missing,planned,additional'],
+        ]);
+
+        $this->ensureSchoolyearForUser($authUser);
+
+        $context = $this->automaticTimetableCalculationContext(
+            $authUser,
+            $validated,
+            $studentOverviewService,
+            $overviewService,
+            $calculationSettingsService,
+            $evaluationSettingsService,
+        );
+
+        return response()->json([
+            'data' => [
+                'availability' => $backendSetupService->courseAvailabilityForUser(
+                    $authUser,
+                    $context['settings'],
+                    $validated['candidate_courses'],
+                    $overviewService,
+                    $context['evaluationCriteria'],
+                    $context['selectedQualityCriterionKeys'],
+                    ($validated['availability_only'] ?? false) === true,
+                ),
+            ],
+        ]);
+    }
+
     public function changePassword(Request $request)
     {
         if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
@@ -351,6 +385,78 @@ class StudentsTimetablesStudentController extends Controller
             'status' => 'success',
             'message' => 'Passwort erfolgreich geändert',
         ]);
+    }
+
+    /**
+     * @return array<string, array<int|string, mixed>>
+     */
+    private function automaticTimetableRules(StudentTimetableEvaluationSettingsService $evaluationSettingsService): array
+    {
+        return [
+            'selected_course_keys' => ['required', 'array', 'min:1'],
+            'selected_course_keys.*' => ['required', 'string', 'max:255'],
+            'deselected_course_group_keys' => ['sometimes', 'array'],
+            'deselected_course_group_keys.*' => ['string', 'max:255', 'distinct'],
+            'selected_additional_course_keys' => ['sometimes', 'array'],
+            'selected_additional_course_keys.*' => ['string', 'max:255', 'distinct'],
+            'selected_additional_courses_required' => ['sometimes', 'boolean'],
+            'selected_quality_criterion_keys' => ['sometimes', 'array'],
+            'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
+            'selected_timetable_type' => ['nullable', 'string', Rule::in(['full_green', 'green', 'conflict'])],
+            'selected_timetable_number' => ['nullable', 'integer', 'min:1'],
+            ...$this->studentOverviewSelectionRules(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array{settings: array<string, mixed>, evaluationCriteria: list<array<string, mixed>>, selectedQualityCriterionKeys: list<string>}
+     */
+    private function automaticTimetableCalculationContext(
+        User $authUser,
+        array $validated,
+        StudentTimetablesStudentOverviewService $studentOverviewService,
+        StudentTimetableOverviewService $overviewService,
+        StudentTimetableCalculationSettingsService $calculationSettingsService,
+        StudentTimetableEvaluationSettingsService $evaluationSettingsService,
+    ): array {
+        $summary = $studentOverviewService->summaryForUser($authUser, $validated['selection'] ?? []);
+        $deselectedCourseGroupKeys = $calculationSettingsService->stringList($validated['deselected_course_group_keys'] ?? []);
+        $selectedCourseKeys = $calculationSettingsService->selectedCourseKeysWithActiveCourseGroups(
+            $validated['selected_course_keys'],
+            $calculationSettingsService->automaticCourses($summary),
+            $deselectedCourseGroupKeys,
+        );
+        $selectedAdditionalCourseKeys = $calculationSettingsService->selectedCourseKeysWithActiveCourseGroups(
+            $validated['selected_additional_course_keys'] ?? [],
+            $calculationSettingsService->additionalCourses($summary),
+            $deselectedCourseGroupKeys,
+        );
+        $selectedQualityCriterionKeys = $calculationSettingsService->stringList($validated['selected_quality_criterion_keys'] ?? []);
+        $selectedAdditionalCoursesRequired = $selectedAdditionalCourseKeys !== []
+            && ($validated['selected_additional_courses_required'] ?? false) === true;
+
+        if ($selectedCourseKeys === []) {
+            abort(422, 'Bitte waehlen Sie mindestens einen Kurs aus.');
+        }
+
+        $evaluationCriteria = $evaluationSettingsService->activeCriteriaForUser($authUser);
+
+        return [
+            'settings' => $calculationSettingsService->settingsFromStudentSummary(
+                $summary,
+                $selectedCourseKeys,
+                $calculationSettingsService->availableTimes($overviewService->courseGroupsForUser($authUser)),
+                $selectedQualityCriterionKeys,
+                $deselectedCourseGroupKeys,
+                $selectedAdditionalCourseKeys,
+                $selectedAdditionalCoursesRequired,
+                $validated['selected_timetable_type'] ?? null,
+                (int) ($validated['selected_timetable_number'] ?? 1),
+            ),
+            'evaluationCriteria' => $evaluationCriteria,
+            'selectedQualityCriterionKeys' => $selectedQualityCriterionKeys,
+        ];
     }
 
     private function validatedLoginUser(StudentsTimetablesStudentService $service, string $email, int $schoolId): User

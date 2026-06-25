@@ -4061,7 +4061,7 @@ export default {
                     { replace: true },
                 )
                 if (refreshAuxiliary) {
-                    this.ensureMoreCourseAvailability()
+                    await this.ensureMoreCourseAvailability()
                     this.ensureConflictResolutionRecommendations()
                 }
 
@@ -4102,7 +4102,7 @@ export default {
         },
         completeTimetableCalculationProgress() {
             if (!this.timetableCalculationProgressSource) return
-            if (this.moreCourseAvailabilityLoading) {
+            if (this.timetableCalculationProgressSource === 'availability' && this.moreCourseAvailabilityLoading) {
                 this.timetableCalculationProgressCompletionPending = true
 
                 return
@@ -4439,6 +4439,7 @@ export default {
                 .filter((course) => course.availability_key && course.course_group && course.course_key)
 
             payload.candidate_courses = candidateCourses
+            payload.availability_only = true
 
             return payload
         },
@@ -5101,11 +5102,10 @@ export default {
                 this.saveTimetableV2Options()
             }
             this.setSelectedTimetableV2Number(1, { replace: true })
-            const calculationRequest = this.calculateTimetables({ progressContext: 'more-courses' })
             this.promoteSelectedMoreCourses()
             this.closeMoreCoursesCard()
 
-            return calculationRequest
+            return this.calculateTimetables({ progressContext: 'more-courses' })
         },
         applyAdoptedTimetableCourseRemoval() {
             if (!this.adoptedTimetableCourseRemovalPendingVisible || !this.moreCoursesSelectionChanged) return null

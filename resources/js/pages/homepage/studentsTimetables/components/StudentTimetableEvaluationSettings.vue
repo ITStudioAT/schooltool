@@ -302,14 +302,11 @@
                 </v-card-actions>
             </v-card>
 
-            <div v-if="!generatingTimetable" class="student-evaluation-settings__automatic-card">
-                <v-icon icon="mdi-calendar-clock" size="22" />
-                <h2>Stundenplan</h2>
-                <span class="student-evaluation-settings__automatic-stars" aria-hidden="true">
-                    <v-icon icon="mdi-star-four-points" size="10" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--1" />
-                    <v-icon icon="mdi-star-four-points" size="14" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--2" />
-                    <v-icon icon="mdi-star-four-points" size="8" class="student-evaluation-settings__automatic-star student-evaluation-settings__automatic-star--3" />
-                </span>
+            <div v-if="!generatingTimetable" class="student-generated-timetable__header">
+                <div class="student-generated-timetable__title">
+                    <v-icon icon="mdi-calendar-clock-outline" size="22" />
+                    <h2>Stundenplan</h2>
+                </div>
                 <span class="student-generated-timetable__toolbar">
                     <span class="student-generated-timetable__primary-actions">
                         <v-btn
@@ -317,7 +314,8 @@
                             :color="resultMoreCoursesUnavailable ? 'error' : 'primary'"
                             variant="tonal"
                             prepend-icon="mdi-plus-circle-outline"
-                            :disabled="generatingTimetable || resultMoreCoursesUnavailable"
+                            :loading="resultMoreCourseAvailabilityLoading"
+                            :disabled="generatingTimetable || resultMoreCourseAvailabilityLoading || resultMoreCoursesUnavailable"
                             :aria-expanded="resultMoreCoursesVisible ? 'true' : 'false'"
                             @click="toggleResultMoreCourses">
                             Mehr Kurse
@@ -355,20 +353,29 @@
                     Mehr Kurse
                 </v-card-title>
                 <v-card-text>
+                    <v-progress-linear
+                        v-if="resultMoreCourseAvailabilityLoading"
+                        color="primary"
+                        indeterminate
+                        rounded
+                        class="mb-3" />
                     <div v-if="resultMoreCourseItems.length" class="student-result-more-courses-card__list">
                         <v-chip
                             v-for="course in resultMoreCourseItems"
                             :key="course.selectionKey"
                             size="small"
-                            color="success"
+                            :color="resultMoreCourseUnavailable(course) ? 'error' : 'success'"
                             :variant="selectedResultMoreCourseItem?.selectionKey === course.selectionKey ? 'flat' : 'tonal'"
+                            :disabled="resultMoreCourseDisabled(course)"
                             class="student-selected-courses-card__course student-result-more-courses-card__course"
                             :class="{
                                 'student-selected-courses-card__course--active': selectedResultMoreCourseItem?.selectionKey === course.selectionKey,
                                 'student-selected-courses-card__course--offered-partial': resultMoreOfferedCourseItemsPartlySelected(course),
                                 'student-selected-courses-card__course--offered-deselected': resultMoreOfferedCourseItemsAllDeselected(course),
+                                'student-result-more-courses-card__course--unavailable': resultMoreCourseUnavailable(course),
                             }"
                             role="button"
+                            :aria-disabled="resultMoreCourseDisabled(course) ? 'true' : 'false'"
                             :aria-pressed="resultDraftAdditionalCourseSelected(course) ? 'true' : 'false'"
                             :aria-expanded="selectedResultMoreCourseItem?.selectionKey === course.selectionKey ? 'true' : 'false'"
                             @click="toggleResultMoreCourseOffers(course)"
@@ -488,7 +495,7 @@
                         variant="tonal"
                         append-icon="mdi-check"
                         :loading="generatingTimetable"
-                        :disabled="generatingTimetable || !resultAdditionalCoursesChanged"
+                        :disabled="generatingTimetable || resultMoreCourseAvailabilityLoading || !resultAdditionalCoursesChanged"
                         @click="applyResultMoreCourses">
                         Anwenden
                     </v-btn>
@@ -1121,6 +1128,11 @@ export default {
             resultDraftAdditionalCourseKeys: [],
             resultDraftQualityCriterionKeys: [],
             resultMoreOfferedCourseSelectionOverrides: {},
+            resultMoreCourseAvailabilityLoading: false,
+            resultMoreCourseAvailabilityByKey: {},
+            resultMoreCourseAvailabilitySignature: '',
+            resultMoreCourseAvailabilityRequestId: 0,
+            resultMoreCourseAvailabilityPromise: null,
         }
     },
 
@@ -1182,6 +1194,20 @@ export default {
         },
         resultMoreCourseItems() {
             return this.additionalCourses.map(course => this.resultMoreCourseItem(course))
+        },
+        resultMoreCourseAvailabilityCandidateItems() {
+            return this.resultMoreCourseItems
+                .filter(course => this.resultMoreOfferedCourseItemsAnySelected(course))
+        },
+        resultMoreCourseAvailabilityComplete() {
+            return this.resultMoreCourseAvailabilityCandidateItems.length > 0
+                && this.resultMoreCourseAvailabilitySignature === this.resultMoreCourseAvailabilityCurrentSignature()
+                && this.resultMoreCourseAvailabilityCandidateItems.every(course => {
+                    const availabilityKey = this.resultMoreCourseAvailabilityKey(course)
+
+                    return availabilityKey
+                        && Object.prototype.hasOwnProperty.call(this.resultMoreCourseAvailabilityByKey, availabilityKey)
+                })
         },
         selectedResultMoreCourseItem() {
             return this.resultMoreCourseItems
@@ -1259,7 +1285,12 @@ export default {
             return this.pendingRemovedSelectedCourseKeys.length > 0
         },
         resultMoreCoursesUnavailable() {
-            return !this.generatedTimetable || this.additionalCourses.length === 0
+            if (!this.generatedTimetable || this.additionalCourses.length === 0) {
+                return true
+            }
+
+            return this.resultMoreCourseAvailabilityComplete
+                && this.resultMoreCourseItems.every(course => this.resultMoreCourseUnavailable(course))
         },
         resultOptionsUnavailable() {
             return !this.generatedTimetable || this.activeGeneratedQualityCriteria.length === 0
@@ -1950,6 +1981,143 @@ export default {
                 distanceLearning: this.resultMoreCourseIsDistanceLearning(course),
             }
         },
+        resultMoreCourseAvailabilityKey(course) {
+            return String(course?.selectionKey || this.courseSelectionKey(course) || '').trim()
+        },
+        resultMoreCourseAvailabilityFor(course) {
+            const availabilityKey = this.resultMoreCourseAvailabilityKey(course)
+
+            return availabilityKey ? this.resultMoreCourseAvailabilityByKey[availabilityKey] : null
+        },
+        resultMoreCourseUnavailable(course) {
+            if (this.resultDraftAdditionalCourseSelected(course)) {
+                return false
+            }
+
+            if (!this.resultMoreOfferedCourseItemsAnySelected(course)) {
+                return true
+            }
+
+            if (!this.resultMoreCourseAvailabilityComplete) {
+                return false
+            }
+
+            const availability = this.resultMoreCourseAvailabilityFor(course)
+
+            return typeof availability === 'boolean'
+                ? availability !== true
+                : availability?.available !== true
+        },
+        resultMoreCourseDisabled(course) {
+            return this.generatingTimetable
+                || this.resultMoreCourseAvailabilityLoading
+                || this.resultMoreCourseUnavailable(course)
+        },
+        resultMoreCourseAvailabilityCandidatePayload(courses) {
+            return (Array.isArray(courses) ? courses : [])
+                .map(course => ({
+                    availability_key: this.resultMoreCourseAvailabilityKey(course),
+                    course_key: this.backendCourseSelectionKey(course),
+                    course_group: 'additional',
+                }))
+                .filter(course => course.availability_key && course.course_key)
+        },
+        resultMoreCourseAvailabilityCurrentSignature() {
+            const candidateCourses = this.resultMoreCourseAvailabilityCandidatePayload(this.resultMoreCourseAvailabilityCandidateItems)
+                .map(course => `${course.availability_key}:${course.course_key}:${course.course_group}`)
+                .sort((firstCourse, secondCourse) => firstCourse.localeCompare(secondCourse, 'de-AT'))
+
+            if (!candidateCourses.length) {
+                return ''
+            }
+
+            return JSON.stringify({
+                candidateCourses,
+                deselectedCourseGroupKeys: this.normalizedCourseKeys(this.deselectedCourseGroupKeys).sort(),
+                selectedAdditionalCourseKeys: this.normalizedCourseKeys(this.selectedVisibleAdditionalCourseKeys).sort(),
+                selectedCourseKeys: this.normalizedCourseKeys(this.selectedBackendCourseKeys()).sort(),
+                selectedQualityCriterionKeys: this.normalizedCourseKeys(this.selectedQualityCriterionKeys).sort(),
+            })
+        },
+        requestResultMoreCourseAvailability(courses) {
+            return axios.post(
+                '/api/homepage/students-timetables/automatic-timetable-availability',
+                this.automaticTimetableAvailabilityPayload(courses),
+            )
+        },
+        ensureResultMoreCourseAvailability() {
+            const availabilitySignature = this.resultMoreCourseAvailabilityCurrentSignature()
+
+            if (!availabilitySignature) {
+                this.resultMoreCourseAvailabilityByKey = {}
+                this.resultMoreCourseAvailabilitySignature = ''
+                this.resultMoreCourseAvailabilityLoading = false
+                this.resultMoreCourseAvailabilityPromise = null
+
+                return Promise.resolve([])
+            }
+
+            if (
+                this.resultMoreCourseAvailabilitySignature === availabilitySignature
+                && this.resultMoreCourseAvailabilityLoading
+                && this.resultMoreCourseAvailabilityPromise
+            ) {
+                return this.resultMoreCourseAvailabilityPromise
+            }
+
+            if (
+                this.resultMoreCourseAvailabilitySignature === availabilitySignature
+                && this.resultMoreCourseAvailabilityComplete
+            ) {
+                return Promise.resolve([])
+            }
+
+            const requestId = this.resultMoreCourseAvailabilityRequestId + 1
+            const coursesToCheck = this.resultMoreCourseAvailabilityCandidateItems
+
+            this.resultMoreCourseAvailabilityRequestId = requestId
+            this.resultMoreCourseAvailabilityByKey = {}
+            this.resultMoreCourseAvailabilitySignature = availabilitySignature
+            this.resultMoreCourseAvailabilityLoading = true
+
+            const availabilityPromise = this.requestResultMoreCourseAvailability(coursesToCheck)
+                .then((response) => {
+                    if (requestId !== this.resultMoreCourseAvailabilityRequestId) {
+                        return []
+                    }
+
+                    this.resultMoreCourseAvailabilityByKey = response.data?.data?.availability || {}
+
+                    if (
+                        this.selectedResultMoreCourseItem
+                        && this.resultMoreCourseUnavailable(this.selectedResultMoreCourseItem)
+                    ) {
+                        this.selectedResultMoreCourseKey = ''
+                    }
+
+                    return this.resultMoreCourseAvailabilityByKey
+                })
+                .catch(() => {
+                    if (requestId !== this.resultMoreCourseAvailabilityRequestId) {
+                        return []
+                    }
+
+                    this.resultMoreCourseAvailabilityByKey = {}
+                    this.resultMoreCourseAvailabilitySignature = ''
+
+                    return []
+                })
+                .finally(() => {
+                    if (requestId === this.resultMoreCourseAvailabilityRequestId) {
+                        this.resultMoreCourseAvailabilityLoading = false
+                        this.resultMoreCourseAvailabilityPromise = null
+                    }
+                })
+
+            this.resultMoreCourseAvailabilityPromise = availabilityPromise
+
+            return availabilityPromise
+        },
         removeResultSelectedCourseItem(course) {
             if (this.generatingTimetable) {
                 return
@@ -1985,7 +2153,7 @@ export default {
             await this.createAutomaticTimetable()
         },
         toggleResultMoreCourses() {
-            if (this.generatingTimetable || this.resultMoreCoursesUnavailable) {
+            if (this.generatingTimetable || this.resultMoreCourseAvailabilityLoading || this.resultMoreCoursesUnavailable) {
                 return
             }
 
@@ -2000,6 +2168,7 @@ export default {
             this.selectedResultMoreCourseKey = ''
             this.resultMoreCoursesVisible = true
             this.resultOptionsVisible = false
+            void this.ensureResultMoreCourseAvailability()
         },
         closeResultMoreCourses() {
             this.resultMoreCoursesVisible = false
@@ -2029,7 +2198,7 @@ export default {
             }
         },
         toggleResultMoreCourseOffers(course) {
-            if (this.generatingTimetable) {
+            if (this.resultMoreCourseDisabled(course)) {
                 return
             }
 
@@ -2363,7 +2532,7 @@ export default {
                 .filter((courseGroupKey, index, courseGroupKeys) => courseGroupKeys.indexOf(courseGroupKey) === index)
         },
         async applyResultMoreCourses() {
-            if (!this.resultAdditionalCoursesChanged || this.generatingTimetable) {
+            if (!this.resultAdditionalCoursesChanged || this.generatingTimetable || this.resultMoreCourseAvailabilityLoading) {
                 return
             }
 
@@ -2681,24 +2850,52 @@ export default {
             return `${new Intl.NumberFormat('de-AT', { maximumFractionDigits: 2 }).format(numericHours)} Std.`
         },
 
+        automaticTimetablePayload(overrides = {}) {
+            const selectedAdditionalCourseKeys = overrides.selectedAdditionalCourseKeys
+                ?? this.selectedVisibleAdditionalCourseKeys
+            const selectedQualityCriterionKeys = overrides.selectedQualityCriterionKeys
+                ?? this.selectedQualityCriterionKeys
+
+            return {
+                selected_course_keys: overrides.selectedCourseKeys ?? this.selectedBackendCourseKeys(),
+                deselected_course_group_keys: overrides.deselectedCourseGroupKeys ?? this.deselectedCourseGroupKeys,
+                selected_additional_course_keys: selectedAdditionalCourseKeys,
+                selected_additional_courses_required: selectedAdditionalCourseKeys.length > 0,
+                selected_quality_criterion_keys: selectedQualityCriterionKeys,
+                selected_timetable_type: overrides.selectedTimetableType ?? this.selectedTimetableType,
+                selected_timetable_number: overrides.selectedTimetableNumber ?? this.selectedTimetableNumber,
+                selection: overrides.selection ?? this.selectionOverride,
+            }
+        },
+
+        automaticTimetableAvailabilityPayload(courses) {
+            return {
+                ...this.automaticTimetablePayload({
+                    selectedTimetableType: 'full_green',
+                    selectedTimetableNumber: 1,
+                }),
+                availability_only: true,
+                candidate_courses: this.resultMoreCourseAvailabilityCandidatePayload(courses),
+            }
+        },
+
         async createAutomaticTimetable() {
             this.emitCourseSelectionChange()
             this.generatingTimetable = true
             this.timetableError = ''
             this.generatedTimetable = null
             this.timetableCounts = {}
+            this.resultMoreCourseAvailabilityByKey = {}
+            this.resultMoreCourseAvailabilitySignature = ''
+            this.resultMoreCourseAvailabilityLoading = false
+            this.resultMoreCourseAvailabilityRequestId += 1
+            this.resultMoreCourseAvailabilityPromise = null
 
             try {
-                const response = await axios.post('/api/homepage/students-timetables/automatic-timetable', {
-                    selected_course_keys: this.selectedBackendCourseKeys(),
-                    deselected_course_group_keys: this.deselectedCourseGroupKeys,
-                    selected_additional_course_keys: this.selectedVisibleAdditionalCourseKeys,
-                    selected_additional_courses_required: this.selectedVisibleAdditionalCourseKeys.length > 0,
-                    selected_quality_criterion_keys: [],
-                    selected_timetable_type: this.selectedTimetableType,
-                    selected_timetable_number: this.selectedTimetableNumber,
-                    selection: this.selectionOverride,
-                })
+                const response = await axios.post(
+                    '/api/homepage/students-timetables/automatic-timetable',
+                    this.automaticTimetablePayload(),
+                )
 
                 this.generatedTimetable = response.data?.data?.selected_timetable || null
                 this.schoolHours = response.data?.data?.school_hours || []
@@ -2717,6 +2914,9 @@ export default {
                 this.moveToStep('result')
             } finally {
                 this.generatingTimetable = false
+                if (this.currentStep === 'result' && this.generatedTimetable) {
+                    await this.ensureResultMoreCourseAvailability()
+                }
             }
         },
 
@@ -4109,6 +4309,28 @@ export default {
     gap: 12px;
 }
 
+.student-generated-timetable__header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.student-generated-timetable__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: #0f172a;
+}
+
+.student-generated-timetable__title h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 900;
+}
+
 .student-selected-courses-card {
     border: 1px solid rgba(16, 38, 58, 0.08);
     background: rgba(255, 255, 255, 0.96);
@@ -4267,6 +4489,11 @@ export default {
 .student-result-more-courses-card__course {
     max-width: 100%;
     cursor: pointer;
+}
+
+.student-result-more-courses-card__course--unavailable {
+    cursor: not-allowed;
+    opacity: 0.72;
 }
 
 .student-result-more-courses-card__meta,

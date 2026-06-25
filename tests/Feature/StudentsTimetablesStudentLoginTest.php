@@ -778,6 +778,33 @@ it('creates the first automatic timetable for the authenticated student', functi
     expect($selectedAdditionalCourseKey)->not->toBeNull();
 
     $this->actingAs($user)
+        ->postJson('/api/homepage/students-timetables/automatic-timetable-availability', [
+            'selected_course_keys' => [$selectedCourseKey],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_quality_criterion_keys' => [],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+            'availability_only' => true,
+            'candidate_courses' => [
+                [
+                    'availability_key' => 'additional:D2',
+                    'course_key' => $selectedAdditionalCourseKey,
+                    'course_group' => 'additional',
+                ],
+            ],
+            'selection' => [
+                'religion' => 'ETH',
+                'language' => 'L',
+                'branch' => 'wirtschaftskundlich',
+                'arts_subject' => 'ME',
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.availability.additional:D2.available', true)
+        ->assertJsonPath('data.availability.additional:D2.valid_timetable_count', 1);
+
+    $this->actingAs($user)
         ->postJson('/api/homepage/students-timetables/automatic-timetable', [
             'selected_course_keys' => [$selectedCourseKey],
             'selected_additional_course_keys' => [$selectedAdditionalCourseKey],

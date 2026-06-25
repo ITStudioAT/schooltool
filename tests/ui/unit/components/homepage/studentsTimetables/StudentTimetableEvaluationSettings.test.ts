@@ -2398,9 +2398,9 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('Auswahl geändert. Stundenplan neu erstellen?')
         expect(source).toContain('cancelResultSelectedCourseRemoval')
         expect(source).toContain('applyResultSelectedCourseRemoval')
-        expect(source).toContain('student-evaluation-settings__automatic-card')
-        expect(resultSource).toContain('<div v-if="!generatingTimetable" class="student-evaluation-settings__automatic-card">')
-        expect(resultSource.indexOf('student-selected-courses-card')).toBeLessThan(resultSource.indexOf('student-evaluation-settings__automatic-card'))
+        expect(source).toContain('student-generated-timetable__header')
+        expect(resultSource).toContain('<div v-if="!generatingTimetable" class="student-generated-timetable__header">')
+        expect(resultSource.indexOf('student-selected-courses-card')).toBeLessThan(resultSource.indexOf('student-generated-timetable__header'))
         expect(source).toContain('student-generated-timetable__success-strip')
         expect(source).toContain('Die Stundenpläne wurden erfolgreich erstellt.')
         expect(source).toContain('generatedTimetableResultCountItems')
@@ -2744,6 +2744,7 @@ describe('Student timetable evaluation settings', () => {
         const ctx: any = {
             generatedTimetable: { slots: {} },
             generatingTimetable: false,
+            resultMoreCourseAvailabilityLoading: false,
             resultMoreCoursesVisible: false,
             resultOptionsVisible: false,
             selectedResultMoreCourseKey: '',
@@ -2790,6 +2791,8 @@ describe('Student timetable evaluation settings', () => {
             resultMoreAllOfferedCourseBackendKeys: methods.resultMoreAllOfferedCourseBackendKeys,
             resultMoreDeselectedCourseGroupKeysForApply: methods.resultMoreDeselectedCourseGroupKeysForApply,
             currentResultMoreDeselectedOfferedCourseGroupKeys: methods.currentResultMoreDeselectedOfferedCourseGroupKeys,
+            resultMoreCourseDisabled: () => false,
+            ensureResultMoreCourseAvailability: vi.fn(() => Promise.resolve([])),
             generatedTimetableConfiguredSchoolHour: methods.generatedTimetableConfiguredSchoolHour,
             courseGroupWeekInterval: methods.courseGroupWeekInterval,
             courseGroupDates: methods.courseGroupDates,
@@ -2905,6 +2908,77 @@ describe('Student timetable evaluation settings', () => {
             },
         ])
         expect(createAutomaticTimetable).toHaveBeenCalledTimes(1)
+    })
+
+    it('builds automatic timetable payloads with selected result options', () => {
+        const methods = (StudentTimetableEvaluationSettings as any).methods
+        const ctx: any = {
+            deselectedCourseGroupKeys: ['planned|D1-A'],
+            selectedQualityCriterionKeys: ['saturday_free'],
+            selectedTimetableType: 'green',
+            selectedTimetableNumber: 3,
+            selectedVisibleAdditionalCourseKeys: ['additional-key'],
+            selectionOverride: { language: 'L' },
+            selectedBackendCourseKeys: () => ['planned-key'],
+        }
+
+        const payload = methods.automaticTimetablePayload.call(ctx)
+
+        expect(payload).toMatchObject({
+            selected_course_keys: ['planned-key'],
+            deselected_course_group_keys: ['planned|D1-A'],
+            selected_additional_course_keys: ['additional-key'],
+            selected_additional_courses_required: true,
+            selected_quality_criterion_keys: ['saturday_free'],
+            selected_timetable_type: 'green',
+            selected_timetable_number: 3,
+            selection: { language: 'L' },
+        })
+    })
+
+    it('builds public more course availability payloads with candidate courses', () => {
+        const methods = (StudentTimetableEvaluationSettings as any).methods
+        const course = {
+            key: 'course-key',
+            code: 'E2',
+            courseGroup: 'additional',
+        }
+        const ctx: any = {
+            deselectedCourseGroupKeys: [],
+            selectedQualityCriterionKeys: ['free_days'],
+            selectedTimetableType: 'green',
+            selectedTimetableNumber: 3,
+            selectedVisibleAdditionalCourseKeys: [],
+            selectionOverride: { language: 'L' },
+            automaticTimetablePayload: methods.automaticTimetablePayload,
+            resultMoreCourseAvailabilityCandidatePayload: methods.resultMoreCourseAvailabilityCandidatePayload,
+            resultMoreCourseAvailabilityKey: methods.resultMoreCourseAvailabilityKey,
+            selectedBackendCourseKeys: () => ['planned-key'],
+            courseSelectionKey: methods.courseSelectionKey,
+            backendCourseSelectionKey: methods.backendCourseSelectionKey,
+            courseSelectionGroup: methods.courseSelectionGroup,
+            normalizedCourseSelectionGroupKey: methods.normalizedCourseSelectionGroupKey,
+            normalizedCourseCode: methods.normalizedCourseCode,
+            displayedCourseSections: [],
+            additionalCourses: [course],
+        }
+
+        const payload = methods.automaticTimetableAvailabilityPayload.call(ctx, [course])
+
+        expect(payload).toMatchObject({
+            availability_only: true,
+            selected_course_keys: ['planned-key'],
+            selected_quality_criterion_keys: ['free_days'],
+            selected_timetable_type: 'full_green',
+            selected_timetable_number: 1,
+            candidate_courses: [
+                {
+                    availability_key: 'additional:E2',
+                    course_key: 'course-key',
+                    course_group: 'additional',
+                },
+            ],
+        })
     })
 
     it('resets result calculation changes to the initial admin-style state', async () => {
@@ -3190,16 +3264,19 @@ describe('Student timetable evaluation settings', () => {
         )
         const source = readFileSync(componentPath, 'utf8')
 
-        expect(source).toContain("axios.post('/api/homepage/students-timetables/automatic-timetable'")
-        expect(source).toContain('selected_course_keys: this.selectedBackendCourseKeys()')
+        expect(source).toContain("'/api/homepage/students-timetables/automatic-timetable'")
+        expect(source).toContain('selected_course_keys: overrides.selectedCourseKeys ?? this.selectedBackendCourseKeys()')
         expect(source).toContain('initialDeselectedCourseGroupKeys')
-        expect(source).toContain('deselected_course_group_keys: this.deselectedCourseGroupKeys')
-        expect(source).toContain('selected_additional_course_keys: this.selectedVisibleAdditionalCourseKeys')
-        expect(source).toContain('selected_additional_courses_required: this.selectedVisibleAdditionalCourseKeys.length > 0')
-        expect(source).toContain('selected_quality_criterion_keys: []')
-        expect(source).toContain('selected_timetable_type: this.selectedTimetableType')
-        expect(source).toContain('selected_timetable_number: this.selectedTimetableNumber')
-        expect(source).toContain('selection: this.selectionOverride')
+        expect(source).toContain('deselected_course_group_keys: overrides.deselectedCourseGroupKeys ?? this.deselectedCourseGroupKeys')
+        expect(source).toContain('selected_additional_course_keys: selectedAdditionalCourseKeys')
+        expect(source).toContain('selected_additional_courses_required: selectedAdditionalCourseKeys.length > 0')
+        expect(source).toContain('selected_quality_criterion_keys: selectedQualityCriterionKeys')
+        expect(source).toContain('selected_timetable_type: overrides.selectedTimetableType ?? this.selectedTimetableType')
+        expect(source).toContain('selected_timetable_number: overrides.selectedTimetableNumber ?? this.selectedTimetableNumber')
+        expect(source).toContain('selection: overrides.selection ?? this.selectionOverride')
+        expect(source).toContain("'/api/homepage/students-timetables/automatic-timetable-availability'")
+        expect(source).toContain('availability_only: true')
+        expect(source).toContain('candidate_courses: this.resultMoreCourseAvailabilityCandidatePayload(courses)')
         expect(source).toContain('Stundenpläne werden berechnet. Das kann einen Moment dauern.')
         expect(source).toContain('student-generated-timetable__calculation-alert')
         expect(source).toContain('this.schoolHours = response.data?.data?.school_hours || []')

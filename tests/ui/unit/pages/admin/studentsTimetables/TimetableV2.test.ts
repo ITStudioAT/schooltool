@@ -2979,7 +2979,7 @@ describe('TimetableV2 route steps', () => {
         expect(TimetableV2.methods.moreCourseDisabled.call(context, moreCourse)).toBe(false)
     })
 
-    it('starts batched more course availability immediately after calculating timetables', async () => {
+    it('runs batched more course availability after calculating timetables and completes progress', async () => {
         const requestMoreCourseAvailability = vi.fn((courses) => Promise.resolve({
             data: {
                 data: {
@@ -3032,8 +3032,9 @@ describe('TimetableV2 route steps', () => {
         expect(context.moreCourseAvailabilityByKey).toEqual({
             [moreCourse.selectionKey]: true,
         })
-
-        await TimetableV2.methods.openMoreCoursesCard.call(context)
+        expect(context.timetableCalculationProgressSource).toBe('availability')
+        expect(context.timetableCalculationProgressValue).toBe(100)
+        expect(context.timetableCalculationProgressLabel).toBe('100%')
 
         expect(requestMoreCourseAvailability).toHaveBeenCalledOnce()
     })
@@ -3148,7 +3149,7 @@ describe('TimetableV2 route steps', () => {
         }
     })
 
-    it('completes calculation progress after pending more course availability checks finish', async () => {
+    it('completes calculation progress while background more course availability checks continue', async () => {
         vi.useFakeTimers()
 
         try {
@@ -3156,6 +3157,30 @@ describe('TimetableV2 route steps', () => {
                 moreCourseAvailabilityLoading: true,
                 timetableCalculationProgress: 95,
                 timetableCalculationProgressSource: 'more-courses',
+                timetableCalculationVisible: true,
+                timetableV2Step: 'timetable-calculation',
+            })
+
+            TimetableV2.methods.completeTimetableCalculationProgress.call(context)
+
+            expect(context.timetableCalculationProgressCompletionPending).toBe(false)
+            expect(context.timetableCalculationProgressValue).toBe(100)
+            expect(context.timetableCalculationProgressLabel).toBe('100%')
+
+            TimetableV2.methods.clearTimetableCalculationProgressTimers.call(context)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('waits to complete availability progress until more course availability checks finish', async () => {
+        vi.useFakeTimers()
+
+        try {
+            const context = timetableV2Context({
+                moreCourseAvailabilityLoading: true,
+                timetableCalculationProgress: 95,
+                timetableCalculationProgressSource: 'availability',
                 timetableCalculationVisible: true,
                 timetableV2Step: 'timetable-calculation',
             })
@@ -5104,6 +5129,7 @@ describe('TimetableV2 route steps', () => {
         expect(payload.selected_additional_courses_required).toBe(false)
         expect(payload.selected_timetable_type).toBe('full_green')
         expect(payload.selected_timetable_number).toBe(1)
+        expect(payload.availability_only).toBe(true)
         expect(payload.candidate_courses).toEqual([
             {
                 availability_key: moreCourse.selectionKey,

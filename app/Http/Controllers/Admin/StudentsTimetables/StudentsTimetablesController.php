@@ -280,6 +280,7 @@ class StudentsTimetablesController extends Controller
                 $evaluationSettingsService,
                 includeQualityCounterFlags: true,
             ),
+            'availability_only' => ['sometimes', 'boolean'],
             'candidate_courses' => ['required', 'array', 'min:1', 'max:100'],
             'candidate_courses.*.availability_key' => ['required', 'string', 'max:255', 'distinct:strict'],
             'candidate_courses.*.course_key' => ['required', 'string', 'max:255'],
@@ -302,6 +303,7 @@ class StudentsTimetablesController extends Controller
                     $overviewService,
                     $evaluationCriteria,
                     $validated['selected_quality_criterion_keys'] ?? [],
+                    ($validated['availability_only'] ?? false) === true,
                 ),
             ],
         ]);

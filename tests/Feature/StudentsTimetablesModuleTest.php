@@ -20,6 +20,7 @@ use App\Models\TimetableImport;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\StudentsTimetables\RecognitionImportService;
+use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
@@ -203,6 +204,134 @@ it('returns backend timetable availability for candidate courses', function () {
             'available' => false,
             'valid_timetable_count' => 0,
         ]);
+});
+
+it('can short circuit backend timetable availability after finding one valid timetable', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-01',
+        'sem_2_start' => '2027-02-16',
+        'until' => '2027-07-01',
+    ]);
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $subjectRows = collect([
+        ['json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1'],
+        ['json_code' => 'M1', 'json_subject' => 'M', 'name' => 'Mathematik 1'],
+        ['json_code' => 'INF2', 'json_subject' => 'INF', 'name' => 'Informatik 2'],
+    ])->map(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 1,
+        'branch' => 'common',
+        'json_code' => $subjectRow['json_code'],
+        'json_subject' => $subjectRow['json_subject'],
+        'name' => $subjectRow['name'],
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        'source' => 'test',
+    ]));
+
+    collect([
+        ['date' => '2026-09-07', 'course' => 'D1', 'subject' => 'Deutsch', 'class_name' => 'D1-A'],
+        ['date' => '2026-09-08', 'course' => 'D1', 'subject' => 'Deutsch', 'class_name' => 'D1-B'],
+        ['date' => '2026-09-09', 'course' => 'M1', 'subject' => 'Mathematik', 'class_name' => 'M1-A'],
+        ['date' => '2026-09-10', 'course' => 'M1', 'subject' => 'Mathematik', 'class_name' => 'M1-B'],
+        ['date' => '2026-09-11', 'course' => 'INF2', 'subject' => 'Informatik', 'class_name' => 'INF2-A'],
+    ])->each(fn (array $entry, int $index): StudentTimetableEntry => StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'line_number' => $index + 1,
+        'date' => $entry['date'],
+        'semester' => 1,
+        'period' => '1',
+        'subject' => $entry['subject'],
+        'course' => $entry['course'],
+        'class_name' => $entry['class_name'],
+        'is_active' => true,
+    ]));
+
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
+
+    $courseKey = fn (StudentTimetableSubjectRow $row): string => implode('|', [
+        $row->id,
+        $row->semester,
+        $row->branch,
+        $row->json_code,
+        $row->json_subject,
+        $row->name,
+        $row->json_code,
+    ]);
+    $selectedCourseKeys = $subjectRows
+        ->take(2)
+        ->map($courseKey)
+        ->values()
+        ->all();
+    $candidateCourseKey = $courseKey($subjectRows->last());
+    $payload = [
+        'selection' => [
+            'semester' => 1,
+            'religion' => 'ETH',
+            'branch' => '',
+            'artsSubject' => 'ME',
+            'language' => 'L',
+        ],
+        'constraints' => [
+            'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+            'availableTimes' => [1],
+            'excludedWeekdayTimes' => [],
+        ],
+        'selected_course_keys' => $selectedCourseKeys,
+        'deselected_course_keys' => [],
+        'deselected_course_group_keys' => [],
+        'selected_additional_course_keys' => [],
+        'selected_additional_courses_required' => false,
+        'selected_timetable_type' => 'full_green',
+        'selected_timetable_number' => 1,
+        'candidate_courses' => [
+            [
+                'availability_key' => 'additional:INF2',
+                'course_key' => $candidateCourseKey,
+                'course_group' => 'additional',
+            ],
+        ],
+    ];
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable-availability', $payload)
+        ->assertSuccessful()
+        ->assertJsonPath('data.availability.additional:INF2.available', true)
+        ->assertJsonPath('data.availability.additional:INF2.valid_timetable_count', 4);
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable-availability', [
+            ...$payload,
+            'availability_only' => true,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.availability.additional:INF2.available', true)
+        ->assertJsonPath('data.availability.additional:INF2.valid_timetable_count', 1);
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable-availability', [
+            ...$payload,
+            'availability_only' => true,
+            'selected_quality_criteria_required' => true,
+            'selected_quality_criterion_keys' => ['free_days'],
+            'evaluation_criteria' => [
+                ['key' => 'free_days', 'enabled' => true, 'priority' => 1, 'option' => null],
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.availability.additional:INF2.available', true)
+        ->assertJsonPath('data.availability.additional:INF2.valid_timetable_count', 1);
 });
 
 it('uses selected quality criteria when refreshing robot quality counters', function () {

@@ -239,6 +239,7 @@ class RobotTimetableBackendSetupService
         StudentTimetableOverviewService $overviewService,
         array $evaluationCriteria = [],
         array $selectedQualityCriterionKeys = [],
+        bool $availabilityOnly = false,
     ): array {
         $subjectRows = StudentTimetableSubjectRow::query()
             ->where('school_id', $authUser->school_id)
@@ -259,6 +260,21 @@ class RobotTimetableBackendSetupService
             ->all();
 
         $courseGroups = $overviewService->courseGroupsForUser($authUser);
+        $selectedQualityCriterionKeys = $this->selectedQualityCriterionKeys(
+            $selectedQualityCriterionKeys,
+            $evaluationCriteria,
+        );
+
+        if ($availabilityOnly && $selectedQualityCriterionKeys === []) {
+            return $this->courseAvailabilityFromSharedInput(
+                $subjectRows,
+                $subjectMappings,
+                $courseGroups,
+                $settings,
+                $candidateCourses,
+            );
+        }
+
         $availability = [];
 
         foreach ($candidateCourses as $candidateCourse) {
@@ -270,6 +286,7 @@ class RobotTimetableBackendSetupService
                 $this->settingsWithAvailabilityCandidate($settings, $candidateCourse),
                 $evaluationCriteria,
                 $selectedQualityCriterionKeys,
+                $availabilityOnly,
             );
 
             $availability[$availabilityKey] = [
@@ -279,6 +296,142 @@ class RobotTimetableBackendSetupService
         }
 
         return $availability;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @param  list<array{availability_key: string, course_key: string, course_group: string}>  $candidateCourses
+     * @return array<string, array{available: bool, valid_timetable_count: int}>
+     */
+    private function courseAvailabilityFromSharedInput(
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+        array $candidateCourses,
+    ): array {
+        $baseInput = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
+        $availableCoursesByKey = $this->availableCoursesByKey($subjectRows, $subjectMappings, $courseGroups, $settings);
+        $availability = [];
+
+        foreach ($candidateCourses as $candidateCourse) {
+            $availabilityKey = (string) $candidateCourse['availability_key'];
+            [$candidateInput, $candidateSettings] = $this->timetableVariationInputWithAvailabilityCandidate(
+                $baseInput,
+                $settings,
+                $candidateCourse,
+                $availableCoursesByKey,
+                $courseGroups,
+                $subjectMappings,
+            );
+            $validTimetableCount = $this->validTimetableCountForAvailabilityInput(
+                $candidateInput,
+                $candidateSettings,
+                [],
+                [],
+                true,
+            );
+
+            $availability[$availabilityKey] = [
+                'available' => $validTimetableCount > 0,
+                'valid_timetable_count' => $validTimetableCount,
+            ];
+        }
+
+        return $availability;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @return array<string, array<string, mixed>>
+     */
+    private function availableCoursesByKey(
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+    ): array {
+        return collect($subjectRows)
+            ->filter(fn (array $subject): bool => ($subject['is_active'] ?? true) !== false)
+            ->filter(fn (array $subject): bool => $this->subjectMatchesSelectedBranch($subject, $settings))
+            ->filter(fn (array $subject): bool => $this->subjectMatchesSelectedChoices($subject, $settings))
+            ->flatMap(fn (array $subject): array => $this->courseVariantsFromSubject(
+                $subject,
+                $subjectMappings,
+                $courseGroups,
+                $settings,
+            ))
+            ->keyBy(fn (array $course): string => (string) ($course['key'] ?? ''))
+            ->all();
+    }
+
+    /**
+     * @param  array{selected_courses: list<array<string, mixed>>, course_options: list<list<array<string, mixed>>>, additional_courses: list<array<string, mixed>>, additional_course_options: list<list<array<string, mixed>>>, has_missing_options: bool}  $baseInput
+     * @param  array<string, mixed>  $settings
+     * @param  array{availability_key: string, course_key: string, course_group: string}  $candidateCourse
+     * @param  array<string, array<string, mixed>>  $availableCoursesByKey
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @return array{0: array{selected_courses: list<array<string, mixed>>, course_options: list<list<array<string, mixed>>>, additional_courses: list<array<string, mixed>>, additional_course_options: list<list<array<string, mixed>>>, has_missing_options: bool}, 1: array<string, mixed>}
+     */
+    private function timetableVariationInputWithAvailabilityCandidate(
+        array $baseInput,
+        array $settings,
+        array $candidateCourse,
+        array $availableCoursesByKey,
+        array $courseGroups,
+        array $subjectMappings,
+    ): array {
+        $candidateSettings = $this->settingsWithAvailabilityCandidate($settings, $candidateCourse);
+        $courseKey = trim((string) $candidateCourse['course_key']);
+        $course = $availableCoursesByKey[$courseKey] ?? null;
+
+        if ($courseKey === '' || $course === null) {
+            return [$baseInput, $candidateSettings];
+        }
+
+        if ($candidateCourse['course_group'] === 'additional') {
+            if (in_array($courseKey, $this->stringList($settings['selected_additional_course_keys'] ?? []), true)) {
+                return [$baseInput, $candidateSettings];
+            }
+
+            return [[
+                ...$baseInput,
+                'additional_courses' => [
+                    ...$baseInput['additional_courses'],
+                    $course,
+                ],
+                'additional_course_options' => [
+                    ...$baseInput['additional_course_options'],
+                    $this->courseOptions($course, $courseGroups, $subjectMappings, $candidateSettings),
+                ],
+            ], $candidateSettings];
+        }
+
+        if (in_array($courseKey, $this->stringList($settings['selected_course_keys'] ?? []), true)) {
+            return [$baseInput, $candidateSettings];
+        }
+
+        $courseOptions = [
+            ...$baseInput['course_options'],
+            $this->courseOptions($course, $courseGroups, $subjectMappings, $candidateSettings),
+        ];
+
+        return [[
+            ...$baseInput,
+            'selected_courses' => [
+                ...$baseInput['selected_courses'],
+                $course,
+            ],
+            'course_options' => $courseOptions,
+            'has_missing_options' => collect($courseOptions)->contains(fn (array $options): bool => $options === []),
+        ], $candidateSettings];
     }
 
     /**
@@ -328,8 +481,32 @@ class RobotTimetableBackendSetupService
         array $settings,
         array $evaluationCriteria,
         array $selectedQualityCriterionKeys,
+        bool $availabilityOnly = false,
     ): int {
         $input = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
+
+        return $this->validTimetableCountForAvailabilityInput(
+            $input,
+            $settings,
+            $evaluationCriteria,
+            $selectedQualityCriterionKeys,
+            $availabilityOnly,
+        );
+    }
+
+    /**
+     * @param  array{selected_courses: list<array<string, mixed>>, course_options: list<list<array<string, mixed>>>, additional_courses: list<array<string, mixed>>, additional_course_options: list<list<array<string, mixed>>>, has_missing_options: bool}  $input
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     */
+    private function validTimetableCountForAvailabilityInput(
+        array $input,
+        array $settings,
+        array $evaluationCriteria,
+        array $selectedQualityCriterionKeys,
+        bool $availabilityOnly = false,
+    ): int {
 
         if ($this->timetableVariationLimitExceeded($input['selected_courses'], $input['course_options'], $input['has_missing_options'])) {
             throw ValidationException::withMessages([
@@ -344,6 +521,31 @@ class RobotTimetableBackendSetupService
             $selectedQualityCriterionKeys,
             $evaluationCriteria,
         );
+
+        if ($availabilityOnly && $selectedQualityCriterionKeys !== []) {
+            $qualityResult = $this->qualityResultForSelectedTimetableType(
+                $input['course_options'],
+                $input['additional_course_options'],
+                $settings,
+                $evaluationCriteria,
+            );
+            $selectedQualitySubset = $this->selectedQualityCriteriaSubset(
+                $qualityResult['combination_counts'],
+                $qualityResult['summary'],
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
+            );
+
+            return $selectedQualitySubset['total'] > 0 ? 1 : 0;
+        }
+
+        if ($availabilityOnly) {
+            return $this->validTimetableExistsForAvailability(
+                $input['course_options'],
+                $input['additional_course_options'],
+                $settings,
+            ) ? 1 : 0;
+        }
 
         if ($selectedQualityCriterionKeys !== []) {
             $qualityResult = $this->qualityResultForSelectedTimetableType(
@@ -371,7 +573,265 @@ class RobotTimetableBackendSetupService
             ($settings['selected_additional_courses_required'] ?? false) === true,
         );
 
-        return $counts['full_green_timetable_count'] + $counts['green_timetable_count'];
+        $validTimetableCount = $counts['full_green_timetable_count'] + $counts['green_timetable_count'];
+
+        return $validTimetableCount;
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
+     * @param  array<string, mixed>  $settings
+     */
+    private function validTimetableExistsForAvailability(
+        array $courseOptions,
+        array $additionalCourseOptions,
+        array $settings,
+        ?string $selectedType = null,
+    ): bool {
+        if ($courseOptions === [] || collect($courseOptions)->contains(fn (array $options): bool => $options === [])) {
+            return false;
+        }
+
+        $courseOptions = $this->availabilityCourseOptions($courseOptions);
+        $additionalCourseOptions = $this->availabilityCourseOptions($additionalCourseOptions);
+        $additionalCoursesRequired = ($settings['selected_additional_courses_required'] ?? false) === true
+            && $this->selectedAdditionalCoursesAvailable($additionalCourseOptions);
+        $memo = [];
+
+        if ($additionalCoursesRequired) {
+            return $this->validTimetableWithAdditionalCoursesExists(
+                $courseOptions,
+                $additionalCourseOptions,
+                memo: $memo,
+                selectedType: $selectedType,
+            );
+        }
+
+        return $this->validTimetableExists($courseOptions, memo: $memo, selectedType: $selectedType);
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @return list<list<array<string, mixed>>>
+     */
+    private function availabilityCourseOptions(array $courseOptions): array
+    {
+        return collect($courseOptions)
+            ->sortBy(fn (array $options): int => count($options))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @param  array<string, bool>  $memo
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
+     */
+    private function validTimetableExists(
+        array $courseOptions,
+        int $courseIndex = 0,
+        ?array $usedAllSummary = null,
+        ?array $usedRegularDateSummary = null,
+        ?array $usedRegularWeeklySlotSummary = null,
+        bool $isFullGreenCandidate = true,
+        bool $hasRegularConflict = false,
+        array &$memo = [],
+        ?string $selectedType = null,
+    ): bool {
+        if ($hasRegularConflict && $selectedType !== 'conflict') {
+            return false;
+        }
+
+        if ($courseIndex >= count($courseOptions)) {
+            if ($selectedType === null) {
+                return ! $hasRegularConflict;
+            }
+
+            $combinationType = $hasRegularConflict
+                ? 'conflict'
+                : ($isFullGreenCandidate ? 'full_green' : 'green');
+
+            return $combinationType === $selectedType;
+        }
+
+        $usedAllSummary ??= $this->emptyDateKeySummary();
+        $usedRegularDateSummary ??= $this->emptyDateKeySummary();
+        $usedRegularWeeklySlotSummary ??= $this->emptyDateKeySummary();
+        $memoKey = $this->availabilityStateKey(
+            $courseIndex,
+            $usedAllSummary,
+            $usedRegularDateSummary,
+            $usedRegularWeeklySlotSummary,
+            $isFullGreenCandidate,
+            $hasRegularConflict,
+            $selectedType,
+        );
+
+        if (array_key_exists($memoKey, $memo)) {
+            return $memo[$memoKey];
+        }
+
+        foreach ($courseOptions[$courseIndex] as $option) {
+            $nextState = $this->nextTimetableTypeState(
+                $option,
+                $usedAllSummary,
+                $usedRegularDateSummary,
+                $usedRegularWeeklySlotSummary,
+                $isFullGreenCandidate,
+                $hasRegularConflict,
+            );
+
+            if ($this->validTimetableExists(
+                $courseOptions,
+                $courseIndex + 1,
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $nextState['is_full_green_candidate'],
+                $nextState['has_regular_conflict'],
+                $memo,
+                $selectedType,
+            )) {
+                return $memo[$memoKey] = true;
+            }
+        }
+
+        return $memo[$memoKey] = false;
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
+     * @param  array<string, bool>  $memo
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
+     */
+    private function validTimetableWithAdditionalCoursesExists(
+        array $courseOptions,
+        array $additionalCourseOptions,
+        int $courseIndex = 0,
+        ?array $usedAllSummary = null,
+        ?array $usedRegularDateSummary = null,
+        ?array $usedRegularWeeklySlotSummary = null,
+        bool $isFullGreenCandidate = true,
+        bool $hasRegularConflict = false,
+        array &$memo = [],
+        ?string $selectedType = null,
+    ): bool {
+        if ($hasRegularConflict && $selectedType !== 'conflict') {
+            return false;
+        }
+
+        if ($courseIndex >= count($courseOptions)) {
+            if ($selectedType !== null) {
+                $combinationType = $hasRegularConflict
+                    ? 'conflict'
+                    : ($isFullGreenCandidate ? 'full_green' : 'green');
+
+                if ($combinationType !== $selectedType) {
+                    return false;
+                }
+            }
+
+            return count($this->additionalOptionsForTimetable(
+                $additionalCourseOptions,
+                $usedAllSummary ?? $this->emptyDateKeySummary(),
+            )) === count($additionalCourseOptions);
+        }
+
+        $usedAllSummary ??= $this->emptyDateKeySummary();
+        $usedRegularDateSummary ??= $this->emptyDateKeySummary();
+        $usedRegularWeeklySlotSummary ??= $this->emptyDateKeySummary();
+        $memoKey = $this->availabilityStateKey(
+            $courseIndex,
+            $usedAllSummary,
+            $usedRegularDateSummary,
+            $usedRegularWeeklySlotSummary,
+            $isFullGreenCandidate,
+            $hasRegularConflict,
+            $selectedType,
+        );
+
+        if (array_key_exists($memoKey, $memo)) {
+            return $memo[$memoKey];
+        }
+
+        if (count($this->additionalOptionsForTimetable($additionalCourseOptions, $usedAllSummary)) !== count($additionalCourseOptions)) {
+            return $memo[$memoKey] = false;
+        }
+
+        foreach ($courseOptions[$courseIndex] as $option) {
+            $nextState = $this->nextTimetableTypeState(
+                $option,
+                $usedAllSummary,
+                $usedRegularDateSummary,
+                $usedRegularWeeklySlotSummary,
+                $isFullGreenCandidate,
+                $hasRegularConflict,
+            );
+
+            if ($this->validTimetableWithAdditionalCoursesExists(
+                $courseOptions,
+                $additionalCourseOptions,
+                $courseIndex + 1,
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $nextState['is_full_green_candidate'],
+                $nextState['has_regular_conflict'],
+                $memo,
+                $selectedType,
+            )) {
+                return $memo[$memoKey] = true;
+            }
+        }
+
+        return $memo[$memoKey] = false;
+    }
+
+    /**
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedRegularWeeklySlotSummary
+     */
+    private function availabilityStateKey(
+        int $courseIndex,
+        array $usedAllSummary,
+        array $usedRegularDateSummary,
+        array $usedRegularWeeklySlotSummary,
+        bool $isFullGreenCandidate,
+        bool $hasRegularConflict,
+        ?string $selectedType,
+    ): string {
+        return implode(';', [
+            $courseIndex,
+            (int) $isFullGreenCandidate,
+            (int) $hasRegularConflict,
+            $selectedType ?? '*',
+            $this->dateSummaryStateKey($usedAllSummary),
+            $this->dateSummaryStateKey($usedRegularDateSummary),
+            $this->dateSummaryStateKey($usedRegularWeeklySlotSummary),
+        ]);
+    }
+
+    /**
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $summary
+     */
+    private function dateSummaryStateKey(array $summary): string
+    {
+        $parts = ['overlap:'.(int) ($summary['has_overlap'] ?? false)];
+
+        foreach (['weekly', 'dated', 'dated_weekly'] as $key) {
+            $values = array_keys($summary[$key] ?? []);
+            sort($values, SORT_STRING);
+            $parts[] = $key.':'.implode(',', $values);
+        }
+
+        return implode('|', $parts);
     }
 
     /**
