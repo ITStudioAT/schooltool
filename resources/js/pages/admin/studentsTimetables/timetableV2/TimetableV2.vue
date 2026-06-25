@@ -1672,7 +1672,6 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
-const TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:overview:last-timetable'
 const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'
 const TIMETABLE_V2_ROUTE_STEPS = ['selection', 'course-review', 'timetable-calculation', 'timetable-adoption']
 const TIMETABLE_V2_ROUTE_MODES = ['student', 'without-student']
@@ -1692,6 +1691,10 @@ export default {
         return {
             robotStudents: [],
             storageRevision: 0,
+            storedTimetableState: null,
+            storedTimetableStateLoading: false,
+            storedTimetableStateSaving: false,
+            storedTimetableStateSaveRequestId: 0,
             studentDialogOpen: false,
             studentCompletedCoursesError: '',
             studentCompletedCoursesLoading: false,
@@ -2806,18 +2809,6 @@ export default {
                 courseItems,
             })
         },
-        storedTimetableState() {
-            this.storageRevision
-
-            const storage = this.timetableStorage()
-            if (!storage) return null
-
-            return (
-                this.timetableStorageKeys()
-                    .map((key) => this.parseStoredTimetableState(storage.getItem(key)))
-                    .find((state) => state !== null) || null
-            )
-        },
         normalizedStudentSearch() {
             return String(this.studentSearch || '')
                 .trim()
@@ -2929,7 +2920,8 @@ export default {
         },
     },
 
-    mounted() {
+    async mounted() {
+        await this.loadStoredTimetableState()
         this.syncStoredTimetableOptions()
         this.applyTimetableV2RouteFromRoute({ restoreEffects: false })
         this.syncTimetableV2Route({ replace: true })
@@ -7181,16 +7173,49 @@ export default {
             }
         },
         storedTimetableStateForSaving() {
-            return this.storedTimetableState || this.parseStoredTimetableState(this.timetableStorage()?.getItem(this.timetableStorageKey())) || null
+            return this.storedTimetableState || null
         },
         saveStoredTimetableState(state) {
-            try {
-                this.timetableStorage()?.setItem(this.timetableStorageKey(), JSON.stringify(state))
-            } catch {
-                // Ignore unavailable or full browser storage.
-            }
-
+            this.storedTimetableState = state
             this.storageRevision++
+
+            const requestId = this.storedTimetableStateSaveRequestId + 1
+            this.storedTimetableStateSaveRequestId = requestId
+            this.storedTimetableStateSaving = true
+
+            axios.put('/api/admin/students-timetables/timetable-v2-state', { state })
+                .then((response) => {
+                    if (requestId !== this.storedTimetableStateSaveRequestId) return
+
+                    const storedState = response.data?.data?.state
+                    if (storedState && typeof storedState === 'object' && !Array.isArray(storedState)) {
+                        this.storedTimetableState = storedState
+                        this.storageRevision++
+                    }
+                })
+                .catch(() => {})
+                .finally(() => {
+                    if (requestId === this.storedTimetableStateSaveRequestId) {
+                        this.storedTimetableStateSaving = false
+                    }
+                })
+        },
+        async loadStoredTimetableState() {
+            this.storedTimetableStateLoading = true
+
+            try {
+                const response = await axios.get('/api/admin/students-timetables/timetable-v2-state')
+                const storedState = response.data?.data?.state
+
+                this.storedTimetableState = storedState && typeof storedState === 'object' && !Array.isArray(storedState)
+                    ? storedState
+                    : null
+            } catch {
+                this.storedTimetableState = null
+            } finally {
+                this.storedTimetableStateLoading = false
+                this.storageRevision++
+            }
         },
         syncStoredTimetableOptions() {
             this.applyTimetableV2OptionState(this.storedTimetableV2Options)
@@ -8143,30 +8168,6 @@ export default {
                 { title: 'ME - Musikerziehung', value: 'ME' },
                 { title: 'BE - Bildnerische Erziehung', value: 'BE' },
             ]
-        },
-        timetableStorageKeys() {
-            const schoolyearId = this.selectedSchoolyear?.id || 'default'
-
-            return [`${TIMETABLE_STORAGE_KEY_PREFIX}:${schoolyearId}`, `${TIMETABLE_STORAGE_KEY_PREFIX}:default`].filter((key, index, keys) => keys.indexOf(key) === index)
-        },
-        timetableStorageKey() {
-            return `${TIMETABLE_STORAGE_KEY_PREFIX}:${this.selectedSchoolyear?.id || 'default'}`
-        },
-        timetableStorage() {
-            if (typeof window === 'undefined' || !window.localStorage) {
-                return null
-            }
-
-            return window.localStorage
-        },
-        parseStoredTimetableState(value) {
-            if (!value) return null
-
-            try {
-                return JSON.parse(value)
-            } catch {
-                return null
-            }
         },
         transferredStudentContextFromRobotStudent(student) {
             if (!student) return null

@@ -15,6 +15,7 @@ use App\Models\StudentTimetableRecognitionRow;
 use App\Models\StudentTimetableSubjectImport;
 use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
+use App\Models\StudentTimetableV2State;
 use App\Models\TeachingSchoolHour;
 use App\Models\TimetableImport;
 use App\Models\User;
@@ -2565,6 +2566,102 @@ it('saves selected timetable overview courses in the database', function () {
         ->assertJsonCount(0, 'data.course_group_keys');
 
     expect(StudentTimetableOverviewSelection::query()->count())->toBe(0);
+});
+
+it('stores timetable v2 state per authenticated user and schoolyear', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill([
+        'schoolyear_id' => $schoolyear->id,
+    ])->save();
+
+    $state = [
+        'selection' => [
+            'semester' => 5,
+        ],
+        'timetableV2Selection' => [
+            'semester' => 5,
+            'courseSelections' => [
+                'planned:D1' => false,
+                'additional:INF2' => true,
+            ],
+        ],
+        'timetableV2Options' => [
+            'maxFreeDays' => true,
+            'noDistanceLearning' => false,
+        ],
+        'transferredStudentContext' => [
+            'student' => [
+                'studentCode' => '1001',
+                'label' => '5K · SOLLEDER Luis · Semester 5',
+            ],
+        ],
+    ];
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/timetable-v2-state', [
+            'state' => $state,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('message', 'Stundenplan-Auswahl wurde gespeichert.')
+        ->assertJsonPath('data.state.transferredStudentContext.student.studentCode', '1001')
+        ->assertJsonPath('data.state.timetableV2Selection.courseSelections.planned:D1', false)
+        ->assertJsonPath('data.state.timetableV2Options.maxFreeDays', true);
+
+    $user->refresh();
+
+    $storedState = StudentTimetableV2State::query()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $user->schoolyear_id)
+        ->where('user_id', $user->id)
+        ->first();
+
+    expect($storedState)->not->toBeNull()
+        ->and($storedState->state)->toEqual($state);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v2-state')
+        ->assertSuccessful()
+        ->assertJsonPath('data.state.transferredStudentContext.student.studentCode', '1001')
+        ->assertJsonPath('data.state.timetableV2Options.maxFreeDays', true);
+
+    $otherUser = User::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+    ]);
+    $otherUser->assignRole('admin');
+
+    $this->actingAs($otherUser)
+        ->getJson('/api/admin/students-timetables/timetable-v2-state')
+        ->assertSuccessful()
+        ->assertJsonPath('data.state', null);
+
+    $this->actingAs($otherUser)
+        ->putJson('/api/admin/students-timetables/timetable-v2-state', [
+            'state' => [
+                'selection' => [
+                    'semester' => 3,
+                ],
+                'timetableV2Selection' => [
+                    'semester' => 3,
+                ],
+                'timetableV2Options' => [
+                    'noSaturday' => true,
+                ],
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.state.selection.semester', 3);
+
+    expect(StudentTimetableV2State::query()->count())->toBe(2);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v2-state')
+        ->assertSuccessful()
+        ->assertJsonPath('data.state.transferredStudentContext.student.studentCode', '1001')
+        ->assertJsonPath('data.state.selection.semester', 5);
 });
 
 it('creates a timetable overview pdf from posted timetable data', function () {

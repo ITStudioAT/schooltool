@@ -17,6 +17,7 @@ use App\Services\StudentsTimetables\StudentTimetableCompletedCourseHistoryServic
 use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
+use App\Services\StudentsTimetables\StudentTimetableV2StateService;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -359,6 +360,37 @@ class StudentsTimetablesController extends Controller
                 $authUser,
                 $validated['course_group_keys'] ?? [],
             ),
+        ]);
+    }
+
+    public function timetableV2State(StudentTimetableV2StateService $service): JsonResponse
+    {
+        $authUser = $this->studentsTimetablesUser();
+
+        return response()->json([
+            'data' => [
+                'state' => $service->stateForUser($authUser),
+            ],
+        ]);
+    }
+
+    public function updateTimetableV2State(Request $request, StudentTimetableV2StateService $service): JsonResponse
+    {
+        $authUser = $this->studentsTimetablesUser();
+
+        $validated = $request->validate([
+            'state' => ['required', 'array'],
+            'state.selection' => ['nullable', 'array'],
+            'state.timetableV2Selection' => ['nullable', 'array'],
+            'state.timetableV2Options' => ['nullable', 'array'],
+            'state.transferredStudentContext' => ['nullable', 'array'],
+        ]);
+
+        return response()->json([
+            'message' => 'Stundenplan-Auswahl wurde gespeichert.',
+            'data' => [
+                'state' => $service->updateForUser($authUser, $validated['state']),
+            ],
         ]);
     }
 

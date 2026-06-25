@@ -845,6 +845,9 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain(':icon="timetableCalculationLoadingIcon"')
         expect(source).toContain('{{ timetableCalculationLoadingLabel }}')
         expect(source).toContain('students-timetable-v2-card-column students-timetable-v2-selected-courses-column')
+        expect(source).toContain("axios.get('/api/admin/students-timetables/timetable-v2-state')")
+        expect(source).toContain("axios.put('/api/admin/students-timetables/timetable-v2-state', { state })")
+        expect(source).not.toContain('localStorage')
         expect(source).toMatch(/Ausgewählte Kurse[\s\S]*v-if="adoptedTimetableVisible && !adoptedTimetableCourseRemovalPendingVisible"[\s\S]*class="students-timetable-v2-card students-timetable-v2-more-adopted-courses-card"[\s\S]*Weitere Kurse/u)
         expect(source).toContain('{{ moreAdoptedCoursesTitle }}')
         expect(source).toContain('class="students-timetable-v2-more-adopted-courses-card__content"')
@@ -4925,12 +4928,12 @@ describe('TimetableV2 route steps', () => {
         })
     })
 
-    it('does not preload review-only data while mounted on the selection step', () => {
+    it('does not preload review-only data while mounted on the selection step', async () => {
         const context = timetableV2Context({
             loadSubjectRows: vi.fn(() => Promise.resolve()),
         })
 
-        TimetableV2.mounted.call(context)
+        await TimetableV2.mounted.call(context)
 
         expect(context.loadSubjectRows).toHaveBeenCalledOnce()
         expect(context.loadStoredStudentOverview).toHaveBeenCalledWith(null)
@@ -4938,7 +4941,7 @@ describe('TimetableV2 route steps', () => {
         expect(context.loadSchoolHours).not.toHaveBeenCalled()
     })
 
-    it('loads robot students on mount when a restored selected student is missing email data', () => {
+    it('loads robot students on mount when a restored selected student is missing email data', async () => {
         const context = timetableV2Context({
             loadRobotStudents: vi.fn(() => Promise.resolve()),
             loadSubjectRows: vi.fn(() => Promise.resolve()),
@@ -4950,7 +4953,7 @@ describe('TimetableV2 route steps', () => {
             },
         })
 
-        TimetableV2.mounted.call(context)
+        await TimetableV2.mounted.call(context)
 
         expect(context.loadRobotStudents).toHaveBeenCalledOnce()
         expect(context.loadStoredStudentOverview).toHaveBeenCalledWith('200')
