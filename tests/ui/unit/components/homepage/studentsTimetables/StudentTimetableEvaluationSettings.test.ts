@@ -3346,6 +3346,92 @@ describe('Student timetable evaluation settings', () => {
         expect(computed.selectedVisibleAdditionalCourseKeys.call(ctx)).toEqual(['additional-red', 'additional-green'])
     })
 
+    it('offers unselected missing and planned courses in the result more-courses panel', () => {
+        const methods = (StudentTimetableEvaluationSettings as any).methods
+        const computed = (StudentTimetableEvaluationSettings as any).computed
+        const ctx = {
+            proposedCourses: [{ key: 'm1', code: 'M1', courseGroup: 'planned' }],
+            selectedCourseKeys: ['planned:M1'],
+            selectedAdditionalCourseKeys: ['additional:Z1'],
+            courseSections: [
+                {
+                    key: 'missing',
+                    items: [{ key: 'd1', code: 'D1' }],
+                },
+                {
+                    key: 'proposed',
+                    items: [
+                        { key: 'm1', code: 'M1' },
+                        { key: 'e1', code: 'E1' },
+                    ],
+                },
+                {
+                    key: 'additional',
+                    items: [
+                        { key: 'z1', code: 'Z1' },
+                        { key: 'gs1', code: 'GS1' },
+                    ],
+                },
+            ],
+            ...methods,
+            get displayedCourseSections() {
+                return computed.displayedCourseSections.call(ctx)
+            },
+            get regularCourseSections() {
+                return computed.regularCourseSections.call(ctx)
+            },
+            get regularCourses() {
+                return computed.regularCourses.call(ctx)
+            },
+            get additionalCourseSections() {
+                return computed.additionalCourseSections.call(ctx)
+            },
+            get additionalCourses() {
+                return computed.additionalCourses.call(ctx)
+            },
+        }
+
+        const resultMoreCourseItems = computed.resultMoreCourseItems.call(ctx)
+
+        expect(resultMoreCourseItems.map((course: Record<string, string>) => `${course.courseGroup}:${course.code}`))
+            .toEqual(['missing:D1', 'planned:E1', 'additional:GS1'])
+        expect(resultMoreCourseItems.map((course: Record<string, string>) => course.courseGroupLabel))
+            .toEqual(['Fehlend', 'Vorgesehen', 'Zusätzlich'])
+    })
+
+    it('applies result more-courses as regular and additional recalculation selections', async () => {
+        const methods = (StudentTimetableEvaluationSettings as any).methods
+        const selectedRegularCourse = { selectionKey: 'missing:D1', courseGroup: 'missing' }
+        const selectedAdditionalCourse = { selectionKey: 'additional:GS1', courseGroup: 'additional' }
+        const ctx = {
+            resultAdditionalCoursesChanged: true,
+            generatingTimetable: false,
+            resultMoreCourseAvailabilityLoading: false,
+            resultDraftSelectedCourseKeys: ['planned:M1', 'missing:D1'],
+            resultDraftAdditionalCourseKeys: ['additional:GS1'],
+            selectedCourseKeys: ['planned:M1'],
+            selectedAdditionalCourseKeys: [],
+            resultMoreCourseItems: [selectedRegularCourse, selectedAdditionalCourse],
+            resultMoreCoursesVisible: true,
+            selectedResultMoreCourseKey: 'missing:D1',
+            resultMoreOfferedCourseSelectionOverrides: {},
+            additionalCourseSelectionChangedAfterTimetable: true,
+            additionalCourseSelectionLocked: true,
+            normalizedCourseKeys: methods.normalizedCourseKeys,
+            resultMoreOfferedCourseItemsAnySelected: vi.fn(() => true),
+            resultMoreDeselectedCourseGroupKeysForApply: vi.fn(() => ['missing:D1|D1-A']),
+            resultMoreOfferedCourseSelectionOverridesFromDeselectedKeys: vi.fn(() => ({})),
+            resetGeneratedTimetableSelection: vi.fn(),
+            createAutomaticTimetable: vi.fn(async () => undefined),
+        }
+
+        await methods.applyResultMoreCourses.call(ctx)
+
+        expect(ctx.selectedCourseKeys).toEqual(['planned:M1', 'missing:D1'])
+        expect(ctx.selectedAdditionalCourseKeys).toEqual(['additional:GS1'])
+        expect(ctx.createAutomaticTimetable).toHaveBeenCalled()
+    })
+
     it('shows current timetable criterion status independently from the checkbox selection', () => {
         const methods = (StudentTimetableEvaluationSettings as any).methods
 

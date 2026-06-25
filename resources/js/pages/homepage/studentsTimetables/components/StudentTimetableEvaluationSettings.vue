@@ -1125,6 +1125,7 @@ export default {
             resultMoreCoursesVisible: false,
             resultOptionsVisible: false,
             selectedResultMoreCourseKey: '',
+            resultDraftSelectedCourseKeys: [],
             resultDraftAdditionalCourseKeys: [],
             resultDraftQualityCriterionKeys: [],
             resultMoreOfferedCourseSelectionOverrides: {},
@@ -1179,6 +1180,20 @@ export default {
             return this.displayedCourseSections
                 .filter(section => String(section?.key || '') !== 'additional')
         },
+        regularCourses() {
+            return this.uniqueCourseItems([
+                ...this.proposedCourses,
+                ...this.regularCourseSections.flatMap(section => {
+                    const courseGroup = this.normalizedCourseSelectionGroupKey(section?.key || '')
+
+                    return (Array.isArray(section?.items) ? section.items : [])
+                        .map(course => ({
+                            ...course,
+                            courseGroup: course?.courseGroup || course?.course_group || courseGroup,
+                        }))
+                }),
+            ])
+        },
         additionalCourseSections() {
             return this.displayedCourseSections
                 .filter(section => String(section?.key || '') === 'additional')
@@ -1193,7 +1208,23 @@ export default {
                 .flatMap(section => section.items)
         },
         resultMoreCourseItems() {
-            return this.additionalCourses.map(course => this.resultMoreCourseItem(course))
+            const selectedRegularCourseKeys = typeof this.resultBaseSelectedCourseKeys === 'function'
+                ? this.resultBaseSelectedCourseKeys()
+                : (Array.isArray(this.selectedCourseKeys) ? this.selectedCourseKeys : [])
+            const regularCourses = Array.isArray(this.regularCourses) ? this.regularCourses : []
+            const additionalCourses = Array.isArray(this.additionalCourses) ? this.additionalCourses : []
+            const courseSelectedFromKeys = typeof this.courseSelectedFromKeys === 'function'
+                ? this.courseSelectedFromKeys
+                : (course, courseKeys) => (Array.isArray(courseKeys) ? courseKeys : []).includes(this.courseSelectionKey(course))
+
+            return [
+                ...regularCourses
+                    .filter(course => !courseSelectedFromKeys.call(this, course, selectedRegularCourseKeys))
+                    .map(course => this.resultMoreCourseItem(course)),
+                ...additionalCourses
+                    .filter(course => !courseSelectedFromKeys.call(this, course, this.selectedAdditionalCourseKeys))
+                    .map(course => this.resultMoreCourseItem(course)),
+            ]
         },
         resultMoreCourseAvailabilityCandidateItems() {
             return this.resultMoreCourseItems
@@ -1302,7 +1333,15 @@ export default {
                 .filter(criterionKey => activeCriterionKeys.includes(criterionKey))
         },
         resultAdditionalCoursesChanged() {
+            const selectedCourseKeys = typeof this.resultBaseSelectedCourseKeys === 'function'
+                ? this.resultBaseSelectedCourseKeys()
+                : this.normalizedCourseKeys(this.selectedCourseKeys)
+
             return !this.normalizedCourseKeyListsEqual(
+                this.resultDraftSelectedCourseKeys,
+                selectedCourseKeys,
+            )
+                || !this.normalizedCourseKeyListsEqual(
                 this.resultDraftAdditionalCourseKeys,
                 this.selectedAdditionalCourseKeys,
             )
@@ -1892,8 +1931,8 @@ export default {
                 .filter(Boolean)
                 .filter((courseKey, index, courseKeyList) => courseKeyList.indexOf(courseKey) === index)
         },
-        selectedBackendCourseKeys() {
-            return this.selectedCoursesForSummary()
+        selectedBackendCourseKeys(courseKeys = this.selectedCourseKeys) {
+            return this.selectedCoursesForSummary(courseKeys)
                 .map(course => this.backendCourseSelectionKey(course))
                 .filter(Boolean)
                 .filter((courseKey, index, courseKeys) => courseKeys.indexOf(courseKey) === index)
@@ -1973,13 +2012,28 @@ export default {
         },
         resultMoreCourseItem(course) {
             const selectedCourseItem = this.resultSelectedCourseItem(course)
+            const courseGroup = this.courseSelectionGroup(course)
 
             return {
                 ...course,
                 ...selectedCourseItem,
-                courseGroupLabel: 'Zusätzlich',
+                courseGroup,
+                courseGroupLabel: typeof this.resultMoreCourseGroupLabel === 'function'
+                    ? this.resultMoreCourseGroupLabel(courseGroup)
+                    : (courseGroup === 'additional' ? 'Zusätzlich' : 'Vorgesehen'),
                 distanceLearning: this.resultMoreCourseIsDistanceLearning(course),
             }
+        },
+        resultMoreCourseGroupLabel(courseGroup) {
+            if (courseGroup === 'additional') {
+                return 'Zusätzlich'
+            }
+
+            if (courseGroup === 'missing') {
+                return 'Fehlend'
+            }
+
+            return 'Vorgesehen'
         },
         resultMoreCourseAvailabilityKey(course) {
             return String(course?.selectionKey || this.courseSelectionKey(course) || '').trim()
@@ -1990,7 +2044,7 @@ export default {
             return availabilityKey ? this.resultMoreCourseAvailabilityByKey[availabilityKey] : null
         },
         resultMoreCourseUnavailable(course) {
-            if (this.resultDraftAdditionalCourseSelected(course)) {
+            if (this.resultDraftCourseSelected(course)) {
                 return false
             }
 
@@ -2018,7 +2072,7 @@ export default {
                 .map(course => ({
                     availability_key: this.resultMoreCourseAvailabilityKey(course),
                     course_key: this.backendCourseSelectionKey(course),
-                    course_group: 'additional',
+                    course_group: this.courseSelectionGroup(course),
                 }))
                 .filter(course => course.availability_key && course.course_key)
         },
@@ -2035,7 +2089,7 @@ export default {
                 candidateCourses,
                 deselectedCourseGroupKeys: this.normalizedCourseKeys(this.deselectedCourseGroupKeys).sort(),
                 selectedAdditionalCourseKeys: this.normalizedCourseKeys(this.selectedVisibleAdditionalCourseKeys).sort(),
-                selectedCourseKeys: this.normalizedCourseKeys(this.selectedBackendCourseKeys()).sort(),
+                selectedCourseKeys: this.normalizedCourseKeys(this.selectedBackendCourseKeys(this.resultDraftSelectedCourseKeys)).sort(),
                 selectedQualityCriterionKeys: this.normalizedCourseKeys(this.selectedQualityCriterionKeys).sort(),
             })
         },
@@ -2163,6 +2217,9 @@ export default {
                 return
             }
 
+            this.resultDraftSelectedCourseKeys = typeof this.resultBaseSelectedCourseKeys === 'function'
+                ? this.resultBaseSelectedCourseKeys()
+                : this.normalizedCourseKeys(this.selectedCourseKeys)
             this.resultDraftAdditionalCourseKeys = this.normalizedCourseKeys(this.selectedAdditionalCourseKeys)
             this.resultMoreOfferedCourseSelectionOverrides = this.resultMoreOfferedCourseSelectionOverridesFromDeselectedKeys()
             this.selectedResultMoreCourseKey = ''
@@ -2172,12 +2229,23 @@ export default {
         },
         closeResultMoreCourses() {
             this.resultMoreCoursesVisible = false
+            this.resultDraftSelectedCourseKeys = typeof this.resultBaseSelectedCourseKeys === 'function'
+                ? this.resultBaseSelectedCourseKeys()
+                : this.normalizedCourseKeys(this.selectedCourseKeys)
             this.resultDraftAdditionalCourseKeys = this.normalizedCourseKeys(this.selectedAdditionalCourseKeys)
             this.selectedResultMoreCourseKey = ''
             this.resultMoreOfferedCourseSelectionOverrides = this.resultMoreOfferedCourseSelectionOverridesFromDeselectedKeys()
         },
         resultDraftAdditionalCourseSelected(course) {
             return this.resultDraftAdditionalCourseKeys.includes(this.courseSelectionKey(course))
+        },
+        resultDraftRegularCourseSelected(course) {
+            return this.resultDraftSelectedCourseKeys.includes(this.courseSelectionKey(course))
+        },
+        resultDraftCourseSelected(course) {
+            return this.courseSelectionGroup(course) === 'additional'
+                ? this.resultDraftAdditionalCourseSelected(course)
+                : this.resultDraftRegularCourseSelected(course)
         },
         setResultDraftAdditionalCourseSelected(course, selected) {
             const courseKey = this.courseSelectionKey(course)
@@ -2197,6 +2265,33 @@ export default {
                     .filter(selectedCourseKey => selectedCourseKey !== courseKey)
             }
         },
+        setResultDraftRegularCourseSelected(course, selected) {
+            const courseKey = this.courseSelectionKey(course)
+
+            if (!courseKey) {
+                return
+            }
+
+            if (selected === true && !this.resultDraftSelectedCourseKeys.includes(courseKey)) {
+                this.resultDraftSelectedCourseKeys = [...this.resultDraftSelectedCourseKeys, courseKey]
+
+                return
+            }
+
+            if (selected !== true) {
+                this.resultDraftSelectedCourseKeys = this.resultDraftSelectedCourseKeys
+                    .filter(selectedCourseKey => selectedCourseKey !== courseKey)
+            }
+        },
+        setResultDraftCourseSelected(course, selected) {
+            if (this.courseSelectionGroup(course) === 'additional') {
+                this.setResultDraftAdditionalCourseSelected(course, selected)
+
+                return
+            }
+
+            this.setResultDraftRegularCourseSelected(course, selected)
+        },
         toggleResultMoreCourseOffers(course) {
             if (this.resultMoreCourseDisabled(course)) {
                 return
@@ -2208,6 +2303,12 @@ export default {
             }
 
             this.selectedResultMoreCourseKey = courseKey
+            if (typeof this.setResultDraftCourseSelected === 'function') {
+                this.setResultDraftCourseSelected(course, true)
+
+                return
+            }
+
             this.setResultDraftAdditionalCourseSelected(course, true)
         },
         resultMoreOfferedCourseSelected(course) {
@@ -2504,7 +2605,9 @@ export default {
         },
         resultMoreDeselectedOfferedCourseGroupKeys() {
             return this.resultMoreCourseItems
-                .filter(course => this.resultDraftAdditionalCourseSelected(course))
+                .filter(course => (typeof this.resultDraftCourseSelected === 'function'
+                    ? this.resultDraftCourseSelected(course)
+                    : this.resultDraftAdditionalCourseSelected(course)))
                 .flatMap(course => this.resultMoreOfferedCourseItemsForSelectedCourse(course))
                 .filter(offeredCourse => !this.resultMoreOfferedCourseSelected(offeredCourse))
                 .map(offeredCourse => offeredCourse.backendSelectionKey)
@@ -2536,15 +2639,24 @@ export default {
                 return
             }
 
+            const deselectedCourseGroupKeys = this.resultMoreDeselectedCourseGroupKeysForApply()
+
+            this.selectedCourseKeys = this.normalizedCourseKeys(this.resultDraftSelectedCourseKeys)
+                .filter(courseKey => {
+                    const course = this.resultMoreCourseItems.find(courseItem => courseItem.selectionKey === courseKey)
+
+                    return !course || this.resultMoreOfferedCourseItemsAnySelected(course)
+                })
             this.selectedAdditionalCourseKeys = this.normalizedCourseKeys(this.resultDraftAdditionalCourseKeys)
                 .filter(courseKey => {
                     const course = this.resultMoreCourseItems.find(courseItem => courseItem.selectionKey === courseKey)
 
                     return !course || this.resultMoreOfferedCourseItemsAnySelected(course)
                 })
-            this.deselectedCourseGroupKeys = this.resultMoreDeselectedCourseGroupKeysForApply()
+            this.deselectedCourseGroupKeys = deselectedCourseGroupKeys
             this.resultMoreCoursesVisible = false
             this.selectedResultMoreCourseKey = ''
+            this.resultDraftSelectedCourseKeys = this.normalizedCourseKeys(this.selectedCourseKeys)
             this.resultDraftAdditionalCourseKeys = this.normalizedCourseKeys(this.selectedAdditionalCourseKeys)
             this.resultMoreOfferedCourseSelectionOverrides = this.resultMoreOfferedCourseSelectionOverridesFromDeselectedKeys()
             this.additionalCourseSelectionChangedAfterTimetable = false
@@ -2617,6 +2729,9 @@ export default {
             this.selectedCourseKeys = this.normalizedCourseKeys(this.resultInitialSelectedCourseKeys)
             this.selectedAdditionalCourseKeys = []
             this.selectedQualityCriterionKeys = this.normalizedCourseKeys(this.initialSelectedQualityCriterionKeys)
+            this.resultDraftSelectedCourseKeys = typeof this.resultBaseSelectedCourseKeys === 'function'
+                ? this.resultBaseSelectedCourseKeys()
+                : this.normalizedCourseKeys(this.selectedCourseKeys)
             this.resultDraftAdditionalCourseKeys = []
             this.resultDraftQualityCriterionKeys = this.normalizedCourseKeys(this.selectedQualityCriterionKeys)
             this.selectedResultMoreCourseKey = ''
@@ -2779,12 +2894,31 @@ export default {
 
             return courses.filter(course => this.courseSelected(course)).length
         },
-        selectedCoursesForSummary() {
-            if (this.allCoursesSelectedByDefault) {
+        selectedCoursesForSummary(courseKeys = this.selectedCourseKeys) {
+            const selectedCourseKeys = typeof this.normalizedCourseKeys === 'function'
+                ? this.normalizedCourseKeys(courseKeys)
+                : (Array.isArray(courseKeys) ? courseKeys.map(courseKey => String(courseKey || '')).filter(Boolean) : [])
+            const regularCourses = Array.isArray(this.regularCourses) ? this.regularCourses : this.proposedCourses
+
+            if (selectedCourseKeys.length === 0) {
                 return this.proposedCourses
             }
 
-            return this.proposedCourses.filter(course => this.courseSelected(course))
+            return regularCourses.filter((course) => {
+                if (typeof this.courseSelectedFromKeys === 'function') {
+                    return this.courseSelectedFromKeys(course, selectedCourseKeys)
+                }
+
+                const courseKey = typeof this.courseSelectionKey === 'function'
+                    ? this.courseSelectionKey(course)
+                    : String(course?.key || '')
+                const backendCourseKey = typeof this.backendCourseSelectionKey === 'function'
+                    ? this.backendCourseSelectionKey(course)
+                    : String(course?.key || '')
+
+                return selectedCourseKeys.includes(courseKey)
+                    || (backendCourseKey && selectedCourseKeys.includes(backendCourseKey))
+            })
         },
         courseItemsSummary(courses) {
             const courseItems = Array.isArray(courses) ? courses : []
@@ -2903,6 +3037,9 @@ export default {
                 this.selectedTimetableType = this.generatedTimetable?.type || this.selectedTimetableType
                 this.selectedTimetableNumber = this.normalizedTimetableNumber(this.generatedTimetable?.number)
                 this.removeHiddenAdditionalCourseSelections()
+                this.resultDraftSelectedCourseKeys = typeof this.resultBaseSelectedCourseKeys === 'function'
+                    ? this.resultBaseSelectedCourseKeys()
+                    : this.normalizedCourseKeys(this.selectedCourseKeys)
                 this.resultDraftAdditionalCourseKeys = this.normalizedCourseKeys(this.selectedAdditionalCourseKeys)
                 this.resultDraftQualityCriterionKeys = this.normalizedCourseKeys(this.selectedQualityCriterionKeys)
                 this.selectedResultMoreCourseKey = ''
@@ -3843,6 +3980,28 @@ export default {
         selectAllProposedCourses() {
             this.selectedCourseKeys = this.proposedCourses.map(course => this.courseSelectionKey(course))
             this.emitCourseSelectionChange()
+        },
+        resultBaseSelectedCourseKeys() {
+            const selectedCourseKeys = typeof this.normalizedCourseKeys === 'function'
+                ? this.normalizedCourseKeys(this.selectedCourseKeys)
+                : (Array.isArray(this.selectedCourseKeys) ? this.selectedCourseKeys.map(courseKey => String(courseKey || '')).filter(Boolean) : [])
+
+            return selectedCourseKeys.length
+                ? selectedCourseKeys
+                : this.proposedCourses.map(course => this.courseSelectionKey(course)).filter(Boolean)
+        },
+        uniqueCourseItems(courses) {
+            const courseItemsByKey = new Map()
+
+            ;(Array.isArray(courses) ? courses : []).forEach((course) => {
+                const key = this.courseSelectionKey(course)
+
+                if (key && !courseItemsByKey.has(key)) {
+                    courseItemsByKey.set(key, course)
+                }
+            })
+
+            return Array.from(courseItemsByKey.values())
         },
 
         normalizedCourseKeys(courseKeys) {
