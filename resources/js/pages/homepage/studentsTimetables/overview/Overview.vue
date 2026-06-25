@@ -24,33 +24,47 @@
                 </div>
 
                 <div class="hero-course-history">
-                    <div
+                    <template
                         v-for="section in heroCourseHistorySections"
-                        :key="section.key"
-                        class="hero-course-history__section">
-                        <div class="hero-course-history__title">
-                            <v-icon :icon="section.icon" size="18" :color="section.color" />
-                            <span>{{ section.title }}</span>
-                            <v-chip size="x-small" :color="section.color" variant="tonal">
-                                {{ section.items.length }}
+                        :key="section.key">
+                        <div
+                            class="hero-course-history__section">
+                            <div class="hero-course-history__title">
+                                <v-icon :icon="section.icon" size="18" :color="section.color" />
+                                <span>{{ section.title }}</span>
+                                <v-chip size="x-small" :color="section.color" variant="tonal">
+                                    {{ section.items.length }}
+                                </v-chip>
+                            </div>
+                            <div v-if="section.items.length" class="hero-course-history__list">
+                                <span
+                                    v-for="course in section.items"
+                                    :key="courseKey(section.key, course)"
+                                    class="hero-course-history__item"
+                                    :class="`hero-course-history__item--${section.key}`">
+                                    <span>{{ courseHistoryCourseLabel(course) }}</span>
+                                    <v-chip v-if="courseHistoryCourseMeta(course)" size="x-small" :color="section.color" variant="tonal">
+                                        {{ courseHistoryCourseMeta(course) }}
+                                    </v-chip>
+                                </span>
+                            </div>
+                            <div v-else class="hero-course-history__empty">
+                                {{ section.empty }}
+                            </div>
+                        </div>
+                        <div
+                            v-if="section.key === 'completed' && heroTimetableSelectionSummary.length"
+                            class="hero-course-history__selection-summary">
+                            <v-chip
+                                v-for="item in heroTimetableSelectionSummary"
+                                :key="item.key"
+                                size="small"
+                                class="hero-course-history__selection-chip"
+                                variant="flat">
+                                {{ item.label }}: {{ item.value }}
                             </v-chip>
                         </div>
-                        <div v-if="section.items.length" class="hero-course-history__list">
-                            <span
-                                v-for="course in section.items"
-                                :key="courseKey(section.key, course)"
-                                class="hero-course-history__item"
-                                :class="`hero-course-history__item--${section.key}`">
-                                <span>{{ courseHistoryCourseLabel(course) }}</span>
-                                <v-chip v-if="courseHistoryCourseMeta(course)" size="x-small" :color="section.color" variant="tonal">
-                                    {{ courseHistoryCourseMeta(course) }}
-                                </v-chip>
-                            </span>
-                        </div>
-                        <div v-else class="hero-course-history__empty">
-                            {{ section.empty }}
-                        </div>
-                    </div>
+                    </template>
                 </div>
 
                 <div class="hero-logout-row">
@@ -93,19 +107,20 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card
-                    v-else-if="automaticTimetableCriteriaReviewVisible"
-                    rounded="lg"
-                    class="automatic-course-review-card">
-                    <v-card-title class="automatic-course-review-card__title">
+                    <v-card
+                        v-else-if="automaticTimetableCriteriaReviewVisible"
+                        rounded="lg"
+                        class="automatic-course-review-card">
+                    <v-card-title class="automatic-course-review-card__title students-timetable-v2-selected-courses-card__title">
                         <span>Ausgewählte Kurse</span>
-                        <span class="automatic-course-review-card__filters">
+                        <span class="automatic-course-review-card__filters students-timetable-v2-selected-courses-card__filters">
                             <v-btn
                                 v-for="option in automaticCourseBulkSelectionOptions"
                                 :key="option.key"
                                 size="small"
                                 variant="tonal"
-                                color="primary"
+                                color="#3949AB"
+                                class="students-timetable-v2-selected-courses-card__bulk-button"
                                 @click="applyAutomaticCourseBulkSelection(option.key)">
                                 {{ option.label }}
                             </v-btn>
@@ -120,25 +135,26 @@
                         </span>
                     </v-card-title>
                     <v-card-text>
-                        <div v-if="automaticSelectedCourseItems.length" class="automatic-course-review-card__list">
+                        <div v-if="automaticSelectedCourseItems.length" class="automatic-course-review-card__list students-timetable-v2-selected-courses-card__list">
                             <v-chip
                                 v-for="course in automaticSelectedCourseItems"
                                 :key="course.selectionKey"
                                 size="small"
                                 color="success"
                                 :variant="automaticReviewCourseActive(course) ? 'flat' : 'tonal'"
-                                class="automatic-course-review-card__course"
+                                class="automatic-course-review-card__course students-timetable-v2-selected-courses-card__course"
                                 :class="{
                                     'automatic-course-review-card__course--active': automaticReviewCourseActive(course),
+                                    'students-timetable-v2-selected-courses-card__course--active': automaticReviewCourseActive(course),
+                                    'students-timetable-v2-selected-courses-card__course--offered-partial': automaticOfferedCourseItemsPartlySelected(course),
+                                    'students-timetable-v2-selected-courses-card__course--offered-deselected': automaticOfferedCourseItemsAllDeselected(course),
                                     'automatic-course-review-card__course--distance-learning': course.distanceLearning,
-                                    'automatic-course-review-card__course--offered-partial': automaticOfferedCourseItemsPartlySelected(course),
-                                    'automatic-course-review-card__course--offered-deselected': automaticOfferedCourseItemsAllDeselected(course),
                                 }"
                                 role="button"
                                 :aria-pressed="automaticReviewCourseActive(course) ? 'true' : 'false'"
                                 @click="selectAutomaticReviewCourse(course)">
                                 <span>{{ course.label }}</span>
-                                <span v-if="course.meta" class="automatic-course-review-card__meta">
+                                <span v-if="course.meta" class="automatic-course-review-card__meta students-timetable-v2-selected-courses-card__meta">
                                     {{ course.meta }}
                                 </span>
                             </v-chip>
@@ -617,7 +633,14 @@
                                 @click="adoptPublishedTimetable">
                                 Als mein Stundenplan übernehmen
                             </v-btn>
-                            <v-btn variant="text" prepend-icon="mdi-arrow-left" @click="closeManualTimetable">Zurück</v-btn>
+                            <v-btn
+                                color="#3949AB"
+                                variant="text"
+                                prepend-icon="mdi-arrow-left"
+                                class="students-timetable-v2-restart-card__primary-button"
+                                @click="closeManualTimetable">
+                                Zurück
+                            </v-btn>
                             <v-btn
                                 v-if="manualTimetableMode === 'personal' && hasPersonalTimetable"
                                 color="error"
@@ -900,40 +923,67 @@
                     :initial-step="automaticTimetableStep"
                     :initial-selected-course-keys="automaticTimetableCourseKeys"
                     :initial-deselected-course-group-keys="automaticTimetableDeselectedCourseGroupKeys"
+                    :initial-selected-additional-course-keys="automaticTimetableAdditionalCourseKeys"
                     :initial-selected-quality-criterion-keys="[]"
                     :default-quality-criterion-selection="false"
                     :proposed-courses="automaticTimetableSelectableCourses"
+                    :result-more-course-group-candidates="manualTimetableCourses"
                     :course-summary="automaticTimetableCourseSummary"
                     :course-sections="automaticTimetableAllCourseSections"
                     :selection-override="selectionOverridePayload() || {}"
                     @close="closeAutomaticTimetable"
+                    @additional-course-selection-change="setAutomaticTimetableAdditionalCourseKeys"
                     @course-selection-change="setAutomaticTimetableCourseKeys"
                     @courses-selected="finishAutomaticTimetable"
                     @quality-criteria-selection-change="setAutomaticTimetableQualityCriterionKeys"
                     @step-change="setAutomaticTimetableStep" />
 
-                <v-card
+                <div
                     v-if="automaticTimetableCriteriaReviewVisible"
-                    rounded="lg"
-                    class="automatic-course-review-actions">
-                    <v-card-actions>
-                        <v-btn variant="tonal" color="secondary" prepend-icon="mdi-restart" @click="restartAutomaticTimetable">
-                            Neustart
-                        </v-btn>
-                        <v-btn variant="tonal" color="primary" prepend-icon="mdi-arrow-left" @click="goBackFromAutomaticCourseReview">
-                            Zurück
-                        </v-btn>
-                        <v-spacer />
-                        <v-btn
-                            variant="flat"
-                            append-icon="mdi-arrow-right"
-                            class="automatic-course-review-next-button"
-                            :disabled="!automaticSelectedCourseItems.length"
-                            @click="continueAutomaticCourseReview">
-                            Weiter
-                        </v-btn>
-                    </v-card-actions>
-                </v-card>
+                    class="students-timetable-v2-card-column">
+                    <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-restart-card">
+                        <v-card-text class="students-timetable-v2-restart-card__content">
+                            <v-btn
+                                color="error"
+                                variant="tonal"
+                                size="large"
+                                prepend-icon="mdi-restart"
+                                @click="restartAutomaticTimetable">
+                                Neustart
+                            </v-btn>
+                            <div class="students-timetable-v2-restart-card__navigation-actions">
+                                <v-btn
+                                    color="primary"
+                                    variant="tonal"
+                                    size="large"
+                                    prepend-icon="mdi-arrow-left"
+                                    class="students-timetable-v2-restart-card__primary-button"
+                                    @click="goBackFromAutomaticCourseReview">
+                                    Zurück
+                                </v-btn>
+                                <v-btn
+                                    color="success"
+                                    variant="tonal"
+                                    size="large"
+                                    append-icon="mdi-arrow-right"
+                                    :disabled="!automaticSelectedCourseItems.length || automaticTimetableCoursesLoadingVisible"
+                                    :loading="automaticTimetableCoursesLoadingVisible"
+                                    @click="continueAutomaticCourseReview">
+                                    Weiter
+                                </v-btn>
+                            </div>
+                            <v-progress-linear
+                                v-if="automaticTimetableCoursesLoadingVisible"
+                                indeterminate
+                                rounded
+                                color="primary"
+                                height="4"
+                                class="students-timetable-v2-restart-card__loading"
+                                title="Kursauswahl wird geladen"
+                                aria-label="Kursauswahl wird geladen" />
+                        </v-card-text>
+                    </v-card>
+                </div>
             </div>
         </section>
     </div>
@@ -1025,6 +1075,9 @@ export default {
             return this.automaticTimetableCourseKeysInitialized
                 ? this.automaticTimetableSelectedCourseKeys
                 : this.automaticTimetableCourseKeysFromRoute()
+        },
+        automaticTimetableAdditionalCourseKeys() {
+            return this.automaticTimetableAdditionalCourseKeysFromRoute()
         },
         automaticTimetableQualityCriterionKeys() {
             return []
@@ -1202,7 +1255,7 @@ export default {
             return this.overviewSelectedCourseLimitSummary.count >= 10 || this.overviewSelectedCourseLimitSummary.hours >= 30
         },
         heroCourseHistorySections() {
-            return [
+            const sections = [
                 {
                     key: 'completed',
                     title: 'Abgeschlossene Kurse',
@@ -1220,6 +1273,17 @@ export default {
                     items: this.courseHistoryItems('missing', this.overview?.missing_courses),
                 },
             ]
+
+            return sections.filter(section => section.key !== 'missing' || section.items.length > 0)
+        },
+        heroTimetableSelectionSummary() {
+            return this.selectionItems
+                .filter(item => String(item?.value || '').trim())
+                .map(item => ({
+                    ...item,
+                    value: String(item.value || '').trim(),
+                    label: String(item.label || '').trim(),
+                }))
         },
         courseSectionTotalCount() {
             return this.courseSections.reduce((courseCount, section) => (
@@ -1771,6 +1835,9 @@ export default {
             delete query.manual_timetable
             delete query.automatic_timetable_courses
             delete query.automatic_timetable_criteria
+            if (step !== 'result') {
+                delete query.automatic_timetable_additional_courses
+            }
             query.automatic_timetable = step
 
             if (
@@ -1814,6 +1881,26 @@ export default {
                 query,
             })
         },
+        setAutomaticTimetableAdditionalCourseKeys(courseKeys) {
+            const selectedCourseKeys = this.normalizedOverviewSelectionKeys(courseKeys)
+            const currentCourseKeys = this.automaticTimetableAdditionalCourseKeys
+
+            if (JSON.stringify(currentCourseKeys) === JSON.stringify(selectedCourseKeys)) {
+                return
+            }
+
+            const query = { ...this.$route.query }
+            delete query.automatic_timetable_additional_courses
+
+            if (selectedCourseKeys.length) {
+                query.automatic_timetable_additional_courses = selectedCourseKeys
+            }
+
+            this.$router.push({
+                path: this.$route.path,
+                query,
+            })
+        },
         resetAutomaticTimetableCoursePreselection() {
             if (!this.automaticTimetableCoursePreselectionResetAvailable) {
                 return
@@ -1823,7 +1910,7 @@ export default {
         },
         automaticSelectedCourseItem(course) {
             const hours = this.courseHoursNumber(course)
-            const label = this.overviewCourseItemLabel(course)
+            const label = this.overviewCourseItemDisplayLabel(course)
 
             return {
                 ...course,
@@ -1832,6 +1919,20 @@ export default {
                 meta: this.overviewCourseItemMeta(course) || (hours ? `${this.formatHours(hours)} Std.` : ''),
                 distanceLearning: this.automaticCourseItemIsDistanceLearning(course),
             }
+        },
+        overviewCourseItemDisplayLabel(course) {
+            const explicitLabel = String(course?.label || '').trim()
+
+            if (!explicitLabel) {
+                return this.overviewCourseItemLabel(course)
+            }
+
+            const normalizedLabelParts = explicitLabel.split(' - ').map((part) => part.trim()).filter(Boolean)
+            if (normalizedLabelParts.length >= 2 && normalizedLabelParts[0] === normalizedLabelParts[1]) {
+                return normalizedLabelParts[0]
+            }
+
+            return explicitLabel
         },
         applyAutomaticCourseBulkSelection(optionKey) {
             const offeredCourseSelections = { ...this.automaticOfferedCourseSelectionOverrides }
@@ -2113,6 +2214,7 @@ export default {
             if (
                 !this.$route.query.automatic_timetable
                 && !this.$route.query.automatic_timetable_courses
+                && !this.$route.query.automatic_timetable_additional_courses
                 && !this.$route.query.automatic_timetable_criteria
             ) {
                 return
@@ -2121,6 +2223,7 @@ export default {
             const query = { ...this.$route.query }
             delete query.automatic_timetable
             delete query.automatic_timetable_courses
+            delete query.automatic_timetable_additional_courses
             delete query.automatic_timetable_criteria
 
             this.$router.push({
@@ -2143,6 +2246,7 @@ export default {
             const query = { ...this.$route.query }
             delete query.automatic_timetable
             delete query.automatic_timetable_courses
+            delete query.automatic_timetable_additional_courses
             delete query.automatic_timetable_criteria
             query.manual_timetable = '1'
 
@@ -2165,6 +2269,7 @@ export default {
             const query = { ...this.$route.query }
             delete query.automatic_timetable
             delete query.automatic_timetable_courses
+            delete query.automatic_timetable_additional_courses
             delete query.automatic_timetable_criteria
             query.manual_timetable = 'published'
 
@@ -2183,6 +2288,7 @@ export default {
             const query = { ...this.$route.query }
             delete query.automatic_timetable
             delete query.automatic_timetable_courses
+            delete query.automatic_timetable_additional_courses
             delete query.automatic_timetable_criteria
             query.manual_timetable = 'personal'
 
@@ -2214,6 +2320,7 @@ export default {
                 const query = { ...this.$route.query }
                 delete query.automatic_timetable
                 delete query.automatic_timetable_courses
+                delete query.automatic_timetable_additional_courses
                 delete query.automatic_timetable_criteria
                 query.manual_timetable = 'personal'
 
@@ -3413,6 +3520,24 @@ export default {
                 ? selectedCourseKeys
                 : this.overviewDefaultSelectedCourseKeys
         },
+        automaticTimetableAdditionalCourseKeysFromRoute(query = this.$route?.query || {}) {
+            if (!Object.prototype.hasOwnProperty.call(query, 'automatic_timetable_additional_courses')) {
+                return []
+            }
+
+            const courseKeys = query.automatic_timetable_additional_courses
+            const courseKeyList = Array.isArray(courseKeys) ? courseKeys : [courseKeys]
+
+            if (courseKeyList.includes(noAutomaticTimetableCourseValue)) {
+                return []
+            }
+
+            return this.normalizedOverviewSelectionKeys(courseKeyList
+                .map(courseKey => String(courseKey || ''))
+                .filter(courseKey => courseKey !== noAutomaticTimetableCourseValue))
+                .filter(Boolean)
+                .filter(courseKey => String(courseKey || '').startsWith('additional:'))
+        },
         syncAutomaticTimetableCourseKeysFromRoute() {
             this.automaticTimetableSelectedCourseKeys = this.automaticTimetableCourseKeysFromRoute()
             this.automaticTimetableCourseKeysInitialized = true
@@ -4204,10 +4329,14 @@ export default {
                 return explicitLabel
             }
 
-            return [
-                String(course?.code || '').trim(),
-                String(course?.name || '').trim(),
-            ].filter(Boolean).join(' - ')
+            const code = String(course?.code || '').trim()
+            const name = String(course?.name || '').trim()
+
+            if (code && name && code.toLowerCase() === name.toLowerCase()) {
+                return code
+            }
+
+            return [code, name].filter(Boolean).join(' - ')
         },
         courseHistoryCourseMeta(course) {
             return String(course?.meta || course?.grade || '').trim()
@@ -4252,7 +4381,7 @@ export default {
 
 .hero-course-history {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 10px;
     margin-top: 12px;
 }
@@ -4316,6 +4445,19 @@ export default {
     color: rgba(16, 38, 58, 0.72);
     font-size: 0.76rem;
     font-weight: 760;
+}
+
+.hero-course-history__selection-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.hero-course-history__selection-chip {
+    border: 1px solid rgba(14, 165, 233, 0.28);
+    background: #f0f9ff !important;
+    color: #0f172a !important;
+    font-weight: 700;
 }
 
 .hero-logout-row {
@@ -4687,10 +4829,6 @@ export default {
     flex-wrap: wrap;
     gap: 8px;
     padding: 16px 20px 8px;
-    color: #0f172a;
-    font-size: 1.25rem;
-    font-weight: 900;
-    line-height: 1.2;
 }
 
 .automatic-course-review-card__filters {
@@ -4698,12 +4836,6 @@ export default {
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
-}
-
-.automatic-course-review-card__filters :deep(.v-btn) {
-    min-width: 72px;
-    font-weight: 900;
-    letter-spacing: 0;
 }
 
 .automatic-course-review-card__summary {
@@ -4781,6 +4913,57 @@ export default {
     font-weight: 900;
 }
 
+.students-timetable-v2-selected-courses-card__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.students-timetable-v2-selected-courses-card__filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.students-timetable-v2-selected-courses-card__summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+
+.students-timetable-v2-selected-courses-card__course {
+    cursor: pointer;
+    font-weight: 400;
+}
+
+.students-timetable-v2-selected-courses-card__course--passive {
+    cursor: default;
+}
+
+.students-timetable-v2-selected-courses-card__course--active {
+    box-shadow: 0 0 0 1px rgba(0, 137, 123, 0.26);
+}
+
+.students-timetable-v2-selected-courses-card__course--offered-partial {
+    border: 1px solid rgba(217, 119, 6, 0.36);
+    background: rgba(255, 251, 235, 0.96) !important;
+    color: #92400e !important;
+}
+
+.students-timetable-v2-selected-courses-card__course--offered-deselected {
+    border: 1px solid rgba(220, 38, 38, 0.42);
+    background: rgba(254, 226, 226, 0.96) !important;
+    color: #991b1b !important;
+}
+
+.students-timetable-v2-selected-courses-card__meta {
+    margin-left: 6px;
+    font-weight: 900;
+}
+
 .automatic-course-review-card__footer {
     min-height: 0;
     padding: 4px 20px 18px;
@@ -4853,39 +5036,38 @@ export default {
     font-weight: 800;
 }
 
-.automatic-course-review-actions {
-    margin-top: 12px;
-    border: 1px solid rgba(16, 38, 58, 0.08);
-    background: #ffffff;
-}
-
-.automatic-course-review-actions :deep(.v-card-actions) {
+.students-timetable-v2-restart-card__content {
+    display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    padding: 14px 20px;
+    justify-content: space-between;
 }
 
-.automatic-course-review-actions :deep(.automatic-course-review-next-button) {
-    min-width: 162px;
-    min-height: 53px;
-    border-radius: 4px;
-    background: #dcefee !important;
-    color: #00877f !important;
-    font-weight: 800;
-    letter-spacing: 2px;
+.students-timetable-v2-restart-card {
+    margin-top: 18px;
 }
 
-.automatic-course-review-actions :deep(.automatic-course-review-next-button .v-btn__append) {
-    margin-left: 16px;
+.students-timetable-v2-restart-card__navigation-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-left: auto;
 }
 
-.automatic-course-review-actions :deep(.automatic-course-review-next-button .v-icon) {
-    font-size: 25px;
+.students-timetable-v2-restart-card__loading {
+    flex-basis: 100%;
 }
 
-.automatic-course-review-actions :deep(.automatic-course-review-next-button.v-btn--disabled) {
-    background: #edf5f4 !important;
-    color: rgba(0, 135, 127, 0.52) !important;
+.students-timetable-v2-selected-courses-card__bulk-button,
+.students-timetable-v2-restart-card__primary-button {
+    color: #3949AB !important;
+    font-weight: 400;
+}
+
+.students-timetable-v2-card-column {
+    display: flex !important;
+    align-self: stretch;
+    min-width: 0;
 }
 
 .manual-overview-course-card {
@@ -5733,14 +5915,6 @@ export default {
 
     .automatic-course-review-card__summary {
         margin-left: 0;
-    }
-
-    .automatic-course-review-actions :deep(.v-spacer) {
-        display: none;
-    }
-
-    .automatic-course-review-actions :deep(.v-btn) {
-        flex: 1 1 100%;
     }
 
     .overview-selection {

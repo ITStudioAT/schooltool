@@ -26,8 +26,10 @@ describe('Student timetable evaluation settings', () => {
         const source = readFileSync(overviewPath, 'utf8')
 
         expect(source).toContain(':proposed-courses="automaticTimetableSelectableCourses"')
+        expect(source).toContain(':result-more-course-group-candidates="manualTimetableCourses"')
         expect(source).toContain(':initial-step="automaticTimetableStep"')
         expect(source).toContain(':initial-selected-course-keys="automaticTimetableCourseKeys"')
+        expect(source).toContain(':initial-selected-additional-course-keys="automaticTimetableAdditionalCourseKeys"')
         expect(source).toContain(':initial-selected-quality-criterion-keys="[]"')
         expect(source).toContain(':default-quality-criterion-selection="false"')
         expect(source).toContain(':course-sections="automaticTimetableAllCourseSections"')
@@ -36,11 +38,13 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('this.overview?.additional_courses')
         expect(source).toContain("title: 'Zusätzliche Kurse'")
         expect(source).toContain('@course-selection-change="setAutomaticTimetableCourseKeys"')
+        expect(source).toContain('@additional-course-selection-change="setAutomaticTimetableAdditionalCourseKeys"')
         expect(source).toContain('@courses-selected="finishAutomaticTimetable"')
         expect(source).toContain('@quality-criteria-selection-change="setAutomaticTimetableQualityCriterionKeys"')
         expect(source).toContain('@step-change="setAutomaticTimetableStep"')
         expect(source).toContain('automatic_timetable')
         expect(source).toContain('automatic_timetable_courses')
+        expect(source).toContain('automatic_timetable_additional_courses')
         expect(source).toContain('automatic_timetable_criteria')
         expect(source).toContain('v-if="timetableActionsVisible"')
         expect(source).toContain('overviewLoading: true')
@@ -1417,7 +1421,9 @@ describe('Student timetable evaluation settings', () => {
                     },
                     {
                         key: 'missing',
-                        items: [],
+                        items: [
+                            { code: 'D1', name: 'Deutsch', grade: '5' },
+                        ],
                     },
                 ],
             },
@@ -1438,11 +1444,38 @@ describe('Student timetable evaluation settings', () => {
                 key: 'missing',
                 title: 'Negative Kurse',
                 empty: 'Keine negativen Kurse gefunden.',
-                items: [],
+                items: [
+                    { code: 'D1', name: 'Deutsch', grade: '5' },
+                ],
             }),
         ])
         expect(methods.courseHistoryCourseLabel({ code: 'ETH1', name: 'Ethik' })).toBe('ETH1 - Ethik')
+        expect(methods.courseHistoryCourseLabel({ code: 'BU1', name: 'BU1' })).toBe('BU1')
         expect(methods.courseHistoryCourseMeta({ grade: '2' })).toBe('2')
+    })
+
+    it('hides the negative course summary in the overview header when no negative courses exist', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx: any = {
+            ...methods,
+            overview: {
+                completed_courses: [
+                    { code: 'ETH1', name: 'Ethik', grade: '2' },
+                ],
+                missing_courses: [],
+                course_sections: [],
+            },
+        }
+
+        ctx.courseSections = computed.courseSections.call(ctx)
+
+        expect(computed.heroCourseHistorySections.call(ctx)).toEqual([
+            expect.objectContaining({
+                key: 'completed',
+                title: 'Abgeschlossene Kurse',
+            }),
+        ])
     })
 
     it('shows selectable negative planned and additional course cards in the overview data card', () => {
@@ -1891,6 +1924,7 @@ describe('Student timetable evaluation settings', () => {
                 query: {
                     automatic_timetable: 'result',
                     automatic_timetable_courses: ['planned:BU2', 'planned:CH1'],
+                    automatic_timetable_additional_courses: ['additional:TT'],
                     automatic_timetable_criteria: 'saturday_free',
                     manual_timetable: '1',
                 },
@@ -1906,6 +1940,43 @@ describe('Student timetable evaluation settings', () => {
             path: '/students-timetables/overview',
             query: {
                 automatic_timetable: 'result',
+                automatic_timetable_additional_courses: ['additional:TT'],
+            },
+        })
+    })
+
+    it('stores automatic timetable additional course selections in the result url', () => {
+        const methods = (Overview as any).methods
+        const push = vi.fn()
+        const ctx: any = {
+            ...methods,
+            automaticTimetableAdditionalCourseKeys: [],
+            $route: {
+                path: '/students-timetables/overview',
+                query: {
+                    automatic_timetable: 'result',
+                },
+            },
+            $router: {
+                push,
+            },
+            overview: {
+                automatic_course_selection: { sections: [] },
+                course_sections: [],
+            },
+        }
+
+        expect(methods.automaticTimetableAdditionalCourseKeysFromRoute.call(ctx, {
+            automatic_timetable_additional_courses: ['additional:TT', 'planned:M1'],
+        })).toEqual(['additional:TT'])
+
+        methods.setAutomaticTimetableAdditionalCourseKeys.call(ctx, ['additional:TT'])
+
+        expect(push).toHaveBeenCalledWith({
+            path: '/students-timetables/overview',
+            query: {
+                automatic_timetable: 'result',
+                automatic_timetable_additional_courses: ['additional:TT'],
             },
         })
     })
@@ -2387,19 +2458,22 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('student-result-course-panels')
         expect(source).toContain('v-if="currentStep === \'courses\'"')
         expect(source).toContain('v-else-if="currentStep === \'result\'" class="student-generated-timetable"')
-        expect(source).toContain('student-generated-timetable__back-button')
         expect(source).toContain('student-selected-courses-card')
         expect(source).toContain('Ausgewählte Kurse')
         expect(source).toContain('resultSelectedCourseItems')
         expect(source).toContain('resultSelectedCourseSummary')
         expect(source).toContain(':close-label="`Kurs ${course.label} entfernen`"')
+        expect(source).toContain(':closable="!resultMoreCoursesOrOptionsOpen && !resultSelectedCourseRemovalPending"')
+        expect(source).toContain(':disabled="generatingTimetable || resultMoreCoursesOrOptionsOpen || resultSelectedCourseRemovalPending"')
         expect(source).toContain('@click:close.stop="removeResultSelectedCourseItem(course)"')
         expect(source).toContain('resultSelectedCourseRemovalPending')
+        expect(source).toContain('student-selected-courses-card__course--pending-removal')
         expect(source).toContain('Auswahl geändert. Stundenplan neu erstellen?')
         expect(source).toContain('cancelResultSelectedCourseRemoval')
         expect(source).toContain('applyResultSelectedCourseRemoval')
+        expect(source).toContain('resultSelectedCourseItemsAfterPendingRemoval')
         expect(source).toContain('student-generated-timetable__header')
-        expect(resultSource).toContain('<div v-if="!generatingTimetable" class="student-generated-timetable__header">')
+        expect(resultSource).toContain('<span v-if="!generatingTimetable && !resultSelectedCourseRemovalPending" class="student-generated-timetable__toolbar">')
         expect(resultSource.indexOf('student-selected-courses-card')).toBeLessThan(resultSource.indexOf('student-generated-timetable__header'))
         expect(source).toContain('student-generated-timetable__success-strip')
         expect(source).toContain('Die Stundenpläne wurden erfolgreich erstellt.')
@@ -2462,6 +2536,7 @@ describe('Student timetable evaluation settings', () => {
         const ctx = {
             initialStep: 'courses',
             initialSelectedCourseKeys: ['course-2'],
+            initialSelectedAdditionalCourseKeys: ['additional:course-3'],
             initialSelectedQualityCriterionKeys: ['saturday_free'],
             normalizedStep: methods.normalizedStep,
             normalizedCourseKeys: methods.normalizedCourseKeys,
@@ -2469,6 +2544,7 @@ describe('Student timetable evaluation settings', () => {
         }
 
         expect(data.call(ctx).selectedCourseKeys).toEqual(['course-2'])
+        expect(data.call(ctx).selectedAdditionalCourseKeys).toEqual(['additional:course-3'])
         expect(data.call(ctx).selectedQualityCriterionKeys).toEqual(['saturday_free'])
         expect(data.call(ctx).resultBackStep).toBe('courses')
     })
@@ -2645,18 +2721,47 @@ describe('Student timetable evaluation settings', () => {
         const computed = (StudentTimetableEvaluationSettings as any).computed
         const ctx = {
             selectedCourseKeys: ['course-1', 'course-2'],
+            selectedAdditionalCourseKeys: ['additional:E2'],
             proposedCourses: [
                 { key: 'course-1', code: 'D1', hours: 3 },
                 { key: 'course-2', code: 'M1', hours: 4 },
                 { key: 'course-3', code: 'E1', hours: 2 },
             ],
+            courseSections: [
+                {
+                    key: 'additional',
+                    title: 'Zusätzliche Kurse',
+                    items: [{ key: 'course-4', code: 'E2', hours: 2 }],
+                },
+            ],
             allCoursesSelectedByDefault: false,
             courseSelectionKey: methods.courseSelectionKey,
             courseSelected: methods.courseSelected,
+            courseSelectedFromKeys: methods.courseSelectedFromKeys,
+            selectionKeyMatchesCourse: methods.selectionKeyMatchesCourse,
+            courseSelectionGroup: methods.courseSelectionGroup,
+            normalizedCourseSelectionGroupKey: methods.normalizedCourseSelectionGroupKey,
+            normalizedCourseCode: methods.normalizedCourseCode,
+            normalizedCourseKeys: methods.normalizedCourseKeys,
+            backendCourseSelectionKey: methods.backendCourseSelectionKey,
+            sortedCourseItems: methods.sortedCourseItems,
+            compareCourseItems: methods.compareCourseItems,
+            courseSortLabel: methods.courseSortLabel,
             courseHoursNumber: methods.courseHoursNumber,
             resultSelectedCourseItem: methods.resultSelectedCourseItem,
             selectedCoursesForSummary: methods.selectedCoursesForSummary,
+            selectedAdditionalCoursesForSummary: methods.selectedAdditionalCoursesForSummary,
             courseItemsSummary: methods.courseItemsSummary,
+            uniqueCourseItems: methods.uniqueCourseItems,
+            get displayedCourseSections() {
+                return computed.displayedCourseSections.call(ctx)
+            },
+            get additionalCourseSections() {
+                return computed.additionalCourseSections.call(ctx)
+            },
+            get additionalCourses() {
+                return computed.additionalCourses.call(ctx)
+            },
             get resultSelectedCourses() {
                 return computed.resultSelectedCourses.call(ctx)
             },
@@ -2665,12 +2770,13 @@ describe('Student timetable evaluation settings', () => {
         expect(computed.resultSelectedCourseItems.call(ctx)).toEqual([
             { selectionKey: 'planned:D1', label: 'D1', meta: '3 Std.' },
             { selectionKey: 'planned:M1', label: 'M1', meta: '4 Std.' },
+            { selectionKey: 'additional:E2', label: 'E2', meta: '2 Std.' },
         ])
         expect(computed.resultSelectedCourseSummary.call(ctx)).toEqual({
-            count: 2,
-            hours: 7,
-            countLabel: '2 Kurse',
-            hoursLabel: '7 Std.',
+            count: 3,
+            hours: 9,
+            countLabel: '3 Kurse',
+            hoursLabel: '9 Std.',
         })
     })
 
@@ -2680,10 +2786,18 @@ describe('Student timetable evaluation settings', () => {
         const createAutomaticTimetable = vi.fn(async () => undefined)
         const ctx = {
             selectedCourseKeys: ['course-1', 'course-2'],
+            selectedAdditionalCourseKeys: ['additional:E2'],
             pendingRemovedSelectedCourseKeys: [],
             proposedCourses: [
                 { key: 'course-1', code: 'D1', hours: 3 },
                 { key: 'course-2', code: 'M1', hours: 4 },
+            ],
+            courseSections: [
+                {
+                    key: 'additional',
+                    title: 'Zusätzliche Kurse',
+                    items: [{ key: 'course-3', code: 'E2', hours: 2 }],
+                },
             ],
             allCoursesSelectedByDefault: false,
             generatingTimetable: false,
@@ -2691,16 +2805,42 @@ describe('Student timetable evaluation settings', () => {
             selectedTimetableNumber: 3,
             courseSelectionKey: methods.courseSelectionKey,
             courseSelected: methods.courseSelected,
+            courseSelectedFromKeys: methods.courseSelectedFromKeys,
+            selectionKeyMatchesCourse: methods.selectionKeyMatchesCourse,
+            courseSelectionGroup: methods.courseSelectionGroup,
+            normalizedCourseSelectionGroupKey: methods.normalizedCourseSelectionGroupKey,
+            normalizedCourseCode: methods.normalizedCourseCode,
+            normalizedCourseKeys: methods.normalizedCourseKeys,
+            backendCourseSelectionKey: methods.backendCourseSelectionKey,
+            sortedCourseItems: methods.sortedCourseItems,
+            compareCourseItems: methods.compareCourseItems,
+            courseSortLabel: methods.courseSortLabel,
             courseHoursNumber: methods.courseHoursNumber,
             resultSelectedCourseItem: methods.resultSelectedCourseItem,
             selectedCoursesForSummary: methods.selectedCoursesForSummary,
+            selectedAdditionalCoursesForSummary: methods.selectedAdditionalCoursesForSummary,
+            uniqueCourseItems: methods.uniqueCourseItems,
             resetGeneratedTimetableSelection: methods.resetGeneratedTimetableSelection,
+            emitAdditionalCourseSelectionChange: methods.emitAdditionalCourseSelectionChange,
             createAutomaticTimetable,
+            $emit: vi.fn(),
+            get displayedCourseSections() {
+                return computed.displayedCourseSections.call(ctx)
+            },
+            get additionalCourseSections() {
+                return computed.additionalCourseSections.call(ctx)
+            },
+            get additionalCourses() {
+                return computed.additionalCourses.call(ctx)
+            },
             get resultSelectedCourses() {
                 return computed.resultSelectedCourses.call(ctx)
             },
             get resultSelectedCourseItems() {
                 return computed.resultSelectedCourseItems.call(ctx)
+            },
+            get resultSelectedCourseItemsAfterPendingRemoval() {
+                return computed.resultSelectedCourseItemsAfterPendingRemoval.call(ctx)
             },
             get resultSelectedCourseRemovalPending() {
                 return computed.resultSelectedCourseRemovalPending.call(ctx)
@@ -2710,18 +2850,26 @@ describe('Student timetable evaluation settings', () => {
         methods.removeResultSelectedCourseItem.call(ctx, { selectionKey: 'planned:D1' })
 
         expect(ctx.pendingRemovedSelectedCourseKeys).toEqual(['planned:D1'])
-        expect(computed.resultSelectedCourseItems.call(ctx).map(course => course.selectionKey)).toEqual(['planned:M1'])
+        expect(computed.resultSelectedCourseItems.call(ctx).map(course => course.selectionKey)).toEqual(['planned:D1', 'planned:M1', 'additional:E2'])
+        expect(computed.resultSelectedCourseItemsAfterPendingRemoval.call(ctx).map(course => course.selectionKey)).toEqual(['planned:M1', 'additional:E2'])
+        expect(methods.resultSelectedCoursePendingRemoval.call(ctx, { selectionKey: 'planned:D1' })).toBe(true)
+        expect(methods.resultSelectedCoursePendingRemoval.call(ctx, { selectionKey: 'planned:M1' })).toBe(false)
+
+        methods.removeResultSelectedCourseItem.call(ctx, { selectionKey: 'planned:M1' })
+
+        expect(ctx.pendingRemovedSelectedCourseKeys).toEqual(['planned:D1'])
 
         methods.cancelResultSelectedCourseRemoval.call(ctx)
 
         expect(ctx.pendingRemovedSelectedCourseKeys).toEqual([])
-        expect(computed.resultSelectedCourseItems.call(ctx).map(course => course.selectionKey)).toEqual(['planned:D1', 'planned:M1'])
+        expect(computed.resultSelectedCourseItems.call(ctx).map(course => course.selectionKey)).toEqual(['planned:D1', 'planned:M1', 'additional:E2'])
         expect(createAutomaticTimetable).not.toHaveBeenCalled()
 
-        methods.removeResultSelectedCourseItem.call(ctx, { selectionKey: 'planned:D1' })
+        methods.removeResultSelectedCourseItem.call(ctx, { selectionKey: 'additional:E2' })
         await methods.applyResultSelectedCourseRemoval.call(ctx)
 
-        expect(ctx.selectedCourseKeys).toEqual(['planned:M1'])
+        expect(ctx.selectedCourseKeys).toEqual(['planned:D1', 'planned:M1'])
+        expect(ctx.selectedAdditionalCourseKeys).toEqual([])
         expect(ctx.pendingRemovedSelectedCourseKeys).toEqual([])
         expect(ctx.selectedTimetableType).toBe(null)
         expect(ctx.selectedTimetableNumber).toBe(1)
@@ -2804,7 +2952,9 @@ describe('Student timetable evaluation settings', () => {
             normalizedCourseKeyListsEqual: methods.normalizedCourseKeyListsEqual,
             setResultDraftAdditionalCourseSelected: methods.setResultDraftAdditionalCourseSelected,
             resetGeneratedTimetableSelection: methods.resetGeneratedTimetableSelection,
+            emitAdditionalCourseSelectionChange: methods.emitAdditionalCourseSelectionChange,
             createAutomaticTimetable,
+            $emit: vi.fn(),
             get resultMoreCourseItems() {
                 return computed.resultMoreCourseItems.call(ctx)
             },
@@ -2846,6 +2996,53 @@ describe('Student timetable evaluation settings', () => {
         expect(ctx.selectedTimetableType).toBe(null)
         expect(ctx.selectedTimetableNumber).toBe(1)
         expect(createAutomaticTimetable).toHaveBeenCalledTimes(1)
+    })
+
+    it('uses candidate courses to resolve offered course groups when selected course has no course_groups', () => {
+        const methods = (StudentTimetableEvaluationSettings as any).methods
+        const matchedCourseGroup = {
+            key: 'course-group-bu1',
+            code: 'BU',
+            class_name: 'BU1',
+            weekday: 2,
+            hour: 4,
+        }
+        const nonMatchingCourseGroup = {
+            key: 'course-group-lu1',
+            code: 'L',
+            class_name: 'L1',
+            weekday: 1,
+            hour: 3,
+        }
+        const selectedCourse = {
+            key: 'course-selected',
+            code: 'BU1',
+            label: 'BU1',
+        }
+
+        const ctx: any = {
+            resultMoreCourseGroupCandidates: [
+                {
+                    code: 'BU/BU1',
+                    ttCodes: ['BU1'],
+                    course_groups: [matchedCourseGroup],
+                },
+                {
+                    code: 'L',
+                    course_groups: [nonMatchingCourseGroup],
+                },
+            ],
+            normalizedCourseCode: methods.normalizedCourseCode,
+            courseCodeAliases: methods.courseCodeAliases,
+            resultMoreCourseAliases: methods.resultMoreCourseAliases,
+            resultMoreCourseCoursesMatch: methods.resultMoreCourseCoursesMatch,
+            resultMoreCourseGroupMatchesSelectedCourse: methods.resultMoreCourseGroupMatchesSelectedCourse,
+            resultMoreCourseGroupCodes: methods.resultMoreCourseGroupCodes,
+        }
+
+        const courseGroups = methods.resultMoreCourseGroupsForSelectedCourse.call(ctx, selectedCourse)
+
+        expect(courseGroups).toEqual([matchedCourseGroup])
     })
 
     it('applies result options only after confirming the draft', async () => {
@@ -3012,6 +3209,7 @@ describe('Student timetable evaluation settings', () => {
             normalizedCourseKeys: methods.normalizedCourseKeys,
             normalizedCourseKeyListsEqual: methods.normalizedCourseKeyListsEqual,
             resetGeneratedTimetableSelection: methods.resetGeneratedTimetableSelection,
+            emitAdditionalCourseSelectionChange: methods.emitAdditionalCourseSelectionChange,
             emitCourseSelectionChange: methods.emitCourseSelectionChange,
             emitQualityCriteriaSelectionChange: methods.emitQualityCriteriaSelectionChange,
             createAutomaticTimetable,
@@ -3043,6 +3241,10 @@ describe('Student timetable evaluation settings', () => {
         expect(ctx.selectedTimetableType).toBe(null)
         expect(ctx.selectedTimetableNumber).toBe(1)
         expect(emitted).toEqual([
+            {
+                event: 'additional-course-selection-change',
+                payload: [],
+            },
             {
                 event: 'course-selection-change',
                 payload: ['planned:D1', 'planned:M1'],
@@ -3177,7 +3379,9 @@ describe('Student timetable evaluation settings', () => {
             courseSelectionKey: methods.courseSelectionKey,
             commitAdditionalCourseSelectionChange: methods.commitAdditionalCourseSelectionChange,
             resetAdditionalCourseSelection: methods.resetAdditionalCourseSelection,
+            emitAdditionalCourseSelectionChange: methods.emitAdditionalCourseSelectionChange,
             moveToStep,
+            $emit: vi.fn(),
         }
 
         methods.setAdditionalCourseSelected.call(ctx, { key: 'course-3' }, true)
@@ -3206,8 +3410,10 @@ describe('Student timetable evaluation settings', () => {
             selectedTimetableNumber: 3,
             courseSelectionKey: methods.courseSelectionKey,
             commitAdditionalCourseSelectionChange: methods.commitAdditionalCourseSelectionChange,
+            emitAdditionalCourseSelectionChange: methods.emitAdditionalCourseSelectionChange,
             resetGeneratedTimetableSelection: methods.resetGeneratedTimetableSelection,
             moveToStep,
+            $emit: vi.fn(),
             async createAutomaticTimetable() {
                 this.generatedTimetable = { slots: { extended: true } }
                 this.additionalCourseSelectionChangedAfterTimetable = false
@@ -3291,7 +3497,16 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('student-generated-timetable__date')
         expect(source).toContain('student-generated-timetable__time-range')
         expect(source).toContain('student-generated-timetable__badge')
-        expect(source).toContain('generatedSlotWeekMarker(block)')
+        expect(source).not.toContain('<sup v-if="block.isDistanceLearningCourse" class="student-generated-timetable__badge">FU</sup>')
+        expect(source).toContain('v-if="block.isAdditionalCourse"')
+        expect(source).toContain('student-generated-timetable__badge--additional')
+        expect(source).toContain('Zusatz')
+        expect(source).not.toContain('v-if="generatedSlotWeekMarker(block)"')
+        expect(source).toContain('generatedTimetableSlotRecurrenceLabel(block)')
+        expect(source).toContain('student-generated-timetable__recurrence')
+        expect(source).toContain('v-if="block.isDistanceLearningCourse"')
+        expect(source).toContain('student-generated-timetable__distance-learning')
+        expect(source).toContain('Fernunterricht')
         expect(source).toContain("'student-generated-timetable__cell--additional': generatedTimetableCellHasAdditionalCourse(weekday.value, hour.value)")
         expect(source).toContain('generatedTimetableCellHasAdditionalCourse(weekday, hour)')
         expect(source).toContain('.student-generated-timetable__cell--additional')
@@ -3422,7 +3637,9 @@ describe('Student timetable evaluation settings', () => {
             resultMoreDeselectedCourseGroupKeysForApply: vi.fn(() => ['missing:D1|D1-A']),
             resultMoreOfferedCourseSelectionOverridesFromDeselectedKeys: vi.fn(() => ({})),
             resetGeneratedTimetableSelection: vi.fn(),
+            emitAdditionalCourseSelectionChange: methods.emitAdditionalCourseSelectionChange,
             createAutomaticTimetable: vi.fn(async () => undefined),
+            $emit: vi.fn(),
         }
 
         await methods.applyResultMoreCourses.call(ctx)
@@ -3913,6 +4130,7 @@ describe('Student timetable evaluation settings', () => {
             courseGroupDates: methods.courseGroupDates,
             weekIntervalFromDates: methods.weekIntervalFromDates,
             dateFromIsoValue: methods.dateFromIsoValue,
+            generatedTimetableSlotRecurrenceLabel: methods.generatedTimetableSlotRecurrenceLabel,
             generatedSlotWeekMarker: methods.generatedSlotWeekMarker,
             visibleTimetableEntryWeekMarker: methods.visibleTimetableEntryWeekMarker,
             timetableEntryWeekMarkers: methods.timetableEntryWeekMarkers,
@@ -3930,6 +4148,7 @@ describe('Student timetable evaluation settings', () => {
             },
         ])
         expect(methods.generatedSlotWeekMarker.call(ctx, ctx.generatedTimetable.slots['1-5'])).toBe('2-w')
+        expect(methods.generatedTimetableSlotRecurrenceLabel.call(ctx, ctx.generatedTimetable.slots['1-5'])).toBe('2-wöchig')
         expect(ctx.generatedTimetable.slots['1-5'].isDistanceLearningCourse).toBe(true)
     })
 

@@ -984,11 +984,6 @@
                                             <div class="students-timetable-v2-result-grid__code">
                                                 <span>{{ selectedTimetableV2SlotTitle(selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value))) }}</span>
                                                 <sup
-                                                    v-if="selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)).isDistanceLearningCourse"
-                                                    class="students-timetable-v2-result-grid__badge">
-                                                    FU
-                                                </sup>
-                                                <sup
                                                     v-if="selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)).isAdditionalCourse"
                                                     class="students-timetable-v2-result-grid__badge students-timetable-v2-result-grid__badge--additional">
                                                     Zusatz
@@ -1011,6 +1006,11 @@
                                                         { showRegularRange: selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length > 0 },
                                                     )
                                                 }}
+                                            </div>
+                                            <div
+                                                v-if="selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)).isDistanceLearningCourse"
+                                                class="students-timetable-v2-result-grid__distance-learning">
+                                                Fernunterricht
                                             </div>
                                             <div
                                                 v-if="selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length"
@@ -7556,8 +7556,8 @@ export default {
         courseBaseAliases(base) {
             const normalizedBase = this.normalizedCourseCode(base)
             const mappedAliases = {
-                ET: ['ETH', 'R', 'RK'],
-                ETH: ['ET', 'R', 'RK'],
+                ET: ['ETH'],
+                ETH: ['ET'],
                 GPB: ['GS'],
                 GS: ['GPB'],
                 GW: ['GWB'],
@@ -7566,8 +7566,8 @@ export default {
                 LET: ['LPT'],
                 ME: ['MU'],
                 MU: ['ME'],
-                R: ['RK', 'ET', 'ETH'],
-                RK: ['R', 'ET', 'ETH'],
+                R: ['RK'],
+                RK: ['R'],
                 S: ['SPA'],
                 SPA: ['S'],
             }
@@ -8662,6 +8662,10 @@ export default {
 .students-timetable-v2-calculation-card__more-course-actions {
     display: flex;
     gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+    margin-left: auto;
+    flex: 0 1 auto;
     flex-wrap: wrap;
 }
 
@@ -9009,6 +9013,13 @@ export default {
 
 .students-timetable-v2-result-grid__recurrence {
     color: #0f766e;
+}
+
+.students-timetable-v2-result-grid__distance-learning {
+    color: #92400e;
+    font-size: 0.7rem;
+    font-weight: 800;
+    line-height: 1.2;
 }
 
 .students-timetable-v2-result-grid__date {

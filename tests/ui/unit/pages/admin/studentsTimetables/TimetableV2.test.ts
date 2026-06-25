@@ -796,6 +796,9 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain('v-if="(calculationButtonCardVisible || adoptedTimetableButtonCardVisible) && !selectedTimetableV2Result"')
         expect(source).not.toContain('Gültiger Stundenplan')
         expect(source).toMatch(/class="students-timetable-v2-result-grid"[\s\S]*class="students-timetable-v2-result-conflicts"[\s\S]*\{\{ selectedTimetableV2ConflictTitle \}\}/u)
+        expect(source).toContain('class="students-timetable-v2-result-grid__distance-learning"')
+        expect(source).toContain('Fernunterricht')
+        expect(source).not.toContain('>\n                                                    FU\n                                                </sup>')
         expect(source).toContain('v-if="selectedTimetableV2ConflictResolutionActionsVisible"')
         expect(source).toMatch(/:color="option\.color"\s+variant="tonal"\s+:prepend-icon="option\.icon"\s+:class="\{ 'students-timetable-v2-result-conflicts__action--recommended': option\.recommended \}"\s+:disabled="timetablePendingActionConfirmationVisible"\s+@click="applySelectedTimetableV2ConflictResolution\(option\)"/u)
         expect(source).toMatch(/v-else-if="timetableCalculationVisible && !moreCoursesVisible" class="students-timetable-v2-calculation-card__actions"/u)
@@ -2813,6 +2816,56 @@ describe('TimetableV2 route steps', () => {
 
         expect(savedState.timetableV2Selection.moreOfferedCourseSelections).toBeUndefined()
         expect(TimetableV2.methods.moreCourseOfferedCourseItemsAllDeselected.call(context, moreCourse)).toBe(true)
+    })
+
+    it('does not mix ethics and religion offered courses', () => {
+        const context = timetableV2Context({
+            courseGroups: [
+                {
+                    class_name: 'ETH - 3 - 3CK - NIE',
+                    course: 'ETH',
+                    hour: 10,
+                    module_code: 'ETH3',
+                    title: 'ETH',
+                    weekday: 3,
+                },
+                {
+                    class_name: 'ETH - 3 - 5RU - HER',
+                    course: 'ETH',
+                    hour: 6,
+                    module_code: 'ETH3',
+                    title: 'ETH',
+                    weekday: 5,
+                },
+                {
+                    class_name: 'Rk - 3 - ENNS',
+                    course: 'Rk',
+                    hour: 8,
+                    module_code: 'Rk3',
+                    title: 'Rk',
+                    weekday: 5,
+                },
+            ],
+        })
+
+        const ethicsOffers = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, {
+            code: 'ETH3',
+            hours: 3,
+            label: 'ETH3',
+            selectionKey: 'planned:ETH3',
+        })
+        const catholicReligionOffers = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, {
+            code: 'Rk3',
+            hours: 3,
+            label: 'Rk3',
+            selectionKey: 'planned:Rk3',
+        })
+
+        expect(ethicsOffers).toHaveLength(2)
+        expect(ethicsOffers.map((course) => course.courseGroup.module_code)).toEqual(['ETH3', 'ETH3'])
+        expect(ethicsOffers.map((course) => course.courseGroup.module_code)).not.toContain('Rk3')
+        expect(catholicReligionOffers).toHaveLength(1)
+        expect(catholicReligionOffers[0].courseGroup.module_code).toBe('Rk3')
     })
 
     it('marks impossible more courses red and prevents opening their offers', () => {
@@ -5645,6 +5698,7 @@ describe('TimetableV2 route steps', () => {
         ])
         expect(TimetableV2.methods.selectedTimetableV2SlotTitle.call(context, context.timetableCalculationResult.selected_timetable.slots['6-2'])).toBe('INF 2')
         expect(TimetableV2.methods.selectedTimetableV2SlotDetails.call(context, context.timetableCalculationResult.selected_timetable.slots['6-2'])).toBe('INF2-Grp1-FU')
+        expect(context.timetableCalculationResult.selected_timetable.slots['6-2'].isDistanceLearningCourse).toBe(true)
         expect(TimetableV2.methods.selectedTimetableV2SlotRecurrenceLabel.call(context, context.timetableCalculationResult.selected_timetable.slots['1-1'])).toBe('')
         expect(TimetableV2.methods.selectedTimetableV2SlotRecurrenceLabel.call(context, context.timetableCalculationResult.selected_timetable.slots['6-2'])).toBe('2-wöchig')
         expect(TimetableV2.methods.selectedTimetableV2SlotDateLabel.call(context, context.timetableCalculationResult.selected_timetable.slots['1-1'])).toBe('')
