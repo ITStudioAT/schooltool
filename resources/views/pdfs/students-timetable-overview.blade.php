@@ -35,7 +35,7 @@
         $pageHeight = 194;
         $headerHeight = 9;
         $availableRowHeight = max(24, $pageHeight - $headerHeight - $labelHeight);
-        $rowHeight = max(4.2, min(8.5, $availableRowHeight / $hourRowCount));
+        $rowHeight = max(5.2, min(10.5, $availableRowHeight / $hourRowCount));
         $naturalHeight = $headerHeight + $labelHeight + ($hourRowCount * $rowHeight);
         $scale = max(0.45, min(1, $pageHeight / $naturalHeight));
         $contentWidth = 100 / $scale;
@@ -278,6 +278,23 @@
                 ->implode(' ');
         };
 
+        $formatDetailsHtml = function (?string $details): string {
+            return collect(preg_split('/\s*·\s*/u', (string) $details) ?: [])
+                ->map(fn (string $segment): string => trim($segment))
+                ->filter()
+                ->map(function (string $segment): string {
+                    if (preg_match('/^(\d+\s*-?\s*w(?:öchig|öching)?)(\s+.*)?$/iu', $segment, $matches) === 1) {
+                        $recurrence = e($matches[1]);
+                        $remainingText = e($matches[2] ?? '');
+
+                        return "<span class=\"recurrence-detail\">{$recurrence}</span>{$remainingText}";
+                    }
+
+                    return e($segment);
+                })
+                ->implode(' · ');
+        };
+
         $formatCourseDates = fn ($slots) => $slots
             ->flatMap(fn (array $slot): array => $slot['dates'] ?? [])
             ->map(fn (string $date): string => trim($date))
@@ -430,7 +447,7 @@
 
         td {
             height: var(--pdf-row-height);
-            padding: 0.4mm 0.5mm;
+            padding: 0.55mm 0.6mm;
             background: #f8fafc;
             font-size: var(--pdf-body-font-size);
             line-height: 1.15;
@@ -482,7 +499,7 @@
 
         .cell-content {
             position: relative;
-            height: calc(var(--pdf-row-height) - 0.8mm);
+            height: calc(var(--pdf-row-height) - 1.1mm);
             overflow: hidden;
         }
 
@@ -512,6 +529,21 @@
             color: #475569;
             font-size: var(--pdf-detail-font-size);
             line-height: 1.1;
+        }
+
+        .recurrence-detail {
+            color: #1d4ed8;
+            font-weight: 700;
+        }
+
+        .course-fu {
+            display: block;
+            margin-top: 0.4mm;
+            color: #1d4ed8;
+            font-size: var(--pdf-detail-font-size);
+            font-weight: 700;
+            line-height: 1.1;
+            white-space: nowrap;
         }
 
         .course-more {
@@ -690,15 +722,17 @@
 
         .fu-badge {
             display: inline-block;
-            padding: 0 0.5mm;
-            margin-left: 0.3mm;
-            background: #dbeafe;
+            padding: 0.2mm 0.8mm;
+            margin-left: 0.5mm;
+            background: #bfdbfe;
             color: #1e40af;
-            font-size: 0.7em;
+            font-size: 0.78em;
             font-weight: 700;
-            line-height: 1.2;
-            border-radius: 0.5mm;
-            vertical-align: super;
+            line-height: 1.25;
+            text-align: center;
+            border: 0.15mm solid #60a5fa;
+            border-radius: 0.8mm;
+            vertical-align: baseline;
         }
 
         .student-course-badge {
@@ -804,13 +838,16 @@
                                                         @foreach($shownCourses as $course)
                                                             <div class="course @if($hasDenseCourses) course--compact @endif">
                                                                 <div class="course-label">
-                                                                    {{ $course['label'] ?? '' }}@if(! empty($course['is_fu']))<span class="fu-badge">FU</span>@endif
+                                                                    {{ $course['label'] ?? '' }}
                                                                     @if(! empty($course['student_course_badge']) && in_array($course['student_course_type'] ?? '', ['missing', 'additional'], true))
                                                                         <span class="student-course-badge student-course-badge--{{ $course['student_course_type'] }}">{{ $course['student_course_badge'] }}</span>
                                                                     @endif
                                                                 </div>
                                                                 @if(! $hasDenseCourses && ! empty($course['details']))
-                                                                    <div class="course-details">{{ $course['details'] }}</div>
+                                                                    <div class="course-details">{!! $formatDetailsHtml($course['details']) !!}</div>
+                                                                @endif
+                                                                @if(! empty($course['is_fu']))
+                                                                    <div class="course-fu">Fernunterricht</div>
                                                                 @endif
                                                             </div>
                                                         @endforeach
@@ -865,8 +902,8 @@
                 <tbody>
                     @foreach($courseDirectory as $entry)
                         <tr>
-                            <td class="cell-label">{{ $entry['label'] }}@if(! empty($entry['is_fu']))<span class="fu-badge">FU</span>@endif</td>
-                            <td class="cell-details">{{ $entry['details'] }}</td>
+                            <td class="cell-label">{{ $entry['label'] }}@if(! empty($entry['is_fu']))<span class="fu-badge">Fernunterricht</span>@endif</td>
+                            <td class="cell-details">{!! $formatDetailsHtml($entry['details']) !!}</td>
                             <td>{{ $entry['slots'] }}</td>
                             <td style="text-align: center">
                                 <span class="status-dot status-dot--{{ $entry['status'] }}"></span>
@@ -923,8 +960,8 @@
                                 <td class="cell-weekday">{{ $slot['weekday'] }}</td>
                                 <td class="cell-hour">{{ $slot['hour_label'] ?? (($slot['hour'] ?? '') . '.') }}</td>
                                 <td class="cell-time">{{ $slot['time'] }}</td>
-                                <td class="cell-label">{{ $slot['label'] }}@if(! empty($slot['is_fu']))<span class="fu-badge">FU</span>@endif</td>
-                                <td class="cell-details">{{ $slot['details'] }}</td>
+                                <td class="cell-label">{{ $slot['label'] }}@if(! empty($slot['is_fu']))<span class="fu-badge">Fernunterricht</span>@endif</td>
+                                <td class="cell-details">{!! $formatDetailsHtml($slot['details']) !!}</td>
                                 <td>
                                     @if($slot['status'] !== 'empty')
                                         <span class="status-dot status-dot--{{ $slot['status'] }}" title="{{ $slot['status'] }}"></span>

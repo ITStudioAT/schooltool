@@ -2750,6 +2750,7 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->contains('+2 weitere Termine')
             && $pdf->contains('class="pdf-page"')
             && $pdf->contains('--pdf-scale:')
+            && $pdf->contains('--pdf-row-height: 10.50mm;')
             && $pdf->contains('.pdf-page-courses')
             && $pdf->contains('page-break-inside: auto;')
             && $pdf->contains('display: table-header-group;')
@@ -2761,7 +2762,8 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->contains('<td class="cell-label">PP2 - 2S - MAI</td>')
             && $pdf->contains('<td class="cell-hour">1.-2.</td>')
             && $pdf->contains('<td class="cell-time">08:00 – 09:35</td>')
-            && $pdf->contains('1-w')
+            && $pdf->contains('<span class="recurrence-detail">1-wöchig</span>')
+            && $pdf->contains('<span class="recurrence-detail">1-w</span>')
             && $pdf->contains('<h1 class="courses-title">Kursliste</h1>')
             && $pdf->contains('<th class="col-directory-label">Kurs</th>')
             && $pdf->contains('<td class="cell-label">M2 - 2S - ALT</td>')
@@ -2840,8 +2842,12 @@ it('lets students create their personal timetable overview pdf from posted timet
             && $pdf->isDownload()
             && $pdf->contains('Mein Stundenplan')
             && $pdf->contains('L4 - SHAM')
-            && $pdf->contains('<span class="fu-badge">FU</span>')
-            && $pdf->contains('2-w');
+            && $pdf->contains('<div class="course-fu">Fernunterricht</div>')
+            && $pdf->contains('.course-fu')
+            && $pdf->contains('<span class="recurrence-detail">2-wöchig</span>')
+            && $pdf->contains('color: #1d4ed8;')
+            && $pdf->contains('vertical-align: baseline;')
+            && $pdf->contains('<span class="recurrence-detail">2-w</span>');
     });
 });
 
