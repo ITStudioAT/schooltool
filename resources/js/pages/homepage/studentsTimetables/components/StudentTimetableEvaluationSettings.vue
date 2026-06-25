@@ -1027,6 +1027,7 @@ export default {
         'course-selection-change',
         'courses-selected',
         'quality-criteria-selection-change',
+        'restart',
         'saved',
         'step-change',
     ],
@@ -3408,6 +3409,7 @@ export default {
             return {
                 label: this.generatedSlotTitle(block),
                 details: this.generatedSlotDetails(block),
+                is_fu: block?.isDistanceLearningCourse === true,
                 student_course_badge: block?.isAdditionalCourse === true ? 'Zusatz' : '',
                 dates,
             }
@@ -5177,7 +5179,15 @@ export default {
 
 .students-timetable-v2-selected-courses-card__course--active,
 .student-selected-courses-card__course--active {
-    box-shadow: 0 0 0 1px rgba(0, 137, 123, 0.26);
+    border-color: #15803d !important;
+    background: #16a34a !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.34);
+}
+
+.students-timetable-v2-selected-courses-card__course--active .students-timetable-v2-selected-courses-card__meta,
+.student-selected-courses-card__course--active .students-timetable-v2-selected-courses-card__meta {
+    color: #ffffff;
 }
 
 .students-timetable-v2-selected-courses-card__course--offered-partial,

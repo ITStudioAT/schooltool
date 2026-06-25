@@ -13,7 +13,7 @@ class RobotTimetableBackendSetupService
 {
     private const MAX_BACKEND_TIMETABLE_VARIATIONS = 200000;
 
-    private const TIMETABLE_VARIATION_CACHE_VERSION = 1;
+    private const TIMETABLE_VARIATION_CACHE_VERSION = 2;
 
     private const TIMETABLE_VARIATION_CACHE_TTL_MINUTES = 20;
 
@@ -79,6 +79,7 @@ class RobotTimetableBackendSetupService
             'additional_course_timetable_count' => $variationResult['additional_course_timetable_count'],
             'no_saturday_timetable_count' => $variationResult['no_saturday_timetable_count'],
             'selected_timetable' => $variationResult['selected_timetable'],
+            'problem_courses' => $variationResult['problem_courses'],
             'quality_counters' => $variationResult['quality_counters'],
             'all_quality_criteria_count' => $variationResult['all_quality_criteria_count'],
             'selected_quality_criteria_count' => $variationResult['selected_quality_criteria_count'],
@@ -1075,6 +1076,7 @@ class RobotTimetableBackendSetupService
         return [
             'course_options' => $input['course_options'],
             'additional_course_options' => $input['additional_course_options'],
+            'problem_courses' => $input['problem_courses'],
             'counts' => $counts,
             'quality_summary' => $qualityResult['summary'],
             'quality_combination_counts' => $qualityResult['combination_counts'],
@@ -1110,6 +1112,7 @@ class RobotTimetableBackendSetupService
         return [
             ...$base['counts'],
             'selected_timetable' => $selectedTimetable,
+            'problem_courses' => $base['problem_courses'],
             'quality_counters' => $this->qualityCountersFromSummary(
                 $base['quality_summary'],
                 $selectedTimetable['metrics'] ?? null,
@@ -1235,7 +1238,7 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $subjectMappings
      * @param  list<array<string, mixed>>  $courseGroups
      * @param  array<string, mixed>  $settings
-     * @return array{selected_courses: list<array<string, mixed>>, course_options: list<list<array<string, mixed>>>, additional_courses: list<array<string, mixed>>, additional_course_options: list<list<array<string, mixed>>>, has_missing_options: bool}
+     * @return array{selected_courses: list<array<string, mixed>>, course_options: list<list<array<string, mixed>>>, additional_courses: list<array<string, mixed>>, additional_course_options: list<list<array<string, mixed>>>, has_missing_options: bool, problem_courses: list<array<string, mixed>>}
      */
     private function timetableVariationInput(
         array $subjectRows,
@@ -1264,7 +1267,107 @@ class RobotTimetableBackendSetupService
             'additional_courses' => $selectedAdditionalCourses,
             'additional_course_options' => $additionalCourseOptions,
             'has_missing_options' => collect($courseOptions)->contains(fn (array $options): bool => $options === []),
+            'problem_courses' => $this->unavailableCourseDiagnostics(
+                $selectedCourses,
+                $courseOptions,
+                $courseGroups,
+                $subjectMappings,
+                $settings,
+            ),
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $selectedCourses
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  array<string, mixed>  $settings
+     * @return list<array<string, mixed>>
+     */
+    private function unavailableCourseDiagnostics(
+        array $selectedCourses,
+        array $courseOptions,
+        array $courseGroups,
+        array $subjectMappings,
+        array $settings,
+    ): array {
+        return collect($selectedCourses)
+            ->values()
+            ->map(function (array $course, int $index) use ($courseOptions, $courseGroups, $subjectMappings, $settings): ?array {
+                if (($courseOptions[$index] ?? []) !== []) {
+                    return null;
+                }
+
+                $reason = $this->unavailableCourseReason($course, $courseGroups, $subjectMappings, $settings);
+
+                return [
+                    'key' => (string) ($course['key'] ?? ''),
+                    'code' => (string) ($course['code'] ?? ''),
+                    'name' => (string) ($course['name'] ?? ''),
+                    'label' => $this->courseProblemLabel($course),
+                    'reason' => $reason,
+                    'reason_label' => $this->unavailableCourseReasonLabel($reason),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  array<string, mixed>  $settings
+     */
+    private function unavailableCourseReason(
+        array $course,
+        array $courseGroups,
+        array $subjectMappings,
+        array $settings,
+    ): string {
+        $settingsWithoutDeselectedGroups = [
+            ...$settings,
+            'deselected_course_group_keys' => [],
+        ];
+
+        if ($this->courseOptions($course, $courseGroups, $subjectMappings, $settingsWithoutDeselectedGroups) !== []) {
+            return 'course_groups_deselected';
+        }
+
+        $settingsWithoutTimeConstraints = [
+            ...$settingsWithoutDeselectedGroups,
+            'constraints' => [
+                ...($this->arrayValue($settings['constraints'] ?? [])),
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 30),
+                'excludedWeekdayTimes' => [],
+            ],
+        ];
+
+        if ($this->courseOptions($course, $courseGroups, $subjectMappings, $settingsWithoutTimeConstraints) !== []) {
+            return 'time_constraints';
+        }
+
+        return 'no_course_groups';
+    }
+
+    private function unavailableCourseReasonLabel(string $reason): string
+    {
+        return match ($reason) {
+            'course_groups_deselected' => 'Alle passenden Kursgruppen wurden abgewählt.',
+            'time_constraints' => 'Die Zeitvorgaben schließen alle passenden Kursgruppen aus.',
+            default => 'Es wurde keine passende Kursgruppe im importierten Stundenplan gefunden.',
+        };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function arrayValue(mixed $value): array
+    {
+        return is_array($value) ? $value : [];
     }
 
     /**
@@ -3639,6 +3742,8 @@ class RobotTimetableBackendSetupService
             ->filter()
             ->unique()
             ->values();
+        $selectedCourseKeyValues = $selectedCourseKeys->all();
+        $deselectedCourseKeys = $this->stringList($settings['deselected_course_keys'] ?? []);
 
         if ($selectedCourseSettingsKey === 'selected_additional_course_keys' && $selectedCourseKeys->isEmpty()) {
             return [];
@@ -3657,15 +3762,51 @@ class RobotTimetableBackendSetupService
             ->when(
                 $selectedCourseKeys->isNotEmpty(),
                 fn (Collection $courses): Collection => $courses
-                    ->filter(fn (array $course): bool => $selectedCourseKeys->contains($course['key'] ?? '')),
+                    ->filter(fn (array $course): bool => $this->courseMatchesSelectedCourseKeys($course, $selectedCourseKeyValues)),
             )
             ->when(
                 $selectedCourseSettingsKey === 'selected_course_keys',
                 fn (Collection $courses): Collection => $courses
-                    ->reject(fn (array $course): bool => in_array($course['key'] ?? '', $settings['deselected_course_keys'] ?? [], true)),
+                    ->reject(fn (array $course): bool => $this->courseMatchesSelectedCourseKeys($course, $deselectedCourseKeys)),
             )
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  list<string>  $selectedCourseKeys
+     */
+    private function courseMatchesSelectedCourseKeys(array $course, array $selectedCourseKeys): bool
+    {
+        if ($selectedCourseKeys === []) {
+            return false;
+        }
+
+        $courseKey = (string) ($course['key'] ?? '');
+        if ($courseKey !== '' && in_array($courseKey, $selectedCourseKeys, true)) {
+            return true;
+        }
+
+        $courseAliases = $this->courseAliases($course);
+
+        return collect($selectedCourseKeys)
+            ->map(fn (string $selectedCourseKey): string => $this->selectedCourseCodeFromKey($selectedCourseKey))
+            ->filter()
+            ->contains(fn (string $selectedCourseCode): bool => in_array($selectedCourseCode, $courseAliases, true));
+    }
+
+    private function selectedCourseCodeFromKey(string $selectedCourseKey): string
+    {
+        $selectedCourseKey = trim($selectedCourseKey);
+        if ($selectedCourseKey === '' || str_contains($selectedCourseKey, '|')) {
+            return '';
+        }
+
+        if (preg_match('/^(.+)-\d+$/u', $selectedCourseKey, $matches) === 1) {
+            return $this->normalizedCourseCode($matches[1]);
+        }
+
+        return $this->normalizedCourseCode($selectedCourseKey);
     }
 
     /**

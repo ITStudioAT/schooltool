@@ -206,6 +206,92 @@ it('returns backend timetable availability for candidate courses', function () {
         ]);
 });
 
+it('returns problem courses when selected courses have no available timetable options', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-01',
+        'until' => '2027-07-01',
+    ]);
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $subjectRow = StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 1,
+        'branch' => 'common',
+        'json_code' => 'D1',
+        'json_subject' => 'D',
+        'name' => 'Deutsch 1',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => 1,
+        'source' => 'test',
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'line_number' => 1,
+        'date' => '2026-09-07',
+        'semester' => 1,
+        'period' => '14',
+        'subject' => 'D',
+        'course' => 'D',
+        'class_name' => 'D1-A',
+        'module_code' => 'D1',
+        'is_active' => true,
+    ]);
+
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
+
+    $selectedCourseKey = implode('|', [
+        $subjectRow->id,
+        $subjectRow->semester,
+        $subjectRow->branch,
+        $subjectRow->json_code,
+        $subjectRow->json_subject,
+        $subjectRow->name,
+        $subjectRow->json_code,
+    ]);
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable', [
+            'selection' => [
+                'semester' => 1,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [$selectedCourseKey],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.timetable_variation_count', 0)
+        ->assertJsonPath('data.selected_course_count', 1)
+        ->assertJsonPath('data.problem_courses.0.key', $selectedCourseKey)
+        ->assertJsonPath('data.problem_courses.0.code', 'D1')
+        ->assertJsonPath('data.problem_courses.0.reason', 'time_constraints')
+        ->assertJsonPath('data.problem_courses.0.reason_label', 'Die Zeitvorgaben schließen alle passenden Kursgruppen aus.')
+        ->assertJsonPath('data.selected_timetable', null);
+});
+
 it('can short circuit backend timetable availability after finding one valid timetable', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $schoolyear = Schoolyear::factory()->create([
@@ -2598,6 +2684,67 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && ! $pdf->contains('LET - 1U - HER')
             && $pdf->contains('20.02.')
             && $pdf->contains('1C · PABINGER Elena');
+    });
+});
+
+it('lets students create their personal timetable overview pdf from posted timetable data', function () {
+    Pdf::fake();
+
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_user');
+
+    $this->actingAs($user)
+        ->postJson('/api/homepage/students-timetables/overview/pdf', [
+            'title' => 'Mein Stundenplan',
+            'schoolyear' => '2025/26',
+            'student' => '1C · PABINGER Elena',
+            'generated_at' => '31.05.2026, 20:00',
+            'weekdays' => [
+                ['label' => 'Mo'],
+            ],
+            'semesters' => [
+                [
+                    'label' => 'Semester',
+                    'date_range' => '',
+                    'weeks' => [
+                        [
+                            'label' => 'Stundenplan',
+                            'hours' => [
+                                [
+                                    'hour' => 1,
+                                    'from' => '08:00',
+                                    'until' => '08:45',
+                                    'cells' => [
+                                        [
+                                            'status' => 'filled',
+                                            'courses' => [
+                                                [
+                                                    'label' => 'L4 - SHAM',
+                                                    'details' => '2-wöchig · L4-SHAM',
+                                                    'is_fu' => true,
+                                                    'recurrence_label' => '2-wöchig',
+                                                    'recurrence_interval' => 2,
+                                                ],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ])
+        ->assertSuccessful();
+
+    Pdf::assertRespondedWithPdf(function ($pdf): bool {
+        return $pdf->viewName === 'pdfs.students-timetable-overview'
+            && $pdf->downloadName === 'stundenplan.pdf'
+            && $pdf->isDownload()
+            && $pdf->contains('Mein Stundenplan')
+            && $pdf->contains('L4 - SHAM')
+            && $pdf->contains('<span class="fu-badge">FU</span>')
+            && $pdf->contains('2-w');
     });
 });
 

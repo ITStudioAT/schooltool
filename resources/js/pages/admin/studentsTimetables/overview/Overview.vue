@@ -2854,6 +2854,8 @@ export default {
                 details: this.courseGroupDetailLabel(courseGroup),
                 dates: this.courseGroupDates(courseGroup),
                 is_fu: this.courseGroupDistanceLearning(courseGroup),
+                recurrence_label: courseGroup?.recurrence_label || '',
+                recurrence_interval: Number(courseGroup?.recurrence_interval || 0) || null,
                 student_course_type: studentCourseType,
                 student_course_badge: studentCourseBadge,
             }

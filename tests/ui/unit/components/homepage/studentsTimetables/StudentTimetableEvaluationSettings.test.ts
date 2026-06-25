@@ -1,8 +1,15 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import axios from 'axios'
 import { describe, expect, it, vi } from 'vitest'
 import StudentTimetableEvaluationSettings from '@/pages/homepage/studentsTimetables/components/StudentTimetableEvaluationSettings.vue'
 import Overview from '@/pages/homepage/studentsTimetables/overview/Overview.vue'
+
+vi.mock('axios', () => ({
+    default: {
+        post: vi.fn(),
+    },
+}))
 
 describe('Student timetable evaluation settings', () => {
     it('keeps student timetable copy free from mojibake', () => {
@@ -43,6 +50,7 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('@adopt-timetable="adoptGeneratedTimetable"')
         expect(source).toContain('@courses-selected="finishAutomaticTimetable"')
         expect(source).toContain('@quality-criteria-selection-change="setAutomaticTimetableQualityCriterionKeys"')
+        expect(source).toContain('@restart="restartAutomaticTimetable"')
         expect(source).toContain('@step-change="setAutomaticTimetableStep"')
         expect(source).toContain('automatic_timetable')
         expect(source).toContain('automatic_timetable_courses')
@@ -70,6 +78,9 @@ describe('Student timetable evaluation settings', () => {
         const source = readFileSync(overviewPath, 'utf8')
 
         expect(source).toContain(":variant=\"overviewCourseItemSelected(course, section.key) ? 'tonal' : 'outlined'\"")
+        expect(source).toContain('.overview-course-selection__item--selected')
+        expect(source).toContain('background: #16a34a !important;')
+        expect(source).toContain('border-color: #15803d !important;')
         expect(source).toContain('.overview-course-selection__item--deselected')
         expect(source).toContain('background: #ffffff;')
         expect(source).toContain('border-color: rgba(100, 116, 139, 0.28);')
@@ -109,6 +120,7 @@ describe('Student timetable evaluation settings', () => {
                             teacher: 'MAY',
                             room: '101',
                         },
+                        isDistanceLearningCourse: true,
                     },
                 },
             },
@@ -135,6 +147,7 @@ describe('Student timetable evaluation settings', () => {
         expect(emittedEvents[0].payload.timetable.semesters[0].weeks[0].hours[0].cells[0].courses[0]).toMatchObject({
             label: 'D1',
             details: 'D1-1A-MAY · MAY · 101',
+            is_fu: true,
         })
         expect(emittedEvents[0].payload.state).toMatchObject({
             source: 'automatic-timetable',
@@ -219,7 +232,31 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('published_timetable')
         expect(source).toContain('publishedTimetableVisible')
         expect(source).toContain("manual_timetable = 'personal'")
+        expect(source).toContain('class="student-manual-timetable__toolbar student-published-timetable__titlebar"')
+        expect(source).toMatch(/student-published-timetable__titlebar[\s\S]*Übernommener Stundenplan/u)
+        expect(source).toContain('class="student-published-timetable__semester-actions"')
+        expect(source).toMatch(/student-published-timetable__semester-head[\s\S]*student-published-timetable__semester-actions[\s\S]*@click="downloadPersonalTimetablePdf"[\s\S]*@click="savePersonalVisibleTimetable"[\s\S]*student-published-timetable__actions/u)
+        expect(source).toContain('class="student-published-timetable__actions"')
+        expect(source).toMatch(/student-published-timetable__semester-head[\s\S]*student-published-timetable__actions[\s\S]*@click="restartPersonalTimetable"[\s\S]*@click="goBackFromPersonalTimetable"/u)
+        expect(source).toContain('downloadPersonalTimetablePdf()')
+        expect(source).toContain("'/api/homepage/students-timetables/overview/pdf'")
+        expect(source).toContain('savePersonalVisibleTimetable()')
+        expect(source).toContain('personalVisibleTimetablePayload()')
+        expect(source).toContain('goBackFromPersonalTimetable()')
+        expect(source).toContain('this.$router.back()')
+        expect(source).toContain('restartPersonalTimetable()')
         expect(source).toContain('class="student-published-timetable__grid"')
+        expect(source).toContain('grid-template-columns: 52px repeat(var(--published-timetable-weekday-count), minmax(86px, 1fr));')
+        expect(source).toContain('class="student-published-timetable__code"')
+        expect(source).toContain('class="student-published-timetable__details"')
+        expect(source).toContain('class="student-published-timetable__distance-learning"')
+        expect(source).toContain('class="student-published-timetable__recurrence"')
+        expect(source).not.toContain('class="student-published-timetable__date"')
+        expect(source).toContain('class="student-published-timetable__badge student-published-timetable__badge--additional"')
+        expect(source).toContain('class="student-published-timetable__markers"')
+        expect(source).toContain('student-published-timetable__cell--additional')
+        expect(source).toContain('student-published-timetable__cell--has-occasional')
+        expect(source).toContain('student-published-timetable__block + .student-published-timetable__block')
         expect(source).toContain('class="timetable-date-overview"')
         expect(source).toContain('@media (max-width: 380px)')
         expect(source).toContain('box-shadow: none;')
@@ -241,6 +278,69 @@ describe('Student timetable evaluation settings', () => {
         expect(source).not.toContain('expandedManualOverviewCoursePanels: []')
         expect(source).not.toContain('<h3>Kurse</h3>')
         expect(source).not.toContain('courseSectionTotalCount')
+    })
+
+    it('restarts the personal timetable view at the plain overview route', () => {
+        const methods = (Overview as any).methods
+        const push = vi.fn()
+        const ctx: any = {
+            personalTimetableViewChangedMessageVisible: true,
+            showManualTimetable: true,
+            showEvaluationSettings: true,
+            manualTimetableMode: 'personal',
+            manualSelectedCourseKeys: ['D1'],
+            manualSelectedCourseGroupKeys: ['D1-1A'],
+            hiddenSavedTimetableCourseChipKeys: ['D1'],
+            personalAdditionalTimetableEntryKeys: ['additional:D2'],
+            selectedStudentCoursePickerTab: 'additional',
+            selectedStudentCoursePickerMenuKey: 'D2',
+            activePersonalMoreCourseCardKey: 'additional',
+            activePersonalMoreCourseMenuKey: 'D2',
+            studentCoursePickerDialogOpen: true,
+            $route: {
+                path: '/students-timetables/overview',
+                query: {
+                    manual_timetable: 'personal',
+                },
+            },
+            $router: {
+                push,
+            },
+        }
+
+        methods.restartPersonalTimetable.call(ctx)
+
+        expect(ctx.personalTimetableViewChangedMessageVisible).toBe(false)
+        expect(ctx.showManualTimetable).toBe(false)
+        expect(ctx.showEvaluationSettings).toBe(false)
+        expect(ctx.manualTimetableMode).toBe('manual')
+        expect(ctx.manualSelectedCourseKeys).toEqual([])
+        expect(ctx.manualSelectedCourseGroupKeys).toEqual([])
+        expect(ctx.hiddenSavedTimetableCourseChipKeys).toEqual([])
+        expect(ctx.personalAdditionalTimetableEntryKeys).toEqual([])
+        expect(ctx.selectedStudentCoursePickerTab).toBe('missing')
+        expect(ctx.selectedStudentCoursePickerMenuKey).toBe('')
+        expect(ctx.activePersonalMoreCourseCardKey).toBe('')
+        expect(ctx.activePersonalMoreCourseMenuKey).toBe('')
+        expect(ctx.studentCoursePickerDialogOpen).toBe(false)
+        expect(push).toHaveBeenCalledWith({
+            path: '/students-timetables/overview',
+            query: {},
+        })
+    })
+
+    it('goes only one history step back from the personal timetable view', () => {
+        const methods = (Overview as any).methods
+        const back = vi.fn()
+        const ctx: any = {
+            $router: {
+                back,
+            },
+        }
+
+        methods.goBackFromPersonalTimetable.call(ctx)
+
+        expect(back).toHaveBeenCalledTimes(1)
     })
 
     it('opens a published timetable with the saved course group selection', () => {
@@ -434,7 +534,226 @@ describe('Student timetable evaluation settings', () => {
                 'student-published-timetable__cell--warning': true,
                 'student-published-timetable__cell--conflict': false,
                 'student-published-timetable__cell--related': false,
+                'student-published-timetable__cell--additional': false,
+                'student-published-timetable__cell--has-occasional': false,
             })
+        expect(methods.publishedTimetableCourseDetails.call(ctx, savedCell.courses[0])).toBe('')
+        expect(methods.publishedTimetableCourseIsDistanceLearning.call(ctx, savedCell.courses[0])).toBe(true)
+        expect(methods.publishedTimetableCourseRecurrenceLabel.call(ctx, savedCell.courses[0])).toBe('2-wöchig')
+        expect(methods.publishedTimetableCourseDetails.call(ctx, savedCell.courses[1])).toBe('')
+        expect(methods.publishedTimetableCourseIsDistanceLearning.call(ctx, savedCell.courses[1])).toBe(false)
+        expect(methods.publishedTimetableCourseRecurrenceLabel.call(ctx, savedCell.courses[1])).toBe('2-wöchig')
+        expect(methods.publishedTimetableCourseDetails.call(ctx, { details: '1w' })).toBe('')
+        expect(methods.publishedTimetableCourseRecurrenceLabel.call(ctx, { recurrence_label: '1w' })).toBe('')
+        expect(methods.publishedTimetableCourseRecurrenceLabel.call(ctx, { recurrence_label: 'wöchentlich' })).toBe('')
+        expect(methods.publishedTimetableCourseRecurrenceLabel.call(ctx, { recurrence_label: '2w' })).toBe('2-wöchig')
+        const screenshotLikeCourseGroup = {
+            key: 'l4-friday-7',
+            course: 'L4',
+            display_label: 'L4-SHAM',
+            semester: 5,
+            weekday: 5,
+            hour: 7,
+            recurrence_interval: 2,
+            distance_learning: true,
+            dates: ['2026-02-20', '2026-03-06', '2026-03-20'],
+        }
+        ctx.overview.manual_timetable.sections[0].items.push({
+            key: 'course-l4',
+            code: 'L4',
+            course_groups: [screenshotLikeCourseGroup],
+        })
+        ctx.overview.manual_timetable.sections[0].items.push({
+            key: 'course-l5',
+            code: 'L5',
+            hours: 2,
+            course_groups: [
+                {
+                    key: 'l5-friday-8',
+                    course: 'L5',
+                    display_label: 'L5-SHAM',
+                    semester: 5,
+                    weekday: 5,
+                    hour: 8,
+                },
+            ],
+        })
+        ctx.overview.manual_timetable.sections[0].items.push({
+            key: 'course-full-week-reference',
+            code: 'REF5',
+            hours: 1,
+            course_groups: [
+                {
+                    key: 'ref5-full-week',
+                    course: 'REF5',
+                    display_label: 'REF5 - FULL',
+                    semester: 5,
+                    weekday: 1,
+                    hour: 1,
+                    recurrence_interval: 1,
+                    dates: [
+                        '2026-02-16',
+                        '2026-02-23',
+                        '2026-03-02',
+                        '2026-03-09',
+                        '2026-03-16',
+                        '2026-03-23',
+                        '2026-04-13',
+                        '2026-04-20',
+                        '2026-04-27',
+                        '2026-05-04',
+                        '2026-05-11',
+                        '2026-05-18',
+                        '2026-06-01',
+                        '2026-06-08',
+                        '2026-06-15',
+                        '2026-06-22',
+                        '2026-06-29',
+                        '2026-07-06',
+                    ],
+                },
+            ],
+        })
+        ctx.overview.manual_timetable.sections[0].items.push({
+            key: 'course-l6',
+            code: 'L6',
+            hours: 4,
+            course_groups: [
+                {
+                    key: 'l6-friday-7',
+                    course: 'L6',
+                    display_label: 'L6 - SHAM',
+                    semester: 5,
+                    weekday: 5,
+                    hour: 7,
+                    recurrence_interval: 1,
+                    dates: [
+                        '2026-02-20',
+                        '2026-02-27',
+                        '2026-03-06',
+                        '2026-03-13',
+                        '2026-03-20',
+                        '2026-03-27',
+                        '2026-04-10',
+                        '2026-04-17',
+                        '2026-04-24',
+                    ],
+                },
+                {
+                    key: 'l6-friday-8',
+                    course: 'L6',
+                    display_label: 'L6 - SHAM',
+                    semester: 5,
+                    weekday: 5,
+                    hour: 8,
+                    recurrence_interval: 1,
+                    dates: [
+                        '2026-02-20',
+                        '2026-02-27',
+                        '2026-03-06',
+                        '2026-03-13',
+                        '2026-03-20',
+                        '2026-03-27',
+                        '2026-04-10',
+                        '2026-04-17',
+                        '2026-04-24',
+                    ],
+                },
+                {
+                    key: 'l6-friday-12',
+                    course: 'L6',
+                    display_label: 'L6 - SHAM',
+                    semester: 5,
+                    weekday: 5,
+                    hour: 12,
+                    recurrence_interval: 1,
+                    dates: [
+                        '2026-02-20',
+                        '2026-02-27',
+                        '2026-03-06',
+                        '2026-03-13',
+                        '2026-03-20',
+                        '2026-03-27',
+                        '2026-04-10',
+                        '2026-04-17',
+                        '2026-04-24',
+                    ],
+                },
+                {
+                    key: 'l6-friday-13',
+                    course: 'L6',
+                    display_label: 'L6 - SHAM',
+                    semester: 5,
+                    weekday: 5,
+                    hour: 13,
+                    recurrence_interval: 1,
+                    dates: [
+                        '2026-02-20',
+                        '2026-02-27',
+                        '2026-03-06',
+                        '2026-03-13',
+                        '2026-03-20',
+                        '2026-03-27',
+                        '2026-04-10',
+                        '2026-04-17',
+                        '2026-04-24',
+                    ],
+                },
+            ],
+        })
+        const screenshotLikeCourse = {
+            label: 'L4',
+            details: 'L4-SHAM',
+            dates: ['2026-02-20', '2026-03-06', '2026-03-20'],
+        }
+        const heuristicDistanceLearningCourse = {
+            label: 'L5',
+            details: 'L5-SHAM',
+        }
+        const splitRowCourse = {
+            label: 'L6',
+            details: 'L6-SHAM',
+        }
+        const screenshotLikeHour = {
+            hour: 7,
+            from: '14:45',
+            until: '15:30',
+        }
+        const heuristicDistanceLearningHour = {
+            hour: 8,
+            from: '15:30',
+            until: '16:15',
+        }
+
+        expect(methods.publishedTimetableCourseDetails.call(ctx, screenshotLikeCourse)).toBe('L4-SHAM')
+        expect(methods.publishedTimetableCourseIsDistanceLearning.call(
+            ctx,
+            screenshotLikeCourse,
+            ctx.publishedTimetableSemesters[0],
+            screenshotLikeHour,
+            4,
+        )).toBe(true)
+        expect(methods.publishedTimetableCourseRecurrenceLabel.call(
+            ctx,
+            screenshotLikeCourse,
+            ctx.publishedTimetableSemesters[0],
+            screenshotLikeHour,
+            4,
+        )).toBe('2-wöchig')
+        expect(methods.publishedTimetableCourseIsDistanceLearning.call(
+            ctx,
+            heuristicDistanceLearningCourse,
+            ctx.publishedTimetableSemesters[0],
+            heuristicDistanceLearningHour,
+            4,
+        )).toBe(true)
+        expect(methods.publishedTimetableCourseIsDistanceLearning.call(
+            ctx,
+            splitRowCourse,
+            ctx.publishedTimetableSemesters[0],
+            screenshotLikeHour,
+            4,
+        )).toBe(false)
         expect(methods.publishedTimetableSameSlotGroups.call(ctx, ctx.publishedTimetableSemesters[0].weeks[0]))
             .toEqual([
                 {
@@ -720,6 +1039,74 @@ describe('Student timetable evaluation settings', () => {
                 },
             },
         ])
+    })
+
+    it('saves the currently visible personal timetable as a separate student timetable', async () => {
+        const methods = (Overview as any).methods
+        const payload = {
+            timetable: {
+                title: 'Mein Stundenplan',
+                weekdays: [{ label: 'Mo' }],
+                semesters: [{ label: 'Semester', weeks: [] }],
+            },
+            state: {
+                source: 'student-personal-timetable',
+            },
+        }
+        const adoptPublishedTimetable = vi.fn(async () => true)
+        const openAdoptedPersonalTimetable = vi.fn()
+        const ctx: any = {
+            ...methods,
+            personalTimetableSaving: false,
+            publishedTimetableVisible: true,
+            hiddenSavedTimetableCourseChipKeys: ['D1|D1 - 1CK'],
+            personalAdditionalTimetableEntryKeys: ['additional:D1'],
+            studentTimetablesStore: { adoptPublishedTimetable },
+            personalVisibleTimetablePayload: vi.fn(() => payload),
+            openAdoptedPersonalTimetable,
+        }
+
+        await methods.savePersonalVisibleTimetable.call(ctx)
+
+        expect(adoptPublishedTimetable).toHaveBeenCalledWith(payload)
+        expect(ctx.hiddenSavedTimetableCourseChipKeys).toEqual([])
+        expect(ctx.personalAdditionalTimetableEntryKeys).toEqual([])
+        expect(openAdoptedPersonalTimetable).toHaveBeenCalledOnce()
+        expect(ctx.personalTimetableSaving).toBe(false)
+    })
+
+    it('exports the visible personal timetable as a pdf', async () => {
+        const methods = (Overview as any).methods
+        const timetable = {
+            title: 'Mein Stundenplan',
+            weekdays: [{ label: 'Mo' }],
+            semesters: [{ label: 'Semester', weeks: [] }],
+        }
+        const pdfBlob = new Blob(['pdf'], { type: 'application/pdf' })
+        const downloadBlob = vi.fn()
+        const ctx: any = {
+            ...methods,
+            pdfExporting: false,
+            publishedTimetableVisible: true,
+            personalVisibleTimetable: vi.fn(() => timetable),
+            fileNameFromContentDisposition: methods.fileNameFromContentDisposition,
+            downloadBlob,
+        }
+
+        vi.mocked(axios.post).mockResolvedValueOnce({
+            data: pdfBlob,
+            headers: {
+                'content-disposition': 'attachment; filename="mein-stundenplan.pdf"',
+            },
+        })
+
+        await methods.downloadPersonalTimetablePdf.call(ctx)
+
+        expect(axios.post).toHaveBeenCalledWith('/api/homepage/students-timetables/overview/pdf', timetable, {
+            responseType: 'blob',
+        })
+        expect(downloadBlob).toHaveBeenCalledWith(pdfBlob, 'mein-stundenplan.pdf')
+        expect(ctx.pdfExporting).toBe(false)
     })
 
     it('opens an empty personal timetable when no personal timetable exists yet', () => {
@@ -1571,11 +1958,16 @@ describe('Student timetable evaluation settings', () => {
         ctx.overview.personal_timetable.timetable.semesters[0].weeks[0].hours[0].cells[2].courses = [
             { label: 'GS2 - 4A - REF' },
             { label: 'GW2 - 4A - REF' },
+            { label: 'ME2 - 4A - REF' },
         ]
 
         expect(methods.courseCodeAliases.call(ctx, 'GSGPB2')).toContain('GS2')
         expect(methods.courseCodeAliases.call(ctx, 'GWB2')).toContain('GW2')
         expect(methods.courseCodeAliases.call(ctx, 'GS2/GSGPB2')).toEqual(expect.arrayContaining(['GS2', 'GSGPB2']))
+        expect(methods.courseCodeAliases.call(ctx, 'MEMU2')).toEqual(['ME2'])
+        expect(methods.studentCoursePickerConcreteMenuLabel.call(ctx, {
+            display_label: 'MEMU2 - 4B - ALT',
+        })).toBe('ME2')
         expect(methods.studentCoursePickerCourseGroupInVisibleTimetable.call(ctx, {
             course: 'GSGPB2',
             display_label: 'GSGPB2 - 4B - ALT',
@@ -1583,6 +1975,10 @@ describe('Student timetable evaluation settings', () => {
         expect(methods.studentCoursePickerCourseGroupInVisibleTimetable.call(ctx, {
             course: 'GWB2',
             display_label: 'GWB2 - 4B - ALT',
+        })).toBe(true)
+        expect(methods.studentCoursePickerCourseGroupInVisibleTimetable.call(ctx, {
+            course: 'MEMU2',
+            display_label: 'MEMU2 - 4B - ALT',
         })).toBe(true)
     })
 
@@ -2259,6 +2655,91 @@ describe('Student timetable evaluation settings', () => {
                 automatic_timetable: 'result',
                 automatic_timetable_additional_courses: ['additional:TT'],
             },
+        })
+    })
+
+    it('restarts generated automatic timetable results at the plain overview route', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const push = vi.fn()
+        const ctx: any = {
+            ...methods,
+            personalTimetableViewChangedMessageVisible: true,
+            showEvaluationSettings: false,
+            showManualTimetable: true,
+            selectedAutomaticReviewCourseKey: 'planned:OLD',
+            automaticOfferedCourseSelectionOverrides: {
+                'planned:OLD::old-group': false,
+            },
+            automaticTimetableInitialRouteCourseKeys: ['26|4|common|OLD|OLD|Old Course|OLD'],
+            automaticTimetableSelectedCourseKeys: ['planned:OLD'],
+            automaticTimetableCourseKeysInitialized: false,
+            $route: {
+                path: '/students-timetables/overview',
+                query: {
+                    automatic_timetable: 'result',
+                    automatic_timetable_courses: ['planned:OLD'],
+                    automatic_timetable_additional_courses: ['additional:TT'],
+                    automatic_timetable_criteria: 'saturday_free',
+                    manual_timetable: '1',
+                    school: 'htl',
+                },
+            },
+            $router: {
+                push,
+            },
+            overview: {
+                automatic_course_selection: {
+                    sections: [
+                        {
+                            key: 'missing',
+                            items: [
+                                {
+                                    key: 'missing-d1',
+                                    code: 'D1',
+                                    name: 'Deutsch 1',
+                                    hours: 4,
+                                    course_groups: [{ key: 'd1-1', course: 'D1', weekday: 1, hour: 1 }],
+                                },
+                            ],
+                        },
+                        {
+                            key: 'proposed',
+                            items: [
+                                {
+                                    key: 'planned-m1',
+                                    code: 'M1',
+                                    name: 'Mathematik 1',
+                                    hours: 4,
+                                    course_groups: [{ key: 'm1-1', course: 'M1', weekday: 2, hour: 2 }],
+                                },
+                            ],
+                        },
+                    ],
+                },
+                course_sections: [],
+            },
+            get overviewDefaultSelectedCourseKeys() {
+                return computed.overviewDefaultSelectedCourseKeys.call(ctx)
+            },
+            get courseSections() {
+                return computed.courseSections.call(ctx)
+            },
+        }
+
+        methods.restartAutomaticTimetable.call(ctx)
+
+        expect(ctx.personalTimetableViewChangedMessageVisible).toBe(false)
+        expect(ctx.showEvaluationSettings).toBe(true)
+        expect(ctx.showManualTimetable).toBe(false)
+        expect(ctx.selectedAutomaticReviewCourseKey).toBe('')
+        expect(ctx.automaticOfferedCourseSelectionOverrides).toEqual({})
+        expect(ctx.automaticTimetableInitialRouteCourseKeys).toEqual([])
+        expect(ctx.automaticTimetableSelectedCourseKeys).toEqual(['missing:D1', 'planned:M1'])
+        expect(ctx.automaticTimetableCourseKeysInitialized).toBe(true)
+        expect(push).toHaveBeenCalledWith({
+            path: '/students-timetables/overview',
+            query: {},
         })
     })
 

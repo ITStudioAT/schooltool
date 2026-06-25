@@ -109,6 +109,86 @@ it('counts all selected course variations and the overlap free full green variat
         ->and($result['no_saturday_timetable_count'])->toBe(3);
 });
 
+it('accepts legacy compact selected course keys by course code', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'M1',
+                'json_subject' => 'M',
+                'name' => 'Mathematik 1',
+                'tt_subject' => 'M',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'D1-A',
+                'display_label' => 'D1-A',
+                'title' => 'D1-A',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 1,
+                'class_name' => 'M1-A',
+                'display_label' => 'M1-A',
+                'title' => 'M1-A',
+                'course' => 'M1',
+                'subject' => 'Mathematik',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+                'religion' => 'ETH',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 3, 4, 5],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [
+                'D1-0',
+                'M1-1',
+            ],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+        ],
+    );
+
+    expect($result['selected_course_count'])->toBe(2)
+        ->and($result['timetable_variation_count'])->toBe(1)
+        ->and($result['full_green_timetable_count'])->toBe(1);
+});
+
 it('reuses the cached timetable calculation base when only the selected timetable number changes', function () {
     $service = app(RobotTimetableBackendSetupService::class);
     $authUser = new User([

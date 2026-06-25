@@ -153,6 +153,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::delete('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'restoreProfileSelection'])->middleware('tool-licensed:StudentsTimetables');
     Route::post('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'adoptPublishedTimetable'])->middleware('tool-licensed:StudentsTimetables');
     Route::delete('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'deletePersonalTimetable'])->middleware('tool-licensed:StudentsTimetables');
+    Route::post('/homepage/students-timetables/overview/pdf', [StudentsTimetablesStudentController::class, 'overviewPdf'])->middleware('tool-licensed:StudentsTimetables');
     Route::get('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'evaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
     Route::put('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'updateEvaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
     Route::post('/homepage/students-timetables/automatic-timetable', [StudentsTimetablesStudentController::class, 'automaticTimetable'])->middleware('tool-licensed:StudentsTimetables');

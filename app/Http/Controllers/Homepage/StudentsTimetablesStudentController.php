@@ -24,6 +24,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Spatie\LaravelPdf\Enums\Format;
+
+use function Spatie\LaravelPdf\Support\pdf;
 
 class StudentsTimetablesStudentController extends Controller
 {
@@ -242,6 +245,25 @@ class StudentsTimetablesStudentController extends Controller
         ]);
     }
 
+    public function overviewPdf(Request $request)
+    {
+        if (! $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate($this->timetableOverviewPayloadRules());
+
+        $validated = $this->normalizeTimetableOverviewPdfLabels($validated);
+
+        return pdf()
+            ->view('pdfs.students-timetable-overview', ['data' => $validated])
+            ->format(Format::A4)
+            ->landscape()
+            ->margins(top: 8, right: 20, bottom: 8, left: 20, unit: 'mm')
+            ->name('stundenplan.pdf')
+            ->download();
+    }
+
     public function evaluationSettings(StudentTimetableEvaluationSettingsService $service)
     {
         if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
@@ -251,6 +273,79 @@ class StudentsTimetablesStudentController extends Controller
         return response()->json([
             'data' => $service->settingsForUser($authUser),
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function timetableOverviewPayloadRules(string $prefix = ''): array
+    {
+        $key = fn (string $field): string => $prefix === '' ? $field : "{$prefix}.{$field}";
+
+        return [
+            $key('title') => ['nullable', 'string', 'max:120'],
+            $key('subtitle') => ['nullable', 'string', 'max:255'],
+            $key('student') => ['nullable', 'string', 'max:255'],
+            $key('schoolyear') => ['nullable', 'string', 'max:120'],
+            $key('generated_at') => ['nullable', 'string', 'max:120'],
+            $key('weekdays') => ['required', 'array', 'min:1', 'max:6'],
+            $key('weekdays.*.label') => ['required', 'string', 'max:12'],
+            $key('semesters') => ['required', 'array', 'min:1', 'max:2'],
+            $key('semesters.*.label') => ['required', 'string', 'max:80'],
+            $key('semesters.*.date_range') => ['nullable', 'string', 'max:80'],
+            $key('semesters.*.weeks') => ['required', 'array', 'min:1', 'max:8'],
+            $key('semesters.*.weeks.*.label') => ['nullable', 'string', 'max:80'],
+            $key('semesters.*.weeks.*.hours') => ['required', 'array', 'max:20'],
+            $key('semesters.*.weeks.*.hours.*.hour') => ['required', 'integer', 'min:1', 'max:30'],
+            $key('semesters.*.weeks.*.hours.*.from') => ['nullable', 'string', 'max:20'],
+            $key('semesters.*.weeks.*.hours.*.until') => ['nullable', 'string', 'max:20'],
+            $key('semesters.*.weeks.*.hours.*.cells') => ['required', 'array', 'min:1', 'max:6'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.status') => ['nullable', 'string', Rule::in(['empty', 'filled', 'warning', 'conflict', 'related'])],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses') => ['array', 'max:10'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.label') => ['required', 'string', 'max:160'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.details') => ['nullable', 'string', 'max:160'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.dates') => ['nullable', 'array', 'max:120'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.dates.*') => ['string', 'max:20'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.is_fu') => ['nullable', 'boolean'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.recurrence_label') => ['nullable', 'string', 'max:80'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.recurrence_interval') => ['nullable', 'integer', 'min:1', 'max:12'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.markers') => ['array', 'max:10'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.student_course_type') => ['nullable', 'string', Rule::in(['', 'missing', 'additional'])],
+            $key('semesters.*.weeks.*.hours.*.cells.*.courses.*.student_course_badge') => ['nullable', 'string', 'max:40'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.markers.*.label') => ['required', 'string', 'max:40'],
+            $key('semesters.*.weeks.*.hours.*.cells.*.markers.*.title') => ['nullable', 'string', 'max:160'],
+        ];
+    }
+
+    private function normalizeTimetableOverviewPdfLabels(array $data): array
+    {
+        foreach ($data['semesters'] as $semesterIndex => $semester) {
+            foreach ($semester['weeks'] as $weekIndex => $week) {
+                foreach ($week['hours'] as $hourIndex => $hour) {
+                    foreach ($hour['cells'] as $cellIndex => $cell) {
+                        $cellData = &$data['semesters'][$semesterIndex]['weeks'][$weekIndex]['hours'][$hourIndex]['cells'][$cellIndex];
+
+                        foreach ($cell['courses'] ?? [] as $courseIndex => $course) {
+                            $cellData['courses'][$courseIndex]['label'] = $this->normalizedTimetableCourseDisplayLabel($course['label'] ?? '');
+                        }
+
+                        foreach ($cell['markers'] ?? [] as $markerIndex => $marker) {
+                            $cellData['markers'][$markerIndex]['label'] = $this->normalizedTimetableCourseDisplayLabel($marker['label'] ?? '');
+                            $cellData['markers'][$markerIndex]['title'] = $this->normalizedTimetableCourseDisplayLabel($marker['title'] ?? '');
+                        }
+
+                        unset($cellData);
+                    }
+                }
+            }
+        }
+
+        return $data;
+    }
+
+    private function normalizedTimetableCourseDisplayLabel(string $label): string
+    {
+        return preg_replace('/^LET(?=\d|\s|-|$)/iu', 'LPT', $label) ?? $label;
     }
 
     public function updateEvaluationSettings(Request $request, StudentTimetableEvaluationSettingsService $service)

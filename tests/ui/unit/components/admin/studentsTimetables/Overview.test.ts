@@ -2080,6 +2080,8 @@ describe('Students timetable overview', () => {
             details: '1-wöchig',
             dates: [],
             is_fu: false,
+            recurrence_label: '1-wöchig',
+            recurrence_interval: null,
             student_course_type: '',
             student_course_badge: '',
         })
@@ -2205,6 +2207,8 @@ describe('Students timetable overview', () => {
             details: '2-wöchig',
             dates: [],
             is_fu: false,
+            recurrence_label: '2-wöchig',
+            recurrence_interval: null,
             student_course_type: 'missing',
             student_course_badge: 'Fehlend',
         })
@@ -2285,6 +2289,8 @@ describe('Students timetable overview', () => {
             details: 'FU · 1-wöchig',
             dates: ['2026-03-13', '2026-03-20'],
             is_fu: true,
+            recurrence_label: '1-wöchig',
+            recurrence_interval: null,
             student_course_type: '',
             student_course_badge: '',
         })
@@ -2314,6 +2320,8 @@ describe('Students timetable overview', () => {
             details: 'FU · 2-wöchig',
             dates: [],
             is_fu: true,
+            recurrence_label: '2-wöchig',
+            recurrence_interval: null,
             student_course_type: '',
             student_course_badge: '',
         })

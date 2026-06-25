@@ -42,6 +42,12 @@ it('publishes a manual timetable for exactly one selected student', function () 
         ->and($publishedTimetable->student_label)->toBe('SCHROLL Lukas')
         ->and($publishedTimetable->timetable['semesters'][0]['weeks'][0]['hours'][0]['cells'][0]['courses'][0]['label'])
         ->toBe('LPT1')
+        ->and($publishedTimetable->timetable['semesters'][0]['weeks'][0]['hours'][0]['cells'][0]['courses'][0]['is_fu'])
+        ->toBeTrue()
+        ->and($publishedTimetable->timetable['semesters'][0]['weeks'][0]['hours'][0]['cells'][0]['courses'][0]['recurrence_label'])
+        ->toBe('2-wöchig')
+        ->and($publishedTimetable->timetable['semesters'][0]['weeks'][0]['hours'][0]['cells'][0]['courses'][0]['recurrence_interval'])
+        ->toBe(2)
         ->and($publishedTimetable->state['activeCourseGroupFilterKeys'])
         ->toBe(['d-1']);
 });
@@ -219,7 +225,10 @@ function publishedTimetablePayload(string $courseLabel): array
                                             [
                                                 'label' => $courseLabel,
                                                 'details' => '4S',
-                                                'dates' => ['2026-02-16'],
+                                                'dates' => ['2026-02-16', '2026-03-02'],
+                                                'is_fu' => true,
+                                                'recurrence_label' => '2-wöchig',
+                                                'recurrence_interval' => 2,
                                             ],
                                         ],
                                         'markers' => [],
