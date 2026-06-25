@@ -836,6 +836,29 @@ it('creates the first automatic timetable for the authenticated student', functi
     $this->actingAs($user)
         ->postJson('/api/homepage/students-timetables/automatic-timetable', [
             'selected_course_keys' => [$selectedCourseKey],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_quality_criterion_keys' => [],
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [12],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selection' => [
+                'religion' => 'ETH',
+                'language' => 'L',
+                'branch' => 'wirtschaftskundlich',
+                'arts_subject' => 'ME',
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.selected_timetable', null);
+
+    $this->actingAs($user)
+        ->postJson('/api/homepage/students-timetables/automatic-timetable', [
+            'selected_course_keys' => [$selectedCourseKey],
             'deselected_course_group_keys' => ["{$selectedCourseKey}|D1 - 4A - MUE"],
             'selected_quality_criterion_keys' => ['saturday_free'],
         ])
@@ -979,6 +1002,78 @@ it('lets the authenticated student adopt and delete the published timetable for 
         ->assertJsonPath('data.personal_timetable', null);
 
     expect(StudentTimetablePersonalTimetable::query()->count())->toBe(0);
+});
+
+it('lets the authenticated student save a generated timetable as their personal timetable', function () {
+    [$school, $schoolyear, $import116] = studentsTimetablesStudentLoginSetup();
+    $import116->forceFill([
+        'student_code' => 'student-100',
+    ])->save();
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => $import116->email,
+        'import116_id' => $import116->id,
+        'schoolclass' => $import116->class,
+    ]);
+    $user->assignRole('studentstimetables_user');
+
+    $timetable = [
+        'title' => 'Stundenplan',
+        'weekdays' => [['label' => 'Mo']],
+        'semesters' => [
+            [
+                'label' => 'Übernommener Stundenplan',
+                'weeks' => [
+                    [
+                        'label' => '',
+                        'hours' => [
+                            [
+                                'hour' => 1,
+                                'from' => '08:00',
+                                'until' => '08:50',
+                                'cells' => [
+                                    [
+                                        'status' => 'filled',
+                                        'courses' => [
+                                            [
+                                                'label' => 'D1',
+                                                'details' => 'D1-1A-MAY',
+                                            ],
+                                        ],
+                                        'markers' => [],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ];
+    $state = [
+        'source' => 'automatic-timetable',
+        'activeCourseGroupFilterKeys' => ['generated-group'],
+    ];
+
+    $this->actingAs($user)
+        ->postJson('/api/homepage/students-timetables/my-timetable', [
+            'timetable' => $timetable,
+            'state' => $state,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('message', 'Stundenplan wurde übernommen.')
+        ->assertJsonPath('data.personal_timetable.student_code', $import116->student_code)
+        ->assertJsonPath('data.personal_timetable.timetable.title', 'Stundenplan')
+        ->assertJsonPath('data.personal_timetable.state.source', 'automatic-timetable')
+        ->assertJsonPath('data.personal_timetable.active_course_group_keys.0', 'generated-group');
+
+    $personalTimetable = StudentTimetablePersonalTimetable::query()->firstOrFail();
+
+    expect($personalTimetable->student_code)->toBe($import116->student_code)
+        ->and($personalTimetable->timetable['semesters'][0]['label'])->toBe('Übernommener Stundenplan')
+        ->and($personalTimetable->state['source'])->toBe('automatic-timetable');
 });
 
 it('flags fully conflicting additional courses for the authenticated student', function () {

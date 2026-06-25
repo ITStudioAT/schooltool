@@ -252,66 +252,6 @@
                     </div>
                 </div>
 
-                <v-expansion-panels
-                    v-if="showManualTimetable && courseSections.length"
-                    v-model="expandedManualOverviewCoursePanels"
-                    class="manual-overview-course-card"
-                    flat>
-                    <v-expansion-panel value="courses" class="manual-overview-course-card__panel">
-                        <v-expansion-panel-title class="manual-overview-course-card__title">
-                            <v-icon icon="mdi-book-open-page-variant-outline" size="22" />
-                            <h3>Kurse</h3>
-                            <v-chip size="small" variant="flat" color="primary">
-                                {{ courseSectionTotalCount }}
-                            </v-chip>
-                        </v-expansion-panel-title>
-
-                        <v-expansion-panel-text>
-                            <v-expansion-panels
-                                v-model="expandedCourseSections"
-                                class="summary-grid summary-panels manual-overview-course-card__sections"
-                                multiple
-                                flat>
-                                <v-expansion-panel
-                                    v-for="section in courseSections"
-                                    :key="section.key"
-                                    :value="section.key"
-                                    class="summary-panel">
-                                    <v-expansion-panel-title class="summary-head">
-                                        <v-icon size="22">{{ section.icon }}</v-icon>
-                                        <h3>{{ section.title }}</h3>
-                                        <v-chip size="small" variant="flat" :color="section.color">{{ section.items.length }}</v-chip>
-                                    </v-expansion-panel-title>
-
-                                    <v-expansion-panel-text>
-                                        <div v-if="section.items.length" class="course-list">
-                                            <div v-for="course in section.items" :key="courseKey(section.key, course)" class="course-row">
-                                                <div>
-                                                    <strong>{{ course.code || course.name || '-' }}</strong>
-                                                    <span v-if="course.name && course.name !== course.code">{{ course.name }}</span>
-                                                </div>
-                                                <div class="course-meta">
-                                                    <v-chip v-if="courseHoursLabel(course)" size="x-small" color="primary" variant="tonal">
-                                                        {{ courseHoursLabel(course) }}
-                                                    </v-chip>
-                                                    <v-chip v-if="course.semester" size="x-small" variant="tonal">S{{ course.semester }}</v-chip>
-                                                    <v-chip v-if="course.grade" size="x-small" color="success" variant="tonal">{{ course.grade }}</v-chip>
-                                                    <v-chip v-if="course.branch && course.branch !== 'common'" size="x-small" variant="tonal">{{ course.branch }}</v-chip>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div v-else class="empty-state">
-                                            <v-icon size="20">mdi-information-outline</v-icon>
-                                            <span>{{ section.empty }}</span>
-                                        </div>
-                                    </v-expansion-panel-text>
-                                </v-expansion-panel>
-                            </v-expansion-panels>
-                        </v-expansion-panel-text>
-                    </v-expansion-panel>
-                </v-expansion-panels>
-
                 <v-dialog v-model="selectionDialogOpen" max-width="420">
                     <v-card>
                         <v-card-title>{{ selectionDraftLabel }} bearbeiten</v-card-title>
@@ -618,7 +558,9 @@
                 </div>
 
                 <section v-if="showManualTimetable" class="student-manual-timetable">
-                    <div class="student-manual-timetable__toolbar">
+                    <div
+                        v-if="manualTimetableMode !== 'personal'"
+                        class="student-manual-timetable__toolbar">
                         <div>
                             <h3>{{ manualTimetableTitle }}</h3>
                         </div>
@@ -641,15 +583,6 @@
                                 @click="closeManualTimetable">
                                 Zurück
                             </v-btn>
-                            <v-btn
-                                v-if="manualTimetableMode === 'personal' && hasPersonalTimetable"
-                                color="error"
-                                variant="flat"
-                                prepend-icon="mdi-trash-can-outline"
-                                :disabled="personalTimetableDeleting"
-                                @click="openPersonalTimetableDeleteDialog">
-                                Löschen
-                            </v-btn>
                         </div>
                     </div>
 
@@ -666,64 +599,184 @@
                         Der Stundenplan wurde übernommen. Du siehst jetzt "Mein Stundenplan".
                     </v-alert>
 
-                    <div
+                    <v-card
                         v-if="personalTimetableCourseSelectionVisible"
-                        class="student-course-choice-panel">
-                        <div class="student-course-choice-panel__header">
-                            <div class="student-course-choice-panel__title">
-                                <v-icon icon="mdi-format-list-checks" size="18" color="primary" />
-                                <span>Kursauswahl</span>
-                                <v-tooltip text="Kurs wählen">
-                                    <template #activator="{ props }">
-                                        <v-btn
-                                            v-bind="props"
-                                            icon="mdi-plus"
-                                            color="primary"
-                                            variant="flat"
-                                            size="small"
-                                            aria-label="Kurs wählen"
-                                            @click="openStudentCoursePickerDialog" />
-                                    </template>
-                                </v-tooltip>
-                            </div>
-                            <div class="student-course-choice-panel__actions">
+                        rounded="lg"
+                        class="students-timetable-v2-card students-timetable-v2-selected-courses-card student-course-choice-panel">
+                        <v-card-title class="students-timetable-v2-selected-courses-card__title">
+                            <span>Ausgewählte Kurse</span>
+                            <span class="students-timetable-v2-selected-courses-card__summary">
                                 <v-chip size="x-small" color="primary" variant="tonal">
                                     {{ savedTimetableCourseChips.length }} ausgewählt
                                 </v-chip>
-                                <v-btn
-                                    v-if="savedTimetableCourseChips.length > 0"
-                                    size="x-small"
+                            </span>
+                        </v-card-title>
+                        <v-card-text>
+                            <div v-if="savedTimetableCourseChips.length" class="students-timetable-v2-selected-courses-card__list">
+                                <v-chip
+                                    v-for="courseChip in savedTimetableCourseChips"
+                                    :key="courseChip.key"
+                                    size="small"
                                     variant="tonal"
-                                    color="error"
-                                    prepend-icon="mdi-close-circle-outline"
-                                    @click="deselectAllSavedTimetableCourseChips">
-                                    Alle abwählen
-                                </v-btn>
+                                    closable
+                                    close-icon="mdi-close"
+                                    :close-label="`Kurs ${courseChip.title} entfernen`"
+                                    class="students-timetable-v2-selected-courses-card__course students-timetable-v2-selected-courses-card__course--passive student-selected-course-filter-chip"
+                                    @click:close="deselectSavedTimetableCourseChip(courseChip)">
+                                    <span>{{ courseChip.shortLabel }}</span>
+                                    <span v-if="courseChip.hoursText" class="students-timetable-v2-selected-courses-card__meta">
+                                        {{ courseChip.hoursText }}
+                                    </span>
+                                </v-chip>
                             </div>
-                        </div>
+                            <v-alert v-else type="info" variant="tonal" density="compact">
+                                Keine Kurse ausgewählt.
+                            </v-alert>
+                        </v-card-text>
+                    </v-card>
 
-                        <div class="student-selected-course-filter-chips">
-                            <v-chip
-                                v-for="courseChip in savedTimetableCourseChips"
-                                :key="courseChip.key"
-                                size="small"
-                                :color="courseChip.hasOverlap ? 'warning' : 'success'"
-                                variant="tonal"
-                                closable
-                                class="student-selected-course-filter-chip"
-                                @click:close="deselectSavedTimetableCourseChip(courseChip)">
-                                <span>{{ courseChip.label }}</span>
-                                <span
-                                    v-if="courseChip.studentCourseBadge"
+                    <v-card
+                        v-if="personalMoreCoursesVisible"
+                        rounded="lg"
+                        class="students-timetable-v2-card students-timetable-v2-more-adopted-courses-card">
+                        <v-card-title class="students-timetable-v2-more-adopted-courses-card__title">
+                            {{ personalMoreCoursesTitle }}
+                        </v-card-title>
+                        <v-card-text class="students-timetable-v2-more-adopted-courses-card__content">
+                            <div v-if="!activePersonalMoreCourseCard" class="students-timetable-v2-more-adopted-courses-card__grid">
+                                <v-card
+                                    v-for="card in personalMoreCourseCards"
+                                    :key="card.key"
+                                    rounded="lg"
+                                    variant="flat"
+                                    class="students-timetable-v2-more-adopted-courses-card__category"
                                     :class="[
-                                        'student-selected-course-filter-chip__source',
-                                        `student-selected-course-filter-chip__source--${courseChip.studentCourseType}`,
-                                    ]">
-                                    {{ savedTimetableCourseChipBadgeLabel(courseChip) }}
-                                </span>
-                            </v-chip>
-                        </div>
-                    </div>
+                                        `students-timetable-v2-more-adopted-courses-card__category--${card.key}`,
+                                        {
+                                            'students-timetable-v2-more-adopted-courses-card__category--disabled': personalMoreCourseCardDisabled(card),
+                                        },
+                                    ]"
+                                    :disabled="personalMoreCourseCardDisabled(card)"
+                                    role="button"
+                                    tabindex="0"
+                                    @click="openPersonalMoreCourseCard(card)"
+                                    @keydown.enter.prevent="openPersonalMoreCourseCard(card)"
+                                    @keydown.space.prevent="openPersonalMoreCourseCard(card)">
+                                    <div class="students-timetable-v2-more-adopted-courses-card__category-title">
+                                        {{ card.title }}
+                                    </div>
+                                </v-card>
+                            </div>
+
+                            <div v-else class="students-timetable-v2-more-adopted-courses-card__course-view">
+                                <div
+                                    class="students-timetable-v2-more-adopted-courses-card__back-card"
+                                    role="button"
+                                    tabindex="0"
+                                    @click="closePersonalMoreCourseCard"
+                                    @keydown.enter.prevent="closePersonalMoreCourseCard"
+                                    @keydown.space.prevent="closePersonalMoreCourseCard">
+                                    <v-icon icon="mdi-arrow-left" size="18" />
+                                    Zurück
+                                </div>
+
+                                <div v-if="personalMoreCourseMenus.length" class="students-timetable-v2-more-adopted-courses-card__course-list">
+                                    <v-card
+                                        v-for="courseMenu in personalMoreCourseMenus"
+                                        :key="courseMenu.key"
+                                        rounded="lg"
+                                        variant="tonal"
+                                        color="success"
+                                        class="students-timetable-v2-more-adopted-courses-card__course"
+                                        :class="{ 'students-timetable-v2-more-adopted-courses-card__course--active': personalMoreCourseMenuActive(courseMenu) }"
+                                        role="button"
+                                        tabindex="0"
+                                        @click="openPersonalMoreCourseMenu(courseMenu)"
+                                        @keydown.enter.prevent="openPersonalMoreCourseMenu(courseMenu)"
+                                        @keydown.space.prevent="openPersonalMoreCourseMenu(courseMenu)">
+                                        <span class="students-timetable-v2-more-adopted-courses-card__course-label">
+                                            {{ courseMenu.label }}
+                                        </span>
+                                        <v-chip v-if="courseMenu.meta" size="x-small" color="success" variant="tonal">
+                                            {{ courseMenu.meta }}
+                                        </v-chip>
+                                        <v-chip
+                                            v-if="studentCoursePickerMenuHasActiveSelection(courseMenu)"
+                                            size="x-small"
+                                            color="success"
+                                            variant="tonal">
+                                            Ausgewählt
+                                        </v-chip>
+                                    </v-card>
+                                </div>
+                                <v-alert v-else type="info" variant="tonal" density="compact">
+                                    Keine Kurse verfügbar.
+                                </v-alert>
+
+                                <v-card
+                                    v-if="selectedPersonalMoreCourseMenu"
+                                    rounded="lg"
+                                    variant="tonal"
+                                    class="students-timetable-v2-more-adopted-course-offers-card students-timetable-v2-offered-courses-card">
+                                    <v-card-title class="students-timetable-v2-offered-courses-card__title">
+                                        Angebotene Kurse
+                                        <v-chip size="x-small" color="primary" variant="tonal">
+                                            {{ selectedPersonalMoreCourseMenu.label }}
+                                        </v-chip>
+                                    </v-card-title>
+                                    <v-card-text>
+                                        <div v-if="selectedPersonalMoreCourseEntryOptions.length" class="students-timetable-v2-offered-courses-card__list">
+                                            <div
+                                                v-for="course in selectedPersonalMoreCourseEntryOptions"
+                                                :key="course.key"
+                                                class="students-timetable-v2-offered-courses-card__item students-timetable-v2-offered-courses-card__item--toggle"
+                                                :class="{
+                                                    'students-timetable-v2-offered-courses-card__item--selected': course.isActive,
+                                                    'students-timetable-v2-offered-courses-card__item--deselected': course.isDisabled,
+                                                }"
+                                                role="button"
+                                                tabindex="0"
+                                                :aria-pressed="course.isActive ? 'true' : 'false'"
+                                                :aria-disabled="course.isDisabled ? 'true' : 'false'"
+                                                @click="togglePersonalMoreCourseEntry(course)"
+                                                @keydown.enter.prevent="togglePersonalMoreCourseEntry(course)"
+                                                @keydown.space.prevent="togglePersonalMoreCourseEntry(course)">
+                                                <span class="students-timetable-v2-offered-courses-card__name">
+                                                    {{ course.label }}
+                                                </span>
+                                                <v-chip v-if="course.offeredScheduleLabel" size="x-small" color="primary" variant="tonal">
+                                                    {{ course.offeredScheduleLabel }}
+                                                </v-chip>
+                                                <v-chip v-if="course.recurrenceLabel" size="x-small" color="primary" variant="tonal">
+                                                    {{ course.recurrenceLabel }}
+                                                </v-chip>
+                                                <v-chip
+                                                    v-if="course.distanceLearning"
+                                                    size="x-small"
+                                                    color="warning"
+                                                    variant="tonal"
+                                                    title="Fernunterricht">
+                                                    Fernunterricht
+                                                </v-chip>
+                                                <v-chip v-if="course.hasRelatedOverlap" size="x-small" color="warning" variant="tonal">
+                                                    Überschneidung
+                                                </v-chip>
+                                                <v-chip v-if="course.isDisabled" size="x-small" color="error" variant="tonal">
+                                                    Blockiert
+                                                </v-chip>
+                                                <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
+                                                    {{ course.roomsLabel }}
+                                                </v-chip>
+                                            </div>
+                                        </div>
+                                        <v-alert v-else type="info" variant="tonal" density="compact">
+                                            Keine angebotenen Kurse gefunden.
+                                        </v-alert>
+                                    </v-card-text>
+                                </v-card>
+                            </div>
+                        </v-card-text>
+                    </v-card>
 
                     <div v-if="publishedTimetableVisible" class="student-published-timetable">
                         <div v-if="publishedTimetableSubtitle" class="student-published-timetable__meta">
@@ -766,9 +819,9 @@
                                             v-for="(cell, cellIndex) in publishedTimetableHourCells(hour)"
                                             :key="`${publishedTimetableHourKey(week, hour)}-${cellIndex}`"
                                             class="student-published-timetable__cell"
-                                            :class="publishedTimetableCellClasses(cell)">
+                                            :class="publishedTimetableCellClasses(cell, semester, hour, cellIndex)">
                                             <div
-                                                v-for="course in publishedTimetableCellCourses(cell)"
+                                                v-for="course in publishedTimetableCellCourses(cell, semester, hour, cellIndex)"
                                                 :key="publishedTimetableCourseKey(course)"
                                                 class="student-published-timetable__block">
                                                 <strong>{{ course.label || '-' }}</strong>
@@ -931,8 +984,10 @@
                     :course-summary="automaticTimetableCourseSummary"
                     :course-sections="automaticTimetableAllCourseSections"
                     :selection-override="selectionOverridePayload() || {}"
+                    :adopt-timetable-loading="personalTimetableSaving"
                     @close="closeAutomaticTimetable"
                     @additional-course-selection-change="setAutomaticTimetableAdditionalCourseKeys"
+                    @adopt-timetable="adoptGeneratedTimetable"
                     @course-selection-change="setAutomaticTimetableCourseKeys"
                     @courses-selected="finishAutomaticTimetable"
                     @quality-criteria-selection-change="setAutomaticTimetableQualityCriterionKeys"
@@ -1037,7 +1092,6 @@ export default {
             showEvaluationSettings: false,
             showManualTimetable: false,
             expandedCourseSections: [],
-            expandedManualOverviewCoursePanels: [],
             manualExpandedCourseSections: ['missing', 'proposed'],
             manualSelectedCourseKeys: [],
             manualSelectedCourseGroupKeys: [],
@@ -1047,9 +1101,12 @@ export default {
             personalTimetableSaving: false,
             personalTimetableViewChangedMessageVisible: false,
             hiddenSavedTimetableCourseChipKeys: [],
+            personalAdditionalTimetableEntryKeys: [],
             studentCoursePickerDialogOpen: false,
             selectedStudentCoursePickerTab: 'missing',
             selectedStudentCoursePickerMenuKey: '',
+            activePersonalMoreCourseCardKey: '',
+            activePersonalMoreCourseMenuKey: '',
             selectionOverride: {},
             selectionDialogOpen: false,
             selectionDraftKey: '',
@@ -1285,11 +1342,6 @@ export default {
                     label: String(item.label || '').trim(),
                 }))
         },
-        courseSectionTotalCount() {
-            return this.courseSections.reduce((courseCount, section) => (
-                courseCount + (Array.isArray(section?.items) ? section.items.length : 0)
-            ), 0)
-        },
         automaticTimetableCourseSelection() {
             const courseSelection = this.overview?.automatic_course_selection
 
@@ -1422,6 +1474,69 @@ export default {
         personalTimetableCourseSelectionVisible() {
             return this.manualTimetableMode === 'personal' && this.savedTimetableCourseChipEntries.length > 0
         },
+        personalMoreCoursesVisible() {
+            return this.manualTimetableMode === 'personal' && this.studentCoursePickerAllCourseGroups.length > 0
+        },
+        personalMoreCourseCards() {
+            return [
+                { key: 'missing', tab: 'missing', title: 'Negative' },
+                { key: 'planned', tab: 'proposed', title: 'Vorgesehene' },
+                { key: 'additional', tab: 'additional', title: 'Zusätzliche' },
+                { key: 'more', tab: 'open', title: 'Weitere' },
+            ]
+        },
+        activePersonalMoreCourseCard() {
+            return this.personalMoreCourseCards
+                .find(card => card.key === this.activePersonalMoreCourseCardKey)
+                || null
+        },
+        personalMoreCoursesTitle() {
+            if (!this.activePersonalMoreCourseCard) {
+                return 'Weitere Kurse'
+            }
+
+            return `Weitere Kurse: ${this.activePersonalMoreCourseCard.title}`
+        },
+        personalMoreCourseMenus() {
+            if (!this.activePersonalMoreCourseCard) {
+                return []
+            }
+
+            return this.personalMoreCourseMenusForCard(this.activePersonalMoreCourseCard)
+        },
+        selectedPersonalMoreCourseMenu() {
+            return this.personalMoreCourseMenus
+                .find(courseMenu => courseMenu.key === this.activePersonalMoreCourseMenuKey)
+                || null
+        },
+        selectedPersonalMoreCourseEntryOptions() {
+            if (!this.selectedPersonalMoreCourseMenu) {
+                return []
+            }
+
+            const semester = this.selectedPersonalMoreCourseMenu.semester
+
+            return this.selectedPersonalMoreCourseMenu.entries.map((entry) => {
+                const hasBlockingOverlap = this.studentCoursePickerEntryHasBlockingOverlap(entry, semester)
+                const hasRelatedOverlap = this.studentCoursePickerEntryHasRelatedOverlap(entry, semester, { hasBlockingOverlap })
+                const isActive = this.studentCoursePickerEntryActive(entry)
+                const isDisabled = hasBlockingOverlap && !isActive
+
+                return {
+                    ...entry,
+                    hasBlockingOverlap,
+                    hasRelatedOverlap,
+                    isActive,
+                    isDisabled,
+                    distanceLearning: this.personalMoreCourseEntryIsDistanceLearning(entry),
+                    color: this.studentCoursePickerEntryColor(entry, {
+                        hasBlockingOverlap,
+                        hasRelatedOverlap,
+                        isActive,
+                    }),
+                }
+            })
+        },
         studentCoursePickerTabs() {
             return [
                 { value: 'missing', label: 'Negative Kurse' },
@@ -1445,8 +1560,40 @@ export default {
         savedTimetableCourseChips() {
             const hiddenCourseChipKeys = new Set(this.hiddenSavedTimetableCourseChipKeys)
 
-            return this.savedTimetableCourseChipEntries
-                .filter(courseChip => !hiddenCourseChipKeys.has(courseChip.key))
+            return [
+                ...this.savedTimetableCourseChipEntries
+                    .filter(courseChip => !hiddenCourseChipKeys.has(courseChip.key)),
+                ...this.personalAdditionalTimetableCourseChips,
+            ]
+        },
+        personalAdditionalTimetableCourseChips() {
+            const selectedEntryKeys = new Set(Array.isArray(this.personalAdditionalTimetableEntryKeys)
+                ? this.personalAdditionalTimetableEntryKeys
+                : [])
+
+            return this.studentCoursePickerAllEntries
+                .filter(entry => selectedEntryKeys.has(this.studentCoursePickerEntrySelectionKey(entry)))
+                .map((entry) => {
+                    const hours = this.personalAdditionalTimetableEntryHours(entry)
+
+                    return {
+                        key: this.studentCoursePickerEntrySelectionKey(entry),
+                        title: entry.label,
+                        label: [
+                            entry.label,
+                            entry.scheduleLabel,
+                        ].filter(Boolean).join(' · '),
+                        shortLabel: this.savedTimetableCourseChipShortLabel({ title: entry.label }),
+                        hoursText: hours > 0 ? `${this.formatHours(hours)} Std.` : '',
+                        hoursLabel: entry.scheduleLabel || '',
+                        timeRanges: [],
+                        detailLabels: [],
+                        hasOverlap: false,
+                        studentCourseType: entry.studentCourseType,
+                        studentCourseBadge: '',
+                        isPersonalAdditional: true,
+                    }
+                })
         },
         studentCoursePickerAllCourseGroups() {
             return this.manualTimetableCourseSections.flatMap((section) => {
@@ -1458,6 +1605,7 @@ export default {
                     course: courseGroup?.course || course?.code || course?.name || courseGroup?.subject || courseGroup?.title,
                     display_label: courseGroup?.display_label || courseGroup?.course || course?.code || course?.name,
                     semester: courseGroup?.semester || course?.semester || 1,
+                    hours: courseGroup?.hours || course?.hours || course?.hours_per_week || 0,
                     studentCourseType: sectionKey,
                     sourceColor: section?.color || 'primary',
                 })))
@@ -1499,80 +1647,12 @@ export default {
                     ...entry,
                     courseGroupKeys: [...new Set(entry.courseGroupKeys)],
                     courseChipKey: this.studentCoursePickerEntryCourseChipKey(entry),
+                    selectionKey: this.studentCoursePickerEntrySelectionKey(entry),
                     scheduleLabel: this.studentCoursePickerEntryScheduleLabel(entry),
                 }))
         },
         studentCoursePickerCourseMenus() {
-            const courseMenus = new Map()
-
-            this.studentCoursePickerCourseGroups.forEach((courseGroup) => {
-                const semester = Number(courseGroup?.semester || 1)
-                const semesterContext = this.studentCoursePickerSemesterContext(semester)
-                const label = this.studentCoursePickerMenuLabel(courseGroup)
-                const normalizedLabel = label.toLocaleUpperCase('de-AT')
-                const courseMenuKey = `semester-${semester}-${normalizedLabel}`
-
-                if (!courseMenus.has(courseMenuKey)) {
-                    courseMenus.set(courseMenuKey, {
-                        key: courseMenuKey,
-                        label,
-                        semester,
-                        semesterLabel: semesterContext.label,
-                        semesterDateRangeLabel: semesterContext.dateRangeLabel,
-                        entries: [],
-                        entriesByLabel: new Map(),
-                    })
-                }
-
-                const courseMenu = courseMenus.get(courseMenuKey)
-                const entryLabel = this.studentCoursePickerEntryLabel(courseGroup)
-                const entryKey = `${courseMenuKey}-${entryLabel.toLocaleUpperCase('de-AT')}`
-
-                if (!courseMenu.entriesByLabel.has(entryKey)) {
-                    courseMenu.entriesByLabel.set(entryKey, {
-                        key: entryKey,
-                        label: entryLabel,
-                        courseGroups: [],
-                        courseGroupKeys: [],
-                        studentCourseType: courseGroup.studentCourseType,
-                        sourceColor: courseGroup.sourceColor,
-                    })
-                }
-
-                const entry = courseMenu.entriesByLabel.get(entryKey)
-                entry.courseGroups.push(courseGroup)
-                if (courseGroup?.key) {
-                    entry.courseGroupKeys.push(String(courseGroup.key))
-                }
-            })
-
-            return Array.from(courseMenus.values())
-                .map(courseMenu => ({
-                    ...courseMenu,
-                    entries: Array.from(courseMenu.entriesByLabel.values())
-                        .map(entry => ({
-                            ...entry,
-                            courseGroupKeys: [...new Set(entry.courseGroupKeys)],
-                            courseChipKey: this.studentCoursePickerEntryCourseChipKey(entry),
-                            scheduleLabel: this.studentCoursePickerEntryScheduleLabel(entry),
-                        }))
-                        .sort((leftEntry, rightEntry) => (
-                            leftEntry.label.localeCompare(rightEntry.label, 'de-AT', {
-                                numeric: true,
-                                sensitivity: 'base',
-                            })
-                        )),
-                }))
-                .sort((leftCourseMenu, rightCourseMenu) => {
-                    if (leftCourseMenu.semester !== rightCourseMenu.semester) {
-                        return leftCourseMenu.semester - rightCourseMenu.semester
-                    }
-
-                    return leftCourseMenu.label.localeCompare(rightCourseMenu.label, 'de-AT', {
-                        numeric: true,
-                        sensitivity: 'base',
-                    })
-                })
+            return this.courseMenusForStudentCoursePickerGroups(this.studentCoursePickerCourseGroups)
         },
         selectedStudentCoursePickerMenu() {
             return this.studentCoursePickerCourseMenus
@@ -1666,6 +1746,9 @@ export default {
             return Array.from(courseChips.values())
                 .map(courseChip => ({
                     ...courseChip,
+                    shortLabel: this.savedTimetableCourseChipShortLabel(courseChip),
+                    hoursText: this.savedTimetableCourseChipHoursText(courseChip),
+                    hoursLabel: this.savedTimetableCourseChipHoursLabel(courseChip),
                     label: this.savedTimetableCourseChipLabel(courseChip),
                 }))
                 .sort((leftCourseChip, rightCourseChip) => leftCourseChip.title.localeCompare(rightCourseChip.title, 'de-AT', {
@@ -2311,31 +2394,64 @@ export default {
                     return
                 }
 
-                this.showManualTimetable = true
-                this.showEvaluationSettings = false
-                this.manualTimetableMode = 'personal'
-                this.applySavedTimetableSelection()
-                this.personalTimetableViewChangedMessageVisible = true
-
-                const query = { ...this.$route.query }
-                delete query.automatic_timetable
-                delete query.automatic_timetable_courses
-                delete query.automatic_timetable_additional_courses
-                delete query.automatic_timetable_criteria
-                query.manual_timetable = 'personal'
-
-                this.$router.push({
-                    path: this.$route.path,
-                    query,
-                })
+                this.openAdoptedPersonalTimetable()
             } finally {
                 this.personalTimetableSaving = false
             }
+        },
+        async adoptGeneratedTimetable(payload) {
+            if (this.personalTimetableSaving) {
+                return
+            }
+
+            this.personalTimetableSaving = true
+
+            try {
+                const saved = await this.studentTimetablesStore.adoptPublishedTimetable(payload)
+
+                if (!saved) {
+                    return
+                }
+
+                this.openAdoptedPersonalTimetable()
+            } finally {
+                this.personalTimetableSaving = false
+            }
+        },
+        openAdoptedPersonalTimetable() {
+            this.showManualTimetable = true
+            this.showEvaluationSettings = false
+            this.manualTimetableMode = 'personal'
+            this.applySavedTimetableSelection()
+            this.personalTimetableViewChangedMessageVisible = true
+
+            const query = { ...this.$route.query }
+            delete query.automatic_timetable
+            delete query.automatic_timetable_courses
+            delete query.automatic_timetable_additional_courses
+            delete query.automatic_timetable_criteria
+            query.manual_timetable = 'personal'
+
+            this.$router.push({
+                path: this.$route.path,
+                query,
+            })
         },
         dismissPersonalTimetableViewChangeMessage() {
             this.personalTimetableViewChangedMessageVisible = false
         },
         deselectSavedTimetableCourseChip(courseChip) {
+            if (courseChip?.isPersonalAdditional) {
+                const courseChipKey = String(courseChip?.key || '')
+
+                this.personalAdditionalTimetableEntryKeys = (Array.isArray(this.personalAdditionalTimetableEntryKeys)
+                    ? this.personalAdditionalTimetableEntryKeys
+                    : [])
+                    .filter(entryKey => entryKey !== courseChipKey)
+
+                return
+            }
+
             const courseChipKey = String(courseChip?.key || '')
 
             if (!courseChipKey || this.hiddenSavedTimetableCourseChipKeys.includes(courseChipKey)) {
@@ -2350,6 +2466,7 @@ export default {
         deselectAllSavedTimetableCourseChips() {
             this.hiddenSavedTimetableCourseChipKeys = this.savedTimetableCourseChipEntries
                 .map(courseChip => courseChip.key)
+            this.personalAdditionalTimetableEntryKeys = []
         },
         openStudentCoursePickerDialog() {
             this.selectedStudentCoursePickerTab = 'missing'
@@ -2366,17 +2483,162 @@ export default {
 
             const courseChipKey = String(entryOption?.courseChipKey || '')
 
-            if (!courseChipKey) {
+            if (courseChipKey) {
+                if (entryOption.isActive) {
+                    this.deselectSavedTimetableCourseChip({ key: courseChipKey })
+                    return
+                }
+
+                this.hiddenSavedTimetableCourseChipKeys = this.hiddenSavedTimetableCourseChipKeys
+                    .filter(hiddenCourseChipKey => hiddenCourseChipKey !== courseChipKey)
+                return
+            }
+
+            const selectionKey = this.studentCoursePickerEntrySelectionKey(entryOption)
+
+            if (!selectionKey) {
                 return
             }
 
             if (entryOption.isActive) {
-                this.deselectSavedTimetableCourseChip({ key: courseChipKey })
+                this.personalAdditionalTimetableEntryKeys = (Array.isArray(this.personalAdditionalTimetableEntryKeys)
+                    ? this.personalAdditionalTimetableEntryKeys
+                    : [])
+                    .filter(entryKey => entryKey !== selectionKey)
                 return
             }
 
-            this.hiddenSavedTimetableCourseChipKeys = this.hiddenSavedTimetableCourseChipKeys
-                .filter(hiddenCourseChipKey => hiddenCourseChipKey !== courseChipKey)
+            const personalAdditionalTimetableEntryKeys = Array.isArray(this.personalAdditionalTimetableEntryKeys)
+                ? this.personalAdditionalTimetableEntryKeys
+                : []
+
+            if (!personalAdditionalTimetableEntryKeys.includes(selectionKey)) {
+                this.personalAdditionalTimetableEntryKeys = [
+                    ...personalAdditionalTimetableEntryKeys,
+                    selectionKey,
+                ]
+            }
+        },
+        personalMoreCourseCardDisabled(card) {
+            return this.personalMoreCourseMenusForCard(card).length === 0
+        },
+        openPersonalMoreCourseCard(card) {
+            if (this.personalMoreCourseCardDisabled(card)) {
+                return
+            }
+
+            this.activePersonalMoreCourseCardKey = String(card?.key || '')
+            this.activePersonalMoreCourseMenuKey = ''
+        },
+        closePersonalMoreCourseCard() {
+            if (this.activePersonalMoreCourseMenuKey) {
+                this.activePersonalMoreCourseMenuKey = ''
+                return
+            }
+
+            this.activePersonalMoreCourseCardKey = ''
+        },
+        openPersonalMoreCourseMenu(courseMenu) {
+            this.activePersonalMoreCourseMenuKey = String(courseMenu?.key || '')
+        },
+        personalMoreCourseMenuActive(courseMenu) {
+            return String(courseMenu?.key || '') === this.activePersonalMoreCourseMenuKey
+        },
+        togglePersonalMoreCourseEntry(course) {
+            this.toggleStudentCoursePickerEntry(course)
+        },
+        personalMoreCourseMenusForCard(card) {
+            const tab = String(card?.tab || 'proposed')
+            const courseGroups = this.studentCoursePickerAllCourseGroups
+                .filter(courseGroup => this.studentCoursePickerCourseGroupMatchesTabValue(courseGroup, tab))
+                .filter(courseGroup => !this.studentCoursePickerCourseGroupInVisibleTimetable(courseGroup))
+
+            if (['planned', 'additional'].includes(String(card?.key || ''))) {
+                return this.courseMenusForStudentCoursePickerGroups(
+                    courseGroups,
+                    { concreteCourseLabels: true },
+                )
+            }
+
+            return this.courseMenusForStudentCoursePickerGroups(courseGroups)
+        },
+        courseMenusForStudentCoursePickerGroups(courseGroups, options = {}) {
+            const courseMenus = new Map()
+
+            courseGroups.forEach((courseGroup) => {
+                const semester = Number(courseGroup?.semester || 1)
+                const semesterContext = this.studentCoursePickerSemesterContext(semester)
+                const label = options?.concreteCourseLabels
+                    ? this.studentCoursePickerConcreteMenuLabel(courseGroup)
+                    : this.studentCoursePickerMenuLabel(courseGroup)
+                const normalizedLabel = label.toLocaleUpperCase('de-AT')
+                const courseMenuKey = `semester-${semester}-${normalizedLabel}`
+
+                if (!courseMenus.has(courseMenuKey)) {
+                    courseMenus.set(courseMenuKey, {
+                        key: courseMenuKey,
+                        label,
+                        semester,
+                        semesterLabel: semesterContext.label,
+                        semesterDateRangeLabel: semesterContext.dateRangeLabel,
+                        entries: [],
+                        entriesByLabel: new Map(),
+                    })
+                }
+
+                const courseMenu = courseMenus.get(courseMenuKey)
+                const entryLabel = this.studentCoursePickerEntryLabel(courseGroup)
+                const entryKey = `${courseMenuKey}-${entryLabel.toLocaleUpperCase('de-AT')}`
+
+                if (!courseMenu.entriesByLabel.has(entryKey)) {
+                    courseMenu.entriesByLabel.set(entryKey, {
+                        key: entryKey,
+                        label: entryLabel,
+                        courseGroups: [],
+                        courseGroupKeys: [],
+                        studentCourseType: courseGroup.studentCourseType,
+                        sourceColor: courseGroup.sourceColor,
+                    })
+                }
+
+                const entry = courseMenu.entriesByLabel.get(entryKey)
+                entry.courseGroups.push(courseGroup)
+                if (courseGroup?.key) {
+                    entry.courseGroupKeys.push(String(courseGroup.key))
+                }
+            })
+
+            return Array.from(courseMenus.values())
+                .map((courseMenu) => {
+                    const entries = Array.from(courseMenu.entriesByLabel.values())
+
+                    return {
+                        ...courseMenu,
+                        meta: this.studentCoursePickerCourseMenuMeta(entries),
+                        entries: entries
+                            .map(entry => ({
+                                ...entry,
+                                courseGroupKeys: [...new Set(entry.courseGroupKeys)],
+                                courseChipKey: this.studentCoursePickerEntryCourseChipKey(entry),
+                                selectionKey: this.studentCoursePickerEntrySelectionKey(entry),
+                                scheduleLabel: this.studentCoursePickerEntryScheduleLabel(entry),
+                                offeredScheduleLabel: this.studentCoursePickerEntryOfferedScheduleLabel(entry),
+                                recurrenceLabel: this.studentCoursePickerEntryRecurrenceLabel(entry),
+                                roomsLabel: this.studentCoursePickerEntryRoomsLabel(entry),
+                            }))
+                            .sort((leftEntry, rightEntry) => this.compareStudentCoursePickerEntryOfferItems(leftEntry, rightEntry)),
+                    }
+                })
+                .sort((leftCourseMenu, rightCourseMenu) => {
+                    if (leftCourseMenu.semester !== rightCourseMenu.semester) {
+                        return leftCourseMenu.semester - rightCourseMenu.semester
+                    }
+
+                    return leftCourseMenu.label.localeCompare(rightCourseMenu.label, 'de-AT', {
+                        numeric: true,
+                        sensitivity: 'base',
+                    })
+                })
         },
         studentCoursePickerMenuHasActiveSelection(courseMenu) {
             return (courseMenu?.entries || [])
@@ -2497,7 +2759,10 @@ export default {
             }
         },
         studentCoursePickerCourseGroupMatchesTab(courseGroup) {
-            const tab = String(this.selectedStudentCoursePickerTab || 'proposed')
+            return this.studentCoursePickerCourseGroupMatchesTabValue(courseGroup, this.selectedStudentCoursePickerTab)
+        },
+        studentCoursePickerCourseGroupMatchesTabValue(courseGroup, tabValue) {
+            const tab = String(tabValue || 'proposed')
             const studentCourseType = String(courseGroup?.studentCourseType || '')
 
             if (tab === 'all') {
@@ -2535,17 +2800,56 @@ export default {
 
             return (match ? match[1] : label).trim().toLocaleUpperCase('de-AT') || '-'
         },
+        studentCoursePickerConcreteMenuLabel(courseGroup) {
+            const label = this.studentCoursePickerEntryLabel(courseGroup)
+            const [concreteLabel] = label.trim().split(/\s+-\s+|\s/u)
+
+            if (concreteLabel) {
+                return concreteLabel.toLocaleUpperCase('de-AT')
+            }
+
+            const course = String(courseGroup?.course || '').trim()
+
+            return (course || label).trim().toLocaleUpperCase('de-AT') || '-'
+        },
+        studentCoursePickerCourseGroupInVisibleTimetable(courseGroup) {
+            const savedCourseChip = this.savedTimetableCourseChipEntryByTitle(this.studentCoursePickerEntryLabel(courseGroup))
+
+            if (savedCourseChip && !this.hiddenSavedTimetableCourseChipKeys.includes(savedCourseChip.key)) {
+                return true
+            }
+
+            const concreteCourseAliases = this.courseCodeAliases(this.studentCoursePickerConcreteMenuLabel(courseGroup))
+
+            if (!concreteCourseAliases.length) {
+                return false
+            }
+
+            const concreteCourseAliasSet = new Set(concreteCourseAliases)
+            const hiddenCourseChipKeys = new Set(this.hiddenSavedTimetableCourseChipKeys)
+
+            return this.savedTimetableCourseChipEntries
+                .filter(courseChip => !hiddenCourseChipKeys.has(courseChip.key))
+                .some(courseChip => this.courseCodeAliases(this.savedTimetableCourseChipShortLabel(courseChip))
+                    .some(courseCode => concreteCourseAliasSet.has(courseCode)))
+        },
         studentCoursePickerEntryLabel(courseGroup) {
             return courseGroup?.display_label || this.manualCourseGroupLabel(courseGroup)
         },
         studentCoursePickerEntryActive(entry) {
             const courseChipKey = String(entry?.courseChipKey || '')
 
-            if (!courseChipKey) {
-                return false
+            if (courseChipKey) {
+                return !this.hiddenSavedTimetableCourseChipKeys.includes(courseChipKey)
             }
 
-            return !this.hiddenSavedTimetableCourseChipKeys.includes(courseChipKey)
+            const selectionKey = this.studentCoursePickerEntrySelectionKey(entry)
+
+            const selectedEntryKeys = Array.isArray(this.personalAdditionalTimetableEntryKeys)
+                ? this.personalAdditionalTimetableEntryKeys
+                : []
+
+            return Boolean(selectionKey && selectedEntryKeys.includes(selectionKey))
         },
         studentCoursePickerEntryColor(entry, state = {}) {
             if (state.hasBlockingOverlap) {
@@ -2569,6 +2873,52 @@ export default {
         studentCoursePickerEntryCourseChipKey(entry) {
             return this.savedTimetableCourseChipEntryByTitle(entry?.label)?.key || ''
         },
+        studentCoursePickerEntrySelectionKey(entry) {
+            const courseChipKey = String(entry?.courseChipKey || '').trim()
+
+            if (courseChipKey) {
+                return courseChipKey
+            }
+
+            const label = String(entry?.label || '').trim()
+            const semester = Number(entry?.semester || 1)
+
+            return label
+                ? `semester-${semester}-${label.toLocaleUpperCase('de-AT')}`
+                : String(entry?.key || '').trim()
+        },
+        studentCoursePickerCourseMenuMeta(entries) {
+            const hours = [...new Set((Array.isArray(entries) ? entries : [])
+                .map(entry => this.personalAdditionalTimetableEntryHours(entry))
+                .filter(value => value > 0))]
+
+            return hours.length === 1 ? `${this.formatHours(hours[0])} Std.` : ''
+        },
+        personalAdditionalTimetableEntryHours(entry) {
+            const courseGroup = (Array.isArray(entry?.courseGroups) ? entry.courseGroups : [])
+                .find(group => this.courseHoursNumber(group) > 0)
+
+            return this.courseHoursNumber(courseGroup)
+        },
+        personalMoreCourseEntryIsDistanceLearning(entry) {
+            const courseGroups = Array.isArray(entry?.courseGroups) ? entry.courseGroups : []
+
+            if (courseGroups.some(courseGroup => (
+                courseGroup?.distanceLearning === true
+                || courseGroup?.distance_learning === true
+                || courseGroup?.isDistanceLearningCourse === true
+                || courseGroup?.is_distance_learning_course === true
+            ))) {
+                return true
+            }
+
+            const requiredSlotCount = Math.max(1, Math.round(this.personalAdditionalTimetableEntryHours(entry)))
+            const scheduledWeeklyLoad = this.courseGroupsScheduledWeeklyLoad(courseGroups)
+
+            return requiredSlotCount >= 2
+                && scheduledWeeklyLoad > 0
+                && Math.abs((scheduledWeeklyLoad * 2) - requiredSlotCount) < 0.001
+        },
         savedTimetableCourseChipEntryByTitle(title) {
             const normalizedTitle = String(title || '').trim().toLocaleUpperCase('de-AT')
 
@@ -2579,6 +2929,81 @@ export default {
             return this.savedTimetableCourseChipEntries.find(courseChip => (
                 String(courseChip?.title || '').trim().toLocaleUpperCase('de-AT') === normalizedTitle
             )) || null
+        },
+        studentCoursePickerEntryOfferedScheduleLabel(entry) {
+            const courseGroups = Array.isArray(entry?.courseGroups) ? entry.courseGroups : []
+
+            return this.studentCoursePickerMergedScheduleLabels(courseGroups).join(', ')
+        },
+        studentCoursePickerEntryRecurrenceLabel(entry) {
+            const courseGroups = Array.isArray(entry?.courseGroups) ? entry.courseGroups : []
+            const blockDateRangeLabels = [...new Set(courseGroups
+                .filter(courseGroup => courseGroup?.is_block || String(courseGroup?.block_label || '').trim())
+                .map(courseGroup => this.studentCoursePickerCourseGroupDateRangeLabel(courseGroup))
+                .filter(Boolean))]
+
+            if (blockDateRangeLabels.length) {
+                return blockDateRangeLabels.join(', ')
+            }
+
+            return this.studentCoursePickerFrequencyLabel(courseGroups)
+        },
+        studentCoursePickerEntryRoomsLabel(entry) {
+            return [...new Set((Array.isArray(entry?.courseGroups) ? entry.courseGroups : [])
+                .flatMap(courseGroup => Array.isArray(courseGroup?.rooms) ? courseGroup.rooms : [])
+                .map(room => String(room || '').trim())
+                .filter(Boolean))]
+                .join(', ')
+        },
+        studentCoursePickerCourseGroupDateRangeLabel(courseGroup) {
+            const dates = Array.isArray(courseGroup?.dates)
+                ? [...courseGroup.dates].filter(Boolean).sort()
+                : []
+            const firstDate = courseGroup?.first_date || dates[0] || null
+            const lastDate = courseGroup?.last_date || dates[dates.length - 1] || firstDate
+            const labels = [
+                this.formatPublishedTimetableCompactDate(firstDate),
+                this.formatPublishedTimetableCompactDate(lastDate),
+            ].filter(Boolean)
+
+            return labels.filter((dateLabel, index) => index === 0 || dateLabel !== labels[0]).join(' - ')
+        },
+        compareStudentCoursePickerEntryOfferItems(firstEntry, secondEntry) {
+            const firstSlot = this.studentCoursePickerEntryFirstSlot(firstEntry)
+            const secondSlot = this.studentCoursePickerEntryFirstSlot(secondEntry)
+
+            if (firstSlot.semester !== secondSlot.semester) {
+                return firstSlot.semester - secondSlot.semester
+            }
+
+            if (firstSlot.slot !== secondSlot.slot) {
+                return firstSlot.slot - secondSlot.slot
+            }
+
+            return String(firstEntry?.label || '').localeCompare(String(secondEntry?.label || ''), 'de-AT', {
+                numeric: true,
+                sensitivity: 'base',
+            })
+        },
+        studentCoursePickerEntryFirstSlot(entry) {
+            const courseGroups = Array.isArray(entry?.courseGroups) ? entry.courseGroups : []
+
+            return courseGroups
+                .map(courseGroup => ({
+                    semester: Number(courseGroup?.semester || entry?.semester || 0),
+                    slot: (Number(courseGroup?.weekday || 0) * 10000)
+                        + (this.studentCoursePickerTimeLabelToMinutes(courseGroup?.time_from) ?? (Number(courseGroup?.hour || 0) * 100)),
+                }))
+                .sort((leftSlot, rightSlot) => {
+                    if (leftSlot.semester !== rightSlot.semester) {
+                        return leftSlot.semester - rightSlot.semester
+                    }
+
+                    return leftSlot.slot - rightSlot.slot
+                })[0] || {
+                    semester: Number(entry?.semester || 0),
+                    slot: 999999,
+                }
         },
         studentCoursePickerEntryScheduleLabel(entry) {
             const courseGroups = Array.isArray(entry?.courseGroups) ? entry.courseGroups : []
@@ -2761,6 +3186,7 @@ export default {
         },
         applySavedTimetableSelection(courseGroupKeys = this.activeSavedTimetableCourseGroupKeys) {
             this.hiddenSavedTimetableCourseChipKeys = []
+            this.personalAdditionalTimetableEntryKeys = []
             const savedCourseGroupKeys = courseGroupKeys
             const savedCourseGroupKeySet = new Set(savedCourseGroupKeys)
 
@@ -2809,16 +3235,83 @@ export default {
 
             return Array.from({ length: weekdayCount }, (_, index) => cells[index] || {})
         },
-        publishedTimetableCellCourses(cell) {
+        publishedTimetableCellCourses(cell, semester = null, hour = null, cellIndex = null) {
             const courses = this.publishedTimetableCellRawCourses(cell)
+            const hiddenCourseChipKeys = new Set(this.hiddenSavedTimetableCourseChipKeys)
+            const visibleCourses = this.manualTimetableMode === 'personal' && this.hiddenSavedTimetableCourseChipKeys.length
+                ? courses.filter(course => !hiddenCourseChipKeys.has(this.savedTimetableCourseChipKey(course)))
+                : courses
 
-            if (this.manualTimetableMode !== 'personal' || !this.hiddenSavedTimetableCourseChipKeys.length) {
-                return courses
+            return [
+                ...visibleCourses,
+                ...this.personalAdditionalTimetableCoursesForCell(semester, hour, cellIndex),
+            ]
+        },
+        personalAdditionalTimetableCoursesForCell(semester, hour, cellIndex) {
+            if (
+                this.manualTimetableMode !== 'personal'
+                || !Array.isArray(this.personalAdditionalTimetableEntryKeys)
+                || !this.personalAdditionalTimetableEntryKeys.length
+                || !hour
+                || cellIndex === null
+            ) {
+                return []
             }
 
-            const hiddenCourseChipKeys = new Set(this.hiddenSavedTimetableCourseChipKeys)
+            const selectedEntryKeys = new Set(this.personalAdditionalTimetableEntryKeys)
+            const semesterIndex = this.publishedTimetableSemesters.indexOf(semester)
+            const semesterValue = Number(semester?.value || semester?.semester || (semesterIndex >= 0 ? semesterIndex + 1 : 1))
+            const weekday = this.publishedTimetableWeekdayForCellIndex(Number(cellIndex))
+            const weekdayValue = Number(weekday?.value || Number(cellIndex) + 1)
+            const hourValue = Number(hour?.hour || 0)
+            const from = this.formatTimeValue(hour?.from)
+            const until = this.formatTimeValue(hour?.until)
 
-            return courses.filter(course => !hiddenCourseChipKeys.has(this.savedTimetableCourseChipKey(course)))
+            return this.studentCoursePickerAllEntries
+                .filter(entry => selectedEntryKeys.has(this.studentCoursePickerEntrySelectionKey(entry)))
+                .flatMap((entry) => (entry.courseGroups || [])
+                    .filter(courseGroup => this.personalAdditionalTimetableCourseGroupMatchesCell(courseGroup, {
+                        semesterValue,
+                        weekdayValue,
+                        hourValue,
+                        from,
+                        until,
+                    }))
+                    .map(courseGroup => this.personalAdditionalTimetableCourseForGroup(entry, courseGroup)))
+        },
+        personalAdditionalTimetableCourseGroupMatchesCell(courseGroup, cellContext) {
+            const courseGroupSemester = Number(courseGroup?.semester || 1)
+            const courseGroupWeekday = Number(courseGroup?.weekday || 0)
+            const courseGroupHour = Number(courseGroup?.hour || 0)
+            const courseGroupTimeParts = this.studentCoursePickerCourseGroupTimeRangeParts(courseGroup)
+            const timeMatches = Boolean(
+                cellContext.from
+                && cellContext.until
+                && courseGroupTimeParts.from === cellContext.from
+                && courseGroupTimeParts.until === cellContext.until,
+            )
+
+            return courseGroupSemester === cellContext.semesterValue
+                && courseGroupWeekday === cellContext.weekdayValue
+                && (courseGroupHour === cellContext.hourValue || timeMatches)
+        },
+        personalAdditionalTimetableCourseForGroup(entry, courseGroup) {
+            const scheduleLabel = this.studentCoursePickerEntryScheduleLabel({
+                ...entry,
+                courseGroups: [courseGroup],
+            })
+
+            return {
+                key: [
+                    this.studentCoursePickerEntrySelectionKey(entry),
+                    courseGroup?.key || '',
+                ].join('|'),
+                label: entry?.label || this.studentCoursePickerEntryLabel(courseGroup),
+                details: scheduleLabel,
+                dates: Array.isArray(courseGroup?.dates) ? courseGroup.dates : [],
+                student_course_badge: 'Ausgewählt',
+                student_course_type: courseGroup?.studentCourseType || entry?.studentCourseType || '',
+            }
         },
         publishedTimetableCellRawCourses(cell) {
             return Array.isArray(cell?.courses) ? cell.courses : []
@@ -2826,8 +3319,8 @@ export default {
         publishedTimetableCellMarkers(cell) {
             return Array.isArray(cell?.markers) ? cell.markers : []
         },
-        publishedTimetableCellClasses(cell) {
-            const courses = this.publishedTimetableCellCourses(cell)
+        publishedTimetableCellClasses(cell, semester = null, hour = null, cellIndex = null) {
+            const courses = this.publishedTimetableCellCourses(cell, semester, hour, cellIndex)
             const hasMultipleCourses = courses.length > 1
 
             return {
@@ -3149,6 +3642,48 @@ export default {
         savedTimetableCourseChipTitle(course) {
             return String(course?.label || course?.title || course?.course || '').trim()
         },
+        savedTimetableCourseChipShortLabel(courseChip) {
+            const title = String(courseChip?.title || '').trim()
+            const [shortLabel] = title.split(/\s+-\s+|\s/u)
+
+            return shortLabel || title || '-'
+        },
+        savedTimetableCourseChipHoursText(courseChip) {
+            const matchedCourse = this.savedTimetableCourseForChip(courseChip)
+            const courseHours = this.courseHoursNumber(matchedCourse)
+            const fallbackHours = matchedCourse
+                ? this.savedTimetableCourseGroupCountForChip(courseChip, matchedCourse)
+                : this.savedTimetableCourseMergedTimeRanges(courseChip.timeRanges).length
+            const hours = courseHours || fallbackHours
+
+            return hours > 0 ? `${this.formatHours(hours)} Std.` : ''
+        },
+        savedTimetableCourseForChip(courseChip) {
+            const chipTitle = String(courseChip?.title || '').trim().toLocaleUpperCase('de-AT')
+            const chipShortLabel = this.normalizedCourseCode(this.savedTimetableCourseChipShortLabel(courseChip))
+            const manualTimetableCourses = Array.isArray(this.manualTimetableCourses)
+                ? this.manualTimetableCourses
+                : this.manualTimetableCourseSections
+                    .flatMap(section => Array.isArray(section?.items) ? section.items : [])
+
+            return manualTimetableCourses.find((course) => {
+                const courseCode = this.normalizedCourseCode(course?.code || course?.name || '')
+                const courseGroups = this.manualCourseGroups(course)
+
+                return courseGroups.some(courseGroup => (
+                    String(this.studentCoursePickerEntryLabel(courseGroup) || '').trim().toLocaleUpperCase('de-AT') === chipTitle
+                )) || (chipShortLabel && courseCode === chipShortLabel)
+            }) || null
+        },
+        savedTimetableCourseGroupCountForChip(courseChip, course) {
+            const chipTitle = String(courseChip?.title || '').trim().toLocaleUpperCase('de-AT')
+            const matchingCourseGroups = this.manualCourseGroups(course)
+                .filter(courseGroup => (
+                    String(this.studentCoursePickerEntryLabel(courseGroup) || '').trim().toLocaleUpperCase('de-AT') === chipTitle
+                ))
+
+            return matchingCourseGroups.length || this.manualCourseGroups(course).length
+        },
         savedTimetableCourseChipLabel(courseChip) {
             const scheduleLabel = [
                 this.savedTimetableCourseMergedTimeLabels(courseChip.timeRanges).join(', '),
@@ -3163,6 +3698,12 @@ export default {
             ]
                 .filter(Boolean)
                 .join(' · ')
+        },
+        savedTimetableCourseChipHoursLabel(courseChip) {
+            return [...new Set(this.savedTimetableCourseMergedTimeRanges(courseChip.timeRanges)
+                .map(timeRange => this.savedTimetableCourseHourRangeLabel(timeRange))
+                .filter(Boolean))]
+                .join(', ')
         },
         savedTimetableCourseTimeRange(hour, cellIndex) {
             const weekday = this.publishedTimetableWeekdayForCellIndex(cellIndex)
@@ -4195,6 +4736,44 @@ export default {
 
             return parts.module ? parts.base : this.normalizedCourseCode(course?.code || course?.label || course?.name || '')
         },
+        courseCodeAliases(value) {
+            return this.courseCodeAliasParts(value)
+                .map(courseCode => this.normalizedCourseCode(courseCode))
+                .flatMap((courseCode) => {
+                    const { base, module } = this.courseCodeModuleParts(courseCode)
+
+                    return this.courseBaseAliases(base).map(baseAlias => `${baseAlias}${module}`)
+                })
+                .filter(Boolean)
+        },
+        courseCodeAliasParts(value) {
+            return String(value || '')
+                .split('/')
+                .map(part => part.trim())
+                .filter(Boolean)
+        },
+        courseBaseAliases(base) {
+            const normalizedBase = this.normalizedCourseCode(base)
+            const mappedAliases = {
+                ET: ['ETH'],
+                ETH: ['ET'],
+                GPB: ['GS'],
+                GS: ['GPB', 'GSGPB'],
+                GSGPB: ['GS'],
+                GW: ['GWB'],
+                GWB: ['GW'],
+                LPT: ['LET'],
+                LET: ['LPT'],
+                ME: ['MU'],
+                MU: ['ME'],
+                R: ['RK'],
+                RK: ['R'],
+                S: ['SPA'],
+                SPA: ['S'],
+            }
+
+            return [...new Set([normalizedBase, ...(mappedAliases[normalizedBase] || [])].filter(Boolean))]
+        },
         courseLimitBasePriority(course) {
             const baseCode = this.courseBaseCode(course)
             const coreCoursePriority = ['L', 'F', 'S', 'E', 'ETH', 'M', 'D'].indexOf(baseCode)
@@ -4913,6 +5492,13 @@ export default {
     font-weight: 900;
 }
 
+.students-timetable-v2-selected-courses-card__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .students-timetable-v2-selected-courses-card__list {
     display: flex;
     flex-wrap: wrap;
@@ -5070,41 +5656,6 @@ export default {
     min-width: 0;
 }
 
-.manual-overview-course-card {
-    margin: -4px 0 18px;
-}
-
-.manual-overview-course-card :deep(.v-expansion-panel) {
-    border: 1px solid rgba(16, 38, 58, 0.08);
-    border-radius: 8px !important;
-    background: rgba(255, 255, 255, 0.84) !important;
-    overflow: hidden;
-}
-
-.manual-overview-course-card__title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 56px;
-    padding: 14px;
-}
-
-.manual-overview-course-card__title h3 {
-    flex: 1;
-    margin: 0;
-    color: #10263a;
-    font-size: 1rem;
-}
-
-.manual-overview-course-card :deep(.v-expansion-panel-text__wrapper) {
-    padding: 0;
-}
-
-.manual-overview-course-card__sections {
-    margin: 0;
-    padding: 12px;
-}
-
 .timetable-actions {
     display: flex;
     flex-wrap: nowrap;
@@ -5210,39 +5761,6 @@ export default {
 .student-manual-timetable__view-change {
     border: 1px solid rgba(22, 163, 74, 0.24);
     color: #14532d;
-}
-
-.student-course-choice-panel {
-    display: grid;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid rgba(57, 73, 171, 0.16);
-    border-radius: 8px;
-    background: #f8fafc;
-}
-
-.student-course-choice-panel__header,
-.student-course-choice-panel__title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.student-course-choice-panel__header {
-    justify-content: space-between;
-}
-
-.student-course-choice-panel__title {
-    color: #172554;
-    font-size: 0.86rem;
-    font-weight: 800;
-}
-
-.student-course-choice-panel__actions {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
 }
 
 .course-choice-restriction-switch {
@@ -5363,34 +5881,245 @@ export default {
     border-top: 1px solid rgba(57, 73, 171, 0.16);
 }
 
-.student-selected-course-filter-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding-top: 2px;
-}
-
 .student-selected-course-filter-chip {
-    font-weight: 650;
+    min-height: 26px;
+    padding-inline: 10px 9px;
+    background: #dff3f1 !important;
+    color: #00877f !important;
+    font-size: 0.76rem;
+    font-weight: 400;
 }
 
-.student-selected-course-filter-chip__source {
-    margin-left: 6px;
-    padding: 0 5px;
-    border-radius: 999px;
-    font-size: 0.62rem;
-    font-weight: 850;
-    line-height: 1.25;
+.student-selected-course-filter-chip :deep(.v-chip__content) {
+    gap: 3px;
 }
 
-.student-selected-course-filter-chip__source--missing {
-    background: rgba(251, 146, 60, 0.24);
-    color: #9a3412;
+.student-selected-course-filter-chip :deep(.v-chip__close) {
+    margin-inline: 4px -2px;
+    color: #00877f;
+    opacity: 1;
 }
 
-.student-selected-course-filter-chip__source--additional {
-    background: rgba(14, 165, 233, 0.22);
-    color: #0369a1;
+.student-selected-course-filter-chip .students-timetable-v2-selected-courses-card__meta {
+    margin-left: 0;
+    font-weight: 950;
+}
+
+.students-timetable-v2-more-adopted-courses-card {
+    border: 1px solid rgba(14, 165, 233, 0.16);
+}
+
+.students-timetable-v2-more-adopted-courses-card__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.students-timetable-v2-more-adopted-courses-card__content {
+    min-height: 48px;
+}
+
+.students-timetable-v2-more-adopted-courses-card__grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.students-timetable-v2-more-adopted-courses-card__category {
+    display: grid;
+    place-items: center;
+    min-width: 0;
+    min-height: 76px;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.82);
+    cursor: pointer;
+    transition:
+        border-color 0.15s ease,
+        background 0.15s ease,
+        transform 0.15s ease;
+}
+
+.students-timetable-v2-more-adopted-courses-card__category:hover,
+.students-timetable-v2-more-adopted-courses-card__category:focus-visible {
+    border-color: rgba(37, 99, 235, 0.34);
+    background: rgba(239, 246, 255, 0.92);
+    outline: none;
+    transform: translateY(-1px);
+}
+
+.students-timetable-v2-more-adopted-courses-card__category--disabled {
+    background: rgba(241, 245, 249, 0.72);
+    border-color: rgba(148, 163, 184, 0.16) !important;
+    color: rgba(15, 23, 42, 0.42);
+    cursor: default;
+    opacity: 0.58;
+}
+
+.students-timetable-v2-more-adopted-courses-card__category--disabled:hover,
+.students-timetable-v2-more-adopted-courses-card__category--disabled:focus-visible {
+    background: rgba(241, 245, 249, 0.72);
+    border-color: rgba(148, 163, 184, 0.16) !important;
+    transform: none;
+}
+
+.students-timetable-v2-more-adopted-courses-card__category-title {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    max-width: 100%;
+    min-width: 0;
+    color: #0f172a;
+    font-size: 0.88rem;
+    font-weight: 900;
+    line-height: 1.2;
+    text-align: center;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+}
+
+.students-timetable-v2-more-adopted-courses-card__category--missing {
+    border-color: rgba(239, 68, 68, 0.24);
+}
+
+.students-timetable-v2-more-adopted-courses-card__category--planned {
+    border-color: rgba(22, 163, 74, 0.24);
+}
+
+.students-timetable-v2-more-adopted-courses-card__category--additional {
+    border-color: rgba(14, 165, 233, 0.24);
+}
+
+.students-timetable-v2-more-adopted-courses-card__category--more {
+    border-color: rgba(37, 99, 235, 0.24);
+}
+
+.students-timetable-v2-more-adopted-courses-card__course-view {
+    display: grid;
+    gap: 10px;
+}
+
+.students-timetable-v2-more-adopted-courses-card__back-card {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid rgba(37, 99, 235, 0.22);
+    border-radius: 8px;
+    background: rgba(239, 246, 255, 0.86);
+    color: #1d4ed8;
+    cursor: pointer;
+    font-size: 0.86rem;
+    font-weight: 800;
+    line-height: 1.2;
+    transition:
+        border-color 0.15s ease,
+        background 0.15s ease;
+}
+
+.students-timetable-v2-more-adopted-courses-card__back-card:hover,
+.students-timetable-v2-more-adopted-courses-card__back-card:focus-visible {
+    border-color: rgba(37, 99, 235, 0.36);
+    background: rgba(219, 234, 254, 0.94);
+    outline: none;
+}
+
+.students-timetable-v2-more-adopted-courses-card__course-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+    gap: 10px;
+}
+
+.students-timetable-v2-more-adopted-courses-card__course {
+    display: grid;
+    place-items: center;
+    gap: 6px;
+    min-height: 64px;
+    padding: 10px 12px;
+    border: 1px solid rgba(22, 163, 74, 0.22);
+    background: rgba(240, 253, 244, 0.86);
+    cursor: pointer;
+    transition:
+        border-color 0.15s ease,
+        background 0.15s ease,
+        transform 0.15s ease;
+}
+
+.students-timetable-v2-more-adopted-courses-card__course:hover,
+.students-timetable-v2-more-adopted-courses-card__course:focus-visible,
+.students-timetable-v2-more-adopted-courses-card__course--active {
+    border-color: rgba(22, 163, 74, 0.42);
+    background: rgba(220, 252, 231, 0.96);
+    outline: none;
+    transform: translateY(-1px);
+}
+
+.students-timetable-v2-more-adopted-courses-card__course-label {
+    color: #14532d;
+    font-size: 1rem;
+    font-weight: 900;
+    line-height: 1.2;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.students-timetable-v2-more-adopted-course-offers-card {
+    border: 1px solid rgba(37, 99, 235, 0.14);
+}
+
+.students-timetable-v2-offered-courses-card__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.students-timetable-v2-offered-courses-card__list {
+    display: grid;
+    gap: 8px;
+}
+
+.students-timetable-v2-offered-courses-card__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    border: 1px solid rgba(71, 85, 105, 0.2);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: #ffffff;
+}
+
+.students-timetable-v2-offered-courses-card__item--toggle {
+    cursor: pointer;
+}
+
+.students-timetable-v2-offered-courses-card__item--selected {
+    border-color: rgba(22, 163, 74, 0.36);
+    background: rgba(220, 252, 231, 0.9);
+    box-shadow: inset 0 0 0 1px rgba(22, 163, 74, 0.12);
+}
+
+.students-timetable-v2-offered-courses-card__item--deselected {
+    border-color: rgba(220, 38, 38, 0.28);
+    background: rgba(254, 242, 242, 0.9);
+    color: #7f1d1d;
+}
+
+.students-timetable-v2-offered-courses-card__item--deselected .students-timetable-v2-offered-courses-card__name {
+    color: #7f1d1d;
+}
+
+.students-timetable-v2-offered-courses-card__name {
+    color: #0f172a;
+    font-weight: 800;
 }
 
 .student-manual-timetable__layout {
@@ -5879,6 +6608,10 @@ export default {
     .overview-course-selection {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .students-timetable-v2-more-adopted-courses-card__grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 520px) {
@@ -5901,6 +6634,10 @@ export default {
     }
 
     .overview-course-selection {
+        grid-template-columns: 1fr;
+    }
+
+    .students-timetable-v2-more-adopted-courses-card__grid {
         grid-template-columns: 1fr;
     }
 
@@ -5943,7 +6680,6 @@ export default {
 
     .content-head,
     .overview-selection,
-    .manual-overview-course-card,
     .student-manual-timetable__toolbar,
     .student-published-timetable__meta,
     .student-published-timetable__semester-head {
@@ -5968,11 +6704,6 @@ export default {
     .student-published-timetable__semester-head span,
     .student-published-timetable__week-label {
         color: rgba(226, 232, 240, 0.86);
-    }
-
-    .manual-overview-course-card__title h3,
-    .manual-overview-course-card__title .v-icon {
-        color: #0f172a;
     }
 
     .student-manual-timetable,

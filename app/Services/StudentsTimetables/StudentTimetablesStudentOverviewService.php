@@ -135,6 +135,39 @@ class StudentTimetablesStudentOverviewService
     }
 
     /**
+     * @param  array<string, mixed>  $timetable
+     * @param  array<string, mixed>  $state
+     * @return array<string, mixed>
+     */
+    public function savePersonalTimetableForUser(User $user, array $timetable, array $state = []): array
+    {
+        $schoolyearId = $this->schoolyearIdForUser($user);
+        $student = $this->import116StudentForUser($user, $schoolyearId);
+        $studentCode = $this->nonEmptyString($student?->student_code);
+
+        if (! $studentCode) {
+            abort(404, 'Schülerdatensatz nicht gefunden.');
+        }
+
+        StudentTimetablePersonalTimetable::query()->updateOrCreate(
+            [
+                'school_id' => $user->school_id,
+                'schoolyear_id' => $schoolyearId,
+                'user_id' => $user->id,
+                'student_code' => $studentCode,
+            ],
+            [
+                'student_label' => $this->studentLabel($student, $user),
+                'timetable' => $timetable,
+                'state' => $state,
+                'adopted_at' => now(),
+            ],
+        );
+
+        return $this->summaryForUser($user);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function deletePersonalTimetableForUser(User $user): array
@@ -439,6 +472,20 @@ class StudentTimetablesStudentOverviewService
         $stringValue = trim((string) $value);
 
         return $stringValue !== '' ? $stringValue : null;
+    }
+
+    private function studentLabel(?Import116 $student, User $user): string
+    {
+        return collect([
+            $student?->class ?? $user->schoolclass,
+            trim(implode(' ', array_filter([
+                $student?->last_name ?? $user->last_name,
+                $student?->first_name ?? $user->first_name,
+            ]))),
+        ])
+            ->map(fn (mixed $value): string => trim((string) $value))
+            ->filter()
+            ->join(' · ');
     }
 
     /**

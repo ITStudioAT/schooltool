@@ -152,13 +152,16 @@ export const useStudentTimetablesUserStore = defineStore('StudentTimetablesUserS
             }
         },
 
-        async adoptPublishedTimetable() {
+        async adoptPublishedTimetable(timetablePayload = null) {
             const notification = useNotificationStore()
             const homepageStore = useHomepageStore()
             homepageStore.is_loading++
 
             try {
-                const response = await axios.post('/api/homepage/students-timetables/my-timetable')
+                const response = await axios.post(
+                    '/api/homepage/students-timetables/my-timetable',
+                    timetablePayload || {},
+                )
                 this.overview = response.data?.data ?? null
                 notification.notify({
                     message: response.data?.message || 'Stundenplan wurde übernommen.',

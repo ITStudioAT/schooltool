@@ -199,10 +199,29 @@ class StudentsTimetablesStudentController extends Controller
         ]);
     }
 
-    public function adoptPublishedTimetable(StudentTimetablesStudentOverviewService $overviewService): JsonResponse
+    public function adoptPublishedTimetable(Request $request, StudentTimetablesStudentOverviewService $overviewService): JsonResponse
     {
         if (! $authUser = $this->userHasRole([StudentsTimetablesStudentService::ROLE_NAME])) {
             abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'timetable' => ['sometimes', 'array'],
+            'timetable.title' => ['required_with:timetable', 'string', 'max:255'],
+            'timetable.weekdays' => ['required_with:timetable', 'array', 'min:1', 'max:7'],
+            'timetable.semesters' => ['required_with:timetable', 'array', 'min:1'],
+            'state' => ['sometimes', 'array'],
+        ]);
+
+        if (array_key_exists('timetable', $validated)) {
+            return response()->json([
+                'message' => 'Stundenplan wurde übernommen.',
+                'data' => $overviewService->savePersonalTimetableForUser(
+                    $authUser,
+                    $validated['timetable'],
+                    $validated['state'] ?? [],
+                ),
+            ]);
         }
 
         return response()->json([
@@ -290,8 +309,10 @@ class StudentsTimetablesStudentController extends Controller
             abort(422, 'Bitte wählen Sie mindestens einen Kurs aus.');
         }
 
-        $evaluationCriteria = $evaluationSettingsService->activeCriteriaForUser($authUser);
-        $settings = $calculationSettingsService->settingsFromStudentSummary(
+        $evaluationCriteria = array_key_exists('evaluation_criteria', $validated)
+            ? $evaluationSettingsService->activeCriteriaForRun($validated['evaluation_criteria'])
+            : $evaluationSettingsService->activeCriteriaForUser($authUser);
+        $settings = $this->automaticTimetableSettingsWithConstraints($calculationSettingsService->settingsFromStudentSummary(
             $summary,
             $selectedCourseKeys,
             $calculationSettingsService->availableTimes($overviewService->courseGroupsForUser($authUser)),
@@ -301,7 +322,7 @@ class StudentsTimetablesStudentController extends Controller
             $selectedAdditionalCoursesRequired,
             $validated['selected_timetable_type'] ?? null,
             (int) ($validated['selected_timetable_number'] ?? 1),
-        );
+        ), $validated['constraints'] ?? []);
         $result = $this->firstAutomaticTimetableResult(
             $authUser,
             $settings,
@@ -404,8 +425,78 @@ class StudentsTimetablesStudentController extends Controller
             'selected_quality_criterion_keys.*' => ['string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
             'selected_timetable_type' => ['nullable', 'string', Rule::in(['full_green', 'green', 'conflict'])],
             'selected_timetable_number' => ['nullable', 'integer', 'min:1'],
+            'constraints' => ['sometimes', 'array'],
+            'constraints.availableWeekdays' => ['sometimes', 'array'],
+            'constraints.availableWeekdays.*' => ['integer', 'between:1,7', 'distinct'],
+            'constraints.availableTimes' => ['sometimes', 'array'],
+            'constraints.availableTimes.*' => ['integer', 'between:1,20', 'distinct'],
+            'constraints.excludedWeekdayTimes' => ['sometimes', 'array'],
+            'constraints.excludedWeekdayTimes.*' => ['string', 'max:20', 'distinct'],
+            'evaluation_criteria' => ['sometimes', 'array'],
+            'evaluation_criteria.*.key' => ['required_with:evaluation_criteria', 'string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
+            'evaluation_criteria.*.enabled' => ['required_with:evaluation_criteria', 'boolean'],
+            'evaluation_criteria.*.priority' => ['required_with:evaluation_criteria', 'integer', 'between:1,'.count($evaluationSettingsService->criterionKeys()), 'distinct'],
+            'evaluation_criteria.*.option' => ['nullable', 'string', Rule::in($evaluationSettingsService->optionValues())],
             ...$this->studentOverviewSelectionRules(),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     * @param  array<string, mixed>  $constraints
+     * @return array<string, mixed>
+     */
+    private function automaticTimetableSettingsWithConstraints(array $settings, array $constraints): array
+    {
+        if ($constraints === []) {
+            return $settings;
+        }
+
+        $constraintSettings = $settings['constraints'] ?? [];
+
+        if (array_key_exists('availableWeekdays', $constraints)) {
+            $constraintSettings['availableWeekdays'] = $this->integerList($constraints['availableWeekdays']);
+        }
+
+        if (array_key_exists('availableTimes', $constraints)) {
+            $constraintSettings['availableTimes'] = $this->integerList($constraints['availableTimes']);
+        }
+
+        if (array_key_exists('excludedWeekdayTimes', $constraints)) {
+            $constraintSettings['excludedWeekdayTimes'] = $this->stringList($constraints['excludedWeekdayTimes']);
+        }
+
+        return [
+            ...$settings,
+            'constraints' => $constraintSettings,
+        ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $values
+     * @return list<int>
+     */
+    private function integerList(array $values): array
+    {
+        return collect($values)
+            ->map(fn (mixed $value): int => (int) $value)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, mixed>  $values
+     * @return list<string>
+     */
+    private function stringList(array $values): array
+    {
+        return collect($values)
+            ->map(fn (mixed $value): string => (string) $value)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**
@@ -440,10 +531,12 @@ class StudentsTimetablesStudentController extends Controller
             abort(422, 'Bitte waehlen Sie mindestens einen Kurs aus.');
         }
 
-        $evaluationCriteria = $evaluationSettingsService->activeCriteriaForUser($authUser);
+        $evaluationCriteria = array_key_exists('evaluation_criteria', $validated)
+            ? $evaluationSettingsService->activeCriteriaForRun($validated['evaluation_criteria'])
+            : $evaluationSettingsService->activeCriteriaForUser($authUser);
 
         return [
-            'settings' => $calculationSettingsService->settingsFromStudentSummary(
+            'settings' => $this->automaticTimetableSettingsWithConstraints($calculationSettingsService->settingsFromStudentSummary(
                 $summary,
                 $selectedCourseKeys,
                 $calculationSettingsService->availableTimes($overviewService->courseGroupsForUser($authUser)),
@@ -453,7 +546,7 @@ class StudentsTimetablesStudentController extends Controller
                 $selectedAdditionalCoursesRequired,
                 $validated['selected_timetable_type'] ?? null,
                 (int) ($validated['selected_timetable_number'] ?? 1),
-            ),
+            ), $validated['constraints'] ?? []),
             'evaluationCriteria' => $evaluationCriteria,
             'selectedQualityCriterionKeys' => $selectedQualityCriterionKeys,
         ];

@@ -8,6 +8,9 @@
                             <div class="students-timetable-v2-review-card__identity">
                                 <v-icon :icon="reviewFlowStudentIcon" size="20" color="primary" />
                                 <strong>{{ courseReviewStudentLabel }}</strong>
+                                <span v-if="courseReviewStudentReligionMeta" class="students-timetable-v2-review-card__student-religion">
+                                    {{ courseReviewStudentReligionMeta }}
+                                </span>
                                 <button
                                     v-if="courseReviewStudentEmail"
                                     type="button"
@@ -1160,6 +1163,9 @@
                                         <span class="students-timetable-v2-student-context__student-label">
                                             {{ storedTimetableStudentLabel }}
                                         </span>
+                                        <span v-if="storedTimetableStudentReligionMeta()" class="students-timetable-v2-student-context__student-religion">
+                                            {{ storedTimetableStudentReligionMeta() }}
+                                        </span>
                                         <button
                                             v-if="storedTimetableStudentEmail"
                                             type="button"
@@ -1179,9 +1185,6 @@
                                                 Kopiert
                                             </span>
                                         </button>
-                                    </span>
-                                    <span v-if="storedTimetableStudentReligionMeta()" class="students-timetable-v2-student-context__student-religion">
-                                        {{ storedTimetableStudentReligionMeta() }}
                                     </span>
                                 </span>
                                 <span class="students-timetable-v2-student-actions">
@@ -1886,6 +1889,26 @@ export default {
                 : null
 
             return this.studentEmail(selectedStudent)
+        },
+        courseReviewStudentReligionMeta() {
+            const contextReligion = this.adoptedTimetableVisible
+                ? String(
+                    this.adoptedTimetableStudentContextSnapshot?.student?.religion
+                        || this.storedTimetableStudentContext?.student?.religion
+                        || '',
+                ).trim()
+                : this.storedTimetableStudentReligion()
+
+            if (contextReligion) return `Religion: ${contextReligion}`
+
+            const studentCode = this.courseReviewStudentCode
+            const selectedStudent = studentCode
+                ? (Array.isArray(this.robotStudents) ? this.robotStudents : [])
+                    .find((student) => this.normalizedStudentCode(student?.student_code) === studentCode)
+                : null
+            const religion = String(selectedStudent?.religion || '').trim()
+
+            return religion ? `Religion: ${religion}` : null
         },
         adoptedPublishedTimetableStudentCode() {
             return this.normalizedStudentCode(
@@ -4741,7 +4764,9 @@ export default {
             }
 
             if (courseGroup === 'planned') {
-                return this.storedPlannedCourseItems.map((course) => this.moreCoursesCardItem(course, courseGroup))
+                return this.storedPlannedCourseItems
+                    .map((course) => this.moreCoursesCardItem(course, courseGroup))
+                    .filter((course) => this.offeredCourseItemsForSelectedCourse(course).length > 0)
             }
 
             if (courseGroup === 'additional') {
@@ -9118,6 +9143,7 @@ export default {
     line-height: 1.3;
 }
 
+.students-timetable-v2-review-card__student-religion,
 .students-timetable-v2-student-context__student-religion {
     color: #0369a1;
     font-size: 0.78rem;

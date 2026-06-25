@@ -39,6 +39,8 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain("title: 'Zusätzliche Kurse'")
         expect(source).toContain('@course-selection-change="setAutomaticTimetableCourseKeys"')
         expect(source).toContain('@additional-course-selection-change="setAutomaticTimetableAdditionalCourseKeys"')
+        expect(source).toContain(':adopt-timetable-loading="personalTimetableSaving"')
+        expect(source).toContain('@adopt-timetable="adoptGeneratedTimetable"')
         expect(source).toContain('@courses-selected="finishAutomaticTimetable"')
         expect(source).toContain('@quality-criteria-selection-change="setAutomaticTimetableQualityCriterionKeys"')
         expect(source).toContain('@step-change="setAutomaticTimetableStep"')
@@ -81,6 +83,63 @@ describe('Student timetable evaluation settings', () => {
         const source = readFileSync(componentPath, 'utf8')
 
         expect(source).toMatch(/currentStep === 'result'[\s\S]*<h2>Stundenplan<\/h2>/u)
+        expect(source).toContain('Stundenplan übernehmen')
+        expect(source).toContain(':loading="adoptTimetableLoading"')
+        expect(source).toContain("@click=\"adoptGeneratedTimetable\"")
+        expect(source).toContain("this.$emit('adopt-timetable', this.generatedPersonalTimetablePayload())")
+    })
+
+    it('emits the selected generated timetable for adoption', () => {
+        const methods = (StudentTimetableEvaluationSettings as any).methods
+        const emittedEvents: Array<{ event: string, payload: any }> = []
+        const ctx: any = {
+            ...methods,
+            adoptTimetableLoading: false,
+            generatingTimetable: false,
+            generatedTimetable: {
+                slots: {
+                    '1-1': {
+                        key: 'slot-1',
+                        code: 'D1',
+                        sourceLabel: 'D1-1A-MAY',
+                        courseGroup: {
+                            key: 'generated-group',
+                            weekday: 1,
+                            hour: 1,
+                            teacher: 'MAY',
+                            room: '101',
+                        },
+                    },
+                },
+            },
+            generatedTimetableWeekdays: [{ value: 1, label: 'Mo' }],
+            generatedTimetableHours: [{ value: 1, hourLabel: '1.', timeFrom: '08:00', timeUntil: '08:50' }],
+            selectedAdditionalCourseKeys: [],
+            selectedQualityCriterionKeys: [],
+            selectedTimetableType: 'full_green',
+            selectedTimetableNumber: 1,
+            normalizedCourseKeys: (values: string[]) => values,
+            resultTimetableConstraints: () => ({}),
+            selectedBackendCourseKeys: () => ['planned:D1'],
+            $emit(event: string, payload: any) {
+                emittedEvents.push({ event, payload })
+            },
+        }
+
+        methods.adoptGeneratedTimetable.call(ctx)
+
+        expect(emittedEvents).toHaveLength(1)
+        expect(emittedEvents[0].event).toBe('adopt-timetable')
+        expect(emittedEvents[0].payload.timetable.title).toBe('Stundenplan')
+        expect(emittedEvents[0].payload.timetable.weekdays).toEqual([{ label: 'Mo' }])
+        expect(emittedEvents[0].payload.timetable.semesters[0].weeks[0].hours[0].cells[0].courses[0]).toMatchObject({
+            label: 'D1',
+            details: 'D1-1A-MAY · MAY · 101',
+        })
+        expect(emittedEvents[0].payload.state).toMatchObject({
+            source: 'automatic-timetable',
+            activeCourseGroupFilterKeys: ['generated-group'],
+        })
     })
 
     it('opens a manual timetable from the student overview', () => {
@@ -93,8 +152,9 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('@click="openPublishedTimetable"')
         expect(source).toContain('@click="openPersonalTimetable"')
         expect(source).toContain('@click="adoptPublishedTimetable"')
-        expect(source).toContain('@click="openPersonalTimetableDeleteDialog"')
+        expect(source).not.toContain('@click="openPersonalTimetableDeleteDialog"')
         expect(source).toContain('@click="deletePersonalTimetable"')
+        expect(source).toContain('v-if="manualTimetableMode !== \'personal\'"')
         expect(source).toContain('persistent max-width="460"')
         expect(source).toContain('Mein Stundenplan löschen?')
         expect(source).toContain('Dieser Stundenplan wird nur für dich und dieses Schuljahr gelöscht.')
@@ -107,9 +167,11 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('close-label="Meldung schließen"')
         expect(source).toContain('@click:close="dismissPersonalTimetableViewChangeMessage"')
         expect(source).toContain('Als mein Stundenplan übernehmen')
-        expect(source).toContain('class="student-course-choice-panel"')
-        expect(source).toContain('<span>Kursauswahl</span>')
-        expect(source).toContain('@click="openStudentCoursePickerDialog"')
+        expect(source).toContain('class="students-timetable-v2-card students-timetable-v2-selected-courses-card student-course-choice-panel"')
+        expect(source).toContain('<span>Ausgewählte Kurse</span>')
+        expect(source).toContain('class="students-timetable-v2-selected-courses-card__title"')
+        expect(source).toContain('class="students-timetable-v2-selected-courses-card__list"')
+        expect(source).not.toContain('@click="openStudentCoursePickerDialog"')
         expect(source).toContain('v-model="studentCoursePickerDialogOpen" persistent max-width="760"')
         expect(source).toContain('Kurs wählen')
         expect(source).toContain('studentCoursePickerTabs')
@@ -120,10 +182,33 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('selectedStudentCoursePickerEntryOptions')
         expect(source).toContain('@click="toggleStudentCoursePickerEntry(entryOption)"')
         expect(source).toContain('{{ savedTimetableCourseChips.length }} ausgewählt')
-        expect(source).toContain('@click="deselectAllSavedTimetableCourseChips"')
+        expect(source).not.toContain('@click="deselectAllSavedTimetableCourseChips"')
+        expect(source).not.toContain('Alle abwählen')
         expect(source).toContain('@click:close="deselectSavedTimetableCourseChip(courseChip)"')
+        expect(source).toContain(':close-label="`Kurs ${courseChip.title} entfernen`"')
+        expect(source).toContain('courseChip.shortLabel')
+        expect(source).toContain('courseChip.hoursText')
+        expect(source).toContain('background: #dff3f1 !important;')
+        expect(source).toContain('class="students-timetable-v2-card students-timetable-v2-more-adopted-courses-card"')
+        expect(source).toContain('class="students-timetable-v2-more-adopted-courses-card__title"')
+        expect(source).toContain('{{ personalMoreCoursesTitle }}')
+        expect(source).toContain('v-for="card in personalMoreCourseCards"')
+        expect(source).toContain('@click="openPersonalMoreCourseCard(card)"')
+        expect(source).toContain('@click="closePersonalMoreCourseCard"')
+        expect(source).toContain('v-for="courseMenu in personalMoreCourseMenus"')
+        expect(source).toContain('@click="openPersonalMoreCourseMenu(courseMenu)"')
+        expect(source).toContain('selectedPersonalMoreCourseEntryOptions')
+        expect(source).toContain('@click="togglePersonalMoreCourseEntry(course)"')
+        expect(source).toContain('courseMenu.meta')
+        expect(source).toContain('course.offeredScheduleLabel')
+        expect(source).toContain('course.recurrenceLabel')
+        expect(source).toContain('v-if="course.distanceLearning"')
+        expect(source).toContain('course.roomsLabel')
+        expect(source).toContain('Angebotene Kurse')
+        expect(source).toContain('Weitere Kurse')
         expect(source).toContain('savedTimetableCourseChips()')
         expect(source).toContain('studentCoursePickerCourseMenus()')
+        expect(source).toContain('courseMenusForStudentCoursePickerGroups(')
         expect(source).toContain('publishedTimetableCellRawCourses(cell)')
         expect(source).toContain('Löschen')
         expect(source).toContain('Mein Stundenplan')
@@ -150,12 +235,12 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('<v-checkbox-btn')
         expect(source).toContain("return 'Stundenplan'")
         expect(source).toContain('Keine passenden Kurstermine gefunden.')
-        expect(source).toContain('showManualTimetable && courseSections.length')
-        expect(source).toContain('class="manual-overview-course-card"')
-        expect(source).toContain('v-model="expandedManualOverviewCoursePanels"')
-        expect(source).toContain('expandedManualOverviewCoursePanels: []')
-        expect(source).toContain('<h3>Kurse</h3>')
-        expect(source).toContain('courseSectionTotalCount')
+        expect(source).not.toContain('showManualTimetable && courseSections.length')
+        expect(source).not.toContain('class="manual-overview-course-card"')
+        expect(source).not.toContain('v-model="expandedManualOverviewCoursePanels"')
+        expect(source).not.toContain('expandedManualOverviewCoursePanels: []')
+        expect(source).not.toContain('<h3>Kurse</h3>')
+        expect(source).not.toContain('courseSectionTotalCount')
     })
 
     it('opens a published timetable with the saved course group selection', () => {
@@ -793,8 +878,11 @@ describe('Student timetable evaluation settings', () => {
             ...methods,
             manualTimetableMode: 'personal',
             hiddenSavedTimetableCourseChipKeys: [],
+            personalAdditionalTimetableEntryKeys: [],
             selectedStudentCoursePickerTab: 'missing',
             selectedStudentCoursePickerMenuKey: '',
+            activePersonalMoreCourseCardKey: '',
+            activePersonalMoreCourseMenuKey: '',
             studentCoursePickerDialogOpen: false,
             overview: {
                 personal_timetable: {
@@ -936,6 +1024,7 @@ describe('Student timetable evaluation settings', () => {
                                 {
                                     key: 'bu2',
                                     code: 'BU2',
+                                    hours: 4,
                                     semester: 1,
                                     course_groups: [
                                         {
@@ -978,6 +1067,23 @@ describe('Student timetable evaluation settings', () => {
                                     ],
                                 },
                                 {
+                                    key: 'bu2-alt',
+                                    code: 'BU2',
+                                    semester: 1,
+                                    course_groups: [
+                                        {
+                                            key: 'bu2-alt-14',
+                                            display_label: 'BU2 - 5DK - ALT',
+                                            semester: 1,
+                                            weekday: 1,
+                                            time_from: '20:25',
+                                            time_until: '21:10',
+                                            recurrence_label: '1w',
+                                            dates: ['2026-03-24'],
+                                        },
+                                    ],
+                                },
+                                {
                                     key: 'bu4',
                                     code: 'BU4',
                                     semester: 1,
@@ -990,6 +1096,7 @@ describe('Student timetable evaluation settings', () => {
                                             time_from: '20:25',
                                             time_until: '21:10',
                                             recurrence_label: '1w',
+                                            distance_learning: true,
                                             dates: ['2026-03-17'],
                                         },
                                     ],
@@ -997,6 +1104,7 @@ describe('Student timetable evaluation settings', () => {
                                 {
                                     key: 'd5',
                                     code: 'D5',
+                                    hours: 3,
                                     semester: 1,
                                     course_groups: [
                                         {
@@ -1018,6 +1126,7 @@ describe('Student timetable evaluation settings', () => {
                                 {
                                     key: 'ch1',
                                     code: 'CH1',
+                                    hours: 3,
                                     semester: 1,
                                     course_groups: [
                                         {
@@ -1039,8 +1148,26 @@ describe('Student timetable evaluation settings', () => {
                                     ],
                                 },
                                 {
+                                    key: 'ch2',
+                                    code: 'CH2',
+                                    hours: 3,
+                                    semester: 1,
+                                    course_groups: [
+                                        {
+                                            key: 'ch2-12',
+                                            course: 'CH',
+                                            display_label: 'CH2 - 4F - NEW',
+                                            weekday: 1,
+                                            time_from: '18:45',
+                                            time_until: '20:15',
+                                            recurrence_label: '1w',
+                                        },
+                                    ],
+                                },
+                                {
                                     key: 'e5',
                                     code: 'E5',
+                                    hours: 3,
                                     semester: 1,
                                     course_groups: [
                                         {
@@ -1068,13 +1195,13 @@ describe('Student timetable evaluation settings', () => {
                             color: 'warning',
                             items: [
                                 {
-                                    key: 'ph2',
-                                    code: 'PH2',
+                                    key: 'd6',
+                                    code: 'D',
                                     semester: 1,
                                     course_groups: [
                                         {
-                                            key: 'ph2-1',
-                                            display_label: 'PH2 - 6A - ALT',
+                                            key: 'd6-1',
+                                            display_label: 'D6 - 6A - ALT',
                                             weekday: 4,
                                             time_from: '18:45',
                                             time_until: '20:15',
@@ -1120,6 +1247,9 @@ describe('Student timetable evaluation settings', () => {
             get savedTimetableCourseChips() {
                 return computed.savedTimetableCourseChips.call(ctx)
             },
+            get personalAdditionalTimetableCourseChips() {
+                return computed.personalAdditionalTimetableCourseChips.call(ctx)
+            },
             get studentCoursePickerTabs() {
                 return computed.studentCoursePickerTabs.call(ctx)
             },
@@ -1141,6 +1271,27 @@ describe('Student timetable evaluation settings', () => {
             get personalTimetableCourseSelectionVisible() {
                 return computed.personalTimetableCourseSelectionVisible.call(ctx)
             },
+            get personalMoreCoursesVisible() {
+                return computed.personalMoreCoursesVisible.call(ctx)
+            },
+            get personalMoreCourseCards() {
+                return computed.personalMoreCourseCards.call(ctx)
+            },
+            get activePersonalMoreCourseCard() {
+                return computed.activePersonalMoreCourseCard.call(ctx)
+            },
+            get personalMoreCoursesTitle() {
+                return computed.personalMoreCoursesTitle.call(ctx)
+            },
+            get personalMoreCourseMenus() {
+                return computed.personalMoreCourseMenus.call(ctx)
+            },
+            get selectedPersonalMoreCourseMenu() {
+                return computed.selectedPersonalMoreCourseMenu.call(ctx)
+            },
+            get selectedPersonalMoreCourseEntryOptions() {
+                return computed.selectedPersonalMoreCourseEntryOptions.call(ctx)
+            },
         }
 
         expect(ctx.personalTimetableCourseSelectionVisible).toBe(true)
@@ -1148,6 +1299,8 @@ describe('Student timetable evaluation settings', () => {
             expect.objectContaining({
                 key: 'BU2 - 5CK - FUCH',
                 label: 'BU2 - 5CK - FUCH · Mo 14.-15 (1w)',
+                shortLabel: 'BU2',
+                hoursText: '4 Std.',
                 hasOverlap: false,
                 studentCourseType: 'missing',
                 studentCourseBadge: 'Fehlend',
@@ -1155,11 +1308,15 @@ describe('Student timetable evaluation settings', () => {
             expect.objectContaining({
                 key: 'CH1 - 4F - KOW',
                 label: 'CH1 - 4F - KOW · Di 13.-14 (1w, 2w)',
+                shortLabel: 'CH1',
+                hoursText: '3 Std.',
                 hasOverlap: false,
             }),
             expect.objectContaining({
                 key: 'D5 - 3R - SHAM',
                 label: 'D5 - 3R - SHAM · Di 1. (1w, 2w)',
+                shortLabel: 'D5',
+                hoursText: '3 Std.',
                 hasOverlap: true,
                 studentCourseType: 'missing',
                 studentCourseBadge: 'Fehlend',
@@ -1167,6 +1324,8 @@ describe('Student timetable evaluation settings', () => {
             expect.objectContaining({
                 key: 'E5 - 3R - HÖF',
                 label: 'E5 - 3R - HÖF · Di 1., Do 16. (1w, 2w)',
+                shortLabel: 'E5',
+                hoursText: '3 Std.',
                 hasOverlap: true,
             }),
         ])
@@ -1205,6 +1364,15 @@ describe('Student timetable evaluation settings', () => {
                 color: 'success',
             }),
             expect.objectContaining({
+                label: 'BU2 - 5DK - ALT',
+                scheduleLabel: 'Mo 20:25 - 21:10 (1w)',
+                hasBlockingOverlap: false,
+                hasRelatedOverlap: true,
+                isActive: false,
+                isDisabled: false,
+                color: 'warning',
+            }),
+            expect.objectContaining({
                 label: 'BU3 - 5CK - TEST',
                 scheduleLabel: 'Mo 20:25 - 21:10 (1w)',
                 hasBlockingOverlap: true,
@@ -1225,9 +1393,142 @@ describe('Student timetable evaluation settings', () => {
         ])
         expect(methods.studentCoursePickerMenuHasActiveSelection.call(ctx, ctx.selectedStudentCoursePickerMenu)).toBe(true)
 
-        methods.toggleStudentCoursePickerEntry.call(ctx, ctx.selectedStudentCoursePickerEntryOptions[1])
+        methods.toggleStudentCoursePickerEntry.call(
+            ctx,
+            ctx.selectedStudentCoursePickerEntryOptions.find(entryOption => entryOption.label === 'BU3 - 5CK - TEST'),
+        )
 
         expect(ctx.hiddenSavedTimetableCourseChipKeys).toEqual([])
+        expect(ctx.personalMoreCoursesVisible).toBe(true)
+        expect(ctx.personalMoreCourseCards.map(card => card.title)).toEqual([
+            'Negative',
+            'Vorgesehene',
+            'Zusätzliche',
+            'Weitere',
+        ])
+        expect(ctx.personalMoreCoursesTitle).toBe('Weitere Kurse')
+
+        methods.openPersonalMoreCourseCard.call(ctx, ctx.personalMoreCourseCards.find(card => card.key === 'missing'))
+
+        expect(ctx.activePersonalMoreCourseCard).toEqual(expect.objectContaining({
+            key: 'missing',
+            title: 'Negative',
+        }))
+        expect(ctx.personalMoreCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['BU'])
+
+        methods.openPersonalMoreCourseMenu.call(ctx, ctx.personalMoreCourseMenus[0])
+
+        expect(ctx.selectedPersonalMoreCourseEntryOptions).toEqual([
+            expect.objectContaining({
+                label: 'BU3 - 5CK - TEST',
+                isActive: false,
+            }),
+            expect.objectContaining({
+                label: 'BU4 - 5CK - FREE',
+                isActive: false,
+            }),
+        ])
+
+        methods.openPersonalMoreCourseCard.call(ctx, ctx.personalMoreCourseCards.find(card => card.key === 'planned'))
+
+        expect(ctx.activePersonalMoreCourseCard).toEqual(expect.objectContaining({
+            key: 'planned',
+            title: 'Vorgesehene',
+        }))
+        expect(ctx.personalMoreCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['CH2'])
+        expect(ctx.personalMoreCourseMenus[0]).toEqual(expect.objectContaining({
+            label: 'CH2',
+            meta: '3 Std.',
+        }))
+
+        methods.openPersonalMoreCourseMenu.call(ctx, ctx.personalMoreCourseMenus[0])
+
+        expect(ctx.selectedPersonalMoreCourseMenu).toEqual(expect.objectContaining({
+            label: 'CH2',
+        }))
+        expect(ctx.selectedPersonalMoreCourseEntryOptions).toEqual([
+            expect.objectContaining({
+                label: 'CH2 - 4F - NEW',
+                offeredScheduleLabel: 'Mo 18:45 - 20:15',
+                recurrenceLabel: '1w',
+                isActive: false,
+                courseChipKey: '',
+            }),
+        ])
+
+        methods.openPersonalMoreCourseCard.call(ctx, ctx.personalMoreCourseCards.find(card => card.key === 'additional'))
+
+        expect(ctx.activePersonalMoreCourseCard).toEqual(expect.objectContaining({
+            key: 'additional',
+            title: 'Zusätzliche',
+        }))
+        expect(ctx.personalMoreCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['D6'])
+
+        methods.openPersonalMoreCourseCard.call(ctx, ctx.personalMoreCourseCards.find(card => card.key === 'more'))
+
+        expect(ctx.activePersonalMoreCourseCard).toEqual(expect.objectContaining({
+            key: 'more',
+            title: 'Weitere',
+        }))
+        expect(ctx.personalMoreCoursesTitle).toBe('Weitere Kurse: Weitere')
+        expect(ctx.personalMoreCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['BU', 'CH', 'D'])
+
+        methods.openPersonalMoreCourseMenu.call(ctx, ctx.personalMoreCourseMenus[0])
+
+        expect(ctx.selectedPersonalMoreCourseMenu).toEqual(expect.objectContaining({
+            label: 'BU',
+        }))
+        expect(ctx.selectedPersonalMoreCourseEntryOptions).toEqual([
+            expect.objectContaining({
+                label: 'BU3 - 5CK - TEST',
+                offeredScheduleLabel: 'Mo 20:25 - 21:10',
+                recurrenceLabel: '1w',
+                isDisabled: true,
+                isActive: false,
+            }),
+            expect.objectContaining({
+                label: 'BU4 - 5CK - FREE',
+                offeredScheduleLabel: 'Mo 20:25 - 21:10',
+                recurrenceLabel: '1w',
+                isDisabled: false,
+                isActive: false,
+                distanceLearning: true,
+                courseChipKey: '',
+            }),
+        ])
+
+        methods.togglePersonalMoreCourseEntry.call(ctx, ctx.selectedPersonalMoreCourseEntryOptions[1])
+
+        expect(ctx.personalAdditionalTimetableEntryKeys).toEqual(['semester-1-BU4 - 5CK - FREE'])
+        expect(ctx.selectedPersonalMoreCourseEntryOptions[1]).toEqual(expect.objectContaining({
+            isActive: true,
+            color: 'warning',
+            distanceLearning: true,
+        }))
+        expect(ctx.personalAdditionalTimetableCourseChips).toEqual([
+            expect.objectContaining({
+                title: 'BU4 - 5CK - FREE',
+                shortLabel: 'BU4',
+                hoursText: '',
+                isPersonalAdditional: true,
+            }),
+        ])
+
+        const personalSemester = ctx.publishedTimetableSemesters[0]
+        const personalHour = personalSemester.weeks[0].hours[2]
+
+        expect(methods.publishedTimetableCellCourses.call(ctx, personalHour.cells[0], personalSemester, personalHour, 0)).toEqual([
+            expect.objectContaining({ label: 'BU2 - 5CK - FUCH' }),
+            expect.objectContaining({
+                label: 'BU4 - 5CK - FREE',
+                details: 'Mo 20:25 - 21:10 (1w)',
+                student_course_badge: 'Ausgewählt',
+            }),
+        ])
+
+        methods.deselectSavedTimetableCourseChip.call(ctx, ctx.personalAdditionalTimetableCourseChips[0])
+
+        expect(ctx.personalAdditionalTimetableEntryKeys).toEqual([])
 
         expect(methods.publishedTimetableCellCourses.call(ctx, {
             courses: [
@@ -1254,11 +1555,11 @@ describe('Student timetable evaluation settings', () => {
 
         ctx.selectedStudentCoursePickerTab = 'open'
 
-        expect(ctx.studentCoursePickerCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['BU', 'PH'])
+        expect(ctx.studentCoursePickerCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['BU', 'CH', 'D'])
 
         ctx.selectedStudentCoursePickerTab = 'all'
 
-        expect(ctx.studentCoursePickerCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['BU', 'CH', 'D', 'E', 'PH'])
+        expect(ctx.studentCoursePickerCourseMenus.map(courseMenu => courseMenu.label)).toEqual(['BU', 'CH', 'D', 'E'])
         expect(ctx.selectedStudentCoursePickerEntryOptions[0]).toEqual(expect.objectContaining({
             courseChipKey: 'BU2 - 5CK - FUCH',
             isActive: false,
@@ -1267,6 +1568,22 @@ describe('Student timetable evaluation settings', () => {
         methods.toggleStudentCoursePickerEntry.call(ctx, ctx.selectedStudentCoursePickerEntryOptions[0])
 
         expect(ctx.hiddenSavedTimetableCourseChipKeys).toEqual(['CH1 - 4F - KOW', 'D5 - 3R - SHAM', 'E5 - 3R - HÖF'])
+        ctx.overview.personal_timetable.timetable.semesters[0].weeks[0].hours[0].cells[2].courses = [
+            { label: 'GS2 - 4A - REF' },
+            { label: 'GW2 - 4A - REF' },
+        ]
+
+        expect(methods.courseCodeAliases.call(ctx, 'GSGPB2')).toContain('GS2')
+        expect(methods.courseCodeAliases.call(ctx, 'GWB2')).toContain('GW2')
+        expect(methods.courseCodeAliases.call(ctx, 'GS2/GSGPB2')).toEqual(expect.arrayContaining(['GS2', 'GSGPB2']))
+        expect(methods.studentCoursePickerCourseGroupInVisibleTimetable.call(ctx, {
+            course: 'GSGPB2',
+            display_label: 'GSGPB2 - 4B - ALT',
+        })).toBe(true)
+        expect(methods.studentCoursePickerCourseGroupInVisibleTimetable.call(ctx, {
+            course: 'GWB2',
+            display_label: 'GWB2 - 4B - ALT',
+        })).toBe(true)
     })
 
     it('keeps manual timetable course selection helpers for the editable manual preview', () => {
@@ -2455,26 +2772,27 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('Zurück')
         expect(source).toContain('student-evaluation-settings__close-button')
         expect(source).toContain('prepend-icon="mdi-arrow-left"')
-        expect(source).toContain('student-result-course-panels')
+        expect(source).not.toContain('student-result-course-panels')
         expect(source).toContain('v-if="currentStep === \'courses\'"')
         expect(source).toContain('v-else-if="currentStep === \'result\'" class="student-generated-timetable"')
-        expect(source).toContain('student-selected-courses-card')
+        expect(source).toContain('students-timetable-v2-selected-courses-card')
         expect(source).toContain('Ausgewählte Kurse')
         expect(source).toContain('resultSelectedCourseItems')
         expect(source).toContain('resultSelectedCourseSummary')
         expect(source).toContain(':close-label="`Kurs ${course.label} entfernen`"')
-        expect(source).toContain(':closable="!resultMoreCoursesOrOptionsOpen && !resultSelectedCourseRemovalPending"')
-        expect(source).toContain(':disabled="generatingTimetable || resultMoreCoursesOrOptionsOpen || resultSelectedCourseRemovalPending"')
+        expect(source).toContain(':closable="resultSelectedCourseItemsDeletable"')
+        expect(source).toContain(':disabled="resultSelectedCourseItemsDisabled"')
         expect(source).toContain('@click:close.stop="removeResultSelectedCourseItem(course)"')
         expect(source).toContain('resultSelectedCourseRemovalPending')
-        expect(source).toContain('student-selected-courses-card__course--pending-removal')
+        expect(source).toContain('students-timetable-v2-selected-courses-card__course--offered-deselected')
+        expect(source).toContain('resultSelectedCoursePendingRemoval(course) || resultMoreOfferedCourseItemsAllDeselected(course)')
         expect(source).toContain('Auswahl geändert. Stundenplan neu erstellen?')
         expect(source).toContain('cancelResultSelectedCourseRemoval')
         expect(source).toContain('applyResultSelectedCourseRemoval')
         expect(source).toContain('resultSelectedCourseItemsAfterPendingRemoval')
         expect(source).toContain('student-generated-timetable__header')
         expect(resultSource).toContain('<span v-if="!generatingTimetable && !resultSelectedCourseRemovalPending" class="student-generated-timetable__toolbar">')
-        expect(resultSource.indexOf('student-selected-courses-card')).toBeLessThan(resultSource.indexOf('student-generated-timetable__header'))
+        expect(resultSource.indexOf('students-timetable-v2-selected-courses-card')).toBeLessThan(resultSource.indexOf('student-generated-timetable__header'))
         expect(source).toContain('student-generated-timetable__success-strip')
         expect(source).toContain('Die Stundenpläne wurden erfolgreich erstellt.')
         expect(source).toContain('generatedTimetableResultCountItems')
@@ -2498,8 +2816,8 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('selectedResultMoreCourseOfferedCourseItems')
         expect(source).toContain('toggleResultMoreOfferedCourseItem(course)')
         expect(source).toContain('deselectSelectedResultMoreCourseOfferedCourses')
-        expect(source).toContain('resultDraftQualityCriterionSelected(criterion)')
-        expect(source).toContain('setResultDraftQualityCriterionSelected(criterion, $event)')
+        expect(source).toContain('resultTimetableOptionCards')
+        expect(source).toContain('toggleResultTimetableOption(option.key)')
         expect(source).toContain('@click="applyResultMoreCourses"')
         expect(source).toContain('@click="applyResultOptions"')
         expect(source).not.toContain('student-evaluation-settings__summary-card')
@@ -2514,11 +2832,8 @@ describe('Student timetable evaluation settings', () => {
         expect(source).toContain('.student-evaluation-settings__course-section-card--additional')
         expect(source).toContain('background: #fed7aa')
         expect(source).toContain('border-color: rgba(234, 88, 12, 0.28)')
-        expect(source).toContain('setAdditionalCourseSelected(course, $event)')
-        expect(source).toContain(':disabled="additionalCourseSelectionLocked || generatingTimetable"')
         expect(source).toContain('Stundenplan erweitern')
         expect(source).toContain('createExtendedAutomaticTimetable')
-        expect(source).toContain(':model-value="true"')
         expect(source).toContain('student-generated-criteria__check')
         expect(source).toContain('student-generated-criteria__status')
         expect(source).toContain("'student-generated-criteria__card--reached': generatedQualityCriterionSelected(criterion) && generatedQualityCriterionReached(criterion)")
@@ -3045,14 +3360,21 @@ describe('Student timetable evaluation settings', () => {
         expect(courseGroups).toEqual([matchedCourseGroup])
     })
 
-    it('applies result options only after confirming the draft', async () => {
+    it('applies admin-style result options only after confirming the draft', async () => {
         const methods = (StudentTimetableEvaluationSettings as any).methods
         const computed = (StudentTimetableEvaluationSettings as any).computed
-        const criterion = { key: 'saturday_free', label: 'Samstag kein Unterricht' }
         const emitted: Array<{ event: string, payload: unknown }> = []
         const createAutomaticTimetable = vi.fn(async () => undefined)
         const ctx: any = {
             generatedTimetable: { slots: {} },
+            timetableCounts: {
+                no_saturday_timetable_count: 2,
+                quality_counters: [
+                    { key: 'free_days', count: 3, best_value: 2 },
+                    { key: 'avoid_distance_learning', count: 1 },
+                    { key: 'starts_from_period_10', count: 4 },
+                ],
+            },
             generatingTimetable: false,
             resultMoreCoursesVisible: true,
             resultOptionsVisible: false,
@@ -3061,7 +3383,20 @@ describe('Student timetable evaluation settings', () => {
             resultMoreCourseItems: [],
             resultDraftQualityCriterionKeys: [],
             selectedQualityCriterionKeys: [],
-            activeGeneratedQualityCriteria: [criterion],
+            resultNoSaturdayDraftSelected: false,
+            resultNoSaturdaySelected: false,
+            resultMaxFreeDaysDraftSelected: false,
+            resultMaxFreeDaysSelected: false,
+            resultNoDistanceLearningDraftSelected: false,
+            resultNoDistanceLearningSelected: false,
+            resultStartsFromPeriod10DraftSelected: false,
+            resultStartsFromPeriod10Selected: false,
+            activeGeneratedQualityCriteria: [
+                { key: 'saturday_free', label: 'Samstag kein Unterricht' },
+                { key: 'free_days', label: 'Anzahl freie Tage' },
+                { key: 'avoid_distance_learning', label: 'Kein Fernunterricht bevorzugt' },
+                { key: 'starts_from_period_10', label: 'Unterricht idealerweise ab 10. Stunde' },
+            ],
             deselectedCourseGroupKeys: [],
             selectedTimetableType: 'green',
             selectedTimetableNumber: 3,
@@ -3069,6 +3404,10 @@ describe('Student timetable evaluation settings', () => {
             normalizedCourseKeyListsEqual: methods.normalizedCourseKeyListsEqual,
             resultMoreOfferedCourseSelectionOverridesFromDeselectedKeys: methods.resultMoreOfferedCourseSelectionOverridesFromDeselectedKeys,
             currentResultMoreDeselectedOfferedCourseGroupKeys: () => [],
+            resultTimetableOptionUnavailable: methods.resultTimetableOptionUnavailable,
+            resultQualityCounter: methods.resultQualityCounter,
+            resultQualityCriterionKeysFromOptionState: methods.resultQualityCriterionKeysFromOptionState,
+            formatNumber: methods.formatNumber,
             resetGeneratedTimetableSelection: methods.resetGeneratedTimetableSelection,
             emitQualityCriteriaSelectionChange: methods.emitQualityCriteriaSelectionChange,
             createAutomaticTimetable,
@@ -3081,27 +3420,66 @@ describe('Student timetable evaluation settings', () => {
             get resultOptionsChanged() {
                 return computed.resultOptionsChanged.call(ctx)
             },
+            get resultTimetableOptionCards() {
+                return computed.resultTimetableOptionCards.call(ctx)
+            },
+            get resultQualityCriteriaRequired() {
+                return computed.resultQualityCriteriaRequired.call(ctx)
+            },
+            get noSaturdayTimetableCount() {
+                return computed.noSaturdayTimetableCount.call(ctx)
+            },
+            get noSaturdayTimetableCountFormatted() {
+                return computed.noSaturdayTimetableCountFormatted.call(ctx)
+            },
+            get maxFreeDaysQualityCounter() {
+                return computed.maxFreeDaysQualityCounter.call(ctx)
+            },
+            get maxFreeDaysTimetableCount() {
+                return computed.maxFreeDaysTimetableCount.call(ctx)
+            },
+            get maxFreeDaysTimetableCountFormatted() {
+                return computed.maxFreeDaysTimetableCountFormatted.call(ctx)
+            },
+            get maxFreeDaysOptionMaximumLabel() {
+                return computed.maxFreeDaysOptionMaximumLabel.call(ctx)
+            },
+            get noDistanceLearningTimetableCount() {
+                return computed.noDistanceLearningTimetableCount.call(ctx)
+            },
+            get noDistanceLearningTimetableCountFormatted() {
+                return computed.noDistanceLearningTimetableCountFormatted.call(ctx)
+            },
+            get startsFromPeriod10TimetableCount() {
+                return computed.startsFromPeriod10TimetableCount.call(ctx)
+            },
+            get startsFromPeriod10TimetableCountFormatted() {
+                return computed.startsFromPeriod10TimetableCountFormatted.call(ctx)
+            },
         }
 
         methods.toggleResultOptions.call(ctx)
-        methods.setResultDraftQualityCriterionSelected.call(ctx, criterion, true)
+        methods.toggleResultTimetableOption.call(ctx, 'no-saturday')
+        methods.toggleResultTimetableOption.call(ctx, 'max-free-days')
 
         expect(ctx.resultOptionsVisible).toBe(true)
         expect(ctx.resultMoreCoursesVisible).toBe(false)
-        expect(ctx.resultDraftQualityCriterionKeys).toEqual(['saturday_free'])
+        expect(ctx.resultNoSaturdayDraftSelected).toBe(true)
+        expect(ctx.resultDraftQualityCriterionKeys).toEqual(['free_days'])
         expect(ctx.selectedQualityCriterionKeys).toEqual([])
         expect(ctx.resultOptionsChanged).toBe(true)
 
         await methods.applyResultOptions.call(ctx)
 
-        expect(ctx.selectedQualityCriterionKeys).toEqual(['saturday_free'])
+        expect(ctx.resultNoSaturdaySelected).toBe(true)
+        expect(ctx.selectedQualityCriterionKeys).toEqual(['free_days'])
         expect(ctx.resultOptionsVisible).toBe(false)
         expect(ctx.selectedTimetableType).toBe(null)
         expect(ctx.selectedTimetableNumber).toBe(1)
         expect(emitted).toEqual([
             {
                 event: 'quality-criteria-selection-change',
-                payload: ['saturday_free'],
+                payload: ['free_days'],
             },
         ])
         expect(createAutomaticTimetable).toHaveBeenCalledTimes(1)
@@ -3111,24 +3489,41 @@ describe('Student timetable evaluation settings', () => {
         const methods = (StudentTimetableEvaluationSettings as any).methods
         const ctx: any = {
             deselectedCourseGroupKeys: ['planned|D1-A'],
-            selectedQualityCriterionKeys: ['saturday_free'],
+            selectedQualityCriterionKeys: ['free_days'],
+            resultNoSaturdaySelected: true,
+            resultStartsFromPeriod10Selected: true,
+            schoolHours: [{ hour: 9 }, { hour: 10 }, { hour: 11 }],
             selectedTimetableType: 'green',
             selectedTimetableNumber: 3,
             selectedVisibleAdditionalCourseKeys: ['additional-key'],
             selectionOverride: { language: 'L' },
             selectedBackendCourseKeys: () => ['planned-key'],
+            resultTimetableConstraints: methods.resultTimetableConstraints,
+            resultTimetableAvailableTimes: methods.resultTimetableAvailableTimes,
+            resultTimetableQualityCriteriaPayload: methods.resultTimetableQualityCriteriaPayload,
         }
 
         const payload = methods.automaticTimetablePayload.call(ctx)
 
         expect(payload).toMatchObject({
+            constraints: {
+                availableWeekdays: [1, 2, 3, 4, 5],
+                availableTimes: [10, 11],
+                excludedWeekdayTimes: [],
+            },
             selected_course_keys: ['planned-key'],
             deselected_course_group_keys: ['planned|D1-A'],
             selected_additional_course_keys: ['additional-key'],
             selected_additional_courses_required: true,
-            selected_quality_criterion_keys: ['saturday_free'],
+            selected_quality_criterion_keys: ['free_days'],
             selected_timetable_type: 'green',
             selected_timetable_number: 3,
+            evaluation_criteria: [
+                { key: 'free_days', enabled: true, priority: 1, option: null },
+                { key: 'avoid_distance_learning', enabled: true, priority: 2, option: 'none' },
+                { key: 'saturday_free', enabled: true, priority: 3, option: null },
+                { key: 'starts_from_period_10', enabled: true, priority: 4, option: null },
+            ],
             selection: { language: 'L' },
         })
     })
@@ -3145,9 +3540,15 @@ describe('Student timetable evaluation settings', () => {
             selectedQualityCriterionKeys: ['free_days'],
             selectedTimetableType: 'green',
             selectedTimetableNumber: 3,
+            resultNoSaturdaySelected: false,
+            resultStartsFromPeriod10Selected: false,
+            schoolHours: [{ hour: 8 }, { hour: 9 }],
             selectedVisibleAdditionalCourseKeys: [],
             selectionOverride: { language: 'L' },
             automaticTimetablePayload: methods.automaticTimetablePayload,
+            resultTimetableConstraints: methods.resultTimetableConstraints,
+            resultTimetableAvailableTimes: methods.resultTimetableAvailableTimes,
+            resultTimetableQualityCriteriaPayload: methods.resultTimetableQualityCriteriaPayload,
             resultMoreCourseAvailabilityCandidatePayload: methods.resultMoreCourseAvailabilityCandidatePayload,
             resultMoreCourseAvailabilityKey: methods.resultMoreCourseAvailabilityKey,
             selectedBackendCourseKeys: () => ['planned-key'],
@@ -3292,7 +3693,6 @@ describe('Student timetable evaluation settings', () => {
         }
 
         expect(computed.additionalCoursePanelVisible.call(ctx)).toBe(true)
-        expect(computed.resultCoursePanelsVisible.call(ctx)).toBe(false)
         expect(computed.additionalCourses.call(ctx)).toEqual([{ key: 'course-3', code: 'E2' }])
     })
 

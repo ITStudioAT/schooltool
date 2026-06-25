@@ -1956,6 +1956,33 @@ describe('TimetableV2 route steps', () => {
         expect(context.moreAdoptedCoursesTitle).toBe('Weitere Kurse')
     })
 
+    it('hides planned adopted courses without offered courses', () => {
+        const context = timetableV2Context({
+            activeMoreAdoptedCourseCardKey: '',
+            courseGroups: [
+                { class_name: 'CH2-4F-KOW', course: 'CH2', hour: 2, title: 'CH2', weekday: 2 },
+            ],
+            storedPlannedCourseItems: [
+                { code: 'CH2', hours: 3, label: 'CH2' },
+                { code: 'RIS3', hours: 2, label: 'RIS3' },
+            ],
+            timetableV2Step: 'timetable-adoption',
+        })
+        const plannedCard = context.moreAdoptedCourseCards.find((card) => card.key === 'planned')
+
+        TimetableV2.methods.openMoreAdoptedCourseCard.call(context, plannedCard)
+
+        expect(context.moreAdoptedCoursesTitle).toBe('Weitere Kurse: Vorgesehene')
+        expect(context.moreAdoptedCourseCandidateItems.map((course) => course.label)).toEqual(['CH2'])
+        expect(context.moreAdoptedCourseItems.map((course) => course.label)).toEqual(['CH2'])
+        expect(TimetableV2.methods.moreAdoptedCourseCardDisabled.call(context, plannedCard)).toBe(false)
+
+        context.courseGroups = []
+
+        expect(context.moreAdoptedCourseCandidateItems).toEqual([])
+        expect(TimetableV2.methods.moreAdoptedCourseCardDisabled.call(context, plannedCard)).toBe(true)
+    })
+
     it('lists only uncategorized existing courses in the adopted more category', () => {
         const context = timetableV2Context({
             activeMoreAdoptedCourseCardKey: 'more',
