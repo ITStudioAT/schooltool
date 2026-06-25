@@ -1774,6 +1774,7 @@ export default {
             restorableMoreCourseAvailabilitySignatures: {},
             conflictResolutionRecommendationByKey: {},
             conflictResolutionRecommendationLoading: false,
+            conflictResolutionRecommendationPromise: null,
             conflictResolutionRecommendationRequestId: 0,
             conflictResolutionRecommendationSignature: '',
             selectedMoreCourseKey: '',
@@ -4183,7 +4184,7 @@ export default {
                 )
                 if (refreshAuxiliary) {
                     await this.ensureMoreCourseAvailability()
-                    this.ensureConflictResolutionRecommendations()
+                    await this.ensureConflictResolutionRecommendations()
                 }
 
                 return this.timetableCalculationResult
@@ -4223,7 +4224,10 @@ export default {
         },
         completeTimetableCalculationProgress() {
             if (!this.timetableCalculationProgressSource) return
-            if (this.timetableCalculationProgressSource === 'availability' && this.moreCourseAvailabilityLoading) {
+            if (
+                (this.timetableCalculationProgressSource === 'availability' && this.moreCourseAvailabilityLoading)
+                || this.conflictResolutionRecommendationLoading
+            ) {
                 this.timetableCalculationProgressCompletionPending = true
 
                 return
@@ -4353,7 +4357,7 @@ export default {
                 this.conflictResolutionRecommendationSignature === recommendationSignature
                 && (this.conflictResolutionRecommendationLoading || Object.keys(this.conflictResolutionRecommendationByKey).length)
             ) {
-                return Promise.resolve(this.conflictResolutionRecommendationByKey)
+                return this.conflictResolutionRecommendationPromise || Promise.resolve(this.conflictResolutionRecommendationByKey)
             }
 
             return this.loadConflictResolutionRecommendations(recommendationSignature)
@@ -4361,6 +4365,7 @@ export default {
         resetConflictResolutionRecommendations() {
             this.conflictResolutionRecommendationByKey = {}
             this.conflictResolutionRecommendationLoading = false
+            this.conflictResolutionRecommendationPromise = null
             this.conflictResolutionRecommendationRequestId++
             this.conflictResolutionRecommendationSignature = ''
         },
@@ -4376,11 +4381,12 @@ export default {
 
             if (!recommendationSignature || !options.length) {
                 this.conflictResolutionRecommendationLoading = false
+                this.conflictResolutionRecommendationPromise = null
 
                 return Promise.resolve({})
             }
 
-            return Promise.all(options.map((option) =>
+            this.conflictResolutionRecommendationPromise = Promise.all(options.map((option) =>
                 this.requestTimetableV2Calculation({
                     excludedSelectedCourseSelectionKey: option.selectionKey,
                     includeQualityCounters: false,
@@ -4403,8 +4409,11 @@ export default {
                 .finally(() => {
                     if (requestId === this.conflictResolutionRecommendationRequestId) {
                         this.conflictResolutionRecommendationLoading = false
+                        this.conflictResolutionRecommendationPromise = null
                     }
                 })
+
+            return this.conflictResolutionRecommendationPromise
         },
         timetableV2CalculationResultHasValidTimetable(calculationResult = {}) {
             return Number(calculationResult?.full_green_timetable_count || 0) > 0

@@ -86,6 +86,7 @@ function timetableV2Context(overrides = {}) {
         restorableMoreCourseAvailabilitySignatures: {},
         conflictResolutionRecommendationByKey: {},
         conflictResolutionRecommendationLoading: false,
+        conflictResolutionRecommendationPromise: null,
         conflictResolutionRecommendationRequestId: 0,
         conflictResolutionRecommendationSignature: '',
         activeMoreExistingCourseBaseKey: '',
@@ -3477,6 +3478,81 @@ describe('TimetableV2 route steps', () => {
         } finally {
             vi.useRealTimers()
         }
+    })
+
+    it('waits to complete calculation progress until conflict resolution actions are ready', async () => {
+        vi.useFakeTimers()
+
+        try {
+            const context = timetableV2Context({
+                conflictResolutionRecommendationLoading: true,
+                moreCourseAvailabilityLoading: false,
+                timetableCalculationProgress: 95,
+                timetableCalculationProgressSource: 'more-courses',
+                timetableCalculationVisible: true,
+                timetableV2Step: 'timetable-calculation',
+            })
+
+            TimetableV2.methods.completeTimetableCalculationProgress.call(context)
+
+            expect(context.timetableCalculationProgressCompletionPending).toBe(true)
+            expect(context.timetableCalculationProgressValue).toBe(95)
+
+            context.conflictResolutionRecommendationLoading = false
+            TimetableV2.methods.completeTimetableCalculationProgress.call(context)
+
+            expect(context.timetableCalculationProgressCompletionPending).toBe(false)
+            expect(context.timetableCalculationProgressValue).toBe(100)
+            expect(context.timetableCalculationProgressLabel).toBe('100%')
+
+            TimetableV2.methods.clearTimetableCalculationProgressTimers.call(context)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('keeps timetable calculation loading until conflict resolution recommendations finish', async () => {
+        let resolveRecommendations
+        const recommendationPromise = new Promise((resolve) => {
+            resolveRecommendations = resolve
+        })
+        const context = timetableV2Context({
+            ensureMoreCourseAvailability: vi.fn(() => Promise.resolve({})),
+            ensureConflictResolutionRecommendations: vi.fn(() => recommendationPromise),
+            requestTimetableV2Calculation: vi.fn(() => Promise.resolve({
+                data: {
+                    data: {
+                        conflict_timetable_count: 1,
+                        selected_timetable: {
+                            number: 1,
+                            type: 'conflict',
+                        },
+                    },
+                },
+            })),
+            selectedTimetableV2CombinedNumberFromResult: () => 1,
+            timetableCalculationVisible: true,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        const calculationPromise = TimetableV2.methods.calculateTimetables.call(context, {
+            progressContext: 'more-courses',
+        })
+
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(context.ensureConflictResolutionRecommendations).toHaveBeenCalledOnce()
+        expect(context.timetableCalculationLoading).toBe(true)
+        expect(context.timetableCalculationProgressValue).toBeLessThan(100)
+
+        resolveRecommendations({})
+        await calculationPromise
+
+        expect(context.timetableCalculationLoading).toBe(false)
+        expect(context.timetableCalculationProgressValue).toBe(100)
+
+        TimetableV2.methods.clearTimetableCalculationProgressTimers.call(context)
     })
 
     it('uses cached timetable results when returning to an already loaded timetable number', async () => {
