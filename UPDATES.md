@@ -11,6 +11,7 @@
 
 ### PDF
 - Darstellung verbessert
+- Zusätzlich zum Gesamtstundenplan: Wochenstundenpläne
 
 
 

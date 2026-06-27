@@ -2856,6 +2856,150 @@ it('creates a timetable overview pdf from posted timetable data', function () {
     });
 });
 
+it('adds recurrence week timetable pages to the overview pdf', function () {
+    Pdf::fake();
+
+    $user = createStudentsTimetablesUserWithLicence();
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/overview/pdf', [
+            'title' => 'Stundenplan',
+            'schoolyear' => '2025/26',
+            'student' => '1C',
+            'generated_at' => '31.05.2026, 20:00',
+            'weekdays' => [
+                ['label' => 'Mo'],
+            ],
+            'semesters' => [
+                [
+                    'label' => 'Semester',
+                    'date_range' => '16.02.2026 - 10.07.2026',
+                    'weeks' => [
+                        [
+                            'label' => '',
+                            'hours' => [
+                                [
+                                    'hour' => 1,
+                                    'from' => '08:00',
+                                    'until' => '08:45',
+                                    'cells' => [
+                                        [
+                                            'status' => 'warning',
+                                            'courses' => [
+                                                [
+                                                    'label' => 'REG1',
+                                                    'details' => '1-wöchig',
+                                                    'dates' => ['2026-02-16', '2026-02-23'],
+                                                    'recurrence_label' => '1-wöchig',
+                                                    'recurrence_interval' => 1,
+                                                ],
+                                                [
+                                                    'label' => 'ALT2A',
+                                                    'details' => '2-wöchig',
+                                                    'dates' => ['2026-02-16', '2026-03-02'],
+                                                    'recurrence_label' => '2-wöchig',
+                                                    'recurrence_interval' => 2,
+                                                ],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                    ],
+                                ],
+                                [
+                                    'hour' => 2,
+                                    'from' => '08:50',
+                                    'until' => '09:35',
+                                    'cells' => [
+                                        [
+                                            'status' => 'filled',
+                                            'courses' => [
+                                                [
+                                                    'label' => 'ALT2B',
+                                                    'details' => '2-wöchig',
+                                                    'dates' => ['2026-02-23', '2026-03-09'],
+                                                    'recurrence_label' => '2-wöchig',
+                                                    'recurrence_interval' => 2,
+                                                ],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                    ],
+                                ],
+                                [
+                                    'hour' => 3,
+                                    'from' => '09:50',
+                                    'until' => '10:35',
+                                    'cells' => [
+                                        [
+                                            'status' => 'filled',
+                                            'courses' => [
+                                                [
+                                                    'label' => 'TRI3',
+                                                    'details' => '3-wöchig',
+                                                    'dates' => ['2026-03-02', '2026-03-23'],
+                                                    'recurrence_label' => '3-wöchig',
+                                                    'recurrence_interval' => 3,
+                                                ],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ])
+        ->assertSuccessful();
+
+    Pdf::assertRespondedWithPdf(function ($pdf): bool {
+        $html = $pdf->getHtml();
+        $section = function (string $start, string $end = '') use ($html): string {
+            $startPosition = strpos($html, $start);
+            if ($startPosition === false) {
+                return '';
+            }
+
+            $sectionStart = $startPosition + strlen($start);
+            $endPosition = $end !== '' ? strpos($html, $end, $sectionStart) : false;
+
+            return $endPosition === false
+                ? substr($html, $sectionStart)
+                : substr($html, $sectionStart, $endPosition - $sectionStart);
+        };
+
+        $week1 = $section('Stundenplan - Woche 1', 'Stundenplan - Woche 2');
+        $week2 = $section('Stundenplan - Woche 2', 'Stundenplan - Woche 3');
+        $week3 = $section('Stundenplan - Woche 3', '<h1 class="courses-title">Kursliste</h1>');
+
+        return $pdf->viewName === 'pdfs.students-timetable-overview'
+            && $pdf->contains('Stundenplan - Woche 1')
+            && $pdf->contains('Stundenplan - Woche 2')
+            && $pdf->contains('Stundenplan - Woche 3')
+            && $pdf->contains('pdf-page--additional')
+            && str_contains($week1, 'REG1')
+            && str_contains($week1, 'ALT2A')
+            && ! str_contains($week1, 'ALT2B')
+            && ! str_contains($week1, 'TRI3')
+            && ! str_contains($week1, '1-wöchig')
+            && ! str_contains($week1, '2-wöchig')
+            && str_contains($week2, 'REG1')
+            && str_contains($week2, 'ALT2B')
+            && ! str_contains($week2, 'ALT2A')
+            && ! str_contains($week2, 'TRI3')
+            && ! str_contains($week2, '1-wöchig')
+            && ! str_contains($week2, '2-wöchig')
+            && str_contains($week3, 'REG1')
+            && str_contains($week3, 'ALT2A')
+            && str_contains($week3, 'TRI3')
+            && ! str_contains($week3, 'ALT2B')
+            && ! str_contains($week3, '1-wöchig')
+            && ! str_contains($week3, '2-wöchig')
+            && ! str_contains($week3, '3-wöchig');
+    });
+});
+
 it('lets students create their personal timetable overview pdf from posted timetable data', function () {
     Pdf::fake();
 

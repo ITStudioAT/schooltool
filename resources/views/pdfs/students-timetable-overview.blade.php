@@ -505,6 +505,222 @@
         $courseDirectoryHintsByLabel = $courseDirectory->mapWithKeys(fn (array $entry): array => [
             $entry['label'] => $entry['hints'],
         ]);
+
+        $courseRecurrenceInterval = function (array $course) use ($detailSeparatorPattern): int {
+            $explicitInterval = (int) ($course['recurrence_interval'] ?? 0);
+            if ($explicitInterval > 1) {
+                return $explicitInterval;
+            }
+
+            $recurrenceSources = collect([
+                $course['recurrence_label'] ?? '',
+                $course['details'] ?? '',
+            ]);
+
+            return (int) ($recurrenceSources
+                ->flatMap(fn (string $source): array => preg_split($detailSeparatorPattern, $source) ?: [])
+                ->map(function (string $segment): int {
+                    if (preg_match('/(\d+)\s*-?\s*w/iu', trim($segment), $matches) !== 1) {
+                        return 1;
+                    }
+
+                    return (int) $matches[1];
+                })
+                ->filter(fn (int $interval): bool => $interval > 1)
+                ->first() ?? 1);
+        };
+
+        $parseTimetableDate = function (?string $date, ?int $fallbackYear = null): ?\Carbon\Carbon {
+            $date = trim((string) $date);
+            if ($date === '') {
+                return null;
+            }
+
+            $formats = ['!Y-m-d', '!d.m.Y', '!d.m.y'];
+            foreach ($formats as $format) {
+                try {
+                    $parsedDate = \Carbon\Carbon::createFromFormat($format, $date);
+                } catch (\Throwable) {
+                    continue;
+                }
+
+                $errors = \Carbon\Carbon::getLastErrors();
+                if ($parsedDate && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))) {
+                    return $parsedDate->startOfDay();
+                }
+            }
+
+            if ($fallbackYear !== null && preg_match('/^\d{1,2}\.\d{1,2}\.?$/u', $date) === 1) {
+                $dateWithYear = rtrim($date, '.').".{$fallbackYear}";
+
+                try {
+                    $parsedDate = \Carbon\Carbon::createFromFormat('!d.m.Y', $dateWithYear);
+
+                    return $parsedDate ? $parsedDate->startOfDay() : null;
+                } catch (\Throwable) {
+                    return null;
+                }
+            }
+
+            try {
+                return \Carbon\Carbon::parse($date)->startOfDay();
+            } catch (\Throwable) {
+                return null;
+            }
+        };
+
+        $semesterStartDate = function (array $semester) use ($parseTimetableDate): ?\Carbon\Carbon {
+            if (preg_match('/^\s*([0-9]{1,2}\.[0-9]{1,2}\.?(?:[0-9]{2,4})?)/u', (string) ($semester['date_range'] ?? ''), $matches) === 1) {
+                $dateRangeStart = $parseTimetableDate($matches[1]);
+                if ($dateRangeStart) {
+                    return $dateRangeStart;
+                }
+            }
+
+            return collect($semester['weeks'] ?? [])
+                ->flatMap(fn (array $week): array => $week['hours'] ?? [])
+                ->flatMap(fn (array $hour): array => $hour['cells'] ?? [])
+                ->flatMap(fn (array $cell): array => $cell['courses'] ?? [])
+                ->flatMap(fn (array $course): array => $course['dates'] ?? [])
+                ->map(fn (string $date): ?\Carbon\Carbon => $parseTimetableDate($date))
+                ->filter()
+                ->sortBy(fn (\Carbon\Carbon $date): int => $date->getTimestamp())
+                ->first();
+        };
+
+        $courseRecurrenceWeek = function (array $course, array $semester) use ($courseRecurrenceInterval, $parseTimetableDate, $semesterStartDate): int {
+            $interval = $courseRecurrenceInterval($course);
+            if ($interval <= 1) {
+                return 1;
+            }
+
+            $semesterStart = $semesterStartDate($semester);
+            $fallbackYear = $semesterStart?->year;
+            $firstDate = collect($course['dates'] ?? [])
+                ->map(fn (string $date): ?\Carbon\Carbon => $parseTimetableDate($date, $fallbackYear))
+                ->filter()
+                ->sortBy(fn (\Carbon\Carbon $date): int => $date->getTimestamp())
+                ->first();
+
+            if (! $firstDate || ! $semesterStart) {
+                return 1;
+            }
+
+            $dayDifference = (int) floor(($firstDate->getTimestamp() - $semesterStart->getTimestamp()) / 86400);
+            $weekOffset = (int) floor($dayDifference / 7);
+            $normalizedOffset = (($weekOffset % $interval) + $interval) % $interval;
+
+            return $normalizedOffset + 1;
+        };
+
+        $courseMatchesRecurrenceWeek = function (array $course, array $semester, int $targetWeek) use ($courseRecurrenceInterval, $courseRecurrenceWeek): bool {
+            $interval = $courseRecurrenceInterval($course);
+            if ($interval <= 1) {
+                return true;
+            }
+
+            $startWeek = $courseRecurrenceWeek($course, $semester);
+
+            return ((($targetWeek - $startWeek) % $interval) + $interval) % $interval === 0;
+        };
+
+        $normalizedMarkerText = fn (?string $text): string => preg_replace('/\s+/u', '', mb_strtolower((string) $text)) ?: '';
+        $markerMatchesCourses = function (array $marker, array $courses) use ($courseTitleCode, $normalizedMarkerText): bool {
+            $markerTexts = collect([
+                $marker['label'] ?? '',
+                $marker['title'] ?? '',
+            ])
+                ->map($normalizedMarkerText)
+                ->filter();
+
+            if ($markerTexts->isEmpty()) {
+                return false;
+            }
+
+            return collect($courses)->contains(function (array $course) use ($courseTitleCode, $markerTexts, $normalizedMarkerText): bool {
+                $courseTexts = collect([
+                    $course['label'] ?? '',
+                    $courseTitleCode($course),
+                ])
+                    ->map($normalizedMarkerText)
+                    ->filter();
+
+                return $courseTexts->contains(function (string $courseText) use ($markerTexts): bool {
+                    return $markerTexts->contains(fn (string $markerText): bool => str_contains($courseText, $markerText) || str_contains($markerText, $courseText));
+                });
+            });
+        };
+
+        $filteredCellStatus = function (string $status, array $courses, array $markers): string {
+            if (count($courses) === 0 && count($markers) === 0) {
+                return 'empty';
+            }
+
+            if (count($courses) > 1 && in_array($status, ['warning', 'conflict', 'related'], true)) {
+                return $status;
+            }
+
+            if ($status === 'related' && count($markers) > 0) {
+                return 'related';
+            }
+
+            return 'filled';
+        };
+
+        $filterTimetableDataForRecurrenceWeek = function (array $sourceData, int $targetWeek) use ($courseMatchesRecurrenceWeek, $filteredCellStatus, $markerMatchesCourses): array {
+            $filteredData = $sourceData;
+            $filteredData['title'] = trim((string) ($sourceData['title'] ?? 'Stundenplan'))." - Woche {$targetWeek}";
+
+            foreach ($sourceData['semesters'] ?? [] as $semesterIndex => $semester) {
+                foreach ($semester['weeks'] ?? [] as $weekIndex => $week) {
+                    foreach ($week['hours'] ?? [] as $hourIndex => $hour) {
+                        foreach ($hour['cells'] ?? [] as $cellIndex => $cell) {
+                            $courses = collect($cell['courses'] ?? [])
+                                ->filter(fn (array $course): bool => $courseMatchesRecurrenceWeek($course, $semester, $targetWeek))
+                                ->values()
+                                ->all();
+                            $markers = collect($cell['markers'] ?? [])
+                                ->filter(fn (array $marker): bool => $markerMatchesCourses($marker, $courses))
+                                ->values()
+                                ->all();
+
+                            $filteredData['semesters'][$semesterIndex]['weeks'][$weekIndex]['hours'][$hourIndex]['cells'][$cellIndex] = [
+                                ...$cell,
+                                'status' => $filteredCellStatus((string) ($cell['status'] ?? 'empty'), $courses, $markers),
+                                'courses' => $courses,
+                                'markers' => $markers,
+                            ];
+                        }
+                    }
+                }
+            }
+
+            return $filteredData;
+        };
+
+        $maxRecurrenceInterval = (int) $semesters
+            ->flatMap(fn (array $semester): array => $semester['weeks'] ?? [])
+            ->flatMap(fn (array $week): array => $week['hours'] ?? [])
+            ->flatMap(fn (array $hour): array => $hour['cells'] ?? [])
+            ->flatMap(fn (array $cell): array => $cell['courses'] ?? [])
+            ->map($courseRecurrenceInterval)
+            ->filter(fn (int $interval): bool => $interval > 1)
+            ->max();
+
+        $timetablePages = collect([[
+            'data' => $data,
+            'is_additional' => false,
+        ]]);
+
+        if ($maxRecurrenceInterval > 1) {
+            $timetablePages = $timetablePages->merge(
+                collect(range(1, $maxRecurrenceInterval))
+                    ->map(fn (int $week): array => [
+                        'data' => $filterTimetableDataForRecurrenceWeek($data, $week),
+                        'is_additional' => true,
+                    ])
+            );
+        }
     @endphp
     <style>
         @page {
@@ -532,6 +748,11 @@
             overflow: hidden;
             page-break-after: avoid;
             break-after: avoid;
+        }
+
+        .pdf-page--additional {
+            page-break-before: always;
+            break-before: page;
         }
 
         .pdf-content {
@@ -983,19 +1204,24 @@
         --pdf-semester-columns: {{ $semesterCount > 1 ? 2 : 1 }};
     "
 >
-    <main class="pdf-page">
+    @foreach($timetablePages as $timetablePage)
+        @php
+            $pageData = $timetablePage['data'];
+            $pageClass = $timetablePage['is_additional'] ? 'pdf-page pdf-page--additional' : 'pdf-page';
+        @endphp
+    <main class="{{ $pageClass }}">
         <div class="pdf-content">
             <div class="header">
-                <h1 class="title">{{ $data['title'] ?? 'Stundenplan' }}</h1>
+                <h1 class="title">{{ $pageData['title'] ?? 'Stundenplan' }}</h1>
                 <div class="meta">
-                    @foreach(array_filter([$data['schoolyear'] ?? null, $data['student'] ?? null, $data['subtitle'] ?? null, $data['generated_at'] ?? null]) as $meta)
+                    @foreach(array_filter([$pageData['schoolyear'] ?? null, $pageData['student'] ?? null, $pageData['subtitle'] ?? null, $pageData['generated_at'] ?? null]) as $meta)
                         <span>{{ $meta }}</span>@if(! $loop->last)<span> &middot; </span>@endif
                     @endforeach
                 </div>
             </div>
 
             <div class="semesters">
-                @foreach($data['semesters'] ?? [] as $semester)
+                @foreach($pageData['semesters'] ?? [] as $semester)
                     <section class="semester">
                         <div class="semester-title">
                             {{ $semester['label'] ?? 'Semester' }}
@@ -1013,7 +1239,7 @@
                                 <thead>
                                     <tr>
                                         <th class="time-cell">Std.</th>
-                                        @foreach($data['weekdays'] ?? [] as $weekday)
+                                        @foreach($pageData['weekdays'] ?? [] as $weekday)
                                             <th>{{ $weekday['label'] ?? '' }}</th>
                                         @endforeach
                                     </tr>
@@ -1073,7 +1299,7 @@
                                                                     @endif
                                                                 </div>
                                                                 @if($courseDetails !== '')
-                                                                    <div class="course-details">{!! $formatDetailsHtml($courseDetails, false, false, $learningModeLabel === 'Kompaktunterricht') !!}</div>
+                                                                    <div class="course-details">{!! $formatDetailsHtml($courseDetails, false, $timetablePage['is_additional'], $learningModeLabel === 'Kompaktunterricht') !!}</div>
                                                                 @endif
                                                                 @if($learningModeLabel !== '')
                                                                     <div class="course-fu">{{ $learningModeLabel }}</div>
@@ -1108,6 +1334,7 @@
 
         </div>
     </main>
+    @endforeach
 
     @if($courseDirectory->isNotEmpty())
         <div class="pdf-page-courses">
