@@ -4545,16 +4545,163 @@ describe('TimetableV2 route steps', () => {
             courses: [
                 {
                     label: 'INF 2',
-                    details: 'INF2 - 1 - 5K - WE · 2-wöchig: 20.02.',
+                    details: 'INF2 - 1 - 5K - WE\n2-wöchig: 20.02.',
                     dates: ['20.02.'],
                 },
                 {
                     label: 'INF 3',
-                    details: 'INF3 - 1 - 5K - WE · 06.03.',
+                    details: 'INF3 - 1 - 5K - WE\n06.03.',
                     dates: ['06.03.'],
                 },
             ],
         })
+    })
+
+    it('includes full compact same-slot course details in the adopted timetable PDF payload', () => {
+        const context = timetableV2Context({
+            timetableV2Step: 'timetable-adoption',
+            selectedSchoolyear: {
+                from: '2025-09-01',
+                sem_2_start: '2026-02-16',
+                until: '2026-07-11',
+            },
+            schoolHours: [
+                {
+                    hour: 5,
+                    from: '13:00:00',
+                    until: '13:45:00',
+                },
+            ],
+            adoptedTimetableCalculationResult: {
+                selected_timetable: {
+                    type: 'valid',
+                    slots: {
+                        '2-5': {
+                            code: 'M4',
+                            sourceLabel: 'M4-3U-ALT',
+                            dateRangeLabel: '21.02.-25.4.',
+                            isKompaktunterrichtCourse: true,
+                            courseGroup: {
+                                hour: 5,
+                                is_kompaktunterricht: true,
+                                weekday: 2,
+                            },
+                            sameSlotEntries: [
+                                {
+                                    code: 'M5',
+                                    sourceLabel: 'M5-3U-ALT',
+                                    dateRangeLabel: '9.5.-11.7.',
+                                    isAdditionalCourse: true,
+                                    isKompaktunterrichtCourse: true,
+                                    courseGroup: {
+                                        hour: 5,
+                                        is_kompaktunterricht: true,
+                                        weekday: 2,
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+        })
+
+        const payload = context.adoptedTimetablePdfPayload()
+        const tuesdayCell = payload.semesters[0].weeks[0].hours[0].cells[1]
+
+        expect(tuesdayCell.courses).toEqual([
+            {
+                dates: [],
+                details: 'M4-3U-ALT\n21.02.-25.4. (Kompakt)',
+                is_fu: false,
+                label: 'M 4',
+                student_course_badge: '',
+                student_course_type: '',
+            },
+            {
+                dates: [],
+                details: 'M5-3U-ALT\n9.5.-11.7. (Kompakt)',
+                is_fu: false,
+                label: 'M 5',
+                student_course_badge: 'Zusatz',
+                student_course_type: 'additional',
+            },
+        ])
+    })
+
+    it('omits whole-semester date ranges from the adopted timetable PDF payload', () => {
+        const context = timetableV2Context({
+            timetableV2Step: 'timetable-adoption',
+            selectedSchoolyear: {
+                from: '2025-09-01',
+                sem_2_start: '2026-02-16',
+                until: '2026-07-11',
+            },
+            schoolHours: [
+                {
+                    hour: 5,
+                    from: '13:00:00',
+                    until: '13:45:00',
+                },
+            ],
+            adoptedTimetableCalculationResult: {
+                selected_timetable: {
+                    type: 'valid',
+                    slots: {
+                        '2-5': {
+                            code: 'M4',
+                            sourceLabel: 'M4-3U-ALT',
+                            dateRangeLabel: '16.02.-11.07.',
+                            isKompaktunterrichtCourse: true,
+                            courseGroup: {
+                                hour: 5,
+                                is_kompaktunterricht: true,
+                                weekday: 2,
+                            },
+                        },
+                    },
+                },
+            },
+        })
+
+        const payload = context.adoptedTimetablePdfPayload()
+        const tuesdayCell = payload.semesters[0].weeks[0].hours[0].cells[1]
+
+        expect(tuesdayCell.courses[0].details).toBe('M4-3U-ALT\nKompakt')
+    })
+
+    it('omits regular date ranges from non-compact courses in the adopted timetable PDF payload', () => {
+        const context = timetableV2Context({
+            timetableV2Step: 'timetable-adoption',
+            schoolHours: [
+                {
+                    hour: 2,
+                    from: '08:50:00',
+                    until: '09:35:00',
+                },
+            ],
+            adoptedTimetableCalculationResult: {
+                selected_timetable: {
+                    type: 'valid',
+                    slots: {
+                        '3-2': {
+                            code: 'F2',
+                            sourceLabel: 'F2-3C-SCHO',
+                            dateRangeLabel: '16.02.-6.7.',
+                            courseGroup: {
+                                hour: 2,
+                                weekday: 3,
+                            },
+                        },
+                    },
+                },
+            },
+        })
+
+        const payload = context.adoptedTimetablePdfPayload()
+        const wednesdayCell = payload.semesters[0].weeks[0].hours[0].cells[2]
+
+        expect(wednesdayCell.courses[0].details).toBe('F2-3C-SCHO')
     })
 
     it('exports one-day overlaps as PDF marker chips instead of normal courses', () => {
@@ -5855,6 +6002,94 @@ describe('TimetableV2 route steps', () => {
 
         expect(payload.selected_additional_course_keys).toEqual([])
         expect(payload.selected_additional_courses_required).toBe(false)
+    })
+
+    it('labels compact offered courses ahead of distance learning', () => {
+        const context = timetableV2Context()
+        const selectedCourse = {
+            hours: 2,
+            key: 'M4',
+            label: 'M4',
+            selectionKey: 'planned:M4',
+        }
+        const [course] = TimetableV2.methods.uniqueOfferedCourseItems.call(context, [
+            {
+                code: 'M',
+                isKompaktunterricht: true,
+                key: 'M4-5RU',
+                name: 'M4 - 5RU - SCH',
+                scheduleSlots: [
+                    {
+                        hour: 1,
+                        weekday: 1,
+                    },
+                ],
+                semester: 1,
+            },
+        ], selectedCourse)
+
+        expect(course.distanceLearning).toBe(true)
+        expect(course.isKompaktunterricht).toBe(true)
+        expect(TimetableV2.methods.offeredCourseInstructionLabel.call(context, course)).toBe('Kompaktunterricht')
+        expect(TimetableV2.methods.selectedTimetableV2SlotInstructionLabel.call(context, {
+            isDistanceLearningCourse: true,
+            isKompaktunterrichtCourse: true,
+        })).toBe('Kompaktunterricht')
+    })
+
+    it('shows compact timetable slots inline with their date range', () => {
+        const context = timetableV2Context()
+        const slot = {
+            dateRangeLabel: '21.02.-25.4.',
+            isKompaktunterrichtCourse: true,
+            courseGroup: {
+                is_kompaktunterricht: true,
+            },
+        }
+
+        expect(TimetableV2.methods.selectedTimetableV2SlotTimePatternLabel.call(context, slot, { showRegularRange: true }))
+            .toBe('21.02.-25.4. (Kompakt)')
+        expect(TimetableV2.methods.selectedTimetableV2SlotInstructionLabel.call(context, slot)).toBe('')
+    })
+
+    it('renders same-slot courses with the same course details and recurrence structure', () => {
+        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+
+        expect(source).toMatch(/v-for="sameSlotEntry in selectedTimetableV2SameSlotEntries[\s\S]*class="students-timetable-v2-result-grid__code"[\s\S]*selectedTimetableV2SlotTitle\(sameSlotEntry\)[\s\S]*class="students-timetable-v2-result-grid__details"[\s\S]*selectedTimetableV2SlotDetails\(sameSlotEntry\)[\s\S]*class="students-timetable-v2-result-grid__recurrence"[\s\S]*selectedTimetableV2SlotTimePatternLabel\(sameSlotEntry, \{ showRegularRange: true \}\)/u)
+    })
+
+    it('writes block date ranges directly into each offered course day', () => {
+        const context = timetableV2Context({
+            schoolHours: [
+                { hour: 12, from: '18:45:00', until: '19:30:00' },
+                { hour: 13, from: '19:30:00', until: '20:15:00' },
+            ],
+        })
+        const scheduleLabel = TimetableV2.methods.compactScheduleSlotsLabel.call(context, [
+            {
+                dateRangeLabel: '28.04. - 07.07.',
+                from: '18:45',
+                hour: 12,
+                until: '19:30',
+                weekday: 2,
+            },
+            {
+                dateRangeLabel: '07.05. - 09.07.',
+                from: '18:45',
+                hour: 12,
+                until: '19:30',
+                weekday: 4,
+            },
+            {
+                dateRangeLabel: '07.05. - 09.07.',
+                from: '19:30',
+                hour: 13,
+                until: '20:15',
+                weekday: 4,
+            },
+        ])
+
+        expect(scheduleLabel).toBe('Di 12. 18:45-19:30 (28.04. - 07.07.), Do 12.-13. 18:45-20:15 (07.05. - 09.07.)')
     })
 
     it('can calculate a recommendation payload without one selected conflict course', () => {

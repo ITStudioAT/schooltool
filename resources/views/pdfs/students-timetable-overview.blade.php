@@ -7,6 +7,18 @@
         $semesters = collect($data['semesters'] ?? []);
         $semesterCount = max(1, $semesters->count());
         $isTwoColumns = $semesterCount > 1;
+        $visibleCourseLimit = 2;
+        $detailSeparatorPattern = '/\s*(?:·|\R)\s*/u';
+        $dateRangeDetailPattern = '/^\d{1,2}\.\d{1,2}\.?(?:\d{2,4})?\s*-\s*\d{1,2}\.\d{1,2}\.?(?:\d{2,4})?$/u';
+        $isHiddenDateRangeDetail = fn (string $segment): bool => preg_match($dateRangeDetailPattern, trim($segment)) === 1;
+        $stripCompactMarkerText = fn (string $text): string => trim(preg_replace('/\s*\(Kompakt(?:unterricht|kurs)?\)\s*/iu', ' ', $text) ?: $text);
+        $isCompactCourse = fn (array $course): bool => ! empty($course['is_kompaktunterricht'])
+            || ! empty($course['isKompaktunterricht'])
+            || ! empty($course['isKompaktunterrichtCourse'])
+            || preg_match('/\bKompakt(?:unterricht)?\b/iu', (string) ($course['details'] ?? '')) === 1;
+        $courseLearningModeLabel = fn (array $course): string => $isCompactCourse($course)
+            ? 'Kompaktunterricht'
+            : (! empty($course['is_fu']) ? 'Fernunterricht' : '');
 
         $semesterMetrics = $semesters->map(function (array $semester) {
             $weeks = collect($semester['weeks'] ?? []);
@@ -35,11 +47,11 @@
         $pageHeight = 194;
         $headerHeight = 9;
         $availableRowHeight = max(24, $pageHeight - $headerHeight - $labelHeight);
-        $rowHeight = max(5.2, min(10.5, $availableRowHeight / $hourRowCount));
+        $baseRowHeight = max(5.2, min(10.5, $availableRowHeight / $hourRowCount));
+        $rowHeight = $baseRowHeight;
         $naturalHeight = $headerHeight + $labelHeight + ($hourRowCount * $rowHeight);
         $scale = max(0.45, min(1, $pageHeight / $naturalHeight));
         $contentWidth = 100 / $scale;
-        $visibleCourseLimit = 2;
 
         $bodyFontSize = max(6.8, min(8.5, $rowHeight * 1.05));
         $detailFontSize = max(5.5, $bodyFontSize - 1.2);
@@ -67,6 +79,7 @@
                             if ($crsLabel === '') {
                                 continue;
                             }
+                            $isCompact = $isCompactCourse($crs);
                             $allCourseSlots->push([
                                 'label' => $crsLabel,
                                 'details' => trim((string) ($crs['details'] ?? '')),
@@ -78,7 +91,8 @@
                                 'hour' => (int) ($hr['hour'] ?? 0),
                                 'time' => $timeRange,
                                 'status' => $cellStatus,
-                                'is_fu' => !empty($crs['is_fu']),
+                                'is_compact' => $isCompact,
+                                'is_fu' => ! $isCompact && ! empty($crs['is_fu']),
                             ]);
                         }
                     }
@@ -95,9 +109,9 @@
                 array_pad(preg_split('/\s*[–-]\s*/u', (string) ($slot['time'] ?? ''), 2) ?: [], 2, ''),
             );
         };
-        $mergeSlotDetails = function (string $leftDetails = '', string $rightDetails = ''): string {
+        $mergeSlotDetails = function (string $leftDetails = '', string $rightDetails = '') use ($detailSeparatorPattern): string {
             return collect([$leftDetails, $rightDetails])
-                ->flatMap(fn (string $details): array => preg_split('/\s*·\s*/u', $details) ?: [])
+                ->flatMap(fn (string $details): array => preg_split($detailSeparatorPattern, $details) ?: [])
                 ->map(fn (string $detail): string => trim($detail))
                 ->filter()
                 ->unique()
@@ -246,87 +260,251 @@
                 ->values()
                 ->implode(', ');
         };
-        $directoryDetails = function ($slots): string {
+        $directoryDetails = function ($slots) use ($detailSeparatorPattern, $isHiddenDateRangeDetail): string {
+            $hasCompactCourse = $slots->contains('is_compact', true);
             $segments = $slots
                 ->pluck('details')
                 ->filter()
-                ->flatMap(fn (string $details) => preg_split('/\s*·\s*/u', $details) ?: [])
+                ->flatMap(fn (string $details) => preg_split($detailSeparatorPattern, $details) ?: [])
                 ->map(fn (string $segment): string => trim($segment))
                 ->filter()
                 ->unique()
-                ->values();
-
-            $recurrences = $segments
-                ->filter(fn (string $segment): bool => preg_match('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', $segment) === 1)
-                ->map(fn (string $segment): string => preg_replace('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', '$1-w', $segment))
-                ->unique()
-                ->sort()
                 ->values();
 
             $remainingSegments = $segments
                 ->reject(fn (string $segment): bool => preg_match('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', $segment) === 1)
                 ->reject(fn (string $segment): bool => preg_match('/^\d{1,2}\.\d{1,2}\.(\d{2,4})?$/u', $segment) === 1)
+                ->reject($isHiddenDateRangeDetail)
+                ->reject(fn (string $segment): bool => $hasCompactCourse
+                    && preg_match('/\bKompakt(?:unterricht|kurs)?\b/iu', $segment) === 1
+                    && preg_match('/\d{1,2}\.\d{1,2}\.?(?:\d{2,4})?\s*-\s*\d{1,2}\.\d{1,2}\.?(?:\d{2,4})?/u', $segment) === 1)
                 ->values();
 
-            $recurrence = $recurrences->isNotEmpty()
-                ? $recurrences->implode(', ')
-                : 'Einzeltermine';
-
-            return collect([$recurrence, ...$remainingSegments])
+            return collect($remainingSegments)
                 ->filter()
                 ->unique()
                 ->implode(' ');
         };
 
-        $formatDetailsHtml = function (?string $details): string {
-            return collect(preg_split('/\s*·\s*/u', (string) $details) ?: [])
+        $directoryHints = function ($slots) use ($detailSeparatorPattern): array {
+            $recurrenceHints = $slots
+                ->pluck('details')
+                ->filter()
+                ->flatMap(fn (string $details) => preg_split($detailSeparatorPattern, $details) ?: [])
                 ->map(fn (string $segment): string => trim($segment))
                 ->filter()
-                ->map(function (string $segment): string {
-                    if (preg_match('/^(\d+\s*-?\s*w(?:öchig|öching)?)(\s+.*)?$/iu', $segment, $matches) === 1) {
-                        $recurrence = e($matches[1]);
-                        $remainingText = e($matches[2] ?? '');
-
-                        return "<span class=\"recurrence-detail\">{$recurrence}</span>{$remainingText}";
+                ->map(function (string $segment): ?string {
+                    if (preg_match('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', $segment, $matches) !== 1) {
+                        return null;
                     }
 
-                    return e($segment);
+                    return "{$matches[1]}-wöchentlich";
                 })
-                ->implode(' · ');
+                ->filter()
+                ->unique()
+                ->sort()
+                ->values();
+
+            return collect([
+                $slots->contains('is_compact', true) ? 'Kompaktkurs' : null,
+                ! $slots->contains('is_compact', true) && $slots->contains('is_fu', true) ? 'Fernunterricht' : null,
+                ...$recurrenceHints,
+            ])
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+        };
+
+        $formatDetailsHtml = function (
+            ?string $details,
+            bool $hideCompactDateDetails = false,
+            bool $hideCourseHintDetails = false,
+            bool $stripCompactMarkers = false,
+        ) use ($isHiddenDateRangeDetail, $stripCompactMarkerText): string {
+            $formatSegment = function (string $segment) use ($hideCompactDateDetails, $hideCourseHintDetails, $isHiddenDateRangeDetail, $stripCompactMarkerText, $stripCompactMarkers): string {
+                if ($stripCompactMarkers) {
+                    $segment = $stripCompactMarkerText($segment);
+                }
+
+                if ($isHiddenDateRangeDetail($segment)) {
+                    return '';
+                }
+
+                if ($hideCompactDateDetails
+                    && preg_match('/\bKompakt(?:unterricht|kurs)?\b/iu', $segment) === 1
+                    && preg_match('/\d{1,2}\.\d{1,2}\.?(?:\d{2,4})?\s*-\s*\d{1,2}\.\d{1,2}\.?(?:\d{2,4})?/u', $segment) === 1) {
+                    return '';
+                }
+
+                if ($hideCourseHintDetails && preg_match('/^(\d+\s*-?\s*w[^\s]*)(\s+.*)?$/iu', $segment, $matches) === 1) {
+                    return e(trim((string) ($matches[2] ?? '')));
+                }
+
+                if ($hideCourseHintDetails && preg_match('/^(Fernunterricht|Kompakt(?:unterricht|kurs)?)(\s+.*)?$/iu', $segment, $matches) === 1) {
+                    return e(trim((string) ($matches[2] ?? '')));
+                }
+
+                if (preg_match('/^(\d+\s*-?\s*w(?:öchig|öching)?)(\s+.*)?$/iu', $segment, $matches) === 1) {
+                    $recurrence = e($matches[1]);
+                    $remainingText = e($matches[2] ?? '');
+
+                    return "<span class=\"recurrence-detail\">{$recurrence}</span>{$remainingText}";
+                }
+
+                return e($segment);
+            };
+
+            return collect(preg_split('/\R/u', (string) $details) ?: [])
+                ->map(fn (string $line): string => trim($line))
+                ->filter()
+                ->map(fn (string $line): string => collect(preg_split('/\s*·\s*/u', $line) ?: [])
+                    ->map(fn (string $segment): string => trim($segment))
+                    ->filter()
+                    ->map($formatSegment)
+                    ->filter()
+                    ->implode(' · '))
+                ->filter()
+                ->map(fn (string $line): string => "<span class=\"course-detail-line\">{$line}</span>")
+                ->implode('');
+        };
+        $courseTitleLabel = fn (array $course): string => preg_replace(
+            '/^(\p{L}+)\s+(\d)/u',
+            '$1$2',
+            trim((string) ($course['label'] ?? ''))
+        ) ?: trim((string) ($course['label'] ?? ''));
+
+        $courseTitleCode = function (array $course) use ($courseTitleLabel): string {
+            $label = $courseTitleLabel($course);
+
+            if (preg_match('/^(\p{L}+\d+(?:\.\d+)?)/u', $label, $matches) === 1) {
+                return $matches[1];
+            }
+
+            return preg_replace('/\s+/u', '', $label) ?: '';
+        };
+
+        $courseTitleSourceLine = function (array $course) use ($courseTitleCode, $isHiddenDateRangeDetail): string {
+            $titleCode = $courseTitleCode($course);
+            if ($titleCode === '') {
+                return '';
+            }
+
+            $escapedTitleCode = preg_quote($titleCode, '/');
+
+            return collect(preg_split('/\R/u', (string) ($course['details'] ?? '')) ?: [])
+                ->map(fn (string $line): string => trim($line))
+                ->filter()
+                ->first(fn (string $line): bool => ! $isHiddenDateRangeDetail($line)
+                    && preg_match("/^{$escapedTitleCode}\s*[-\s]+.+$/iu", $line) === 1
+                ) ?? '';
+        };
+
+        $courseTitleContext = function (array $course) use ($courseTitleCode, $courseTitleSourceLine): string {
+            $titleCode = $courseTitleCode($course);
+            $sourceLine = $courseTitleSourceLine($course);
+            if ($titleCode === '' || $sourceLine === '') {
+                return '';
+            }
+
+            $escapedTitleCode = preg_quote($titleCode, '/');
+            $context = preg_replace("/^{$escapedTitleCode}\s*[-\s]*/iu", '', $sourceLine) ?: '';
+
+            return trim($context) !== trim($sourceLine) ? trim($context) : '';
+        };
+
+        $courseDetailsForRendering = function (array $course) use ($courseTitleSourceLine): string {
+            $sourceLine = $courseTitleSourceLine($course);
+
+            return collect(preg_split('/\R/u', (string) ($course['details'] ?? '')) ?: [])
+                ->map(fn (string $line): string => trim($line))
+                ->filter()
+                ->reject(fn (string $line): bool => $sourceLine !== '' && $line === $sourceLine)
+                ->implode("\n");
+        };
+
+        $parseDirectoryDate = function (string $date): array {
+            $date = trim($date);
+            $formats = [
+                '!Y-m-d' => 'Y-m-d',
+                '!d.m.Y' => 'Y-m-d',
+                '!d.m.y' => 'Y-m-d',
+                '!d.m.' => 'm-d',
+                '!d.m' => 'm-d',
+            ];
+
+            foreach ($formats as $format => $sortFormat) {
+                try {
+                    $parsedDate = \Carbon\Carbon::createFromFormat($format, $date);
+                } catch (\Throwable) {
+                    continue;
+                }
+
+                $errors = \Carbon\Carbon::getLastErrors();
+
+                if (! $parsedDate || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+                    continue;
+                }
+
+                return [
+                    'key' => $parsedDate->format($sortFormat),
+                    'label' => $parsedDate->format('d.m.'),
+                ];
+            }
+
+            try {
+                $parsedDate = \Carbon\Carbon::parse($date);
+
+                return [
+                    'key' => $parsedDate->format('Y-m-d'),
+                    'label' => $parsedDate->format('d.m.'),
+                ];
+            } catch (\Throwable) {
+                return [
+                    'key' => "z-{$date}",
+                    'label' => $date,
+                ];
+            }
         };
 
         $formatCourseDates = fn ($slots) => $slots
             ->flatMap(fn (array $slot): array => $slot['dates'] ?? [])
-            ->map(fn (string $date): string => trim($date))
-            ->filter()
-            ->unique()
-            ->sort()
-            ->map(function (string $date): string {
-                try {
-                    return \Carbon\Carbon::parse($date)->format('d.m.');
-                } catch (\Throwable) {
-                    return $date;
+            ->map(function (string $date) use ($parseDirectoryDate): ?array {
+                $date = trim($date);
+                if ($date === '') {
+                    return null;
                 }
+
+                return $parseDirectoryDate($date);
             })
+            ->filter()
+            ->unique('key')
+            ->sortBy('key')
+            ->pluck('label')
             ->values()
             ->all();
 
         $courseDirectory = $allCourseSlots
             ->groupBy('label')
-            ->map(function ($slots, string $label) use ($directorySlotSummary, $directoryDetails, $formatCourseDates) {
+            ->map(function ($slots, string $label) use ($directorySlotSummary, $directoryDetails, $directoryHints, $formatCourseDates) {
                 return [
                     'label' => $label,
                     'details' => $directoryDetails($slots),
+                    'hints' => $directoryHints($slots),
                     'slots' => $directorySlotSummary($slots),
                     'dates' => $formatCourseDates($slots),
                     'status' => $slots->contains('status', 'conflict') ? 'conflict'
                         : ($slots->contains('status', 'warning') ? 'warning'
                         : ($slots->contains('status', 'related') ? 'related' : 'filled')),
-                    'is_fu' => $slots->contains('is_fu', true),
+                    'is_compact' => $slots->contains('is_compact', true),
+                    'is_fu' => ! $slots->contains('is_compact', true) && $slots->contains('is_fu', true),
                 ];
             })
             ->sortBy('label', SORT_NATURAL | SORT_FLAG_CASE)
             ->values();
+        $courseDirectoryHintsByLabel = $courseDirectory->mapWithKeys(fn (array $entry): array => [
+            $entry['label'] => $entry['hints'],
+        ]);
     @endphp
     <style>
         @page {
@@ -446,12 +624,12 @@
         }
 
         td {
-            height: var(--pdf-row-height);
-            padding: 0.55mm 0.6mm;
+            height: auto;
+            padding: 0.55mm 0.6mm 1.15mm;
             background: #f8fafc;
             font-size: var(--pdf-body-font-size);
             line-height: 1.15;
-            overflow: hidden;
+            overflow: visible;
         }
 
         .time-cell {
@@ -494,19 +672,46 @@
         }
 
         .course--compact + .course--compact {
-            margin-top: 0.1mm;
+            margin-top: 1.2mm;
         }
 
         .cell-content {
             position: relative;
-            height: calc(var(--pdf-row-height) - 1.1mm);
-            overflow: hidden;
+            height: auto;
+            overflow: visible;
         }
 
         .course-label {
+            display: table;
+            width: 100%;
+            table-layout: fixed;
             font-weight: 700;
             line-height: 1.15;
             word-break: break-word;
+        }
+
+        .course-label-main,
+        .course-label-context {
+            display: table-cell;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            vertical-align: top;
+            white-space: nowrap;
+        }
+
+        .course-label-main {
+            font-size: 1.08em;
+            font-weight: 700;
+        }
+
+        .course-label-context {
+            color: #334155;
+            font-size: 0.88em;
+            font-weight: 700;
+            padding-left: 0.8mm;
+            text-align: right;
+            width: 48%;
         }
 
         .course--compact .course-label {
@@ -521,7 +726,6 @@
         .course-more {
             overflow: hidden;
             text-overflow: ellipsis;
-            white-space: nowrap;
         }
 
         .course-details {
@@ -529,6 +733,17 @@
             color: #475569;
             font-size: var(--pdf-detail-font-size);
             line-height: 1.1;
+        }
+
+        .course-detail-line {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .course-more {
+            white-space: nowrap;
         }
 
         .recurrence-detail {
@@ -661,13 +876,13 @@
         .courses-table .col-weekday { width: 8%; }
         .courses-table .col-hour { width: 6%; text-align: center; }
         .courses-table .col-time { width: 14%; }
-        .courses-table .col-label { width: 30%; }
+        .courses-table .col-label { width: 24%; }
+        .courses-table .col-hints { width: 14%; }
         .courses-table .col-details { width: 34%; }
-        .courses-table .col-status { width: 8%; text-align: center; }
 
-        .courses-table .col-directory-status { width: 6%; text-align: center; }
-        .courses-table .col-directory-label { width: 22%; }
-        .courses-table .col-directory-details { width: 18%; }
+        .courses-table .col-directory-label { width: 14%; }
+        .courses-table .col-directory-hints { width: 12%; }
+        .courses-table .col-directory-details { width: 20%; }
         .courses-table .col-directory-slots { width: 54%; }
 
         .directory-dates-row td {
@@ -704,26 +919,26 @@
             font-weight: 700;
         }
 
+        .course-hint {
+            color: #1d4ed8;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .course-hint + .course-hint::before {
+            color: #64748b;
+            content: " · ";
+            font-weight: 400;
+        }
+
         .courses-table .cell-details {
             color: #64748b;
         }
 
-        .status-dot {
-            display: inline-block;
-            width: 2.2mm;
-            height: 2.2mm;
-            border-radius: 50%;
-        }
-
-        .status-dot--filled { background: #22c55e; }
-        .status-dot--warning { background: #f97316; }
-        .status-dot--conflict { background: #ef4444; }
-        .status-dot--related { background: #f97316; }
-
         .fu-badge {
             display: inline-block;
             padding: 0.2mm 0.8mm;
-            margin-left: 0.5mm;
+            margin-left: 1.4mm;
             background: #bfdbfe;
             color: #1e40af;
             font-size: 0.78em;
@@ -837,17 +1052,31 @@
 
                                                         @foreach($shownCourses as $course)
                                                             <div class="course @if($hasDenseCourses) course--compact @endif">
+                                                                @php
+                                                                    $titleLabel = $courseTitleLabel($course);
+                                                                    $courseDetails = $courseDetailsForRendering($course);
+                                                                    $learningModeLabel = $courseLearningModeLabel($course);
+                                                                    $titleContext = $courseTitleContext($course);
+                                                                    if ($learningModeLabel === 'Kompaktunterricht') {
+                                                                        $titleContext = $stripCompactMarkerText($titleContext);
+                                                                    }
+                                                                @endphp
                                                                 <div class="course-label">
-                                                                    {{ $course['label'] ?? '' }}
-                                                                    @if(! empty($course['student_course_badge']) && in_array($course['student_course_type'] ?? '', ['missing', 'additional'], true))
-                                                                        <span class="student-course-badge student-course-badge--{{ $course['student_course_type'] }}">{{ $course['student_course_badge'] }}</span>
+                                                                    <span class="course-label-main">
+                                                                        {{ $titleLabel }}
+                                                                        @if(! empty($course['student_course_badge']) && in_array($course['student_course_type'] ?? '', ['missing', 'additional'], true))
+                                                                            <span class="student-course-badge student-course-badge--{{ $course['student_course_type'] }}">{{ $course['student_course_badge'] }}</span>
+                                                                        @endif
+                                                                    </span>
+                                                                    @if($titleContext !== '')
+                                                                        <span class="course-label-context">{{ $titleContext }}</span>
                                                                     @endif
                                                                 </div>
-                                                                @if(! $hasDenseCourses && ! empty($course['details']))
-                                                                    <div class="course-details">{!! $formatDetailsHtml($course['details']) !!}</div>
+                                                                @if($courseDetails !== '')
+                                                                    <div class="course-details">{!! $formatDetailsHtml($courseDetails, false, false, $learningModeLabel === 'Kompaktunterricht') !!}</div>
                                                                 @endif
-                                                                @if(! empty($course['is_fu']))
-                                                                    <div class="course-fu">Fernunterricht</div>
+                                                                @if($learningModeLabel !== '')
+                                                                    <div class="course-fu">{{ $learningModeLabel }}</div>
                                                                 @endif
                                                             </div>
                                                         @endforeach
@@ -894,20 +1123,22 @@
                 <thead>
                     <tr>
                         <th class="col-directory-label">Kurs</th>
+                        <th class="col-directory-hints">Hinweise</th>
                         <th class="col-directory-details">Details</th>
                         <th class="col-directory-slots">Termine</th>
-                        <th class="col-directory-status">Status</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach($courseDirectory as $entry)
                         <tr>
-                            <td class="cell-label">{{ $entry['label'] }}@if(! empty($entry['is_fu']))<span class="fu-badge">Fernunterricht</span>@endif</td>
+                            <td class="cell-label">{{ $entry['label'] }}</td>
+                            <td class="cell-hints">
+                                @foreach($entry['hints'] as $hint)
+                                    <span class="course-hint">{{ $hint }}</span>
+                                @endforeach
+                            </td>
                             <td class="cell-details">{!! $formatDetailsHtml($entry['details']) !!}</td>
                             <td>{{ $entry['slots'] }}</td>
-                            <td style="text-align: center">
-                                <span class="status-dot status-dot--{{ $entry['status'] }}"></span>
-                            </td>
                         </tr>
                         @if(!empty($entry['dates']))
                             <tr class="directory-dates-row">
@@ -950,23 +1181,26 @@
                             <th class="col-hour">Std.</th>
                             <th class="col-time">Zeit</th>
                             <th class="col-label">Kurs</th>
+                            <th class="col-hints">Hinweise</th>
                             <th class="col-details">Details</th>
-                            <th class="col-status">Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach($slots as $slot)
+                            @php
+                                $slotHints = $courseDirectoryHintsByLabel->get($slot['label'], []);
+                            @endphp
                             <tr>
                                 <td class="cell-weekday">{{ $slot['weekday'] }}</td>
                                 <td class="cell-hour">{{ $slot['hour_label'] ?? (($slot['hour'] ?? '') . '.') }}</td>
                                 <td class="cell-time">{{ $slot['time'] }}</td>
-                                <td class="cell-label">{{ $slot['label'] }}@if(! empty($slot['is_fu']))<span class="fu-badge">Fernunterricht</span>@endif</td>
-                                <td class="cell-details">{!! $formatDetailsHtml($slot['details']) !!}</td>
-                                <td>
-                                    @if($slot['status'] !== 'empty')
-                                        <span class="status-dot status-dot--{{ $slot['status'] }}" title="{{ $slot['status'] }}"></span>
-                                    @endif
+                                <td class="cell-label">{{ $slot['label'] }}</td>
+                                <td class="cell-hints">
+                                    @foreach($slotHints as $hint)
+                                        <span class="course-hint">{{ $hint }}</span>
+                                    @endforeach
                                 </td>
+                                <td class="cell-details">{!! $formatDetailsHtml($slot['details'], ! empty($slot['is_compact']), true) !!}</td>
                             </tr>
                         @endforeach
                     </tbody>

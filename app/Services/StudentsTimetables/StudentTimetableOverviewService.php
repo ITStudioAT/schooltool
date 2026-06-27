@@ -22,7 +22,7 @@ class StudentTimetableOverviewService
 
     private const CACHE_STALE_SECONDS = 120 * 60;
 
-    private const CACHE_VERSION = 3;
+    private const CACHE_VERSION = 4;
 
     /**
      * @return list<array<string, mixed>>
@@ -273,6 +273,9 @@ class StudentTimetableOverviewService
             $dates,
             $schoolyear,
         );
+        $isKompaktunterricht = $entries->contains(
+            fn (array $entry): bool => $this->isKompaktunterrichtClass((string) ($entry['class_name'] ?? '')),
+        );
 
         return [
             'key' => md5($this->groupKey($firstEntry)),
@@ -297,6 +300,7 @@ class StudentTimetableOverviewService
             'recurrence_label' => $recurrence['label'],
             'is_block' => $isBlock,
             'block_label' => $isBlock ? 'Block' : null,
+            'is_kompaktunterricht' => $isKompaktunterricht,
         ];
     }
 
@@ -520,6 +524,27 @@ class StudentTimetableOverviewService
         $formatted = preg_replace('/\s*-\s*/', ' - ', $value);
 
         return trim($formatted ?: $value);
+    }
+
+    private function isKompaktunterrichtClass(string $className): bool
+    {
+        $className = $this->withoutTimeFragments($className);
+        if ($className === '') {
+            return false;
+        }
+
+        $segments = collect(preg_split('/\s*-\s*/u', $className) ?: [])
+            ->map(fn (string $segment): string => trim($segment))
+            ->filter()
+            ->values();
+
+        $classSegments = $segments->count() > 1
+            ? $segments->slice(1)
+            : $segments;
+
+        return $classSegments->contains(
+            fn (string $segment): bool => (bool) preg_match('/^\d+[A-ZÄÖÜ]*[QRSTUV][A-ZÄÖÜ]*$/iu', $segment),
+        );
     }
 
     /**

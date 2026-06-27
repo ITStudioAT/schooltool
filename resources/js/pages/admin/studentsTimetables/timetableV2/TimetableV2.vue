@@ -225,12 +225,12 @@
                                                 {{ course.recurrenceLabel }}
                                             </v-chip>
                                             <v-chip
-                                                v-if="course.distanceLearning"
+                                                v-if="offeredCourseInstructionVisible(course)"
                                                 size="x-small"
                                                 color="warning"
                                                 variant="tonal"
-                                                title="Fernunterricht">
-                                                Fernunterricht
+                                                :title="offeredCourseInstructionLabel(course)">
+                                                {{ offeredCourseInstructionLabel(course) }}
                                             </v-chip>
                                             <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
                                                 {{ course.roomsLabel }}
@@ -319,12 +319,12 @@
                                     {{ course.recurrenceLabel }}
                                 </v-chip>
                                 <v-chip
-                                    v-if="course.distanceLearning"
+                                    v-if="offeredCourseInstructionVisible(course)"
                                     size="x-small"
                                     color="warning"
                                     variant="tonal"
-                                    title="Fernunterricht">
-                                    Fernunterricht
+                                    :title="offeredCourseInstructionLabel(course)">
+                                    {{ offeredCourseInstructionLabel(course) }}
                                 </v-chip>
                                 <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
                                     {{ course.roomsLabel }}
@@ -886,12 +886,12 @@
                                             {{ course.recurrenceLabel }}
                                         </v-chip>
                                         <v-chip
-                                            v-if="course.distanceLearning"
+                                            v-if="offeredCourseInstructionVisible(course)"
                                             size="x-small"
                                             color="warning"
                                             variant="tonal"
-                                            title="Fernunterricht">
-                                            Fernunterricht
+                                            :title="offeredCourseInstructionLabel(course)">
+                                            {{ offeredCourseInstructionLabel(course) }}
                                         </v-chip>
                                         <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
                                             {{ course.roomsLabel }}
@@ -1015,9 +1015,9 @@
                                                 }}
                                             </div>
                                             <div
-                                                v-if="selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)).isDistanceLearningCourse"
+                                                v-if="selectedTimetableV2SlotInstructionLabel(selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)))"
                                                 class="students-timetable-v2-result-grid__distance-learning">
-                                                Fernunterricht
+                                                {{ selectedTimetableV2SlotInstructionLabel(selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value))) }}
                                             </div>
                                             <div
                                                 v-if="selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length"
@@ -1026,10 +1026,29 @@
                                                     v-for="sameSlotEntry in selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value))"
                                                     :key="selectedTimetableV2SlotKey(sameSlotEntry)"
                                                     class="students-timetable-v2-result-grid__same-slot">
-                                                    <span>{{ selectedTimetableV2SlotTitle(sameSlotEntry) }}</span>
-                                                    <span v-if="selectedTimetableV2SlotTimePatternLabel(sameSlotEntry, { showRegularRange: true })">
+                                                    <div class="students-timetable-v2-result-grid__code">
+                                                        <span>{{ selectedTimetableV2SlotTitle(sameSlotEntry) }}</span>
+                                                        <sup
+                                                            v-if="sameSlotEntry.isAdditionalCourse"
+                                                            class="students-timetable-v2-result-grid__badge students-timetable-v2-result-grid__badge--additional">
+                                                            Zusatz
+                                                        </sup>
+                                                    </div>
+                                                    <div
+                                                        v-if="selectedTimetableV2SlotDetails(sameSlotEntry)"
+                                                        class="students-timetable-v2-result-grid__details">
+                                                        {{ selectedTimetableV2SlotDetails(sameSlotEntry) }}
+                                                    </div>
+                                                    <div
+                                                        v-if="selectedTimetableV2SlotTimePatternLabel(sameSlotEntry, { showRegularRange: true })"
+                                                        class="students-timetable-v2-result-grid__recurrence">
                                                         {{ selectedTimetableV2SlotTimePatternLabel(sameSlotEntry, { showRegularRange: true }) }}
-                                                    </span>
+                                                    </div>
+                                                    <div
+                                                        v-if="selectedTimetableV2SlotInstructionLabel(sameSlotEntry)"
+                                                        class="students-timetable-v2-result-grid__distance-learning">
+                                                        {{ selectedTimetableV2SlotInstructionLabel(sameSlotEntry) }}
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div
@@ -3327,8 +3346,21 @@ export default {
         adoptedTimetablePdfCourseDetails(slot) {
             return [
                 this.selectedTimetableV2SlotDetails(slot),
-                this.selectedTimetableV2SlotTimePatternLabel(slot),
-            ].filter(Boolean).join(' · ')
+                this.adoptedTimetablePdfCourseTimePatternLabel(slot),
+            ].filter(Boolean).join('\n')
+        },
+        adoptedTimetablePdfCourseTimePatternLabel(slot) {
+            const isKompaktunterricht = this.selectedTimetableV2SlotIsKompaktunterricht(slot)
+            const timePatternLabel = this.selectedTimetableV2SlotTimePatternLabel(slot, {
+                hideWholeSemesterRange: true,
+                showRegularRange: isKompaktunterricht,
+            })
+
+            if (!isKompaktunterricht || /\(Kompakt\)/iu.test(timePatternLabel)) {
+                return timePatternLabel
+            }
+
+            return timePatternLabel ? `${timePatternLabel} (Kompakt)` : 'Kompakt'
         },
         downloadBlob(blob, filename) {
             const objectUrl = URL.createObjectURL(blob)
@@ -3459,6 +3491,10 @@ export default {
         selectedTimetableV2SlotDateLabel(slot, options = {}) {
             const dateRangeLabel = String(slot?.dateRangeLabel || '').trim()
 
+            if (options?.hideWholeSemesterRange === true && this.selectedTimetableV2DateRangeCoversWholeSemester(dateRangeLabel)) {
+                return ''
+            }
+
             if (!this.selectedTimetableV2SlotIsOccasional(slot)) {
                 return options?.showRegularRange === true ? dateRangeLabel : ''
             }
@@ -3473,10 +3509,11 @@ export default {
         selectedTimetableV2SlotTimePatternLabel(slot, options = {}) {
             const recurrenceLabel = this.selectedTimetableV2SlotRecurrenceLabel(slot)
             const dateLabel = this.selectedTimetableV2SlotDateLabel(slot, options)
+            const compactSuffix = dateLabel && this.selectedTimetableV2SlotIsKompaktunterricht(slot) ? ' (Kompakt)' : ''
 
-            if (recurrenceLabel && dateLabel) return `${recurrenceLabel}: ${dateLabel}`
+            if (recurrenceLabel && dateLabel) return `${recurrenceLabel}: ${dateLabel}${compactSuffix}`
 
-            return recurrenceLabel || dateLabel
+            return recurrenceLabel || (dateLabel ? `${dateLabel}${compactSuffix}` : '')
         },
         selectedTimetableV2SlotExactDateLabels(slot) {
             if (!Array.isArray(slot?.courseGroup?.dates)) return []
@@ -3489,6 +3526,60 @@ export default {
         },
         selectedTimetableV2DateLabelIsRange(label) {
             return /\d{1,2}\.\d{1,2}\.?\s*-\s*\d{1,2}\.\d{1,2}\.?/u.test(String(label || ''))
+        },
+        selectedTimetableV2DateRangeCoversWholeSemester(label) {
+            const dateRangeKey = this.selectedTimetableV2DateRangeKey(label)
+            if (!dateRangeKey) return false
+
+            return this.selectedTimetableV2FullSemesterDateRangeKeys().includes(dateRangeKey)
+        },
+        selectedTimetableV2FullSemesterDateRangeKeys() {
+            const schoolyear = this.selectedSchoolyear || {}
+            const fromDate = this.normalizedDate(schoolyear.from)
+            const sem2StartDate = this.normalizedDate(schoolyear.sem_2_start)
+            const untilDate = this.normalizedDate(schoolyear.until)
+            const dateRanges = [
+                [fromDate, untilDate],
+            ]
+
+            if (fromDate && sem2StartDate) {
+                const sem1UntilDate = new Date(sem2StartDate)
+                sem1UntilDate.setDate(sem1UntilDate.getDate() - 1)
+                dateRanges.push([fromDate, sem1UntilDate])
+            }
+
+            if (sem2StartDate && untilDate) {
+                dateRanges.push([sem2StartDate, untilDate])
+            }
+
+            return this.uniqueValues(dateRanges
+                .map(([rangeFrom, rangeUntil]) => this.selectedTimetableV2DateRangeKeyFromDates(rangeFrom, rangeUntil))
+                .filter(Boolean))
+        },
+        selectedTimetableV2DateRangeKey(label) {
+            const dateMatches = [...String(label || '').matchAll(/(\d{1,2})\.(\d{1,2})\.?(?:\d{2,4})?/gu)]
+            if (dateMatches.length < 2) return ''
+
+            const firstDate = dateMatches[0]
+            const lastDate = dateMatches[dateMatches.length - 1]
+
+            return [
+                this.selectedTimetableV2DateKeyPart(Number(firstDate[1]), Number(firstDate[2])),
+                this.selectedTimetableV2DateKeyPart(Number(lastDate[1]), Number(lastDate[2])),
+            ].filter(Boolean).join('|')
+        },
+        selectedTimetableV2DateRangeKeyFromDates(fromDate, untilDate) {
+            if (!fromDate || !untilDate) return ''
+
+            return [
+                this.selectedTimetableV2DateKeyPart(fromDate.getDate(), fromDate.getMonth() + 1),
+                this.selectedTimetableV2DateKeyPart(untilDate.getDate(), untilDate.getMonth() + 1),
+            ].filter(Boolean).join('|')
+        },
+        selectedTimetableV2DateKeyPart(day, month) {
+            if (!Number.isFinite(day) || !Number.isFinite(month)) return ''
+
+            return `${Number(month)}-${Number(day)}`
         },
         selectedTimetableV2SameSlotEntries(slot) {
             return Array.isArray(slot?.sameSlotEntries) ? slot.sameSlotEntries : []
@@ -5166,9 +5257,10 @@ export default {
             return {
                 code: this.normalizedCourseCode(selectedCourse?.code || selectedCourse?.label || offeredCourse?.code),
                 courseGroup,
-                dateRangeLabel: this.adoptedTimetableOfferDateRangeLabel(offeredCourse),
+                dateRangeLabel: scheduleSlot?.dateRangeLabel || this.adoptedTimetableOfferDateRangeLabel(offeredCourse),
                 isAdditionalCourse: selectedCourse?.courseGroup === 'additional',
                 isDistanceLearningCourse: offeredCourse?.distanceLearning === true,
+                isKompaktunterrichtCourse: offeredCourse?.isKompaktunterricht === true,
                 key: [
                     offeredCourse?.selectionKey || offeredCourse?.key,
                     weekday,
@@ -6175,6 +6267,7 @@ export default {
 
                 courseItemsByIdentity.set(identityKey, {
                     ...existingCourseItem,
+                    isKompaktunterricht: existingCourseItem.isKompaktunterricht === true || courseItem.isKompaktunterricht === true,
                     roomsLabel: this.mergedLabelList(existingCourseItem.roomsLabel, courseItem.roomsLabel),
                     recurrenceLabel: this.mergedLabelList(existingCourseItem.recurrenceLabel, courseItem.recurrenceLabel),
                     scheduleSlots: this.mergedScheduleSlots(existingCourseItem.scheduleSlots, courseItem.scheduleSlots),
@@ -6188,6 +6281,7 @@ export default {
                     ...courseItem,
                     backendSelectionKey: this.offeredCourseBackendSelectionKey(courseItem, selectedCourse),
                     distanceLearning: this.offeredCourseIsDistanceLearning({ ...courseItem, scheduleSlots }, selectedCourse),
+                    isKompaktunterricht: this.offeredCourseIsKompaktunterricht(courseItem),
                     recurrenceLabel: courseItem.recurrenceLabel,
                     selectionKey: this.offeredCourseSelectionKey(courseItem, selectedCourse),
                     scheduleLabel: this.compactScheduleSlotsLabel(scheduleSlots),
@@ -6246,6 +6340,36 @@ export default {
             if (optionKey === 'without-distance-learning') return course?.distanceLearning === true
 
             return false
+        },
+        offeredCourseInstructionVisible(course) {
+            return this.offeredCourseInstructionLabel(course) !== ''
+        },
+        offeredCourseInstructionLabel(course) {
+            if (course?.isKompaktunterricht === true || course?.is_kompaktunterricht === true) return 'Kompaktunterricht'
+            if (course?.distanceLearning === true) return 'Fernunterricht'
+
+            return ''
+        },
+        offeredCourseIsKompaktunterricht(courseItem) {
+            return courseItem?.isKompaktunterricht === true
+                || courseItem?.is_kompaktunterricht === true
+                || courseItem?.courseGroup?.is_kompaktunterricht === true
+                || courseItem?.courseGroup?.isKompaktunterricht === true
+        },
+        selectedTimetableV2SlotInstructionLabel(slot) {
+            if (this.selectedTimetableV2SlotIsKompaktunterricht(slot) && !this.selectedTimetableV2SlotDateLabel(slot, { showRegularRange: true })) {
+                return 'Kompaktunterricht'
+            }
+
+            if (slot?.isDistanceLearningCourse === true || slot?.courseGroup?.distanceLearning === true) return 'Fernunterricht'
+
+            return ''
+        },
+        selectedTimetableV2SlotIsKompaktunterricht(slot) {
+            return slot?.isKompaktunterrichtCourse === true
+                || slot?.isKompaktunterricht === true
+                || slot?.courseGroup?.is_kompaktunterricht === true
+                || slot?.courseGroup?.isKompaktunterricht === true
         },
         saveOfferedCourseSelections(offeredCourseSelections) {
             if (this.adoptedTimetableVisible) {
@@ -6434,6 +6558,7 @@ export default {
                 scheduleSlots: this.courseGroupScheduleSlots(courseGroup),
                 scheduleLabel: this.compactScheduleSlotsLabel(this.courseGroupScheduleSlots(courseGroup)),
                 recurrenceLabel: this.offeredCourseRecurrenceLabel(courseGroup),
+                isKompaktunterricht: courseGroup?.is_kompaktunterricht === true || courseGroup?.isKompaktunterricht === true,
                 roomsLabel: (Array.isArray(courseGroup?.rooms) ? courseGroup.rooms : [])
                     .filter(Boolean)
                     .join(', '),
@@ -6497,7 +6622,7 @@ export default {
         },
         offeredCourseRecurrenceLabel(courseGroup) {
             if (courseGroup?.is_block || String(courseGroup?.block_label || '').trim()) {
-                return this.courseGroupDateRangeLabel(courseGroup)
+                return ''
             }
 
             return this.offeredCourseScheduleRecurrenceLabel(courseGroup)
@@ -6572,6 +6697,7 @@ export default {
                 weekday: Number(courseGroup?.weekday || 0) || null,
                 hour,
                 from: timeRange.from,
+                dateRangeLabel: this.courseGroupDateRangeLabel(courseGroup),
                 recurrenceInterval: this.courseGroupWeekInterval(courseGroup),
                 recurrenceLabel: this.offeredCourseScheduleRecurrenceLabel(courseGroup),
                 until: timeRange.until,
@@ -6588,6 +6714,7 @@ export default {
                     slot?.weekday || '',
                     slot?.hour || '',
                     slot?.from || '',
+                    slot?.dateRangeLabel || '',
                     slot?.recurrenceInterval || '',
                     slot?.recurrenceLabel || '',
                     slot?.until || '',
@@ -6622,6 +6749,7 @@ export default {
                     startHour: Number(slot.hour),
                     endHour: Number(slot.hour),
                     from: slot.from || '',
+                    dateRangeLabel: slot.dateRangeLabel || '',
                     recurrenceLabel: slot.recurrenceLabel || '',
                     until: slot.until || '',
                 })
@@ -6632,6 +6760,7 @@ export default {
         scheduleSlotExtendsRange(range, slot) {
             return Number(range?.weekday || 0) === Number(slot?.weekday || 0)
                 && Number(range?.endHour || 0) + 1 === Number(slot?.hour || 0)
+                && String(range?.dateRangeLabel || '') === String(slot?.dateRangeLabel || '')
         },
         scheduleRangeLabel(range) {
             const weekdayLabel = this.courseGroupWeekdayLabel(range?.weekday)
@@ -6639,8 +6768,10 @@ export default {
                 ? `${Number(range?.startHour)}.`
                 : `${Number(range?.startHour)}.-${Number(range?.endHour)}.`
             const timeRangeLabel = [range?.from, range?.until].filter(Boolean).join('-')
+            const dateRangeLabel = String(range?.dateRangeLabel || '').trim()
+            const dateRangeSuffix = dateRangeLabel ? `(${dateRangeLabel})` : ''
 
-            return [weekdayLabel, hourLabel, timeRangeLabel].filter(Boolean).join(' ')
+            return [weekdayLabel, hourLabel, timeRangeLabel, dateRangeSuffix].filter(Boolean).join(' ')
         },
         courseGroupWeekdayLabel(weekday) {
             return [

@@ -2695,7 +2695,7 @@ it('creates a timetable overview pdf from posted timetable data', function () {
                                         [
                                             'status' => 'warning',
                                             'courses' => [
-                                                ['label' => 'M2 - 2S - ALT', 'details' => '1w', 'student_course_type' => 'missing', 'student_course_badge' => 'Fehlend'],
+                                                ['label' => 'M2 - 2S - ALT', 'details' => "dense-grid-detail\n21.02.-25.04. (Kompakt)", 'student_course_type' => 'missing', 'student_course_badge' => 'Fehlend'],
                                                 ['label' => 'E2 - 1U - NIE', 'details' => '1-wöchig · 09.05. - 11.07.', 'student_course_type' => 'additional', 'student_course_badge' => 'Zusätzlich'],
                                                 ['label' => 'D2 - 1U - HER', 'details' => '1-wöchig · 21.02. - 25.04.'],
                                             ],
@@ -2734,6 +2734,32 @@ it('creates a timetable overview pdf from posted timetable data', function () {
                                         ],
                                     ],
                                 ],
+                                [
+                                    'hour' => 3,
+                                    'from' => '09:50',
+                                    'until' => '10:35',
+                                    'cells' => [
+                                        [
+                                            'status' => 'empty',
+                                            'courses' => [
+                                                [
+                                                    'label' => 'F 2',
+                                                    'details' => "F2-3C-SCHO\n16.02.-6.7",
+                                                    'dates' => ['29.06.', '27.06.', '27.04.', '27.06.'],
+                                                ],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                        [
+                                            'status' => 'filled',
+                                            'courses' => [
+                                                ['label' => 'GW1', 'details' => "GWB1-1RU-RAI\n20.02.-10.7. (Kompakt)", 'is_fu' => true],
+                                                ['label' => 'CH1', 'details' => 'CH1-3RU-KOW 20.02.-10.7. (Kompakt)'],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                    ],
+                                ],
                             ],
                         ],
                     ],
@@ -2751,11 +2777,25 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->contains('class="pdf-page"')
             && $pdf->contains('--pdf-scale:')
             && $pdf->contains('--pdf-row-height: 10.50mm;')
+            && $pdf->contains('height: auto;')
+            && $pdf->contains('padding: 0.55mm 0.6mm 1.15mm;')
+            && $pdf->contains('overflow: visible;')
+            && $pdf->contains('.course--compact + .course--compact')
+            && $pdf->contains('margin-top: 1.2mm;')
+            && ! $pdf->contains('--pdf-hour-row-height:')
             && $pdf->contains('.pdf-page-courses')
             && $pdf->contains('page-break-inside: auto;')
             && $pdf->contains('display: table-header-group;')
             && $pdf->contains('font-size: 8pt;')
             && $pdf->contains('.courses-table .cell-weekday')
+            && $pdf->contains('.courses-table .col-hints { width: 14%; }')
+            && $pdf->contains('.courses-table .col-details { width: 34%; }')
+            && $pdf->contains('.courses-table .col-directory-label { width: 14%; }')
+            && $pdf->contains('.courses-table .col-directory-hints { width: 12%; }')
+            && $pdf->contains('.courses-table .col-directory-slots { width: 54%; }')
+            && ! $pdf->contains('col-directory-status')
+            && ! $pdf->contains('col-status')
+            && ! $pdf->contains('status-dot')
             && $pdf->contains('font-weight: 400;')
             && $pdf->contains('Mo 1.-2.')
             && $pdf->contains('Mo 1.-2. 08:00 - 09:35')
@@ -2763,10 +2803,40 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->contains('<td class="cell-hour">1.-2.</td>')
             && $pdf->contains('<td class="cell-time">08:00 – 09:35</td>')
             && $pdf->contains('<span class="recurrence-detail">1-wöchig</span>')
-            && $pdf->contains('<span class="recurrence-detail">1-w</span>')
+            && $pdf->contains("08:00<br>\n                                                        08:45")
+            && $pdf->contains('<div class="course-details"><span class="course-detail-line">dense-grid-detail</span></div>')
+            && $pdf->contains('course-label-main')
+            && $pdf->contains('<span class="course-label-context">3C-SCHO</span>')
+            && ! $pdf->contains('<div class="course-details"><span class="course-detail-line">F2-3C-SCHO</span></div>')
+            && ! $pdf->contains('16.02.-6.7')
+            && $pdf->contains('<span class="directory-date">27.04.</span>')
+            && $pdf->contains('<span class="directory-date">27.06.</span>')
+            && $pdf->contains('<span class="directory-date">29.06.</span>')
+            && substr_count($pdf->html, '<span class="directory-date">27.06.</span>') === 1
+            && strpos($pdf->html, '<span class="directory-date">27.04.</span>') < strpos($pdf->html, '<span class="directory-date">27.06.</span>')
+            && strpos($pdf->html, '<span class="directory-date">27.06.</span>') < strpos($pdf->html, '<span class="directory-date">29.06.</span>')
+            && $pdf->contains('GWB1-1RU-RAI')
+            && $pdf->contains('20.02.-10.7.')
+            && ! $pdf->contains('3RU-KOW 20.02.-10.7. (Kompakt)')
+            && ! $pdf->contains('<span class="course-detail-line">21.02.-25.04. (Kompakt)</span>')
+            && ! $pdf->contains('<span class="course-detail-line">20.02.-10.7. (Kompakt)</span>')
+            && ! $pdf->contains('CH1-3RU-KOW 20.02.-10.7. (Kompakt)')
+            && $pdf->contains('<div class="course-fu">Kompaktunterricht</div>')
+            && ! $pdf->contains('Fernunterricht')
             && $pdf->contains('<h1 class="courses-title">Kursliste</h1>')
             && $pdf->contains('<th class="col-directory-label">Kurs</th>')
+            && $pdf->contains('<th class="col-directory-hints">Hinweise</th>')
+            && $pdf->contains('colspan="3" class="directory-dates-cell"')
             && $pdf->contains('<td class="cell-label">M2 - 2S - ALT</td>')
+            && $pdf->contains('.course-hint')
+            && $pdf->contains('content: " · ";')
+            && $pdf->contains('<span class="course-hint">Kompaktkurs</span>')
+            && $pdf->contains('<span class="course-hint">1-wöchentlich</span>')
+            && $pdf->contains('<th class="col-hints">Hinweise</th>')
+            && substr_count($pdf->html, '<span class="course-hint">Kompaktkurs</span>') >= 2
+            && ! str_contains(substr($pdf->html, strrpos($pdf->html, '<div class="pdf-page-courses">') ?: 0), '<span class="recurrence-detail">')
+            && $pdf->contains('margin-left: 1.4mm;')
+            && ! $pdf->contains('Einzeltermine')
             && $pdf->contains('background: #f8fafc;')
             && $pdf->contains('background: #dbeafe;')
             && $pdf->contains('.cell-warning')
@@ -2842,12 +2912,14 @@ it('lets students create their personal timetable overview pdf from posted timet
             && $pdf->isDownload()
             && $pdf->contains('Mein Stundenplan')
             && $pdf->contains('L4 - SHAM')
+            && $pdf->contains('<th class="col-directory-hints">Hinweise</th>')
+            && $pdf->contains('<span class="course-hint">Fernunterricht</span>')
+            && $pdf->contains('<span class="course-hint">2-wöchentlich</span>')
             && $pdf->contains('<div class="course-fu">Fernunterricht</div>')
             && $pdf->contains('.course-fu')
             && $pdf->contains('<span class="recurrence-detail">2-wöchig</span>')
             && $pdf->contains('color: #1d4ed8;')
-            && $pdf->contains('vertical-align: baseline;')
-            && $pdf->contains('<span class="recurrence-detail">2-w</span>');
+            && $pdf->contains('vertical-align: baseline;');
     });
 });
 
@@ -3153,6 +3225,46 @@ it('removes end times from fully concatenated timetable labels', function () {
 
     expect($groups->firstWhere('title', 'ETH')['display_label'])
         ->toBe('ETH4 - 5RU - HER');
+});
+
+it('marks compact timetable course groups from class tokens', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-07',
+        'sem_2_start' => '2026-10-20',
+        'until' => '2027-02-14',
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    foreach ([
+        ['period' => '1', 'class_name' => 'M4-3R-SCH'],
+        ['period' => '2', 'class_name' => 'M4-5RU-SCH'],
+        ['period' => '3', 'class_name' => 'M4-3A-SCH'],
+    ] as $entry) {
+        StudentTimetableEntry::factory()->create([
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $schoolyear->id,
+            'date' => '2026-09-07',
+            'semester' => 1,
+            'period' => $entry['period'],
+            'course' => 'M',
+            'module_code' => 'M4',
+            'subject' => 'M',
+            'teacher' => null,
+            'room' => null,
+            'class_name' => $entry['class_name'],
+        ]);
+    }
+
+    $groups = collect($this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/course-groups')
+        ->assertSuccessful()
+        ->json('data'));
+
+    expect($groups->firstWhere('display_label', 'M4 - 3R - SCH')['is_kompaktunterricht'])->toBeTrue()
+        ->and($groups->firstWhere('display_label', 'M4 - 5RU - SCH')['is_kompaktunterricht'])->toBeTrue()
+        ->and($groups->firstWhere('display_label', 'M4 - 3A - SCH')['is_kompaktunterricht'])->toBeFalse();
 });
 
 it('denies the dummy dashboard without a school licence', function () {
