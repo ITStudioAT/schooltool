@@ -228,7 +228,7 @@ class RobotTimetableBackendSetupService
 
     /**
      * @param  array<string, mixed>  $settings
-     * @param  list<array{availability_key: string, course_key: string, course_group: string}>  $candidateCourses
+     * @param  list<array<string, mixed>>  $candidateCourses
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
      * @return array<string, array{available: bool, valid_timetable_count: int}>
@@ -304,7 +304,7 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $subjectMappings
      * @param  list<array<string, mixed>>  $courseGroups
      * @param  array<string, mixed>  $settings
-     * @param  list<array{availability_key: string, course_key: string, course_group: string}>  $candidateCourses
+     * @param  list<array<string, mixed>>  $candidateCourses
      * @return array<string, array{available: bool, valid_timetable_count: int}>
      */
     private function courseAvailabilityFromSharedInput(
@@ -375,7 +375,7 @@ class RobotTimetableBackendSetupService
     /**
      * @param  array{selected_courses: list<array<string, mixed>>, course_options: list<list<array<string, mixed>>>, additional_courses: list<array<string, mixed>>, additional_course_options: list<list<array<string, mixed>>>, has_missing_options: bool}  $baseInput
      * @param  array<string, mixed>  $settings
-     * @param  array{availability_key: string, course_key: string, course_group: string}  $candidateCourse
+     * @param  array<string, mixed>  $candidateCourse
      * @param  array<string, array<string, mixed>>  $availableCoursesByKey
      * @param  list<array<string, mixed>>  $courseGroups
      * @param  list<array<string, mixed>>  $subjectMappings
@@ -437,7 +437,7 @@ class RobotTimetableBackendSetupService
 
     /**
      * @param  array<string, mixed>  $settings
-     * @param  array{availability_key: string, course_key: string, course_group: string}  $candidateCourse
+     * @param  array<string, mixed>  $candidateCourse
      * @return array<string, mixed>
      */
     private function settingsWithAvailabilityCandidate(array $settings, array $candidateCourse): array
@@ -446,6 +446,14 @@ class RobotTimetableBackendSetupService
         if ($courseKey === '') {
             return $settings;
         }
+
+        $settings = [
+            ...$settings,
+            'deselected_course_group_keys' => $this->uniqueStrings([
+                ...$this->stringList($settings['deselected_course_group_keys'] ?? []),
+                ...$this->stringList($candidateCourse['deselected_course_group_keys'] ?? []),
+            ]),
+        ];
 
         if ($candidateCourse['course_group'] === 'additional') {
             return [

@@ -451,10 +451,12 @@ class StudentsTimetablesStudentController extends Controller
         $validated = $request->validate([
             ...$this->automaticTimetableRules($evaluationSettingsService),
             'availability_only' => ['sometimes', 'boolean'],
-            'candidate_courses' => ['required', 'array', 'min:1', 'max:100'],
+            'candidate_courses' => ['required', 'array', 'min:1', 'max:500'],
             'candidate_courses.*.availability_key' => ['required', 'string', 'max:255', 'distinct:strict'],
             'candidate_courses.*.course_key' => ['required', 'string', 'max:255'],
             'candidate_courses.*.course_group' => ['required', 'string', 'in:missing,planned,additional'],
+            'candidate_courses.*.deselected_course_group_keys' => ['sometimes', 'array', 'max:100'],
+            'candidate_courses.*.deselected_course_group_keys.*' => ['string', 'max:255'],
         ]);
 
         $this->ensureSchoolyearForUser($authUser);

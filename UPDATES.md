@@ -13,6 +13,9 @@
 - Darstellung verbessert
 - Zusätzlich zum Gesamtstundenplan: Wochenstundenpläne
 
+### Übernommener Stundenplan
+- UI-Design: Farbanpassungen von Buttons
+
 
 
 ## 3.41.5

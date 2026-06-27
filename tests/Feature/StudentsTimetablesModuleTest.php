@@ -192,6 +192,7 @@ it('returns backend timetable availability for candidate courses', function () {
                     'availability_key' => 'additional:INF2',
                     'course_key' => 'INF2',
                     'course_group' => 'additional',
+                    'deselected_course_group_keys' => ['INF2|A'],
                 ],
             ],
         ]);
@@ -2592,6 +2593,18 @@ it('stores timetable v2 state per authenticated user and schoolyear', function (
             'maxFreeDays' => true,
             'noDistanceLearning' => false,
         ],
+        'timetableV2Adoption' => [
+            'selectedNumber' => 2,
+            'adoptedCalculationResult' => [
+                'selected_timetable' => [
+                    'slots' => [
+                        '1-1' => [
+                            'code' => 'D1',
+                        ],
+                    ],
+                ],
+            ],
+        ],
         'transferredStudentContext' => [
             'student' => [
                 'studentCode' => '1001',
@@ -2607,6 +2620,8 @@ it('stores timetable v2 state per authenticated user and schoolyear', function (
         ->assertSuccessful()
         ->assertJsonPath('message', 'Stundenplan-Auswahl wurde gespeichert.')
         ->assertJsonPath('data.state.transferredStudentContext.student.studentCode', '1001')
+        ->assertJsonPath('data.state.timetableV2Adoption.selectedNumber', 2)
+        ->assertJsonPath('data.state.timetableV2Adoption.adoptedCalculationResult.selected_timetable.slots.1-1.code', 'D1')
         ->assertJsonPath('data.state.timetableV2Selection.courseSelections.planned:D1', false)
         ->assertJsonPath('data.state.timetableV2Options.maxFreeDays', true);
 
@@ -2625,6 +2640,7 @@ it('stores timetable v2 state per authenticated user and schoolyear', function (
         ->getJson('/api/admin/students-timetables/timetable-v2-state')
         ->assertSuccessful()
         ->assertJsonPath('data.state.transferredStudentContext.student.studentCode', '1001')
+        ->assertJsonPath('data.state.timetableV2Adoption.selectedNumber', 2)
         ->assertJsonPath('data.state.timetableV2Options.maxFreeDays', true);
 
     $otherUser = User::factory()->create([
