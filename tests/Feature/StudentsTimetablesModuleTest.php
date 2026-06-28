@@ -294,6 +294,83 @@ it('returns problem courses when selected courses have no available timetable op
         ->assertJsonPath('data.selected_timetable', null);
 });
 
+it('excludes deselected offered course groups from backend timetable calculations', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-01',
+        'sem_2_start' => '2027-02-16',
+        'until' => '2027-07-01',
+    ]);
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 2,
+        'branch' => 'common',
+        'json_code' => 'E2',
+        'json_subject' => 'E',
+        'name' => 'Englisch 2',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => 1,
+        'source' => 'test',
+    ]);
+
+    collect([
+        ['date' => '2026-09-07', 'period' => '13', 'class_name' => 'E2-1R-REIS'],
+        ['date' => '2026-09-08', 'period' => '12', 'class_name' => 'E2-2A-RAI'],
+    ])->each(fn (array $entry, int $index): StudentTimetableEntry => StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'line_number' => $index + 1,
+        'date' => $entry['date'],
+        'semester' => 2,
+        'period' => $entry['period'],
+        'subject' => 'E',
+        'course' => 'E',
+        'module_code' => 'E2',
+        'class_name' => $entry['class_name'],
+        'is_active' => true,
+    ]));
+
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
+
+    $response = $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable', [
+            'selection' => [
+                'semester' => 2,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [12, 13],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => ['E2-1'],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => ['E2-1|E2-2A-RAI'],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.selected_timetable.slots.1-13.courseGroup.class_name', 'E2-1R-REIS');
+
+    expect(json_encode($response->json('data.selected_timetable'), JSON_THROW_ON_ERROR))
+        ->not->toContain('E2-2A-RAI');
+});
+
 it('can short circuit backend timetable availability after finding one valid timetable', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $schoolyear = Schoolyear::factory()->create([
@@ -2097,6 +2174,76 @@ it('can return a slim robot student overview course history payload', function (
         ->assertJsonMissingPath('data.school_hours')
         ->assertJsonMissingPath('data.selection_options')
         ->assertJsonMissingPath('data.selection_items');
+});
+
+it('bases student overview planned and additional courses on passed progression instead of student semester', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '6S',
+        'school_level' => '11_2',
+        'student_code' => '100',
+        'last_name' => 'Schroll',
+        'first_name' => 'Lukas',
+        'religion' => 'Rk',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    collect([
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1', 'hours_per_week' => 3],
+        ['semester' => 2, 'branch' => 'common', 'json_code' => 'D2', 'json_subject' => 'D', 'name' => 'Deutsch 2', 'hours_per_week' => 3],
+        ['semester' => 3, 'branch' => 'common', 'json_code' => 'D3', 'json_subject' => 'D', 'name' => 'Deutsch 3', 'hours_per_week' => 3],
+        ['semester' => 6, 'branch' => 'common', 'json_code' => 'D4', 'json_subject' => 'D', 'name' => 'Deutsch 4', 'hours_per_week' => 3],
+    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        ...$subjectRow,
+    ]));
+
+    $import = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'noten.csv',
+        'stored_filename' => 'noten.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten.csv",
+        'total_rows' => 1,
+        'imported_rows' => 1,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+
+    StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $import->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => 2,
+        'student_code' => '100',
+        'subject' => 'D1',
+        'grade' => '2',
+        'note' => '2',
+        'raw_data' => ['semester' => '1'],
+    ]);
+
+    $response = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/robot/student-overview?student_code=100&strict_selection=1&selection[semester]=6')
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection.semester', 6);
+
+    expect(collect($response->json('data.proposed_courses'))->pluck('code')->all())
+        ->toBe(['D2'])
+        ->and(collect($response->json('data.additional_courses'))->pluck('code')->all())
+        ->toBe(['D3']);
 });
 
 it('does not propose choice courses when strict student overview selection is missing that choice', function () {

@@ -250,10 +250,19 @@ class StudentTimetableCalculationSettingsService
      */
     private function courseGroupSelectionKeys(array $course): array
     {
-        $courseKey = (string) ($course['key'] ?? $course['code'] ?? '');
+        $courseKeys = collect([
+            $course['key'] ?? '',
+            $course['code'] ?? '',
+        ])
+            ->map(fn (mixed $courseKey): string => trim((string) $courseKey))
+            ->filter()
+            ->unique()
+            ->values();
 
         return collect(is_array($course['course_groups'] ?? null) ? $course['course_groups'] : [])
-            ->map(fn (array $courseGroup): string => $this->courseGroupSelectionKey($courseKey, $courseGroup))
+            ->flatMap(fn (array $courseGroup): array => $courseKeys
+                ->map(fn (string $courseKey): string => $this->courseGroupSelectionKey($courseKey, $courseGroup))
+                ->all())
             ->filter()
             ->unique()
             ->values()

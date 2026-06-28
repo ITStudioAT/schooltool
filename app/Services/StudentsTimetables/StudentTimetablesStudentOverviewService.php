@@ -247,8 +247,8 @@ class StudentTimetablesStudentOverviewService
         $completedCourseCodes = $this->studentCompletedCourseCodes($completedCourses);
         $visitedCourseCodes = $this->studentVisitedCourseCodes($recognizedCourses);
         $missingCourses = $this->negativeCourses($recognizedCourses);
-        $proposedCourses = $this->plannedCoursesForSemester($subjectCourses, $selection, $completedCourseCodes, $visitedCourseCodes, $missingCourses);
-        $additionalCourses = $this->additionalCourses($subjectCourses, $selection, $completedCourseCodes, $visitedCourseCodes, $missingCourses, $proposedCourses);
+        $proposedCourses = $this->plannedCoursesForProgression($subjectCourses, $completedCourseCodes, $visitedCourseCodes, $missingCourses);
+        $additionalCourses = $this->additionalCoursesForProgression($subjectCourses, $completedCourseCodes, $visitedCourseCodes, $missingCourses, $proposedCourses);
         $courseSections = $this->courseSections($completedCourses, $missingCourses, $proposedCourses, $additionalCourses);
         $automaticCourseSelection = $this->automaticCourseSelection($courseSections);
 
@@ -1515,30 +1515,19 @@ class StudentTimetablesStudentOverviewService
      * @param  list<array<string, mixed>>  $missingCourses
      * @return list<array<string, mixed>>
      */
-    private function plannedCoursesForSemester(Collection $subjectCourses, array $selection, array $completedCourseCodes, array $visitedCourseCodes, array $missingCourses): array
+    private function plannedCoursesForProgression(Collection $subjectCourses, array $completedCourseCodes, array $visitedCourseCodes, array $missingCourses): array
     {
-        $semester = $this->integerOrNull($selection['semester'] ?? null);
-
-        if (! $semester) {
-            return [];
-        }
-
         $missingCourseCodes = $this->studentPlannedCourseCodes($missingCourses);
 
         return $subjectCourses
-            ->filter(fn (array $course): bool => (int) ($course['semester'] ?? 0) <= $semester)
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $completedCourseCodes))
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $missingCourseCodes))
-            ->filter(fn (array $course): bool => (int) ($course['semester'] ?? 0) === $semester
-                || $this->coursePossibleAsStudentMissing($course, $completedCourseCodes, $visitedCourseCodes))
+            ->filter(fn (array $course): bool => $this->coursePossibleAsStudentMissing($course, $completedCourseCodes, $visitedCourseCodes))
             ->unique(fn (array $course): string => $this->studentPlanningCourseUniqueKey($course))
-            ->sort(function (array $firstCourse, array $secondCourse): int {
-                $semesterComparison = (int) ($firstCourse['semester'] ?? 0) <=> (int) ($secondCourse['semester'] ?? 0);
-
-                return $semesterComparison !== 0
-                    ? $semesterComparison
-                    : strnatcasecmp((string) $firstCourse['code'], (string) $secondCourse['code']);
-            })
+            ->groupBy(fn (array $course): string => $this->studentProgressionCourseGroupKey($course))
+            ->map(fn (Collection $courses): ?array => $this->firstStudentProgressionCourse($courses))
+            ->filter()
+            ->sort(fn (array $firstCourse, array $secondCourse): int => $this->studentProgressionCourseSort($firstCourse, $secondCourse))
             ->values()
             ->all();
     }
@@ -1573,14 +1562,8 @@ class StudentTimetablesStudentOverviewService
      * @param  list<array<string, mixed>>  $plannedCourses
      * @return list<array<string, mixed>>
      */
-    private function additionalCourses(Collection $subjectCourses, array $selection, array $completedCourseCodes, array $visitedCourseCodes, array $missingCourses, array $plannedCourses): array
+    private function additionalCoursesForProgression(Collection $subjectCourses, array $completedCourseCodes, array $visitedCourseCodes, array $missingCourses, array $plannedCourses): array
     {
-        $semester = $this->integerOrNull($selection['semester'] ?? null);
-
-        if (! $semester) {
-            return [];
-        }
-
         $plannedCourseCodes = $this->studentPlannedCourseCodes($plannedCourses);
         $regularCourseCodes = $this->studentPlannedCourseCodes([
             ...$missingCourses,
@@ -1592,20 +1575,75 @@ class StudentTimetablesStudentOverviewService
         ]);
 
         return $subjectCourses
-            ->filter(fn (array $course): bool => (int) ($course['semester'] ?? 0) > $semester)
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $unavailableCourseCodes))
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $regularCourseCodes))
             ->filter(fn (array $course): bool => $this->coursePossibleAsStudentAdditional($course, $completedCourseCodes, $visitedCourseCodes, $plannedCourseCodes))
             ->unique(fn (array $course): string => $this->studentPlanningCourseUniqueKey($course))
-            ->sort(function (array $firstCourse, array $secondCourse): int {
-                $semesterComparison = (int) ($firstCourse['semester'] ?? 0) <=> (int) ($secondCourse['semester'] ?? 0);
-
-                return $semesterComparison !== 0
-                    ? $semesterComparison
-                    : strnatcasecmp((string) $firstCourse['code'], (string) $secondCourse['code']);
-            })
+            ->groupBy(fn (array $course): string => $this->studentProgressionCourseGroupKey($course))
+            ->map(fn (Collection $courses): ?array => $this->firstStudentProgressionCourse($courses))
+            ->filter()
+            ->sort(fn (array $firstCourse, array $secondCourse): int => $this->studentProgressionCourseSort($firstCourse, $secondCourse))
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $courses
+     * @return array<string, mixed>|null
+     */
+    private function firstStudentProgressionCourse(Collection $courses): ?array
+    {
+        return $courses
+            ->sort(fn (array $firstCourse, array $secondCourse): int => $this->studentProgressionCourseSort($firstCourse, $secondCourse))
+            ->first();
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     */
+    private function studentProgressionCourseGroupKey(array $course): string
+    {
+        $baseAliases = collect($this->courseModulePartsForStudentPlanning($course))
+            ->flatMap(fn (array $parts): array => $this->studentCourseBaseAliases((string) ($parts['base'] ?? '')))
+            ->filter()
+            ->sort()
+            ->unique()
+            ->values()
+            ->implode('|');
+
+        return $baseAliases !== '' ? $baseAliases : $this->studentPlanningCourseUniqueKey($course);
+    }
+
+    /**
+     * @param  array<string, mixed>  $firstCourse
+     * @param  array<string, mixed>  $secondCourse
+     */
+    private function studentProgressionCourseSort(array $firstCourse, array $secondCourse): int
+    {
+        $firstModule = $this->studentProgressionCourseModuleNumber($firstCourse);
+        $secondModule = $this->studentProgressionCourseModuleNumber($secondCourse);
+        $moduleComparison = $firstModule <=> $secondModule;
+
+        if ($moduleComparison !== 0) {
+            return $moduleComparison;
+        }
+
+        $semesterComparison = (int) ($firstCourse['semester'] ?? 0) <=> (int) ($secondCourse['semester'] ?? 0);
+
+        return $semesterComparison !== 0
+            ? $semesterComparison
+            : strnatcasecmp((string) $firstCourse['code'], (string) $secondCourse['code']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     */
+    private function studentProgressionCourseModuleNumber(array $course): int
+    {
+        return collect($this->courseModulePartsForStudentPlanning($course))
+            ->map(fn (array $parts): ?int => $this->integerOrNull($parts['module'] ?? null))
+            ->filter(fn (?int $module): bool => $module !== null)
+            ->min() ?? PHP_INT_MAX;
     }
 
     /**
