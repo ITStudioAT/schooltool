@@ -23,6 +23,9 @@
 - Diese wurden bisher auch aufgrund des Semesters des Studierenden ausgewählt. Das Studierenden-Semester spielt am sofort keine Rolle mehr.
 - Alphabethische Sortierung 
 
+### Ausgewählte Kurse
+- Änderung der Selektion auf Checkboxen für Fernunterricht und Kompaktunterricht
+- Chip-Färbung verändert
 
 
 ## 3.41.5
