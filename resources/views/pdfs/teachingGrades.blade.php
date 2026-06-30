@@ -67,6 +67,11 @@
     </style>
 </head>
 <body>
+    @php
+        $semesterCount = (int) ($semester_count ?? 2);
+        $hasTwoSemesters = $semesterCount === 2;
+    @endphp
+
     <div class="report-header">
         <p class="report-subtitle">{{ $course_title }} · {{ $school_name ?: '-' }} · Schuljahr {{ $schoolyear_name ?: '-' }} · {{ $generated_at }}</p>
     </div>
@@ -81,10 +86,12 @@
                     <th>Name</th>
                     <th>E-Mail</th>
                     <th style="width: 8%;">Klasse</th>
-                    @if (in_array(1, $semesters))
+                    @if (! $hasTwoSemesters)
+                        <th class="text-center" style="width: 10%;">Note</th>
+                    @elseif (in_array(1, $semesters))
                         <th class="text-center" style="width: 10%;">Note Sem. 1</th>
                     @endif
-                    @if (in_array(2, $semesters))
+                    @if ($hasTwoSemesters && in_array(2, $semesters))
                         <th class="text-center" style="width: 10%;">Note Sem. 2</th>
                     @endif
                 </tr>
@@ -96,10 +103,12 @@
                         <td>{{ $student['name'] ?: '-' }}</td>
                         <td class="muted">{{ $student['email'] ?: '-' }}</td>
                         <td>{{ $student['class'] ?: '-' }}</td>
-                        @if (in_array(1, $semesters))
+                        @if (! $hasTwoSemesters)
+                            <td class="text-center">{{ $student['sem_grade'] ?? '-' }}</td>
+                        @elseif (in_array(1, $semesters))
                             <td class="text-center">{{ $student['sem_1_grade'] ?? '-' }}</td>
                         @endif
-                        @if (in_array(2, $semesters))
+                        @if ($hasTwoSemesters && in_array(2, $semesters))
                             <td class="text-center">{{ $student['sem_2_grade'] ?? '-' }}</td>
                         @endif
                     </tr>

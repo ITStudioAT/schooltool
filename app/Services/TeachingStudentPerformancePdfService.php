@@ -46,8 +46,6 @@ class TeachingStudentPerformancePdfService
             'school:id,long_name,short_name',
             'schoolyear:id,name,sem_2_start',
             'user:id,first_name,last_name,last_name',
-            'teachingCourseStudents.user:id,first_name,last_name,schoolclass,email',
-            'teachingCourseStudents.import116:id,first_name,last_name,class,email',
         ]);
 
         $schema = TeachingSchema::query()
@@ -79,9 +77,7 @@ class TeachingStudentPerformancePdfService
                 'user:id,first_name,last_name,schoolclass,email',
                 'import116:id,first_name,last_name,class,email',
             ])])
-            : $course->teachingCourseStudents
-                ->sortBy(fn (TeachingCourseStudent $student) => $this->studentDisplayName($student), SORT_NATURAL | SORT_FLAG_CASE)
-                ->values();
+            : $this->activeCourseStudents($course);
 
         return $courseStudents
             ->map(function (TeachingCourseStudent $student) use ($course, $worksByType, $semesterCount, $semesterTwoStart): array {
@@ -223,19 +219,19 @@ class TeachingStudentPerformancePdfService
         $course->loadMissing([
             'school:id,long_name,short_name',
             'schoolyear:id,name',
-            'teachingCourseStudents.user:id,first_name,last_name,schoolclass,email',
-            'teachingCourseStudents.import116:id,first_name,last_name,class,email',
         ]);
 
-        $students = $course->teachingCourseStudents
-            ->sortBy(fn (TeachingCourseStudent $student) => $this->studentDisplayName($student), SORT_NATURAL | SORT_FLAG_CASE)
-            ->values()
+        $semesterCount = $this->semesterCountForCourse($course);
+        $semesters = $semesterCount === 1 ? [1] : $semesters;
+
+        $students = $this->activeCourseStudents($course)
             ->map(fn (TeachingCourseStudent $student): array => [
                 'name' => $this->studentDisplayName($student),
                 'email' => trim((string) ($student->user?->email ?? $student->import116?->email ?? '')),
                 'class' => trim((string) ($student->user?->schoolclass ?? $student->import116?->class ?? '')),
                 'sem_1_grade' => $student->sem_1_grade,
                 'sem_2_grade' => $student->sem_2_grade,
+                'sem_grade' => $student->sem_grade,
             ])
             ->all();
 
@@ -245,6 +241,7 @@ class TeachingStudentPerformancePdfService
             'course_title' => trim((string) $course->title),
             'school_name' => trim((string) ($course->school?->long_name ?: $course->school?->short_name)),
             'schoolyear_name' => trim((string) ($course->schoolyear?->name ?? '')),
+            'semester_count' => $semesterCount,
             'semesters' => $semesters,
             'students' => $students,
             'generated_at' => now()->format('d.m.Y H:i'),
@@ -253,6 +250,36 @@ class TeachingStudentPerformancePdfService
             ->landscape()
             ->name($filename)
             ->download($filename);
+    }
+
+    private function semesterCountForCourse(TeachingCourse $course): int
+    {
+        $schema = TeachingSchema::query()
+            ->where('school_id', $course->school_id)
+            ->where('schoolyear_id', $course->schoolyear_id)
+            ->where('user_id', $course->user_id)
+            ->where('schema_id', $course->teaching_schema_id)
+            ->first();
+
+        $grading = is_array($schema?->grading) ? $schema->grading : [];
+
+        return (int) ($grading['semester_count'] ?? 2) === 1 ? 1 : 2;
+    }
+
+    /**
+     * @return Collection<int, TeachingCourseStudent>
+     */
+    private function activeCourseStudents(TeachingCourse $course): Collection
+    {
+        return $course->teachingCourseStudents()
+            ->with([
+                'user:id,first_name,last_name,schoolclass,email',
+                'import116:id,first_name,last_name,class,email',
+            ])
+            ->whereNull('canceled_at')
+            ->get()
+            ->sortBy(fn (TeachingCourseStudent $student) => $this->studentDisplayName($student), SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
     }
 
     private function semesterForDate(?string $date, int $semesterCount, ?string $semesterTwoStart): int

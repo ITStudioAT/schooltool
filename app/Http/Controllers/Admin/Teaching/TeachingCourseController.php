@@ -146,6 +146,10 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        if ($course_student->canceled_at !== null) {
+            abort(422, 'Diese:r Schüler:in ist im Kurs nicht aktiv.');
+        }
+
         return $service->download($course, $course_student);
     }
 
@@ -171,7 +175,11 @@ class TeachingCourseController extends Controller
             if ((int) $courseStudent->teaching_course_id !== (int) $course->id) {
                 abort(403, 'Sie haben keine Berechtigung');
             }
-        } elseif (! $course->teachingCourseStudents()->exists()) {
+
+            if ($courseStudent->canceled_at !== null) {
+                abort(422, 'Diese:r Schüler:in ist im Kurs nicht aktiv.');
+            }
+        } elseif (! $course->teachingCourseStudents()->whereNull('canceled_at')->exists()) {
             abort(422, 'Keine Schüler:innen für den Druck vorhanden.');
         }
 
@@ -204,7 +212,7 @@ class TeachingCourseController extends Controller
             abort(422, 'Mindestens ein Semester muss ausgewählt werden.');
         }
 
-        if (! $course->teachingCourseStudents()->exists()) {
+        if (! $course->teachingCourseStudents()->whereNull('canceled_at')->exists()) {
             abort(422, 'Keine Schüler:innen für den Druck vorhanden.');
         }
 

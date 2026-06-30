@@ -5,6 +5,8 @@
 ### Unterricht
 
 - Leistungen Plus: 1-semstrige Leistungen sind jetzt editierbar
+- Druck: 1-semestrige Leistungen druckbar
+- Nicht-aktive Studierende werden nicht mehr gedruckt
 
 ## 3.41.6
 

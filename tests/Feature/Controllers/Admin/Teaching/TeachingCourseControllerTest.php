@@ -669,6 +669,55 @@ describe('student performances pdf', function () {
         Pdf::assertRespondedWithPdf(fn () => true);
     });
 
+    test('returns combined performances pdf for active course students only', function () {
+        Pdf::fake();
+
+        $activeStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'first_name' => 'Anna',
+            'last_name' => 'Aktiv',
+            'schoolclass' => '2A',
+        ]);
+        $canceledStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'first_name' => 'Clara',
+            'last_name' => 'Abgemeldet',
+            'schoolclass' => '2A',
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'title' => 'Mathematik',
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $activeStudent->id,
+        ]);
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $canceledStudent->id,
+            'canceled_at' => now(),
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->get("/api/admin/teaching/courses/{$course->id}/performances_pdf")
+            ->assertSuccessful();
+
+        Pdf::assertRespondedWithPdf(function ($pdf): bool {
+            return $pdf->viewName === 'pdfs.teachingStudentPerformances'
+                && count($pdf->viewData['reports']) === 1
+                && $pdf->contains('Aktiv Anna')
+                && ! $pdf->contains('Abgemeldet Clara');
+        });
+    });
+
     test('returns a pdf download for one selected course student via the course print endpoint', function () {
         Pdf::fake();
 
@@ -724,6 +773,26 @@ describe('student performances pdf', function () {
 
         $this->get("/api/admin/teaching/courses/{$course->id}/performances_pdf?course_student_id={$courseStudent->id}")
             ->assertForbidden();
+    });
+
+    test('rejects selecting a canceled course student on the course print endpoint', function () {
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $courseStudent = TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $this->teacher->id,
+            'canceled_at' => now(),
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->get("/api/admin/teaching/courses/{$course->id}/performances_pdf?course_student_id={$courseStudent->id}")
+            ->assertUnprocessable();
     });
 
     test('returns a pdf download for the selected course student', function () {
@@ -795,6 +864,7 @@ describe('student performances pdf', function () {
             'course_title' => 'Mathematik',
             'school_name' => 'Course Test School',
             'schoolyear_name' => '2025/26',
+            'semester_count' => 2,
             'semesters' => [1, 2],
             'generated_at' => '16.05.2026 15:30',
             'students' => [
@@ -816,6 +886,88 @@ describe('student performances pdf', function () {
             ->assertSee('>1<', false)
             ->assertDontSee('Gesamtnote', false)
             ->assertDontSee('>J<', false);
+    });
+
+    test('grades pdf prints active course students only', function () {
+        Pdf::fake();
+
+        $activeStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'first_name' => 'Anna',
+            'last_name' => 'Aktiv',
+            'schoolclass' => '2A',
+        ]);
+        $canceledStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'first_name' => 'Clara',
+            'last_name' => 'Abgemeldet',
+            'schoolclass' => '2A',
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'title' => 'Mathematik',
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $activeStudent->id,
+            'sem_1_grade' => '2',
+        ]);
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $canceledStudent->id,
+            'sem_1_grade' => '5',
+            'canceled_at' => now(),
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->get("/api/admin/teaching/courses/{$course->id}/grades_pdf?semesters=1")
+            ->assertSuccessful();
+
+        Pdf::assertRespondedWithPdf(function ($pdf): bool {
+            return $pdf->viewName === 'pdfs.teachingGrades'
+                && count($pdf->viewData['students']) === 1
+                && $pdf->contains('Aktiv Anna')
+                && $pdf->contains('>2<')
+                && ! $pdf->contains('Abgemeldet Clara')
+                && ! $pdf->contains('>5<');
+        });
+    });
+
+    test('grades pdf view prints one-semester grades', function () {
+        $view = $this->view('pdfs.teachingGrades', [
+            'course_title' => 'Textverarbeitung',
+            'school_name' => 'Course Test School',
+            'schoolyear_name' => '2025/26',
+            'semester_count' => 1,
+            'semesters' => [1],
+            'generated_at' => '16.05.2026 15:30',
+            'students' => [
+                [
+                    'name' => 'Mustermann, Anna',
+                    'email' => 'anna@example.test',
+                    'class' => '2B',
+                    'sem_1_grade' => '5',
+                    'sem_2_grade' => '4',
+                    'sem_grade' => '2',
+                ],
+            ],
+        ]);
+
+        $view
+            ->assertSee('>Note<', false)
+            ->assertSee('>2<', false)
+            ->assertDontSee('Note Sem. 1', false)
+            ->assertDontSee('Note Sem. 2', false)
+            ->assertDontSee('>5<', false)
+            ->assertDontSee('>4<', false);
     });
 
     test('formats performance dates in the pdf data without the year', function () {

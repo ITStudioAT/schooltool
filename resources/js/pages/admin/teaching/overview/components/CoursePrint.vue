@@ -36,16 +36,11 @@
             <div class="text-h6 mb-3">Noten drucken</div>
 
             <v-checkbox
+                v-for="option in gradeSemesterOptions"
+                :key="option.value"
                 v-model="grades_semesters"
-                label="Semester 1"
-                value="1"
-                color="primary"
-                hide-details
-                density="compact" />
-            <v-checkbox
-                v-model="grades_semesters"
-                label="Semester 2"
-                value="2"
+                :label="option.label"
+                :value="option.value"
                 color="primary"
                 hide-details
                 density="compact"
@@ -85,6 +80,7 @@ export default {
             const students = Array.isArray(this.selected_course?.students_info) ? this.selected_course.students_info : []
             return students
                 .filter((student) => !!student?.course_student_id)
+                .filter((student) => !student?.canceled_at && !student?.deleted_at)
                 .map((student) => ({
                     title: `${student.last_name}, ${student.first_name}${student.schoolclass || student.class ? ` (${student.schoolclass || student.class})` : ''}`,
                     value: student.course_student_id,
@@ -104,8 +100,33 @@ export default {
         canPrintGrades() {
             return !!this.selected_course?.id && this.grades_semesters.length > 0 && this.studentOptions.length > 0
         },
+        semesterCount() {
+            return Number(this.selected_course?.teacher_teaching_schema?.grading?.semester_count) || 2
+        },
+        hasTwoSemesters() {
+            return this.semesterCount === 2
+        },
+        gradeSemesterOptions() {
+            if (!this.hasTwoSemesters) {
+                return [{ label: 'Semester', value: '1' }]
+            }
+
+            return [
+                { label: 'Semester 1', value: '1' },
+                { label: 'Semester 2', value: '2' },
+            ]
+        },
     },
     watch: {
+        gradeSemesterOptions: {
+            immediate: true,
+            handler(options) {
+                const allowedValues = options.map((option) => option.value)
+                const selectedValues = this.grades_semesters.filter((semester) => allowedValues.includes(semester))
+
+                this.grades_semesters = selectedValues.length ? selectedValues : allowedValues
+            },
+        },
         print_scope(value) {
             if (value === 'all') {
                 this.selected_course_student_id = null
