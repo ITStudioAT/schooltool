@@ -1,5 +1,21 @@
 # UPDATES
 
+## 3.41.8
+
+### Stundenplan mit Überschneidung
+
+- Konflikt-Lösungsbuttons auch beim Weiterscrollen zu weiteren TTs
+- Konflikte werden mit Wochentag und Stunde, sortiert, angezeigt
+
+### Auswahl Studierender
+
+- Ohne Auswahl wird der Dialog nicht mehr verlassen (ausser bei Abbruch)
+- UI-Design des Dialog verbessert
+
+### Auswahl/Start
+
+- UI-Design adaptiert
+
 ## 3.41.7
 
 ### Unterricht
