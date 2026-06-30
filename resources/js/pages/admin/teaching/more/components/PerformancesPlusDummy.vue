@@ -85,6 +85,22 @@
                                         />
                                     </div>
                                 </div>
+                                <div v-else class="student-semester-grades">
+                                    <div class="student-semester-grade">
+                                        <v-chip size="x-small" variant="tonal" :color="row.student.sem_grade ? 'success' : 'default'">
+                                            Sem {{ row.student.sem_grade || '–' }}
+                                        </v-chip>
+                                        <v-btn
+                                            icon="mdi-pencil"
+                                            size="x-small"
+                                            variant="text"
+                                            color="primary"
+                                            title="Semesternote bearbeiten"
+                                            :disabled="savingGrades"
+                                            @click.stop="openGradeDialog(row.student, 'sem_grade')"
+                                        />
+                                    </div>
+                                </div>
                             </td>
                             <td v-for="col in gradeColumns" :key="`${row.student_id}-${col.key}`" class="grade-cell">
                                 <div class="grade-cell-inner">
@@ -161,10 +177,10 @@
                     <v-text-field
                         v-else
                         v-model="gradeForm.sem_grade"
-                        label="Note"
+                        label="Semester"
                         density="compact"
                         variant="outlined"
-                        autofocus
+                        :autofocus="gradeDialogFocusField === 'sem_grade'"
                     />
                 </v-card-text>
                 <v-card-actions>
@@ -737,7 +753,9 @@ export default {
         },
         openGradeDialog(student, focusField = 'sem_1_grade') {
             this.selectedGradeStudent = student
-            this.gradeDialogFocusField = focusField === 'sem_2_grade' ? 'sem_2_grade' : 'sem_1_grade'
+            this.gradeDialogFocusField = ['sem_1_grade', 'sem_2_grade', 'sem_grade'].includes(focusField)
+                ? focusField
+                : 'sem_1_grade'
             this.gradeForm = {
                 sem_1_grade: student?.sem_1_grade || '',
                 sem_2_grade: student?.sem_2_grade || '',

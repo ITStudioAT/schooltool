@@ -164,9 +164,11 @@ describe('PerformancesPlusDummy semester grade editing', () => {
         expect(source).toContain('class="student-semester-grade"')
         expect(source).toContain("S1 {{ row.student.sem_1_grade || '–' }}")
         expect(source).toContain("S2 {{ row.student.sem_2_grade || '–' }}")
+        expect(source).toContain("Sem {{ row.student.sem_grade || '–' }}")
         expect(source).toContain('icon="mdi-pencil"')
         expect(source).toContain('@click.stop="openGradeDialog(row.student, \'sem_1_grade\')"')
         expect(source).toContain('@click.stop="openGradeDialog(row.student, \'sem_2_grade\')"')
+        expect(source).toContain('@click.stop="openGradeDialog(row.student, \'sem_grade\')"')
         expect(source).toContain('<v-dialog v-model="showGradeDialog" persistent max-width="420">')
         expect(source).toContain('Semesternoten bearbeiten')
     })
@@ -223,6 +225,62 @@ describe('PerformancesPlusDummy semester grade editing', () => {
         }))
         expect(selectedCourse.students_info[0].sem_1_grade).toBe('4')
         expect(selectedCourse.students_info[0].sem_2_grade).toBe('2')
+        expect(ctx.showGradeDialog).toBe(false)
+        expect(ctx.selectedGradeStudent).toBeNull()
+    })
+
+    it('saves the semester grade for single-semester courses', async () => {
+        const methods = (PerformancesPlusDummy as any).methods
+        const selectedCourse = {
+            id: 6,
+            teaching_schema_id: 'schema-1',
+            students_info: [
+                { id: 21, last_name: 'Gamma', first_name: 'Gina', sem_grade: null },
+                { id: 22, last_name: 'Delta', first_name: 'Dora', sem_grade: '3' },
+            ],
+            students: [21, 22],
+            students_deleted: [],
+        }
+        const update = vi.fn().mockResolvedValue(true)
+        const ctx: Record<string, any> = {
+            selectedCourse,
+            selectedGradeStudent: null,
+            showGradeDialog: false,
+            savingGrades: false,
+            hasTwoSemesters: false,
+            gradeDialogFocusField: 'sem_1_grade',
+            gradeForm: {
+                sem_1_grade: '',
+                sem_2_grade: '',
+                sem_grade: '',
+            },
+            courseStore: {
+                ensureCourseStudentCollections: vi.fn(),
+                update,
+            },
+            studentLabelWithClass: methods.studentLabelWithClass,
+            openGradeDialog: methods.openGradeDialog,
+            closeGradeDialog: methods.closeGradeDialog,
+        }
+
+        methods.openGradeDialog.call(ctx, selectedCourse.students_info[0], 'sem_grade')
+        expect(ctx.gradeDialogFocusField).toBe('sem_grade')
+
+        ctx.gradeForm.sem_grade = '2'
+
+        await methods.saveGradeDialog.call(ctx)
+
+        expect(update).toHaveBeenCalledWith(expect.objectContaining({
+            id: 6,
+            students: [
+                expect.objectContaining({ id: 21, sem_grade: '2' }),
+                expect.objectContaining({ id: 22, sem_grade: '3' }),
+            ],
+            students_deleted: [],
+        }))
+        expect(update.mock.calls[0][0].students[0]).not.toHaveProperty('sem_1_grade')
+        expect(update.mock.calls[0][0].students[0]).not.toHaveProperty('sem_2_grade')
+        expect(selectedCourse.students_info[0].sem_grade).toBe('2')
         expect(ctx.showGradeDialog).toBe(false)
         expect(ctx.selectedGradeStudent).toBeNull()
     })
