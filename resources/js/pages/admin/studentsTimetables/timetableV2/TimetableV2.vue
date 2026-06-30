@@ -1384,7 +1384,7 @@
 
             <v-col v-if="courseCardsVisible && selectedCourseLimitReached" cols="12" class="students-timetable-v2-card-column">
                 <v-alert type="info" variant="tonal" density="compact" icon="mdi-information-outline">
-                    <div>Maximum erreicht: Negative Kurse und Vorgesehene Kurse dürfen zusammen höchstens 10 Kurse und 30 Stunden ergeben.</div>
+                    <div>Maximum erreicht: Negative Kurse und Frühere Kurse dürfen zusammen höchstens 10 Kurse und 30 Stunden ergeben.</div>
                     <div>Wählen Sie einen Kurs ab, um einen anderen Kurs auszuwählen.</div>
                 </v-alert>
             </v-col>
@@ -1744,7 +1744,16 @@ export default {
                     items: this.storedPlannedCourseItems.map((course) => this.courseSelectionCardItem(course, 'planned')),
                     key: 'planned',
                     summaryChips: this.courseSelectionCardSummaryChips(this.storedPlannedCourseSummary, 'success'),
-                    title: 'Vorgesehene Kurse',
+                    title: 'Frühere Kurse',
+                    visible: this.courseCardsVisible,
+                },
+                {
+                    courseGroup: 'semester',
+                    emptyLabel: 'Keine aktuellen Kurse gefunden.',
+                    items: this.storedSemesterCourseItems.map((course) => this.courseSelectionCardItem(course, 'semester')),
+                    key: 'semester',
+                    summaryChips: this.courseSelectionCardSummaryChips(this.storedSemesterCourseSummary, 'success'),
+                    title: 'Aktuelle Kurse',
                     visible: this.courseCardsVisible,
                 },
                 {
@@ -1924,6 +1933,18 @@ export default {
         storedMissingCourseItems() {
             return this.normalizedMissingCourseItems(this.storedTimetableStudentContext?.courses?.failed || [])
         },
+        storedSemesterCourseItems() {
+            if (!this.storedTimetableStudentContext) {
+                return Array.isArray(this.noStudentPlannedCourseItems) ? this.noStudentPlannedCourseItems : []
+            }
+
+            const completedCourseCodes = this.courseCodeSet(this.storedCompletedCourseItems)
+            const failedCourseCodes = this.courseCodeSet(this.storedMissingCourseItems)
+
+            return this.sortedCourseItems(this.uniqueCourseItems(this.selectedStudentDefaultSemesterCourses())
+                .filter((course) => !this.courseCodeSetContainsCourse(completedCourseCodes, course))
+                .filter((course) => !this.courseCodeSetContainsCourse(failedCourseCodes, course)))
+        },
         visitedCourseItems() {
             return this.sortedCourseItems([
                 ...this.storedCompletedCourseItems.map((course) => this.visitedCourseItem(course, 'completed')),
@@ -1963,7 +1984,7 @@ export default {
         },
         storedPlannedCourseItems() {
             if (!this.storedTimetableStudentContext) {
-                return this.noStudentPlannedCourseItems
+                return []
             }
 
             const courses = this.storedTimetableStudentContext?.courses || {}
@@ -1971,14 +1992,15 @@ export default {
                 .map((course) => this.normalizedCourseCode(course.code || course.label))
                 .filter(Boolean))
             const completedCourseCodes = this.courseCodeSet(this.storedCompletedCourseItems)
+            const semesterCourseCodes = this.courseCodeSet(this.storedSemesterCourseItems)
 
             return this.sortedCourseItems(this.uniqueCourseItems([
-                ...this.selectedStudentDefaultSemesterCourses(),
                 ...this.normalizedOverviewCourseItems(courses.missing || []),
                 ...this.normalizedOverviewCourseItems(courses.planned || []),
             ])
                 .filter((course) => !this.courseCodeSetContainsCourse(completedCourseCodes, course))
                 .filter((course) => !this.courseCodeSetContainsCourse(negativeCourseCodes, course))
+                .filter((course) => !this.courseCodeSetContainsCourse(semesterCourseCodes, course))
                 .filter((course) => !this.plannedCourseBlockedByNegativeCourse(course)))
         },
         storedAdditionalCourseItems() {
@@ -1987,8 +2009,11 @@ export default {
             }
 
             const courses = this.storedTimetableStudentContext?.courses || {}
+            const selectedSemesterCourseCodes = this.courseCodeSet(this.selectedSemesterCourseLimitItems()
+                .map((courseItem) => courseItem.course))
 
-            return this.sortedCourseItems(this.uniqueCourseItems(this.normalizedOverviewCourseItems(courses.additional || [])))
+            return this.sortedCourseItems(this.uniqueCourseItems(this.normalizedOverviewCourseItems(courses.additional || []))
+                .filter((course) => !this.courseCodeSetContainsCourse(selectedSemesterCourseCodes, course)))
         },
         selectedPlannedCourseItems() {
             return this.storedPlannedCourseItems.filter((course) => this.courseItemSelected(course, 'planned'))
@@ -1998,6 +2023,9 @@ export default {
         },
         selectedMissingCourseCardItems() {
             return this.storedMissingCourseCardItems.filter((course) => this.courseItemSelected(course, 'missing'))
+        },
+        selectedSemesterCourseItems() {
+            return this.storedSemesterCourseItems.filter((course) => this.courseItemSelected(course, 'semester'))
         },
         selectedAdditionalCourseItems() {
             return this.storedAdditionalCourseItems.filter((course) => this.courseItemSelected(course, 'additional'))
@@ -2010,6 +2038,9 @@ export default {
                 ...this.storedMissingCourseCardItems
                     .filter((course) => !this.courseItemSelected(course, 'missing'))
                     .map((course) => this.moreCoursesCardItem(course, 'missing')),
+                ...this.storedSemesterCourseItems
+                    .filter((course) => !this.courseItemSelected(course, 'semester'))
+                    .map((course) => this.moreCoursesCardItem(course, 'semester')),
                 ...this.storedPlannedCourseItems
                     .filter((course) => !this.courseItemSelected(course, 'planned'))
                     .map((course) => this.moreCoursesCardItem(course, 'planned')),
@@ -2026,7 +2057,7 @@ export default {
                     title: 'Negative',
                 },
                 {
-                    courseGroups: ['planned'],
+                    courseGroups: ['semester', 'planned'],
                     key: 'planned',
                     title: 'Vorgesehene',
                 },
@@ -2158,6 +2189,9 @@ export default {
         storedMissingCourseCardSummary() {
             return this.courseItemsSummary(this.selectedMissingCourseCardItems)
         },
+        storedSemesterCourseSummary() {
+            return this.courseItemsSummary(this.selectedSemesterCourseItems)
+        },
         storedCompletedCourseSummary() {
             return this.courseItemsSummary(this.selectedCompletedCourseItems)
         },
@@ -2171,6 +2205,7 @@ export default {
             return this.courseItemsSummary([
                 ...this.selectedCompletedCourseItems,
                 ...this.selectedMissingCourseCardItems,
+                ...this.selectedSemesterCourseItems,
                 ...this.selectedPlannedCourseItems,
                 ...this.selectedAdditionalCourseItems,
             ])
@@ -2179,6 +2214,7 @@ export default {
             return this.courseItemsSummary([
                 ...this.selectedCompletedCourseItems,
                 ...this.selectedMissingCourseCardItems,
+                ...this.selectedSemesterCourseItems,
                 ...this.selectedPlannedCourseItems,
             ])
         },
@@ -2774,6 +2810,8 @@ export default {
             const courseItems = [
                 ...this.storedMissingCourseCardItems
                     .map((course) => this.courseLimitPreselectionSignaturePart(course, 'missing')),
+                ...this.storedSemesterCourseItems
+                    .map((course) => this.courseLimitPreselectionSignaturePart(course, 'semester')),
                 ...this.storedPlannedCourseItems
                     .map((course) => this.courseLimitPreselectionSignaturePart(course, 'planned')),
             ]
@@ -4984,9 +5022,17 @@ export default {
             if (!preselectionSignature) return false
 
             const currentTimetableV2Selection = this.storedTimetableV2Selection || {}
-            if (!force && currentTimetableV2Selection.courseLimitPreselectionKey === preselectionSignature) return false
-
             const courseSelections = this.courseSelectionsForCourseLimitPreselection(force ? {} : this.courseSelectionOverrides)
+            const currentSelections = JSON.stringify(this.selectionSignatureEntries(this.courseSelectionOverrides))
+            const preselectedSelections = JSON.stringify(this.selectionSignatureEntries(courseSelections))
+            if (
+                !force
+                && currentTimetableV2Selection.courseLimitPreselectionKey === preselectionSignature
+                && currentSelections === preselectedSelections
+            ) {
+                return false
+            }
+
             const timetableV2Selection = {
                 ...currentTimetableV2Selection,
                 courseLimitPreselectionKey: preselectionSignature,
@@ -5058,6 +5104,7 @@ export default {
             return [
                 ...this.storedCompletedCourseItems.map((course) => ({ course, courseGroup: 'completed' })),
                 ...this.storedMissingCourseCardItems.map((course) => ({ course, courseGroup: 'missing' })),
+                ...this.storedSemesterCourseItems.map((course) => ({ course, courseGroup: 'semester' })),
                 ...this.storedPlannedCourseItems.map((course) => ({ course, courseGroup: 'planned' })),
             ]
         },
@@ -5073,21 +5120,35 @@ export default {
             ))
         },
         courseLimitPreselectionCandidates(courseSelections = {}) {
-            return [
-                ...this.rankedCourseLimitPreselectionGroup(this.storedPlannedCourseItems, 'planned', courseSelections),
-            ]
+            return this.rankedCourseLimitPreselectionItems(this.selectedSemesterCourseLimitItems(), courseSelections)
         },
         courseLimitDuplicateModuleCourseItems(courseSelections = {}) {
+            return this.duplicateModuleCourseItems(this.plannedCourseLimitItems(), courseSelections)
+        },
+        selectedSemesterCourseLimitItems() {
             return [
-                ...this.duplicateModuleCourseItemsForGroup(this.storedPlannedCourseItems, 'planned', courseSelections),
+                ...this.storedMissingCourseCardItems
+                    .filter((course) => this.courseIncludedInSelectedStudentDefaultSemester(course))
+                    .map((course) => ({ course, courseGroup: 'missing' })),
+                ...this.storedSemesterCourseItems.map((course) => ({ course, courseGroup: 'semester' })),
+            ]
+        },
+        plannedCourseLimitItems() {
+            return [
+                ...this.storedPlannedCourseItems.map((course) => ({ course, courseGroup: 'planned' })),
             ]
         },
         duplicateModuleCourseItemsForGroup(courses, courseGroup, courseSelections = {}) {
+            return this.duplicateModuleCourseItems(
+                (Array.isArray(courses) ? courses : []).map((course) => ({ course, courseGroup })),
+                courseSelections,
+            )
+        },
+        duplicateModuleCourseItems(courseItems, courseSelections = {}) {
             const selectedCourseItemsByBase = new Map()
-            const courseItems = Array.isArray(courses) ? courses : []
+            const normalizedCourseItems = Array.isArray(courseItems) ? courseItems : []
 
-            courseItems
-                .map((course) => ({ course, courseGroup }))
+            normalizedCourseItems
                 .filter((courseItem) => this.courseSelectedBySelections(
                     courseItem.course,
                     courseItem.courseGroup,
@@ -5113,8 +5174,13 @@ export default {
                 .slice(1)
         },
         rankedCourseLimitPreselectionGroup(courses, courseGroup, courseSelections = {}) {
-            return (Array.isArray(courses) ? courses : [])
-                .map((course) => ({ course, courseGroup }))
+            return this.rankedCourseLimitPreselectionItems(
+                (Array.isArray(courses) ? courses : []).map((course) => ({ course, courseGroup })),
+                courseSelections,
+            )
+        },
+        rankedCourseLimitPreselectionItems(courseItems, courseSelections = {}) {
+            return (Array.isArray(courseItems) ? courseItems : [])
                 .filter((courseItem) => this.courseSelectedBySelections(
                     courseItem.course,
                     courseItem.courseGroup,
@@ -5160,6 +5226,9 @@ export default {
                 ...this.storedMissingCourseCardItems
                     .filter((course) => this.courseSelectedBySelections(course, 'missing', courseSelections))
                     .map((course) => this.selectedCourseListItem(course, 'missing')),
+                ...this.storedSemesterCourseItems
+                    .filter((course) => this.courseSelectedBySelections(course, 'semester', courseSelections))
+                    .map((course) => this.selectedCourseListItem(course, 'semester')),
                 ...this.storedPlannedCourseItems
                     .filter((course) => this.courseSelectedBySelections(course, 'planned', courseSelections))
                     .map((course) => this.selectedCourseListItem(course, 'planned')),
@@ -5204,8 +5273,10 @@ export default {
             }
 
             if (courseGroup === 'planned') {
-                return this.storedPlannedCourseItems
-                    .map((course) => this.moreCoursesCardItem(course, courseGroup))
+                return [
+                    ...this.storedSemesterCourseItems.map((course) => this.moreCoursesCardItem(course, 'semester')),
+                    ...this.storedPlannedCourseItems.map((course) => this.moreCoursesCardItem(course, courseGroup)),
+                ]
                     .filter((course) => this.offeredCourseItemsForSelectedCourse(course).length > 0)
             }
 
@@ -5336,6 +5407,7 @@ export default {
             return new Set([
                 ...this.storedCompletedCourseItems,
                 ...this.storedMissingCourseCardItems,
+                ...this.storedSemesterCourseItems,
                 ...this.storedPlannedCourseItems,
                 ...this.storedAdditionalCourseItems,
             ].flatMap((course) => this.courseCodeAliases({ code: course?.code || course?.label })))
@@ -5369,6 +5441,7 @@ export default {
             if (courseGroup === 'completed') return 'Abgeschlossen'
             if (courseGroup === 'missing') return 'Fehlend'
             if (courseGroup === 'more') return 'Weiterer Kurs'
+            if (courseGroup === 'semester') return 'Aktuell'
             if (courseGroup === 'planned') return 'Vorgesehen'
 
             return 'Vorgesehen'
@@ -6619,6 +6692,9 @@ export default {
             if (!selectionKey || !courseGroup) return
 
             const courseSelections = { ...this.currentCourseSelectionOverrides() }
+            const explicitlySelected = courseSelections[selectionKey] === true
+            const currentlySelected = (Array.isArray(this.selectedCourseItems) ? this.selectedCourseItems : [])
+                .some((selectedCourse) => selectedCourse?.selectionKey === selectionKey)
 
             if (selected) {
                 if (this.courseItemDefaultSelected(course, courseGroup)) {
@@ -6626,7 +6702,7 @@ export default {
                 } else {
                     courseSelections[selectionKey] = true
                 }
-            } else if (this.courseItemDefaultSelected(course, courseGroup)) {
+            } else if (this.courseItemDefaultSelected(course, courseGroup) || (currentlySelected && !explicitlySelected)) {
                 courseSelections[selectionKey] = false
             } else {
                 delete courseSelections[selectionKey]
@@ -7550,7 +7626,7 @@ export default {
             return this.courseItemDefaultSelected(course, courseGroup)
         },
         courseGroupDefaultSelected(courseGroup) {
-            return courseGroup === 'planned'
+            return courseGroup === 'semester'
         },
         courseItemDefaultSelected(course, courseGroup) {
             if (this.courseItemUnavailable(course, courseGroup)) {
@@ -7609,6 +7685,10 @@ export default {
 
             if (courseGroup === 'missing') {
                 return this.storedMissingCourseCardItems
+            }
+
+            if (courseGroup === 'semester') {
+                return this.storedSemesterCourseItems
             }
 
             if (courseGroup === 'planned') {
@@ -7718,7 +7798,7 @@ export default {
             }
         },
         courseSelectionCardItemColor(courseGroup, unavailable) {
-            if (courseGroup === 'planned' && unavailable) return 'error'
+            if (['semester', 'planned'].includes(courseGroup) && unavailable) return 'error'
 
             return 'success'
         },
@@ -7814,7 +7894,7 @@ export default {
                 : undefined
         },
         courseItemUnavailable(course, courseGroup) {
-            if (!['completed', 'missing', 'planned'].includes(courseGroup)) return false
+            if (!['completed', 'missing', 'semester', 'planned'].includes(courseGroup)) return false
             if (!this.courseOfferAvailabilityKnown()) return false
 
             return this.offeredCourseItemsForSelectedCourse(course).length === 0
@@ -7825,7 +7905,7 @@ export default {
                 || (Array.isArray(this.courseGroups) && this.courseGroups.length > 0)
         },
         courseSelectionWouldExceedLimit(course, courseGroup, courseSelections = {}) {
-            if (!['completed', 'missing', 'planned'].includes(courseGroup)) return false
+            if (!['completed', 'missing', 'semester', 'planned'].includes(courseGroup)) return false
             if (this.courseItemUnavailable(course, courseGroup)) return false
             if (this.courseSelectedBySelections(course, courseGroup, courseSelections)) return false
 
@@ -8505,9 +8585,10 @@ export default {
                 .some((courseCode) => courseCodes.has(courseCode))
         },
         courseCodeAliases(course) {
-            const compactCourseCodeAliases = new Set(this.compactCourseCodeAliasesFromValue(course?.code))
+            const courseCodeValue = String(course?.code || course?.subject || course?.label || course?.name || '').trim()
+            const compactCourseCodeAliases = new Set(this.compactCourseCodeAliasesFromValue(courseCodeValue))
 
-            return this.courseCodeAliasParts(course?.code)
+            return this.courseCodeAliasParts(courseCodeValue)
                 .map((courseCode) => this.normalizedCourseCode(courseCode))
                 .flatMap((courseCode) => {
                     if (compactCourseCodeAliases.has(courseCode)) {
@@ -10644,6 +10725,11 @@ export default {
 }
 
 .students-timetable-v2-completed-courses__item--missing {
+    border-color: rgba(22, 163, 74, 0.18);
+    background: rgba(240, 253, 244, 0.78);
+}
+
+.students-timetable-v2-completed-courses__item--semester {
     border-color: rgba(22, 163, 74, 0.18);
     background: rgba(240, 253, 244, 0.78);
 }

@@ -87,7 +87,7 @@
                     </v-chip>
                 </div>
                 <v-alert
-                    v-else
+                    v-else-if="card.emptyLabel"
                     type="info"
                     variant="tonal"
                     density="compact"
@@ -193,7 +193,9 @@ export default {
                 actions: this.displayedCardActions(card),
                 items: card.items.map((course) => this.displayedCourseItem(course)),
                 mdColumns: card.mdColumns || this.courseCardMdColumns,
-                summaryChips: this.courseSelectionCardSummaryChips(this.selectedCourseSummaryForCard(card), this.cardSummaryColor(card)),
+                summaryChips: card.summaryChipsVisible === false
+                    ? []
+                    : this.courseSelectionCardSummaryChips(this.selectedCourseSummaryForCard(card), this.cardSummaryColor(card)),
             }))
         },
         activeCourseSelections() {
@@ -212,7 +214,7 @@ export default {
         selectedCourseLimitItems() {
             return this.visibleCards
                 .flatMap((card) => card.items)
-                .filter((course) => ['completed', 'missing', 'planned'].includes(course.courseGroup))
+                .filter((course) => ['completed', 'missing', 'semester', 'planned'].includes(course.courseGroup))
                 .filter((course) => this.courseSelected(course, this.activeCourseSelections))
         },
         selectedCourseLimitSummary() {
@@ -319,13 +321,13 @@ export default {
             return undefined
         },
         courseSelectionWouldExceedLimit(course, courseSelections = this.activeCourseSelections) {
-            if (!['completed', 'missing', 'planned'].includes(course.courseGroup)) return false
+            if (!['completed', 'missing', 'semester', 'planned'].includes(course.courseGroup)) return false
             if (course.unavailable) return false
             if (this.courseSelected(course, courseSelections)) return false
 
             const selectedCourses = this.visibleCards
                 .flatMap((card) => card.items)
-                .filter((courseItem) => ['completed', 'missing', 'planned'].includes(courseItem.courseGroup))
+                .filter((courseItem) => ['completed', 'missing', 'semester', 'planned'].includes(courseItem.courseGroup))
                 .filter((courseItem) => this.courseSelected(courseItem, courseSelections))
             const selectedCourseCount = selectedCourses.length
             const selectedCourseHours = selectedCourses
@@ -561,6 +563,11 @@ export default {
 }
 
 .students-timetable-v2-completed-courses__item--missing {
+    border-color: rgba(22, 163, 74, 0.18);
+    background: rgba(240, 253, 244, 0.78);
+}
+
+.students-timetable-v2-completed-courses__item--semester {
     border-color: rgba(22, 163, 74, 0.18);
     background: rgba(240, 253, 244, 0.78);
 }
