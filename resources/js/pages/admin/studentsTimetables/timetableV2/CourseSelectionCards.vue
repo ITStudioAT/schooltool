@@ -227,6 +227,7 @@ export default {
                     courseGroup: course.courseGroup,
                     key: course.key,
                     selectionKey: course.selectionKey,
+                    selectionKeys: this.courseSelectionKeys(course),
                     unavailable: course.unavailable === true,
                 })),
                 key: card.key,
@@ -264,6 +265,17 @@ export default {
         courseSelectionSignature(courseSelections = {}) {
             return JSON.stringify(this.selectionSignatureEntries(courseSelections))
         },
+        uniqueValues(values) {
+            return (Array.isArray(values) ? values : []).filter((value, index, allValues) => allValues.indexOf(value) === index)
+        },
+        courseSelectionKeys(course) {
+            const selectionKeys = Array.isArray(course?.selectionKeys) ? course.selectionKeys : []
+
+            return this.uniqueValues([
+                course?.selectionKey,
+                ...selectionKeys,
+            ].map((selectionKey) => String(selectionKey || '').trim()).filter(Boolean))
+        },
         draftCourseSelectionOverrides() {
             return {
                 ...this.normalizedCourseSelections(this.activeCourseSelections),
@@ -281,9 +293,10 @@ export default {
         },
         courseSelected(course, courseSelections = this.activeCourseSelections) {
             if (course.unavailable) return false
-            if (!course.selectionKey) return course.defaultSelected === true
-            if (courseSelections[course.selectionKey] === true) return true
-            if (courseSelections[course.selectionKey] === false) return false
+            const selectionKeys = this.courseSelectionKeys(course)
+            if (!selectionKeys.length) return course.defaultSelected === true
+            if (selectionKeys.some((selectionKey) => courseSelections[selectionKey] === false)) return false
+            if (selectionKeys.some((selectionKey) => courseSelections[selectionKey] === true)) return true
 
             return course.defaultSelected === true
         },
@@ -352,19 +365,29 @@ export default {
             if (this.courseSelectionDisabled(course)) return
 
             const courseSelections = this.draftCourseSelectionOverrides()
+            const selectionKeys = this.courseSelectionKeys(course)
 
             if (this.courseSelected(course, courseSelections)) {
                 if (course.defaultSelected === true) {
-                    courseSelections[course.selectionKey] = false
+                    selectionKeys.forEach((selectionKey) => {
+                        courseSelections[selectionKey] = false
+                    })
                 } else {
-                    delete courseSelections[course.selectionKey]
+                    selectionKeys.forEach((selectionKey) => {
+                        delete courseSelections[selectionKey]
+                    })
                 }
             } else {
                 if (this.courseSelectionWouldExceedLimit(course, courseSelections)) return
 
                 if (course.defaultSelected === true) {
-                    delete courseSelections[course.selectionKey]
+                    selectionKeys.forEach((selectionKey) => {
+                        delete courseSelections[selectionKey]
+                    })
                 } else {
+                    selectionKeys.forEach((selectionKey) => {
+                        delete courseSelections[selectionKey]
+                    })
                     courseSelections[course.selectionKey] = true
                 }
             }
@@ -380,19 +403,29 @@ export default {
             courseItems.forEach((course) => {
                 if (!course.selectionKey) return
                 if (selected && course.unavailable) return
+                const selectionKeys = this.courseSelectionKeys(course)
 
                 if (selected) {
                     if (this.courseSelectionWouldExceedLimit(course, courseSelections)) return
 
                     if (course.defaultSelected === true) {
-                        delete courseSelections[course.selectionKey]
+                        selectionKeys.forEach((selectionKey) => {
+                            delete courseSelections[selectionKey]
+                        })
                     } else {
+                        selectionKeys.forEach((selectionKey) => {
+                            delete courseSelections[selectionKey]
+                        })
                         courseSelections[course.selectionKey] = true
                     }
                 } else if (course.defaultSelected === true) {
-                    courseSelections[course.selectionKey] = false
+                    selectionKeys.forEach((selectionKey) => {
+                        courseSelections[selectionKey] = false
+                    })
                 } else {
-                    delete courseSelections[course.selectionKey]
+                    selectionKeys.forEach((selectionKey) => {
+                        delete courseSelections[selectionKey]
+                    })
                 }
             })
 

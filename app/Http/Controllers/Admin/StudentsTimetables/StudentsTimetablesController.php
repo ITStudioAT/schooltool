@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Teaching\SchoolHourResource;
 use App\Models\Import116;
 use App\Models\StudentTimetablePublishedTimetable;
+use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use App\Services\SchoolHourService;
 use App\Services\SchoolyearService;
@@ -160,6 +161,50 @@ class StudentsTimetablesController extends Controller
                 $validated['selection'] ?? [],
                 (bool) ($validated['strict_selection'] ?? false),
             );
+
+        return response()->json([
+            'data' => $data,
+        ]);
+    }
+
+    public function timetableV2SelectionBootstrap(
+        Request $request,
+        StudentTimetableV2StateService $stateService,
+        StudentTimetableOverviewService $overviewService,
+        StudentTimetablesStudentOverviewService $studentOverviewService,
+    ): JsonResponse {
+        $authUser = $this->studentsTimetablesUser();
+
+        $validated = $request->validate([
+            'student_code' => ['nullable', 'string', 'max:255'],
+            'selection' => ['sometimes', 'array'],
+            'selection.semester' => ['nullable', 'integer', 'between:1,20'],
+            'selection.religion' => ['nullable', 'string', 'max:20'],
+            'selection.branch' => ['nullable', 'string', 'max:80'],
+            'selection.artsSubject' => ['nullable', 'string', 'max:20'],
+            'selection.arts_subject' => ['nullable', 'string', 'max:20'],
+            'selection.language' => ['nullable', 'string', 'max:20'],
+            'strict_selection' => ['sometimes', 'boolean'],
+        ]);
+
+        $state = $stateService->stateForUser($authUser);
+        $studentCode = trim((string) ($validated['student_code'] ?? data_get($state, 'transferredStudentContext.student.studentCode', '')));
+        $selection = $validated['selection'] ?? data_get($state, 'timetableV2Selection', []);
+        $selection = is_array($selection) ? $selection : [];
+        $data = [
+            'state' => $state,
+            'course_groups' => $overviewService->courseGroupsForUser($authUser),
+            'subjects' => $this->timetableV2SubjectRows($authUser),
+        ];
+
+        if ($studentCode !== '') {
+            $data['student_overview'] = $studentOverviewService->courseHistoryForStudentCode(
+                $authUser,
+                $studentCode,
+                $selection,
+                (bool) ($validated['strict_selection'] ?? $selection !== []),
+            );
+        }
 
         return response()->json([
             'data' => $data,
@@ -578,6 +623,71 @@ class StudentsTimetablesController extends Controller
         if (! $authUser->school_id) {
             abort(422, 'Bitte wählen Sie zuerst eine Schule aus.');
         }
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function timetableV2SubjectRows(User $authUser): array
+    {
+        return StudentTimetableSubjectRow::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->orderBy('sort_order')
+            ->orderBy('semester')
+            ->orderBy('branch')
+            ->get([
+                'id',
+                'semester',
+                'branch',
+                'json_code',
+                'json_subject',
+                'name',
+                'hours_per_week',
+                'is_active',
+                'source',
+            ])
+            ->map(fn (StudentTimetableSubjectRow $row): array => [
+                'id' => $row->id,
+                'semester' => $row->semester,
+                'branch' => $row->branch === 'common' ? null : $row->branch,
+                'json_code' => $row->json_code,
+                'json_subject' => $row->json_subject,
+                'name' => $this->canonicalTimetableV2SubjectName($row->name, $row->json_code, $row->json_subject),
+                'hours_per_week' => $row->hours_per_week,
+                'is_active' => $row->is_active,
+                'source' => $row->source,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function canonicalTimetableV2SubjectName(mixed $name, mixed $jsonCode = null, mixed $jsonSubject = null): ?string
+    {
+        $subjectKey = $this->subjectCodeWithoutModule($this->emptyStringToNull($jsonSubject))
+            ?: $this->subjectCodeWithoutModule($this->emptyStringToNull($jsonCode));
+
+        if ($subjectKey && mb_strtoupper($subjectKey, 'UTF-8') === 'LPT') {
+            return 'Lern- und PrÃ¤sentationstechniken';
+        }
+
+        return $this->emptyStringToNull($name);
+    }
+
+    private function subjectCodeWithoutModule(?string $code): ?string
+    {
+        if (! $code) {
+            return null;
+        }
+
+        return preg_replace('/\d+$/', '', $code) ?: $code;
+    }
+
+    private function emptyStringToNull(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+
+        return $value === '' ? null : $value;
     }
 
     private function studentsTimetablesUser(): User

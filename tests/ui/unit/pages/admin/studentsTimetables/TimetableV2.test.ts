@@ -27,14 +27,26 @@ function timetableV2Context(overrides = {}) {
         schoolHours: [],
         subjectRows: [],
         studentCompletedCoursesLoading: false,
+        selectionBootstrapLoading: false,
+        studentCompletedCoursesError: '',
+        studentOverviewActiveRequestKey: '',
+        studentOverviewLoadedRequestKey: '',
+        studentCompletedCoursesRequestId: 0,
         subjectRowsLoading: false,
         courseGroupsLoading: false,
         courseGroupsLoaded: false,
+        courseGroups: [],
+        courseGroupsRevision: 0,
+        courseGroupsError: '',
+        offeredCourseItemsCache: {},
+        offeredCourseItemsCacheCourseGroups: null,
+        subjectRowsError: '',
         schoolHoursLoading: false,
         storageRevision: 0,
         storedTimetableStudentContext: null,
         storedTimetableState: null,
         pendingStoredTimetableState: null,
+        pendingRemovedSelectedCourseKeys: {},
         draftCourseSelections: null,
         courseSelectionDraftPending: false,
         storedTimetableStateSaveRequestId: 0,
@@ -674,6 +686,11 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.moreCoursesCardItems.call(context)
             },
         },
+        moreCoursesCategoryCards: {
+            get() {
+                return TimetableV2.computed.moreCoursesCategoryCards.call(context)
+            },
+        },
         moreAdoptedCourseCards: {
             get() {
                 return TimetableV2.computed.moreAdoptedCourseCards.call(context)
@@ -747,6 +764,11 @@ function timetableV2Context(overrides = {}) {
         moreCoursesSelectionChanged: {
             get() {
                 return TimetableV2.computed.moreCoursesSelectionChanged.call(context)
+            },
+        },
+        hasPendingRemovedSelectedCourses: {
+            get() {
+                return TimetableV2.computed.hasPendingRemovedSelectedCourses.call(context)
             },
         },
         timetablePendingActionConfirmationVisible: {
@@ -966,17 +988,19 @@ describe('TimetableV2 route steps', () => {
         expect(source).not.toContain('>\n                                                    FU\n                                                </sup>')
         expect(source).toContain('v-if="selectedTimetableV2ConflictResolutionActionsVisible"')
         expect(source).toMatch(/:color="option\.color"\s+variant="tonal"\s+:prepend-icon="option\.icon"\s+:class="\{ 'students-timetable-v2-result-conflicts__action--recommended': option\.recommended \}"\s+:disabled="timetablePendingActionConfirmationVisible"\s+@click="applySelectedTimetableV2ConflictResolution\(option\)"/u)
-        expect(source).toMatch(/v-else-if="timetableCalculationVisible && !moreCoursesVisible" class="students-timetable-v2-calculation-card__actions"/u)
+        expect(source).toMatch(/v-else-if="timetableCalculationVisible && !moreCoursesCardVisible" class="students-timetable-v2-calculation-card__actions"/u)
         expect(source).toMatch(/\.students-timetable-v2-calculation-card__actions \{[\s\S]*justify-content: flex-end;[\s\S]*flex: 0 1 auto;[\s\S]*margin-left: auto;/u)
         expect(source).toMatch(/\.students-timetable-v2-calculation-card__reset-button \{[\s\S]*margin-left: 0;/u)
-        expect(source).toMatch(/class="students-timetable-v2-calculation-card__primary-actions"[\s\S]*:color="moreCoursesButtonUnavailable \? 'error' : 'primary'"\s+variant="tonal"\s+prepend-icon="mdi-plus-circle-outline"\s+:disabled="timetableCalculationLoading \|\| moreCourseAvailabilityLoading \|\| moreCoursesButtonUnavailable"\s+@click="toggleMoreCoursesCard">\s+Mehr Kurse/u)
+        expect(source).toMatch(/v-else-if="timetableCalculationVisible && !moreCoursesCardVisible"[\s\S]*class="students-timetable-v2-calculation-card__primary-actions"[\s\S]*:color="moreCoursesButtonUnavailable \? 'error' : 'primary'"\s+variant="tonal"\s+prepend-icon="mdi-plus-circle-outline"\s+:disabled="timetableCalculationLoading \|\| moreCourseAvailabilityLoading"\s+@click="toggleMoreCoursesCard">\s+Mehr Kurse/u)
         expect(source).toMatch(/:color="timetableOptionsButtonUnavailable \? 'error' : 'info'"\s+variant="tonal"\s+prepend-icon="mdi-cog-outline"\s+:disabled="timetableCalculationLoading \|\| moreCourseAvailabilityLoading \|\| timetableOptionsButtonUnavailable"\s+:aria-expanded="timetableOptionsCardVisible \? 'true' : 'false'"\s+@click="toggleTimetableOptionsCard">\s+Optionen/u)
         expect(source).toMatch(/color="warning"\s+variant="tonal"\s+prepend-icon="mdi-restore"\s+class="students-timetable-v2-calculation-card__reset-button"\s+:disabled="timetableCalculationLoading \|\| !timetableCalculationResetAvailable"\s+@click="resetTimetableCalculationChanges">\s+Zurücksetzen/u)
+        expect(source).toMatch(/v-if="moreCoursesVisible"[\s\S]*prepend-icon="mdi-close"[\s\S]*@click="cancelMoreCoursesCard">\s+Abbruch/u)
+        expect(source).toMatch(/v-if="moreCoursesVisible"[\s\S]*append-icon="mdi-check"[\s\S]*:disabled="!moreCoursesSelectionChanged \|\| timetableCalculationLoading"[\s\S]*@click="applyMoreCoursesSelection">\s+Anwenden/u)
         expect(source).toMatch(/prepend-icon="mdi-tune-variant"\s+:disabled="!courseLimitPreselectionResetAvailable"\s+@click="applyCourseLimitPreselection\(true\)">\s+Vorauswahl zurücksetzen/u)
         expect(source).toContain(':icon="timetableCalculationLoadingIcon"')
         expect(source).toContain('{{ timetableCalculationLoadingLabel }}')
         expect(source).toContain('students-timetable-v2-card-column students-timetable-v2-selected-courses-column')
-        expect(source).toContain("axios.get('/api/admin/students-timetables/timetable-v2-state')")
+        expect(source).toContain('/api/admin/students-timetables/timetable-v2-selection-bootstrap')
         expect(source).toContain("axios.put('/api/admin/students-timetables/timetable-v2-state', { state })")
         expect(source).not.toContain('localStorage')
         expect(source).toMatch(/Ausgewählte Kurse[\s\S]*v-if="adoptedTimetableVisible && !adoptedTimetableCourseRemovalPendingVisible"[\s\S]*class="students-timetable-v2-card students-timetable-v2-more-adopted-courses-card"[\s\S]*Weitere Kurse/u)
@@ -1003,7 +1027,13 @@ describe('TimetableV2 route steps', () => {
         expect(source).toMatch(/@media \(max-width: 640px\) \{[\s\S]*\.students-timetable-v2-more-adopted-courses-card__grid \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);[\s\S]*\.students-timetable-v2-more-adopted-courses-card__category \{[\s\S]*min-height: 64px;[\s\S]*\.students-timetable-v2-more-adopted-courses-card__category-title \{[\s\S]*font-size: 0\.82rem;/u)
         expect(source).toMatch(/\.students-timetable-v2-more-adopted-courses-card__course-list \{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(116px, 1fr\)\);/u)
         expect(source).toMatch(/\.students-timetable-v2-more-adopted-courses-card__course \{[\s\S]*min-height: 64px;/u)
-        expect(source).not.toContain('v-for="course in card.items"')
+        expect(source).toContain('v-for="card in moreCoursesCategoryCards"')
+        expect(source).toContain('v-for="course in card.items"')
+        expect(source).toContain("title: 'Abgeschlossene'")
+        expect(source).toContain("title: 'Negative'")
+        expect(source).toContain("title: 'Frühere'")
+        expect(source).toContain("title: 'Aktuelle'")
+        expect(source).toContain("title: 'Zusätzliche'")
         expect(source).not.toContain('{{ card.emptyLabel }}')
         expect(source).toMatch(/Ausgewählte Kurse[\s\S]*v-if="selectedTimetableOptionItems\.length"[\s\S]*class="students-timetable-v2-card students-timetable-v2-selected-options-card"[\s\S]*Optionen/u)
         expect(source).toContain('v-for="option in selectedTimetableOptionItems"')
@@ -1194,6 +1224,263 @@ describe('TimetableV2 route steps', () => {
         } finally {
             globalThis.axios = previousAxios
             vi.useRealTimers()
+        }
+    })
+
+    it('keeps a removed default semester course out of the selected card after a stale save response', async () => {
+        vi.useFakeTimers()
+
+        const previousAxios = globalThis.axios
+        const savedState = {
+            selection: {},
+            timetableV2Selection: {
+                courseSelections: {
+                    'semester:M4': false,
+                },
+            },
+            transferredStudentContext: null,
+        }
+        const staleResponseState = {
+            selection: {},
+            timetableV2Selection: {},
+            transferredStudentContext: null,
+        }
+        const axiosMock = {
+            put: vi.fn().mockResolvedValue({
+                data: {
+                    data: {
+                        state: staleResponseState,
+                    },
+                },
+            }),
+        }
+        const context = timetableV2Context({
+            saveStoredTimetableState: TimetableV2.methods.saveStoredTimetableState,
+            storedSemesterCourseItems: [
+                { code: 'M4', hours: 3, key: 'M4', label: 'M4' },
+                { code: 'D4', hours: 4, key: 'D4', label: 'D4' },
+            ],
+        })
+        globalThis.axios = axiosMock
+
+        try {
+            TimetableV2.methods.saveStoredTimetableState.call(context, savedState)
+
+            expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['D4'])
+
+            await vi.advanceTimersByTimeAsync(180)
+            await Promise.resolve()
+
+            expect(axiosMock.put).toHaveBeenCalledOnce()
+            expect(context.storedTimetableState).toBe(savedState)
+            expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['D4'])
+        } finally {
+            globalThis.axios = previousAxios
+            vi.useRealTimers()
+        }
+    })
+
+    it('loads timetable v2 selection bootstrap data in one request', async () => {
+        const previousAxios = globalThis.axios
+        const storedState = {
+            timetableV2Selection: {
+                semester: 4,
+            },
+        }
+        const courseGroups = [{ key: 'course-group-1' }]
+        const subjects = [{ id: 1, json_code: 'D1' }]
+        const axiosMock = {
+            get: vi.fn(() => Promise.resolve({
+                data: {
+                    data: {
+                        state: storedState,
+                        course_groups: courseGroups,
+                        subjects,
+                    },
+                },
+            })),
+        }
+        const context = timetableV2Context({
+            applyCourseLimitPreselection: vi.fn(),
+        })
+        globalThis.axios = axiosMock
+
+        try {
+            await TimetableV2.methods.loadTimetableV2SelectionBootstrap.call(context, '', {
+                applyStoredState: true,
+            })
+
+            expect(axiosMock.get).toHaveBeenCalledOnce()
+            expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/students-timetables/timetable-v2-selection-bootstrap', {
+                params: {},
+            })
+            expect(context.storedTimetableState).toBe(storedState)
+            expect(context.storageRevision).toBe(1)
+            expect(context.courseGroups).toBe(courseGroups)
+            expect(context.courseGroupsRevision).toBe(1)
+            expect(context.courseGroupsLoaded).toBe(true)
+            expect(context.subjectRows).toBe(subjects)
+            expect(context.selectionBootstrapLoading).toBe(false)
+            expect(context.applyCourseLimitPreselection).toHaveBeenCalledOnce()
+        } finally {
+            globalThis.axios = previousAxios
+        }
+    })
+
+    it('applies bootstrap student overview locally without scheduling an immediate state save', () => {
+        const context = timetableV2Context({
+            storedTimetableState: {
+                timetableV2Selection: {
+                    semester: 4,
+                },
+                transferredStudentContext: {
+                    student: {
+                        studentCode: '200',
+                    },
+                },
+            },
+            storedTimetableStudentContext: {
+                student: {
+                    studentCode: '200',
+                },
+            },
+            saveStoredTimetableState: vi.fn(),
+            resetDraftCourseSelections: vi.fn(),
+            applyCourseLimitPreselection: vi.fn(),
+        })
+
+        TimetableV2.methods.applyStoredStudentOverviewSummary.call(context, '200', {
+            student: {
+                student_code: '200',
+                religion: 'Ris',
+            },
+            selection: {
+                semester: 4,
+                religion: 'Ris',
+            },
+            completed_courses: [
+                {
+                    code: 'D1',
+                    grade: '1',
+                },
+            ],
+            missing_courses: [],
+            proposed_courses: [],
+            additional_courses: [],
+            automatic_course_selection: {
+                sections: [],
+            },
+        }, 'request-key', {
+            persistState: false,
+        })
+
+        expect(context.saveStoredTimetableState).not.toHaveBeenCalled()
+        expect(context.resetDraftCourseSelections).toHaveBeenCalledOnce()
+        expect(context.storageRevision).toBe(1)
+        expect(context.studentOverviewLoadedRequestKey).toBe('request-key')
+        expect(context.storedTimetableState.transferredStudentContext.student.religion).toBe('Ris')
+        expect(context.storedTimetableState.transferredStudentContext.courses.completed[0].code).toBe('D1')
+        expect(context.applyCourseLimitPreselection).toHaveBeenCalledOnce()
+    })
+
+    it('invalidates offered course cache when course groups are replaced', () => {
+        const context = timetableV2Context({
+            courseGroupsRevision: 2,
+            offeredCourseItemsCache: {
+                '2|D1': [{ key: 'old-offer' }],
+            },
+        })
+        const courseGroups = [{ key: 'new-offer' }]
+
+        TimetableV2.methods.replaceCourseGroups.call(context, courseGroups)
+
+        expect(context.courseGroups).toBe(courseGroups)
+        expect(context.courseGroupsRevision).toBe(3)
+        expect(context.offeredCourseItemsCache).toEqual({})
+        expect(context.offeredCourseItemsCacheCourseGroups).toBe(courseGroups)
+    })
+
+    it('loads stored student overview through the selection bootstrap without a recursive reload', async () => {
+        const previousAxios = globalThis.axios
+        const axiosMock = {
+            get: vi.fn(() => Promise.resolve({
+                data: {
+                    data: {
+                        state: null,
+                        course_groups: [],
+                        subjects: [],
+                        student_overview: {
+                            student: {
+                                student_code: '200',
+                                religion: 'Ris',
+                            },
+                            selection: {
+                                semester: 4,
+                                religion: 'Ris',
+                                language: 'F',
+                                branch: 'gymnasial',
+                                arts_subject: 'ME',
+                            },
+                            completed_courses: [
+                                {
+                                    code: 'D1',
+                                    grade: '1',
+                                },
+                            ],
+                            missing_courses: [],
+                            proposed_courses: [],
+                            additional_courses: [],
+                            automatic_course_selection: {
+                                sections: [],
+                            },
+                        },
+                    },
+                },
+            })),
+        }
+        const context = timetableV2Context({
+            storedTimetableState: {
+                timetableV2Selection: {
+                    semester: 4,
+                },
+                transferredStudentContext: {
+                    student: {
+                        studentCode: '200',
+                    },
+                },
+            },
+            storedTimetableStudentContext: {
+                student: {
+                    studentCode: '200',
+                },
+            },
+            applyStoredStudentOverviewSummary: vi.fn(),
+            loadTimetableV2SelectionBootstrap: TimetableV2.methods.loadTimetableV2SelectionBootstrap,
+        })
+        globalThis.axios = axiosMock
+
+        try {
+            await TimetableV2.methods.loadStoredStudentOverview.call(context, '200', {
+                strictSelection: false,
+            })
+
+            expect(axiosMock.get).toHaveBeenCalledOnce()
+            expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/students-timetables/timetable-v2-selection-bootstrap', {
+                params: {
+                    student_code: '200',
+                    strict_selection: 0,
+                    selection: {
+                        semester: 4,
+                    },
+                },
+            })
+            expect(context.loadStoredStudentOverview).not.toHaveBeenCalled()
+            expect(context.applyStoredStudentOverviewSummary).toHaveBeenCalledOnce()
+            expect(context.applyStoredStudentOverviewSummary.mock.calls[0][0]).toBe('200')
+            expect(context.applyStoredStudentOverviewSummary.mock.calls[0][1].student.religion).toBe('Ris')
+            expect(context.applyStoredStudentOverviewSummary.mock.calls[0][2]).toContain('"studentCode":"200"')
+        } finally {
+            globalThis.axios = previousAxios
         }
     })
 
@@ -1561,6 +1848,7 @@ describe('TimetableV2 route steps', () => {
                 },
             },
             timetableCalculationVisible: true,
+            timetableStartMode: 'student',
             timetableV2Step: 'timetable-calculation',
         })
 
@@ -1601,6 +1889,7 @@ describe('TimetableV2 route steps', () => {
                 ],
             },
             timetableCalculationVisible: true,
+            timetableStartMode: 'student',
             timetableV2Step: 'timetable-calculation',
         })
 
@@ -1757,6 +2046,48 @@ describe('TimetableV2 route steps', () => {
         expect(optionsContext.selectedCourseItemsDisabled).toBe(true)
         expect(optionsContext.selectedCourseItemsDeletable).toBe(false)
         expect(optionsContext.selectedTimetableOptionItemsDeletable).toBe(false)
+    })
+
+    it('ignores selected course chip actions while the more courses picker is open', () => {
+        const saveStoredTimetableState = vi.fn()
+        const context = timetableV2Context({
+            moreCoursesVisible: true,
+            moreCoursesCardVisible: true,
+            saveStoredTimetableState,
+            selectedReviewCourseKey: 'planned:M1',
+            storedPlannedCourseItems: [
+                { code: 'D1', hours: 3, key: 'D1', label: 'D1' },
+                { code: 'M1', hours: 4, key: 'M1', label: 'M1' },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    courseSelections: {
+                        'planned:D1': true,
+                        'planned:M1': true,
+                    },
+                },
+                transferredStudentContext: null,
+            },
+            timetableV2Step: 'timetable-calculation',
+        })
+        const selectedCourse = TimetableV2.methods.selectedCourseListItem.call(
+            context,
+            context.storedPlannedCourseItems[0],
+            'planned',
+        )
+
+        expect(context.selectedCourseItemsDisabled).toBe(true)
+        expect(context.selectedCourseItemsDeletable).toBe(false)
+        expect(TimetableV2.methods.selectedCourseItemPassive.call(context)).toBe(true)
+
+        TimetableV2.methods.selectReviewCourse.call(context, selectedCourse)
+        TimetableV2.methods.removeSelectedCourseItem.call(context, selectedCourse)
+
+        expect(context.selectedReviewCourseKey).toBe('planned:M1')
+        expect(context.moreCoursesVisible).toBe(true)
+        expect(context.moreCoursesCardVisible).toBe(true)
+        expect(saveStoredTimetableState).not.toHaveBeenCalled()
     })
 
     it('locks non-confirmation actions while changes are waiting for apply or cancel', () => {
@@ -2132,6 +2463,42 @@ describe('TimetableV2 route steps', () => {
         expect(source).not.toContain("'students-timetable-v2-selected-courses-card__course--offered-deselected': moreCourseOfferedCourseItemsAllDeselected(course)")
         expect(source).toContain("'students-timetable-v2-more-courses-card__course--unavailable': moreCourseUnavailable(course)")
         expect(source).toMatch(/@click="toggleMoreCourseOffers\(course\)"/u)
+    })
+
+    it('shows five category cards in the more courses card', () => {
+        const context = timetableV2Context({
+            courseSelectionOverrides: {
+                'additional:GS1': true,
+                'planned:GW1': false,
+            },
+            storedAdditionalCourseItems: [
+                { code: 'GS1', hours: 4, label: 'GS1' },
+            ],
+            storedCompletedCourseItems: [
+                { code: 'BU1', grade: '1', label: 'BU1' },
+            ],
+            storedMissingCourseCardItems: [
+                { code: 'M1', hours: 3, label: 'M1' },
+            ],
+            storedPlannedCourseItems: [
+                { code: 'GW1', hours: 4, label: 'GW1' },
+            ],
+            storedSemesterCourseItems: [
+                { code: 'D1', hours: 3, label: 'D1' },
+            ],
+        })
+
+        expect(context.moreCoursesCategoryCards.map((card) => ({
+            itemLabels: card.items.map((course) => course.label),
+            key: card.key,
+            title: card.title,
+        }))).toEqual([
+            { itemLabels: ['BU1'], key: 'completed', title: 'Abgeschlossene' },
+            { itemLabels: ['M1'], key: 'missing', title: 'Negative' },
+            { itemLabels: ['GW1'], key: 'planned', title: 'Frühere' },
+            { itemLabels: [], key: 'semester', title: 'Aktuelle' },
+            { itemLabels: [], key: 'additional', title: 'Zusätzliche' },
+        ])
     })
 
     it('renders a red close button for offered courses in the more courses card', () => {
@@ -2838,6 +3205,62 @@ describe('TimetableV2 route steps', () => {
         })
     })
 
+    it('clears stale course selection aliases when reselecting a default course', () => {
+        const semesterCourse = {
+            color: 'success',
+            courseGroup: 'semester',
+            defaultSelected: true,
+            hoursNumber: 3,
+            key: 'subject-row-m4',
+            label: 'M4',
+            selectionKey: 'semester:M4',
+            selectionKeys: ['semester:M4', 'semester:subject-row-m4'],
+            unavailable: false,
+        }
+        const context = {
+            ...CourseSelectionCards.methods,
+            $emit: vi.fn(),
+            cards: [
+                {
+                    courseGroup: 'semester',
+                    items: [semesterCourse],
+                    key: 'semester',
+                    visible: true,
+                },
+            ],
+            courseSelections: {
+                'semester:M4': true,
+                'semester:subject-row-m4': false,
+            },
+            draftCourseSelections: null,
+        }
+
+        Object.defineProperties(context, {
+            activeCourseSelections: {
+                get() {
+                    return CourseSelectionCards.computed.activeCourseSelections.call(context)
+                },
+            },
+            courseSelectionDraftChanged: {
+                get() {
+                    return CourseSelectionCards.computed.courseSelectionDraftChanged.call(context)
+                },
+            },
+            visibleCards: {
+                get() {
+                    return CourseSelectionCards.computed.visibleCards.call(context)
+                },
+            },
+        })
+
+        expect(CourseSelectionCards.methods.courseSelected.call(context, semesterCourse)).toBe(false)
+
+        CourseSelectionCards.methods.toggleCourse.call(context, semesterCourse)
+
+        expect(context.draftCourseSelections).toEqual({})
+        expect(context.$emit).toHaveBeenCalledWith('draft-selections-change', {})
+    })
+
     it('lists visited completed and failed courses alphabetically with grades and status colors', () => {
         const context = timetableV2Context({
             storedTimetableStudentContext: {
@@ -3299,9 +3722,47 @@ describe('TimetableV2 route steps', () => {
         expect(context.storedSemesterCourseItems.map((course) => course.code)).toEqual(['D4', 'M4'])
         expect(context.storedPlannedCourseItems.map((course) => course.code)).toEqual(['M3'])
         expect(context.selectedMissingCourseCardItems.map((course) => course.code)).toEqual(['BU2'])
-        expect(context.selectedSemesterCourseItems.map((course) => course.code)).toEqual(['D4', 'M4'])
+        expect(context.selectedSemesterCourseItems.map((course) => course.code)).toEqual([])
         expect(context.selectedPlannedCourseItems.map((course) => course.code)).toEqual([])
-        expect(context.selectedCourseItems.map((course) => course.code)).toEqual(['BU2', 'D4', 'M4'])
+        expect(context.selectedCourseItems.map((course) => course.code)).toEqual(['BU2'])
+    })
+
+    it('does not preselect a current semester course when the previous module is unfinished', () => {
+        const context = timetableV2Context({
+            courseSelectionOverrides: {
+                'semester:D4': true,
+            },
+            storedTimetableStudentContext: {
+                student: {
+                    semesterLabel: 'Semester 6',
+                },
+                courses: {
+                    completed: [
+                        { code: 'D1', grade: '2' },
+                        { code: 'D2', grade: '3' },
+                    ],
+                    failed: [],
+                    missing: [],
+                    planned: [
+                        { code: 'D3', hours: 3, label: 'D3' },
+                    ],
+                },
+            },
+            subjectRows: [
+                { id: 1, semester: 3, branch: 'common', json_code: 'D3', json_subject: 'D', name: 'Deutsch 3', hours_per_week: 3 },
+                { id: 2, semester: 6, branch: 'common', json_code: 'D4', json_subject: 'D', name: 'Deutsch 4', hours_per_week: 3 },
+                { id: 3, semester: 6, branch: 'common', json_code: 'M4', json_subject: 'M', name: 'Mathematik 4', hours_per_week: 4 },
+            ],
+        })
+
+        expect(context.storedSemesterCourseItems.map((course) => course.code)).toEqual(['D4', 'M4'])
+        expect(context.storedPlannedCourseItems.map((course) => course.code)).toEqual(['D3'])
+        expect(context.selectedSemesterCourseItems.map((course) => course.code)).toEqual(['M4'])
+        expect(context.courseItemDefaultSelected(context.storedSemesterCourseItems[0], 'semester')).toBe(false)
+        expect(context.courseItemSelected(context.storedSemesterCourseItems[0], 'semester')).toBe(false)
+        expect(context.courseSelectedBySelections(context.storedSemesterCourseItems[0], 'semester', {
+            'semester:D4': true,
+        })).toBe(false)
     })
 
     it('lists future planned courses as additional courses for the selected student semester', () => {
@@ -3448,7 +3909,7 @@ describe('TimetableV2 route steps', () => {
         expect(disabledSemesterCourses).toHaveLength(1)
     })
 
-    it('clears stale unselected current semester courses when applying preselection', () => {
+    it('keeps unselected current semester courses when applying preselection', () => {
         const storedTimetableState = {
             selection: {},
             timetableV2Selection: {
@@ -3480,13 +3941,11 @@ describe('TimetableV2 route steps', () => {
 
         TimetableV2.methods.applyCourseLimitPreselection.call(context)
 
-        expect(saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
-            timetableV2Selection: expect.objectContaining({
-                courseSelections: {
-                    'additional:GW2': true,
-                },
-            }),
-        }))
+        expect(saveStoredTimetableState).not.toHaveBeenCalled()
+        expect(context.courseSelectionsForCourseLimitPreselection(context.courseSelectionOverrides)).toEqual({
+            'additional:GW2': true,
+            'semester:D4': false,
+        })
     })
 
     it('does not list negative courses as planned courses', () => {
@@ -3571,8 +4030,8 @@ describe('TimetableV2 route steps', () => {
         expect(context.storedMissingCourseCardItems.map((course) => course.code)).toEqual(['E2'])
         expect(context.selectedStudentDefaultSemesterCourses().map((course) => course.code)).toEqual(['E3', 'E4'])
         expect(context.storedSemesterCourseItems.map((course) => course.code)).toEqual(['E3'])
-        expect(context.selectedSemesterCourseItems.map((course) => course.code)).toEqual(['E3'])
-        expect(context.courseItemSelected(semesterE3Course, 'semester')).toBe(true)
+        expect(context.selectedSemesterCourseItems.map((course) => course.code)).toEqual([])
+        expect(context.courseItemSelected(semesterE3Course, 'semester')).toBe(false)
     })
 
     it('keeps a follow-up course out of current courses when an earlier prerequisite is negative', () => {
@@ -3750,6 +4209,86 @@ describe('TimetableV2 route steps', () => {
         expect(context.timetableV2Step).toBe('course-review')
         expect(context.loadCourseGroups).toHaveBeenCalledOnce()
         expect(context.loadSchoolHours).toHaveBeenCalledOnce()
+    })
+
+    it('keeps a deselected subject-row semester course out of course review from selection', () => {
+        let context: ReturnType<typeof timetableV2Context>
+        const storedTimetableState = {
+            selection: {},
+            timetableV2Selection: {},
+            transferredStudentContext: null,
+        }
+        const saveStoredTimetableState = vi.fn((state) => {
+            context.storedTimetableState = state
+        })
+
+        context = timetableV2Context({
+            courseCardsVisible: true,
+            draftCourseSelections: {
+                'semester:M4': false,
+                'semester:subject-row-m4': true,
+            },
+            saveStoredTimetableState,
+            storedSemesterCourseItems: [
+                { code: 'CH1', hours: 3, key: 'CH1', label: 'CH1' },
+                { hours: 3, key: 'subject-row-m4', label: 'M4' },
+            ],
+            storedTimetableState,
+            storedTimetableStateForSaving() {
+                return context.storedTimetableState
+            },
+        })
+        const m4CardItem = TimetableV2.methods.courseSelectionCardItem.call(
+            context,
+            context.storedSemesterCourseItems[1],
+            'semester',
+        )
+
+        expect(m4CardItem.selectionKey).toBe('semester:M4')
+        expect(m4CardItem.selectionKeys).toEqual(['semester:M4', 'semester:subject-row-m4'])
+        expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['CH1'])
+
+        TimetableV2.methods.openCourseReview.call(context)
+
+        expect(saveStoredTimetableState).toHaveBeenCalledOnce()
+        expect(context.storedTimetableState.timetableV2Selection.courseSelections).toEqual({
+            'semester:M4': false,
+            'semester:subject-row-m4': true,
+        })
+        expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['CH1'])
+        expect(context.timetableV2Step).toBe('course-review')
+    })
+
+    it('preserves deselected default semester courses when refreshing course limit preselection', () => {
+        const context = timetableV2Context({
+            courseCardsVisible: true,
+            storedSemesterCourseItems: [
+                { code: 'CH1', hours: 3, key: 'CH1', label: 'CH1' },
+                { hours: 3, key: 'subject-row-m4', label: 'M4' },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {},
+                transferredStudentContext: null,
+            },
+        })
+
+        const courseSelections = TimetableV2.methods.courseSelectionsForCourseLimitPreselection.call(context, {
+            'semester:CH1': true,
+            'semester:M4': false,
+            'semester:subject-row-m4': false,
+        })
+
+        expect(courseSelections).toEqual({
+            'semester:M4': false,
+            'semester:subject-row-m4': false,
+        })
+        expect(TimetableV2.methods.courseSelectedBySelections.call(
+            context,
+            context.storedSemesterCourseItems[1],
+            'semester',
+            courseSelections,
+        )).toBe(false)
     })
 
     it('resets preselection across all course cards', () => {
@@ -4350,6 +4889,31 @@ describe('TimetableV2 route steps', () => {
         context.moreCourseAvailabilityByKey[context.moreCoursesCardItems[0].selectionKey] = true
 
         expect(context.moreCoursesButtonUnavailable).toBe(false)
+    })
+
+    it('keeps the more courses card openable when every more course is impossible', () => {
+        const context = timetableV2Context({
+            courseGroups: [
+                { class_name: 'INF2-A', course: 'INF2', hour: 2, title: 'INF2', weekday: 2 },
+                { class_name: 'GS1-A', course: 'GS1', hour: 3, title: 'GS1', weekday: 3 },
+            ],
+            moreCourseAvailabilitySignature: '',
+            storedAdditionalCourseItems: [
+                { code: 'INF2', hours: 2, key: 'INF2', label: 'INF2' },
+                { code: 'GS1', hours: 4, key: 'GS1', label: 'GS1' },
+            ],
+        })
+        context.moreCourseAvailabilitySignature = TimetableV2.methods.moreCourseAvailabilityCurrentSignature.call(context)
+        context.moreCourseAvailabilityByKey = Object.fromEntries(
+            context.moreCoursesCardItems.map((course) => [course.selectionKey, false])
+        )
+
+        expect(context.moreCoursesButtonUnavailable).toBe(true)
+
+        TimetableV2.methods.toggleMoreCoursesCard.call(context)
+
+        expect(context.moreCoursesVisible).toBe(true)
+        expect(context.moreCoursesCardVisible).toBe(true)
     })
 
     it('loads more course availability from the batch result', async () => {
@@ -5026,13 +5590,15 @@ describe('TimetableV2 route steps', () => {
         expect(calculateTimetables).toHaveBeenCalledOnce()
     })
 
-    it('moves a removed selected course into more courses and restores it on cancel', () => {
+    it('moves a removed selected course into pending actions and restores it on cancel', () => {
         let context: ReturnType<typeof timetableV2Context>
+        const calculateTimetables = vi.fn()
         const saveStoredTimetableState = vi.fn((state) => {
             context.storedTimetableState = state
         })
 
         context = timetableV2Context({
+            calculateTimetables,
             saveStoredTimetableState,
             storedPlannedCourseItems: [
                 { code: 'D1', hours: 3, key: 'D1', label: 'D1' },
@@ -5052,6 +5618,7 @@ describe('TimetableV2 route steps', () => {
                 return context.storedTimetableState
             },
             timetableCalculationVisible: true,
+            timetableV2Step: 'timetable-calculation',
         })
         const selectedCourse = TimetableV2.methods.selectedCourseListItem.call(context, context.storedPlannedCourseItems[0], 'planned')
 
@@ -5063,7 +5630,9 @@ describe('TimetableV2 route steps', () => {
         expect(context.storedTimetableState.timetableV2Selection.courseSelections).toEqual({
             'planned:GW1': true,
         })
+        expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['GW1'])
         expect(context.moreCoursesCardItems.map((course) => course.label)).toContain('D1')
+        expect(calculateTimetables).not.toHaveBeenCalled()
 
         TimetableV2.methods.cancelMoreCoursesCard.call(context)
 
@@ -5074,6 +5643,199 @@ describe('TimetableV2 route steps', () => {
         expect(context.moreCoursesVisible).toBe(false)
         expect(context.moreCoursesCardVisible).toBe(false)
         expect(context.moreCoursesCardItems.map((course) => course.label)).not.toContain('D1')
+    })
+
+    it('stages removal of a default selected semester course and closes the picker after applying', async () => {
+        let context: ReturnType<typeof timetableV2Context>
+        const calculateTimetables = vi.fn(() => {
+            context.moreCoursesVisible = true
+            context.moreCoursesCardVisible = true
+
+            return Promise.resolve({})
+        })
+        const saveStoredTimetableState = vi.fn((state) => {
+            context.storedTimetableState = state
+        })
+
+        context = timetableV2Context({
+            $route: {
+                path: '/admin/students-timetables/timetable-v2/overview',
+                query: {
+                    mode: 'student',
+                    moreCourses: '1',
+                    step: 'timetable-calculation',
+                    tt: '1',
+                },
+            },
+            calculateTimetables,
+            saveStoredTimetableState,
+            storedSemesterCourseItems: [
+                { hours: 3, key: 'subject-row-m4', label: 'M4' },
+                { code: 'D4', hours: 4, key: 'D4', label: 'D4' },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {},
+                transferredStudentContext: null,
+            },
+            storedTimetableStateForSaving() {
+                return context.storedTimetableState
+            },
+            timetableCalculationVisible: true,
+            timetableStartMode: 'student',
+            timetableV2Step: 'timetable-calculation',
+        })
+        const selectedCourse = TimetableV2.methods.selectedCourseListItem.call(context, context.storedSemesterCourseItems[0], 'semester')
+
+        TimetableV2.methods.removeSelectedCourseItem.call(context, selectedCourse)
+
+        expect(context.moreCoursesVisible).toBe(true)
+        expect(context.moreCoursesCardVisible).toBe(false)
+        expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['D4'])
+        expect(context.storedTimetableState.timetableV2Selection.courseSelections).toEqual({
+            'semester:subject-row-m4': false,
+            'semester:M4': false,
+        })
+        expect(TimetableV2.methods.courseSelectedBySelections.call(
+            context,
+            { code: 'M4', hours: 3, key: 'M4', label: 'M4' },
+            'semester',
+            context.storedTimetableState.timetableV2Selection.courseSelections,
+        )).toBe(false)
+        expect(context.moreCoursesSelectionChanged).toBe(true)
+        expect(context.moreCoursesButtonUnavailable).toBe(false)
+        expect(context.timetableCalculationResetAvailable).toBe(true)
+
+        TimetableV2.methods.toggleMoreCoursesCard.call(context)
+
+        expect(context.moreCoursesVisible).toBe(true)
+        expect(context.moreCoursesCardVisible).toBe(true)
+        expect(context.moreCoursesSelectionChanged).toBe(true)
+
+        await TimetableV2.methods.applyMoreCoursesSelection.call(context)
+
+        expect(context.moreCoursesVisible).toBe(false)
+        expect(context.moreCoursesCardVisible).toBe(false)
+        expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['D4'])
+        expect(context.$router.replace).toHaveBeenLastCalledWith({
+            path: '/admin/students-timetables/timetable-v2/overview',
+            query: {
+                mode: 'student',
+                step: 'timetable-calculation',
+                tt: '1',
+            },
+        })
+        expect(calculateTimetables).toHaveBeenCalledOnce()
+    })
+
+    it('hides a removed selected course immediately while the state save is still pending', () => {
+        const saveStoredTimetableState = vi.fn()
+        const context = timetableV2Context({
+            saveStoredTimetableState,
+            storedSemesterCourseItems: [
+                { hours: 3, key: 'subject-row-m4', label: 'M4' },
+                { code: 'D4', hours: 4, key: 'D4', label: 'D4' },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {},
+                transferredStudentContext: null,
+            },
+            timetableCalculationVisible: true,
+            timetableStartMode: 'student',
+            timetableV2Step: 'timetable-calculation',
+        })
+        const selectedCourse = TimetableV2.methods.selectedCourseListItem.call(context, context.storedSemesterCourseItems[0], 'semester')
+
+        expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['D4', 'M4'])
+
+        TimetableV2.methods.removeSelectedCourseItem.call(context, selectedCourse)
+
+        expect(saveStoredTimetableState).toHaveBeenCalledOnce()
+        expect(context.pendingRemovedSelectedCourseKeys).toEqual({
+            'semester:M4': true,
+            'semester:subject-row-m4': true,
+        })
+        expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['D4'])
+        expect(context.moreCoursesSelectionChanged).toBe(true)
+    })
+
+    it('uses the course code instead of an internal subject-row key for selected semester courses', () => {
+        const context = timetableV2Context({
+            storedSemesterCourseItems: [
+                { hours: 3, key: 'subject-row-m4', label: 'M4' },
+                { code: 'D4', hours: 4, key: 'D4', label: 'D4' },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {},
+                transferredStudentContext: null,
+            },
+            timetableCalculationVisible: true,
+            timetableStartMode: 'student',
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['D4', 'M4'])
+        expect(payload.selected_course_keys).toEqual(['D4', 'M4'])
+        expect(payload.selected_course_keys).not.toContain('subject-row-m4')
+    })
+
+    it('keeps a removed default selected semester course out of the recalculation payload', async () => {
+        let context: ReturnType<typeof timetableV2Context>
+        let requestPayload
+        const saveStoredTimetableState = vi.fn((state) => {
+            context.storedTimetableState = state
+        })
+
+        context = timetableV2Context({
+            calculateTimetables: TimetableV2.methods.calculateTimetables,
+            requestTimetableV2Calculation: vi.fn((options = {}) => {
+                requestPayload = TimetableV2.methods.timetableV2CalculationPayload.call(context, options)
+
+                return Promise.resolve({
+                    data: {
+                        data: {
+                            full_green_timetable_count: 1,
+                            green_timetable_count: 0,
+                            selected_timetable: { number: 1, type: 'full_green' },
+                        },
+                    },
+                })
+            }),
+            saveStoredTimetableState,
+            storedSemesterCourseItems: [
+                { hours: 3, key: 'subject-row-m4', label: 'M4' },
+                { code: 'D4', hours: 4, key: 'D4', label: 'D4' },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {},
+                transferredStudentContext: null,
+            },
+            storedTimetableStateForSaving() {
+                return context.storedTimetableState
+            },
+            timetableCalculationResult: {
+                full_green_timetable_count: 1,
+                green_timetable_count: 0,
+                selected_timetable: { number: 1, type: 'full_green' },
+            },
+            timetableCalculationVisible: true,
+            timetableStartMode: 'student',
+            timetableV2Step: 'timetable-calculation',
+        })
+        const selectedCourse = TimetableV2.methods.selectedCourseListItem.call(context, context.storedSemesterCourseItems[0], 'semester')
+
+        TimetableV2.methods.removeSelectedCourseItem.call(context, selectedCourse)
+        await TimetableV2.methods.applyMoreCoursesSelection.call(context)
+
+        expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['D4'])
+        expect(requestPayload.selected_course_keys).toEqual(['D4'])
+        expect(requestPayload.selected_course_keys).not.toContain('M4')
+        expect(context.timetableCalculationResult.full_green_timetable_count).toBe(1)
     })
 
     it('applies removed selected courses by recalculating the timetable', () => {
@@ -6588,17 +7350,49 @@ describe('TimetableV2 route steps', () => {
         })
     })
 
+    it('closes stale more courses card state when restoring a calculation route without more courses', () => {
+        const context = timetableV2Context({
+            $route: {
+                path: '/admin/students-timetables/timetable-v2/overview',
+                query: {
+                    mode: 'student',
+                    step: 'timetable-calculation',
+                    tt: '1',
+                },
+            },
+            moreCoursesVisible: false,
+            moreCoursesCardVisible: true,
+            selectedMoreCourseKey: 'planned:M4',
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        TimetableV2.methods.applyTimetableV2RouteFromRoute.call(context, {
+            restoreEffects: false,
+        })
+
+        expect(context.timetableV2Step).toBe('timetable-calculation')
+        expect(context.moreCoursesVisible).toBe(false)
+        expect(context.moreCoursesCardVisible).toBe(false)
+        expect(context.selectedMoreCourseKey).toBe('')
+        expect(context.$router.replace).not.toHaveBeenCalled()
+    })
+
     it('does not preload review-only data while mounted on the selection step', async () => {
         const context = timetableV2Context({
             initialRouteLoading: true,
+            loadTimetableV2SelectionBootstrap: vi.fn(() => Promise.resolve()),
             loadSubjectRows: vi.fn(() => Promise.resolve()),
         })
 
         await TimetableV2.mounted.call(context)
 
         expect(context.initialRouteLoading).toBe(false)
-        expect(context.loadSubjectRows).toHaveBeenCalledOnce()
-        expect(context.loadStoredStudentOverview).toHaveBeenCalledWith(null)
+        expect(context.loadTimetableV2SelectionBootstrap).toHaveBeenCalledWith('', {
+            applyStoredState: true,
+            persistStudentOverviewState: false,
+        })
+        expect(context.loadSubjectRows).not.toHaveBeenCalled()
+        expect(context.loadStoredStudentOverview).not.toHaveBeenCalled()
         expect(context.loadCourseGroups).not.toHaveBeenCalled()
         expect(context.loadSchoolHours).not.toHaveBeenCalled()
     })
@@ -6606,11 +7400,19 @@ describe('TimetableV2 route steps', () => {
     it('loads robot students on mount when a restored selected student is missing email data', async () => {
         const context = timetableV2Context({
             loadRobotStudents: vi.fn(() => Promise.resolve()),
-            loadSubjectRows: vi.fn(() => Promise.resolve()),
-            storedTimetableStudentContext: {
+            loadTimetableV2SelectionBootstrap: vi.fn(() => Promise.resolve()),
+            storedTimetableState: {
+                transferredStudentContext: {
                 student: {
                     studentCode: '200',
                     label: '5C · ZADRA Isabella · Semester 5',
+                },
+            },
+            },
+            storedTimetableStudentContext: {
+                student: {
+                    studentCode: '200',
+                    label: '5C Â· ZADRA Isabella Â· Semester 5',
                 },
             },
         })
@@ -6618,7 +7420,11 @@ describe('TimetableV2 route steps', () => {
         await TimetableV2.mounted.call(context)
 
         expect(context.loadRobotStudents).toHaveBeenCalledOnce()
-        expect(context.loadStoredStudentOverview).toHaveBeenCalledWith('200')
+        expect(context.loadTimetableV2SelectionBootstrap).toHaveBeenCalledWith('', {
+            applyStoredState: true,
+            persistStudentOverviewState: false,
+        })
+        expect(context.loadStoredStudentOverview).not.toHaveBeenCalled()
     })
 
     it('keeps review-only loaders out of the selection page loading state', () => {
@@ -8432,6 +9238,7 @@ describe('TimetableV2 route steps', () => {
         expect(context.saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
             timetableV2Selection: expect.objectContaining({
                 courseSelections: {
+                    'planned:D1': false,
                     'planned:subject-row-1': false,
                 },
             }),

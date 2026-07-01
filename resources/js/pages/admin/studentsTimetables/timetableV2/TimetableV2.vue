@@ -111,7 +111,7 @@
                                 class="students-timetable-v2-selected-courses-card__course"
                                 :class="{
                                     'students-timetable-v2-selected-courses-card__course--active': selectedCourseItemActive(course),
-                                    'students-timetable-v2-selected-courses-card__course--passive': !selectedCourseItemsClickable || selectedCourseItemsDisabled,
+                                    'students-timetable-v2-selected-courses-card__course--passive': selectedCourseItemPassive(),
                                     'students-timetable-v2-selected-courses-card__course--offered-partial': selectedCourseItemOfferStatusVisible && offeredCourseItemsPartlySelected(course),
                                     'students-timetable-v2-selected-courses-card__course--offered-deselected': selectedCourseItemOfferStatusVisible && offeredCourseItemsAllDeselected(course),
                                     'students-timetable-v2-selected-courses-card__course--conflict': selectedCourseItemHasConflict(course),
@@ -451,14 +451,14 @@
                                 Anwenden
                             </v-btn>
                         </span>
-                        <span v-else-if="timetableCalculationVisible && !moreCoursesVisible" class="students-timetable-v2-calculation-card__actions">
+                        <span v-else-if="timetableCalculationVisible && !moreCoursesCardVisible" class="students-timetable-v2-calculation-card__actions">
                             <span class="students-timetable-v2-calculation-card__primary-actions">
                                 <v-btn
                                     size="large"
                                     :color="moreCoursesButtonUnavailable ? 'error' : 'primary'"
                                     variant="tonal"
                                     prepend-icon="mdi-plus-circle-outline"
-                                    :disabled="timetableCalculationLoading || moreCourseAvailabilityLoading || moreCoursesButtonUnavailable"
+                                    :disabled="timetableCalculationLoading || moreCourseAvailabilityLoading"
                                     @click="toggleMoreCoursesCard">
                                     Mehr Kurse
                                 </v-btn>
@@ -484,6 +484,26 @@
                                 Zurücksetzen
                             </v-btn>
                             <v-btn
+                                v-if="moreCoursesVisible"
+                                size="large"
+                                color="warning"
+                                variant="tonal"
+                                prepend-icon="mdi-close"
+                                @click="cancelMoreCoursesCard">
+                                Abbruch
+                            </v-btn>
+                            <v-btn
+                                v-if="moreCoursesVisible"
+                                size="large"
+                                color="success"
+                                variant="tonal"
+                                append-icon="mdi-check"
+                                :disabled="!moreCoursesSelectionChanged || timetableCalculationLoading"
+                                @click="applyMoreCoursesSelection">
+                                Anwenden
+                            </v-btn>
+                            <v-btn
+                                v-else
                                 size="large"
                                 color="success"
                                 variant="flat"
@@ -826,39 +846,56 @@
                                         Weitere Kurse werden geprüft.
                                     </v-alert>
                                 </template>
-                                <div v-else-if="moreCoursesCardItems.length" class="students-timetable-v2-more-courses-card__list">
-                                    <v-chip
-                                        v-for="course in moreCoursesCardItems"
-                                        :key="course.selectionKey"
-                                        size="small"
-                                        :color="moreCourseChipColor(course)"
-                                        :variant="selectedMoreCourseItem?.selectionKey === course.selectionKey && !moreCourseUnavailable(course) ? 'flat' : 'tonal'"
-                                        :disabled="moreCourseDisabled(course)"
-                                        class="students-timetable-v2-selected-courses-card__course students-timetable-v2-more-courses-card__course"
+                                <div v-else class="students-timetable-v2-more-courses-card__category-grid">
+                                    <v-card
+                                        v-for="card in moreCoursesCategoryCards"
+                                        :key="card.key"
+                                        rounded="lg"
+                                        variant="tonal"
+                                        class="students-timetable-v2-more-courses-card__category"
                                         :class="{
-                                            'students-timetable-v2-selected-courses-card__course--active': selectedMoreCourseItem?.selectionKey === course.selectionKey,
-                                            'students-timetable-v2-more-courses-card__course--unavailable': moreCourseUnavailable(course),
-                                        }"
-                                        :role="moreCourseDisabled(course) ? undefined : 'button'"
-                                        :tabindex="moreCourseDisabled(course) ? undefined : 0"
-                                        :aria-expanded="selectedMoreCourseItem?.selectionKey === course.selectionKey ? 'true' : 'false'"
-                                        @click="toggleMoreCourseOffers(course)"
-                                        @keydown.enter.prevent="toggleMoreCourseOffers(course)"
-                                        @keydown.space.prevent="toggleMoreCourseOffers(course)">
-                                        <span class="students-timetable-v2-more-courses-card__label">
-                                            {{ course.label }}
-                                        </span>
-                                        <span v-if="course.meta" class="students-timetable-v2-more-courses-card__meta">
-                                            {{ course.meta }}
-                                        </span>
-                                        <span class="students-timetable-v2-more-courses-card__group">
-                                            {{ course.courseGroupLabel }}
-                                        </span>
-                                    </v-chip>
+                                            'students-timetable-v2-more-courses-card__category--empty': card.items.length === 0,
+                                        }">
+                                        <v-card-title class="students-timetable-v2-more-courses-card__category-title">
+                                            <span>{{ card.title }}</span>
+                                            <v-chip size="x-small" color="primary" variant="tonal">
+                                                {{ card.countLabel }}
+                                            </v-chip>
+                                        </v-card-title>
+                                        <v-card-text class="students-timetable-v2-more-courses-card__category-content">
+                                            <div v-if="card.items.length" class="students-timetable-v2-more-courses-card__list">
+                                                <v-chip
+                                                    v-for="course in card.items"
+                                                    :key="course.selectionKey"
+                                                    size="small"
+                                                    :color="moreCourseChipColor(course)"
+                                                    :variant="selectedMoreCourseItem?.selectionKey === course.selectionKey && !moreCourseUnavailable(course) ? 'flat' : 'tonal'"
+                                                    :disabled="moreCourseDisabled(course)"
+                                                    class="students-timetable-v2-selected-courses-card__course students-timetable-v2-more-courses-card__course"
+                                                    :class="{
+                                                        'students-timetable-v2-selected-courses-card__course--active': selectedMoreCourseItem?.selectionKey === course.selectionKey,
+                                                        'students-timetable-v2-more-courses-card__course--unavailable': moreCourseUnavailable(course),
+                                                    }"
+                                                    :role="moreCourseDisabled(course) ? undefined : 'button'"
+                                                    :tabindex="moreCourseDisabled(course) ? undefined : 0"
+                                                    :aria-expanded="selectedMoreCourseItem?.selectionKey === course.selectionKey ? 'true' : 'false'"
+                                                    @click="toggleMoreCourseOffers(course)"
+                                                    @keydown.enter.prevent="toggleMoreCourseOffers(course)"
+                                                    @keydown.space.prevent="toggleMoreCourseOffers(course)">
+                                                    <span class="students-timetable-v2-more-courses-card__label">
+                                                        {{ course.label }}
+                                                    </span>
+                                                    <span v-if="course.meta" class="students-timetable-v2-more-courses-card__meta">
+                                                        {{ course.meta }}
+                                                    </span>
+                                                </v-chip>
+                                            </div>
+                                            <v-alert v-else type="info" variant="tonal" density="compact">
+                                                Keine weiteren Kurse verfügbar.
+                                            </v-alert>
+                                        </v-card-text>
+                                    </v-card>
                                 </div>
-                                <v-alert v-else type="info" variant="tonal" density="compact">
-                                    Keine weiteren Kurse verfügbar.
-                                </v-alert>
                             </v-card-text>
                         </v-card>
                         <v-card
@@ -1532,6 +1569,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import CourseSelectionCards from './CourseSelectionCards.vue'
 
 const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'
+const TIMETABLE_V2_SELECTION_BOOTSTRAP_ENDPOINT = '/api/admin/students-timetables/timetable-v2-selection-bootstrap'
 const TIMETABLE_V2_ROUTE_STEPS = ['selection', 'course-review', 'timetable-calculation', 'timetable-adoption']
 const TIMETABLE_V2_ROUTE_MODES = ['student', 'without-student']
 const TIMETABLE_MAX_FREE_DAYS_CRITERION_KEY = 'free_days'
@@ -1566,6 +1604,7 @@ export default {
             studentDialogOpen: false,
             studentCompletedCoursesError: '',
             studentCompletedCoursesLoading: false,
+            selectionBootstrapLoading: false,
             studentOverviewActiveRequestKey: '',
             studentOverviewLoadedRequestKey: '',
             studentCompletedCoursesRequestId: 0,
@@ -1577,9 +1616,12 @@ export default {
                 studentCode: null,
             },
             courseGroups: [],
+            courseGroupsRevision: 0,
             courseGroupsError: '',
             courseGroupsLoaded: false,
             courseGroupsLoading: false,
+            offeredCourseItemsCache: {},
+            offeredCourseItemsCacheCourseGroups: null,
             schoolHours: [],
             schoolHoursLoading: false,
             subjectRows: [],
@@ -1632,6 +1674,7 @@ export default {
             activeMoreExistingCourseBaseKey: '',
             moreCoursesSelectionSnapshot: '',
             courseSelectionSnapshotSelections: {},
+            pendingRemovedSelectedCourseKeys: {},
             offeredCourseSelectionSnapshotSelections: {},
             moreOfferedCourseSelectionSnapshot: '',
             moreOfferedCourseSelectionSnapshotSelections: {},
@@ -2079,6 +2122,44 @@ export default {
                     .map((course) => this.moreCoursesCardItem(course, 'additional')),
             ])
         },
+        moreCoursesCategoryCards() {
+            return [
+                {
+                    courseGroups: ['completed'],
+                    key: 'completed',
+                    title: 'Abgeschlossene',
+                },
+                {
+                    courseGroups: ['missing'],
+                    key: 'missing',
+                    title: 'Negative',
+                },
+                {
+                    courseGroups: ['planned'],
+                    key: 'planned',
+                    title: 'Frühere',
+                },
+                {
+                    courseGroups: ['semester'],
+                    key: 'semester',
+                    title: 'Aktuelle',
+                },
+                {
+                    courseGroups: ['additional'],
+                    key: 'additional',
+                    title: 'Zusätzliche',
+                },
+            ].map((card) => {
+                const items = this.moreCoursesCardItems
+                    .filter((course) => card.courseGroups.includes(course.courseGroup))
+
+                return {
+                    ...card,
+                    countLabel: `${this.formatNumber(items.length)} ${items.length === 1 ? 'Kurs' : 'Kurse'}`,
+                    items,
+                }
+            })
+        },
         moreAdoptedCourseCards() {
             return [
                 {
@@ -2186,10 +2267,18 @@ export default {
         },
         moreCoursesSelectionChanged() {
             return this.currentMoreCoursesSelectionSignature() !== this.moreCoursesSelectionSnapshot
+                || (this.moreCoursesVisible && !this.moreCoursesCardVisible && this.hasPendingRemovedSelectedCourses)
                 || this.timetableOptionsChanged
         },
         selectedCourseItems() {
-            return this.selectedCourseItemsForCourseSelections(this.currentCourseSelectionOverrides())
+            const selectedCourseItems = this.selectedCourseItemsForCourseSelections(this.currentCourseSelectionOverrides())
+
+            if (!this.hasPendingRemovedSelectedCourses) return selectedCourseItems
+
+            return selectedCourseItems.filter((course) => !this.pendingRemovedSelectedCourse(course))
+        },
+        hasPendingRemovedSelectedCourses() {
+            return Object.keys(this.pendingRemovedSelectedCourseKeys || {}).length > 0
         },
         courseGroupsByCourseCode() {
             const courseGroupsByCourseCode = new Map()
@@ -2986,21 +3075,21 @@ export default {
 
     async mounted() {
         try {
-            await this.loadStoredTimetableState()
+            await this.loadTimetableV2SelectionBootstrap('', {
+                applyStoredState: true,
+                persistStudentOverviewState: false,
+            })
             this.syncStoredTimetableOptions()
             this.applyTimetableV2RouteFromRoute({ restoreEffects: false })
             this.syncTimetableV2Route({ replace: true })
-            const subjectRowsPromise = this.loadSubjectRows()
-            const courseGroupsPromise = this.courseGroupsNeededForCurrentStep()
-                ? this.loadCourseGroups()
-                : null
+            const subjectRowsPromise = Promise.resolve()
+            const courseGroupsPromise = Promise.resolve()
             const schoolHoursPromise = this.courseReviewVisible || this.timetableCalculationVisible || this.adoptedTimetableVisible
                 ? this.loadSchoolHours()
                 : null
             if (this.storedTimetableStudentCode && !this.storedTimetableStudentEmail) {
                 this.loadRobotStudents()
             }
-            const studentOverviewPromise = this.loadStoredStudentOverview(this.storedTimetableStudentCode)
             const routeEffectsPromise = this.restoreTimetableV2RouteStepEffects({
                 subjectRowsPromise,
                 courseGroupsPromise,
@@ -3011,7 +3100,6 @@ export default {
                 subjectRowsPromise,
                 courseGroupsPromise,
                 schoolHoursPromise,
-                studentOverviewPromise,
                 routeEffectsPromise,
             ].filter(Boolean))
         } finally {
@@ -3114,6 +3202,7 @@ export default {
         },
         backToTimetableCalculation() {
             this.closeMoreCoursesCard()
+            this.clearPendingRemovedSelectedCourses()
             this.setTimetableV2Step('timetable-calculation')
             this.restoreAdoptedTimetableCalculationSelection()
         },
@@ -4284,7 +4373,7 @@ export default {
         },
         applyMoreCoursesRouteState() {
             if (!this.timetableCalculationVisible) {
-                if (this.moreCoursesVisible) {
+                if (this.moreCoursesVisible || this.moreCoursesCardVisible) {
                     this.closeMoreCoursesCard({ syncRoute: false })
                 }
 
@@ -4292,7 +4381,7 @@ export default {
             }
 
             if (!this.normalizedTimetableV2RouteMoreCourses()) {
-                if (this.moreCoursesVisible) {
+                if (this.moreCoursesVisible || this.moreCoursesCardVisible) {
                     this.closeMoreCoursesCard({ syncRoute: false })
                 }
 
@@ -4443,6 +4532,7 @@ export default {
             this.timetableNoDistanceLearningSelected = false
             this.timetableStartsFromPeriod10Selected = false
             this.closeTimetableOptionsCard()
+            this.clearPendingRemovedSelectedCourses()
             this.resetMoreCourseAvailability()
             this.saveStoredTimetableState({
                 ...this.defaultStoredTimetableState(),
@@ -5024,7 +5114,15 @@ export default {
                 : availableTimes
         },
         timetableV2CalculationCourseKey(course) {
-            return String(course?.key || course?.code || course?.label || '').trim()
+            const courseKey = String(course?.key || '').trim()
+            const courseCode = this.normalizedCourseCode(course?.code || course?.label || '')
+
+            return courseKey && !this.syntheticCourseKey(courseKey)
+                ? courseKey
+                : courseCode || courseKey
+        },
+        syntheticCourseKey(courseKey) {
+            return /^subject-row-/iu.test(String(courseKey || '').trim())
         },
         timetableV2DeselectedOfferedCourseGroupKeys(options = {}) {
             const excludedSelectedCourseSelectionKey = String(options?.excludedSelectedCourseSelectionKey || '').trim()
@@ -5096,10 +5194,11 @@ export default {
             const nextCourseSelections = this.courseSelectionOverridesForCurrentCourseItems(courseSelections)
 
             this.courseLimitDefaultSelectedCourseItems().forEach((courseItem) => {
-                const selectionKey = this.courseSelectionKey(courseItem.course, courseItem.courseGroup)
-                if (selectionKey) {
-                    delete nextCourseSelections[selectionKey]
-                }
+                this.courseSelectionKeys(courseItem.course, courseItem.courseGroup).forEach((selectionKey) => {
+                    if (nextCourseSelections[selectionKey] === true) {
+                        delete nextCourseSelections[selectionKey]
+                    }
+                })
             })
 
             this.courseLimitDuplicateModuleCourseItems(nextCourseSelections).forEach((courseItem) => {
@@ -5131,7 +5230,7 @@ export default {
             const currentSelectionKeys = new Set(this.courseLimitPreselectionCourseItems()
                 .concat(this.storedAdditionalCourseItems.map((course) => ({ course, courseGroup: 'additional' })))
                 .filter((courseItem) => !this.courseItemUnavailable(courseItem.course, courseItem.courseGroup))
-                .map((courseItem) => this.courseSelectionKey(courseItem.course, courseItem.courseGroup))
+                .flatMap((courseItem) => this.courseSelectionKeys(courseItem.course, courseItem.courseGroup))
                 .filter(Boolean))
 
             return Object.fromEntries(
@@ -5248,12 +5347,14 @@ export default {
         },
         courseSelectedBySelections(course, courseGroup, courseSelections = {}) {
             if (this.courseItemUnavailable(course, courseGroup)) return false
+            if (this.courseSelectionBlockedByOpenPrerequisiteCourse(course, courseGroup)) return false
 
-            const selectionKey = this.courseSelectionKey(course, courseGroup)
+            const selectionKeys = this.courseSelectionKeys(course, courseGroup)
+            const selectionKey = selectionKeys[0] || ''
             if (!selectionKey) return this.courseItemDefaultSelected(course, courseGroup)
 
-            if (courseSelections[selectionKey] === true) return true
-            if (courseSelections[selectionKey] === false) return false
+            if (selectionKeys.some((key) => courseSelections[key] === false)) return false
+            if (selectionKeys.some((key) => courseSelections[key] === true)) return true
 
             return this.courseItemDefaultSelected(course, courseGroup)
         },
@@ -5673,6 +5774,14 @@ export default {
         },
         toggleMoreCoursesCard() {
             if (this.moreCoursesVisible) {
+                if (!this.moreCoursesCardVisible) {
+                    this.moreCoursesCardVisible = true
+                    this.timetableOptionsCardVisible = false
+                    this.syncTimetableV2Route({ replace: true, syncRoute: true })
+
+                    return this.ensureMoreCourseAvailability()
+                }
+
                 this.closeMoreCoursesCard({ replace: true, syncRoute: true })
 
                 return
@@ -5719,9 +5828,10 @@ export default {
                 })
             }
 
+            this.clearPendingRemovedSelectedCourses()
             this.closeMoreCoursesCard({ replace: true, syncRoute: true })
         },
-        applyMoreCoursesSelection() {
+        async applyMoreCoursesSelection() {
             if (!this.moreCoursesSelectionChanged || this.timetableCalculationLoading) return null
 
             const timetableOptionsChanged = this.timetableOptionsChanged
@@ -5737,7 +5847,11 @@ export default {
             this.promoteSelectedMoreCourses()
             this.closeMoreCoursesCard({ replace: true, syncRoute: true })
 
-            return this.calculateTimetables({ progressContext: 'more-courses' })
+            const calculationResult = await this.calculateTimetables({ progressContext: 'more-courses' })
+
+            this.closeMoreCoursesCard({ replace: true, syncRoute: true })
+
+            return calculationResult
         },
         applyAdoptedTimetableCourseRemoval() {
             if (!this.adoptedTimetableCourseRemovalPendingVisible || !this.moreCoursesSelectionChanged) return null
@@ -5867,8 +5981,12 @@ export default {
             const selectionKey = course?.selectionKey || this.courseSelectionKey(course, course?.courseGroup)
             if (!selectionKey) return
 
+            this.clearPendingRemovedSelectedCourse(course)
+
             if (this.courseItemDefaultSelected(course, course.courseGroup)) {
-                delete selections.courseSelections[selectionKey]
+                this.courseSelectionKeys(course, course.courseGroup).forEach((courseSelectionKey) => {
+                    delete selections.courseSelections[courseSelectionKey]
+                })
             } else {
                 selections.courseSelections[selectionKey] = true
             }
@@ -6671,6 +6789,10 @@ export default {
             return this.selectedCourseItemsClickable
                 && this.selectedReviewCourseItem?.selectionKey === course?.selectionKey
         },
+        selectedCourseItemPassive() {
+            return (!this.selectedCourseItemsClickable && !this.selectedCourseItemsDeletable)
+                || this.selectedCourseItemsDisabled
+        },
         selectedCourseItemColor(course) {
             return this.selectedCourseItemHasConflict(course) ? 'error' : 'success'
         },
@@ -6690,7 +6812,7 @@ export default {
                 || this.timetableSlotMatchesCourse(conflict, course))
         },
         selectReviewCourse(course) {
-            if (!this.selectedCourseItemsClickable) return
+            if (!this.selectedCourseItemsClickable || this.selectedCourseItemsDisabled) return
 
             const selectionKey = course?.selectionKey || ''
 
@@ -6723,7 +6845,7 @@ export default {
             })
         },
         removeSelectedCourseItem(course) {
-            if (!this.selectedCourseItemsDeletable) return
+            if (!this.selectedCourseItemsDeletable || this.selectedCourseItemsDisabled) return
 
             if ((this.timetableCalculationVisible || this.adoptedTimetableVisible) && !this.moreCoursesVisible) {
                 this.openMoreCoursesPendingActions()
@@ -6743,13 +6865,19 @@ export default {
                 .some((selectedCourse) => selectedCourse?.selectionKey === selectionKey)
 
             if (selected) {
+                this.clearPendingRemovedSelectedCourse(course)
+
                 if (this.courseItemDefaultSelected(course, courseGroup)) {
-                    delete courseSelections[selectionKey]
+                    this.courseSelectionKeys(course, courseGroup).forEach((courseSelectionKey) => {
+                        delete courseSelections[courseSelectionKey]
+                    })
                 } else {
                     courseSelections[selectionKey] = true
                 }
             } else if (this.courseItemDefaultSelected(course, courseGroup) || (currentlySelected && !explicitlySelected)) {
-                courseSelections[selectionKey] = false
+                this.courseSelectionKeys(course, courseGroup).forEach((courseSelectionKey) => {
+                    courseSelections[courseSelectionKey] = false
+                })
             } else {
                 delete courseSelections[selectionKey]
             }
@@ -6759,6 +6887,40 @@ export default {
                 moreOfferedCourseSelections: { ...this.currentMoreOfferedCourseSelectionOverrides() },
                 offeredCourseSelections: { ...this.currentOfferedCourseSelectionOverrides() },
             })
+
+            if (!selected) {
+                this.markPendingRemovedSelectedCourse(course)
+            }
+        },
+        pendingRemovedSelectedCourse(course) {
+            const pendingRemovedSelectedCourseKeys = this.pendingRemovedSelectedCourseKeys || {}
+
+            return this.courseSelectionKeys(course, course?.courseGroup)
+                .some((courseSelectionKey) => pendingRemovedSelectedCourseKeys[courseSelectionKey] === true)
+        },
+        markPendingRemovedSelectedCourse(course) {
+            const courseSelectionKeys = this.courseSelectionKeys(course, course?.courseGroup)
+            if (!courseSelectionKeys.length) return
+
+            this.pendingRemovedSelectedCourseKeys = {
+                ...(this.pendingRemovedSelectedCourseKeys || {}),
+                ...Object.fromEntries(courseSelectionKeys.map((courseSelectionKey) => [courseSelectionKey, true])),
+            }
+        },
+        clearPendingRemovedSelectedCourse(course) {
+            const courseSelectionKeys = this.courseSelectionKeys(course, course?.courseGroup)
+            if (!courseSelectionKeys.length || !this.hasPendingRemovedSelectedCourses) return
+
+            const pendingRemovedSelectedCourseKeys = { ...(this.pendingRemovedSelectedCourseKeys || {}) }
+
+            courseSelectionKeys.forEach((courseSelectionKey) => {
+                delete pendingRemovedSelectedCourseKeys[courseSelectionKey]
+            })
+
+            this.pendingRemovedSelectedCourseKeys = pendingRemovedSelectedCourseKeys
+        },
+        clearPendingRemovedSelectedCourses() {
+            this.pendingRemovedSelectedCourseKeys = {}
         },
         offeredCourseItemsAllDeselected(course) {
             const offeredCourses = this.offeredCourseItemsForSelectedCourse(course)
@@ -6776,6 +6938,15 @@ export default {
             return selectedOfferedCourseCount > 0 && selectedOfferedCourseCount < offeredCourses.length
         },
         offeredCourseItemsForSelectedCourse(course) {
+            if (this.offeredCourseItemsCacheCourseGroups !== this.courseGroups) {
+                this.resetOfferedCourseItemsCache()
+            }
+
+            const cacheKey = this.offeredCourseItemsCacheKey(course)
+            if (cacheKey && Array.isArray(this.offeredCourseItemsCache?.[cacheKey])) {
+                return this.offeredCourseItemsCache[cacheKey]
+            }
+
             const courseAliases = this.courseCodeAliases({ code: course?.code || course?.label })
             const courseGroups = this.courseGroupsForCourseAliases(courseAliases)
 
@@ -6784,7 +6955,26 @@ export default {
                 .map((courseGroup) => this.offeredCourseGroupItem(courseGroup))
                 .sort((firstCourse, secondCourse) => this.compareOfferedCourseItems(firstCourse, secondCourse))
 
-            return this.uniqueOfferedCourseItems(offeredCourseItems, course)
+            const uniqueOfferedCourseItems = this.uniqueOfferedCourseItems(offeredCourseItems, course)
+
+            if (cacheKey) {
+                this.offeredCourseItemsCache = {
+                    ...this.offeredCourseItemsCache,
+                    [cacheKey]: uniqueOfferedCourseItems,
+                }
+            }
+
+            return uniqueOfferedCourseItems
+        },
+        offeredCourseItemsCacheKey(course) {
+            const courseKey = [
+                this.courseGroupsRevision,
+                this.normalizedCourseCode(course?.code || course?.label || ''),
+                String(course?.key || course?.selectionKey || '').trim(),
+                String(course?.courseGroup || '').trim(),
+            ].join('|')
+
+            return courseKey.replace(/\|+$/g, '')
         },
         courseGroupsForCourseAliases(courseAliases) {
             if (!Array.isArray(courseAliases) || !courseAliases.length) return []
@@ -7443,9 +7633,9 @@ export default {
             try {
                 const response = await axios.get('/api/admin/students-timetables/course-groups')
 
-                this.courseGroups = response.data?.data || []
+                this.replaceCourseGroups(response.data?.data || [])
             } catch {
-                this.courseGroups = []
+                this.replaceCourseGroups([])
                 this.courseGroupsError = 'Die angebotenen Kurse konnten nicht geladen werden.'
             } finally {
                 this.courseGroupsLoaded = true
@@ -7496,7 +7686,79 @@ export default {
                 this.applyCourseLimitPreselection()
             }
         },
-        async loadStoredStudentOverview(studentCode) {
+        async loadTimetableV2SelectionBootstrap(studentCode = '', options = {}) {
+            const normalizedStudentCode = this.normalizedStudentCode(studentCode)
+            const selection = normalizedStudentCode ? this.studentOverviewSelectionPayload() : {}
+
+            this.selectionBootstrapLoading = true
+            this.courseGroupsLoading = !this.courseGroups.length
+            this.subjectRowsLoading = !this.subjectRows.length
+            this.courseGroupsError = ''
+            this.subjectRowsError = ''
+
+            try {
+                const response = await axios.get(TIMETABLE_V2_SELECTION_BOOTSTRAP_ENDPOINT, {
+                    params: {
+                        ...(normalizedStudentCode ? { student_code: normalizedStudentCode } : {}),
+                        ...(normalizedStudentCode ? { strict_selection: options.strictSelection === false ? 0 : 1 } : {}),
+                        ...(Object.keys(selection).length ? { selection } : {}),
+                    },
+                })
+                const data = response.data?.data || {}
+
+                if (options.applyStoredState === true) {
+                    const storedState = data.state
+
+                    this.storedTimetableState = storedState && typeof storedState === 'object' && !Array.isArray(storedState)
+                        ? storedState
+                        : null
+                    this.storageRevision++
+                }
+
+                if (Array.isArray(data.course_groups)) {
+                    this.replaceCourseGroups(data.course_groups)
+                    this.courseGroupsLoaded = true
+                }
+
+                if (Array.isArray(data.subjects)) {
+                    this.subjectRows = data.subjects
+                }
+
+                const overviewStudentCode = normalizedStudentCode
+                    || this.normalizedStudentCode(data.student_overview?.student?.student_code)
+                    || this.storedTimetableStudentCode
+
+                if (overviewStudentCode && data.student_overview && typeof data.student_overview === 'object' && options.applyStudentOverview !== false) {
+                    const requestSelection = this.studentOverviewSelectionPayload()
+                    const requestKey = this.studentOverviewRequestKey(overviewStudentCode, requestSelection)
+
+                    this.applyStoredStudentOverviewSummary(overviewStudentCode, data.student_overview, requestKey, {
+                        persistState: options.persistStudentOverviewState !== false,
+                    })
+                } else if (options.applyStudentOverview !== false) {
+                    this.applyCourseLimitPreselection()
+                }
+
+                return data
+            } catch (error) {
+                if (!this.courseGroups.length) {
+                    this.replaceCourseGroups([])
+                    this.courseGroupsError = 'Die angebotenen Kurse konnten nicht geladen werden.'
+                }
+
+                if (!this.subjectRows.length) {
+                    this.subjectRows = []
+                    this.subjectRowsError = 'Die Kurse konnten nicht geladen werden.'
+                }
+
+                throw error
+            } finally {
+                this.selectionBootstrapLoading = false
+                this.courseGroupsLoading = false
+                this.subjectRowsLoading = false
+            }
+        },
+        async loadStoredStudentOverview(studentCode, options = {}) {
             const normalizedStudentCode = this.normalizedStudentCode(studentCode)
             const selection = this.studentOverviewSelectionPayload()
             const requestKey = this.studentOverviewRequestKey(normalizedStudentCode, selection)
@@ -7524,52 +7786,20 @@ export default {
             this.studentOverviewActiveRequestKey = requestKey
             this.studentCompletedCoursesLoading = true
             this.studentCompletedCoursesError = ''
-            this.loadSubjectRows()
-            this.loadCourseGroups()
 
             try {
-                const response = await axios.get('/api/admin/students-timetables/robot/student-overview', {
-                    params: {
-                        student_code: normalizedStudentCode,
-                        strict_selection: 1,
-                        payload: 'course_history',
-                        ...(Object.keys(selection).length ? { selection } : {}),
-                    },
+                const data = await this.loadTimetableV2SelectionBootstrap(normalizedStudentCode, {
+                    applyStoredState: false,
+                    applyStudentOverview: false,
+                    strictSelection: options.strictSelection !== false,
                 })
 
                 if (requestId !== this.studentCompletedCoursesRequestId) return
                 if (this.storedTimetableStudentCode !== normalizedStudentCode) return
 
-                const overviewSummary = response.data?.data || {}
-                const courseHistory = this.overviewStudentCourseHistoryFromSummary(overviewSummary)
-                const storedState = this.storedTimetableStateForSaving()
-                const timetableV2Selection = this.timetableV2SelectionWithCourseDefaults(storedState?.timetableV2Selection || {}, courseHistory.completed)
-                const nextSelection = this.studentOverviewSelectionPayloadForSelection(timetableV2Selection)
-                const shouldReloadWithCourseDefaults = this.studentOverviewRequestKey(normalizedStudentCode, nextSelection) !== requestKey
+                const overviewSummary = data.student_overview || {}
 
-                this.saveStoredTimetableState({
-                    ...this.defaultStoredTimetableState(),
-                    ...storedState,
-                    timetableV2Selection,
-                    transferredStudentContext: {
-                        ...this.storedTimetableStudentContext,
-                        student: {
-                            ...this.storedTimetableStudentContext?.student,
-                            religion: overviewSummary?.student?.religion ?? this.storedTimetableStudentContext?.student?.religion,
-                        },
-                        courses: {
-                            ...this.storedTimetableStudentContext?.courses,
-                            ...courseHistory,
-                        },
-                    },
-                })
-                this.studentOverviewLoadedRequestKey = requestKey
-
-                if (shouldReloadWithCourseDefaults) {
-                    this.loadStoredStudentOverview(normalizedStudentCode)
-                } else {
-                    this.applyCourseLimitPreselection()
-                }
+                this.applyStoredStudentOverviewSummary(normalizedStudentCode, overviewSummary, requestKey)
             } catch {
                 if (requestId !== this.studentCompletedCoursesRequestId) return
 
@@ -7580,6 +7810,58 @@ export default {
                     this.studentCompletedCoursesLoading = false
                 }
             }
+        },
+        applyStoredStudentOverviewSummary(normalizedStudentCode, overviewSummary, requestKey = '', options = {}) {
+            if (this.storedTimetableStudentCode && this.storedTimetableStudentCode !== normalizedStudentCode) return
+
+            const courseHistory = this.overviewStudentCourseHistoryFromSummary(overviewSummary)
+            const storedState = this.storedTimetableStateForSaving()
+            const inferredSelection = this.timetableV2SelectionFromStudentOverviewSelection(overviewSummary?.selection || {})
+            const timetableV2Selection = this.timetableV2SelectionWithCourseDefaults({
+                ...inferredSelection,
+                ...(storedState?.timetableV2Selection || {}),
+            }, courseHistory.completed)
+
+            const nextState = {
+                ...this.defaultStoredTimetableState(),
+                ...storedState,
+                timetableV2Selection,
+                transferredStudentContext: {
+                    ...this.storedTimetableStudentContext,
+                    student: {
+                        ...this.storedTimetableStudentContext?.student,
+                        religion: overviewSummary?.student?.religion ?? this.storedTimetableStudentContext?.student?.religion,
+                    },
+                    courses: {
+                        ...this.storedTimetableStudentContext?.courses,
+                        ...courseHistory,
+                    },
+                },
+            }
+
+            if (options.persistState === false) {
+                this.storedTimetableState = nextState
+                this.storageRevision++
+                this.resetDraftCourseSelections()
+            } else if (!this.storedTimetableStatesEqual(storedState, nextState)) {
+                this.saveStoredTimetableState(nextState)
+            }
+
+            this.studentOverviewLoadedRequestKey = requestKey
+            this.applyCourseLimitPreselection()
+        },
+        timetableV2SelectionFromStudentOverviewSelection(selection) {
+            if (!selection || typeof selection !== 'object' || Array.isArray(selection)) return {}
+
+            return Object.fromEntries(
+                [
+                    ['semester', selection.semester],
+                    ['religion', selection.religion],
+                    ['language', selection.language],
+                    ['branch', selection.branch],
+                    ['artsSubject', selection.arts_subject ?? selection.artsSubject],
+                ].filter(([, value]) => String(value || '').trim() !== '')
+            )
         },
         selectStudentDraft(studentCode) {
             this.studentSelectionDraft.studentCode = this.normalizedStudentCode(studentCode)
@@ -7609,7 +7891,7 @@ export default {
             this.setTimetableV2Step('selection')
             this.closeStudentDialog()
             this.studentOverviewLoadedRequestKey = ''
-            this.loadStoredStudentOverview(studentCode)
+            this.loadStoredStudentOverview(studentCode, { strictSelection: false })
         },
         clearStoredTimetableStudent() {
             this.selectedReviewCourseKey = ''
@@ -7660,14 +7942,16 @@ export default {
         },
         courseItemSelected(course, courseGroup) {
             if (this.courseItemUnavailable(course, courseGroup)) return false
+            if (this.courseSelectionBlockedByOpenPrerequisiteCourse(course, courseGroup)) return false
 
-            const selectionKey = this.courseSelectionKey(course, courseGroup)
+            const selectionKeys = this.courseSelectionKeys(course, courseGroup)
+            const selectionKey = selectionKeys[0] || ''
             if (!selectionKey) return this.courseItemDefaultSelected(course, courseGroup)
 
             const courseSelectionOverrides = this.courseSelectionOverrides || {}
 
-            if (courseSelectionOverrides[selectionKey] === true) return true
-            if (courseSelectionOverrides[selectionKey] === false) return false
+            if (selectionKeys.some((key) => courseSelectionOverrides[key] === false)) return false
+            if (selectionKeys.some((key) => courseSelectionOverrides[key] === true)) return true
 
             return this.courseItemDefaultSelected(course, courseGroup)
         },
@@ -7688,6 +7972,10 @@ export default {
             }
 
             if (courseGroup === 'planned' && this.courseBlockedByNegativeCourse(course)) {
+                return false
+            }
+
+            if (this.courseSelectionBlockedByOpenPrerequisiteCourse(course, courseGroup)) {
                 return false
             }
 
@@ -7723,6 +8011,27 @@ export default {
                 this.courseBaseCode(negativeCourse) === courseBaseCode
                     && this.courseModuleNumber(negativeCourse) > 0
                     && courseModuleNumber > this.courseModuleNumber(negativeCourse) + 1)
+        },
+        courseSelectionBlockedByOpenPrerequisiteCourse(course, courseGroup) {
+            if (courseGroup !== 'semester') return false
+
+            const courseBaseCode = this.courseBaseCode(course)
+            const courseModuleNumber = this.courseModuleNumber(course)
+            if (!courseBaseCode || !courseModuleNumber) return false
+
+            return this.openStudentCourseItems().some((openCourse) =>
+                this.courseBaseCode(openCourse) === courseBaseCode
+                    && this.courseModuleNumber(openCourse) > 0
+                    && courseModuleNumber > this.courseModuleNumber(openCourse))
+        },
+        openStudentCourseItems() {
+            const courses = this.storedTimetableStudentContext?.courses || {}
+
+            return this.uniqueCourseItems([
+                ...this.storedMissingCourseCardItems,
+                ...this.normalizedOverviewCourseItems(courses.missing || []),
+                ...this.normalizedOverviewCourseItems(courses.planned || []),
+            ])
         },
         courseGroupItems(courseGroup) {
             if (courseGroup === 'completed') {
@@ -7772,9 +8081,12 @@ export default {
 
                     const selectionKey = this.courseSelectionKey(course, courseGroup)
                     if (!selectionKey) return false
+                    const selectionKeys = this.courseSelectionKeys(course, courseGroup)
 
                     if (this.courseItemDefaultSelected(course, courseGroup)) {
-                        delete courseSelections[selectionKey]
+                        selectionKeys.forEach((courseSelectionKey) => {
+                            delete courseSelections[courseSelectionKey]
+                        })
                     } else {
                         courseSelections[selectionKey] = true
                     }
@@ -7801,6 +8113,7 @@ export default {
             const unavailable = this.courseItemUnavailable(course, courseGroup)
             const disabled = this.courseItemSelectionDisabled(course, courseGroup)
             const selectionKey = this.courseSelectionKey(course, courseGroup)
+            const selectionKeys = this.courseSelectionKeys(course, courseGroup)
             const label = String(course?.label || course?.code || course?.name || '').trim()
 
             return {
@@ -7823,6 +8136,7 @@ export default {
                 meta: this.courseSelectionCardItemMeta(course, courseGroup),
                 selected,
                 selectionKey,
+                selectionKeys,
                 title: this.courseItemSelectionDisabledLabel(course, courseGroup),
                 unavailable,
                 variant: this.courseSelectionCardItemVariant(courseGroup, selected, unavailable),
@@ -7874,20 +8188,30 @@ export default {
                 const selectionKey = this.courseSelectionKey(course, courseGroup)
                 if (!selectionKey) return
                 if (selected && this.courseItemUnavailable(course, courseGroup)) return
+                const selectionKeys = this.courseSelectionKeys(course, courseGroup)
 
                 if (selected) {
                     if (this.courseSelectionWouldExceedLimit(course, courseGroup, courseSelections)) return
 
                     if (this.courseItemDefaultSelected(course, courseGroup)) {
-                        delete courseSelections[selectionKey]
+                        selectionKeys.forEach((courseSelectionKey) => {
+                            delete courseSelections[courseSelectionKey]
+                        })
                     } else {
+                        selectionKeys.forEach((courseSelectionKey) => {
+                            delete courseSelections[courseSelectionKey]
+                        })
                         courseSelections[selectionKey] = true
                     }
                 } else {
                     if (this.courseItemDefaultSelected(course, courseGroup)) {
-                        courseSelections[selectionKey] = false
+                        selectionKeys.forEach((courseSelectionKey) => {
+                            courseSelections[courseSelectionKey] = false
+                        })
                     } else {
-                        delete courseSelections[selectionKey]
+                        selectionKeys.forEach((courseSelectionKey) => {
+                            delete courseSelections[courseSelectionKey]
+                        })
                     }
                 }
             })
@@ -7905,19 +8229,29 @@ export default {
             if (this.courseItemUnavailable(course, courseGroup)) return
 
             const courseSelections = this.draftCourseSelectionOverrides()
+            const selectionKeys = this.courseSelectionKeys(course, courseGroup)
 
             if (this.courseItemSelected(course, courseGroup)) {
                 if (this.courseItemDefaultSelected(course, courseGroup)) {
-                    courseSelections[selectionKey] = false
+                    selectionKeys.forEach((courseSelectionKey) => {
+                        courseSelections[courseSelectionKey] = false
+                    })
                 } else {
-                    delete courseSelections[selectionKey]
+                    selectionKeys.forEach((courseSelectionKey) => {
+                        delete courseSelections[courseSelectionKey]
+                    })
                 }
             } else {
                 if (this.courseSelectionWouldExceedLimit(course, courseGroup, courseSelections)) return
 
                 if (this.courseItemDefaultSelected(course, courseGroup)) {
-                    delete courseSelections[selectionKey]
+                    selectionKeys.forEach((courseSelectionKey) => {
+                        delete courseSelections[courseSelectionKey]
+                    })
                 } else {
+                    selectionKeys.forEach((courseSelectionKey) => {
+                        delete courseSelections[courseSelectionKey]
+                    })
                     courseSelections[selectionKey] = true
                 }
             }
@@ -7964,10 +8298,42 @@ export default {
                 || selectedCourseHours + this.courseHoursNumber(course) > 30
         },
         courseSelectionKey(course, courseGroup) {
-            const courseKey = this.normalizedCourseCode(course?.code || '')
-                || String(course?.key || course?.label || '').trim()
+            const courseKey = this.courseSelectionCourseKey(course)
 
             return courseKey ? `${courseGroup}:${courseKey}` : ''
+        },
+        courseSelectionCourseKey(course) {
+            const explicitCourseCode = this.normalizedCourseCode(course?.code || course?.subject || '')
+
+            return (explicitCourseCode ? this.courseCodeAliases({ code: explicitCourseCode })[0] || explicitCourseCode : '')
+                || this.courseSelectionCourseCodeFromValue(course?.label)
+                || this.courseSelectionCourseCodeFromValue(course?.name)
+                || String(course?.key || course?.label || '').trim()
+        },
+        courseSelectionCourseCodeFromValue(value) {
+            const normalizedValue = this.normalizedCourseCode(value)
+            if (this.courseSelectionCourseCodeToken(normalizedValue)) {
+                return this.courseCodeAliases({ code: normalizedValue })[0] || normalizedValue
+            }
+
+            const token = this.courseCodeTokensFromValue(value)
+                .map((courseCode) => this.normalizedCourseCode(courseCode))
+                .find((courseCode) => this.courseSelectionCourseCodeToken(courseCode) && this.courseCodeModuleParts(courseCode).module)
+
+            return token ? this.courseCodeAliases({ code: token })[0] || token : ''
+        },
+        courseSelectionCourseCodeToken(value) {
+            return /^[A-Z]{1,5}[0-9]*[A-Z]*$/u.test(this.normalizedCourseCode(value))
+        },
+        courseSelectionKeys(course, courseGroup) {
+            const courseKeys = [
+                String(course?.selectionKey || '').trim(),
+                this.courseSelectionKey(course, courseGroup),
+                String(course?.key || '').trim() ? `${courseGroup}:${String(course.key).trim()}` : '',
+                ...this.courseCodeAliases(course).map((courseCode) => `${courseGroup}:${courseCode}`),
+            ]
+
+            return this.uniqueValues(courseKeys.filter(Boolean))
         },
         updatedStoredSelection(selectedStudent) {
             const currentSelection = this.storedTimetableStateForSaving()?.selection || {}
@@ -7982,6 +8348,36 @@ export default {
         },
         storedTimetableStateForSaving() {
             return this.storedTimetableState || null
+        },
+        storedTimetableStatesEqual(firstState, secondState) {
+            return this.storedTimetableStateSignature(firstState) === this.storedTimetableStateSignature(secondState)
+        },
+        storedTimetableStateSignature(state) {
+            return JSON.stringify(this.stableStoredTimetableStateValue(state ?? null))
+        },
+        stableStoredTimetableStateValue(value) {
+            if (Array.isArray(value)) {
+                return value.map((item) => this.stableStoredTimetableStateValue(item))
+            }
+
+            if (value && typeof value === 'object') {
+                return Object.fromEntries(
+                    Object.keys(value)
+                        .sort()
+                        .map((key) => [key, this.stableStoredTimetableStateValue(value[key])])
+                )
+            }
+
+            return value
+        },
+        replaceCourseGroups(courseGroups) {
+            this.courseGroups = Array.isArray(courseGroups) ? courseGroups : []
+            this.courseGroupsRevision++
+            this.resetOfferedCourseItemsCache()
+        },
+        resetOfferedCourseItemsCache() {
+            this.offeredCourseItemsCache = {}
+            this.offeredCourseItemsCacheCourseGroups = this.courseGroups
         },
         saveStoredTimetableState(state) {
             this.storedTimetableState = state
@@ -8009,7 +8405,12 @@ export default {
                     if (requestId !== this.storedTimetableStateSaveRequestId) return
 
                     const storedState = response.data?.data?.state
-                    if (storedState && typeof storedState === 'object' && !Array.isArray(storedState)) {
+                    if (
+                        storedState
+                        && typeof storedState === 'object'
+                        && !Array.isArray(storedState)
+                        && this.storedTimetableStatesEqual(storedState, state)
+                    ) {
                         this.storedTimetableState = storedState
                         this.storageRevision++
                     }
@@ -9791,6 +10192,7 @@ export default {
 
 .students-timetable-v2-selected-courses-card__course--passive {
     cursor: default;
+    pointer-events: none;
 }
 
 .students-timetable-v2-selected-courses-card__course--active {
@@ -10335,6 +10737,37 @@ export default {
 .students-timetable-v2-more-courses-card__title {
     font-size: 0.95rem;
     font-weight: 900;
+}
+
+.students-timetable-v2-more-courses-card__category-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.students-timetable-v2-more-courses-card__category {
+    border: 1px solid rgba(100, 116, 139, 0.18);
+}
+
+.students-timetable-v2-more-courses-card__category--empty {
+    opacity: 0.78;
+}
+
+.students-timetable-v2-more-courses-card__category-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 0;
+    padding: 10px 12px 4px;
+    color: #0f172a;
+    font-size: 0.82rem;
+    font-weight: 900;
+    line-height: 1.1;
+}
+
+.students-timetable-v2-more-courses-card__category-content {
+    padding: 8px 12px 12px;
 }
 
 .students-timetable-v2-more-courses-card__list {

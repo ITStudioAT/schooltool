@@ -6,7 +6,10 @@ use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\StudentTimetableEntry;
 use App\Models\StudentTimetablePublishedTimetable;
+use App\Models\StudentTimetableSubjectRow;
+use App\Models\StudentTimetableV2State;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -129,6 +132,64 @@ it('returns a published timetable state for the selected admin student', functio
         ->assertJsonPath('data.state.activeCourseGroupFilterKeys.0', 'd-1')
         ->assertJsonPath('data.state.manualPanelOpen', true)
         ->assertJsonPath('data.timetable.semesters.0.weeks.0.hours.0.cells.0.courses.0.label', 'D1');
+});
+
+it('returns timetable v2 selection bootstrap data in one response', function () {
+    [$user, $student] = createPublishedTimetableAdminUser();
+
+    StudentTimetableV2State::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+        'user_id' => $user->id,
+        'state' => [
+            'timetableV2Selection' => [
+                'semester' => 4,
+            ],
+            'transferredStudentContext' => [
+                'student' => [
+                    'studentCode' => $student->student_code,
+                ],
+            ],
+        ],
+    ]);
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+        'semester' => 4,
+        'branch' => 'gymnasial',
+        'json_code' => 'D4',
+        'json_subject' => 'D',
+        'name' => 'Deutsch',
+        'hours_per_week' => 3,
+        'is_active' => true,
+        'sort_order' => 1,
+        'source' => 'manual',
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+        'date' => '2026-02-16',
+        'semester' => 1,
+        'period' => '1',
+        'subject' => 'D',
+        'course' => 'D1',
+        'teacher' => 'AB',
+        'class_name' => '4S',
+        'student_group' => '4S',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->getJson("/api/admin/students-timetables/timetable-v2-selection-bootstrap?student_code={$student->student_code}&strict_selection=0&selection[semester]=4")
+        ->assertSuccessful()
+        ->assertJsonPath('data.state.timetableV2Selection.semester', 4)
+        ->assertJsonPath('data.subjects.0.json_code', 'D4')
+        ->assertJsonPath('data.course_groups.0.subject', 'D')
+        ->assertJsonPath('data.course_groups.0.course', 'D1')
+        ->assertJsonPath('data.student_overview.student.student_code', $student->student_code)
+        ->assertJsonPath('data.student_overview.selection.semester', 4);
 });
 
 it('rejects publishing a timetable for a student outside the selected schoolyear', function () {
