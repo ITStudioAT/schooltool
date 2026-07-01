@@ -175,7 +175,7 @@ export default {
         },
     },
 
-    emits: ['apply-course-selections', 'draft-change'],
+    emits: ['apply-course-selections', 'draft-change', 'draft-selections-change'],
 
     data() {
         return {
@@ -220,14 +220,23 @@ export default {
         selectedCourseLimitSummary() {
             return this.courseItemsSummary(this.selectedCourseLimitItems)
         },
+        cardRosterSignature() {
+            return JSON.stringify(this.visibleCards.map((card) => ({
+                courseGroup: card.courseGroup,
+                items: card.items.map((course) => ({
+                    courseGroup: course.courseGroup,
+                    key: course.key,
+                    selectionKey: course.selectionKey,
+                    unavailable: course.unavailable === true,
+                })),
+                key: card.key,
+            })))
+        },
     },
 
     watch: {
-        cards: {
-            deep: true,
-            handler() {
-                this.resetDraftCourseSelections()
-            },
+        cardRosterSignature() {
+            this.resetDraftCourseSelections()
         },
         courseSelections: {
             deep: true,
@@ -263,10 +272,12 @@ export default {
         setDraftCourseSelections(courseSelections = {}) {
             this.draftCourseSelections = this.normalizedCourseSelections(courseSelections)
             this.$emit('draft-change', this.courseSelectionDraftChanged)
+            this.$emit('draft-selections-change', this.activeCourseSelections)
         },
         resetDraftCourseSelections() {
             this.draftCourseSelections = null
             this.$emit('draft-change', false)
+            this.$emit('draft-selections-change', null)
         },
         courseSelected(course, courseSelections = this.activeCourseSelections) {
             if (course.unavailable) return false
