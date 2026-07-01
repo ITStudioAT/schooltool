@@ -834,7 +834,7 @@
                             variant="tonal"
                             class="students-timetable-v2-more-courses-card">
                             <v-card-title class="students-timetable-v2-more-courses-card__title">
-                                Mehr Kurse
+                                {{ moreCoursesTitle }}
                             </v-card-title>
                             <v-card-text>
                                 <template v-if="moreCourseAvailabilityLoading">
@@ -846,55 +846,73 @@
                                         Weitere Kurse werden geprüft.
                                     </v-alert>
                                 </template>
-                                <div v-else class="students-timetable-v2-more-courses-card__category-grid">
+                                <div v-else-if="!activeMoreCoursesCategoryCard" class="students-timetable-v2-more-courses-card__category-grid">
                                     <v-card
                                         v-for="card in moreCoursesCategoryCards"
                                         :key="card.key"
                                         rounded="lg"
                                         variant="tonal"
                                         class="students-timetable-v2-more-courses-card__category"
-                                        :class="{
-                                            'students-timetable-v2-more-courses-card__category--empty': card.items.length === 0,
-                                        }">
-                                        <v-card-title class="students-timetable-v2-more-courses-card__category-title">
+                                        :class="[
+                                            `students-timetable-v2-more-courses-card__category--${card.key}`,
+                                            {
+                                                'students-timetable-v2-more-courses-card__category--empty': moreCoursesCategoryCardDisabled(card),
+                                            },
+                                        ]"
+                                        :disabled="moreCoursesCategoryCardDisabled(card)"
+                                        :ripple="!moreCoursesCategoryCardDisabled(card)"
+                                        :role="moreCoursesCategoryCardDisabled(card) ? undefined : 'button'"
+                                        :tabindex="moreCoursesCategoryCardDisabled(card) ? -1 : 0"
+                                        :aria-disabled="moreCoursesCategoryCardDisabled(card) ? 'true' : 'false'"
+                                        @click="openMoreCoursesCategoryCard(card)"
+                                        @keydown.enter.prevent="openMoreCoursesCategoryCard(card)"
+                                        @keydown.space.prevent="openMoreCoursesCategoryCard(card)">
+                                        <div class="students-timetable-v2-more-courses-card__category-title">
                                             <span>{{ card.title }}</span>
-                                            <v-chip size="x-small" color="primary" variant="tonal">
-                                                {{ card.countLabel }}
-                                            </v-chip>
-                                        </v-card-title>
-                                        <v-card-text class="students-timetable-v2-more-courses-card__category-content">
-                                            <div v-if="card.items.length" class="students-timetable-v2-more-courses-card__list">
-                                                <v-chip
-                                                    v-for="course in card.items"
-                                                    :key="course.selectionKey"
-                                                    size="small"
-                                                    :color="moreCourseChipColor(course)"
-                                                    :variant="selectedMoreCourseItem?.selectionKey === course.selectionKey && !moreCourseUnavailable(course) ? 'flat' : 'tonal'"
-                                                    :disabled="moreCourseDisabled(course)"
-                                                    class="students-timetable-v2-selected-courses-card__course students-timetable-v2-more-courses-card__course"
-                                                    :class="{
-                                                        'students-timetable-v2-selected-courses-card__course--active': selectedMoreCourseItem?.selectionKey === course.selectionKey,
-                                                        'students-timetable-v2-more-courses-card__course--unavailable': moreCourseUnavailable(course),
-                                                    }"
-                                                    :role="moreCourseDisabled(course) ? undefined : 'button'"
-                                                    :tabindex="moreCourseDisabled(course) ? undefined : 0"
-                                                    :aria-expanded="selectedMoreCourseItem?.selectionKey === course.selectionKey ? 'true' : 'false'"
-                                                    @click="toggleMoreCourseOffers(course)"
-                                                    @keydown.enter.prevent="toggleMoreCourseOffers(course)"
-                                                    @keydown.space.prevent="toggleMoreCourseOffers(course)">
-                                                    <span class="students-timetable-v2-more-courses-card__label">
-                                                        {{ course.label }}
-                                                    </span>
-                                                    <span v-if="course.meta" class="students-timetable-v2-more-courses-card__meta">
-                                                        {{ course.meta }}
-                                                    </span>
-                                                </v-chip>
-                                            </div>
-                                            <v-alert v-else type="info" variant="tonal" density="compact">
-                                                Keine weiteren Kurse verfügbar.
-                                            </v-alert>
-                                        </v-card-text>
+                                        </div>
                                     </v-card>
+                                </div>
+                                <div v-else class="students-timetable-v2-more-courses-card__course-view">
+                                    <section
+                                        class="students-timetable-v2-more-courses-card__back-card"
+                                        role="button"
+                                        tabindex="0"
+                                        @click="closeMoreCoursesCategoryCard"
+                                        @keydown.enter.prevent="closeMoreCoursesCategoryCard"
+                                        @keydown.space.prevent="closeMoreCoursesCategoryCard">
+                                        <v-icon icon="mdi-arrow-left" size="18" />
+                                        <span>Zurück</span>
+                                    </section>
+                                    <div v-if="activeMoreCoursesCategoryCard.items.length" class="students-timetable-v2-more-courses-card__list">
+                                        <v-chip
+                                            v-for="course in activeMoreCoursesCategoryCard.items"
+                                            :key="course.selectionKey"
+                                            size="small"
+                                            :color="moreCourseChipColor(course)"
+                                            :variant="selectedMoreCourseItem?.selectionKey === course.selectionKey && !moreCourseUnavailable(course) ? 'flat' : 'tonal'"
+                                            :disabled="moreCourseDisabled(course)"
+                                            class="students-timetable-v2-selected-courses-card__course students-timetable-v2-more-courses-card__course"
+                                            :class="{
+                                                'students-timetable-v2-selected-courses-card__course--active': selectedMoreCourseItem?.selectionKey === course.selectionKey,
+                                                'students-timetable-v2-more-courses-card__course--unavailable': moreCourseUnavailable(course),
+                                            }"
+                                            :role="moreCourseDisabled(course) ? undefined : 'button'"
+                                            :tabindex="moreCourseDisabled(course) ? undefined : 0"
+                                            :aria-expanded="selectedMoreCourseItem?.selectionKey === course.selectionKey ? 'true' : 'false'"
+                                            @click="toggleMoreCourseOffers(course)"
+                                            @keydown.enter.prevent="toggleMoreCourseOffers(course)"
+                                            @keydown.space.prevent="toggleMoreCourseOffers(course)">
+                                            <span class="students-timetable-v2-more-courses-card__label">
+                                                {{ course.label }}
+                                            </span>
+                                            <span v-if="course.meta" class="students-timetable-v2-more-courses-card__meta">
+                                                {{ course.meta }}
+                                            </span>
+                                        </v-chip>
+                                    </div>
+                                    <v-alert v-else type="info" variant="tonal" density="compact">
+                                        Keine weiteren Kurse verfügbar.
+                                    </v-alert>
                                 </div>
                             </v-card-text>
                         </v-card>
@@ -1670,6 +1688,7 @@ export default {
             timetableOptionsCardVisible: false,
             moreCoursesVisible: false,
             moreCoursesCardVisible: false,
+            activeMoreCoursesCategoryCardKey: '',
             activeMoreAdoptedCourseCardKey: '',
             activeMoreExistingCourseBaseKey: '',
             moreCoursesSelectionSnapshot: '',
@@ -2159,6 +2178,19 @@ export default {
                     items,
                 }
             })
+        },
+        moreCoursesTitle() {
+            if (!this.activeMoreCoursesCategoryCard) return 'Mehr Kurse'
+
+            return ['Mehr Kurse', this.activeMoreCoursesCategoryCard.title].filter(Boolean).join(': ')
+        },
+        activeMoreCoursesCategoryCard() {
+            const activeCard = this.moreCoursesCategoryCards.find((card) => card.key === this.activeMoreCoursesCategoryCardKey)
+            if (activeCard) return activeCard
+
+            if (!this.selectedMoreCourseItem) return null
+
+            return this.moreCoursesCategoryCardForCourse(this.selectedMoreCourseItem)
         },
         moreAdoptedCourseCards() {
             return [
@@ -5586,6 +5618,31 @@ export default {
 
             return 'Vorgesehen'
         },
+        moreCoursesCategoryCardForCourse(course) {
+            const selectionKey = course?.selectionKey || this.courseSelectionKey(course, course?.courseGroup)
+            if (!selectionKey) return null
+
+            return this.moreCoursesCategoryCards.find((card) => card.items
+                .some((cardCourse) => cardCourse.selectionKey === selectionKey))
+                || null
+        },
+        moreCoursesCategoryCardDisabled(card) {
+            return !Array.isArray(card?.items) || card.items.length === 0
+        },
+        openMoreCoursesCategoryCard(card) {
+            if (this.moreCoursesCategoryCardDisabled(card)) return
+
+            const cardKey = String(card?.key || '').trim()
+            if (!cardKey) return
+
+            this.activeMoreCoursesCategoryCardKey = cardKey
+            this.selectedMoreCourseKey = ''
+            this.syncTimetableV2Route({ replace: true })
+        },
+        closeMoreCoursesCategoryCard() {
+            this.activeMoreCoursesCategoryCardKey = ''
+            this.closeMoreCourseOffers()
+        },
         openMoreAdoptedCourseCard(card) {
             if (this.moreAdoptedCourseCardDisabled(card)) return
 
@@ -5793,6 +5850,7 @@ export default {
             this.moreCoursesVisible = true
             this.moreCoursesCardVisible = true
             this.timetableOptionsCardVisible = false
+            this.activeMoreCoursesCategoryCardKey = ''
             this.moreCoursesSelectionSnapshot = this.currentMoreCoursesSelectionSignature()
             this.courseSelectionSnapshotSelections = { ...this.currentCourseSelectionOverrides() }
             this.offeredCourseSelectionSnapshotSelections = { ...this.currentOfferedCourseSelectionOverrides() }
@@ -5809,6 +5867,7 @@ export default {
             this.moreCoursesVisible = true
             this.moreCoursesCardVisible = false
             this.timetableOptionsCardVisible = false
+            this.activeMoreCoursesCategoryCardKey = ''
             this.timetableNoSaturdayDraftSelected = this.timetableNoSaturdaySelected
             this.timetableMaxFreeDaysDraftSelected = this.timetableMaxFreeDaysSelected
             this.timetableNoDistanceLearningDraftSelected = this.timetableNoDistanceLearningSelected
@@ -6009,6 +6068,7 @@ export default {
         closeMoreCoursesCard(options = {}) {
             this.moreCoursesVisible = false
             this.moreCoursesCardVisible = false
+            this.activeMoreCoursesCategoryCardKey = ''
             this.activeMoreAdoptedCourseCardKey = ''
             this.activeMoreExistingCourseBaseKey = ''
             this.selectedMoreCourseKey = ''
@@ -10742,32 +10802,118 @@ export default {
 .students-timetable-v2-more-courses-card__category-grid {
     display: grid;
     gap: 10px;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .students-timetable-v2-more-courses-card__category {
-    border: 1px solid rgba(100, 116, 139, 0.18);
+    display: grid;
+    place-items: center;
+    min-width: 0;
+    min-height: 76px;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.82);
+    cursor: pointer;
+    transition:
+        border-color 0.15s ease,
+        background 0.15s ease,
+        transform 0.15s ease;
+}
+
+.students-timetable-v2-more-courses-card__category:hover,
+.students-timetable-v2-more-courses-card__category:focus-visible {
+    border-color: rgba(37, 99, 235, 0.34);
+    background: rgba(239, 246, 255, 0.92);
+    outline: none;
+    transform: translateY(-1px);
 }
 
 .students-timetable-v2-more-courses-card__category--empty {
-    opacity: 0.78;
+    background: rgba(241, 245, 249, 0.72);
+    border-color: rgba(148, 163, 184, 0.16) !important;
+    color: rgba(15, 23, 42, 0.42);
+    cursor: default;
+    opacity: 0.58;
+}
+
+.students-timetable-v2-more-courses-card__category--empty:hover,
+.students-timetable-v2-more-courses-card__category--empty:focus-visible {
+    background: rgba(241, 245, 249, 0.72);
+    border-color: rgba(148, 163, 184, 0.16) !important;
+    transform: none;
 }
 
 .students-timetable-v2-more-courses-card__category-title {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     gap: 8px;
-    min-height: 0;
-    padding: 10px 12px 4px;
+    max-width: 100%;
+    min-width: 0;
     color: #0f172a;
-    font-size: 0.82rem;
+    font-size: 0.88rem;
     font-weight: 900;
-    line-height: 1.1;
+    line-height: 1.2;
+    text-align: center;
+    overflow-wrap: anywhere;
+    hyphens: auto;
 }
 
-.students-timetable-v2-more-courses-card__category-content {
-    padding: 8px 12px 12px;
+.students-timetable-v2-more-courses-card__category--completed {
+    border-color: rgba(22, 163, 74, 0.24);
+}
+
+.students-timetable-v2-more-courses-card__category--missing {
+    border-color: rgba(239, 68, 68, 0.24);
+}
+
+.students-timetable-v2-more-courses-card__category--planned {
+    border-color: rgba(22, 163, 74, 0.24);
+}
+
+.students-timetable-v2-more-courses-card__category--semester {
+    border-color: rgba(14, 165, 233, 0.24);
+}
+
+.students-timetable-v2-more-courses-card__category--additional {
+    border-color: rgba(37, 99, 235, 0.24);
+}
+
+.students-timetable-v2-more-courses-card__course-view {
+    display: grid;
+    gap: 10px;
+}
+
+.students-timetable-v2-more-courses-card__back-card {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: fit-content;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid rgba(37, 99, 235, 0.22);
+    border-radius: 8px;
+    background: rgba(239, 246, 255, 0.86);
+    color: #1d4ed8;
+    cursor: pointer;
+    font-size: 0.86rem;
+    font-weight: 900;
+    line-height: 1.1;
+    transition:
+        border-color 0.15s ease,
+        background 0.15s ease,
+        color 0.15s ease;
+}
+
+.students-timetable-v2-more-courses-card__back-card:hover,
+.students-timetable-v2-more-courses-card__back-card:focus-visible {
+    border-color: rgba(37, 99, 235, 0.32);
+    background: rgba(37, 99, 235, 0.08);
+    color: #1e40af;
+    outline: none;
 }
 
 .students-timetable-v2-more-courses-card__list {
@@ -11643,12 +11789,27 @@ export default {
         gap: 8px;
     }
 
+    .students-timetable-v2-more-courses-card__category-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
     .students-timetable-v2-more-adopted-courses-card__category {
         min-height: 64px;
         padding: 8px;
     }
 
+    .students-timetable-v2-more-courses-card__category {
+        min-height: 64px;
+        padding: 8px;
+    }
+
     .students-timetable-v2-more-adopted-courses-card__category-title {
+        font-size: 0.82rem;
+        line-height: 1.15;
+    }
+
+    .students-timetable-v2-more-courses-card__category-title {
         font-size: 0.82rem;
         line-height: 1.15;
     }
