@@ -928,6 +928,15 @@
                                 </v-chip>
                                 <span class="students-timetable-v2-offered-courses-card__actions">
                                     <v-btn
+                                        size="small"
+                                        color="success"
+                                        variant="tonal"
+                                        append-icon="mdi-check"
+                                        :disabled="!moreCoursesSelectionChanged || timetableCalculationLoading"
+                                        @click.stop="applyMoreCoursesSelection">
+                                        Anwenden
+                                    </v-btn>
+                                    <v-btn
                                         prepend-icon="mdi-close"
                                         size="small"
                                         variant="tonal"
@@ -954,15 +963,19 @@
                                         :key="course.key"
                                         class="students-timetable-v2-offered-courses-card__item students-timetable-v2-offered-courses-card__item--toggle"
                                         :class="{
-                                            'students-timetable-v2-offered-courses-card__item--selected': moreOfferedCourseSelected(course),
-                                            'students-timetable-v2-offered-courses-card__item--deselected': !moreOfferedCourseSelected(course),
+                                            'students-timetable-v2-offered-courses-card__item--selected': moreOfferedCourseSelected(course) && !moreCourseOfferUnavailable(course),
+                                            'students-timetable-v2-offered-courses-card__item--deselected': !moreOfferedCourseSelected(course) && !moreCourseOfferUnavailable(course),
+                                            'students-timetable-v2-offered-courses-card__item--available': !moreCourseOfferUnavailable(course),
+                                            'students-timetable-v2-offered-courses-card__item--unavailable': moreCourseOfferUnavailable(course),
                                         }"
-                                        role="button"
-                                        tabindex="0"
+                                        :role="moreCourseOfferDisabled(course) ? undefined : 'button'"
+                                        :tabindex="moreCourseOfferDisabled(course) ? -1 : 0"
                                         :aria-pressed="moreOfferedCourseSelected(course) ? 'true' : 'false'"
-                                        @click="toggleMoreOfferedCourseItem(course)"
-                                        @keydown.enter.prevent="toggleMoreOfferedCourseItem(course)"
-                                        @keydown.space.prevent="toggleMoreOfferedCourseItem(course)">
+                                        :aria-disabled="moreCourseOfferDisabled(course) ? 'true' : 'false'"
+                                        :title="moreCourseOfferUnavailable(course) ? 'Kann nicht konfliktfrei in den Stundenplan eingefügt werden.' : undefined"
+                                        @click="toggleMoreOfferedCourseItem(course, selectedMoreCourseItem)"
+                                        @keydown.enter.prevent="toggleMoreOfferedCourseItem(course, selectedMoreCourseItem)"
+                                        @keydown.space.prevent="toggleMoreOfferedCourseItem(course, selectedMoreCourseItem)">
                                         <v-icon v-if="moreOfferedCourseSelected(course)" icon="mdi-check" size="16" color="success" />
                                         <span class="students-timetable-v2-offered-courses-card__name">
                                             {{ course.name || course.code }}
@@ -5052,7 +5065,7 @@ export default {
         },
         moreCourseAvailabilityPayloadCandidates(course) {
             const availabilityKey = this.moreCourseAvailabilityKey(course)
-            const courseGroup = course?.courseGroup || ''
+            const courseGroup = this.moreCourseAvailabilityCourseGroup(course)
             const courseKey = this.timetableV2CalculationCourseKey(course)
             const offeredCourses = this.offeredCourseItemsForSelectedCourse(course)
             const offeredCourseGroupKeys = offeredCourses
@@ -5073,6 +5086,12 @@ export default {
                         .filter((courseGroupKey) => courseGroupKey !== offeredCourse?.backendSelectionKey),
                 })),
             ]
+        },
+        moreCourseAvailabilityCourseGroup(course) {
+            const courseGroup = String(course?.courseGroup || '').trim()
+            if (['additional', 'missing'].includes(courseGroup)) return courseGroup
+
+            return 'planned'
         },
         timetableV2CalculationSelectedCourses(options = {}) {
             const excludedSelectedCourseSelectionKey = String(options?.excludedSelectedCourseSelectionKey || '').trim()
@@ -5148,13 +5167,14 @@ export default {
         timetableV2CalculationCourseKey(course) {
             const courseKey = String(course?.key || '').trim()
             const courseCode = this.normalizedCourseCode(course?.code || course?.label || '')
+            const subjectRowCourse = this.subjectRowCourseForCourseCode(courseCode)
 
             return courseKey && !this.syntheticCourseKey(courseKey)
                 ? courseKey
-                : courseCode || courseKey
+                : subjectRowCourse?.key || courseCode || courseKey
         },
         syntheticCourseKey(courseKey) {
-            return /^subject-row-/iu.test(String(courseKey || '').trim())
+            return /^(completed|missing|subject-row)-/iu.test(String(courseKey || '').trim())
         },
         timetableV2DeselectedOfferedCourseGroupKeys(options = {}) {
             const excludedSelectedCourseSelectionKey = String(options?.excludedSelectedCourseSelectionKey || '').trim()
@@ -6526,6 +6546,18 @@ export default {
         moreCourseDisabled(course) {
             return this.moreCourseAvailabilityLoading || this.moreCourseUnavailable(course) || this.moreCourseSelectionLocked(course)
         },
+        moreCourseOfferUnavailable(offeredCourse, moreCourse = this.selectedMoreCourseItem) {
+            if (!moreCourse || this.moreCourseRestorable(moreCourse)) return false
+            if (this.moreCourseUnavailable(moreCourse)) return true
+
+            const availabilityKey = this.moreCourseOfferAvailabilityKey(moreCourse, offeredCourse)
+            if (!availabilityKey) return false
+
+            return this.moreCourseAvailabilityByKey[availabilityKey] === false
+        },
+        moreCourseOfferDisabled(offeredCourse, moreCourse = this.selectedMoreCourseItem) {
+            return this.moreCourseAvailabilityLoading || this.moreCourseOfferUnavailable(offeredCourse, moreCourse)
+        },
         moreCourseSelectionLocked(course) {
             const selectionKey = this.moreCourseAvailabilityKey(course)
             if (!selectionKey || !this.selectedMoreCourseKey) return false
@@ -6560,7 +6592,7 @@ export default {
                 return selectionKey && Object.prototype.hasOwnProperty.call(this.moreOfferedCourseSelectionOverrides, selectionKey)
             })
             const offerAvailabilityValues = offeredCourses.map((offeredCourse) => {
-                if (hasExplicitOfferSelection && !this.moreOfferedCourseSelected(offeredCourse)) return false
+                if (hasExplicitOfferSelection && !this.moreOfferedCourseSelected(offeredCourse, course)) return false
 
                 const availability = this.moreCourseAvailabilityByKey[this.moreCourseOfferAvailabilityKey(course, offeredCourse)]
                 if (availability === true || availability === false) return availability
@@ -6583,16 +6615,17 @@ export default {
         moreCourseOfferedCourseItemsAllDeselected(course) {
             const offeredCourses = this.offeredCourseItemsForSelectedCourse(course)
 
-            return offeredCourses.length > 0 && offeredCourses.every((offeredCourse) => !this.moreOfferedCourseSelected(offeredCourse))
+            return offeredCourses.length > 0 && offeredCourses.every((offeredCourse) => !this.moreOfferedCourseSelected(offeredCourse, course))
         },
         moreCourseOfferedCourseItemsAnySelected(course) {
             return this.offeredCourseItemsForSelectedCourse(course)
-                .some((offeredCourse) => this.moreOfferedCourseSelected(offeredCourse))
+                .some((offeredCourse) => this.moreOfferedCourseSelected(offeredCourse, course))
         },
-        moreOfferedCourseSelected(course) {
-            const selectionKey = course?.selectionKey || this.offeredCourseSelectionKey(course, this.selectedMoreCourseItem)
+        moreOfferedCourseSelected(course, moreCourse = this.selectedMoreCourseItem) {
+            const selectionKey = course?.selectionKey || this.offeredCourseSelectionKey(course, moreCourse)
             if (!selectionKey) return false
             if (!this.offeredCourseIncludedByInstructionFilters(course)) return false
+            if (this.moreCourseOfferUnavailable(course, moreCourse)) return false
 
             return this.moreOfferedCourseSelectionOverrides[selectionKey] === true
         },
@@ -6738,6 +6771,7 @@ export default {
                 const selectionKey = offeredCourse?.selectionKey || this.offeredCourseSelectionKey(offeredCourse, course)
                 if (!selectionKey) return selections
                 if (this.offeredCourseSelectionOverrides[selectionKey] === false) return selections
+                if (this.moreCourseOfferUnavailable(offeredCourse, course)) return selections
 
                 return {
                     ...selections,
@@ -6745,13 +6779,15 @@ export default {
                 }
             }, {})
         },
-        toggleMoreOfferedCourseItem(course) {
-            const selectionKey = course?.selectionKey || this.offeredCourseSelectionKey(course, this.selectedMoreCourseItem)
+        toggleMoreOfferedCourseItem(course, moreCourse = this.selectedMoreCourseItem) {
+            if (this.moreCourseOfferDisabled(course, moreCourse)) return
+
+            const selectionKey = course?.selectionKey || this.offeredCourseSelectionKey(course, moreCourse)
             if (!selectionKey) return
 
             const moreOfferedCourseSelections = { ...this.moreOfferedCourseSelectionOverrides }
 
-            if (this.moreOfferedCourseSelected(course)) {
+            if (this.moreOfferedCourseSelected(course, moreCourse)) {
                 delete moreOfferedCourseSelections[selectionKey]
             } else {
                 moreOfferedCourseSelections[selectionKey] = true
@@ -10601,6 +10637,30 @@ export default {
 }
 
 .students-timetable-v2-offered-courses-card__item--deselected .students-timetable-v2-offered-courses-card__name {
+    color: #7f1d1d;
+}
+
+.students-timetable-v2-offered-courses-card__item--available {
+    border-color: rgba(22, 163, 74, 0.36);
+    background: rgba(240, 253, 244, 0.92);
+    color: #14532d;
+}
+
+.students-timetable-v2-offered-courses-card__item--available .students-timetable-v2-offered-courses-card__name,
+.students-timetable-v2-offered-courses-card__item--available .students-timetable-v2-offered-courses-card__code {
+    color: #14532d;
+}
+
+.students-timetable-v2-offered-courses-card__item--unavailable {
+    cursor: not-allowed;
+    border-color: rgba(220, 38, 38, 0.5);
+    background: rgba(254, 242, 242, 0.95);
+    color: #7f1d1d;
+    box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.14);
+}
+
+.students-timetable-v2-offered-courses-card__item--unavailable .students-timetable-v2-offered-courses-card__name,
+.students-timetable-v2-offered-courses-card__item--unavailable .students-timetable-v2-offered-courses-card__code {
     color: #7f1d1d;
 }
 

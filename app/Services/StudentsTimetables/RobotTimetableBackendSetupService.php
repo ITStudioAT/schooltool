@@ -320,6 +320,17 @@ class RobotTimetableBackendSetupService
 
         foreach ($candidateCourses as $candidateCourse) {
             $availabilityKey = (string) $candidateCourse['availability_key'];
+            $courseKey = trim((string) $candidateCourse['course_key']);
+
+            if ($courseKey === '' || ! array_key_exists($courseKey, $availableCoursesByKey)) {
+                $availability[$availabilityKey] = [
+                    'available' => false,
+                    'valid_timetable_count' => 0,
+                ];
+
+                continue;
+            }
+
             [$candidateInput, $candidateSettings] = $this->timetableVariationInputWithAvailabilityCandidate(
                 $baseInput,
                 $settings,
@@ -368,7 +379,29 @@ class RobotTimetableBackendSetupService
                 $courseGroups,
                 $settings,
             ))
-            ->keyBy(fn (array $course): string => (string) ($course['key'] ?? ''))
+            ->reduce(function (array $coursesByKey, array $course): array {
+                foreach ($this->availabilityCourseLookupKeys($course) as $courseKey) {
+                    $coursesByKey[$courseKey] ??= $course;
+                }
+
+                return $coursesByKey;
+            }, []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @return list<string>
+     */
+    private function availabilityCourseLookupKeys(array $course): array
+    {
+        return collect([
+            $course['key'] ?? '',
+            ...$this->courseAliases($course),
+        ])
+            ->map(fn (string $value): string => trim($value))
+            ->filter()
+            ->unique()
+            ->values()
             ->all();
     }
 

@@ -4,6 +4,121 @@ use App\Models\User;
 use App\Services\StudentsTimetables\RobotTimetableBackendSetupService;
 use Illuminate\Support\Facades\Cache;
 
+it('indexes availability candidates by generated key and course code alias', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $method = $reflection->getMethod('availableCoursesByKey');
+    $method->setAccessible(true);
+
+    $coursesByKey = $method->invokeArgs($service, [
+        [
+            [
+                'id' => 11,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'BU1',
+                'json_subject' => 'BU',
+                'name' => 'Biologie 1',
+                'tt_subject' => 'BU',
+                'hours_per_week' => 4,
+                'is_active' => true,
+            ],
+        ],
+        [],
+        [
+            [
+                'weekday' => 1,
+                'hour' => 14,
+                'class_name' => 'BU - 1 - 3C - PLA',
+                'display_label' => 'BU - 1 - 3C - PLA',
+                'title' => 'BU - 1 - 3C - PLA',
+                'course' => 'BU1',
+                'subject' => 'BU',
+            ],
+        ],
+        [
+            'selection' => [
+                'semester' => 1,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+        ],
+    ]);
+
+    expect($coursesByKey['11|1|common|BU1|BU|Biologie 1|BU1']['code'])->toBe('BU1')
+        ->and($coursesByKey['BU1']['code'])->toBe('BU1');
+});
+
+it('marks unresolved shared availability candidates unavailable', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $method = $reflection->getMethod('courseAvailabilityFromSharedInput');
+    $method->setAccessible(true);
+
+    $availability = $method->invokeArgs($service, [
+        [
+            [
+                'id' => 11,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'BU1',
+                'json_subject' => 'BU',
+                'name' => 'Biologie 1',
+                'tt_subject' => 'BU',
+                'hours_per_week' => 4,
+                'is_active' => true,
+            ],
+        ],
+        [],
+        [
+            [
+                'weekday' => 1,
+                'hour' => 14,
+                'class_name' => 'BU - 1 - 3C - PLA',
+                'display_label' => 'BU - 1 - 3C - PLA',
+                'title' => 'BU - 1 - 3C - PLA',
+                'course' => 'BU1',
+                'subject' => 'BU',
+            ],
+        ],
+        [
+            'selection' => [
+                'semester' => 1,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [14],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        [
+            [
+                'availability_key' => 'unknown',
+                'course_key' => 'UNKNOWN',
+                'course_group' => 'planned',
+            ],
+        ],
+    ]);
+
+    expect($availability['unknown'])->toBe([
+        'available' => false,
+        'valid_timetable_count' => 0,
+    ]);
+});
+
 it('counts all selected course variations and the overlap free full green variations', function () {
     $service = app(RobotTimetableBackendSetupService::class);
 

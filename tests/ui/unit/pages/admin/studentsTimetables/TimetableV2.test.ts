@@ -1028,7 +1028,7 @@ describe('TimetableV2 route steps', () => {
         expect(source).toMatch(/\.students-timetable-v2-more-adopted-courses-card__course-list \{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(116px, 1fr\)\);/u)
         expect(source).toMatch(/\.students-timetable-v2-more-adopted-courses-card__course \{[\s\S]*min-height: 64px;/u)
         expect(source).toContain('v-for="card in moreCoursesCategoryCards"')
-        expect(source).toContain('v-for="course in card.items"')
+        expect(source).toContain('v-for="course in activeMoreCoursesCategoryCard.items"')
         expect(source).toContain("title: 'Abgeschlossene'")
         expect(source).toContain("title: 'Negative'")
         expect(source).toContain("title: 'Frühere'")
@@ -2501,14 +2501,20 @@ describe('TimetableV2 route steps', () => {
         ])
     })
 
-    it('renders a red close button for offered courses in the more courses card', () => {
+    it('renders apply and close buttons for offered courses in the more courses card', () => {
         const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
 
+        expect(source).toMatch(/class="students-timetable-v2-offered-courses-card__actions"[\s\S]*append-icon="mdi-check"[\s\S]*:disabled="!moreCoursesSelectionChanged \|\| timetableCalculationLoading"[\s\S]*@click\.stop="applyMoreCoursesSelection">\s+Anwenden[\s\S]*@click\.stop="closeMoreCourseOffers">\s+Schließen/u)
+        expect(source).toMatch(/class="students-timetable-v2-offered-courses-card__actions"[\s\S]*size="small"[\s\S]*color="success"[\s\S]*variant="tonal"[\s\S]*append-icon="mdi-check"/u)
         expect(source).toContain('prepend-icon="mdi-close"')
         expect(source).toMatch(/prepend-icon="mdi-close"[\s\S]*color="error"[\s\S]*aria-label="Schließen"/u)
         expect(source).toContain('aria-label="Schließen"')
         expect(source).toMatch(/@click\.stop="closeMoreCourseOffers">\s+Schließen/u)
         expect(source).toMatch(/@click\.stop="closeMoreCourseOffers"/u)
+        expect(source).toContain("'students-timetable-v2-offered-courses-card__item--available': !moreCourseOfferUnavailable(course)")
+        expect(source).toContain("'students-timetable-v2-offered-courses-card__item--unavailable': moreCourseOfferUnavailable(course)")
+        expect(source).toContain(':aria-disabled="moreCourseOfferDisabled(course) ? \'true\' : \'false\'"')
+        expect(source).toContain('@click="toggleMoreOfferedCourseItem(course, selectedMoreCourseItem)"')
     })
 
     it('shows four adopted course option cards without details', () => {
@@ -8192,6 +8198,18 @@ describe('TimetableV2 route steps', () => {
             [offerAvailabilityKeys[1]]: false,
         }
         expect(TimetableV2.methods.moreCourseChipColor.call(context, moreCourse)).toBe('warning')
+        expect(TimetableV2.methods.moreCourseOfferUnavailable.call(context, offeredCourses[0], moreCourse)).toBe(false)
+        expect(TimetableV2.methods.moreCourseOfferUnavailable.call(context, offeredCourses[1], moreCourse)).toBe(true)
+        expect(TimetableV2.methods.moreCourseOfferDisabled.call(context, offeredCourses[1], moreCourse)).toBe(true)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, offeredCourses[1], moreCourse)).toBe(false)
+        expect(TimetableV2.methods.moreOfferedCourseSelectionsForSingleCourse.call(context, moreCourse)).toEqual({
+            [offerSelectionKeys[0]]: true,
+        })
+
+        const saveCallCount = context.saveStoredTimetableState.mock.calls.length
+        TimetableV2.methods.toggleMoreOfferedCourseItem.call(context, offeredCourses[1], moreCourse)
+
+        expect(context.saveStoredTimetableState).toHaveBeenCalledTimes(saveCallCount)
 
         context.moreCourseAvailabilityByKey = {
             [moreCourse.selectionKey]: false,
@@ -8199,6 +8217,156 @@ describe('TimetableV2 route steps', () => {
             [offerAvailabilityKeys[1]]: false,
         }
         expect(TimetableV2.methods.moreCourseChipColor.call(context, moreCourse)).toBe('error')
+    })
+
+    it('checks more course offer availability across every category', () => {
+        const courseCodes = ['BU1', 'M1', 'GW1', 'D2', 'INF2']
+        const context = timetableV2Context({
+            courseSelectionOverrides: {
+                'semester:D2': false,
+            },
+            courseGroups: courseCodes.flatMap((courseCode, courseIndex) => [
+                {
+                    class_name: `${courseCode}-A`,
+                    course: courseCode,
+                    display_label: `${courseCode} - A`,
+                    hour: courseIndex + 1,
+                    key: `${courseCode.toLowerCase()}-a`,
+                    semester: 1,
+                    teacher: 'A',
+                    title: courseCode,
+                    weekday: 1,
+                },
+                {
+                    class_name: `${courseCode}-B`,
+                    course: courseCode,
+                    display_label: `${courseCode} - B`,
+                    hour: courseIndex + 2,
+                    key: `${courseCode.toLowerCase()}-b`,
+                    semester: 1,
+                    teacher: 'B',
+                    title: courseCode,
+                    weekday: 2,
+                },
+            ]),
+            courseGroupsLoaded: true,
+            selectedCourseItems: [
+                { courseGroup: 'planned', key: 'D0', selectionKey: 'planned:D0' },
+            ],
+            storedAdditionalCourseItems: [
+                { code: 'INF2', hours: 2, key: 'INF2', label: 'INF2' },
+            ],
+            storedCompletedCourseItems: [
+                { code: 'BU1', hours: 4, key: 'BU1', label: 'BU1' },
+            ],
+            storedMissingCourseCardItems: [
+                { code: 'M1', hours: 3, key: 'M1', label: 'M1' },
+            ],
+            storedPlannedCourseItems: [
+                { code: 'GW1', hours: 4, key: 'GW1', label: 'GW1' },
+            ],
+            storedSemesterCourseItems: [
+                { code: 'D2', hours: 3, key: 'D2', label: 'D2' },
+            ],
+        })
+        const expectedPayloadGroups = {
+            additional: 'additional',
+            completed: 'planned',
+            missing: 'missing',
+            planned: 'planned',
+            semester: 'planned',
+        }
+
+        Object.entries(expectedPayloadGroups).forEach(([courseGroup, expectedPayloadGroup]) => {
+            const moreCourse = context.moreCoursesCardItems.find((course) => course.courseGroup === courseGroup)
+            const offeredCourses = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, moreCourse)
+            const offerAvailabilityKeys = offeredCourses.map((offeredCourse) =>
+                TimetableV2.methods.moreCourseOfferAvailabilityKey.call(context, moreCourse, offeredCourse))
+            const offerSelectionKeys = offeredCourses.map((offeredCourse) => offeredCourse.selectionKey)
+
+            const payload = TimetableV2.methods.timetableV2CalculationPayloadForMoreCourseAvailability.call(context, moreCourse)
+
+            expect(offeredCourses).toHaveLength(2)
+            expect(payload.candidate_courses[0]).toMatchObject({
+                availability_key: moreCourse.selectionKey,
+                course_group: expectedPayloadGroup,
+                course_key: moreCourse.key,
+            })
+            expect(payload.candidate_courses.slice(1).map((candidateCourse) => candidateCourse.course_group)).toEqual([
+                expectedPayloadGroup,
+                expectedPayloadGroup,
+            ])
+
+            context.storedTimetableState = {
+                timetableV2Selection: {
+                    moreOfferedCourseSelections: Object.fromEntries(offerSelectionKeys.map((selectionKey) => [selectionKey, true])),
+                },
+            }
+            context.moreCourseAvailabilityByKey = {
+                [moreCourse.selectionKey]: true,
+                [offerAvailabilityKeys[0]]: true,
+                [offerAvailabilityKeys[1]]: false,
+            }
+
+            expect(TimetableV2.methods.moreCourseOfferUnavailable.call(context, offeredCourses[0], moreCourse)).toBe(false)
+            expect(TimetableV2.methods.moreCourseOfferUnavailable.call(context, offeredCourses[1], moreCourse)).toBe(true)
+            expect(TimetableV2.methods.moreCourseOfferDisabled.call(context, offeredCourses[1], moreCourse)).toBe(true)
+            expect(TimetableV2.methods.moreCourseChipColor.call(context, moreCourse)).toBe('warning')
+            expect(TimetableV2.methods.moreOfferedCourseSelectionsForSingleCourse.call(context, moreCourse)).toEqual({
+                [offerSelectionKeys[0]]: true,
+            })
+        })
+    })
+
+    it('uses subject row keys for synthetic completed more course availability candidates', () => {
+        const context = timetableV2Context({
+            courseGroups: [
+                {
+                    class_name: 'BU - 1 - 3C - PLA',
+                    course: 'BU1',
+                    display_label: 'BU - 1 - 3C - PLA',
+                    hour: 14,
+                    key: 'bu1-pla',
+                    semester: 1,
+                    teacher: 'PLA',
+                    title: 'BU - 1 - 3C - PLA',
+                    weekday: 1,
+                },
+            ],
+            courseGroupsLoaded: true,
+            storedCompletedCourseItems: [
+                {
+                    code: 'BU1',
+                    hours: 4,
+                    key: 'completed-BU1-1',
+                    label: 'BU1',
+                    meta: '1',
+                },
+            ],
+            subjectRows: [
+                {
+                    branch: 'common',
+                    hours_per_week: 4,
+                    id: 11,
+                    is_active: true,
+                    json_code: 'BU1',
+                    json_subject: 'BU',
+                    name: 'Biologie 1',
+                    semester: 1,
+                },
+            ],
+        })
+        const moreCourse = context.moreCoursesCardItems.find((course) => course.courseGroup === 'completed')
+        const payload = TimetableV2.methods.timetableV2CalculationPayloadForMoreCourseAvailability.call(context, moreCourse)
+
+        expect(TimetableV2.methods.timetableV2CalculationCourseKey.call(context, moreCourse)).toBe(
+            '11|1|common|BU1|BU|Biologie 1|BU1',
+        )
+        expect(payload.candidate_courses[0]).toMatchObject({
+            availability_key: 'completed:BU1',
+            course_group: 'planned',
+            course_key: '11|1|common|BU1|BU|Biologie 1|BU1',
+        })
     })
 
     it('applies the no Saturday option to timetable and availability payloads', () => {
