@@ -267,12 +267,22 @@ class RobotTimetableBackendSetupService
         );
 
         if ($availabilityOnly && $selectedQualityCriterionKeys === []) {
+            $base = $this->timetableVariationBase(
+                $subjectRows,
+                $subjectMappings,
+                $courseGroups,
+                $settings,
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
+            );
+
             return $this->courseAvailabilityFromSharedInput(
                 $subjectRows,
                 $subjectMappings,
                 $courseGroups,
                 $settings,
                 $candidateCourses,
+                $this->selectedTimetableFromBase($base, $settings, $evaluationCriteria),
             );
         }
 
@@ -313,9 +323,13 @@ class RobotTimetableBackendSetupService
         array $courseGroups,
         array $settings,
         array $candidateCourses,
+        ?array $selectedTimetable = null,
     ): array {
         $baseInput = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
         $availableCoursesByKey = $this->availableCoursesByKey($subjectRows, $subjectMappings, $courseGroups, $settings);
+        $selectedTimetableOccupiedCourseGroups = $selectedTimetable === null
+            ? null
+            : $this->selectedTimetableOccupiedCourseGroups($selectedTimetable);
         $availability = [];
 
         foreach ($candidateCourses as $candidateCourse) {
@@ -326,6 +340,31 @@ class RobotTimetableBackendSetupService
                 $availability[$availabilityKey] = [
                     'available' => false,
                     'valid_timetable_count' => 0,
+                ];
+
+                continue;
+            }
+
+            if (
+                $selectedTimetableOccupiedCourseGroups !== null
+                && ! $this->availabilityCandidateAlreadySelected($candidateCourse, $settings, $courseKey)
+            ) {
+                $candidateSettings = $this->settingsWithAvailabilityCandidate($settings, $candidateCourse);
+                $courseOptions = $this->courseOptions(
+                    $availableCoursesByKey[$courseKey],
+                    $courseGroups,
+                    $subjectMappings,
+                    $candidateSettings,
+                );
+                $candidateAvailable = $courseOptions !== []
+                    && collect($courseOptions)->contains(fn (array $option): bool => ! $this->courseOptionConflictsWithSelectedTimetable(
+                        $option,
+                        $selectedTimetableOccupiedCourseGroups,
+                    ));
+
+                $availability[$availabilityKey] = [
+                    'available' => $candidateAvailable,
+                    'valid_timetable_count' => $candidateAvailable ? 1 : 0,
                 ];
 
                 continue;
@@ -354,6 +393,19 @@ class RobotTimetableBackendSetupService
         }
 
         return $availability;
+    }
+
+    /**
+     * @param  array<string, mixed>  $candidateCourse
+     * @param  array<string, mixed>  $settings
+     */
+    private function availabilityCandidateAlreadySelected(array $candidateCourse, array $settings, string $courseKey): bool
+    {
+        $selectedCourseKey = ($candidateCourse['course_group'] ?? null) === 'additional'
+            ? 'selected_additional_course_keys'
+            : 'selected_course_keys';
+
+        return in_array($courseKey, $this->stringList($settings[$selectedCourseKey] ?? []), true);
     }
 
     /**
@@ -432,6 +484,25 @@ class RobotTimetableBackendSetupService
 
         if ($candidateCourse['course_group'] === 'additional') {
             if (in_array($courseKey, $this->stringList($settings['selected_additional_course_keys'] ?? []), true)) {
+                if ($this->stringList($candidateCourse['deselected_course_group_keys'] ?? []) === []) {
+                    return [$baseInput, $candidateSettings];
+                }
+
+                $additionalCourses = $baseInput['additional_courses'];
+                $additionalCourseOptions = $baseInput['additional_course_options'];
+                foreach ($additionalCourses as $courseIndex => $additionalCourse) {
+                    if (! $this->courseMatchesSelectedCourseKeys($additionalCourse, [$courseKey])) {
+                        continue;
+                    }
+
+                    $additionalCourseOptions[$courseIndex] = $this->courseOptions($course, $courseGroups, $subjectMappings, $candidateSettings);
+
+                    return [[
+                        ...$baseInput,
+                        'additional_course_options' => $additionalCourseOptions,
+                    ], $candidateSettings];
+                }
+
                 return [$baseInput, $candidateSettings];
             }
 
@@ -449,6 +520,26 @@ class RobotTimetableBackendSetupService
         }
 
         if (in_array($courseKey, $this->stringList($settings['selected_course_keys'] ?? []), true)) {
+            if ($this->stringList($candidateCourse['deselected_course_group_keys'] ?? []) === []) {
+                return [$baseInput, $candidateSettings];
+            }
+
+            $selectedCourses = $baseInput['selected_courses'];
+            $courseOptions = $baseInput['course_options'];
+            foreach ($selectedCourses as $courseIndex => $selectedCourse) {
+                if (! $this->courseMatchesSelectedCourseKeys($selectedCourse, [$courseKey])) {
+                    continue;
+                }
+
+                $courseOptions[$courseIndex] = $this->courseOptions($course, $courseGroups, $subjectMappings, $candidateSettings);
+
+                return [[
+                    ...$baseInput,
+                    'course_options' => $courseOptions,
+                    'has_missing_options' => collect($courseOptions)->contains(fn (array $options): bool => $options === []),
+                ], $candidateSettings];
+            }
+
             return [$baseInput, $candidateSettings];
         }
 

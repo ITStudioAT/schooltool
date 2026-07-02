@@ -119,6 +119,371 @@ it('marks unresolved shared availability candidates unavailable', function () {
     ]);
 });
 
+it('checks selected course availability candidates with their offer-specific deselections', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $method = $reflection->getMethod('courseAvailabilityFromSharedInput');
+    $method->setAccessible(true);
+
+    $d1Key = '1|1|common|D1|D|Deutsch 1|D1';
+    $e2Key = '2|2|common|E2|E|English 2|E2';
+
+    $availability = $method->invokeArgs($service, [
+        [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'E2',
+                'json_subject' => 'E',
+                'name' => 'English 2',
+                'tt_subject' => 'E',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        [],
+        [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'D1-A',
+                'display_label' => 'D1-A',
+                'title' => 'D1-A',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'E2-A',
+                'display_label' => 'E2-A',
+                'title' => 'E2-A',
+                'course' => 'E2',
+                'subject' => 'English',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 1,
+                'class_name' => 'E2-B',
+                'display_label' => 'E2-B',
+                'title' => 'E2-B',
+                'course' => 'E2',
+                'subject' => 'English',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        [
+            'selection' => [
+                'semester' => 2,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [$d1Key, $e2Key],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        [
+            [
+                'availability_key' => 'offer-a',
+                'course_key' => $e2Key,
+                'course_group' => 'missing',
+                'deselected_course_group_keys' => ['E2|E2-B'],
+            ],
+            [
+                'availability_key' => 'offer-b',
+                'course_key' => $e2Key,
+                'course_group' => 'missing',
+                'deselected_course_group_keys' => ['E2|E2-A'],
+            ],
+        ],
+    ]);
+
+    expect($availability['offer-a'])->toBe([
+        'available' => false,
+        'valid_timetable_count' => 0,
+    ])->and($availability['offer-b'])->toBe([
+        'available' => true,
+        'valid_timetable_count' => 1,
+    ]);
+});
+
+it('keeps Saturday only missing course offers available when they do not overlap the selected timetable', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $method = $reflection->getMethod('courseAvailabilityFromSharedInput');
+    $method->setAccessible(true);
+
+    $d1Key = '1|1|common|D1|D|Deutsch 1|D1';
+    $e2Key = '2|2|common|E2|E|English 2|E2';
+
+    $availability = $method->invokeArgs($service, [
+        [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'E2',
+                'json_subject' => 'E',
+                'name' => 'English 2',
+                'tt_subject' => 'E',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        [],
+        [
+            [
+                'weekday' => 1,
+                'hour' => 12,
+                'class_name' => 'D - 1 - 1A - TEST',
+                'display_label' => 'D - 1 - 1A - TEST',
+                'title' => 'D - 1 - 1A - TEST',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 12,
+                'class_name' => 'E - 2 - 2A - RAI',
+                'display_label' => 'E - 2 - 2A - RAI',
+                'title' => 'E - 2 - 2A - RAI',
+                'course' => 'E2',
+                'subject' => 'English',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 14,
+                'class_name' => 'E - 2 - 2F - RAI',
+                'display_label' => 'E - 2 - 2F - RAI',
+                'title' => 'E - 2 - 2F - RAI',
+                'course' => 'E2',
+                'subject' => 'English',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 4,
+                'hour' => 13,
+                'class_name' => 'E - 2 - 1R - REIS',
+                'display_label' => 'E - 2 - 1R - REIS',
+                'title' => 'E - 2 - 1R - REIS',
+                'course' => 'E2',
+                'subject' => 'English',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 6,
+                'hour' => 1,
+                'class_name' => 'E - 2 - 1U - NI',
+                'display_label' => 'E - 2 - 1U - NI',
+                'title' => 'E - 2 - 1U - NI',
+                'course' => 'E2',
+                'subject' => 'English',
+                'dates' => [],
+                'dates_count' => 0,
+                'is_kompaktunterricht' => true,
+            ],
+        ],
+        [
+            'selection' => [
+                'semester' => 2,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [$d1Key],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        [
+            [
+                'availability_key' => 'e2-saturday',
+                'course_key' => $e2Key,
+                'course_group' => 'missing',
+                'deselected_course_group_keys' => [
+                    'E2|E - 2 - 2A - RAI',
+                    'E2|E - 2 - 2F - RAI',
+                    'E2|E - 2 - 1R - REIS',
+                ],
+            ],
+        ],
+    ]);
+
+    expect($availability['e2-saturday'])->toBe([
+        'available' => true,
+        'valid_timetable_count' => 1,
+    ]);
+});
+
+it('checks missing course offers against the selected timetable instead of unrelated recalculation conflicts', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $method = $reflection->getMethod('courseAvailabilityFromSharedInput');
+    $method->setAccessible(true);
+
+    $d1Key = '1|1|common|D1|D|Deutsch 1|D1';
+    $e2Key = '2|2|common|E2|E|English 2|E2';
+    $selectedTimetable = [
+        'slots' => [
+            [
+                'courseGroup' => [
+                    'weekday' => 1,
+                    'hour' => 12,
+                    'class_name' => 'D1-A',
+                    'display_label' => 'D1-A',
+                    'title' => 'D1-A',
+                    'course' => 'D1',
+                    'subject' => 'Deutsch',
+                    'dates' => [],
+                    'dates_count' => 0,
+                ],
+            ],
+        ],
+    ];
+
+    $availability = $method->invokeArgs($service, [
+        [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'E2',
+                'json_subject' => 'E',
+                'name' => 'English 2',
+                'tt_subject' => 'E',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        [],
+        [
+            [
+                'weekday' => 6,
+                'hour' => 1,
+                'class_name' => 'D1-SAT',
+                'display_label' => 'D1-SAT',
+                'title' => 'D1-SAT',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 6,
+                'hour' => 1,
+                'class_name' => 'E2-SAT',
+                'display_label' => 'E2-SAT',
+                'title' => 'E2-SAT',
+                'course' => 'E2',
+                'subject' => 'English',
+                'dates' => [],
+                'dates_count' => 0,
+                'is_kompaktunterricht' => true,
+            ],
+        ],
+        [
+            'selection' => [
+                'semester' => 2,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [$d1Key],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        [
+            [
+                'availability_key' => 'e2-saturday',
+                'course_key' => $e2Key,
+                'course_group' => 'missing',
+                'deselected_course_group_keys' => [],
+            ],
+        ],
+        $selectedTimetable,
+    ]);
+
+    expect($availability['e2-saturday'])->toBe([
+        'available' => true,
+        'valid_timetable_count' => 1,
+    ]);
+});
+
 it('counts all selected course variations and the overlap free full green variations', function () {
     $service = app(RobotTimetableBackendSetupService::class);
 
