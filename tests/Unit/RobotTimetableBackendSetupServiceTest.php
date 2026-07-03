@@ -51,6 +51,80 @@ it('indexes availability candidates by generated key and course code alias', fun
         ->and($coursesByKey['BU1']['code'])->toBe('BU1');
 });
 
+it('resolves generic religion availability candidates to the selected religion course', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $method = $reflection->getMethod('courseAvailabilityFromSharedInput');
+    $method->setAccessible(true);
+
+    $availability = $method->invokeArgs($service, [
+        [
+            [
+                'id' => 15,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'R/ET2',
+                'json_subject' => 'R/ET',
+                'name' => 'Religion/Ethik 2',
+                'tt_subject' => 'R/ET',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        [],
+        [
+            [
+                'weekday' => 4,
+                'hour' => 10,
+                'class_name' => 'Ris - 2 - EYG',
+                'display_label' => 'Ris - 2 - EYG',
+                'title' => 'Ris - 2 - EYG',
+                'course' => 'Ris2',
+                'subject' => 'Ris2',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        [
+            'selection' => [
+                'semester' => 4,
+                'religion' => 'Ris',
+                'branch' => 'gymnasial',
+                'artsSubject' => null,
+                'language' => 'F',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        [
+            [
+                'availability_key' => 'completed:R2::offer::completed:R2::2|RIS|RIS2EYG',
+                'course_group' => 'planned',
+                'course_key' => 'R2',
+                'deselected_course_group_keys' => [],
+            ],
+        ],
+        [
+            'slots' => [],
+        ],
+    ]);
+
+    expect($availability['completed:R2::offer::completed:R2::2|RIS|RIS2EYG'])->toBe([
+        'available' => true,
+        'valid_timetable_count' => 1,
+    ]);
+});
+
 it('marks unresolved shared availability candidates unavailable', function () {
     $service = app(RobotTimetableBackendSetupService::class);
     $reflection = new ReflectionClass($service);
@@ -479,6 +553,311 @@ it('checks missing course offers against the selected timetable instead of unrel
     ]);
 
     expect($availability['e2-saturday'])->toBe([
+        'available' => true,
+        'valid_timetable_count' => 1,
+    ]);
+});
+
+it('keeps saturday missing course offers available when another timetable variation can accept them', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $method = $reflection->getMethod('courseAvailabilityFromSharedInput');
+    $method->setAccessible(true);
+
+    $d1Key = '1|1|common|D1|D|Deutsch 1|D1';
+    $e2Key = '2|2|common|E2|E|English 2|E2';
+    $selectedTimetable = [
+        'slots' => [
+            [
+                'courseGroup' => [
+                    'weekday' => 6,
+                    'hour' => 1,
+                    'class_name' => 'D1-SAT',
+                    'display_label' => 'D1-SAT',
+                    'title' => 'D1-SAT',
+                    'course' => 'D1',
+                    'subject' => 'Deutsch',
+                    'dates' => [],
+                    'dates_count' => 0,
+                ],
+            ],
+        ],
+    ];
+
+    $availability = $method->invokeArgs($service, [
+        [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'E2',
+                'json_subject' => 'E',
+                'name' => 'English 2',
+                'tt_subject' => 'E',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        [],
+        [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'D1-MON',
+                'display_label' => 'D1-MON',
+                'title' => 'D1-MON',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 6,
+                'hour' => 1,
+                'class_name' => 'D1-SAT',
+                'display_label' => 'D1-SAT',
+                'title' => 'D1-SAT',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 6,
+                'hour' => 1,
+                'class_name' => 'E - 2 - 1U - NI',
+                'display_label' => 'E - 2 - 1U - NI',
+                'title' => 'E - 2 - 1U - NI',
+                'course' => 'E2',
+                'subject' => 'English',
+                'dates' => ['2026-05-09', '2026-05-16', '2026-05-23', '2026-05-30', '2026-06-06', '2026-06-13', '2026-06-20', '2026-06-27', '2026-07-04', '2026-07-11'],
+                'dates_count' => 10,
+                'is_kompaktunterricht' => true,
+            ],
+        ],
+        [
+            'selection' => [
+                'semester' => 2,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [$d1Key],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        [
+            [
+                'availability_key' => 'e2-saturday',
+                'course_key' => $e2Key,
+                'course_group' => 'missing',
+                'deselected_course_group_keys' => [],
+            ],
+        ],
+        $selectedTimetable,
+    ]);
+
+    expect($availability['e2-saturday'])->toBe([
+        'available' => true,
+        'valid_timetable_count' => 1,
+    ]);
+});
+
+it('keeps distance learning offers available when another timetable variation can free their periods', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $method = $reflection->getMethod('courseAvailabilityFromSharedInput');
+    $method->setAccessible(true);
+
+    $f2Key = '1|2|common|F2|F|Französisch 2|F2';
+    $f3Key = '2|3|common|F3|F|Französisch 3|F3';
+    $selectedTimetable = [
+        'slots' => [
+            [
+                'courseGroup' => [
+                    'weekday' => 5,
+                    'hour' => 10,
+                    'class_name' => 'F3-4A-NIE',
+                    'display_label' => 'F3-4A-NIE',
+                    'title' => 'F3-4A-NIE',
+                    'course' => 'F',
+                    'module_code' => 'F3',
+                    'subject' => 'F',
+                    'dates' => ['2026-02-20', '2026-02-27', '2026-03-06', '2026-03-13'],
+                    'dates_count' => 4,
+                ],
+            ],
+            [
+                'courseGroup' => [
+                    'weekday' => 5,
+                    'hour' => 11,
+                    'class_name' => 'F3-4A-NIE',
+                    'display_label' => 'F3-4A-NIE',
+                    'title' => 'F3-4A-NIE',
+                    'course' => 'F',
+                    'module_code' => 'F3',
+                    'subject' => 'F',
+                    'dates' => ['2026-02-20', '2026-02-27', '2026-03-06', '2026-03-13'],
+                    'dates_count' => 4,
+                ],
+            ],
+        ],
+    ];
+
+    $availability = $method->invokeArgs($service, [
+        [
+            [
+                'id' => 1,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'F2',
+                'json_subject' => 'F',
+                'name' => 'Französisch 2',
+                'tt_subject' => 'F',
+                'hours_per_week' => 2,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 3,
+                'branch' => 'common',
+                'json_code' => 'F3',
+                'json_subject' => 'F',
+                'name' => 'Französisch 3',
+                'tt_subject' => 'F',
+                'hours_per_week' => 2,
+                'is_active' => true,
+            ],
+        ],
+        [],
+        [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'F3-ALT',
+                'display_label' => 'F3-ALT',
+                'title' => 'F3-ALT',
+                'course' => 'F',
+                'module_code' => 'F3',
+                'subject' => 'F',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 1,
+                'hour' => 2,
+                'class_name' => 'F3-ALT',
+                'display_label' => 'F3-ALT',
+                'title' => 'F3-ALT',
+                'course' => 'F',
+                'module_code' => 'F3',
+                'subject' => 'F',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 5,
+                'hour' => 10,
+                'class_name' => 'F3-4A-NIE',
+                'display_label' => 'F3-4A-NIE',
+                'title' => 'F3-4A-NIE',
+                'course' => 'F',
+                'module_code' => 'F3',
+                'subject' => 'F',
+                'dates' => ['2026-02-20', '2026-02-27', '2026-03-06', '2026-03-13'],
+                'dates_count' => 4,
+            ],
+            [
+                'weekday' => 5,
+                'hour' => 11,
+                'class_name' => 'F3-4A-NIE',
+                'display_label' => 'F3-4A-NIE',
+                'title' => 'F3-4A-NIE',
+                'course' => 'F',
+                'module_code' => 'F3',
+                'subject' => 'F',
+                'dates' => ['2026-02-20', '2026-02-27', '2026-03-06', '2026-03-13'],
+                'dates_count' => 4,
+            ],
+            [
+                'weekday' => 5,
+                'hour' => 10,
+                'class_name' => 'F2-2QS+3K-SCHO',
+                'display_label' => 'F2-2QS+3K-SCHO',
+                'title' => 'F2-2QS+3K-SCHO',
+                'course' => 'F',
+                'module_code' => 'F2',
+                'subject' => 'F',
+                'dates' => ['2026-02-20', '2026-02-27', '2026-03-06', '2026-03-13', '2026-03-20', '2026-03-27', '2026-04-10', '2026-04-17', '2026-04-24', '2026-05-08', '2026-05-15', '2026-05-22', '2026-05-29', '2026-06-12', '2026-06-19', '2026-06-26', '2026-07-03', '2026-07-10'],
+                'dates_count' => 18,
+            ],
+            [
+                'weekday' => 5,
+                'hour' => 11,
+                'class_name' => 'F2-2QS+3K-SCHO',
+                'display_label' => 'F2-2QS+3K-SCHO',
+                'title' => 'F2-2QS+3K-SCHO',
+                'course' => 'F',
+                'module_code' => 'F2',
+                'subject' => 'F',
+                'dates' => ['2026-02-20', '2026-02-27', '2026-03-06', '2026-03-13', '2026-03-20', '2026-03-27', '2026-04-10', '2026-04-17', '2026-04-24', '2026-05-08', '2026-05-15', '2026-05-22', '2026-05-29', '2026-06-12', '2026-06-19', '2026-06-26', '2026-07-03', '2026-07-10'],
+                'dates_count' => 18,
+            ],
+        ],
+        [
+            'selection' => [
+                'semester' => 4,
+                'religion' => 'Ris',
+                'branch' => 'gymnasial',
+                'artsSubject' => 'ME',
+                'language' => 'F',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [$f3Key],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        [
+            [
+                'availability_key' => 'f2-distance-learning',
+                'course_key' => $f2Key,
+                'course_group' => 'missing',
+                'deselected_course_group_keys' => [],
+            ],
+        ],
+        $selectedTimetable,
+    ]);
+
+    expect($availability['f2-distance-learning'])->toBe([
         'available' => true,
         'valid_timetable_count' => 1,
     ]);

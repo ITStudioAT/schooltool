@@ -362,12 +362,14 @@ class RobotTimetableBackendSetupService
                         $selectedTimetableOccupiedCourseGroups,
                     ));
 
-                $availability[$availabilityKey] = [
-                    'available' => $candidateAvailable,
-                    'valid_timetable_count' => $candidateAvailable ? 1 : 0,
-                ];
+                if ($candidateAvailable) {
+                    $availability[$availabilityKey] = [
+                        'available' => true,
+                        'valid_timetable_count' => 1,
+                    ];
 
-                continue;
+                    continue;
+                }
             }
 
             [$candidateInput, $candidateSettings] = $this->timetableVariationInputWithAvailabilityCandidate(
@@ -431,8 +433,8 @@ class RobotTimetableBackendSetupService
                 $courseGroups,
                 $settings,
             ))
-            ->reduce(function (array $coursesByKey, array $course): array {
-                foreach ($this->availabilityCourseLookupKeys($course) as $courseKey) {
+            ->reduce(function (array $coursesByKey, array $course) use ($settings): array {
+                foreach ($this->availabilityCourseLookupKeys($course, $settings) as $courseKey) {
                     $coursesByKey[$courseKey] ??= $course;
                 }
 
@@ -442,12 +444,14 @@ class RobotTimetableBackendSetupService
 
     /**
      * @param  array<string, mixed>  $course
+     * @param  array<string, mixed>  $settings
      * @return list<string>
      */
-    private function availabilityCourseLookupKeys(array $course): array
+    private function availabilityCourseLookupKeys(array $course, array $settings): array
     {
         return collect([
             $course['key'] ?? '',
+            $this->genericSelectedReligionCourseKey($course, $settings),
             ...$this->courseAliases($course),
         ])
             ->map(fn (string $value): string => trim($value))
@@ -455,6 +459,29 @@ class RobotTimetableBackendSetupService
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  array<string, mixed>  $settings
+     */
+    private function genericSelectedReligionCourseKey(array $course, array $settings): string
+    {
+        $selectedReligion = $this->normalizedCourseCode(data_get($settings, 'selection.religion', ''));
+        if (! in_array($selectedReligion, ['REV', 'RIS', 'RK', 'ROR'], true)) {
+            return '';
+        }
+
+        $courseCode = $this->normalizedCourseCode($course['code'] ?? '');
+        if (preg_match('/^([A-Z]+)(\d+)$/u', $courseCode, $matches) !== 1) {
+            return '';
+        }
+
+        if (($matches[1] ?? '') !== $selectedReligion) {
+            return '';
+        }
+
+        return "R{$matches[2]}";
     }
 
     /**

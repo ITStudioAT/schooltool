@@ -310,6 +310,16 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.noSaturdayTimetableCountFormatted.call(context)
             },
         },
+        selectedTimetableV2SaturdayFreeTestLabel: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2SaturdayFreeTestLabel.call(context)
+            },
+        },
+        selectedTimetableV2TestCourseAnalysisItems: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2TestCourseAnalysisItems.call(context)
+            },
+        },
         maxFreeDaysQualityCounter: {
             get() {
                 return TimetableV2.computed.maxFreeDaysQualityCounter.call(context)
@@ -987,6 +997,8 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain(':disabled="!selectedTimetableV2NextAvailable || timetablePendingActionConfirmationVisible"')
         expect(source).toContain(':disabled="timetableCalculationLoading || timetablePendingActionConfirmationVisible"')
         expect(source).not.toContain('v-if="timetableCalculationVisible" class="students-timetable-v2-result__meta"')
+        expect(source).toMatch(/class="students-timetable-v2-result"[\s\S]*class="students-timetable-v2-tests-card"[\s\S]*class="students-timetable-v2-tests-card__title">\s+Tests\s+<\/v-card-title>[\s\S]*class="students-timetable-v2-tests-card__content">\s+<div>\{\{ selectedTimetableV2SaturdayFreeTestLabel \}\}<\/div>[\s\S]*v-for="item in selectedTimetableV2TestCourseAnalysisItems"[\s\S]*\{\{ item \}\}[\s\S]*class="students-timetable-v2-result__header"[\s\S]*prepend-icon="mdi-restart"/u)
+        expect(source).toMatch(/\.students-timetable-v2-tests-card \{[\s\S]*justify-self: stretch;[\s\S]*width: 100%;[\s\S]*border: 1px solid rgb\(var\(--v-theme-error\)\);[\s\S]*background: transparent !important;[\s\S]*box-shadow: none;/u)
         expect(source).toMatch(/class="students-timetable-v2-result__title"[\s\S]*v-if="selectedTimetableV2RestartButtonInHeaderVisible"[\s\S]*prepend-icon="mdi-restart"[\s\S]*@click="restartTimetableV2">\s+Neustart/u)
         expect(source).toMatch(/v-if="selectedTimetableV2RestartButtonInHeaderVisible \|\| adoptedTimetableVisible"[\s\S]*class="students-timetable-v2-result__meta"[\s\S]*v-if="selectedTimetableV2RestartButtonInHeaderVisible"[\s\S]*prepend-icon="mdi-arrow-left"[\s\S]*@click="adoptedTimetableVisible \? backToTimetableCalculation\(\) : backToCourseReview\(\)">\s+Zurück/u)
         expect(source).toContain('v-if="(calculationButtonCardVisible || adoptedTimetableButtonCardVisible) && !selectedTimetableV2Result"')
@@ -1005,7 +1017,12 @@ describe('TimetableV2 route steps', () => {
         expect(source).toMatch(/:color="timetableOptionsButtonUnavailable \? 'error' : 'info'"\s+variant="tonal"\s+prepend-icon="mdi-cog-outline"\s+:disabled="timetableCalculationLoading \|\| moreCourseAvailabilityLoading \|\| timetableOptionsButtonUnavailable"\s+:aria-expanded="timetableOptionsCardVisible \? 'true' : 'false'"\s+@click="toggleTimetableOptionsCard">\s+Optionen/u)
         expect(source).toMatch(/color="warning"\s+variant="tonal"\s+prepend-icon="mdi-restore"\s+class="students-timetable-v2-calculation-card__reset-button"\s+:disabled="timetableCalculationLoading \|\| !timetableCalculationResetAvailable"\s+@click="resetTimetableCalculationChanges">\s+Zurücksetzen/u)
         expect(source).toMatch(/v-if="moreCoursesVisible"[\s\S]*prepend-icon="mdi-close"[\s\S]*@click="cancelMoreCoursesCard">\s+Abbruch/u)
-        expect(source).toMatch(/v-if="moreCoursesVisible"[\s\S]*append-icon="mdi-check"[\s\S]*:disabled="!moreCoursesSelectionChanged \|\| timetableCalculationLoading"[\s\S]*@click="applyMoreCoursesSelection">\s+Anwenden/u)
+        const moreCoursesHeaderActionsSource = source.slice(
+            source.indexOf('v-else-if="timetableCalculationVisible && !moreCoursesCardVisible" class="students-timetable-v2-calculation-card__actions"'),
+            source.indexOf('<span v-else-if="timetableCalculationVisible" class="students-timetable-v2-calculation-card__more-course-actions"'),
+        )
+
+        expect(moreCoursesHeaderActionsSource).not.toContain('@click="applyMoreCoursesSelection"')
         expect(source).toMatch(/prepend-icon="mdi-tune-variant"\s+:disabled="!courseLimitPreselectionResetAvailable"\s+@click="applyCourseLimitPreselection\(true\)">\s+Vorauswahl zurücksetzen/u)
         expect(source).toContain(':icon="timetableCalculationLoadingIcon"')
         expect(source).toContain('{{ timetableCalculationLoadingLabel }}')
@@ -1166,9 +1183,15 @@ describe('TimetableV2 route steps', () => {
         expect(source).toMatch(/\.students-timetable-v2-options-card__option \{[\s\S]*background: rgba\(248, 250, 252, 0\.96\);/u)
         expect(source).toMatch(/\.students-timetable-v2-options-card__option--unavailable \{[\s\S]*background: rgba\(241, 245, 249, 0\.96\);/u)
         expect(source).toMatch(/\.students-timetable-v2-options-card__option--loading \{[\s\S]*background: rgba\(248, 250, 252, 0\.98\);/u)
-        expect(source).toMatch(/v-else-if="timetableCalculationVisible" class="students-timetable-v2-calculation-card__more-course-actions"[\s\S]*Abbruch[\s\S]*Anwenden/u)
+        const moreCoursesPanelActionsSource = source.slice(
+            source.indexOf('v-else-if="timetableCalculationVisible" class="students-timetable-v2-calculation-card__more-course-actions"'),
+            source.indexOf('v-else-if="adoptedTimetableCourseRemovalPendingVisible"'),
+        )
+
+        expect(moreCoursesPanelActionsSource).toContain('Abbruch')
+        expect(moreCoursesPanelActionsSource).not.toContain('Anwenden')
         expect(source).toMatch(/size="large"\s+color="warning"\s+variant="tonal"\s+prepend-icon="mdi-close"\s+@click="cancelMoreCoursesCard">\s+Abbruch/u)
-        expect(source).toMatch(/append-icon="mdi-check"\s+:disabled="!moreCoursesSelectionChanged \|\| timetableCalculationLoading"\s+@click="applyMoreCoursesSelection">\s+Anwenden/u)
+        expect(moreCoursesPanelActionsSource).not.toContain('@click="applyMoreCoursesSelection"')
         expect(source).toMatch(/v-else-if="adoptedTimetableCourseRemovalPendingVisible"[\s\S]*@click="cancelMoreCoursesCard">\s+Abbruch[\s\S]*:disabled="!moreCoursesSelectionChanged"[\s\S]*@click="applyAdoptedTimetableCourseRemoval">\s+Anwenden/u)
         expect(source).toMatch(/<span>\{\{ adoptedTimetableVisible \? 'Übernommener Stundenplan' : 'Stundenpläne' \}\}<\/span>/u)
         expect(source).toMatch(/v-else-if="adoptedTimetableVisible" class="students-timetable-v2-calculation-card__actions"[\s\S]*prepend-icon="mdi-file-pdf-box"[\s\S]*:loading="pdfExporting"[\s\S]*@click="downloadAdoptedTimetablePdf">\s+PDF/u)
@@ -1507,6 +1530,228 @@ describe('TimetableV2 route steps', () => {
 
         expect(context.noSaturdayTimetableCount).toBe(12)
         expect(context.noSaturdayTimetableCountFormatted).toBe('12')
+        expect(context.selectedTimetableV2SaturdayFreeTestLabel).toBe('sa-free: yes')
+    })
+
+    it('marks the Saturday-free test as no when no timetable is Saturday-free', () => {
+        const context = timetableV2Context({
+            timetableCalculationResult: {
+                no_saturday_timetable_count: 0,
+            },
+        })
+
+        expect(context.noSaturdayTimetableCount).toBe(0)
+        expect(context.selectedTimetableV2SaturdayFreeTestLabel).toBe('sa-free: no')
+    })
+
+    it('analyses the booked E2-1U-NI compact course for the tests card', () => {
+        const context = timetableV2Context({
+            schoolHours: [
+                { hour: 1, from: '09:00:00', until: '09:50:00' },
+                { hour: 2, from: '09:50:00', until: '10:35:00' },
+                { hour: 3, from: '10:35:00', until: '11:25:00' },
+                { hour: 4, from: '11:25:00', until: '12:10:00' },
+            ],
+            timetableCalculationResult: {
+                selected_timetable: {
+                    slots: {
+                        '6-1': {
+                            code: 'E2',
+                            sourceLabel: 'E - 2 - 1U - NI',
+                            dateRangeLabel: '09.05. - 11.07.',
+                            courseGroup: { class_name: 'E - 2 - 1U - NI', hour: 1, is_kompaktunterricht: true, weekday: 6 },
+                        },
+                        '6-2': {
+                            code: 'E2',
+                            sourceLabel: 'E - 2 - 1U - NI',
+                            dateRangeLabel: '09.05. - 11.07.',
+                            courseGroup: { class_name: 'E - 2 - 1U - NI', hour: 2, is_kompaktunterricht: true, weekday: 6 },
+                        },
+                        '6-3': {
+                            code: 'E2',
+                            sourceLabel: 'E - 2 - 1U - NI',
+                            dateRangeLabel: '09.05. - 11.07.',
+                            courseGroup: { class_name: 'E - 2 - 1U - NI', hour: 3, is_kompaktunterricht: true, weekday: 6 },
+                        },
+                        '6-4': {
+                            code: 'E2',
+                            sourceLabel: 'E - 2 - 1U - NI',
+                            dateRangeLabel: '09.05. - 04.07.',
+                            courseGroup: { class_name: 'E - 2 - 1U - NI', hour: 4, is_kompaktunterricht: true, weekday: 6 },
+                        },
+                    },
+                },
+            },
+        })
+
+        expect(context.selectedTimetableV2TestCourseAnalysisItems).toEqual([
+            'E - 2 - 1U - NI sa-only: yes',
+        ])
+    })
+
+    it('analyses E2-1U-NI directly from booked app course offers for the tests card', () => {
+        const context = timetableV2Context({
+            selectedCourseItems: [
+                { code: 'E2', label: 'E2' },
+            ],
+            offeredCourseItemsForSelectedCourse: () => [
+                {
+                    name: 'E - 2 - 1U - NI',
+                    selectionKey: 'e2-ni',
+                    scheduleSlots: [
+                        { dateRangeLabel: '09.05. - 11.07.', from: '09:00', hour: 1, until: '09:50', weekday: 6 },
+                        { dateRangeLabel: '09.05. - 11.07.', from: '09:50', hour: 2, until: '10:35', weekday: 6 },
+                        { dateRangeLabel: '09.05. - 11.07.', from: '10:35', hour: 3, until: '11:25', weekday: 6 },
+                        { dateRangeLabel: '09.05. - 04.07.', from: '11:25', hour: 4, until: '12:10', weekday: 6 },
+                    ],
+                },
+                {
+                    name: 'E - 2 - 1U - OTHER',
+                    selectionKey: 'e2-other',
+                    scheduleSlots: [
+                        { dateRangeLabel: '09.05. - 11.07.', from: '09:00', hour: 1, until: '09:50', weekday: 5 },
+                    ],
+                },
+            ],
+            offeredCourseSelected: (offeredCourse) => offeredCourse.selectionKey !== 'e2-other',
+        })
+
+        expect(context.selectedTimetableV2TestCourseAnalysisItems).toEqual([
+            'E - 2 - 1U - NI sa-only: yes',
+        ])
+    })
+
+    it('analyses E2-1U-NI directly from loaded app course groups for the tests card', () => {
+        const context = timetableV2Context({
+            courseGroups: [
+                {
+                    class_name: 'E - 2 - 1U - NI',
+                    course: 'E',
+                    display_label: 'E - 2 - 1U - NI',
+                    first_date: '2026-05-09',
+                    hour: 1,
+                    is_kompaktunterricht: true,
+                    last_date: '2026-07-11',
+                    semester: 2,
+                    student_group: '1U',
+                    title: 'E2',
+                    weekday: 6,
+                },
+                {
+                    class_name: 'E - 2 - 1U - NI',
+                    course: 'E',
+                    display_label: 'E - 2 - 1U - NI',
+                    first_date: '2026-05-09',
+                    hour: 2,
+                    is_kompaktunterricht: true,
+                    last_date: '2026-07-11',
+                    semester: 2,
+                    student_group: '1U',
+                    title: 'E2',
+                    weekday: 6,
+                },
+                {
+                    class_name: 'E - 2 - 1U - NI',
+                    course: 'E',
+                    display_label: 'E - 2 - 1U - NI',
+                    first_date: '2026-05-09',
+                    hour: 3,
+                    is_kompaktunterricht: true,
+                    last_date: '2026-07-11',
+                    semester: 2,
+                    student_group: '1U',
+                    title: 'E2',
+                    weekday: 6,
+                },
+                {
+                    class_name: 'E - 2 - 1U - NI',
+                    course: 'E',
+                    display_label: 'E - 2 - 1U - NI',
+                    first_date: '2026-05-09',
+                    hour: 4,
+                    is_kompaktunterricht: true,
+                    last_date: '2026-07-04',
+                    semester: 2,
+                    student_group: '1U',
+                    title: 'E2',
+                    weekday: 6,
+                },
+            ],
+            schoolHours: [
+                { hour: 1, from: '09:00:00', until: '09:50:00' },
+                { hour: 2, from: '09:50:00', until: '10:35:00' },
+                { hour: 3, from: '10:35:00', until: '11:25:00' },
+                { hour: 4, from: '11:25:00', until: '12:10:00' },
+            ],
+        })
+
+        expect(context.selectedTimetableV2TestCourseAnalysisItems).toEqual([
+            'E - 2 - 1U - NI sa-only: yes',
+        ])
+    })
+
+    it('marks E2-1U-NI as not Saturday-only when the booked course uses another weekday', () => {
+        const context = timetableV2Context({
+            selectedCourseItems: [
+                { code: 'E2', label: 'E2' },
+            ],
+            offeredCourseItemsForSelectedCourse: () => [
+                {
+                    name: 'E - 2 - 1U - NI',
+                    selectionKey: 'e2-ni',
+                    scheduleSlots: [
+                        { dateRangeLabel: '09.05. - 11.07.', from: '09:00', hour: 1, until: '09:50', weekday: 6 },
+                        { dateRangeLabel: '09.05. - 11.07.', from: '09:50', hour: 2, until: '10:35', weekday: 5 },
+                    ],
+                },
+            ],
+        })
+
+        expect(context.selectedTimetableV2TestCourseAnalysisItems).toEqual([
+            'E - 2 - 1U - NI sa-only: no',
+        ])
+    })
+
+    it('explains why the E2-1U-NI Saturday-only course is unavailable in the tests card', () => {
+        const courseGroups = [
+            {
+                class_name: 'E - 2 - 1U - NI',
+                course: 'E2',
+                display_label: 'E - 2 - 1U - NI',
+                first_date: '2026-05-09',
+                hour: 1,
+                is_kompaktunterricht: true,
+                key: 'e2-ni-1',
+                last_date: '2026-07-11',
+                semester: 2,
+                student_group: '1U',
+                teacher: 'NI',
+                title: 'E2',
+                weekday: 6,
+            },
+        ]
+        const context = timetableV2Context({
+            courseGroups,
+            courseGroupsLoaded: true,
+            storedMissingCourseCardItems: [
+                { code: 'E2', key: 'E2', label: 'E2' },
+            ],
+            timetableNoSaturdaySelected: true,
+        })
+        const moreCourse = context.moreCoursesCardItems.find((course) => course.key === 'E2')
+        const offeredCourse = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, moreCourse)[0]
+        const availabilityKey = TimetableV2.methods.moreCourseOfferAvailabilityKey.call(context, moreCourse, offeredCourse)
+
+        context.moreCourseAvailabilityByKey = {
+            [availabilityKey]: false,
+        }
+
+        expect(context.selectedTimetableV2TestCourseAnalysisItems).toEqual(expect.arrayContaining([
+            expect.stringMatching(/sa-only: yes$/u),
+            'no-saturday-filter: yes',
+            expect.stringMatching(/availability: no$/u),
+            'reason: no-saturday filter blocks this Saturday-only course',
+        ]))
     })
 
     it('formats the max free days timetable count and maximum label for the options card', () => {
@@ -2540,6 +2785,7 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain('aria-label="Schließen"')
         expect(source).toMatch(/@click\.stop="closeMoreCourseOffers">\s+Schließen/u)
         expect(source).toMatch(/@click\.stop="closeMoreCourseOffers"/u)
+        expect(source).toContain("'students-timetable-v2-offered-courses-card__item--deselected': !moreOfferedCourseSelected(course) && !moreCourseOfferUnavailable(course)")
         expect(source).toContain("'students-timetable-v2-offered-courses-card__item--available': !moreCourseOfferUnavailable(course)")
         expect(source).toContain("'students-timetable-v2-offered-courses-card__item--unavailable': moreCourseOfferUnavailable(course)")
         expect(source).toContain(':aria-disabled="moreCourseOfferDisabled(course) ? \'true\' : \'false\'"')
@@ -4875,6 +5121,50 @@ describe('TimetableV2 route steps', () => {
         expect(catholicReligionOffers[0].courseGroup.module_code).toBe('Rk3')
     })
 
+    it('only offers the selected student religion for generic religion courses', () => {
+        const context = timetableV2Context({
+            courseGroups: [
+                {
+                    class_name: 'Ris - 4 - EYG',
+                    course: 'Ris',
+                    hour: 3,
+                    module_code: 'Ris4',
+                    title: 'Ris',
+                    weekday: 1,
+                },
+                {
+                    class_name: 'Rk - 4 - ENNS',
+                    course: 'Rk',
+                    hour: 4,
+                    module_code: 'Rk4',
+                    title: 'Rk',
+                    weekday: 2,
+                },
+            ],
+            storedTimetableState: {
+                timetableV2Selection: {
+                    religion: 'Ris',
+                },
+            },
+            storedTimetableStudentContext: {
+                student: {
+                    religion: 'islam. (IGGÖ)',
+                },
+            },
+        })
+
+        const religionOffers = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, {
+            code: 'R4',
+            hours: 1,
+            label: 'R4',
+            selectionKey: 'completed:R4',
+        })
+
+        expect(religionOffers).toHaveLength(1)
+        expect(religionOffers.map((course) => course.courseGroup.module_code)).toEqual(['Ris4'])
+        expect(religionOffers.map((course) => course.courseGroup.module_code)).not.toContain('Rk4')
+    })
+
     it('marks impossible more courses red and opens their offers without allowing selection', () => {
         const context = timetableV2Context({
             courseGroups: [
@@ -4982,12 +5272,15 @@ describe('TimetableV2 route steps', () => {
             ],
         })
         const moreCourse = context.moreCoursesCardItems[0]
+        const offeredCourse = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, moreCourse)[0]
+        const offerAvailabilityKey = TimetableV2.methods.moreCourseOfferAvailabilityKey.call(context, moreCourse, offeredCourse)
 
         await TimetableV2.methods.loadMoreCourseAvailabilityForCourse.call(context, moreCourse, 1)
 
-        expect(context.requestMoreCourseAvailability).toHaveBeenCalledWith([moreCourse])
+        expect(context.requestMoreCourseAvailability).toHaveBeenCalledWith([moreCourse], { includeOffers: true })
         expect(context.moreCourseAvailabilityByKey).toEqual({
             [moreCourse.selectionKey]: false,
+            [offerAvailabilityKey]: false,
         })
     })
 
@@ -5015,14 +5308,17 @@ describe('TimetableV2 route steps', () => {
             timetableMaxFreeDaysSelected: true,
         })
         const moreCourse = context.moreCoursesCardItems[0]
+        const offeredCourse = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, moreCourse)[0]
+        const offerAvailabilityKey = TimetableV2.methods.moreCourseOfferAvailabilityKey.call(context, moreCourse, offeredCourse)
         const availabilitySignature = TimetableV2.methods.moreCourseAvailabilityCurrentSignature.call(context)
 
         await TimetableV2.methods.loadMoreCourseAvailabilityForCourse.call(context, moreCourse, 1)
 
         expect(availabilitySignature).toContain('"maxFreeDaysSelected":true')
-        expect(context.requestMoreCourseAvailability).toHaveBeenCalledWith([moreCourse])
+        expect(context.requestMoreCourseAvailability).toHaveBeenCalledWith([moreCourse], { includeOffers: true })
         expect(context.moreCourseAvailabilityByKey).toEqual({
             [moreCourse.selectionKey]: false,
+            [offerAvailabilityKey]: false,
         })
     })
 
@@ -5120,7 +5416,7 @@ describe('TimetableV2 route steps', () => {
             setTimeout(resolve, 0)
         })
 
-        expect(requestMoreCourseAvailability).toHaveBeenCalledWith([moreCourse])
+        expect(requestMoreCourseAvailability).toHaveBeenCalledWith([moreCourse], { includeOffers: false })
         expect(context.moreCourseAvailabilityLoading).toBe(false)
         expect(context.moreCourseAvailabilityByKey).toEqual({
             [moreCourse.selectionKey]: true,
@@ -5589,7 +5885,7 @@ describe('TimetableV2 route steps', () => {
 
         await TimetableV2.methods.loadMoreCourseAvailabilityForCourse.call(context, removedMoreCourse, 1)
 
-        expect(requestMoreCourseAvailability).toHaveBeenCalledWith([removedMoreCourse])
+        expect(requestMoreCourseAvailability).toHaveBeenCalledWith([removedMoreCourse], { includeOffers: true })
         expect(context.moreCourseAvailabilityByKey[removedMoreCourse.selectionKey]).toBe(false)
     })
 
@@ -8173,6 +8469,26 @@ describe('TimetableV2 route steps', () => {
                 availability_key: moreCourse.selectionKey,
                 course_group: 'additional',
                 course_key: 'INF2',
+            },
+        ])
+    })
+
+    it('uses the normalized course code for synthetic missing course availability keys', () => {
+        const context = timetableV2Context({
+            storedMissingCourseCardItems: [
+                { code: 'E2', hours: 3, key: 'E2-1', label: 'E2' },
+            ],
+        })
+        const moreCourse = context.moreCoursesCardItems.find((course) => course.key === 'E2-1')
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayloadForMoreCourseAvailability.call(context, moreCourse)
+
+        expect(TimetableV2.methods.timetableV2CalculationCourseKey.call(context, moreCourse)).toBe('E2-1')
+        expect(payload.candidate_courses).toEqual([
+            {
+                availability_key: moreCourse.selectionKey,
+                course_group: 'missing',
+                course_key: 'E2',
             },
         ])
     })

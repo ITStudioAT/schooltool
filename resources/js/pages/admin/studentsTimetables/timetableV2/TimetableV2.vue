@@ -496,16 +496,6 @@
                                 Abbruch
                             </v-btn>
                             <v-btn
-                                v-if="moreCoursesVisible"
-                                size="large"
-                                color="success"
-                                variant="tonal"
-                                append-icon="mdi-check"
-                                :disabled="!moreCoursesSelectionChanged || timetableCalculationLoading"
-                                @click="applyMoreCoursesSelection">
-                                Anwenden
-                            </v-btn>
-                            <v-btn
                                 v-else
                                 size="large"
                                 color="success"
@@ -524,15 +514,6 @@
                                 prepend-icon="mdi-close"
                                 @click="cancelMoreCoursesCard">
                                 Abbruch
-                            </v-btn>
-                            <v-btn
-                                size="large"
-                                color="success"
-                                variant="tonal"
-                                append-icon="mdi-check"
-                                :disabled="!moreCoursesSelectionChanged || timetableCalculationLoading"
-                                @click="applyMoreCoursesSelection">
-                                Anwenden
                             </v-btn>
                         </span>
                         <span
@@ -908,7 +889,7 @@
                                             :tabindex="moreCourseOpenDisabled(course) ? -1 : 0"
                                             :aria-disabled="moreCourseOpenDisabled(course) ? 'true' : 'false'"
                                             :aria-expanded="selectedMoreCourseItem?.selectionKey === course.selectionKey ? 'true' : 'false'"
-                                            :title="moreCourseUnavailable(course) ? 'Keine konfliktfreie Auswahl verfügbar. Angebote anzeigen.' : undefined"
+                                            :title="moreCourseUnavailable(course) ? '!! Konflikte !!' : undefined"
                                             @click="toggleMoreCourseOffers(course)"
                                             @keydown.enter.prevent="toggleMoreCourseOffers(course)"
                                             @keydown.space.prevent="toggleMoreCourseOffers(course)">
@@ -1025,6 +1006,22 @@
                         <div
                             v-if="selectedTimetableV2Result"
                             class="students-timetable-v2-result">
+                            <v-card
+                                v-if="selectedTimetableV2RestartButtonInHeaderVisible"
+                                rounded="lg"
+                                class="students-timetable-v2-tests-card">
+                                <v-card-title class="students-timetable-v2-tests-card__title">
+                                    Tests
+                                </v-card-title>
+                                <v-card-text class="students-timetable-v2-tests-card__content">
+                                    <div>{{ selectedTimetableV2SaturdayFreeTestLabel }}</div>
+                                    <div
+                                        v-for="item in selectedTimetableV2TestCourseAnalysisItems"
+                                        :key="item">
+                                        {{ item }}
+                                    </div>
+                                </v-card-text>
+                            </v-card>
                             <div class="students-timetable-v2-result__header">
                                 <div class="students-timetable-v2-result__title">
                                     <v-btn
@@ -2476,6 +2473,108 @@ export default {
         noSaturdayTimetableCountFormatted() {
             return this.formatNumber(this.noSaturdayTimetableCount)
         },
+        selectedTimetableV2SaturdayFreeTestLabel() {
+            return `sa-free: ${this.noSaturdayTimetableCount > 0 ? 'yes' : 'no'}`
+        },
+        selectedTimetableV2TestCourseAnalysisItems() {
+            const targetCourseKey = this.normalizedCourseCode('E2-1U-NI')
+            const bookedCourseItems = this.selectedTimetableV2BookedCourseAnalysisItems(targetCourseKey)
+            if (bookedCourseItems.length) {
+                return [
+                    ...bookedCourseItems,
+                    ...this.selectedTimetableV2TestCourseAvailabilityItems(targetCourseKey),
+                ]
+            }
+
+            const courseGroupItems = this.selectedTimetableV2CourseGroupAnalysisItems(targetCourseKey)
+            if (courseGroupItems.length) {
+                return [
+                    ...courseGroupItems,
+                    ...this.selectedTimetableV2TestCourseAvailabilityItems(targetCourseKey),
+                ]
+            }
+
+            const slotsByKey = new Map()
+
+            this.selectedTimetableV2SlotEntries.forEach((entry) => {
+                [
+                    entry.slot,
+                    ...this.selectedTimetableV2SameSlotEntries(entry.slot),
+                    ...this.selectedTimetableV2SlotConflicts(entry.slot),
+                ]
+                    .filter((slot) => this.selectedTimetableV2SlotMatchesCourse(slot, targetCourseKey))
+                    .forEach((slot) => {
+                        const weekday = Number(slot?.courseGroup?.weekday || slot?.weekday || entry.weekday || 0)
+                        const hour = Number(slot?.courseGroup?.hour || slot?.hour || entry.hour || 0)
+                        const dateRangeLabel = String(slot?.dateRangeLabel || this.courseGroupDateRangeLabel(slot?.courseGroup || {}) || '').trim()
+                        const label = this.selectedTimetableV2AnalysisCourseLabel(slot) || 'E2-1U-NI'
+                        const slotKey = [
+                            label,
+                            weekday,
+                            hour,
+                            dateRangeLabel,
+                            this.selectedTimetableV2SlotKey(slot),
+                        ].join('|')
+
+                        if (!Number.isFinite(weekday) || weekday <= 0 || !Number.isFinite(hour) || hour <= 0 || slotsByKey.has(slotKey)) return
+
+                        const configuredTime = this.timetableV2ConfiguredTimeOptions()
+                            .find((time) => Number(time.value) === hour) || {}
+
+                        slotsByKey.set(slotKey, {
+                            dateRangeLabel,
+                            from: configuredTime.timeFrom || '',
+                            hour,
+                            label,
+                            until: configuredTime.timeUntil || '',
+                            weekday,
+                        })
+                    })
+            })
+
+            const ranges = [...slotsByKey.values()]
+                .sort((firstSlot, secondSlot) =>
+                    firstSlot.label.localeCompare(secondSlot.label, 'de-AT', { numeric: true, sensitivity: 'base' })
+                    || firstSlot.weekday - secondSlot.weekday
+                    || firstSlot.hour - secondSlot.hour
+                    || firstSlot.dateRangeLabel.localeCompare(secondSlot.dateRangeLabel, 'de-AT', { numeric: true, sensitivity: 'base' }))
+                .reduce((rangeItems, slot) => {
+                    const previousRange = rangeItems[rangeItems.length - 1]
+
+                    if (
+                        previousRange
+                        && previousRange.label === slot.label
+                        && previousRange.weekday === slot.weekday
+                        && previousRange.dateRangeLabel === slot.dateRangeLabel
+                        && previousRange.endHour + 1 === slot.hour
+                    ) {
+                        previousRange.endHour = slot.hour
+                        previousRange.until = slot.until || previousRange.until
+
+                        return rangeItems
+                    }
+
+                    rangeItems.push({
+                        ...slot,
+                        endHour: slot.hour,
+                        startHour: slot.hour,
+                    })
+
+                    return rangeItems
+                }, [])
+
+            return [...ranges.reduce((itemsByLabel, range) => {
+                const label = range.label
+                const rangesForLabel = itemsByLabel.get(label) || []
+
+                rangesForLabel.push(range)
+                itemsByLabel.set(label, rangesForLabel)
+
+                return itemsByLabel
+            }, new Map()).entries()]
+                .map(([label, rangeItems]) => this.selectedTimetableV2CourseSaturdayOnlyLabel(label, rangeItems))
+                .concat(this.selectedTimetableV2TestCourseAvailabilityItems(targetCourseKey))
+        },
         saturdayFreeQualityCounter() {
             return (Array.isArray(this.currentTimetableV2CalculationResult?.quality_counters)
                 ? this.currentTimetableV2CalculationResult.quality_counters
@@ -3738,6 +3837,182 @@ export default {
 
             return sourceLabel
         },
+        selectedTimetableV2AnalysisCourseLabel(slot) {
+            return [
+                slot?.sourceLabel,
+                slot?.groupSelectionLabel,
+                slot?.name,
+                slot?.label,
+                slot?.class_name,
+                slot?.display_label,
+                slot?.student_group,
+                slot?.title,
+                slot?.courseGroup?.class_name,
+                slot?.courseGroup?.display_label,
+                slot?.courseGroup?.student_group,
+                slot?.courseGroup?.title,
+            ]
+                .map((label) => String(label || '').trim())
+                .find(Boolean) || ''
+        },
+        selectedTimetableV2BookedCourseAnalysisItems(targetCourseKey) {
+            const itemsByLabel = new Map()
+            const selectedCourses = Array.isArray(this.selectedCourseItems) ? this.selectedCourseItems : []
+
+            selectedCourses.forEach((selectedCourse) => {
+                this.offeredCourseItemsForSelectedCourse(selectedCourse)
+                    .filter((offeredCourse) => this.offeredCourseSelected(offeredCourse))
+                    .filter((offeredCourse) => this.selectedTimetableV2SlotMatchesCourse(offeredCourse, targetCourseKey))
+                    .forEach((offeredCourse) => {
+                        const slots = this.selectedTimetableV2CourseAnalysisSlots(offeredCourse?.scheduleSlots)
+                        if (!slots.length) return
+
+                        const label = this.selectedTimetableV2AnalysisCourseLabel(offeredCourse) || 'E2-1U-NI'
+                        const scheduleSlots = itemsByLabel.get(label) || []
+
+                        itemsByLabel.set(label, [
+                            ...scheduleSlots,
+                            ...slots,
+                        ])
+                    })
+            })
+
+            return [...itemsByLabel.entries()]
+                .map(([label, scheduleSlots]) => this.selectedTimetableV2CourseSaturdayOnlyLabel(label, scheduleSlots))
+        },
+        selectedTimetableV2CourseGroupAnalysisItems(targetCourseKey) {
+            const matchingCourseGroups = (Array.isArray(this.courseGroups) ? this.courseGroups : [])
+                .filter((courseGroup) => this.selectedTimetableV2SlotMatchesCourse(courseGroup, targetCourseKey))
+
+            if (!matchingCourseGroups.length) return []
+
+            const slotsByLabel = matchingCourseGroups.reduce((itemsByLabel, courseGroup) => {
+                const offeredCourse = this.offeredCourseGroupItem(courseGroup)
+                const label = this.selectedTimetableV2AnalysisCourseLabel(offeredCourse) || 'E2-1U-NI'
+                const scheduleSlots = itemsByLabel.get(label) || []
+
+                itemsByLabel.set(label, [
+                    ...scheduleSlots,
+                    ...this.mergedScheduleSlots(offeredCourse.scheduleSlots, []),
+                ])
+
+                return itemsByLabel
+            }, new Map())
+
+            return [...slotsByLabel.entries()]
+                .map(([label, scheduleSlots]) => this.selectedTimetableV2CourseSaturdayOnlyLabel(label, scheduleSlots))
+                .filter(Boolean)
+        },
+        selectedTimetableV2CourseAnalysisSlots(scheduleSlots) {
+            return (Array.isArray(scheduleSlots) ? scheduleSlots : [])
+                .filter((slot) => Number.isFinite(Number(slot?.hour)) && Number(slot?.hour) > 0)
+                .sort((firstSlot, secondSlot) =>
+                    Number(firstSlot?.weekday || 0) - Number(secondSlot?.weekday || 0)
+                    || Number(firstSlot?.hour || 0) - Number(secondSlot?.hour || 0))
+        },
+        selectedTimetableV2CourseSaturdayOnlyLabel(label, scheduleSlots) {
+            const slots = this.selectedTimetableV2CourseAnalysisSlots(scheduleSlots)
+            if (!slots.length) return ''
+
+            const isSaturdayOnly = slots.every((slot) => Number(slot?.weekday || 0) === 6)
+
+            return `${label} sa-only: ${isSaturdayOnly ? 'yes' : 'no'}`
+        },
+        selectedTimetableV2TestCourseAvailabilityItems(targetCourseKey) {
+            const matchingCourse = this.moreCoursesCardItems.find((course) =>
+                this.normalizedCourseCode(course?.key || course?.code || course?.label) === 'E2')
+            if (!matchingCourse) return []
+
+            const matchingOffer = this.offeredCourseItemsForSelectedCourse(matchingCourse)
+                .find((offeredCourse) => this.selectedTimetableV2SlotMatchesCourse(offeredCourse, targetCourseKey))
+            if (!matchingOffer) return []
+
+            const availabilityKey = this.moreCourseOfferAvailabilityKey(matchingCourse, matchingOffer)
+            const availability = this.moreCourseAvailabilityByKey[availabilityKey]
+            const availabilityLabel = availability === true ? 'yes' : (availability === false ? 'no' : 'unknown')
+            const label = this.selectedTimetableV2AnalysisCourseLabel(matchingOffer) || 'E2-1U-NI'
+            const items = [
+                `no-saturday-filter: ${this.timetableNoSaturdaySelected ? 'yes' : 'no'}`,
+                `${label} availability: ${availabilityLabel}`,
+            ]
+
+            if (availability !== false) return items
+
+            const scheduleSlots = this.selectedTimetableV2CourseAnalysisSlots(matchingOffer?.scheduleSlots)
+            const isSaturdayOnly = scheduleSlots.length > 0
+                && scheduleSlots.every((slot) => Number(slot?.weekday || 0) === 6)
+
+            if (this.timetableNoSaturdaySelected && isSaturdayOnly) {
+                return [
+                    ...items,
+                    'reason: no-saturday filter blocks this Saturday-only course',
+                ]
+            }
+
+            return [
+                ...items,
+                'reason: backend availability found no valid timetable for this offer',
+            ]
+        },
+        selectedTimetableV2BookedCourseScheduleLabel(scheduleSlots) {
+            const slots = this.selectedTimetableV2CourseAnalysisSlots(scheduleSlots)
+            const ranges = []
+
+            slots.forEach((slot) => {
+                const previousRange = ranges[ranges.length - 1]
+                if (previousRange && this.scheduleSlotExtendsRange(previousRange, slot)) {
+                    previousRange.endHour = Number(slot.hour)
+                    previousRange.until = slot.until || previousRange.until
+
+                    return
+                }
+
+                ranges.push({
+                    weekday: Number(slot.weekday || 0) || null,
+                    startHour: Number(slot.hour),
+                    endHour: Number(slot.hour),
+                    from: slot.from || '',
+                    dateRangeLabel: slot.dateRangeLabel || '',
+                    recurrenceLabel: slot.recurrenceLabel || '',
+                    until: slot.until || '',
+                })
+            })
+
+            return ranges.map((range) => this.scheduleRangeLabel(range)).filter(Boolean).join('; ')
+        },
+        selectedTimetableV2SlotMatchesCourse(slot, targetCourseKey) {
+            const normalizedTargetCourseKey = this.normalizedCourseCode(targetCourseKey)
+            if (!normalizedTargetCourseKey) return false
+
+            return [
+                slot?.sourceLabel,
+                slot?.groupSelectionLabel,
+                slot?.name,
+                slot?.label,
+                slot?.code,
+                slot?.class_name,
+                slot?.display_label,
+                slot?.student_group,
+                slot?.title,
+                slot?.courseGroup?.class_name,
+                slot?.courseGroup?.display_label,
+                slot?.courseGroup?.student_group,
+                slot?.courseGroup?.title,
+            ]
+                .map((label) => this.normalizedCourseCode(label))
+                .some((label) => label === normalizedTargetCourseKey || label.startsWith(normalizedTargetCourseKey))
+        },
+        selectedTimetableV2TestCourseRangeLabel(range) {
+            const weekdayLabel = this.courseGroupWeekdayLabel(range?.weekday)
+            const hourLabel = Number(range?.startHour) === Number(range?.endHour)
+                ? `${Number(range?.startHour)}.`
+                : `${Number(range?.startHour)}.-${Number(range?.endHour)}.`
+            const timeRangeLabel = [range?.from, range?.until].filter(Boolean).join('-')
+            const dateRangeLabel = String(range?.dateRangeLabel || '').trim()
+            const dateRangeSuffix = dateRangeLabel ? `(${dateRangeLabel})` : ''
+
+            return [weekdayLabel, hourLabel, timeRangeLabel, dateRangeSuffix].filter(Boolean).join(' ')
+        },
         selectedTimetableV2SlotRecurrenceLabel(slot) {
             const interval = this.courseGroupWeekInterval(slot?.courseGroup || slot)
             if (Number.isInteger(interval) && interval > 1) return `${interval}-wöchig`
@@ -4844,10 +5119,10 @@ export default {
                 this.timetableV2CalculationPayload(options),
             )
         },
-        requestMoreCourseAvailability(courses) {
+        requestMoreCourseAvailability(courses, options = {}) {
             return axios.post(
                 '/api/admin/students-timetables/robot/backend-timetable-availability',
-                this.timetableV2CalculationPayloadForMoreCourseAvailability(courses),
+                this.timetableV2CalculationPayloadForMoreCourseAvailability(courses, options),
             )
         },
         conflictResolutionRecommendationCurrentSignature() {
@@ -5084,12 +5359,12 @@ export default {
                 },
             ]
         },
-        timetableV2CalculationPayloadForMoreCourseAvailability(courses = []) {
+        timetableV2CalculationPayloadForMoreCourseAvailability(courses = [], options = {}) {
             const payload = this.timetableV2CalculationPayload({
                 includeQualityCounters: false,
             })
             const candidateCourses = (Array.isArray(courses) ? courses : [courses])
-                .flatMap((course) => this.moreCourseAvailabilityPayloadCandidates(course))
+                .flatMap((course) => this.moreCourseAvailabilityPayloadCandidates(course, options))
                 .filter((course) => course.availability_key && course.course_group && course.course_key)
 
             payload.candidate_courses = candidateCourses
@@ -5097,21 +5372,27 @@ export default {
 
             return payload
         },
-        moreCourseAvailabilityPayloadCandidates(course) {
+        moreCourseAvailabilityPayloadCandidates(course, options = {}) {
             const availabilityKey = this.moreCourseAvailabilityKey(course)
             const courseGroup = this.moreCourseAvailabilityCourseGroup(course)
-            const courseKey = this.timetableV2CalculationCourseKey(course)
+            const courseKey = this.timetableV2AvailabilityCourseKey(course)
+            const parentCandidate = {
+                availability_key: availabilityKey,
+                course_group: courseGroup,
+                course_key: courseKey,
+            }
+
+            if (options.includeOffers === false) {
+                return [parentCandidate]
+            }
+
             const offeredCourses = this.offeredCourseItemsForSelectedCourse(course)
             const offeredCourseGroupKeys = offeredCourses
                 .map((offeredCourse) => offeredCourse?.backendSelectionKey)
                 .filter(Boolean)
 
             return [
-                {
-                    availability_key: availabilityKey,
-                    course_group: courseGroup,
-                    course_key: courseKey,
-                },
+                parentCandidate,
                 ...offeredCourses.map((offeredCourse) => ({
                     availability_key: this.moreCourseOfferAvailabilityKey(course, offeredCourse),
                     course_group: courseGroup,
@@ -5206,6 +5487,18 @@ export default {
             return courseKey && !this.syntheticCourseKey(courseKey)
                 ? courseKey
                 : subjectRowCourse?.key || courseCode || courseKey
+        },
+        timetableV2AvailabilityCourseKey(course) {
+            const courseKey = this.timetableV2CalculationCourseKey(course)
+            const courseCode = this.normalizedCourseCode(course?.code || course?.label || '')
+            if (!courseKey || !courseCode) return courseKey
+
+            const escapedCourseCode = courseCode.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+            if (!new RegExp(`^${escapedCourseCode}-\\d+$`, 'u').test(courseKey)) return courseKey
+
+            const subjectRowCourse = this.subjectRowCourseForCourseCode(courseCode)
+
+            return subjectRowCourse?.key || courseCode
         },
         syntheticCourseKey(courseKey) {
             return /^(completed|missing|subject-row)-/iu.test(String(courseKey || '').trim())
@@ -6341,6 +6634,7 @@ export default {
 
             this.selectedMoreCourseKey = selectionKey
             this.saveMoreOfferedCourseSelections(this.moreOfferedCourseSelectionsForSingleCourse(course))
+            this.loadMoreCourseAvailabilityForCourse(course, this.moreCourseAvailabilityRequestId)
             this.syncTimetableV2Route()
         },
         closeMoreCourseOffers() {
@@ -6430,7 +6724,7 @@ export default {
                 this.startTimetableCalculationProgress('availability')
             }
 
-            return this.requestMoreCourseAvailability(coursesToCheck)
+            return this.requestMoreCourseAvailability(coursesToCheck, { includeOffers: false })
                 .then((response) => {
                     if (requestId !== this.moreCourseAvailabilityRequestId) return []
 
@@ -6453,7 +6747,7 @@ export default {
                     if (requestId !== this.moreCourseAvailabilityRequestId) return []
 
                     coursesToCheck
-                        .flatMap((course) => this.moreCourseAvailabilityPayloadCandidates(course))
+                        .flatMap((course) => this.moreCourseAvailabilityPayloadCandidates(course, { includeOffers: false }))
                         .filter((course) => course.availability_key)
                         .forEach((course) => this.setMoreCourseAvailability(course.availability_key, false, requestId))
 
@@ -6491,15 +6785,17 @@ export default {
             if (!this.prepareMoreCourseAvailability(course, requestId)) return
 
             try {
-                const response = await this.requestMoreCourseAvailability([course])
+                const response = await this.requestMoreCourseAvailability([course], { includeOffers: true })
                 const availability = response.data?.data?.availability || {}
                 this.setMoreCourseAvailabilityFromResponse(availability, requestId)
 
-                this.setMoreCourseAvailability(
-                    availabilityKey,
-                    this.moreCourseAvailabilityResultAvailable(availability[availabilityKey]),
-                    requestId,
-                )
+                this.moreCourseAvailabilityPayloadCandidates(course, { includeOffers: true })
+                    .filter((candidateCourse) => candidateCourse.availability_key)
+                    .forEach((candidateCourse) => this.setMoreCourseAvailability(
+                        candidateCourse.availability_key,
+                        this.moreCourseAvailabilityResultAvailable(availability[candidateCourse.availability_key]),
+                        requestId,
+                    ))
             } catch {
                 if (requestId !== this.moreCourseAvailabilityRequestId) return
 
@@ -7387,8 +7683,39 @@ export default {
 
             const courseGroupCodes = this.courseGroupCodes(courseGroup)
             if (!courseAliases.some((courseAlias) => courseGroupCodes.includes(courseAlias))) return false
+            if (!this.courseGroupMatchesSelectedReligionCourse(courseGroupCodes, course)) return false
 
             return !this.courseGroupHasConflictingModuleCode(this.courseGroupLeadingCodes(courseGroup), courseAliases)
+        },
+        courseGroupMatchesSelectedReligionCourse(courseGroupCodes, course) {
+            const selectedReligionBase = this.selectedReligionCourseBase(course)
+            if (!selectedReligionBase) return true
+
+            return (Array.isArray(courseGroupCodes) ? courseGroupCodes : [])
+                .map((courseCode) => this.courseCodeModuleParts(courseCode).base)
+                .some((base) => this.religionCourseBase(base) === selectedReligionBase)
+        },
+        selectedReligionCourseBase(course) {
+            const courseBase = this.religionCourseBase(this.courseCodeModuleParts(course?.code || course?.label || '').base)
+            if (!courseBase) return ''
+            if (courseBase !== 'R') return courseBase
+
+            return this.religionCourseBase(this.effectiveTimetableV2Selection?.religion)
+        },
+        religionCourseBase(value) {
+            const normalizedValue = this.normalizedCourseCode(value)
+            const religionBases = {
+                ET: 'ETH',
+                ETH: 'ETH',
+                R: 'R',
+                REV: 'REV',
+                RIS: 'RIS',
+                RK: 'RK',
+                RKATH: 'RK',
+                ROR: 'ROR',
+            }
+
+            return religionBases[normalizedValue] || ''
         },
         courseGroupHasConflictingModuleCode(leadingCourseCodes, courseAliases) {
             const aliasesWithModule = courseAliases
@@ -11170,6 +11497,28 @@ export default {
     display: grid;
     gap: 10px;
     margin-top: 12px;
+}
+
+.students-timetable-v2-tests-card {
+    justify-self: stretch;
+    width: 100%;
+    border: 1px solid rgb(var(--v-theme-error));
+    background: transparent !important;
+    box-shadow: none;
+}
+
+.students-timetable-v2-tests-card__title {
+    padding: 8px 14px;
+    font-size: 0.95rem;
+    font-weight: 800;
+    line-height: 1.25rem;
+}
+
+.students-timetable-v2-tests-card__content {
+    padding: 0 14px 12px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.25rem;
 }
 
 .students-timetable-v2-result__header {
