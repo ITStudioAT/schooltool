@@ -1515,9 +1515,9 @@ class RobotTimetableBackendSetupService
     private function unavailableCourseReasonLabel(string $reason): string
     {
         return match ($reason) {
-            'course_groups_deselected' => 'Alle passenden Kursgruppen wurden abgewählt.',
-            'time_constraints' => 'Die Zeitvorgaben schließen alle passenden Kursgruppen aus.',
-            default => 'Es wurde keine passende Kursgruppe im importierten Stundenplan gefunden.',
+            'course_groups_deselected' => 'Alle passenden Modulgruppen wurden abgewählt.',
+            'time_constraints' => 'Die Zeitvorgaben schließen alle passenden Modulgruppen aus.',
+            default => 'Es wurde keine passende Modulgruppe im importierten Stundenplan gefunden.',
         };
     }
 

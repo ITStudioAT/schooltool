@@ -402,7 +402,7 @@ class StudentsTimetablesController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'Kursauswahl wurde gespeichert.',
+            'message' => 'Modulauswahl wurde gespeichert.',
             'data' => $service->updateSelectedCourseGroupsForUser(
                 $authUser,
                 $validated['course_group_keys'] ?? [],
@@ -525,6 +525,10 @@ class StudentsTimetablesController extends Controller
             $key('student') => ['nullable', 'string', 'max:255'],
             $key('schoolyear') => ['nullable', 'string', 'max:120'],
             $key('generated_at') => ['nullable', 'string', 'max:120'],
+            $key('print_options') => ['nullable', 'array'],
+            $key('print_options.single_weeks') => ['nullable', 'boolean'],
+            $key('print_options.course_list') => ['nullable', 'boolean'],
+            $key('print_options.course_overview') => ['nullable', 'boolean'],
             $key('weekdays') => ['required', 'array', 'min:1', 'max:6'],
             $key('weekdays.*.label') => ['required', 'string', 'max:12'],
             $key('semesters') => ['required', 'array', 'min:1', 'max:2'],

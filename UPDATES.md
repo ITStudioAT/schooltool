@@ -2,9 +2,11 @@
 
 ## 3.41.8
 
-### Bugs
+### Fixes
 
 - Auswahl & Neuberechnung von Mehr Kurse und Optionen
+- Modulbezeichnungen vereinheitlicht
+- Kurse zu Module umbenannt
 
 ### Stundenplan mit Überschneidung
 
@@ -19,6 +21,11 @@
 ### Auswahl/Start
 
 - UI-Design adaptiert
+- Module richtig zugeordnet (frühere, zusätzliche Module)
+
+### Druck
+
+- Druck mit differenzierter Auswahl
 
 ## 3.41.7
 

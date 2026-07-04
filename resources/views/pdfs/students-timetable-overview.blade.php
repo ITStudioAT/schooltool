@@ -4,8 +4,18 @@
     <meta charset="utf-8">
     <title>{{ $data['title'] ?? 'Stundenplan' }}</title>
     @php
+        $printOptions = $data['print_options'] ?? [];
+        $printSingleWeeks = ($printOptions['single_weeks'] ?? false) === true;
+        $printCourseList = ($printOptions['course_list'] ?? true) !== false;
+        $printCourseOverview = ($printOptions['course_overview'] ?? true) !== false;
         $semesters = collect($data['semesters'] ?? []);
-        $semesterCount = max(1, $semesters->count());
+        $metricSemesters = $printSingleWeeks
+            ? $semesters->map(fn (array $semester): array => [
+                ...$semester,
+                'weeks' => collect($semester['weeks'] ?? [])->take(1)->all(),
+            ])
+            : $semesters;
+        $semesterCount = $printSingleWeeks ? 1 : max(1, $semesters->count());
         $isTwoColumns = $semesterCount > 1;
         $visibleCourseLimit = 2;
         $detailSeparatorPattern = '/\s*(?:·|\R)\s*/u';
@@ -20,7 +30,7 @@
             ? 'Kompaktunterricht'
             : (! empty($course['is_fu']) ? 'Fernunterricht' : '');
 
-        $semesterMetrics = $semesters->map(function (array $semester) {
+        $semesterMetrics = $metricSemesters->map(function (array $semester) {
             $weeks = collect($semester['weeks'] ?? []);
 
             return [
@@ -707,18 +717,44 @@
             ->filter(fn (int $interval): bool => $interval > 1)
             ->max();
 
-        $timetablePages = collect([[
-            'data' => $data,
-            'is_additional' => false,
-        ]]);
+        $splitTimetableDataIntoWeekPages = function (array $sourceData, bool $isAdditional): \Illuminate\Support\Collection {
+            return collect($sourceData['semesters'] ?? [])
+                ->flatMap(function (array $semester) use ($sourceData, $isAdditional): \Illuminate\Support\Collection {
+                    return collect($semester['weeks'] ?? [])
+                        ->map(fn (array $week): array => [
+                            'data' => [
+                                ...$sourceData,
+                                'semesters' => [[
+                                    ...$semester,
+                                    'weeks' => [$week],
+                                ]],
+                            ],
+                            'is_additional' => $isAdditional,
+                        ]);
+                })
+                ->values();
+        };
 
-        if ($maxRecurrenceInterval > 1) {
+        $timetablePages = $printSingleWeeks
+            ? $splitTimetableDataIntoWeekPages($data, false)
+            : collect([[
+                'data' => $data,
+                'is_additional' => false,
+            ]]);
+
+        if ($printSingleWeeks && $maxRecurrenceInterval > 1) {
             $timetablePages = $timetablePages->merge(
                 collect(range(1, $maxRecurrenceInterval))
-                    ->map(fn (int $week): array => [
-                        'data' => $filterTimetableDataForRecurrenceWeek($data, $week),
-                        'is_additional' => true,
-                    ])
+                    ->flatMap(function (int $week) use ($data, $filterTimetableDataForRecurrenceWeek, $printSingleWeeks, $splitTimetableDataIntoWeekPages): \Illuminate\Support\Collection {
+                        $filteredData = $filterTimetableDataForRecurrenceWeek($data, $week);
+
+                        return $printSingleWeeks
+                            ? $splitTimetableDataIntoWeekPages($filteredData, true)
+                            : collect([[
+                                'data' => $filteredData,
+                                'is_additional' => true,
+                            ]]);
+                    })
             );
         }
     @endphp
@@ -1336,7 +1372,7 @@
     </main>
     @endforeach
 
-    @if($courseDirectory->isNotEmpty())
+    @if($printCourseList && $courseDirectory->isNotEmpty())
         <div class="pdf-page-courses">
             <div class="courses-header">
                 <h1 class="courses-title">Kursliste</h1>
@@ -1383,7 +1419,7 @@
         </div>
     @endif
 
-    @if($courseOverviewSemesters->isNotEmpty())
+    @if($printCourseOverview && $courseOverviewSemesters->isNotEmpty())
         <div class="pdf-page-courses">
             <div class="courses-header">
                 <h1 class="courses-title">Kursübersicht</h1>

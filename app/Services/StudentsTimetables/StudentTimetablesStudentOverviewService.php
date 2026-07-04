@@ -549,35 +549,35 @@ class StudentTimetablesStudentOverviewService
         return [
             [
                 'key' => 'completed',
-                'title' => 'Abgeschlossene Kurse',
+                'title' => 'Abgeschlossene Module',
                 'icon' => 'mdi-check-circle-outline',
                 'color' => self::COURSE_SECTION_COLOR_MAP['completed'],
                 'items' => $completedCourses,
-                'empty' => 'Keine abgeschlossenen Kurse gefunden.',
+                'empty' => 'Keine abgeschlossenen Module gefunden.',
             ],
             [
                 'key' => 'missing',
-                'title' => 'Negative Kurse',
+                'title' => 'Negative Module',
                 'icon' => 'mdi-alert-circle-outline',
                 'color' => self::COURSE_SECTION_COLOR_MAP['missing'],
                 'items' => $missingCourses,
-                'empty' => 'Keine negativen Kurse erkannt.',
+                'empty' => 'Keine negativen Module erkannt.',
             ],
             [
                 'key' => 'proposed',
-                'title' => 'Vorgesehene Kurse',
+                'title' => 'Vorgesehene Module',
                 'icon' => 'mdi-format-list-checks',
                 'color' => self::COURSE_SECTION_COLOR_MAP['proposed'],
                 'items' => $proposedCourses,
-                'empty' => 'Keine vorgesehenen Kurse importiert.',
+                'empty' => 'Keine vorgesehenen Module importiert.',
             ],
             [
                 'key' => 'additional',
-                'title' => 'Zusätzliche Kurse',
+                'title' => 'Zusätzliche Module',
                 'icon' => 'mdi-plus-circle-outline',
                 'color' => self::COURSE_SECTION_COLOR_MAP['additional'],
                 'items' => $additionalCourses,
-                'empty' => 'Keine zusätzlichen Kurse erkannt.',
+                'empty' => 'Keine zusätzlichen Module erkannt.',
             ],
         ];
     }
@@ -599,7 +599,7 @@ class StudentTimetablesStudentOverviewService
         $hours = $this->courseHoursTotal($courses->all());
 
         return [
-            'title' => 'Negative Kurse + Vorgesehene Kurse',
+            'title' => 'Negative Module + Vorgesehene Module',
             'sections' => $sections,
             'courses' => $courses->all(),
             'total' => $courses->count(),

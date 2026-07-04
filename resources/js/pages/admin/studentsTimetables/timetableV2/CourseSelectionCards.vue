@@ -339,8 +339,8 @@ export default {
             return this.courseSelectionWouldExceedLimit(course, this.activeCourseSelections)
         },
         courseSelectionDisabledLabel(course, disabled) {
-            if (course.unavailable) return 'Kein angebotener Kurs vorhanden'
-            if (disabled) return 'Maximum 10 Kurse / 30 Stunden erreicht'
+            if (course.unavailable) return 'Kein angebotenes Modul vorhanden'
+            if (disabled) return 'Maximum 10 Module / 30 Stunden erreicht'
 
             return undefined
         },
@@ -486,7 +486,7 @@ export default {
 
             return {
                 count,
-                countLabel: `${count} ${count === 1 ? 'Kurs' : 'Kurse'}`,
+                countLabel: `${count} ${count === 1 ? 'Modul' : 'Module'}`,
                 hours,
                 hoursLabel: `${this.formatHours(hours)} Std.`,
             }

@@ -22,6 +22,16 @@
         </div>
 
         <v-row v-else-if="reviewFlowVisible" dense align="stretch">
+            <v-col v-if="timetableV2StepperVisible" cols="12" class="students-timetable-v2-card-column">
+                <v-stepper
+                    :model-value="timetableV2StepNumber"
+                    :items="timetableV2StepperItems"
+                    hide-actions
+                    flat
+                    color="primary"
+                    class="students-timetable-v2-stepper" />
+            </v-col>
+
             <v-col cols="12" class="students-timetable-v2-card-column">
                 <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-review-card">
                     <v-card-text class="students-timetable-v2-review-card__content">
@@ -70,7 +80,7 @@
             <v-col cols="12" class="students-timetable-v2-card-column students-timetable-v2-selected-courses-column">
                 <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-selected-courses-card">
                     <v-card-title class="students-timetable-v2-selected-courses-card__title">
-                        <span>Ausgewählte Kurse</span>
+                        <span>Ausgewählte Module</span>
                         <span v-if="courseReviewVisible && selectedCourseItemsClickable" class="students-timetable-v2-selected-courses-card__filters">
                             <v-checkbox
                                 :model-value="includeDistanceLearningCourseVariants"
@@ -106,7 +116,7 @@
                                 :variant="selectedCourseItemActive(course) ? 'flat' : 'tonal'"
                                 :closable="selectedCourseItemsDeletable"
                                 :disabled="selectedCourseItemsDisabled"
-                                :close-label="`Kurs ${course.label} entfernen`"
+                                :close-label="`Modul ${course.label} entfernen`"
                                 close-icon="mdi-close"
                                 class="students-timetable-v2-selected-courses-card__course students-timetable-v2-selected-courses-card__course--button"
                                 :class="{
@@ -127,11 +137,11 @@
                             </v-chip>
                         </div>
                         <v-alert v-else type="info" variant="tonal" density="compact">
-                            Keine Kurse ausgewählt.
+                            Keine Module ausgewählt.
                         </v-alert>
                     </v-card-text>
                     <v-card-actions v-if="courseReviewVisible" class="students-timetable-v2-course-card-footer">
-                        Hier können einzelne Kurse (z.B. Fernunterricht) abgewählt werden.
+                        Hier können einzelne Module (z.B. Fernunterricht) abgewählt werden.
                     </v-card-actions>
                 </v-card>
                 <v-card
@@ -206,7 +216,7 @@
                                 </v-card>
                             </div>
                             <v-alert v-else type="info" variant="tonal" density="compact">
-                                Keine Kurse verfügbar.
+                                Keine Module verfügbar.
                             </v-alert>
                             <v-card
                                 v-if="selectedMoreAdoptedCourseItem"
@@ -214,10 +224,7 @@
                                 variant="tonal"
                                 class="students-timetable-v2-more-adopted-course-offers-card students-timetable-v2-offered-courses-card">
                                 <v-card-title class="students-timetable-v2-offered-courses-card__title">
-                                    <span>Angebotene Kurse</span>
-                                    <v-chip size="x-small" color="primary" variant="tonal">
-                                        {{ selectedMoreAdoptedCourseItem.label }}
-                                    </v-chip>
+                                    Angebotene Kurse zum Modul {{ selectedMoreAdoptedCourseItem.label }}
                                 </v-card-title>
                                 <v-card-text>
                                     <v-progress-linear
@@ -234,6 +241,7 @@
                                             :key="course.key"
                                             class="students-timetable-v2-offered-courses-card__item students-timetable-v2-offered-courses-card__item--toggle"
                                             :class="{
+                                                'students-timetable-v2-offered-courses-card__item--available': !moreAdoptedCourseOfferCollides(course),
                                                 'students-timetable-v2-offered-courses-card__item--colliding': moreAdoptedCourseOfferCollides(course),
                                             }"
                                             role="button"
@@ -268,40 +276,11 @@
                                         </div>
                                     </div>
                                     <v-alert v-else type="info" variant="tonal" density="compact">
-                                        Keine angebotenen Kurse gefunden.
+                                        Keine angebotenen Module gefunden.
                                     </v-alert>
                                 </v-card-text>
                             </v-card>
                         </div>
-                    </v-card-text>
-                </v-card>
-                <v-card
-                    v-if="selectedTimetableOptionsSummaryCardVisible"
-                    rounded="lg"
-                    class="students-timetable-v2-card students-timetable-v2-selected-options-card">
-                    <v-card-title class="students-timetable-v2-selected-options-card__title">
-                        Optionen
-                    </v-card-title>
-                    <v-card-text>
-                        <div v-if="selectedTimetableOptionItems.length" class="students-timetable-v2-selected-options-card__list">
-                            <v-chip
-                                v-for="option in selectedTimetableOptionItems"
-                                :key="option.key"
-                                size="small"
-                                color="success"
-                                variant="tonal"
-                                prepend-icon="mdi-check"
-                                :closable="selectedTimetableOptionItemsDeletable"
-                                :disabled="selectedTimetableSummaryChipsDisabled"
-                                :close-label="`Option ${option.label} entfernen`"
-                                close-icon="mdi-close"
-                                @click:close.stop="removeSelectedTimetableOption(option)">
-                                {{ option.label }}
-                            </v-chip>
-                        </div>
-                        <v-alert v-else type="info" variant="tonal" density="compact">
-                            Keine Optionen ausgewählt
-                        </v-alert>
                     </v-card-text>
                 </v-card>
             </v-col>
@@ -309,10 +288,7 @@
             <v-col v-if="selectedCourseOfferCardVisible" cols="12" class="students-timetable-v2-card-column">
                 <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-offered-courses-card">
                     <v-card-title class="students-timetable-v2-offered-courses-card__title">
-                        <span>Angebotene Kurse</span>
-                        <v-chip size="x-small" color="primary" variant="tonal">
-                            {{ selectedReviewCourseItem.label }}
-                        </v-chip>
+                        Angebotene Kurse zum Modul {{ selectedReviewCourseItem.label }}
                     </v-card-title>
                     <v-card-text>
                         <v-progress-linear
@@ -366,7 +342,7 @@
                             </div>
                         </div>
                         <v-alert v-else type="info" variant="tonal" density="compact">
-                            Keine angebotenen Kurse gefunden.
+                            Keine angebotenen Module gefunden.
                         </v-alert>
                     </v-card-text>
                 </v-card>
@@ -417,10 +393,13 @@
             </v-col>
 
             <v-col v-if="timetableCalculationVisible || adoptedTimetableVisible" cols="12" class="students-timetable-v2-card-column">
-                <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-calculation-card">
+                <v-card
+                    rounded="lg"
+                    class="students-timetable-v2-card students-timetable-v2-calculation-card"
+                    :class="{ 'students-timetable-v2-calculation-card--final': adoptedTimetableVisible }">
                     <v-card-title class="students-timetable-v2-calculation-card__title">
                         <span class="students-timetable-v2-calculation-card__heading">
-                            <span>{{ adoptedTimetableVisible ? 'Übernommener Stundenplan' : 'Stundenpläne' }}</span>
+                            <span>{{ timetableCalculationCardTitleLabel }}</span>
                             <span
                                 v-if="timetableCalculationProgressVisible"
                                 class="students-timetable-v2-calculation-card__title-progress">
@@ -486,7 +465,7 @@
                                     prepend-icon="mdi-plus-circle-outline"
                                     :disabled="timetableCalculationLoading || moreCourseAvailabilityLoading"
                                     @click="toggleMoreCoursesCard">
-                                    Mehr Kurse
+                                    Mehr Module
                                 </v-btn>
                                 <v-btn
                                     size="large"
@@ -549,34 +528,6 @@
                                 :disabled="!moreCoursesSelectionChanged"
                                 @click="applyAdoptedTimetableCourseRemoval">
                                 Löschen
-                            </v-btn>
-                        </span>
-                        <span v-else-if="adoptedTimetableVisible" class="students-timetable-v2-calculation-card__actions">
-                            <v-btn
-                                size="large"
-                                color="error"
-                                variant="tonal"
-                                prepend-icon="mdi-file-pdf-box"
-                                :disabled="pdfExporting || !selectedTimetableV2Result"
-                                :loading="pdfExporting"
-                                @click="downloadAdoptedTimetablePdf">
-                                PDF
-                            </v-btn>
-                            <v-btn
-                                v-if="adoptedTimetableSaveVisible"
-                                size="large"
-                                color="success"
-                                variant="flat"
-                                prepend-icon="mdi-content-save-outline"
-                                :title="`Stundenplan für ${adoptedPublishedTimetableStudentName} speichern`"
-                                :aria-label="`Stundenplan für ${adoptedPublishedTimetableStudentName} speichern`"
-                                :disabled="publishedTimetableSaving || !selectedTimetableV2Result"
-                                :loading="publishedTimetableSaving"
-                                @click="saveAdoptedPublishedStudentTimetable">
-                                <span class="students-timetable-v2-save-button__label">
-                                    <span>Speichern für</span>
-                                    <span>{{ adoptedPublishedTimetableStudentName }}</span>
-                                </span>
                             </v-btn>
                         </span>
                     </v-card-title>
@@ -841,7 +792,7 @@
                                         color="primary"
                                         class="students-timetable-v2-completed-courses__loading" />
                                     <v-alert type="info" variant="tonal" density="compact" icon="mdi-calculator-variant-outline">
-                                        Weitere Kurse werden geprüft.
+                                        Weitere Module werden geprüft.
                                     </v-alert>
                                 </template>
                                 <div v-else-if="!activeMoreCoursesCategoryCard" class="students-timetable-v2-more-courses-card__category-grid">
@@ -921,7 +872,7 @@
                                         </v-card>
                                     </div>
                                     <v-alert v-else type="info" variant="tonal" density="compact">
-                                        Keine weiteren Kurse verfügbar.
+                                        Keine weiteren Module verfügbar.
                                     </v-alert>
                                 </div>
                             </v-card-text>
@@ -932,10 +883,7 @@
                             variant="tonal"
                             class="students-timetable-v2-more-courses-offered-card students-timetable-v2-offered-courses-card">
                             <v-card-title class="students-timetable-v2-offered-courses-card__title">
-                                <span>Angebotene Kurse</span>
-                                <v-chip size="x-small" color="primary" variant="tonal">
-                                    {{ selectedMoreCourseItem.label }}
-                                </v-chip>
+                                <span>Angebotene Kurse zum Modul {{ selectedMoreCourseItem.label }}</span>
                                 <span class="students-timetable-v2-offered-courses-card__actions">
                                     <v-btn
                                         size="small"
@@ -1013,7 +961,7 @@
                                     </div>
                                 </div>
                                 <v-alert v-else type="info" variant="tonal" density="compact">
-                                    Keine angebotenen Kurse gefunden.
+                                    Keine angebotenen Module gefunden.
                                 </v-alert>
                             </v-card-text>
                         </v-card>
@@ -1040,13 +988,33 @@
                                 <div
                                     v-if="selectedTimetableV2RestartButtonInHeaderVisible || adoptedTimetableVisible"
                                     class="students-timetable-v2-result__meta">
-                                    <v-chip
+                                    <v-btn
                                         v-if="adoptedTimetableVisible"
-                                        color="success"
+                                        color="error"
                                         variant="tonal"
-                                        prepend-icon="mdi-check">
-                                        {{ adoptedTimetableNumberLabel }}
-                                    </v-chip>
+                                        size="large"
+                                        prepend-icon="mdi-printer-outline"
+                                        :disabled="pdfExporting || !selectedTimetableV2Result"
+                                        :loading="pdfExporting"
+                                        @click="openAdoptedTimetablePrintDialog">
+                                        Drucken
+                                    </v-btn>
+                                    <v-btn
+                                        v-if="adoptedTimetableSaveVisible"
+                                        color="success"
+                                        variant="flat"
+                                        size="large"
+                                        prepend-icon="mdi-content-save-outline"
+                                        :title="`Stundenplan für ${adoptedPublishedTimetableStudentName} speichern`"
+                                        :aria-label="`Stundenplan für ${adoptedPublishedTimetableStudentName} speichern`"
+                                        :disabled="publishedTimetableSaving || !selectedTimetableV2Result"
+                                        :loading="publishedTimetableSaving"
+                                        @click="saveAdoptedPublishedStudentTimetable">
+                                        <span class="students-timetable-v2-save-button__label">
+                                            <span>Speichern für</span>
+                                            <span>{{ adoptedPublishedTimetableStudentName }}</span>
+                                        </span>
+                                    </v-btn>
                                     <v-btn
                                         v-if="selectedTimetableV2RestartButtonInHeaderVisible"
                                         color="primary"
@@ -1325,6 +1293,16 @@
         </v-row>
 
         <v-row v-else dense align="stretch">
+            <v-col v-if="timetableV2StepperVisible" cols="12" class="students-timetable-v2-card-column">
+                <v-stepper
+                    :model-value="timetableV2StepNumber"
+                    :items="timetableV2StepperItems"
+                    hide-actions
+                    flat
+                    color="primary"
+                    class="students-timetable-v2-stepper" />
+            </v-col>
+
             <v-col v-if="startCardVisible" cols="12" class="students-timetable-v2-card-column">
                 <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-start-card">
                     <v-card-title>Start</v-card-title>
@@ -1353,7 +1331,10 @@
                 </v-card>
             </v-col>
 
-            <v-col v-if="studentCardVisible || selectionCardVisible" cols="12" class="students-timetable-v2-card-column">
+            <v-col
+                v-if="studentCardVisible || selectionCardVisible"
+                cols="12"
+                class="students-timetable-v2-card-column students-timetable-v2-student-card-stack">
                 <div class="ttv2-strip">
                     <div v-if="studentCardVisible" class="ttv2-strip__student">
                         <div class="ttv2-strip__student-icon">
@@ -1438,7 +1419,7 @@
             <v-col v-if="courseCardsVisible" cols="12" class="students-timetable-v2-card-column">
                 <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-visited-courses-card">
                     <v-card-title class="students-timetable-v2-visited-courses-card__title">
-                        Besuchte Kurse
+                        Besuchte Module
                     </v-card-title>
                     <v-card-text class="students-timetable-v2-visited-courses-card__content">
                         <div v-if="visitedCourseItems.length" class="students-timetable-v2-visited-courses-card__list">
@@ -1456,7 +1437,7 @@
                             </v-chip>
                         </div>
                         <v-alert v-else type="info" variant="tonal" density="compact">
-                            Keine besuchten Kurse gefunden.
+                            Keine besuchten Module gefunden.
                         </v-alert>
                     </v-card-text>
                 </v-card>
@@ -1477,8 +1458,8 @@
 
             <v-col v-if="courseCardsVisible && selectedCourseLimitReached" cols="12" class="students-timetable-v2-card-column">
                 <v-alert type="info" variant="tonal" density="compact" icon="mdi-information-outline">
-                    <div>Maximum erreicht: Negative Kurse und Frühere Kurse dürfen zusammen höchstens 10 Kurse und 30 Stunden ergeben.</div>
-                    <div>Wählen Sie einen Kurs ab, um einen anderen Kurs auszuwählen.</div>
+                    <div>Maximum erreicht: Negative Module und Frühere Module dürfen zusammen höchstens 10 Module und 30 Stunden ergeben.</div>
+                    <div>Wählen Sie ein Modul ab, um ein anderes Modul auszuwählen.</div>
                 </v-alert>
             </v-col>
 
@@ -1518,6 +1499,50 @@
                 </v-card>
             </v-col>
         </v-row>
+
+        <v-dialog v-model="printDialogVisible" persistent max-width="460">
+            <v-card rounded="lg">
+                <v-card-title class="d-flex align-center ga-2">
+                    <v-icon icon="mdi-printer-outline" />
+                    Stundenplan drucken
+                </v-card-title>
+                <v-card-text>
+                    <v-checkbox
+                        v-model="printOptions.singleWeeks"
+                        label="Einzelne Wochen drucken"
+                        color="primary"
+                        density="compact"
+                        hide-details />
+                    <v-checkbox
+                        v-model="printOptions.courseList"
+                        label="Modulliste"
+                        color="primary"
+                        density="compact"
+                        hide-details />
+                    <v-checkbox
+                        v-model="printOptions.courseOverview"
+                        label="Modulübersicht"
+                        color="primary"
+                        density="compact"
+                        hide-details />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" :disabled="pdfExporting" @click="closeAdoptedTimetablePrintDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        prepend-icon="mdi-printer-outline"
+                        :disabled="!selectedTimetableV2Result"
+                        :loading="pdfExporting"
+                        @click="downloadAdoptedTimetablePdf">
+                        Drucken
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <v-dialog v-model="studentDialogOpen" persistent max-width="560">
             <v-card rounded="lg">
@@ -1625,6 +1650,34 @@ const OFFERED_COURSE_BULK_SELECTION_OPTIONS = [
     { key: 'distance-learning', label: 'Nur Fernunterricht' },
     { key: 'without-distance-learning', label: 'Ohne Fernunterricht' },
 ]
+const TIMETABLE_COURSE_SUBJECT_LABELS = {
+    REV: { code: 'Rev', name: 'Evangelische Religion' },
+    RK: { code: 'Rk', name: 'Katholische Religion' },
+    RIS: { code: 'Ris', name: 'Islamische Religion' },
+    ROR: { code: 'Ror', name: 'Orthodoxe Religion' },
+    D: { code: 'D', name: 'Deutsch' },
+    E: { code: 'E', name: 'Englisch' },
+    F: { code: 'F', name: 'Französisch' },
+    L: { code: 'L', name: 'Latein' },
+    SPA: { code: 'SPA', name: 'Spanisch' },
+    GWB: { code: 'GWB', name: 'Geographie' },
+    GPB: { code: 'GPB', name: 'Geschichte' },
+    BU: { code: 'BU', name: 'Biologie' },
+    CH: { code: 'CH', name: 'Chemie' },
+    PH: { code: 'PH', name: 'Physik' },
+    PP: { code: 'PP', name: 'Psychologie und Philosophie' },
+    MU: { code: 'MU', name: 'Musik' },
+    KG: { code: 'KG', name: 'Kunst' },
+    INF: { code: 'INF', name: 'Informatik' },
+    OEKO: { code: 'ÖKO', name: 'Ökonomie' },
+}
+const TIMETABLE_COURSE_SUBJECT_DISPLAY_ALIASES = {
+    GW: 'GWB',
+    OEK: 'OEKO',
+    OKO: 'OEKO',
+    OKON: 'OEKO',
+    S: 'SPA',
+}
 
 export default {
     components: {
@@ -1688,6 +1741,12 @@ export default {
             adoptedTimetableCalculationOptionsSnapshot: null,
             adoptedTimetableSelectionSnapshot: null,
             adoptedTimetableStudentContextSnapshot: null,
+            printDialogVisible: false,
+            printOptions: {
+                singleWeeks: false,
+                courseList: true,
+                courseOverview: true,
+            },
             pdfExporting: false,
             publishedTimetableSaving: false,
             adoptedPublishedTimetableReport: {
@@ -1750,6 +1809,27 @@ export default {
         },
         reviewFlowVisible() {
             return this.courseReviewVisible || this.timetableCalculationVisible || this.adoptedTimetableVisible
+        },
+        timetableV2StepperVisible() {
+            return !this.startCardVisible
+                && (this.timetableStartMode === 'student' || Boolean(this.storedTimetableStudentContext))
+        },
+        timetableV2StepNumber() {
+            return TIMETABLE_V2_ROUTE_STEPS.indexOf(this.timetableV2Step) + 1
+        },
+        timetableV2StepperItems() {
+            const currentStepNumber = this.timetableV2StepNumber
+
+            return [
+                { title: 'Auswahl', value: 1 },
+                { title: 'Module', value: 2 },
+                { title: 'Stundenplan', value: 3 },
+                { title: 'Übernahme', value: 4 },
+            ].map((item) => ({
+                ...item,
+                complete: item.value < currentStepNumber,
+                editable: false,
+            }))
         },
         timetableV2PageActionsDisabled() {
             return this.timetableV2PageLoading
@@ -1826,48 +1906,48 @@ export default {
             return [
                 {
                     courseGroup: 'completed',
-                    emptyLabel: 'Keine abgeschlossenen Kurse gefunden.',
+                    emptyLabel: 'Keine abgeschlossenen Module gefunden.',
                     items: this.storedCompletedCourseItems.map((course) => this.courseSelectionCardItem(course, 'completed')),
                     key: 'completed',
                     mdColumns: 12,
                     summaryChips: this.courseSelectionCardSummaryChips(this.storedCompletedCourseSummary, 'success'),
-                    title: 'Abgeschlossene Kurse',
+                    title: 'Abgeschlossene Module',
                     visible: this.courseCardsVisible,
                 },
                 {
                     courseGroup: 'missing',
-                    emptyLabel: 'Keine negativen Kurse gefunden.',
+                    emptyLabel: 'Keine negativen Module gefunden.',
                     items: this.storedMissingCourseCardItems.map((course) => this.courseSelectionCardItem(course, 'missing')),
                     key: 'missing',
                     summaryChips: this.courseSelectionCardSummaryChips(this.storedMissingCourseCardSummary, 'success'),
-                    title: 'Negative Kurse',
+                    title: 'Negative Module',
                     visible: this.missingCourseCardVisible,
                 },
                 {
                     courseGroup: 'planned',
-                    emptyLabel: 'Keine vorgesehenen Kurse gefunden.',
+                    emptyLabel: 'Keine vorgesehenen Module gefunden.',
                     items: this.storedPlannedCourseItems.map((course) => this.courseSelectionCardItem(course, 'planned')),
                     key: 'planned',
                     summaryChips: this.courseSelectionCardSummaryChips(this.storedPlannedCourseSummary, 'success'),
-                    title: 'Frühere Kurse',
+                    title: 'Frühere Module',
                     visible: this.courseCardsVisible,
                 },
                 {
                     courseGroup: 'semester',
-                    emptyLabel: 'Keine aktuellen Kurse gefunden.',
+                    emptyLabel: 'Keine aktuellen Module gefunden.',
                     items: this.storedSemesterCourseItems.map((course) => this.courseSelectionCardItem(course, 'semester')),
                     key: 'semester',
                     summaryChips: this.courseSelectionCardSummaryChips(this.storedSemesterCourseSummary, 'success'),
-                    title: 'Aktuelle Kurse',
+                    title: 'Aktuelle Module',
                     visible: this.courseCardsVisible,
                 },
                 {
                     courseGroup: 'additional',
-                    emptyLabel: 'Keine zusätzlichen Kurse gefunden.',
+                    emptyLabel: 'Keine zusätzlichen Module gefunden.',
                     items: this.storedAdditionalCourseItems.map((course) => this.courseSelectionCardItem(course, 'additional')),
                     key: 'additional',
                     summaryChips: this.courseSelectionCardSummaryChips(this.storedAdditionalCourseSummary, 'success'),
-                    title: 'Zusätzliche Kurse',
+                    title: 'Zusätzliche Module',
                     visible: this.courseCardsVisible,
                 },
             ]
@@ -2072,9 +2152,12 @@ export default {
                 const courseCode = course.code || course.label
                 const overviewCourse = overviewCoursesByCode.get(this.normalizedCourseCode(courseCode))
                 const subjectRowCourse = this.subjectRowCourseForCourseCode(courseCode)
-                if (!overviewCourse && !subjectRowCourse) return null
+                const courseHours = this.courseHoursNumber(course)
+                if (!overviewCourse && !subjectRowCourse && !courseHours) return null
 
-                const hours = this.courseHoursNumber(overviewCourse) || Number(subjectRowCourse?.hours || 0)
+                const hours = courseHours
+                    || this.courseHoursNumber(overviewCourse)
+                    || Number(subjectRowCourse?.hours || 0)
                 const matchedCourseKey = String(overviewCourse?.key || subjectRowCourse?.key || course.key || '').trim()
                 const matchedCourseCode = String(course.code || overviewCourse?.code || subjectRowCourse?.code || '').trim()
                 const matchedCourseLabel = String(course.label || matchedCourseCode || overviewCourse?.label || subjectRowCourse?.label || '').trim()
@@ -2095,6 +2178,7 @@ export default {
             }
 
             const courses = this.storedTimetableStudentContext?.courses || {}
+            const additionalCourseItems = this.normalizedOverviewCourseItems(courses.additional || [])
             const negativeCourseCodes = new Set(this.storedMissingCourseCardItems
                 .map((course) => this.normalizedCourseCode(course.code || course.label))
                 .filter(Boolean))
@@ -2104,6 +2188,7 @@ export default {
             return this.sortedCourseItems(this.uniqueCourseItems([
                 ...this.normalizedOverviewCourseItems(courses.missing || []),
                 ...this.normalizedOverviewCourseItems(courses.planned || []),
+                ...additionalCourseItems.filter((course) => this.courseDueBySelectedStudentSemester(course)),
             ])
                 .filter((course) => !this.courseAfterSelectedStudentSemester(course))
                 .filter((course) => !this.courseCodeSetContainsCourse(completedCourseCodes, course))
@@ -2117,6 +2202,10 @@ export default {
             }
 
             const courses = this.storedTimetableStudentContext?.courses || {}
+            const additionalCourseItems = this.normalizedOverviewCourseItems(courses.additional || [])
+            const dueAdditionalCourseCodes = this.courseCodeSet(
+                additionalCourseItems.filter((course) => this.courseDueBySelectedStudentSemester(course)),
+            )
             const completedCourseCodes = this.courseCodeSet(this.storedCompletedCourseItems)
             const negativeCourseCodes = this.courseCodeSet(this.storedMissingCourseCardItems)
             const selectedSemesterCourseCodes = this.courseCodeSet(this.selectedSemesterCourseLimitItems()
@@ -2127,11 +2216,12 @@ export default {
             ]).filter((course) => this.courseAfterSelectedStudentSemester(course))
 
             return this.sortedCourseItems(this.uniqueCourseItems([
-                ...this.normalizedOverviewCourseItems(courses.additional || []),
+                ...additionalCourseItems,
                 ...futurePlannedCourseItems,
             ])
                 .filter((course) => !this.courseCodeSetContainsCourse(completedCourseCodes, course))
                 .filter((course) => !this.courseCodeSetContainsCourse(negativeCourseCodes, course))
+                .filter((course) => !this.courseCodeSetContainsCourse(dueAdditionalCourseCodes, course))
                 .filter((course) => !this.courseCodeSetContainsCourse(selectedSemesterCourseCodes, course)))
         },
         selectedPlannedCourseItems() {
@@ -2201,15 +2291,15 @@ export default {
 
                 return {
                     ...card,
-                    countLabel: `${this.formatNumber(items.length)} ${items.length === 1 ? 'Kurs' : 'Kurse'}`,
+                    countLabel: `${this.formatNumber(items.length)} ${items.length === 1 ? 'Modul' : 'Module'}`,
                     items,
                 }
             })
         },
         moreCoursesTitle() {
-            if (!this.activeMoreCoursesCategoryCard) return 'Mehr Kurse'
+            if (!this.activeMoreCoursesCategoryCard) return 'Mehr Module'
 
-            return ['Mehr Kurse', this.activeMoreCoursesCategoryCard.title].filter(Boolean).join(': ')
+            return ['Mehr Module', this.activeMoreCoursesCategoryCard.title].filter(Boolean).join(': ')
         },
         activeMoreCoursesCategoryCard() {
             const activeCard = this.moreCoursesCategoryCards.find((card) => card.key === this.activeMoreCoursesCategoryCardKey)
@@ -2221,6 +2311,11 @@ export default {
         },
         moreAdoptedCourseCards() {
             return [
+                {
+                    courseGroups: ['completed'],
+                    key: 'completed',
+                    title: 'Abgeschlossene',
+                },
                 {
                     courseGroups: ['missing'],
                     key: 'missing',
@@ -2244,10 +2339,10 @@ export default {
             ]
         },
         moreAdoptedCoursesTitle() {
-            if (!this.activeMoreAdoptedCourseCard) return 'Weitere Kurse'
+            if (!this.activeMoreAdoptedCourseCard) return 'Weitere Module'
 
             return [
-                'Weitere Kurse',
+                'Weitere Module',
                 this.activeMoreAdoptedCourseCard.title,
                 this.selectedMoreExistingCourseBaseItem?.label,
                 this.selectedMoreAdoptedCourseItem?.label,
@@ -2677,20 +2772,32 @@ export default {
         },
         selectedTimetableOptionItems() {
             const options = []
+            const adoptedTimetableOptions = this.adoptedTimetableVisible
+                && this.adoptedTimetableCalculationOptionsSnapshot
+                && typeof this.adoptedTimetableCalculationOptionsSnapshot === 'object'
+                && !Array.isArray(this.adoptedTimetableCalculationOptionsSnapshot)
+                ? this.adoptedTimetableCalculationOptionsSnapshot
+                : null
+            const selectedTimetableOptions = adoptedTimetableOptions || {
+                maxFreeDays: this.timetableMaxFreeDaysSelected,
+                noDistanceLearning: this.timetableNoDistanceLearningSelected,
+                noSaturday: this.timetableNoSaturdaySelected,
+                startsFromPeriod10: this.timetableStartsFromPeriod10Selected,
+            }
             const useDraftTimetableOptions = this.timetableOptionsChanged
                 && (this.timetableOptionsCardVisible || (this.moreCoursesVisible && !this.moreCoursesCardVisible))
             const noSaturdaySelected = useDraftTimetableOptions
                 ? this.timetableNoSaturdayDraftSelected
-                : this.timetableNoSaturdaySelected
+                : selectedTimetableOptions.noSaturday === true
             const maxFreeDaysSelected = useDraftTimetableOptions
                 ? this.timetableMaxFreeDaysDraftSelected
-                : this.timetableMaxFreeDaysSelected
+                : selectedTimetableOptions.maxFreeDays === true
             const noDistanceLearningSelected = useDraftTimetableOptions
                 ? this.timetableNoDistanceLearningDraftSelected
-                : this.timetableNoDistanceLearningSelected
+                : selectedTimetableOptions.noDistanceLearning === true
             const startsFromPeriod10Selected = useDraftTimetableOptions
                 ? this.timetableStartsFromPeriod10DraftSelected
-                : this.timetableStartsFromPeriod10Selected
+                : selectedTimetableOptions.startsFromPeriod10 === true
 
             if (noSaturdaySelected) {
                 options.push({
@@ -2798,7 +2905,12 @@ export default {
                 : this.timetableCalculationResult
         },
         adoptedTimetableNumberLabel() {
-            return `Nr. ${this.formatNumber(this.adoptedTimetableSelectedNumber)} übernommen`
+            return `Finaler Stundenplan Nr. ${this.formatNumber(this.adoptedTimetableSelectedNumber)}`
+        },
+        timetableCalculationCardTitleLabel() {
+            return this.adoptedTimetableVisible
+                ? this.adoptedTimetableNumberLabel
+                : 'Stundenpläne'
         },
         adoptSelectedTimetableV2ButtonLabel() {
             return `Stundenplan Nr. ${this.formatNumber(this.timetableCalculationSelectedNumber)} übernehmen`
@@ -2904,7 +3016,7 @@ export default {
                     const recommended = this.conflictResolutionRecommendationByKey?.[option.selectionKey] === true
 
                     return {
-                        actionLabel: 'Kurs entfernen',
+                        actionLabel: 'Modul entfernen',
                         actionType: 'course',
                         buttonLabel: recommended
                             ? `${targetLabel} Entfernen · alle Konflikte`
@@ -2957,13 +3069,13 @@ export default {
                         || this.selectedCourseItems
                             .find((course) => code && String(course?.code || '').trim() === code)
                         || null
-                    const label = String(
+                    const label = this.courseDisplayLabel(
                         selectedCourse?.label
                         || problemCourse?.label
                         || problemCourse?.name
                         || code
-                        || 'Kurs',
-                    ).trim()
+                        || 'Modul',
+                    )
 
                     return {
                         key: key || selectedCourse?.selectionKey || code || `problem-course-${index}`,
@@ -2993,7 +3105,7 @@ export default {
 
             return courses
                 .map((course, index) => {
-                    const label = String(course?.label || course?.code || course?.name || 'Kurs').trim()
+                    const label = this.courseDisplayLabel(course?.label || course?.code || course?.name || 'Modul')
                     const key = String(course?.selectionKey || this.courseSelectionKey(course, course?.courseGroup) || `course-${index}`).trim()
 
                     return {
@@ -3441,6 +3553,16 @@ export default {
                 .filter((time) => Number.isFinite(time.value))
                 .sort((firstTime, secondTime) => firstTime.value - secondTime.value)
         },
+        openAdoptedTimetablePrintDialog() {
+            if (this.pdfExporting || !this.selectedTimetableV2Result) return
+
+            this.printDialogVisible = true
+        },
+        closeAdoptedTimetablePrintDialog() {
+            if (this.pdfExporting) return
+
+            this.printDialogVisible = false
+        },
         async downloadAdoptedTimetablePdf() {
             if (this.pdfExporting || !this.selectedTimetableV2Result) return
 
@@ -3459,6 +3581,7 @@ export default {
                     : new Blob([response?.data], { type: 'application/pdf' })
 
                 this.downloadBlob(blob, fileName)
+                this.printDialogVisible = false
             } catch (error) {
                 console.error(error)
                 window.alert?.('PDF konnte nicht erstellt werden.')
@@ -3508,7 +3631,7 @@ export default {
             return {
                 student_code: this.adoptedPublishedTimetableStudentCode,
                 student_label: this.adoptedPublishedTimetableStudentName,
-                timetable: this.adoptedTimetablePdfPayload(),
+                timetable: this.adoptedTimetablePdfPayload(false),
                 state: this.adoptedPublishedStudentTimetableState(),
             }
         },
@@ -3580,8 +3703,8 @@ export default {
                 }
             })
         },
-        adoptedTimetablePdfPayload() {
-            return {
+        adoptedTimetablePdfPayload(includePrintOptions = true) {
+            const payload = {
                 title: 'Stundenplan',
                 subtitle: '',
                 schoolyear: this.selectedSchoolyear?.name || this.selectedSchoolyear?.label || '',
@@ -3594,6 +3717,19 @@ export default {
                     label: weekday.shortTitle || weekday.label || '',
                 })),
                 semesters: [this.adoptedTimetablePdfSemesterPayload()],
+            }
+
+            if (includePrintOptions) {
+                payload.print_options = this.adoptedTimetablePdfPrintOptionsPayload()
+            }
+
+            return payload
+        },
+        adoptedTimetablePdfPrintOptionsPayload() {
+            return {
+                single_weeks: this.printOptions?.singleWeeks === true,
+                course_list: this.printOptions?.courseList !== false,
+                course_overview: this.printOptions?.courseOverview !== false,
             }
         },
         adoptedTimetablePdfSemesterPayload() {
@@ -3614,7 +3750,7 @@ export default {
                 || Number(this.adoptedTimetableSelectionSnapshot?.semester || 0)
                 || Number(this.storedTimetableV2Selection?.semester || 0)
 
-            return semester ? `Semester ${semester}` : 'Übernommener Stundenplan'
+            return semester ? `Semester ${semester}` : 'Finaler Stundenplan'
         },
         adoptedTimetablePdfHourPayload(hour) {
             return {
@@ -3838,7 +3974,7 @@ export default {
                 .filter((conflict) => !this.selectedTimetableV2SlotIsOccasional(conflict))
         },
         selectedTimetableV2SlotTitle(slot) {
-            return this.spacedCourseCode(slot?.code || slot?.sourceLabel || slot?.name || '')
+            return this.courseDisplayLabel(slot?.code || slot?.sourceLabel || slot?.name || '')
         },
         selectedTimetableV2SlotDetails(slot) {
             const sourceLabel = String(slot?.sourceLabel || '').trim()
@@ -3846,7 +3982,7 @@ export default {
 
             if (!sourceLabel || sourceLabel === title) return ''
 
-            return sourceLabel
+            return this.courseDisplayLabel(sourceLabel)
         },
         selectedTimetableV2AnalysisCourseLabel(slot) {
             return [
@@ -4346,8 +4482,8 @@ export default {
                 .filter(Boolean)
         },
         selectedTimetableV2ProblemDateLabels(slot, conflict) {
-            const slotLabel = this.selectedTimetableV2CourseProblemLabel(slot)
-            const conflictLabel = this.selectedTimetableV2CourseProblemLabel(conflict)
+            const slotLabel = this.selectedTimetableV2RawCourseProblemLabel(slot)
+            const conflictLabel = this.selectedTimetableV2RawCourseProblemLabel(conflict)
             if (!slotLabel || !conflictLabel) return []
 
             const problems = Array.isArray(this.selectedTimetableV2Result?.problems)
@@ -4390,6 +4526,9 @@ export default {
             return this.formatCompactDateValue(normalizedValue)
         },
         selectedTimetableV2CourseProblemLabel(item) {
+            return this.courseDisplayLabel(this.selectedTimetableV2RawCourseProblemLabel(item))
+        },
+        selectedTimetableV2RawCourseProblemLabel(item) {
             const sourceLabel = String(item?.sourceLabel || '').trim()
             if (sourceLabel) return sourceLabel
 
@@ -5845,7 +5984,7 @@ export default {
         },
         selectedCourseListItem(course, courseGroup) {
             const hours = this.courseHoursNumber(course)
-            const label = String(course?.label || course?.code || course?.name || '').trim()
+            const label = this.courseDisplayLabel(course?.label || course?.code || course?.name || '')
 
             return {
                 selectionKey: this.courseSelectionKey(course, courseGroup) || `${courseGroup}:${course?.key || course?.label}`,
@@ -5864,6 +6003,10 @@ export default {
             }
         },
         moreAdoptedCourseCandidateItemsForGroup(courseGroup) {
+            if (courseGroup === 'completed') {
+                return this.storedCompletedCourseItems.map((course) => this.moreCoursesCardItem(course, courseGroup))
+            }
+
             if (courseGroup === 'missing') {
                 return this.storedMissingCourseCardItems.map((course) => this.moreCoursesCardItem(course, courseGroup))
             }
@@ -5914,7 +6057,7 @@ export default {
 
                 const entry = coursesByBaseKey.get(baseKey) || {
                     courseGroup: 'more-base',
-                    courseGroupLabel: 'Kursgruppe',
+                    courseGroupLabel: 'Modulgruppe',
                     courses: [],
                     isTopLevelCourseGroup: true,
                     key: `more-base:${baseKey}`,
@@ -5931,7 +6074,7 @@ export default {
                 .map((entry) => ({
                     ...entry,
                     courses: this.sortedCourseItems(entry.courses),
-                    meta: `${this.formatNumber(entry.courses.length)} ${entry.courses.length === 1 ? 'Kurs' : 'Kurse'}`,
+                    meta: `${this.formatNumber(entry.courses.length)} ${entry.courses.length === 1 ? 'Modul' : 'Module'}`,
                 })))
         },
         moreExistingCourseBaseKey(course) {
@@ -5940,7 +6083,7 @@ export default {
             return parts.base || this.normalizedCourseCode(course?.code || course?.label || course?.name || '')
         },
         moreExistingCourseBaseLabel(baseKey) {
-            return this.normalizedCourseCode(baseKey)
+            return this.courseDisplayLabel(baseKey)
         },
         moreExistingCourseCodes() {
             const courseGroups = Array.isArray(this.courseGroups) ? this.courseGroups : []
@@ -6036,7 +6179,7 @@ export default {
             if (courseGroup === 'additional') return 'Zusätzlich'
             if (courseGroup === 'completed') return 'Abgeschlossen'
             if (courseGroup === 'missing') return 'Fehlend'
-            if (courseGroup === 'more') return 'Weiterer Kurs'
+            if (courseGroup === 'more') return 'Weiteres Modul'
             if (courseGroup === 'semester') return 'Aktuell'
             if (courseGroup === 'planned') return 'Vorgesehen'
 
@@ -7872,7 +8015,8 @@ export default {
             return this.courseCodeTokensFromValue(firstSegment)
         },
         offeredCourseGroupItem(courseGroup) {
-            const code = this.spacedCourseCode(courseGroup?.title || courseGroup?.course || courseGroup?.module_code || courseGroup?.subject)
+            const code = this.courseDisplayLabel(courseGroup?.title || courseGroup?.course || courseGroup?.module_code || courseGroup?.subject)
+            const displayCode = code
 
             return {
                 key: courseGroup?.key || [
@@ -7886,7 +8030,7 @@ export default {
                 code,
                 courseGroup: this.clonedTimetableV2Value(courseGroup),
                 groupSelectionLabel: this.courseGroupOptionLabel(courseGroup),
-                name: this.offeredCourseGroupLabel(courseGroup, code),
+                name: this.offeredCourseGroupLabel(courseGroup, code, displayCode),
                 semester: Number(courseGroup?.semester || 0) || null,
                 weekday: Number(courseGroup?.weekday || 0) || null,
                 hour: Number(courseGroup?.hour || 0) || null,
@@ -7899,17 +8043,17 @@ export default {
                     .join(', '),
             }
         },
-        offeredCourseGroupLabel(courseGroup, code) {
+        offeredCourseGroupLabel(courseGroup, code, displayCode = code) {
             const teacher = this.cleanedOfferedCourseTeacherSegment(courseGroup?.teacher, code)
             const group = this.cleanedOfferedCourseGroupSegment(
                 courseGroup?.student_group || courseGroup?.class_name || courseGroup?.display_label,
                 code,
                 teacher,
             )
-            const fallbackLabel = this.spacedCourseCode(courseGroup?.display_label || courseGroup?.title || courseGroup?.course || courseGroup?.subject)
+            const fallbackLabel = this.courseDisplayLabel(courseGroup?.display_label || courseGroup?.title || courseGroup?.course || courseGroup?.subject)
 
             return this.uniqueValues([
-                code,
+                displayCode,
                 group,
                 teacher,
             ].filter(Boolean)).join(' - ') || fallbackLabel || 'Ohne Bezeichnung'
@@ -8142,6 +8286,31 @@ export default {
                 .trim()
                 .replace(/^([A-Za-zÄÖÜäöüß]+)\s*(\d+)$/u, '$1 $2')
         },
+        courseDisplayLabel(value) {
+            const label = String(value || '').trim()
+            if (!label) return ''
+
+            return this.canonicalCourseDisplayLabel(label) || label
+        },
+        canonicalCourseDisplayLabel(value) {
+            const label = String(value || '').trim()
+            const match = label.match(/^([A-Za-zÄÖÜäöüß]+)\s*([0-9]*)/u)
+
+            if (!match) return ''
+
+            const [, subjectCode, moduleCode] = match
+            const normalizedSubjectCode = this.normalizedCourseCode(subjectCode)
+            const subjectLabel = TIMETABLE_COURSE_SUBJECT_LABELS[
+                TIMETABLE_COURSE_SUBJECT_DISPLAY_ALIASES[normalizedSubjectCode] || normalizedSubjectCode
+            ]
+
+            if (!subjectLabel) return ''
+
+            const rest = label.slice(match[0].length)
+            const formattedRest = rest
+
+            return `${subjectLabel.code}${moduleCode || ''}${formattedRest || ''}`
+        },
         formatTimeValue(value) {
             const rawValue = String(value || '').trim()
 
@@ -8201,7 +8370,7 @@ export default {
                 this.replaceCourseGroups(response.data?.data || [])
             } catch {
                 this.replaceCourseGroups([])
-                this.courseGroupsError = 'Die angebotenen Kurse konnten nicht geladen werden.'
+                this.courseGroupsError = 'Die angebotenen Module konnten nicht geladen werden.'
             } finally {
                 this.courseGroupsLoaded = true
                 this.courseGroupsLoading = false
@@ -8245,7 +8414,7 @@ export default {
                 this.subjectRows = response.data?.data?.subjects || []
             } catch {
                 this.subjectRows = []
-                this.subjectRowsError = 'Die Kurse konnten nicht geladen werden.'
+                this.subjectRowsError = 'Die Module konnten nicht geladen werden.'
             } finally {
                 this.subjectRowsLoading = false
                 this.applyCourseLimitPreselection()
@@ -8308,12 +8477,12 @@ export default {
             } catch (error) {
                 if (!this.courseGroups.length) {
                     this.replaceCourseGroups([])
-                    this.courseGroupsError = 'Die angebotenen Kurse konnten nicht geladen werden.'
+                    this.courseGroupsError = 'Die angebotenen Module konnten nicht geladen werden.'
                 }
 
                 if (!this.subjectRows.length) {
                     this.subjectRows = []
-                    this.subjectRowsError = 'Die Kurse konnten nicht geladen werden.'
+                    this.subjectRowsError = 'Die Module konnten nicht geladen werden.'
                 }
 
                 throw error
@@ -8368,7 +8537,7 @@ export default {
             } catch {
                 if (requestId !== this.studentCompletedCoursesRequestId) return
 
-                this.studentCompletedCoursesError = 'Die abgeschlossenen Kurse konnten nicht geladen werden.'
+                this.studentCompletedCoursesError = 'Die abgeschlossenen Module konnten nicht geladen werden.'
             } finally {
                 if (requestId === this.studentCompletedCoursesRequestId) {
                     this.studentOverviewActiveRequestKey = ''
@@ -8678,7 +8847,7 @@ export default {
             const disabled = this.courseItemSelectionDisabled(course, courseGroup)
             const selectionKey = this.courseSelectionKey(course, courseGroup)
             const selectionKeys = this.courseSelectionKeys(course, courseGroup)
-            const label = String(course?.label || course?.code || course?.name || '').trim()
+            const label = this.courseDisplayLabel(course?.label || course?.code || course?.name || '')
 
             return {
                 ariaDisabled: disabled ? 'true' : 'false',
@@ -8707,7 +8876,7 @@ export default {
             }
         },
         visitedCourseItem(course, status) {
-            const label = String(course?.label || course?.code || course?.name || '').trim()
+            const label = this.courseDisplayLabel(course?.label || course?.code || course?.name || '')
             const grade = String(course?.meta || course?.grade || '').trim() || '-'
             const statusLabel = status === 'failed' ? 'Negativ' : 'Abgeschlossen'
 
@@ -8830,11 +8999,11 @@ export default {
         },
         courseItemSelectionDisabledLabel(course, courseGroup) {
             if (this.courseItemUnavailable(course, courseGroup)) {
-                return 'Kein angebotener Kurs vorhanden'
+                return 'Kein angebotenes Modul vorhanden'
             }
 
             return this.courseItemSelectionDisabled(course, courseGroup)
-                ? 'Maximum von 10 Kursen oder 30 Stunden erreicht'
+                ? 'Maximum von 10 Modulen oder 30 Stunden erreicht'
                 : undefined
         },
         courseItemUnavailable(course, courseGroup) {
@@ -9256,10 +9425,13 @@ export default {
                     const code = String(course?.code || course?.subject || '').trim()
                     const label = String(course?.label || code || course?.name || '').trim()
                     const grade = String(course?.meta || course?.grade || '').trim()
+                    const hours = this.courseHoursNumber(course) || this.subjectRowHoursForCourseCode(code)
 
                     return {
                         key: String(course?.key || `missing-${label || index}-${grade || index}`).trim(),
                         code,
+                        hours,
+                        hoursMeta: hours ? `${this.formatHours(hours)} Std.` : '',
                         label,
                         meta: grade,
                     }
@@ -9333,6 +9505,15 @@ export default {
                 && Number.isFinite(courseSemester)
                 && courseSemester > selectedSemester
         },
+        courseDueBySelectedStudentSemester(course) {
+            const selectedSemester = this.selectedStudentDefaultSemester()
+            const courseSemester = this.courseKnownSemesterNumber(course)
+
+            return Number.isFinite(selectedSemester)
+                && Number.isFinite(courseSemester)
+                && courseSemester > 0
+                && courseSemester <= selectedSemester
+        },
         subjectRowSemesterForCourse(course) {
             const courseCodes = this.courseCodeSet([course])
             if (!courseCodes.size) return null
@@ -9373,7 +9554,7 @@ export default {
             return {
                 count: courseItems.length,
                 hours,
-                countLabel: `${this.formatNumber(courseItems.length)} ${courseItems.length === 1 ? 'Kurs' : 'Kurse'}`,
+                countLabel: `${this.formatNumber(courseItems.length)} ${courseItems.length === 1 ? 'Modul' : 'Module'}`,
                 hoursLabel: `${this.formatHours(hours)} Std.`,
             }
         },
@@ -9420,15 +9601,22 @@ export default {
             return (Array.isArray(this.subjectRows) ? this.subjectRows : [])
                 .filter((subject) => subject?.is_active !== false)
                 .flatMap((subject) => this.subjectCourseVariants(subject))
-                .map((subject) => {
+                .flatMap((subject) => {
                     const selectedCourse = this.selectedCourseFromSubject(subject)
+                    const selectedCourseCode = this.normalizedCourseCode(selectedCourse.code || subject?.json_code || subject?.json_subject || subject?.name)
+                    const sourceCourseCode = this.normalizedCourseCode(subject?.json_code || selectedCourse.code || subject?.json_subject || subject?.name)
+                    const hours = Number(selectedCourse.hours || subject?.hours_per_week || 0)
 
-                    return {
-                        code: this.normalizedCourseCode(selectedCourse.code || subject?.json_code || subject?.json_subject || subject?.name),
-                        hours: Number(selectedCourse.hours || subject?.hours_per_week || 0),
-                        key: selectedCourse.key,
-                        label: selectedCourse.name || selectedCourse.code,
-                    }
+                    return this.uniqueValues([selectedCourseCode, sourceCourseCode])
+                        .filter(Boolean)
+                        .map((subjectCode) => ({
+                            code: subjectCode,
+                            hours,
+                            key: selectedCourse.key,
+                            label: subjectCode === selectedCourseCode
+                                ? selectedCourse.name || selectedCourse.code
+                                : subjectCode,
+                        }))
                 })
                 .find((subject) => subject.code === normalizedCode)
                 || null
@@ -9498,19 +9686,19 @@ export default {
 
             const languageCode = this.languageSubjectCode(subject)
 
-            return !languageCode || languageCode === selectedLanguage
+            return !languageCode || this.selectionCourseAliases(selectedLanguage).includes(languageCode)
         },
         languageSubjectCode(subject) {
             const rawBaseKey = this.subjectBaseKey(subject)
             const baseKey = this.normalizedCourseCode(rawBaseKey)
-            if (['L', 'F', 'S'].includes(baseKey)) return baseKey
+            if (['L', 'F', 'S', 'SPA'].includes(baseKey)) return this.courseDisplayLabel(baseKey)
             if (rawBaseKey !== 'L/F/S') return ''
 
             const jsonCodeParts = this.courseCodeAliasParts(this.courseCodeWithoutModule(subject?.json_code))
                 .map((value) => this.normalizedCourseCode(value))
 
-            return jsonCodeParts.length === 1 && ['L', 'F', 'S'].includes(jsonCodeParts[0])
-                ? jsonCodeParts[0]
+            return jsonCodeParts.length === 1 && ['L', 'F', 'S', 'SPA'].includes(jsonCodeParts[0])
+                ? this.courseDisplayLabel(jsonCodeParts[0])
                 : ''
         },
         selectedCoursesFromSubject(subject) {
@@ -9559,7 +9747,7 @@ export default {
         },
         selectedCourseCode(subject) {
             if (this.isReligionSubject(subject)) return `${this.effectiveTimetableV2Selection.religion}${this.subjectModuleNumber(subject)}`
-            if (this.isLanguageSubject(subject)) return `${this.effectiveTimetableV2Selection.language}${this.subjectModuleNumber(subject)}`
+            if (this.isLanguageSubject(subject)) return this.courseDisplayLabel(`${this.effectiveTimetableV2Selection.language}${this.subjectModuleNumber(subject)}`)
 
             return this.alternativeDisplay(subject?.json_code || subject?.json_subject || subject?.name)
         },
@@ -9567,11 +9755,11 @@ export default {
             const moduleNumber = this.subjectModuleNumber(subject)
 
             if (this.isReligionSubject(subject)) {
-                return `${this.selectedOptionDescription(this.religionOptions(), this.effectiveTimetableV2Selection.religion)} ${moduleNumber}`.trim()
+                return this.courseDisplayLabel(`${this.effectiveTimetableV2Selection.religion}${moduleNumber}`)
             }
 
             if (this.isLanguageSubject(subject)) {
-                return `${this.selectedOptionDescription(this.languageOptions(), this.effectiveTimetableV2Selection.language)} ${moduleNumber}`.trim()
+                return this.courseDisplayLabel(`${this.effectiveTimetableV2Selection.language}${moduleNumber}`)
             }
 
             if (this.isArtsSubject(subject)) {
@@ -10001,10 +10189,10 @@ export default {
         religionOptions() {
             return [
                 { title: 'ETH - Ethik', value: 'ETH' },
-                { title: 'Rev - Religion evangelisch', value: 'Rev' },
-                { title: 'Ris - Religion Islam', value: 'Ris' },
-                { title: 'Rk - Religion katholisch', value: 'Rk' },
-                { title: 'Ror - Religion orthodox', value: 'Ror' },
+                { title: 'Rev - Evangelische Religion', value: 'Rev' },
+                { title: 'Ris - Islamische Religion', value: 'Ris' },
+                { title: 'Rk - Katholische Religion', value: 'Rk' },
+                { title: 'Ror - Orthodoxe Religion', value: 'Ror' },
             ]
         },
         religionOptionsForSelectedStudent() {
@@ -10076,7 +10264,7 @@ export default {
             return [
                 { title: 'L - Latein', value: 'L' },
                 { title: 'F - Französisch', value: 'F' },
-                { title: 'S - Spanisch', value: 'S' },
+                { title: 'SPA - Spanisch', value: 'SPA' },
             ]
         },
         branchOptions() {
@@ -10346,6 +10534,12 @@ export default {
     flex: 1 1 auto;
 }
 
+.students-timetable-v2-calculation-card--final {
+    border-color: rgba(22, 163, 74, 0.28);
+    background: rgba(240, 253, 244, 0.96);
+    box-shadow: 0 10px 22px rgba(22, 163, 74, 0.12);
+}
+
 .students-timetable-v2-card-column {
     display: flex !important;
     align-self: stretch;
@@ -10370,6 +10564,31 @@ export default {
     min-height: 48px;
     flex-wrap: wrap;
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+}
+
+.students-timetable-v2-stepper {
+    width: 100%;
+    border: 1px solid rgba(37, 99, 235, 0.12);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.94) !important;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+    overflow: hidden;
+}
+
+.students-timetable-v2-stepper :deep(.v-stepper-header) {
+    min-height: 54px;
+    box-shadow: none;
+}
+
+.students-timetable-v2-stepper :deep(.v-stepper-item) {
+    min-height: 54px;
+    padding: 8px 12px;
+}
+
+.students-timetable-v2-stepper :deep(.v-stepper-item__title) {
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0;
 }
 
 .ttv2-strip__student {
@@ -10877,7 +11096,7 @@ export default {
 
 .students-timetable-v2-more-adopted-courses-card__grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 10px;
 }
 
@@ -10935,6 +11154,10 @@ export default {
     text-align: center;
     overflow-wrap: anywhere;
     hyphens: auto;
+}
+
+.students-timetable-v2-more-adopted-courses-card__category--completed {
+    border-color: rgba(22, 163, 74, 0.24);
 }
 
 .students-timetable-v2-more-adopted-courses-card__category--missing {
@@ -11078,23 +11301,6 @@ export default {
 
 .students-timetable-v2-more-adopted-course-offers-card {
     border: 1px solid rgba(37, 99, 235, 0.14);
-}
-
-.students-timetable-v2-selected-options-card {
-    border: 1px solid rgba(22, 163, 74, 0.16);
-}
-
-.students-timetable-v2-selected-options-card__title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.students-timetable-v2-selected-options-card__list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
 }
 
 .students-timetable-v2-offered-courses-card__title {

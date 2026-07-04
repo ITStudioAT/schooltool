@@ -326,7 +326,7 @@ it('returns the student timetable overview summary for the authenticated import1
         ->assertJsonPath('data.selection.arts_subject', null)
         ->assertJsonPath('data.course_sections.0.key', 'completed')
         ->assertJsonPath('data.course_sections.0.icon', 'mdi-check-circle-outline')
-        ->assertJsonPath('data.course_sections.2.title', 'Vorgesehene Kurse')
+        ->assertJsonPath('data.course_sections.2.title', 'Vorgesehene Module')
         ->assertJsonCount(2, 'data.selection_options.religion')
         ->assertJsonPath('data.selection_options.religion.0.value', 'ETH')
         ->assertJsonPath('data.selection_options.religion.1.value', 'Rk')
