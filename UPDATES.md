@@ -7,6 +7,7 @@
 - Auswahl & Neuberechnung von Mehr Kurse und Optionen
 - Modulbezeichnungen vereinheitlicht
 - Kurse zu Module umbenannt
+- Darstellung zwei Module in der gleichen TT-Zelle, die sich nicht überschneiden: Konflikt entfernt.
 
 ### Stundenplan mit Überschneidung
 

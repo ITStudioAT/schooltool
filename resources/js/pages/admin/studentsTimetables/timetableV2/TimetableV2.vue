@@ -1018,6 +1018,47 @@
                                     </v-btn>
                                 </div>
                             </div>
+                            <v-card
+                                rounded="lg"
+                                variant="tonal"
+                                class="students-timetable-v2-tests-card">
+                                <v-card-title class="students-timetable-v2-tests-card__title">
+                                    Tests
+                                </v-card-title>
+                                <v-card-text class="students-timetable-v2-tests-card__content">
+                                    <div
+                                        v-for="course in selectedTimetableV2TestsCardCourseScheduleItems"
+                                        :key="course.key"
+                                        class="students-timetable-v2-tests-card__course">
+                                        <span class="students-timetable-v2-tests-card__course-label">
+                                            {{ course.displayLabel }} ({{ course.typeLabel }}):
+                                        </span>
+                                        <v-chip
+                                            v-if="course.scheduleLabel"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            class="students-timetable-v2-tests-card__info">
+                                            {{ course.scheduleLabel }}
+                                        </v-chip>
+                                        <span v-else class="students-timetable-v2-tests-card__empty">
+                                            Keine Termine im aktuellen Stundenplan.
+                                        </span>
+                                    </div>
+                                    <div class="students-timetable-v2-tests-card__course students-timetable-v2-tests-card__course--comparison">
+                                        <span class="students-timetable-v2-tests-card__course-label">
+                                            Vergleich:
+                                        </span>
+                                        <v-chip
+                                            size="small"
+                                            :color="selectedTimetableV2TestsCardScheduleComparison.color"
+                                            variant="tonal"
+                                            class="students-timetable-v2-tests-card__info">
+                                            {{ selectedTimetableV2TestsCardScheduleComparison.label }}
+                                        </v-chip>
+                                    </div>
+                                </v-card-text>
+                            </v-card>
                             <div
                                 class="students-timetable-v2-result-grid"
                                 :style="{ '--students-timetable-v2-result-weekdays': selectedTimetableV2Weekdays.length }">
@@ -1077,13 +1118,13 @@
                                             <div
                                                 v-if="selectedTimetableV2SlotTimePatternLabel(
                                                     selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)),
-                                                    { showRegularRange: selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length > 0 },
+                                                    { showRegularRange: selectedTimetableV2DisplaySameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length > 0 },
                                                 )"
                                                 class="students-timetable-v2-result-grid__recurrence">
                                                 {{
                                                     selectedTimetableV2SlotTimePatternLabel(
                                                         selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value)),
-                                                        { showRegularRange: selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length > 0 },
+                                                        { showRegularRange: selectedTimetableV2DisplaySameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length > 0 },
                                                     )
                                                 }}
                                             </div>
@@ -1093,10 +1134,10 @@
                                                 {{ selectedTimetableV2SlotInstructionLabel(selectedTimetableV2DisplaySlot(selectedTimetableV2Slot(weekday.value, time.value))) }}
                                             </div>
                                             <div
-                                                v-if="selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length"
+                                                v-if="selectedTimetableV2DisplaySameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value)).length"
                                                 class="students-timetable-v2-result-grid__same-slots">
                                                 <div
-                                                    v-for="sameSlotEntry in selectedTimetableV2SameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value))"
+                                                    v-for="sameSlotEntry in selectedTimetableV2DisplaySameSlotEntries(selectedTimetableV2Slot(weekday.value, time.value))"
                                                     :key="selectedTimetableV2SlotKey(sameSlotEntry)"
                                                     class="students-timetable-v2-result-grid__same-slot">
                                                     <div class="students-timetable-v2-result-grid__code">
@@ -1808,7 +1849,7 @@ export default {
             return this.timetableV2Step === 'course-review'
         },
         selectedCourseItemsClickable() {
-            return (this.courseReviewVisible || this.timetableCalculationVisible) && !this.timetableV2PageActionsDisabled
+            return this.courseReviewVisible && !this.timetableV2PageActionsDisabled
         },
         selectedCourseItemsDisabled() {
             return this.timetableV2PageActionsDisabled || this.moreCoursesVisible || this.timetableOptionsCardVisible
@@ -2431,7 +2472,7 @@ export default {
         },
         selectedCourseOfferCardVisible() {
             return Boolean(this.selectedReviewCourseItem)
-                && (this.courseReviewVisible || this.timetableCalculationVisible)
+                && this.courseReviewVisible
                 && !this.moreCoursesVisible
                 && !this.timetableOptionsCardVisible
         },
@@ -2551,6 +2592,41 @@ export default {
         },
         selectedTimetableV2SaturdayFreeTestLabel() {
             return `sa-free: ${this.noSaturdayTimetableCount > 0 ? 'yes' : 'no'}`
+        },
+        selectedTimetableV2TestsCardCourseScheduleItems() {
+            return [
+                { displayLabel: '1. D - 5 - 3R - SHAM', key: 'D5-3R-SHAM', label: 'D5-3R-SHAM' },
+                { displayLabel: '2. E - 5 - 3R - HÖF', key: 'E5-3R-HOEF', label: 'E5-3R-HÖF' },
+            ].map((course) => ({
+                ...course,
+                scheduleLabel: this.selectedTimetableV2TestsCardScheduleLabelForCourse(course.key),
+                typeLabel: this.selectedTimetableV2TestsCardCourseTypeLabelForCourse(course.key),
+            }))
+        },
+        selectedTimetableV2TestsCardScheduleComparison() {
+            const matchingSlots = this.selectedTimetableV2TestsCardMatchingScheduleSlots
+            if (!matchingSlots.length) {
+                return {
+                    color: 'warning',
+                    label: 'Gleiche Tage/Uhrzeiten/Daten: Nein',
+                }
+            }
+
+            return {
+                color: 'success',
+                label: `Gleiche Tage/Uhrzeiten/Daten: Ja - ${this.compactScheduleSlotsLabel(matchingSlots, {
+                    showDateRanges: true,
+                })}`,
+            }
+        },
+        selectedTimetableV2TestsCardMatchingScheduleSlots() {
+            return this.selectedTimetableV2TestsCardMatchingScheduleSlotsForCourses('D5-3R-SHAM', 'E5-3R-HOEF')
+        },
+        selectedTimetableV2TestsCardScheduleLabel() {
+            return this.selectedTimetableV2TestsCardScheduleLabelForCourse('D5-3R-SHAM')
+        },
+        selectedTimetableV2TestsCardScheduleSlots() {
+            return this.selectedTimetableV2TestsCardScheduleSlotsForCourse('D5-3R-SHAM')
         },
         selectedTimetableV2TestCourseAnalysisItems() {
             const targetCourseKey = this.normalizedCourseCode('E2-1U-NI')
@@ -2903,6 +2979,9 @@ export default {
         },
         selectedTimetableV2ConflictSeverity() {
             const conflictPairs = this.selectedTimetableV2ConflictPairs()
+            if (!conflictPairs.length) {
+                return this.selectedTimetableV2ApparentOverlapSummaryItems.length ? 'info' : ''
+            }
 
             return conflictPairs.length > 0
                 && conflictPairs.every((pair) => this.selectedTimetableV2ConflictPairIsOccasional(pair))
@@ -2914,11 +2993,15 @@ export default {
                 .some((pair) => !this.selectedTimetableV2ConflictPairIsOccasional(pair))
         },
         selectedTimetableV2ConflictIcon() {
+            if (this.selectedTimetableV2ConflictSeverity === 'info') return 'mdi-information-outline'
+
             return this.selectedTimetableV2ConflictSeverity === 'warning'
                 ? 'mdi-alert-outline'
                 : 'mdi-alert-circle-outline'
         },
         selectedTimetableV2ConflictTitle() {
+            if (this.selectedTimetableV2ConflictSeverity === 'info') return 'Hinweise'
+
             return this.selectedTimetableV2ConflictSeverity === 'warning'
                 ? 'Überschneidungen'
                 : 'Konflikte'
@@ -2928,8 +3011,10 @@ export default {
                 .sort((firstEntry, secondEntry) =>
                     Number(firstEntry.weekday || 0) - Number(secondEntry.weekday || 0)
                     || Number(firstEntry.hour || 0) - Number(secondEntry.hour || 0))
-                .flatMap((entry) => this.selectedTimetableV2SlotConflicts(entry.slot)
-                    .map((conflict) => this.selectedTimetableV2ConflictSummaryLabel(entry.slot, conflict, {
+                .flatMap((entry) => [
+                    ...this.selectedTimetableV2SlotConflicts(entry.slot),
+                    ...this.selectedTimetableV2RegularSameSlotConflicts(entry.slot),
+                ].map((conflict) => this.selectedTimetableV2ConflictSummaryLabel(entry.slot, conflict, {
                         slotHour: entry.hour,
                         slotWeekday: entry.weekday,
                     })))
@@ -2940,12 +3025,34 @@ export default {
                 return slotConflictLabels
             }
 
+            if (this.selectedTimetableV2ApparentOverlapSummaryItems.length) {
+                return this.selectedTimetableV2ApparentOverlapSummaryItems
+            }
+
+            if (!this.selectedTimetableV2ConflictPairs().length) return []
+
             const problems = Array.isArray(this.selectedTimetableV2Result?.problems)
                 ? this.selectedTimetableV2Result.problems
                 : []
 
             return this.uniqueValues(problems
                 .map((problem) => String(problem || '').trim())
+                .filter(Boolean))
+        },
+        selectedTimetableV2ApparentOverlapSummaryItems() {
+            return this.uniqueValues([...this.selectedTimetableV2SlotEntries]
+                .sort((firstEntry, secondEntry) =>
+                    Number(firstEntry.weekday || 0) - Number(secondEntry.weekday || 0)
+                    || Number(firstEntry.hour || 0) - Number(secondEntry.hour || 0))
+                .flatMap((entry) => this.selectedTimetableV2DisplaySameSlotEntries(entry.slot)
+                    .filter((sameSlotEntry) => this.selectedTimetableV2SlotDateRangeBounds(entry.slot)
+                        && this.selectedTimetableV2SlotDateRangeBounds(sameSlotEntry)
+                        && !this.selectedTimetableV2SlotDateRangesOverlap(entry.slot, sameSlotEntry))
+                    .map((sameSlotEntry) => this.selectedTimetableV2ApparentOverlapSummaryLabel(entry.slot, sameSlotEntry, {
+                        slotHour: entry.hour,
+                        slotWeekday: entry.weekday,
+                    })))
+                .map((summary) => String(summary || '').trim())
                 .filter(Boolean))
         },
         selectedTimetableV2ConflictResolutionOptions() {
@@ -3436,6 +3543,7 @@ export default {
             this.loadSchoolHours?.()
         },
         openTimetableCalculation() {
+            this.selectedReviewCourseKey = ''
             this.timetableCalculationSelectedNumber = 1
             this.clearAdoptedTimetableV2Result()
             this.setTimetableV2Step('timetable-calculation')
@@ -3747,7 +3855,7 @@ export default {
             const courseItemsByKey = new Map()
             const overlapItems = [
                 slot,
-                ...this.selectedTimetableV2SameSlotEntries(slot),
+                ...this.selectedTimetableV2DisplaySameSlotEntries(slot),
                 ...conflicts,
             ].filter(Boolean)
             const hasRegularOverlapItem = overlapItems.some((courseItem) => !this.selectedTimetableV2SlotIsOccasional(courseItem))
@@ -4132,6 +4240,187 @@ export default {
 
             return [weekdayLabel, hourLabel, recurrenceLabel, timeRangeLabel, dateRangeSuffix].filter(Boolean).join(' ')
         },
+        selectedTimetableV2TestsCardScheduleLabelForCourse(targetCourseKey) {
+            return this.compactScheduleSlotsLabel(this.selectedTimetableV2TestsCardScheduleSlotsForCourse(targetCourseKey), {
+                showDateRanges: true,
+            })
+        },
+        selectedTimetableV2TestsCardScheduleSlotsForCourse(targetCourseKey) {
+            const courseGroupScheduleSlots = this.selectedTimetableV2TestsCardCourseGroupScheduleSlotsForCourse(targetCourseKey)
+            if (courseGroupScheduleSlots.length) return courseGroupScheduleSlots
+
+            return this.selectedTimetableV2TestsCardTimetableScheduleSlotsForCourse(targetCourseKey)
+        },
+        selectedTimetableV2TestsCardCourseGroupScheduleSlotsForCourse(targetCourseKey) {
+            const scheduleSlotsByKey = new Map()
+
+            this.selectedTimetableV2TestsCardCourseGroupsForCourse(targetCourseKey)
+                .forEach((courseGroup) => {
+                    this.courseGroupScheduleSlots(courseGroup).forEach((slot) => {
+                        const exactDateLabels = this.selectedTimetableV2SlotExactDateLabels({ courseGroup })
+                        const scheduleSlot = {
+                            ...slot,
+                            dateLabels: exactDateLabels,
+                            dateRangeLabel: exactDateLabels.length ? exactDateLabels.join(', ') : slot.dateRangeLabel,
+                        }
+                        const scheduleSlotKey = [
+                            scheduleSlot.weekday,
+                            scheduleSlot.hour,
+                            scheduleSlot.from,
+                            scheduleSlot.until,
+                            scheduleSlot.dateRangeLabel,
+                            scheduleSlot.recurrenceLabel,
+                        ].join('|')
+
+                        scheduleSlotsByKey.set(scheduleSlotKey, scheduleSlot)
+                    })
+                })
+
+            return [...scheduleSlotsByKey.values()]
+        },
+        selectedTimetableV2TestsCardCourseGroupsForCourse(targetCourseKey) {
+            const courseGroups = Array.isArray(this.courseGroups) ? this.courseGroups : []
+
+            return courseGroups.filter((courseGroup) => this.selectedTimetableV2SlotMatchesCourse(courseGroup, targetCourseKey))
+        },
+        selectedTimetableV2TestsCardTimetableScheduleSlotsForCourse(targetCourseKey) {
+            const configuredTimesByHour = new Map(this.timetableV2ConfiguredTimeOptions()
+                .map((time) => [Number(time.value), time]))
+            const scheduleSlotsByKey = new Map()
+
+            this.selectedTimetableV2TestsCardSlotsForCourse(targetCourseKey)
+                .forEach(({ entry, slot }) => {
+                    const courseGroup = slot?.courseGroup || {}
+                    const weekday = Number(courseGroup.weekday || slot?.weekday || entry.weekday || 0)
+                    const hour = Number(courseGroup.hour || slot?.hour || entry.hour || 0)
+                    if (!Number.isFinite(weekday) || weekday <= 0 || !Number.isFinite(hour) || hour <= 0) return
+
+                    const configuredTime = configuredTimesByHour.get(hour) || {}
+                    const exactDateLabels = this.selectedTimetableV2SlotExactDateLabels(slot)
+                    const exactDateLabel = exactDateLabels.join(', ')
+                    const dateRangeLabel = exactDateLabel || String(slot?.dateRangeLabel || this.courseGroupDateRangeLabel(courseGroup) || '').trim()
+                    const recurrenceLabel = this.selectedTimetableV2SlotRecurrenceLabel(slot)
+                    const scheduleSlot = {
+                        dateLabels: exactDateLabels,
+                        dateRangeLabel,
+                        from: slot?.from || configuredTime.timeFrom || '',
+                        hour,
+                        recurrenceLabel,
+                        until: slot?.until || configuredTime.timeUntil || '',
+                        weekday,
+                    }
+                    const scheduleSlotKey = [
+                        weekday,
+                        hour,
+                        scheduleSlot.from,
+                        scheduleSlot.until,
+                        dateRangeLabel,
+                        recurrenceLabel,
+                        this.selectedTimetableV2SlotKey(slot),
+                    ].join('|')
+
+                    scheduleSlotsByKey.set(scheduleSlotKey, scheduleSlot)
+                })
+
+            return [...scheduleSlotsByKey.values()]
+        },
+        selectedTimetableV2TestsCardCourseTypeLabelForCourse(targetCourseKey) {
+            if (this.courseLabelLooksLikeRKompaktunterricht(targetCourseKey)) return 'Kompakt'
+            if (this.selectedTimetableV2TestsCardCourseGroupsForCourse(targetCourseKey)
+                .some((courseGroup) => this.offeredCourseIsKompaktunterricht(courseGroup))) return 'Kompakt'
+
+            const typeLabels = this.uniqueValues(this.selectedTimetableV2TestsCardSlotsForCourse(targetCourseKey)
+                .map(({ slot }) => this.selectedTimetableV2TestsCardCourseTypeLabelForSlot(slot)))
+
+            if (typeLabels.includes('Kompakt')) return 'Kompakt'
+            if (typeLabels.includes('Fern')) return 'Fern'
+
+            return 'Normal'
+        },
+        selectedTimetableV2TestsCardCourseTypeLabelForSlot(slot) {
+            if (this.selectedTimetableV2SlotIsKompaktunterricht(slot)) return 'Kompakt'
+            if (slot?.isDistanceLearningCourse === true || slot?.distanceLearning === true || slot?.courseGroup?.distanceLearning === true) return 'Fern'
+
+            return 'Normal'
+        },
+        selectedTimetableV2TestsCardSlotsForCourse(targetCourseKey) {
+            const normalizedTargetCourseKey = this.normalizedCourseCode(targetCourseKey)
+            const slotsByKey = new Map()
+
+            this.selectedTimetableV2SlotEntries.forEach((entry) => {
+                [
+                    entry.slot,
+                    ...this.selectedTimetableV2SameSlotEntries(entry.slot),
+                    ...this.selectedTimetableV2RawSlotConflicts(entry.slot),
+                ]
+                    .filter((slot) => this.selectedTimetableV2SlotMatchesCourse(slot, normalizedTargetCourseKey))
+                    .forEach((slot) => {
+                        const key = [
+                            this.selectedTimetableV2SlotKey(slot),
+                            slot?.weekday || entry.weekday || '',
+                            slot?.hour || entry.hour || '',
+                        ].join('|')
+
+                        slotsByKey.set(key, { entry, slot })
+                    })
+            })
+
+            return [...slotsByKey.values()]
+        },
+        selectedTimetableV2TestsCardMatchingScheduleSlotsForCourses(firstCourseKey, secondCourseKey) {
+            const firstCourseSlots = this.selectedTimetableV2TestsCardScheduleSlotsForCourse(firstCourseKey)
+            const secondCourseSlotKeys = new Set(this.selectedTimetableV2TestsCardScheduleSlotsForCourse(secondCourseKey)
+                .flatMap((slot) => this.selectedTimetableV2TestsCardScheduleSlotComparisonKeys(slot)))
+            const matchingSlotsByKey = new Map()
+
+            firstCourseSlots.forEach((slot) => {
+                const comparisonBaseKey = this.selectedTimetableV2TestsCardScheduleSlotComparisonBaseKey(slot)
+                if (!comparisonBaseKey) return
+
+                const matchingDateLabels = this.selectedTimetableV2TestsCardScheduleSlotComparisonDateLabels(slot)
+                    .filter((dateLabel) => secondCourseSlotKeys.has(`${comparisonBaseKey}|${dateLabel}`))
+                if (!matchingDateLabels.length) return
+
+                const comparisonKey = `${comparisonBaseKey}|${matchingDateLabels.join(', ')}`
+
+                matchingSlotsByKey.set(comparisonKey, {
+                    ...slot,
+                    dateLabels: matchingDateLabels,
+                    dateRangeLabel: matchingDateLabels.join(', '),
+                })
+            })
+
+            return [...matchingSlotsByKey.values()]
+        },
+        selectedTimetableV2TestsCardScheduleSlotComparisonKeys(slot) {
+            const comparisonBaseKey = this.selectedTimetableV2TestsCardScheduleSlotComparisonBaseKey(slot)
+            if (!comparisonBaseKey) return []
+
+            return this.selectedTimetableV2TestsCardScheduleSlotComparisonDateLabels(slot)
+                .map((dateLabel) => `${comparisonBaseKey}|${dateLabel}`)
+        },
+        selectedTimetableV2TestsCardScheduleSlotComparisonBaseKey(slot) {
+            const weekday = Number(slot?.weekday || 0)
+            const hour = Number(slot?.hour || 0)
+            if (!Number.isFinite(weekday) || weekday <= 0 || !Number.isFinite(hour) || hour <= 0) return ''
+
+            return [
+                weekday,
+                hour,
+                slot?.from || '',
+                slot?.until || '',
+            ].join('|')
+        },
+        selectedTimetableV2TestsCardScheduleSlotComparisonDateLabels(slot) {
+            const dateLabels = Array.isArray(slot?.dateLabels)
+                ? slot.dateLabels.map((dateLabel) => String(dateLabel || '').trim()).filter(Boolean)
+                : []
+            if (dateLabels.length) return this.uniqueValues(dateLabels)
+
+            const dateRangeLabel = String(slot?.dateRangeLabel || '').trim()
+
+            return dateRangeLabel ? [dateRangeLabel] : []
+        },
         selectedTimetableV2SlotRecurrenceLabel(slot) {
             const interval = this.courseGroupWeekInterval(slot?.courseGroup || slot)
             if (Number.isInteger(interval) && interval > 1) return `${interval}-wöchig`
@@ -4237,8 +4526,74 @@ export default {
         selectedTimetableV2SameSlotEntries(slot) {
             return Array.isArray(slot?.sameSlotEntries) ? slot.sameSlotEntries : []
         },
-        selectedTimetableV2SlotConflicts(slot) {
+        selectedTimetableV2DisplaySameSlotEntries(slot) {
+            const sameSlotEntriesByKey = new Map()
+            const displaySameSlotEntries = [
+                ...this.selectedTimetableV2SameSlotEntries(slot),
+                ...this.selectedTimetableV2RawSlotConflicts(slot)
+                    .filter((conflict) => !this.selectedTimetableV2SlotConflictDatesOverlap(slot, conflict))
+                    .map((conflict) => this.selectedTimetableV2SlotConflictDateSource(slot, conflict)),
+            ]
+
+            displaySameSlotEntries.filter(Boolean)
+                .forEach((sameSlotEntry) => {
+                    const key = this.selectedTimetableV2DisplaySameSlotEntryKey(sameSlotEntry)
+
+                    if (!key) return
+                    if (sameSlotEntriesByKey.has(key) && this.selectedTimetableV2SlotDateRangeBounds(sameSlotEntriesByKey.get(key))) return
+
+                    sameSlotEntriesByKey.set(key, sameSlotEntry)
+                })
+
+            return [...sameSlotEntriesByKey.values()]
+        },
+        selectedTimetableV2DisplaySameSlotEntryKey(sameSlotEntry) {
+            return [
+                this.selectedTimetableV2CourseProblemLabel(sameSlotEntry),
+                sameSlotEntry?.code || '',
+                sameSlotEntry?.sourceLabel || '',
+                sameSlotEntry?.courseGroup?.weekday || sameSlotEntry?.weekday || '',
+                sameSlotEntry?.courseGroup?.hour || sameSlotEntry?.hour || '',
+                sameSlotEntry?.from || '',
+                sameSlotEntry?.until || '',
+            ]
+                .map((value) => this.normalizedCourseCode(value) || String(value || '').trim())
+                .filter(Boolean)
+                .join('|')
+        },
+        selectedTimetableV2RawSlotConflicts(slot) {
             return Array.isArray(slot?.conflicts) ? slot.conflicts : []
+        },
+        selectedTimetableV2SlotConflicts(slot) {
+            return this.selectedTimetableV2RawSlotConflicts(slot)
+                .filter((conflict) => this.selectedTimetableV2SlotConflictDatesOverlap(slot, conflict))
+        },
+        selectedTimetableV2SlotConflictDatesOverlap(slot, conflict) {
+            if (!slot || !conflict) return false
+            const conflictDateSource = this.selectedTimetableV2SlotConflictDateSource(slot, conflict)
+            if (!this.selectedTimetableV2SlotDateRangeBounds(slot) || !this.selectedTimetableV2SlotDateRangeBounds(conflictDateSource)) return true
+
+            return this.selectedTimetableV2SlotDateRangesOverlap(slot, conflictDateSource)
+        },
+        selectedTimetableV2SlotConflictDateSource(slot, conflict) {
+            if (this.selectedTimetableV2SlotDateRangeBounds(conflict)) return conflict
+
+            const conflictCourseKeys = [
+                conflict?.code,
+                conflict?.sourceLabel,
+                conflict?.name,
+                conflict?.label,
+                conflict?.courseGroup?.class_name,
+                conflict?.courseGroup?.display_label,
+                conflict?.courseGroup?.title,
+            ]
+                .map((value) => this.normalizedCourseCode(value))
+                .filter(Boolean)
+
+            return this.selectedTimetableV2SameSlotEntries(slot)
+                .find((sameSlotEntry) => this.selectedTimetableV2SlotDateRangeBounds(sameSlotEntry)
+                    && conflictCourseKeys.some((courseKey) => this.selectedTimetableV2SlotMatchesCourse(sameSlotEntry, courseKey)))
+                || conflict
         },
         selectedTimetableV2RegularSameSlotConflicts(slot) {
             if (!slot) return []
@@ -4252,6 +4607,15 @@ export default {
             return this.selectedTimetableV2SlotDateRangesOverlap(slot, sameSlotEntry)
         },
         selectedTimetableV2SlotDateRangesOverlap(firstSlot, secondSlot) {
+            const firstExactDateValues = this.selectedTimetableV2SlotExactDateValues(firstSlot)
+            const secondExactDateValues = this.selectedTimetableV2SlotExactDateValues(secondSlot)
+
+            if (firstExactDateValues.length && secondExactDateValues.length) {
+                const secondExactDateValueSet = new Set(secondExactDateValues)
+
+                return firstExactDateValues.some((dateValue) => secondExactDateValueSet.has(dateValue))
+            }
+
             const firstRange = this.selectedTimetableV2SlotDateRangeBounds(firstSlot)
             const secondRange = this.selectedTimetableV2SlotDateRangeBounds(secondSlot)
 
@@ -4260,10 +4624,7 @@ export default {
             return Math.max(firstRange.start, secondRange.start) <= Math.min(firstRange.end, secondRange.end)
         },
         selectedTimetableV2SlotDateRangeBounds(slot) {
-            const exactDateLabels = this.selectedTimetableV2SlotExactDateLabels(slot)
-            const exactDateValues = exactDateLabels
-                .map((dateLabel) => this.selectedTimetableV2CompactDateValue(dateLabel))
-                .filter((dateValue) => Number.isFinite(dateValue))
+            const exactDateValues = this.selectedTimetableV2SlotExactDateValues(slot)
 
             if (exactDateValues.length) {
                 return {
@@ -4282,6 +4643,11 @@ export default {
                 start: rangeValues[0],
                 end: rangeValues[rangeValues.length - 1],
             }
+        },
+        selectedTimetableV2SlotExactDateValues(slot) {
+            return this.selectedTimetableV2SlotExactDateLabels(slot)
+                .map((dateLabel) => this.selectedTimetableV2CompactDateValue(dateLabel))
+                .filter((dateValue) => Number.isFinite(dateValue))
         },
         selectedTimetableV2CompactDateValue(dateLabel) {
             const compactDateMatch = String(dateLabel || '').trim().match(/^(\d{1,2})\.(\d{1,2})\.?$/u)
@@ -4354,6 +4720,26 @@ export default {
             return firstTitle && secondTitle
                 ? `${firstTitle} überschneidet sich mit ${secondTitle}.`
                 : secondTitle
+        },
+        selectedTimetableV2ApparentOverlapSummaryLabel(slot, sameSlotEntry, options = {}) {
+            const weekdayLabel = this.courseGroupWeekdayLabel(slot?.courseGroup?.weekday || slot?.weekday || options?.slotWeekday)
+            const hour = Number(slot?.courseGroup?.hour || slot?.hour || options?.slotHour || 0)
+            const hourLabel = Number.isFinite(hour) && hour > 0 ? `${hour}.` : ''
+            const slotLabel = this.selectedTimetableV2CourseProblemLabel(slot)
+            const sameSlotLabel = this.selectedTimetableV2CourseProblemLabel(sameSlotEntry)
+            const slotDateLabel = this.selectedTimetableV2ApparentOverlapDateLabel(slot)
+            const sameSlotDateLabel = this.selectedTimetableV2ApparentOverlapDateLabel(sameSlotEntry)
+            const timeLabel = [weekdayLabel, hourLabel].filter(Boolean).join(' ')
+
+            if (!slotLabel || !sameSlotLabel || !slotDateLabel || !sameSlotDateLabel) return ''
+
+            return `${timeLabel}: ${slotLabel} Termine (${slotDateLabel}); ${sameSlotLabel} Termine (${sameSlotDateLabel}) - keine gleichen Termine.`
+        },
+        selectedTimetableV2ApparentOverlapDateLabel(slot) {
+            const exactDateLabels = this.selectedTimetableV2SlotExactDateLabels(slot)
+            if (exactDateLabels.length) return exactDateLabels.join(', ')
+
+            return String(this.selectedTimetableV2SlotDateLabel(slot, { showRegularRange: true }) || slot?.dateRangeLabel || '').trim()
         },
         selectedTimetableV2CourseProblemLabelWithHour(item, fallbackHour = null, fallbackWeekday = null) {
             const label = this.selectedTimetableV2CourseProblemLabel(item)
@@ -4768,7 +5154,9 @@ export default {
         },
         restoreTimetableV2RouteStepEffects(loadPromises = {}) {
             if (this.courseReviewVisible || this.timetableCalculationVisible || this.adoptedTimetableVisible) {
-                this.selectedReviewCourseKey = this.selectedReviewCourseItem?.selectionKey || ''
+                this.selectedReviewCourseKey = this.timetableCalculationVisible
+                    ? ''
+                    : this.selectedReviewCourseItem?.selectionKey || ''
 
                 if (!loadPromises.courseGroupsPromise) {
                     this.loadCourseGroups?.()
@@ -7765,7 +8153,7 @@ export default {
             return this.offeredCourseInstructionLabel(course) !== ''
         },
         offeredCourseInstructionLabel(course) {
-            if (course?.isKompaktunterricht === true || course?.is_kompaktunterricht === true) return 'Kompaktunterricht'
+            if (this.offeredCourseIsKompaktunterricht(course)) return 'Kompaktunterricht'
             if (course?.distanceLearning === true) return 'Fernunterricht'
 
             return ''
@@ -7775,11 +8163,29 @@ export default {
                 || courseItem?.is_kompaktunterricht === true
                 || courseItem?.courseGroup?.is_kompaktunterricht === true
                 || courseItem?.courseGroup?.isKompaktunterricht === true
+                || this.courseItemLooksLikeRKompaktunterricht(courseItem)
+        },
+        courseItemLooksLikeRKompaktunterricht(courseItem) {
+            return [
+                courseItem,
+                courseItem?.courseGroup,
+            ].some((course) => [
+                course?.sourceLabel,
+                course?.groupSelectionLabel,
+                course?.name,
+                course?.label,
+                course?.code,
+                course?.class_name,
+                course?.display_label,
+                course?.student_group,
+                course?.title,
+            ].some((label) => this.courseLabelLooksLikeRKompaktunterricht(label)))
+        },
+        courseLabelLooksLikeRKompaktunterricht(value) {
+            return /(?:^|[\s-])\d+\s*R(?:$|[\s-])/iu.test(String(value || ''))
         },
         selectedTimetableV2SlotInstructionLabel(slot) {
-            if (this.selectedTimetableV2SlotIsKompaktunterricht(slot) && !this.selectedTimetableV2SlotDateLabel(slot, { showRegularRange: true })) {
-                return 'Kompaktunterricht'
-            }
+            if (this.selectedTimetableV2SlotIsKompaktunterricht(slot)) return 'Kompaktunterricht'
 
             if (slot?.isDistanceLearningCourse === true || slot?.courseGroup?.distanceLearning === true) return 'Fernunterricht'
 
@@ -7790,6 +8196,7 @@ export default {
                 || slot?.isKompaktunterricht === true
                 || slot?.courseGroup?.is_kompaktunterricht === true
                 || slot?.courseGroup?.isKompaktunterricht === true
+                || this.courseItemLooksLikeRKompaktunterricht(slot)
         },
         saveOfferedCourseSelections(offeredCourseSelections) {
             if (this.adoptedTimetableVisible) {
@@ -7993,7 +8400,7 @@ export default {
         offeredCourseGroupItem(courseGroup) {
             const code = this.courseDisplayLabel(courseGroup?.title || courseGroup?.course || courseGroup?.module_code || courseGroup?.subject)
             const displayCode = code
-            const isKompaktunterricht = courseGroup?.is_kompaktunterricht === true || courseGroup?.isKompaktunterricht === true
+            const isKompaktunterricht = this.offeredCourseIsKompaktunterricht(courseGroup)
             const recurrenceLabel = this.offeredCourseRecurrenceLabel(courseGroup)
             const scheduleSlots = this.courseGroupScheduleSlots(courseGroup)
 
@@ -11909,6 +12316,57 @@ export default {
     line-height: 1.25rem;
 }
 
+.students-timetable-v2-tests-card {
+    border: 1px solid rgba(14, 165, 233, 0.18);
+    background: rgba(240, 249, 255, 0.86);
+}
+
+.students-timetable-v2-tests-card__title {
+    min-height: 0;
+    padding: 8px 10px 0;
+    color: #075985;
+    font-size: 0.82rem;
+    font-weight: 900;
+}
+
+.students-timetable-v2-tests-card__content {
+    display: grid;
+    gap: 6px;
+    padding: 8px 10px 10px !important;
+}
+
+.students-timetable-v2-tests-card__course {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.students-timetable-v2-tests-card__info {
+    height: auto !important;
+    min-height: 26px;
+    max-width: 100%;
+}
+
+.students-timetable-v2-tests-card__info :deep(.v-chip__content) {
+    display: flex;
+    flex-wrap: wrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.students-timetable-v2-tests-card__course-label,
+.students-timetable-v2-tests-card__empty {
+    color: #0f172a;
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.students-timetable-v2-tests-card__empty {
+    color: #64748b;
+    font-weight: 700;
+}
+
 .students-timetable-v2-result-conflicts {
     display: grid;
     gap: 6px;
@@ -11926,6 +12384,12 @@ export default {
     border: 1px solid rgba(217, 119, 6, 0.22);
     background: rgba(254, 243, 199, 0.96);
     color: #78350f;
+}
+
+.students-timetable-v2-result-conflicts--info {
+    border: 1px solid rgba(14, 165, 233, 0.22);
+    background: rgba(240, 249, 255, 0.96);
+    color: #075985;
 }
 
 .students-timetable-v2-result-conflicts__title {

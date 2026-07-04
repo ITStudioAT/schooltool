@@ -343,6 +343,31 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.selectedTimetableV2TestCourseAnalysisItems.call(context)
             },
         },
+        selectedTimetableV2TestsCardScheduleLabel: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2TestsCardScheduleLabel.call(context)
+            },
+        },
+        selectedTimetableV2TestsCardCourseScheduleItems: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2TestsCardCourseScheduleItems.call(context)
+            },
+        },
+        selectedTimetableV2TestsCardScheduleComparison: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2TestsCardScheduleComparison.call(context)
+            },
+        },
+        selectedTimetableV2TestsCardMatchingScheduleSlots: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2TestsCardMatchingScheduleSlots.call(context)
+            },
+        },
+        selectedTimetableV2TestsCardScheduleSlots: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2TestsCardScheduleSlots.call(context)
+            },
+        },
         maxFreeDaysQualityCounter: {
             get() {
                 return TimetableV2.computed.maxFreeDaysQualityCounter.call(context)
@@ -702,6 +727,11 @@ function timetableV2Context(overrides = {}) {
         selectedTimetableV2ConflictSummaryItems: {
             get() {
                 return TimetableV2.computed.selectedTimetableV2ConflictSummaryItems.call(context)
+            },
+        },
+        selectedTimetableV2ApparentOverlapSummaryItems: {
+            get() {
+                return TimetableV2.computed.selectedTimetableV2ApparentOverlapSummaryItems.call(context)
             },
         },
         selectedTimetableV2ConflictResolutionOptions: {
@@ -1085,7 +1115,15 @@ describe('TimetableV2 route steps', () => {
         expect(source).not.toContain('v-if="timetableCalculationVisible" class="students-timetable-v2-result__meta"')
         expect(source).toContain(":class=\"{ 'students-timetable-v2-calculation-card--final': adoptedTimetableVisible }\"")
         expect(source).toMatch(/\.students-timetable-v2-calculation-card--final \{[\s\S]*border-color: rgba\(22, 163, 74, 0\.28\);[\s\S]*background: rgba\(240, 253, 244, 0\.96\);/u)
-        expect(source).not.toContain('students-timetable-v2-tests-card')
+        expect(source).toMatch(/class="students-timetable-v2-tests-card"[\s\S]*Tests[\s\S]*v-for="course in selectedTimetableV2TestsCardCourseScheduleItems"[\s\S]*\{\{ course\.displayLabel \}\} \(\{\{ course\.typeLabel \}\}\):[\s\S]*\{\{ course\.scheduleLabel \}\}[\s\S]*Vergleich:[\s\S]*selectedTimetableV2TestsCardScheduleComparison\.color[\s\S]*\{\{ selectedTimetableV2TestsCardScheduleComparison\.label \}\}/u)
+        expect(source).toContain("{ displayLabel: '1. D - 5 - 3R - SHAM', key: 'D5-3R-SHAM', label: 'D5-3R-SHAM' }")
+        expect(source).toContain("{ displayLabel: '2. E - 5 - 3R - HÖF', key: 'E5-3R-HOEF', label: 'E5-3R-HÖF' }")
+        expect(source).toContain("label: 'Gleiche Tage/Uhrzeiten/Daten: Nein'")
+        expect(source).toContain("label: `Gleiche Tage/Uhrzeiten/Daten: Ja - ${this.compactScheduleSlotsLabel(matchingSlots, {")
+        expect(source).not.toContain('{{ selectedTimetableV2SaturdayFreeTestLabel }}')
+        expect(source).not.toContain('v-for="item in selectedTimetableV2TestCourseAnalysisItems"')
+        expect(source).toMatch(/\.students-timetable-v2-tests-card \{[\s\S]*border: 1px solid rgba\(14, 165, 233, 0\.18\);/u)
+        expect(source).toMatch(/\.students-timetable-v2-tests-card__info :deep\(\.v-chip__content\) \{[\s\S]*display: flex;[\s\S]*flex-wrap: wrap;[\s\S]*white-space: normal;/u)
         expect(source).toMatch(/class="students-timetable-v2-result__title"[\s\S]*v-if="selectedTimetableV2RestartButtonInHeaderVisible"[\s\S]*prepend-icon="mdi-restart"[\s\S]*@click="restartTimetableV2">\s+Neustart/u)
         expect(source).toMatch(/v-if="selectedTimetableV2RestartButtonInHeaderVisible \|\| adoptedTimetableVisible"[\s\S]*class="students-timetable-v2-result__meta"[\s\S]*v-if="selectedTimetableV2RestartButtonInHeaderVisible"[\s\S]*prepend-icon="mdi-arrow-left"[\s\S]*@click="adoptedTimetableVisible \? backToTimetableCalculation\(\) : backToCourseReview\(\)">\s+Zurück/u)
         expect(source).toContain('v-if="(calculationButtonCardVisible || adoptedTimetableButtonCardVisible) && !selectedTimetableV2Result"')
@@ -1860,6 +1898,251 @@ describe('TimetableV2 route steps', () => {
             expect.stringMatching(/availability: no$/u),
             'reason: no-saturday filter blocks this Saturday-only course',
         ]))
+    })
+
+    it('shows D5-3R-SHAM and E5-3R-HÖF dates and hours in the tests card', () => {
+        const context = timetableV2Context({
+            schoolHours: [
+                { hour: 12, from: '18:45:00', until: '19:30:00' },
+                { hour: 13, from: '19:30:00', until: '20:15:00' },
+                { hour: 14, from: '20:25:00', until: '21:10:00' },
+                { hour: 15, from: '21:10:00', until: '21:55:00' },
+            ],
+            courseGroups: [
+                {
+                    class_name: 'D5-3R-SHAM',
+                    dates: [
+                        '2026-02-24',
+                        '2026-03-10',
+                        '2026-03-24',
+                        '2026-04-07',
+                        '2026-04-21',
+                        '2026-05-05',
+                        '2026-05-12',
+                        '2026-05-19',
+                        '2026-06-02',
+                        '2026-06-16',
+                        '2026-06-30',
+                    ],
+                    display_label: 'D5-3R-SHAM',
+                    hour: 14,
+                    recurrence_interval: 2,
+                    title: 'D5',
+                    weekday: 2,
+                },
+                {
+                    class_name: 'D5-3R-SHAM',
+                    dates: [
+                        '2026-02-17',
+                        '2026-02-24',
+                        '2026-03-03',
+                        '2026-03-10',
+                        '2026-03-17',
+                        '2026-03-24',
+                        '2026-04-07',
+                        '2026-04-14',
+                        '2026-04-21',
+                        '2026-04-28',
+                        '2026-05-05',
+                        '2026-05-12',
+                        '2026-05-19',
+                        '2026-05-26',
+                        '2026-06-02',
+                        '2026-06-09',
+                        '2026-06-16',
+                        '2026-06-23',
+                        '2026-06-30',
+                        '2026-07-07',
+                    ],
+                    display_label: 'D5-3R-SHAM',
+                    hour: 15,
+                    title: 'D5',
+                    weekday: 2,
+                },
+            ],
+            timetableCalculationResult: {
+                selected_timetable: {
+                    slots: {
+                        '2-12': {
+                            sourceLabel: 'D5-3R-SHAM',
+                            courseGroup: {
+                                dates: ['2026-04-28', '2026-05-05'],
+                                hour: 12,
+                                weekday: 2,
+                            },
+                        },
+                        '4-12': {
+                            sourceLabel: 'D5-3R-SHAM',
+                            courseGroup: {
+                                dates: ['2026-05-07', '2026-05-14'],
+                                hour: 12,
+                                weekday: 4,
+                            },
+                        },
+                        '4-13': {
+                            sourceLabel: 'D5-3R-SHAM',
+                            courseGroup: {
+                                dates: ['2026-05-07', '2026-05-14'],
+                                hour: 13,
+                                weekday: 4,
+                            },
+                        },
+                        '3-12': {
+                            sourceLabel: 'E5-3R-HÖF',
+                            courseGroup: {
+                                dates: ['2026-05-06', '2026-05-13'],
+                                distanceLearning: true,
+                                hour: 12,
+                                weekday: 3,
+                            },
+                        },
+                        '3-13': {
+                            sourceLabel: 'E5-3R-HÖF',
+                            courseGroup: {
+                                dates: ['2026-05-06', '2026-05-13'],
+                                distanceLearning: true,
+                                hour: 13,
+                                weekday: 3,
+                            },
+                        },
+                        '2-14': {
+                            sourceLabel: 'PH1-5C-DOM',
+                            courseGroup: {
+                                dates: ['2026-04-28'],
+                                hour: 14,
+                                weekday: 2,
+                            },
+                            conflicts: [
+                                {
+                                    sourceLabel: 'E5-3R-HÖF',
+                                    courseGroup: {
+                                        dates: ['2026-02-17', '2026-03-03', '2026-03-17', '2026-04-14'],
+                                        hour: 14,
+                                        isKompaktunterricht: true,
+                                        recurrence_interval: 2,
+                                        weekday: 2,
+                                    },
+                                    isKompaktunterrichtCourse: true,
+                                },
+                            ],
+                        },
+                        '5-12': {
+                            sourceLabel: 'D5-3R-OTHER',
+                            courseGroup: {
+                                dates: ['2026-05-08'],
+                                hour: 12,
+                                weekday: 5,
+                            },
+                        },
+                    },
+                },
+            },
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        expect(context.selectedTimetableV2TestsCardScheduleSlots).toHaveLength(2)
+        expect(context.selectedTimetableV2TestsCardScheduleLabel).toBe('Di 14. 2-wöchig 20:25-21:10 (24.02., 10.03., 24.03., 07.04., 21.04., 05.05., 12.05., 19.05., 02.06., 16.06., 30.06.), Di 15. 21:10-21:55 (17.02., 24.02., 03.03., 10.03., 17.03., 24.03., 07.04., 14.04., 21.04., 28.04., 05.05., 12.05., 19.05., 26.05., 02.06., 09.06., 16.06., 23.06., 30.06., 07.07.)')
+        expect(context.selectedTimetableV2TestsCardMatchingScheduleSlots).toEqual([])
+        expect(context.selectedTimetableV2TestsCardScheduleComparison).toEqual({
+            color: 'warning',
+            label: 'Gleiche Tage/Uhrzeiten/Daten: Nein',
+        })
+        expect(context.selectedTimetableV2TestsCardCourseScheduleItems).toEqual([
+            {
+                displayLabel: '1. D - 5 - 3R - SHAM',
+                key: 'D5-3R-SHAM',
+                label: 'D5-3R-SHAM',
+                scheduleLabel: 'Di 14. 2-wöchig 20:25-21:10 (24.02., 10.03., 24.03., 07.04., 21.04., 05.05., 12.05., 19.05., 02.06., 16.06., 30.06.), Di 15. 21:10-21:55 (17.02., 24.02., 03.03., 10.03., 17.03., 24.03., 07.04., 14.04., 21.04., 28.04., 05.05., 12.05., 19.05., 26.05., 02.06., 09.06., 16.06., 23.06., 30.06., 07.07.)',
+                typeLabel: 'Kompakt',
+            },
+            {
+                displayLabel: '2. E - 5 - 3R - HÖF',
+                key: 'E5-3R-HOEF',
+                label: 'E5-3R-HÖF',
+                scheduleLabel: 'Di 14. 2-wöchig 20:25-21:10 (17.02., 03.03., 17.03., 14.04.), Mi 12.-13. 18:45-20:15 (06.05., 13.05.)',
+                typeLabel: 'Kompakt',
+            },
+        ])
+    })
+
+    it('answers when D5-3R-SHAM and E5-3R-HÖF share the same day hour and dates in the tests card', () => {
+        const context = timetableV2Context({
+            schoolHours: [
+                { hour: 12, from: '18:45:00', until: '19:30:00' },
+                { hour: 13, from: '19:30:00', until: '20:15:00' },
+            ],
+            timetableCalculationResult: {
+                selected_timetable: {
+                    slots: {
+                        '2-12-d5': {
+                            key: 'd5-shared-12',
+                            sourceLabel: 'D5-3R-SHAM',
+                            courseGroup: {
+                                dates: ['2026-04-28', '2026-05-05'],
+                                hour: 12,
+                                isKompaktunterricht: true,
+                                weekday: 2,
+                            },
+                        },
+                        '2-13-d5': {
+                            key: 'd5-shared-13',
+                            sourceLabel: 'D5-3R-SHAM',
+                            courseGroup: {
+                                dates: ['2026-04-28', '2026-05-05'],
+                                hour: 13,
+                                isKompaktunterricht: true,
+                                weekday: 2,
+                            },
+                        },
+                        '2-12-e5': {
+                            key: 'e5-shared-12',
+                            sourceLabel: 'E5-3R-HÖF',
+                            courseGroup: {
+                                dates: ['2026-04-28', '2026-05-12'],
+                                hour: 12,
+                                weekday: 2,
+                            },
+                        },
+                        '3-12-e5': {
+                            key: 'e5-other',
+                            sourceLabel: 'E5-3R-HÖF',
+                            courseGroup: {
+                                dates: ['2026-05-06'],
+                                hour: 12,
+                                weekday: 3,
+                            },
+                        },
+                    },
+                },
+            },
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        expect(context.selectedTimetableV2TestsCardMatchingScheduleSlots).toEqual([
+            {
+                dateLabels: ['28.04.'],
+                dateRangeLabel: '28.04.',
+                from: '18:45',
+                hour: 12,
+                recurrenceLabel: '',
+                until: '19:30',
+                weekday: 2,
+            },
+        ])
+        expect(context.selectedTimetableV2TestsCardScheduleComparison).toEqual({
+            color: 'success',
+            label: 'Gleiche Tage/Uhrzeiten/Daten: Ja - Di 12. 18:45-19:30 (28.04.)',
+        })
+        expect(context.selectedTimetableV2TestsCardCourseScheduleItems.map(({ key, typeLabel }) => ({ key, typeLabel }))).toEqual([
+            {
+                key: 'D5-3R-SHAM',
+                typeLabel: 'Kompakt',
+            },
+            {
+                key: 'E5-3R-HOEF',
+                typeLabel: 'Kompakt',
+            },
+        ])
     })
 
     it('formats the max free days timetable count and maximum label for the options card', () => {
@@ -8353,6 +8636,27 @@ describe('TimetableV2 route steps', () => {
         expect(context.loadSchoolHours).toHaveBeenCalledOnce()
     })
 
+    it('clears selected course details when restoring the calculation step', () => {
+        const context = timetableV2Context({
+            selectedCourseItems: [
+                { label: 'D1', selectionKey: 'planned:D1' },
+                { label: 'GW1', selectionKey: 'planned:GW1' },
+            ],
+            selectedReviewCourseKey: 'planned:GW1',
+            timetableCalculationVisible: true,
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        context.loadCourseGroups.mockClear()
+        context.loadSchoolHours.mockClear()
+
+        TimetableV2.methods.restoreTimetableV2RouteStepEffects.call(context)
+
+        expect(context.selectedReviewCourseKey).toBe('')
+        expect(context.selectedReviewCourseItem).toBeNull()
+        expect(context.selectedCourseOfferCardVisible).toBe(false)
+    })
+
     it('selects a review course only after the course chip is clicked', () => {
         const context = timetableV2Context({
             courseReviewVisible: true,
@@ -9044,7 +9348,7 @@ describe('TimetableV2 route steps', () => {
         expect(calculateTimetables).toHaveBeenCalledWith({ refreshAuxiliary: false })
     })
 
-    it('opens offered courses from the calculation summary selected courses', () => {
+    it('keeps offered courses closed from the calculation summary selected courses', () => {
         const context = timetableV2Context({
             timetableCalculationVisible: true,
             timetableV2Step: 'timetable-calculation',
@@ -9052,19 +9356,18 @@ describe('TimetableV2 route steps', () => {
                 { label: 'E2', selectionKey: 'missing:E2' },
                 { label: 'D1', selectionKey: 'planned:D1' },
             ],
-            selectedReviewCourseKey: 'planned:D1',
         })
 
         TimetableV2.methods.selectReviewCourse.call(context, context.selectedCourseItems[0])
 
-        expect(context.selectedCourseItemsClickable).toBe(true)
-        expect(context.selectedReviewCourseKey).toBe('missing:E2')
-        expect(context.selectedReviewCourseItem).toEqual(context.selectedCourseItems[0])
-        expect(context.selectedCourseOfferCardVisible).toBe(true)
+        expect(context.selectedCourseItemsClickable).toBe(false)
+        expect(context.selectedReviewCourseKey).toBe('')
+        expect(context.selectedReviewCourseItem).toBeNull()
+        expect(context.selectedCourseOfferCardVisible).toBe(false)
         expect(context.selectedCourseOfferItemsSelectable).toBe(false)
     })
 
-    it('keeps calculation summary offered courses read-only', () => {
+    it('keeps calculation summary offered courses hidden and read-only', () => {
         const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
         const saveStoredTimetableState = vi.fn()
         const usedOfferedCourse = { key: 'E2-A', selectionKey: 'missing:E2::offer-a' }
@@ -9095,7 +9398,7 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain("'students-timetable-v2-offered-courses-card__item--deselected': !offeredCourseSelected(course)")
         expect(TimetableV2.methods.offeredCourseSelected.call(context, usedOfferedCourse)).toBe(true)
         expect(TimetableV2.methods.offeredCourseSelected.call(context, unusedOfferedCourse)).toBe(false)
-        expect(context.selectedCourseOfferCardVisible).toBe(true)
+        expect(context.selectedCourseOfferCardVisible).toBe(false)
         expect(context.selectedCourseOfferItemsSelectable).toBe(false)
         expect(saveStoredTimetableState).not.toHaveBeenCalled()
     })
@@ -9849,13 +10152,13 @@ describe('TimetableV2 route steps', () => {
 
         expect(TimetableV2.methods.selectedTimetableV2SlotTimePatternLabel.call(context, slot, { showRegularRange: true }))
             .toBe('21.02.-25.4. (Kompakt)')
-        expect(TimetableV2.methods.selectedTimetableV2SlotInstructionLabel.call(context, slot)).toBe('')
+        expect(TimetableV2.methods.selectedTimetableV2SlotInstructionLabel.call(context, slot)).toBe('Kompaktunterricht')
     })
 
     it('renders same-slot courses with the same course details and recurrence structure', () => {
         const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
 
-        expect(source).toMatch(/v-for="sameSlotEntry in selectedTimetableV2SameSlotEntries[\s\S]*class="students-timetable-v2-result-grid__code"[\s\S]*selectedTimetableV2SlotTitle\(sameSlotEntry\)[\s\S]*class="students-timetable-v2-result-grid__details"[\s\S]*selectedTimetableV2SlotDetails\(sameSlotEntry\)[\s\S]*class="students-timetable-v2-result-grid__recurrence"[\s\S]*selectedTimetableV2SlotTimePatternLabel\(sameSlotEntry, \{ showRegularRange: true \}\)/u)
+        expect(source).toMatch(/v-for="sameSlotEntry in selectedTimetableV2DisplaySameSlotEntries[\s\S]*class="students-timetable-v2-result-grid__code"[\s\S]*selectedTimetableV2SlotTitle\(sameSlotEntry\)[\s\S]*class="students-timetable-v2-result-grid__details"[\s\S]*selectedTimetableV2SlotDetails\(sameSlotEntry\)[\s\S]*class="students-timetable-v2-result-grid__recurrence"[\s\S]*selectedTimetableV2SlotTimePatternLabel\(sameSlotEntry, \{ showRegularRange: true \}\)/u)
     })
 
     it('writes block date ranges directly into each offered course day', () => {
@@ -10894,6 +11197,93 @@ describe('TimetableV2 route steps', () => {
         })
     })
 
+    it('does not show compact same-slot courses as conflicts when their exact dates do not overlap', () => {
+        const context = timetableV2Context({
+            timetableCalculationVisible: true,
+            timetableV2Step: 'timetable-calculation',
+            timetableCalculationResult: {
+                selected_timetable: {
+                    number: 1,
+                    problems: [
+                        'D5 Deutsch 5 D5-3R-SHAM überschneidet sich mit E5 Englisch 5 E5-3R-HÖF.',
+                    ],
+                    type: 'full_green',
+                    slots: {
+                        '2-14': {
+                            code: 'D5',
+                            sourceLabel: 'D5-3R-SHAM',
+                            dateRangeLabel: '24.02.-30.6.',
+                            isDistanceLearningCourse: true,
+                            isKompaktunterrichtCourse: true,
+                            courseGroup: {
+                                weekday: 2,
+                                hour: 14,
+                                dates: ['2026-02-24', '2026-03-10', '2026-03-24', '2026-04-07', '2026-04-21', '2026-05-05', '2026-05-12', '2026-05-19', '2026-06-02', '2026-06-16', '2026-06-30'],
+                                isKompaktunterricht: true,
+                            },
+                            sameSlotEntries: [
+                                {
+                                    code: 'E5',
+                                    sourceLabel: 'E5-3R-HÖF',
+                                    isKompaktunterrichtCourse: true,
+                                    courseGroup: {
+                                        weekday: 2,
+                                        hour: 14,
+                                        isKompaktunterricht: true,
+                                    },
+                                },
+                            ],
+                            conflicts: [
+                                {
+                                    code: 'E5',
+                                    sourceLabel: 'E5-3R-HÖF',
+                                    dateRangeLabel: '17.02.-14.4.',
+                                    isKompaktunterrichtCourse: true,
+                                    courseGroup: {
+                                        weekday: 2,
+                                        hour: 14,
+                                        dates: ['2026-02-17', '2026-03-03', '2026-03-17', '2026-04-14'],
+                                        isKompaktunterricht: true,
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+        })
+        const slot = context.timetableCalculationResult.selected_timetable.slots['2-14']
+
+        expect(TimetableV2.methods.selectedTimetableV2SlotInstructionLabel.call(context, slot)).toBe('Kompaktunterricht')
+        expect(TimetableV2.methods.selectedTimetableV2SlotConflicts.call(context, slot)).toEqual([])
+        expect(TimetableV2.methods.selectedTimetableV2RegularSameSlotConflicts.call(context, slot)).toEqual([])
+        expect(TimetableV2.methods.selectedTimetableV2SlotConflictSeverity.call(context, slot)).toBe('')
+        expect(TimetableV2.methods.selectedTimetableV2DisplayedSlotConflicts.call(context, slot)).toEqual([])
+        expect(context.selectedTimetableV2ConflictSeverity).toBe('info')
+        expect(context.selectedTimetableV2ConflictTitle).toBe('Hinweise')
+        expect(context.selectedTimetableV2ConflictIcon).toBe('mdi-information-outline')
+        expect(context.selectedTimetableV2ApparentOverlapSummaryItems).toEqual([
+            'Di 14.: D5-3R-SHAM Termine (24.02., 10.03., 24.03., 07.04., 21.04., 05.05., 12.05., 19.05., 02.06., 16.06., 30.06.); E5-3R-HÖF Termine (17.02., 03.03., 17.03., 14.04.) - keine gleichen Termine.',
+        ])
+        expect(context.selectedTimetableV2ConflictSummaryItems).toEqual(context.selectedTimetableV2ApparentOverlapSummaryItems)
+        expect(context.selectedTimetableV2ConflictResolutionOptions).toEqual([])
+        const displaySameSlotEntries = TimetableV2.methods.selectedTimetableV2DisplaySameSlotEntries.call(context, slot)
+        expect(displaySameSlotEntries).toHaveLength(1)
+        expect(TimetableV2.methods.selectedTimetableV2SlotTitle.call(context, displaySameSlotEntries[0])).toBe('E5')
+        expect(TimetableV2.methods.selectedTimetableV2SlotTimePatternLabel.call(context, displaySameSlotEntries[0], { showRegularRange: true }))
+            .toBe('17.02.-14.4. (Kompakt)')
+        expect(TimetableV2.methods.selectedTimetableV2SlotExactDateLabels.call(context, displaySameSlotEntries[0])).toEqual([
+            '17.02.',
+            '03.03.',
+            '17.03.',
+            '14.04.',
+        ])
+        expect(TimetableV2.methods.selectedTimetableV2CellClasses.call(context, 2, 14)).toMatchObject({
+            'students-timetable-v2-result-grid__cell--conflict': false,
+            'students-timetable-v2-result-grid__cell--filled': true,
+        })
+    })
+
     it('shows regular same-slot entries with overlapping date ranges as red conflicts', () => {
         const context = timetableV2Context({
             selectedCourseItems: [
@@ -10924,7 +11314,7 @@ describe('TimetableV2 route steps', () => {
                                     courseGroup: {
                                         weekday: 5,
                                         hour: 9,
-                                        dates: ['2026-02-17', '2026-03-03', '2026-03-17', '2026-03-31', '2026-04-14', '2026-04-28', '2026-05-12', '2026-05-26', '2026-06-09', '2026-06-23', '2026-07-07'],
+                                        dates: ['2026-02-17', '2026-03-10', '2026-03-17', '2026-03-31', '2026-04-14', '2026-04-28', '2026-05-12', '2026-05-26', '2026-06-09', '2026-06-23', '2026-07-07'],
                                     },
                                 },
                             ],
