@@ -2,6 +2,10 @@
 
 ## 3.41.8
 
+### Bugs
+
+- Auswahl & Neuberechnung von Mehr Kurse und Optionen
+
 ### Stundenplan mit Überschneidung
 
 - Konflikt-Lösungsbuttons auch beim Weiterscrollen zu weiteren TTs
@@ -15,7 +19,6 @@
 ### Auswahl/Start
 
 - UI-Design adaptiert
-
 
 ## 3.41.7
 
