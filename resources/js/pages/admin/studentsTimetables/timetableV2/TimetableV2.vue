@@ -259,9 +259,6 @@
                                             <v-chip v-if="course.scheduleLabel" size="x-small" color="primary" variant="tonal">
                                                 {{ course.scheduleLabel }}
                                             </v-chip>
-                                            <v-chip v-if="course.recurrenceLabel" size="x-small" color="primary" variant="tonal">
-                                                {{ course.recurrenceLabel }}
-                                            </v-chip>
                                             <v-chip
                                                 v-if="offeredCourseInstructionVisible(course)"
                                                 size="x-small"
@@ -324,9 +321,6 @@
                                 </span>
                                 <v-chip v-if="course.scheduleLabel" size="x-small" color="primary" variant="tonal">
                                     {{ course.scheduleLabel }}
-                                </v-chip>
-                                <v-chip v-if="course.recurrenceLabel" size="x-small" color="primary" variant="tonal">
-                                    {{ course.recurrenceLabel }}
                                 </v-chip>
                                 <v-chip
                                     v-if="offeredCourseInstructionVisible(course)"
@@ -943,9 +937,6 @@
                                         </span>
                                         <v-chip v-if="course.scheduleLabel" size="x-small" color="primary" variant="tonal">
                                             {{ course.scheduleLabel }}
-                                        </v-chip>
-                                        <v-chip v-if="course.recurrenceLabel" size="x-small" color="primary" variant="tonal">
-                                            {{ course.recurrenceLabel }}
                                         </v-chip>
                                         <v-chip
                                             v-if="offeredCourseInstructionVisible(course)"
@@ -1589,29 +1580,8 @@
                                 @click="selectStudentDraft(student.student_code)"
                                 @keydown.enter.prevent="selectStudentDraft(student.student_code)"
                                 @keydown.space.prevent="selectStudentDraft(student.student_code)">
-                                <span class="students-timetable-v2-student-search-results__item-content">
-                                    <span class="students-timetable-v2-student-search-results__name">
-                                        {{ studentOptionTitle(student) }}
-                                    </span>
-                                    <button
-                                        v-if="studentEmail(student)"
-                                        type="button"
-                                        class="students-timetable-v2-student-search-results__email"
-                                        :class="{ 'students-timetable-v2-student-search-results__email--copied': copiedStudentEmailCode === normalizedStudentCode(student.student_code) }"
-                                        :aria-label="copiedStudentEmailCode === normalizedStudentCode(student.student_code) ? `E-Mail-Adresse kopiert: ${studentEmail(student)}` : `E-Mail-Adresse kopieren: ${studentEmail(student)}`"
-                                        :title="copiedStudentEmailCode === normalizedStudentCode(student.student_code) ? 'Kopiert!' : `E-Mail-Adresse kopieren: ${studentEmail(student)}`"
-                                        @click.stop="copyStudentEmail(student)">
-                                        <v-icon icon="mdi-email-outline" size="14" />
-                                        <span>{{ studentEmail(student) }}</span>
-                                        <v-icon
-                                            :icon="copiedStudentEmailCode === normalizedStudentCode(student.student_code) ? 'mdi-check' : 'mdi-content-copy'"
-                                            size="13" />
-                                        <span
-                                            v-if="copiedStudentEmailCode === normalizedStudentCode(student.student_code)"
-                                            class="students-timetable-v2-student-search-results__email-copied">
-                                            Kopiert
-                                        </span>
-                                    </button>
+                                <span class="students-timetable-v2-student-search-results__label">
+                                    {{ studentOptionTitle(student) }}
                                 </span>
                             </v-btn>
                             <div v-if="!filteredStudentResults.length" class="students-timetable-v2-student-search-results__empty">Keine Schüler gefunden</div>
@@ -4106,8 +4076,9 @@ export default {
             const ranges = []
 
             slots.forEach((slot) => {
+                const dateRangeLabel = options?.showDateRanges === true ? slot.dateRangeLabel || '' : ''
                 const previousRange = ranges[ranges.length - 1]
-                if (previousRange && this.scheduleSlotExtendsRange(previousRange, slot)) {
+                if (previousRange && this.scheduleSlotExtendsRange(previousRange, { ...slot, dateRangeLabel })) {
                     previousRange.endHour = Number(slot.hour)
                     previousRange.until = slot.until || previousRange.until
 
@@ -4154,11 +4125,12 @@ export default {
             const hourLabel = Number(range?.startHour) === Number(range?.endHour)
                 ? `${Number(range?.startHour)}.`
                 : `${Number(range?.startHour)}.-${Number(range?.endHour)}.`
+            const recurrenceLabel = String(range?.recurrenceLabel || '').trim()
             const timeRangeLabel = [range?.from, range?.until].filter(Boolean).join('-')
             const dateRangeLabel = String(range?.dateRangeLabel || '').trim()
             const dateRangeSuffix = dateRangeLabel ? `(${dateRangeLabel})` : ''
 
-            return [weekdayLabel, hourLabel, timeRangeLabel, dateRangeSuffix].filter(Boolean).join(' ')
+            return [weekdayLabel, hourLabel, recurrenceLabel, timeRangeLabel, dateRangeSuffix].filter(Boolean).join(' ')
         },
         selectedTimetableV2SlotRecurrenceLabel(slot) {
             const interval = this.courseGroupWeekInterval(slot?.courseGroup || slot)
@@ -7694,15 +7666,19 @@ export default {
 
             return [...courseItemsByIdentity.values()].map((courseItem) => {
                 const scheduleSlots = this.mergedScheduleSlots(courseItem.scheduleSlots, [])
+                const isKompaktunterricht = this.offeredCourseIsKompaktunterricht(courseItem)
 
                 return {
                     ...courseItem,
                     backendSelectionKey: this.offeredCourseBackendSelectionKey(courseItem, selectedCourse),
                     distanceLearning: this.offeredCourseIsDistanceLearning({ ...courseItem, scheduleSlots }, selectedCourse),
-                    isKompaktunterricht: this.offeredCourseIsKompaktunterricht(courseItem),
+                    isKompaktunterricht,
                     recurrenceLabel: courseItem.recurrenceLabel,
                     selectionKey: this.offeredCourseSelectionKey(courseItem, selectedCourse),
-                    scheduleLabel: this.compactScheduleSlotsLabel(scheduleSlots),
+                    scheduleLabel: this.compactScheduleSlotsLabel(scheduleSlots, {
+                        recurrenceFallback: courseItem.recurrenceLabel,
+                        showDateRanges: isKompaktunterricht,
+                    }),
                     scheduleSlots,
                 }
             })
@@ -8017,6 +7993,9 @@ export default {
         offeredCourseGroupItem(courseGroup) {
             const code = this.courseDisplayLabel(courseGroup?.title || courseGroup?.course || courseGroup?.module_code || courseGroup?.subject)
             const displayCode = code
+            const isKompaktunterricht = courseGroup?.is_kompaktunterricht === true || courseGroup?.isKompaktunterricht === true
+            const recurrenceLabel = this.offeredCourseRecurrenceLabel(courseGroup)
+            const scheduleSlots = this.courseGroupScheduleSlots(courseGroup)
 
             return {
                 key: courseGroup?.key || [
@@ -8034,10 +8013,13 @@ export default {
                 semester: Number(courseGroup?.semester || 0) || null,
                 weekday: Number(courseGroup?.weekday || 0) || null,
                 hour: Number(courseGroup?.hour || 0) || null,
-                scheduleSlots: this.courseGroupScheduleSlots(courseGroup),
-                scheduleLabel: this.compactScheduleSlotsLabel(this.courseGroupScheduleSlots(courseGroup)),
-                recurrenceLabel: this.offeredCourseRecurrenceLabel(courseGroup),
-                isKompaktunterricht: courseGroup?.is_kompaktunterricht === true || courseGroup?.isKompaktunterricht === true,
+                scheduleSlots,
+                scheduleLabel: this.compactScheduleSlotsLabel(scheduleSlots, {
+                    recurrenceFallback: recurrenceLabel,
+                    showDateRanges: isKompaktunterricht,
+                }),
+                recurrenceLabel,
+                isKompaktunterricht,
                 roomsLabel: (Array.isArray(courseGroup?.rooms) ? courseGroup.rooms : [])
                     .filter(Boolean)
                     .join(', '),
@@ -8206,7 +8188,7 @@ export default {
                 Number(firstSlot?.weekday || 0) - Number(secondSlot?.weekday || 0)
                 || Number(firstSlot?.hour || 0) - Number(secondSlot?.hour || 0))
         },
-        compactScheduleSlotsLabel(scheduleSlots) {
+        compactScheduleSlotsLabel(scheduleSlots, options = {}) {
             const slots = (Array.isArray(scheduleSlots) ? scheduleSlots : [])
                 .filter((slot) => Number.isFinite(Number(slot?.hour)) && Number(slot?.hour) > 0)
                 .sort((firstSlot, secondSlot) =>
@@ -8215,8 +8197,10 @@ export default {
             const ranges = []
 
             slots.forEach((slot) => {
+                const dateRangeLabel = options?.showDateRanges === true ? slot.dateRangeLabel || '' : ''
+                const recurrenceLabel = slot.recurrenceLabel || options?.recurrenceFallback || ''
                 const previousRange = ranges[ranges.length - 1]
-                if (previousRange && this.scheduleSlotExtendsRange(previousRange, slot)) {
+                if (previousRange && this.scheduleSlotExtendsRange(previousRange, { ...slot, dateRangeLabel, recurrenceLabel })) {
                     previousRange.endHour = Number(slot.hour)
                     previousRange.until = slot.until || previousRange.until
 
@@ -8228,8 +8212,8 @@ export default {
                     startHour: Number(slot.hour),
                     endHour: Number(slot.hour),
                     from: slot.from || '',
-                    dateRangeLabel: slot.dateRangeLabel || '',
-                    recurrenceLabel: slot.recurrenceLabel || '',
+                    dateRangeLabel,
+                    recurrenceLabel,
                     until: slot.until || '',
                 })
             })
@@ -8240,17 +8224,19 @@ export default {
             return Number(range?.weekday || 0) === Number(slot?.weekday || 0)
                 && Number(range?.endHour || 0) + 1 === Number(slot?.hour || 0)
                 && String(range?.dateRangeLabel || '') === String(slot?.dateRangeLabel || '')
+                && String(range?.recurrenceLabel || '') === String(slot?.recurrenceLabel || '')
         },
         scheduleRangeLabel(range) {
             const weekdayLabel = this.courseGroupWeekdayLabel(range?.weekday)
             const hourLabel = Number(range?.startHour) === Number(range?.endHour)
                 ? `${Number(range?.startHour)}.`
                 : `${Number(range?.startHour)}.-${Number(range?.endHour)}.`
+            const recurrenceLabel = String(range?.recurrenceLabel || '').trim()
             const timeRangeLabel = [range?.from, range?.until].filter(Boolean).join('-')
             const dateRangeLabel = String(range?.dateRangeLabel || '').trim()
             const dateRangeSuffix = dateRangeLabel ? `(${dateRangeLabel})` : ''
 
-            return [weekdayLabel, hourLabel, timeRangeLabel, dateRangeSuffix].filter(Boolean).join(' ')
+            return [weekdayLabel, hourLabel, recurrenceLabel, timeRangeLabel, dateRangeSuffix].filter(Boolean).join(' ')
         },
         courseGroupWeekdayLabel(weekday) {
             return [
@@ -10581,14 +10567,47 @@ export default {
 }
 
 .students-timetable-v2-stepper :deep(.v-stepper-item) {
+    position: relative;
     min-height: 54px;
     padding: 8px 12px;
+    border-radius: 12px;
+    color: rgba(var(--v-theme-on-surface), 0.7);
+    transition:
+        background-color 0.18s ease,
+        box-shadow 0.18s ease,
+        color 0.18s ease;
+}
+
+.students-timetable-v2-stepper :deep(.v-stepper-item--selected) {
+    background: rgba(37, 99, 235, 0.12);
+    color: rgb(var(--v-theme-primary));
+    box-shadow:
+        inset 0 0 0 1px rgba(37, 99, 235, 0.32),
+        0 6px 14px rgba(37, 99, 235, 0.12);
+}
+
+.students-timetable-v2-stepper :deep(.v-stepper-item--complete:not(.v-stepper-item--selected)) {
+    color: rgba(var(--v-theme-success), 0.94);
+}
+
+.students-timetable-v2-stepper :deep(.v-stepper-item__avatar.v-avatar) {
+    font-weight: 900;
+}
+
+.students-timetable-v2-stepper :deep(.v-stepper-item--selected .v-stepper-item__avatar.v-avatar) {
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.18);
+    transform: scale(1.08);
 }
 
 .students-timetable-v2-stepper :deep(.v-stepper-item__title) {
     font-size: 0.82rem;
     font-weight: 800;
     letter-spacing: 0;
+}
+
+.students-timetable-v2-stepper :deep(.v-stepper-item--selected .v-stepper-item__title) {
+    font-size: 0.9rem;
+    font-weight: 900;
 }
 
 .ttv2-strip__student {
@@ -12368,32 +12387,25 @@ export default {
 
 .students-timetable-v2-student-search-results__item {
     justify-content: flex-start;
-    min-height: 32px;
+    min-height: 40px;
+    padding-block: 7px;
+    text-transform: none;
 }
 
-.students-timetable-v2-student-search-results__item-content {
-    display: grid;
-    align-items: start;
-    gap: 3px;
-    grid-template-columns: minmax(0, 1fr);
-    min-width: 0;
-    padding-bottom: 2px;
+.students-timetable-v2-student-search-results__label {
     width: 100%;
-    text-align: left;
-}
-
-.students-timetable-v2-student-search-results__name {
-    color: rgb(var(--v-theme-primary));
+    color: rgb(var(--v-theme-on-surface));
+    font-size: 0.86rem;
     font-weight: 700;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    letter-spacing: 0;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    text-align: left;
+    white-space: normal;
 }
 
 .students-timetable-v2-review-card__student-email,
-.students-timetable-v2-student-context__student-email,
-.students-timetable-v2-student-search-results__email {
+.students-timetable-v2-student-context__student-email {
     display: inline-flex;
     align-items: center;
     max-width: 100%;
@@ -12416,14 +12428,8 @@ export default {
     min-width: 0;
 }
 
-.students-timetable-v2-student-search-results__email {
-    font-weight: 400;
-    justify-self: start;
-}
-
 .students-timetable-v2-review-card__student-email span,
-.students-timetable-v2-student-context__student-email span,
-.students-timetable-v2-student-search-results__email span {
+.students-timetable-v2-student-context__student-email span {
     overflow: hidden;
     min-width: 0;
     text-overflow: ellipsis;
@@ -12433,24 +12439,20 @@ export default {
 .students-timetable-v2-review-card__student-email:hover,
 .students-timetable-v2-review-card__student-email:focus-visible,
 .students-timetable-v2-student-context__student-email:hover,
-.students-timetable-v2-student-context__student-email:focus-visible,
-.students-timetable-v2-student-search-results__email:hover,
-.students-timetable-v2-student-search-results__email:focus-visible {
+.students-timetable-v2-student-context__student-email:focus-visible {
     background: rgba(191, 219, 254, 0.96);
     outline: none;
 }
 
 .students-timetable-v2-review-card__student-email--copied,
-.students-timetable-v2-student-context__student-email--copied,
-.students-timetable-v2-student-search-results__email--copied {
+.students-timetable-v2-student-context__student-email--copied {
     border-color: rgba(22, 163, 74, 0.28);
     background: rgba(220, 252, 231, 0.92);
     color: #15803d;
 }
 
 .students-timetable-v2-review-card__student-email-copied,
-.students-timetable-v2-student-context__student-email-copied,
-.students-timetable-v2-student-search-results__email-copied {
+.students-timetable-v2-student-context__student-email-copied {
     color: #15803d;
 }
 
