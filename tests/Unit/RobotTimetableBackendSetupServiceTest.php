@@ -51,6 +51,129 @@ it('indexes availability candidates by generated key and course code alias', fun
         ->and($coursesByKey['BU1']['code'])->toBe('BU1');
 });
 
+it('keeps alternating two weekly course offers available when their date ranges overlap', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $method = $reflection->getMethod('courseAvailabilityFromSharedInput');
+    $method->setAccessible(true);
+
+    $e5Key = '112|5|common|E5|E|Englisch 5|E5';
+    $d5Key = '111|5|common|D5|D|Deutsch 5|D5';
+    $selectedTimetable = [
+        'slots' => [
+            '2-14' => [
+                'courseGroup' => [
+                    'weekday' => 2,
+                    'hour' => 14,
+                    'class_name' => 'E5-3R-HOF',
+                    'display_label' => 'E5 - 3R - HOF',
+                    'title' => 'E5 - 3R - HOF',
+                    'course' => 'E',
+                    'module_code' => 'E5',
+                    'subject' => 'E',
+                    'dates' => ['2026-02-17', '2026-03-03', '2026-03-17', '2026-04-14'],
+                    'dates_count' => 4,
+                    'recurrence_type' => 'every_2_weeks',
+                    'recurrence_interval' => 2,
+                ],
+            ],
+        ],
+    ];
+
+    $availability = $method->invokeArgs($service, [
+        [
+            [
+                'id' => 112,
+                'semester' => 5,
+                'branch' => 'common',
+                'json_code' => 'E5',
+                'json_subject' => 'E',
+                'name' => 'Englisch 5',
+                'tt_subject' => 'E',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 111,
+                'semester' => 5,
+                'branch' => 'common',
+                'json_code' => 'D5',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 5',
+                'tt_subject' => 'D',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        [],
+        [
+            [
+                'weekday' => 2,
+                'hour' => 14,
+                'class_name' => 'E5-3R-HOF',
+                'display_label' => 'E5 - 3R - HOF',
+                'title' => 'E5 - 3R - HOF',
+                'course' => 'E',
+                'module_code' => 'E5',
+                'subject' => 'E',
+                'dates' => ['2026-02-17', '2026-03-03', '2026-03-17', '2026-04-14'],
+                'dates_count' => 4,
+                'recurrence_type' => 'every_2_weeks',
+                'recurrence_interval' => 2,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 14,
+                'class_name' => 'D5-3R-SHAM',
+                'display_label' => 'D5 - 3R - SHAM',
+                'title' => 'D5 - 3R - SHAM',
+                'course' => 'D',
+                'module_code' => 'D5',
+                'subject' => 'D',
+                'dates' => ['2026-02-24', '2026-03-10', '2026-03-24', '2026-04-07', '2026-04-21', '2026-05-05'],
+                'dates_count' => 6,
+                'recurrence_type' => 'every_2_weeks',
+                'recurrence_interval' => 2,
+            ],
+        ],
+        [
+            'selection' => [
+                'semester' => 5,
+                'religion' => 'Rk',
+                'branch' => null,
+                'artsSubject' => null,
+                'language' => 'F',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [$e5Key],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        [
+            [
+                'availability_key' => 'semester:D5::offer::semester:D5::2|D|D53RSHAM',
+                'course_key' => $d5Key,
+                'course_group' => 'planned',
+                'deselected_course_group_keys' => [],
+            ],
+        ],
+        $selectedTimetable,
+    ]);
+
+    expect($availability['semester:D5::offer::semester:D5::2|D|D53RSHAM'])->toBe([
+        'available' => true,
+        'valid_timetable_count' => 1,
+    ]);
+});
+
 it('resolves generic religion availability candidates to the selected religion course', function () {
     $service = app(RobotTimetableBackendSetupService::class);
     $reflection = new ReflectionClass($service);

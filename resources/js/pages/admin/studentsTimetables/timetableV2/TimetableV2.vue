@@ -301,18 +301,15 @@
                                 v-for="course in selectedReviewOfferedCourseItems"
                                 :key="course.key"
                                 class="students-timetable-v2-offered-courses-card__item"
-                                :class="{
-                                    'students-timetable-v2-offered-courses-card__item--toggle': selectedCourseOfferItemsSelectable,
-                                    'students-timetable-v2-offered-courses-card__item--selected': offeredCourseSelected(course),
-                                    'students-timetable-v2-offered-courses-card__item--deselected': !offeredCourseSelected(course),
-                                }"
+                                :class="course.classes"
                                 :role="selectedCourseOfferItemsSelectable ? 'button' : undefined"
                                 :tabindex="selectedCourseOfferItemsSelectable ? 0 : undefined"
-                                :aria-pressed="selectedCourseOfferItemsSelectable ? (offeredCourseSelected(course) ? 'true' : 'false') : undefined"
+                                :aria-pressed="course.ariaPressed"
+                                :title="course.title"
                                 @click="toggleSelectedReviewOfferedCourseItem(course)"
                                 @keydown.enter.prevent="toggleSelectedReviewOfferedCourseItem(course)"
                                 @keydown.space.prevent="toggleSelectedReviewOfferedCourseItem(course)">
-                                <v-icon v-if="selectedCourseOfferItemsSelectable && offeredCourseSelected(course)" icon="mdi-check" size="16" color="success" />
+                                <v-icon v-if="course.selected" icon="mdi-check" size="16" color="success" />
                                 <span class="students-timetable-v2-offered-courses-card__name">
                                     {{ course.name || course.code }}
                                 </span>
@@ -323,12 +320,12 @@
                                     {{ course.scheduleLabel }}
                                 </v-chip>
                                 <v-chip
-                                    v-if="offeredCourseInstructionVisible(course)"
+                                    v-if="course.instructionVisible"
                                     size="x-small"
                                     color="warning"
                                     variant="tonal"
-                                    :title="offeredCourseInstructionLabel(course)">
-                                    {{ offeredCourseInstructionLabel(course) }}
+                                    :title="course.instructionLabel">
+                                    {{ course.instructionLabel }}
                                 </v-chip>
                                 <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
                                     {{ course.roomsLabel }}
@@ -789,9 +786,9 @@
                                         Weitere Module werden geprüft.
                                     </v-alert>
                                 </template>
-                                <div v-else-if="!activeMoreCoursesCategoryCard" class="students-timetable-v2-more-courses-card__category-grid">
+                                <div v-else-if="!displayedActiveMoreCoursesCategoryCard" class="students-timetable-v2-more-courses-card__category-grid">
                                     <v-card
-                                        v-for="card in moreCoursesCategoryCards"
+                                        v-for="card in displayedMoreCoursesCategoryCards"
                                         :key="card.key"
                                         rounded="lg"
                                         variant="tonal"
@@ -799,14 +796,14 @@
                                         :class="[
                                             `students-timetable-v2-more-courses-card__category--${card.key}`,
                                             {
-                                                'students-timetable-v2-more-courses-card__category--empty': moreCoursesCategoryCardDisabled(card),
+                                                'students-timetable-v2-more-courses-card__category--empty': card.disabled,
                                             },
                                         ]"
-                                        :disabled="moreCoursesCategoryCardDisabled(card)"
-                                        :ripple="!moreCoursesCategoryCardDisabled(card)"
-                                        :role="moreCoursesCategoryCardDisabled(card) ? undefined : 'button'"
-                                        :tabindex="moreCoursesCategoryCardDisabled(card) ? -1 : 0"
-                                        :aria-disabled="moreCoursesCategoryCardDisabled(card) ? 'true' : 'false'"
+                                        :disabled="card.disabled"
+                                        :ripple="!card.disabled"
+                                        :role="card.disabled ? undefined : 'button'"
+                                        :tabindex="card.disabled ? -1 : 0"
+                                        :aria-disabled="card.disabled ? 'true' : 'false'"
                                         @click="openMoreCoursesCategoryCard(card)"
                                         @keydown.enter.prevent="openMoreCoursesCategoryCard(card)"
                                         @keydown.space.prevent="openMoreCoursesCategoryCard(card)">
@@ -826,29 +823,22 @@
                                         <v-icon icon="mdi-arrow-left" size="18" />
                                         <span>Zurück</span>
                                     </section>
-                                    <div v-if="activeMoreCoursesCategoryCard.items.length" class="students-timetable-v2-more-courses-card__list">
+                                    <div v-if="displayedActiveMoreCoursesCategoryCard.items.length" class="students-timetable-v2-more-courses-card__list">
                                         <v-card
-                                            v-for="course in activeMoreCoursesCategoryCard.items"
+                                            v-for="course in displayedActiveMoreCoursesCategoryCard.items"
                                             :key="course.selectionKey"
                                             rounded="lg"
                                             variant="tonal"
-                                            :color="moreCourseChipColor(course)"
-                                            :disabled="moreCourseOpenDisabled(course)"
-                                            :ripple="!moreCourseOpenDisabled(course)"
+                                            :color="course.color"
+                                            :disabled="course.disabled"
+                                            :ripple="!course.disabled"
                                             class="students-timetable-v2-more-courses-card__course"
-                                            :class="[
-                                                `students-timetable-v2-more-courses-card__course--${moreCourseChipColor(course)}`,
-                                                {
-                                                    'students-timetable-v2-more-courses-card__course--active': selectedMoreCourseItem?.selectionKey === course.selectionKey,
-                                                    'students-timetable-v2-more-courses-card__course--disabled': moreCourseOpenDisabled(course),
-                                                    'students-timetable-v2-more-courses-card__course--unavailable': moreCourseUnavailable(course),
-                                                },
-                                            ]"
-                                            :role="moreCourseOpenDisabled(course) ? undefined : 'button'"
-                                            :tabindex="moreCourseOpenDisabled(course) ? -1 : 0"
-                                            :aria-disabled="moreCourseOpenDisabled(course) ? 'true' : 'false'"
-                                            :aria-expanded="selectedMoreCourseItem?.selectionKey === course.selectionKey ? 'true' : 'false'"
-                                            :title="moreCourseUnavailable(course) ? '!! Konflikte !!' : undefined"
+                                            :class="course.classes"
+                                            :role="course.disabled ? undefined : 'button'"
+                                            :tabindex="course.disabled ? -1 : 0"
+                                            :aria-disabled="course.ariaDisabled"
+                                            :aria-expanded="course.ariaExpanded"
+                                            :title="course.title"
                                             @click="toggleMoreCourseOffers(course)"
                                             @keydown.enter.prevent="toggleMoreCourseOffers(course)"
                                             @keydown.space.prevent="toggleMoreCourseOffers(course)">
@@ -858,7 +848,7 @@
                                             <v-chip
                                                 v-if="course.meta"
                                                 size="x-small"
-                                                :color="moreCourseChipColor(course)"
+                                                :color="course.color"
                                                 variant="tonal"
                                                 class="students-timetable-v2-more-courses-card__meta">
                                                 {{ course.meta }}
@@ -914,21 +904,16 @@
                                         v-for="course in selectedMoreCourseOfferedCourseItems"
                                         :key="course.key"
                                         class="students-timetable-v2-offered-courses-card__item students-timetable-v2-offered-courses-card__item--toggle"
-                                        :class="{
-                                            'students-timetable-v2-offered-courses-card__item--selected': moreOfferedCourseSelected(course) && !moreCourseOfferUnavailable(course),
-                                            'students-timetable-v2-offered-courses-card__item--deselected': !moreOfferedCourseSelected(course) && !moreCourseOfferUnavailable(course),
-                                            'students-timetable-v2-offered-courses-card__item--available': !moreCourseOfferUnavailable(course),
-                                            'students-timetable-v2-offered-courses-card__item--unavailable': moreCourseOfferUnavailable(course),
-                                        }"
-                                        :role="moreCourseOfferDisabled(course) ? undefined : 'button'"
-                                        :tabindex="moreCourseOfferDisabled(course) ? -1 : 0"
-                                        :aria-pressed="moreOfferedCourseSelected(course) ? 'true' : 'false'"
-                                        :aria-disabled="moreCourseOfferDisabled(course) ? 'true' : 'false'"
-                                        :title="moreCourseOfferUnavailable(course) ? 'Kann nicht konfliktfrei in den Stundenplan eingefügt werden.' : undefined"
+                                        :class="course.classes"
+                                        :role="course.disabled ? undefined : 'button'"
+                                        :tabindex="course.disabled ? -1 : 0"
+                                        :aria-pressed="course.ariaPressed"
+                                        :aria-disabled="course.ariaDisabled"
+                                        :title="course.title"
                                         @click="toggleMoreOfferedCourseItem(course, selectedMoreCourseItem)"
                                         @keydown.enter.prevent="toggleMoreOfferedCourseItem(course, selectedMoreCourseItem)"
                                         @keydown.space.prevent="toggleMoreOfferedCourseItem(course, selectedMoreCourseItem)">
-                                        <v-icon v-if="moreOfferedCourseSelected(course)" icon="mdi-check" size="16" color="success" />
+                                        <v-icon v-if="course.selected" icon="mdi-check" size="16" color="success" />
                                         <span class="students-timetable-v2-offered-courses-card__name">
                                             {{ course.name || course.code }}
                                         </span>
@@ -939,12 +924,12 @@
                                             {{ course.scheduleLabel }}
                                         </v-chip>
                                         <v-chip
-                                            v-if="offeredCourseInstructionVisible(course)"
+                                            v-if="course.instructionVisible"
                                             size="x-small"
                                             color="warning"
                                             variant="tonal"
-                                            :title="offeredCourseInstructionLabel(course)">
-                                            {{ offeredCourseInstructionLabel(course) }}
+                                            :title="course.instructionLabel">
+                                            {{ course.instructionLabel }}
                                         </v-chip>
                                         <v-chip v-if="course.roomsLabel" size="x-small" color="secondary" variant="outlined">
                                             {{ course.roomsLabel }}
@@ -2269,6 +2254,11 @@ export default {
                     .map((course) => this.moreCoursesCardItem(course, 'additional')),
             ])
         },
+        moreCoursesCardItemsBySelectionKey() {
+            return new Map(this.moreCoursesCardItems
+                .filter((course) => course.selectionKey)
+                .map((course) => [course.selectionKey, course]))
+        },
         moreCoursesCategoryCards() {
             return [
                 {
@@ -2306,6 +2296,32 @@ export default {
                     items,
                 }
             })
+        },
+        displayedMoreCoursesCategoryCards() {
+            return this.moreCoursesCategoryCards.map((card) => ({
+                ...card,
+                disabled: this.moreCoursesCategoryCardDisabled(card),
+            }))
+        },
+        displayedActiveMoreCoursesCategoryCard() {
+            const displayedCards = this.displayedMoreCoursesCategoryCards
+            let activeCard = displayedCards.find((card) => card.key === this.activeMoreCoursesCategoryCardKey)
+
+            if (!activeCard && this.selectedMoreCourseItem) {
+                const selectedCard = this.moreCoursesCategoryCardForCourse(this.selectedMoreCourseItem)
+                activeCard = selectedCard
+                    ? displayedCards.find((card) => card.key === selectedCard.key) || null
+                    : null
+            }
+
+            if (!activeCard) return null
+
+            const context = this.moreCoursesDisplayContext()
+
+            return {
+                ...activeCard,
+                items: activeCard.items.map((course) => this.displayedMoreCourseCardItem(course, context)),
+            }
         },
         moreCoursesTitle() {
             if (!this.activeMoreCoursesCategoryCard) return 'Mehr Module'
@@ -2419,13 +2435,17 @@ export default {
             ].every((optionAvailable) => !optionAvailable)
         },
         selectedMoreCourseItem() {
-            return this.moreCoursesCardItems.find((course) => course.selectionKey === this.selectedMoreCourseKey)
+            return this.moreCoursesCardItemsBySelectionKey.get(String(this.selectedMoreCourseKey || '').trim())
                 || null
         },
         selectedMoreCourseOfferedCourseItems() {
             if (!this.selectedMoreCourseItem) return []
 
-            return this.offeredCourseItemsForSelectedCourse(this.selectedMoreCourseItem)
+            const moreCourse = this.selectedMoreCourseItem
+            const context = this.moreOfferedCourseSelectionContext(moreCourse)
+
+            return this.offeredCourseItemsForSelectedCourse(moreCourse)
+                .map((course) => this.selectedMoreCourseOfferedCourseItem(course, moreCourse, context))
         },
         moreOfferedCourseSelectionChanged() {
             return this.moreOfferedCourseSelectionSignature() !== this.moreOfferedCourseSelectionSnapshot
@@ -2468,7 +2488,17 @@ export default {
         selectedReviewOfferedCourseItems() {
             if (!this.selectedReviewCourseItem) return []
 
+            const offeredCourseSelections = this.currentOfferedCourseSelectionOverrides()
+            const instructionFilters = this.instructionCourseFiltersForSelection(
+                this.currentTimetableV2SelectionForCourseState(),
+            )
+
             return this.offeredCourseItemsForSelectedCourse(this.selectedReviewCourseItem)
+                .map((course) => this.selectedReviewOfferedCourseItem(course, {
+                    instructionFilters,
+                    offeredCourseSelections,
+                    selectable: this.selectedCourseOfferItemsSelectable,
+                }))
         },
         selectedCourseOfferCardVisible() {
             return Boolean(this.selectedReviewCourseItem)
@@ -6575,6 +6605,160 @@ export default {
         moreCoursesCategoryCardDisabled(card) {
             return !Array.isArray(card?.items) || card.items.length === 0
         },
+        moreCoursesDisplayContext() {
+            const selectedMoreCourseKey = String(this.selectedMoreCourseKey || '').trim()
+            const selectedMoreCourse = selectedMoreCourseKey
+                ? this.moreCoursesCardItemsBySelectionKey.get(selectedMoreCourseKey) || null
+                : null
+            const restorableMoreCourseAvailabilitySignatures = this.restorableMoreCourseAvailabilitySignatures || {}
+            const restorableAvailabilitySignature = Object.keys(restorableMoreCourseAvailabilitySignatures).length
+                ? this.moreCourseAvailabilityCurrentSignature()
+                : ''
+            const selectedMoreCourseContext = selectedMoreCourse
+                ? this.moreOfferedCourseSelectionContext(selectedMoreCourse, { restorableAvailabilitySignature })
+                : null
+
+            return {
+                availabilityLoading: this.moreCourseAvailabilityLoading,
+                instructionFilters: this.instructionCourseFiltersForSelection(
+                    this.currentTimetableV2SelectionForCourseState(),
+                ),
+                moreCourseAvailabilityByKey: this.moreCourseAvailabilityByKey,
+                moreOfferedCourseSelections: this.moreOfferedCourseSelectionOverrides,
+                offeredCourseSelections: this.offeredCourseSelectionOverrides,
+                restorableAvailabilitySignature,
+                selectedMoreCourse,
+                selectedMoreCourseHasSelectedOffers: selectedMoreCourse
+                    ? this.offeredCourseItemsForSelectedCourse(selectedMoreCourse)
+                        .some((offeredCourse) => this.moreOfferedCourseSelectedWithContext(
+                            offeredCourse,
+                            selectedMoreCourse,
+                            selectedMoreCourseContext,
+                        ))
+                    : false,
+                selectedMoreCourseKey,
+            }
+        },
+        displayedMoreCourseCardItem(course, context = {}) {
+            const availabilityKey = this.moreCourseAvailabilityKey(course)
+            const restorable = this.moreCourseRestorableWithContext(course, context, availabilityKey)
+            const unavailable = this.moreCourseUnavailableWithContext(course, context, {
+                availabilityKey,
+                restorable,
+            })
+            const locked = this.moreCourseSelectionLockedWithContext(course, context, availabilityKey)
+            const disabled = context.availabilityLoading === true || locked
+            const color = this.moreCourseChipColorWithContext(course, context, {
+                availabilityKey,
+                restorable,
+                unavailable,
+            })
+            const active = context.selectedMoreCourseKey === availabilityKey
+
+            return {
+                ...course,
+                active,
+                ariaDisabled: disabled ? 'true' : 'false',
+                ariaExpanded: active ? 'true' : 'false',
+                classes: [
+                    `students-timetable-v2-more-courses-card__course--${color}`,
+                    {
+                        'students-timetable-v2-more-courses-card__course--active': active,
+                        'students-timetable-v2-more-courses-card__course--disabled': disabled,
+                        'students-timetable-v2-more-courses-card__course--unavailable': unavailable,
+                    },
+                ],
+                color,
+                disabled,
+                title: unavailable ? '!! Konflikte !!' : undefined,
+                unavailable,
+            }
+        },
+        moreCourseRestorableWithContext(course, context = {}, availabilityKey = this.moreCourseAvailabilityKey(course)) {
+            if (!availabilityKey || !context.restorableAvailabilitySignature) return false
+
+            return this.restorableMoreCourseAvailabilitySignatures?.[availabilityKey]
+                === context.restorableAvailabilitySignature
+        },
+        moreCourseUnavailableWithContext(course, context = {}, state = {}) {
+            const restorable = Object.prototype.hasOwnProperty.call(state, 'restorable')
+                ? state.restorable === true
+                : this.moreCourseRestorableWithContext(course, context, state.availabilityKey)
+            if (restorable) return false
+
+            const availabilityKey = state.availabilityKey || this.moreCourseAvailabilityKey(course)
+            if (!availabilityKey) return false
+
+            return (context.moreCourseAvailabilityByKey || this.moreCourseAvailabilityByKey)?.[availabilityKey] === false
+        },
+        moreCourseSelectionLockedWithContext(course, context = {}, availabilityKey = this.moreCourseAvailabilityKey(course)) {
+            if (!availabilityKey || !context.selectedMoreCourseKey) return false
+            if (!context.selectedMoreCourse || context.selectedMoreCourseHasSelectedOffers !== true) return false
+
+            return context.selectedMoreCourseKey !== availabilityKey
+        },
+        moreCourseChipColorWithContext(course, context = {}, state = {}) {
+            const availabilityState = this.moreCourseOfferAvailabilityStateWithContext(course, context, state)
+
+            if (availabilityState === 'all') return 'success'
+            if (availabilityState === 'some') return 'warning'
+            if (availabilityState === 'none') return 'error'
+
+            return this.moreCourseUnavailableWithContext(course, context, state) ? 'error' : 'success'
+        },
+        moreCourseOfferAvailabilityStateWithContext(course, context = {}, state = {}) {
+            const restorable = Object.prototype.hasOwnProperty.call(state, 'restorable')
+                ? state.restorable === true
+                : this.moreCourseRestorableWithContext(course, context, state.availabilityKey)
+            if (restorable) return 'all'
+
+            const unavailable = Object.prototype.hasOwnProperty.call(state, 'unavailable')
+                ? state.unavailable === true
+                : this.moreCourseUnavailableWithContext(course, context, {
+                    availabilityKey: state.availabilityKey,
+                    restorable,
+                })
+            const offeredCourses = this.offeredCourseItemsForSelectedCourse(course)
+            if (!offeredCourses.length) return unavailable ? 'none' : 'unknown'
+
+            const moreOfferedCourseSelections = context.moreOfferedCourseSelections || this.moreOfferedCourseSelectionOverrides
+            const offeredCourseSelectionKeys = offeredCourses
+                .map((offeredCourse) => offeredCourse?.selectionKey || this.offeredCourseSelectionKey(offeredCourse, course))
+                .filter(Boolean)
+            const explicitSelections = offeredCourseSelectionKeys
+                .map((selectionKey) => moreOfferedCourseSelections[selectionKey])
+                .filter((selected) => selected === true || selected === false)
+            const hasExplicitOfferSelection = explicitSelections.length > 0
+            const selectionContext = {
+                ...context,
+                moreCourseRestorable: restorable,
+                moreCourseSelectedForAdding: context.selectedMoreCourseKey === (state.availabilityKey || this.moreCourseAvailabilityKey(course)),
+                moreCourseUnavailable: unavailable,
+                unavailable,
+                usesExplicitSelectedOfferList: hasExplicitOfferSelection,
+            }
+            const availabilityByKey = context.moreCourseAvailabilityByKey || this.moreCourseAvailabilityByKey
+            const offerAvailabilityValues = offeredCourses.map((offeredCourse) => {
+                if (hasExplicitOfferSelection && !this.moreOfferedCourseSelectedWithContext(offeredCourse, course, selectionContext)) return false
+
+                const availability = availabilityByKey[this.moreCourseOfferAvailabilityKey(course, offeredCourse)]
+                if (availability === true || availability === false) return availability
+                if (hasExplicitOfferSelection && !unavailable) return true
+
+                return null
+            })
+
+            if (offerAvailabilityValues.some((availability) => availability === null)) {
+                return unavailable ? 'none' : 'unknown'
+            }
+
+            const availableOfferCount = offerAvailabilityValues.filter((available) => available === true).length
+
+            if (availableOfferCount === offeredCourses.length) return 'all'
+            if (availableOfferCount > 0) return 'some'
+
+            return 'none'
+        },
         openMoreCoursesCategoryCard(card) {
             if (this.moreCoursesCategoryCardDisabled(card)) return
 
@@ -7219,7 +7403,10 @@ export default {
             }
         },
         toggleMoreCourseOffers(course) {
-            if (this.moreCourseOpenDisabled(course)) return
+            const disabled = Object.prototype.hasOwnProperty.call(course, 'disabled')
+                ? course.disabled === true
+                : this.moreCourseOpenDisabled(course)
+            if (disabled) return
 
             const selectionKey = course?.selectionKey || this.courseSelectionKey(course, course?.courseGroup)
             if (!selectionKey) return
@@ -7553,18 +7740,92 @@ export default {
             return this.offeredCourseItemsForSelectedCourse(course)
                 .some((offeredCourse) => this.moreOfferedCourseSelected(offeredCourse, course))
         },
+        moreOfferedCourseSelectionContext(moreCourse = this.selectedMoreCourseItem, options = {}) {
+            const restorableAvailabilitySignature = Object.prototype.hasOwnProperty.call(options, 'restorableAvailabilitySignature')
+                ? options.restorableAvailabilitySignature
+                : Object.keys(this.restorableMoreCourseAvailabilitySignatures || {}).length
+                    ? this.moreCourseAvailabilityCurrentSignature()
+                    : ''
+            const baseContext = {
+                moreCourseAvailabilityByKey: this.moreCourseAvailabilityByKey,
+                restorableAvailabilitySignature,
+            }
+            const moreCourseRestorable = this.moreCourseRestorableWithContext(moreCourse, baseContext)
+            const moreCourseUnavailable = this.moreCourseUnavailableWithContext(moreCourse, baseContext, {
+                restorable: moreCourseRestorable,
+            })
+
+            return {
+                instructionFilters: this.instructionCourseFiltersForSelection(
+                    this.currentTimetableV2SelectionForCourseState(),
+                ),
+                moreCourseAvailabilityByKey: this.moreCourseAvailabilityByKey,
+                moreCourseRestorable,
+                moreCourseSelectedForAdding: this.moreCourseSelectedForAdding(moreCourse),
+                moreCourseUnavailable,
+                moreOfferedCourseSelections: this.moreOfferedCourseSelectionOverrides,
+                offeredCourseSelections: this.offeredCourseSelectionOverrides,
+                restorableAvailabilitySignature,
+                usesExplicitSelectedOfferList: this.moreCourseUsesExplicitSelectedOfferList(moreCourse),
+            }
+        },
+        selectedMoreCourseOfferedCourseItem(course, moreCourse = this.selectedMoreCourseItem, context = {}) {
+            const unavailable = this.moreCourseOfferUnavailableWithContext(course, moreCourse, context)
+            const disabled = this.moreCourseAvailabilityLoading || unavailable
+            const selected = this.moreOfferedCourseSelectedWithContext(course, moreCourse, {
+                ...context,
+                unavailable,
+            })
+            const instructionLabel = this.offeredCourseInstructionLabel(course)
+
+            return {
+                ...course,
+                ariaDisabled: disabled ? 'true' : 'false',
+                ariaPressed: selected ? 'true' : 'false',
+                classes: {
+                    'students-timetable-v2-offered-courses-card__item--selected': selected && !unavailable,
+                    'students-timetable-v2-offered-courses-card__item--deselected': !selected && !unavailable,
+                    'students-timetable-v2-offered-courses-card__item--available': !unavailable,
+                    'students-timetable-v2-offered-courses-card__item--unavailable': unavailable,
+                },
+                disabled,
+                instructionLabel,
+                instructionVisible: instructionLabel !== '',
+                selected,
+                title: unavailable ? 'Kann nicht konfliktfrei in den Stundenplan eingefügt werden.' : undefined,
+                unavailable,
+            }
+        },
+        moreCourseOfferUnavailableWithContext(offeredCourse, moreCourse = this.selectedMoreCourseItem, context = {}) {
+            if (!moreCourse || context.moreCourseRestorable === true) return false
+
+            const availabilityKey = this.moreCourseOfferAvailabilityKey(moreCourse, offeredCourse)
+            if (!availabilityKey) return false
+
+            const availability = (context.moreCourseAvailabilityByKey || this.moreCourseAvailabilityByKey)[availabilityKey]
+            if (availability === true || availability === false) return availability === false
+
+            return context.moreCourseUnavailable === true
+        },
         moreOfferedCourseSelected(course, moreCourse = this.selectedMoreCourseItem) {
+            return this.moreOfferedCourseSelectedWithContext(
+                course,
+                moreCourse,
+                this.moreOfferedCourseSelectionContext(moreCourse),
+            )
+        },
+        moreOfferedCourseSelectedWithContext(course, moreCourse = this.selectedMoreCourseItem, context = {}) {
             const selectionKey = course?.selectionKey || this.offeredCourseSelectionKey(course, moreCourse)
             if (!selectionKey) return false
-            if (!this.offeredCourseIncludedByInstructionFilters(course)) return false
-            if (this.moreCourseOfferUnavailable(course, moreCourse)) return false
-            if (this.offeredCourseSelectionOverrides[selectionKey] === false) return false
+            if (!this.offeredCourseIncludedByInstructionFilters(course, context.instructionFilters || null)) return false
+            if (context.unavailable === true || this.moreCourseOfferUnavailableWithContext(course, moreCourse, context)) return false
+            if (context.offeredCourseSelections?.[selectionKey] === false) return false
 
-            if (this.moreOfferedCourseSelectionOverrides[selectionKey] === false) return false
-            if (this.moreOfferedCourseSelectionOverrides[selectionKey] === true) return true
-            if (this.moreCourseUsesExplicitSelectedOfferList(moreCourse)) return false
+            if (context.moreOfferedCourseSelections?.[selectionKey] === false) return false
+            if (context.moreOfferedCourseSelections?.[selectionKey] === true) return true
+            if (context.usesExplicitSelectedOfferList === true) return false
 
-            return this.moreCourseSelectedForAdding(moreCourse)
+            return context.moreCourseSelectedForAdding === true
         },
         moreCourseUsesExplicitSelectedOfferList(moreCourse = this.selectedMoreCourseItem) {
             if (!moreCourse) return false
@@ -7577,7 +7838,6 @@ export default {
                 .filter((selected) => selected === true || selected === false)
 
             return explicitSelections.length > 0
-                && explicitSelections.every((selected) => selected === true)
         },
         moreOfferedCourseSelectionSignature(moreOfferedCourseSelections = this.moreOfferedCourseSelectionOverrides) {
             const selections = moreOfferedCourseSelections && typeof moreOfferedCourseSelections === 'object' && !Array.isArray(moreOfferedCourseSelections)
@@ -7732,18 +7992,25 @@ export default {
             }, {})
         },
         toggleMoreOfferedCourseItem(course, moreCourse = this.selectedMoreCourseItem) {
-            if (this.moreCourseOfferDisabled(course, moreCourse)) return
+            const disabled = Object.prototype.hasOwnProperty.call(course, 'disabled')
+                ? course.disabled === true
+                : this.moreCourseOfferDisabled(course, moreCourse)
+
+            if (disabled) return
 
             const selectionKey = course?.selectionKey || this.offeredCourseSelectionKey(course, moreCourse)
             if (!selectionKey) return
 
             const moreOfferedCourseSelections = { ...this.moreOfferedCourseSelectionOverrides }
             const offeredCourseSelections = { ...this.currentOfferedCourseSelectionOverrides() }
+            const selected = Object.prototype.hasOwnProperty.call(course, 'selected')
+                ? course.selected === true
+                : this.moreOfferedCourseSelected(course, moreCourse)
 
-            if (this.moreOfferedCourseSelected(course, moreCourse)) {
+            if (selected) {
                 moreOfferedCourseSelections[selectionKey] = false
             } else {
-                delete moreOfferedCourseSelections[selectionKey]
+                moreOfferedCourseSelections[selectionKey] = true
                 delete offeredCourseSelections[selectionKey]
             }
 
@@ -8091,22 +8358,52 @@ export default {
             })
         },
         offeredCourseSelected(course) {
+            return this.offeredCourseSelectedWithContext(
+                course,
+                this.currentOfferedCourseSelectionOverrides(),
+                this.instructionCourseFiltersForSelection(this.currentTimetableV2SelectionForCourseState()),
+            )
+        },
+        offeredCourseSelectedWithContext(course, offeredCourseSelections, instructionFilters) {
             const selectionKey = course?.selectionKey || this.offeredCourseSelectionKey(course)
             if (!selectionKey) return true
-            if (!this.offeredCourseIncludedByInstructionFilters(course)) return false
+            if (!this.offeredCourseIncludedByInstructionFilters(course, instructionFilters)) return false
 
-            return this.currentOfferedCourseSelectionOverrides()[selectionKey] !== false
+            return offeredCourseSelections?.[selectionKey] !== false
         },
-        offeredCourseIncludedByInstructionFilters(course) {
-            const filters = this.instructionCourseFiltersForSelection(
+        selectedReviewOfferedCourseItem(course, options = {}) {
+            const selected = this.offeredCourseSelectedWithContext(
+                course,
+                options.offeredCourseSelections || {},
+                options.instructionFilters || null,
+            )
+            const selectable = options.selectable === true
+            const instructionLabel = this.offeredCourseInstructionLabel(course)
+
+            return {
+                ...course,
+                ariaPressed: selectable ? (selected ? 'true' : 'false') : undefined,
+                classes: {
+                    'students-timetable-v2-offered-courses-card__item--toggle': selectable,
+                    'students-timetable-v2-offered-courses-card__item--selected': selected,
+                    'students-timetable-v2-offered-courses-card__item--deselected': !selected,
+                },
+                instructionLabel,
+                instructionVisible: instructionLabel !== '',
+                selected,
+                title: undefined,
+            }
+        },
+        offeredCourseIncludedByInstructionFilters(course, filters = null) {
+            const resolvedFilters = filters || this.instructionCourseFiltersForSelection(
                 this.currentTimetableV2SelectionForCourseState(),
             )
 
-            if (!filters.includeDistanceLearningCourses && this.offeredCourseIsDistanceLearningCourse(course)) {
+            if (!resolvedFilters.includeDistanceLearningCourses && this.offeredCourseIsDistanceLearningCourse(course)) {
                 return false
             }
 
-            if (!filters.includeKompaktunterrichtCourses && this.offeredCourseIsKompaktunterricht(course)) {
+            if (!resolvedFilters.includeKompaktunterrichtCourses && this.offeredCourseIsKompaktunterricht(course)) {
                 return false
             }
 
@@ -8123,7 +8420,11 @@ export default {
 
             const offeredCourseSelections = { ...this.currentOfferedCourseSelectionOverrides() }
 
-            if (this.offeredCourseSelected(course)) {
+            const selected = Object.prototype.hasOwnProperty.call(course, 'selected')
+                ? course.selected === true
+                : this.offeredCourseSelected(course)
+
+            if (selected) {
                 offeredCourseSelections[selectionKey] = false
             } else {
                 delete offeredCourseSelections[selectionKey]

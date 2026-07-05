@@ -17,6 +17,10 @@ class RobotTimetableBackendSetupService
 
     private const TIMETABLE_VARIATION_CACHE_TTL_MINUTES = 20;
 
+    public function __construct(
+        private StudentTimetableRememberedTtEntryService $rememberedTtEntryService,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
@@ -48,7 +52,10 @@ class RobotTimetableBackendSetupService
             ->map(fn (StudentTimetableSubjectMapping $mapping): array => $mapping->toArray())
             ->all();
 
-        $courseGroups = $overviewService->courseGroupsForUser($authUser);
+        $courseGroups = $this->rememberedTtEntryService->activeCourseGroupsForUser(
+            $authUser,
+            $overviewService->courseGroupsForUser($authUser),
+        );
 
         $variationResult = $this->calculateCachedTimetableVariationsForUser(
             authUser: $authUser,
@@ -219,7 +226,10 @@ class RobotTimetableBackendSetupService
         return $this->qualityCountersForTimetableVariations(
             subjectRows: $subjectRows,
             subjectMappings: $subjectMappings,
-            courseGroups: $overviewService->courseGroupsForUser($authUser),
+            courseGroups: $this->rememberedTtEntryService->activeCourseGroupsForUser(
+                $authUser,
+                $overviewService->courseGroupsForUser($authUser),
+            ),
             settings: $settings,
             evaluationCriteria: $evaluationCriteria,
             selectedQualityCriterionKeys: $selectedQualityCriterionKeys,
@@ -260,7 +270,10 @@ class RobotTimetableBackendSetupService
             ->map(fn (StudentTimetableSubjectMapping $mapping): array => $mapping->toArray())
             ->all();
 
-        $courseGroups = $overviewService->courseGroupsForUser($authUser);
+        $courseGroups = $this->rememberedTtEntryService->activeCourseGroupsForUser(
+            $authUser,
+            $overviewService->courseGroupsForUser($authUser),
+        );
         $selectedQualityCriterionKeys = $this->selectedQualityCriterionKeys(
             $selectedQualityCriterionKeys,
             $evaluationCriteria,
@@ -3815,6 +3828,13 @@ class RobotTimetableBackendSetupService
             return false;
         }
 
+        if (
+            ! $this->usesContinuousRegularDateRange($firstCourseGroup)
+            || ! $this->usesContinuousRegularDateRange($secondCourseGroup)
+        ) {
+            return false;
+        }
+
         $firstDates = $this->courseGroupDates($firstCourseGroup);
         $secondDates = $this->courseGroupDates($secondCourseGroup);
 
@@ -4677,6 +4697,10 @@ class RobotTimetableBackendSetupService
             return $dateKeys;
         }
 
+        if (! $this->usesContinuousRegularDateRange($courseGroup)) {
+            return $dateKeys;
+        }
+
         $rangeStart = $this->dateMonthDayOrdinal($dates[0] ?? '');
         $rangeEnd = $this->dateMonthDayOrdinal($dates[count($dates) - 1] ?? '');
 
@@ -4698,6 +4722,32 @@ class RobotTimetableBackendSetupService
         $datesCount = $this->courseGroupDatesCount($courseGroup);
 
         return $datesCount !== null && $datesCount > 0 && $datesCount <= 2;
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function hasInactiveRememberedDates(array $courseGroup): bool
+    {
+        return ($courseGroup['has_inactive_remembered_dates'] ?? false) === true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function usesContinuousRegularDateRange(array $courseGroup): bool
+    {
+        if ($this->hasInactiveRememberedDates($courseGroup)) {
+            return false;
+        }
+
+        if (is_numeric($courseGroup['recurrence_interval'] ?? null)) {
+            return (int) $courseGroup['recurrence_interval'] <= 1;
+        }
+
+        $recurrenceType = mb_strtolower(trim((string) ($courseGroup['recurrence_type'] ?? '')));
+
+        return $recurrenceType === '' || $recurrenceType === 'weekly';
     }
 
     /**

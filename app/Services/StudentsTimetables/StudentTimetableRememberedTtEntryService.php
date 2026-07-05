@@ -71,6 +71,28 @@ class StudentTimetableRememberedTtEntryService
     }
 
     /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @return list<array<string, mixed>>
+     */
+    public function activeCourseGroupsForUser(User $authUser, array $courseGroups): array
+    {
+        $inactiveDatesByCourseGroupKey = $this->inactiveDatesByCourseGroupKey($authUser);
+
+        if ($inactiveDatesByCourseGroupKey === []) {
+            return $courseGroups;
+        }
+
+        return collect($courseGroups)
+            ->map(fn (array $courseGroup): ?array => $this->courseGroupWithoutInactiveDates(
+                $courseGroup,
+                $inactiveDatesByCourseGroupKey,
+            ))
+            ->filter(fn (?array $courseGroup): bool => $courseGroup !== null)
+            ->values()
+            ->all();
+    }
+
+    /**
      * @param  iterable<int, StudentTimetableRememberedTtEntry>  $entries
      * @return array<string, mixed>
      */
@@ -133,6 +155,167 @@ class StudentTimetableRememberedTtEntryService
             ->filter(fn (array $offer): bool => $offer['key'] !== '' && $offer['name'] !== '' && $offer['entries'] !== [])
             ->unique('key')
             ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, array<string, true>>
+     */
+    private function inactiveDatesByCourseGroupKey(User $authUser): array
+    {
+        return StudentTimetableRememberedTtEntry::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $this->schoolyearIdForUser($authUser))
+            ->where('user_id', $authUser->id)
+            ->where('is_active', false)
+            ->whereNotNull('entry_date')
+            ->get(['entry_key', 'entry_date'])
+            ->reduce(function (array $inactiveDates, StudentTimetableRememberedTtEntry $entry): array {
+                $date = $entry->entry_date?->format('Y-m-d');
+
+                if (! $date) {
+                    return $inactiveDates;
+                }
+
+                foreach ($this->courseGroupKeysFromEntryKey((string) $entry->entry_key, $date) as $courseGroupKey) {
+                    $inactiveDates[$courseGroupKey] ??= [];
+                    $inactiveDates[$courseGroupKey][$date] = true;
+                }
+
+                return $inactiveDates;
+            }, []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     * @param  array<string, array<string, true>>  $inactiveDatesByCourseGroupKey
+     * @return array<string, mixed>|null
+     */
+    private function courseGroupWithoutInactiveDates(array $courseGroup, array $inactiveDatesByCourseGroupKey): ?array
+    {
+        $courseGroupKey = trim((string) ($courseGroup['key'] ?? ''));
+        $inactiveDates = $inactiveDatesByCourseGroupKey[$courseGroupKey] ?? [];
+
+        if ($inactiveDates === []) {
+            return $courseGroup;
+        }
+
+        $dates = $this->courseGroupDates($courseGroup);
+
+        if ($dates === []) {
+            return $courseGroup;
+        }
+
+        $activeDates = collect($dates)
+            ->reject(fn (string $date): bool => isset($inactiveDates[$date]))
+            ->values()
+            ->all();
+
+        if (count($activeDates) === count($dates)) {
+            return $courseGroup;
+        }
+
+        if ($activeDates === []) {
+            return null;
+        }
+
+        return [
+            ...$courseGroup,
+            'dates' => $activeDates,
+            'dates_count' => count($activeDates),
+            'first_date' => $activeDates[0],
+            'last_date' => $activeDates[count($activeDates) - 1],
+            'has_inactive_remembered_dates' => true,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function courseGroupKeysFromEntryKey(string $entryKey, string $date): array
+    {
+        $parts = collect(explode('|', $entryKey))
+            ->map(fn (string $part): string => trim($part))
+            ->values()
+            ->all();
+
+        $courseGroupKeys = [];
+
+        foreach ($parts as $index => $part) {
+            if (! $this->looksLikeCourseGroupKey($part)) {
+                continue;
+            }
+
+            if (($parts[$index + 1] ?? '') !== $date) {
+                continue;
+            }
+
+            $courseGroupKeys[] = $part;
+        }
+
+        if ($courseGroupKeys !== []) {
+            return $this->uniqueStrings($courseGroupKeys);
+        }
+
+        return collect($parts)
+            ->keys()
+            ->filter(fn (int $index): bool => ($parts[$index] ?? '') === $date && $index > 0)
+            ->map(function (int $dateIndex) use ($parts): string {
+                $previousDateIndex = collect(array_slice($parts, 0, $dateIndex))
+                    ->keys()
+                    ->reverse()
+                    ->first(fn (int $index): bool => $this->looksLikeDate($parts[$index] ?? ''));
+                $startIndex = $previousDateIndex === null ? 0 : $previousDateIndex + 2;
+
+                return implode('|', array_slice($parts, $startIndex, $dateIndex - $startIndex));
+            })
+            ->map(fn (string $courseGroupKey): string => trim($courseGroupKey, '| '))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function looksLikeCourseGroupKey(string $value): bool
+    {
+        return preg_match('/^[a-f0-9]{32}$/u', $value) === 1;
+    }
+
+    private function looksLikeDate(string $value): bool
+    {
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/u', $value) === 1;
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     * @return list<string>
+     */
+    private function courseGroupDates(array $courseGroup): array
+    {
+        if (! is_array($courseGroup['dates'] ?? null)) {
+            return [];
+        }
+
+        return collect($courseGroup['dates'])
+            ->map(fn (mixed $date): string => trim((string) $date))
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<string>  $values
+     * @return list<string>
+     */
+    private function uniqueStrings(array $values): array
+    {
+        return collect($values)
+            ->map(fn (string $value): string => trim($value))
+            ->filter()
+            ->unique()
             ->values()
             ->all();
     }

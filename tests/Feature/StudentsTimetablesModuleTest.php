@@ -372,6 +372,236 @@ it('excludes deselected offered course groups from backend timetable calculation
         ->not->toContain('E2-2A-RAI');
 });
 
+it('ignores inactive remembered tt entry dates in backend timetable calculations', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-01',
+        'sem_2_start' => '2027-02-16',
+        'until' => '2027-07-01',
+    ]);
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $subjectRows = collect([
+        ['json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1'],
+        ['json_code' => 'M1', 'json_subject' => 'M', 'name' => 'Mathematik 1'],
+    ])->map(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 1,
+        'branch' => 'common',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        'source' => 'test',
+        ...$subjectRow,
+    ]));
+
+    collect([
+        ['date' => '2026-09-07', 'course' => 'D1', 'subject' => 'Deutsch', 'class_name' => 'D1-A'],
+        ['date' => '2026-09-14', 'course' => 'D1', 'subject' => 'Deutsch', 'class_name' => 'D1-A'],
+        ['date' => '2026-09-07', 'course' => 'M1', 'subject' => 'Mathematik', 'class_name' => 'M1-A'],
+    ])->each(fn (array $entry, int $index): StudentTimetableEntry => StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'line_number' => $index + 1,
+        'date' => $entry['date'],
+        'semester' => 1,
+        'period' => '1',
+        'subject' => $entry['subject'],
+        'course' => $entry['course'],
+        'class_name' => $entry['class_name'],
+        'teacher' => null,
+        'room' => null,
+        'is_active' => true,
+    ]));
+
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
+
+    $courseGroups = collect($this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/course-groups')
+        ->assertSuccessful()
+        ->json('data'));
+    $dCourseGroup = $courseGroups->firstWhere('class_name', 'D1-A');
+
+    StudentTimetableRememberedTtEntry::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'offer_key_hash' => hash('sha256', 'D1-A'),
+        'entry_key_hash' => hash('sha256', "{$dCourseGroup['key']}|2026-09-07|1"),
+        'offer_key' => 'D1-A',
+        'entry_key' => "{$dCourseGroup['key']}|2026-09-07|1",
+        'offer_name' => 'D1-A',
+        'entry_date' => '2026-09-07',
+        'is_active' => false,
+    ]);
+
+    $selectedCourseKeys = $subjectRows
+        ->map(fn (StudentTimetableSubjectRow $row): string => implode('|', [
+            $row->id,
+            $row->semester,
+            $row->branch,
+            $row->json_code,
+            $row->json_subject,
+            $row->name,
+            $row->json_code,
+        ]))
+        ->values()
+        ->all();
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable', [
+            'selection' => [
+                'semester' => 1,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => $selectedCourseKeys,
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.full_green_timetable_count', 1)
+        ->assertJsonPath('data.green_timetable_count', 0)
+        ->assertJsonPath('data.red_timetable_count', 0)
+        ->assertJsonPath('data.selected_timetable.type', 'full_green')
+        ->assertJsonPath('data.selected_timetable.slots.1-1.courseGroup.dates.0', '2026-09-14');
+});
+
+it('does not block crossed out dates inside regular course ranges', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-01',
+        'sem_2_start' => '2027-02-16',
+        'until' => '2027-07-01',
+    ]);
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $subjectRows = collect([
+        ['json_code' => 'E6', 'json_subject' => 'E', 'name' => 'Englisch 6'],
+        ['json_code' => 'M1', 'json_subject' => 'M', 'name' => 'Mathematik 1'],
+    ])->map(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 2,
+        'branch' => 'common',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        'source' => 'test',
+        ...$subjectRow,
+    ]));
+
+    collect([
+        ['date' => '2027-05-05', 'course' => 'E6', 'subject' => 'Englisch', 'class_name' => 'E6 - 3R - HOF'],
+        ['date' => '2027-05-12', 'course' => 'E6', 'subject' => 'Englisch', 'class_name' => 'E6 - 3R - HOF'],
+        ['date' => '2027-05-19', 'course' => 'E6', 'subject' => 'Englisch', 'class_name' => 'E6 - 3R - HOF'],
+        ['date' => '2027-05-26', 'course' => 'E6', 'subject' => 'Englisch', 'class_name' => 'E6 - 3R - HOF'],
+        ['date' => '2027-05-12', 'course' => 'M1', 'subject' => 'Mathematik', 'class_name' => 'M1-A'],
+    ])->each(fn (array $entry, int $index): StudentTimetableEntry => StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'line_number' => $index + 1,
+        'date' => $entry['date'],
+        'semester' => 2,
+        'period' => '14',
+        'subject' => $entry['subject'],
+        'course' => $entry['course'],
+        'class_name' => $entry['class_name'],
+        'teacher' => null,
+        'room' => null,
+        'is_active' => true,
+    ]));
+
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
+
+    $courseGroups = collect($this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/course-groups')
+        ->assertSuccessful()
+        ->json('data'));
+    $englishCourseGroup = $courseGroups->firstWhere('class_name', 'E6 - 3R - HOF');
+
+    StudentTimetableRememberedTtEntry::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'offer_key_hash' => hash('sha256', 'E6 - 3R - HOF'),
+        'entry_key_hash' => hash('sha256', "{$englishCourseGroup['key']}|2027-05-12|14"),
+        'offer_key' => 'E6 - 3R - HOF',
+        'entry_key' => "{$englishCourseGroup['key']}|2027-05-12|14",
+        'offer_name' => 'E6 - 3R - HOF',
+        'entry_date' => '2027-05-12',
+        'is_active' => false,
+    ]);
+
+    $selectedCourseKeys = $subjectRows
+        ->map(fn (StudentTimetableSubjectRow $row): string => implode('|', [
+            $row->id,
+            $row->semester,
+            $row->branch,
+            $row->json_code,
+            $row->json_subject,
+            $row->name,
+            $row->json_code,
+        ]))
+        ->values()
+        ->all();
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable', [
+            'selection' => [
+                'semester' => 2,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [3],
+                'availableTimes' => [14],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => $selectedCourseKeys,
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.full_green_timetable_count', 1)
+        ->assertJsonPath('data.green_timetable_count', 0)
+        ->assertJsonPath('data.red_timetable_count', 0)
+        ->assertJsonPath('data.selected_timetable.type', 'full_green')
+        ->assertJsonPath('data.selected_timetable.slots.3-14.courseGroup.dates.0', '2027-05-05')
+        ->assertJsonPath('data.selected_timetable.slots.3-14.courseGroup.dates.1', '2027-05-19')
+        ->assertJsonPath('data.selected_timetable.slots.3-14.courseGroup.dates.2', '2027-05-26');
+});
+
 it('can short circuit backend timetable availability after finding one valid timetable', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $schoolyear = Schoolyear::factory()->create([

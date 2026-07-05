@@ -774,6 +774,11 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.moreCoursesCardItems.call(context)
             },
         },
+        moreCoursesCardItemsBySelectionKey: {
+            get() {
+                return TimetableV2.computed.moreCoursesCardItemsBySelectionKey.call(context)
+            },
+        },
         moreCoursesCategoryCards: {
             get() {
                 return TimetableV2.computed.moreCoursesCategoryCards.call(context)
@@ -5868,6 +5873,53 @@ describe('TimetableV2 route steps', () => {
             offeredCourses.map((course) => [course.selectionKey, false])
         ))
         expect(TimetableV2.methods.moreCourseOfferedCourseItemsAllDeselected.call(context, moreCourse)).toBe(true)
+    })
+
+    it('selects available more course offers after explicit offer choices exist', async () => {
+        const context = timetableV2Context({
+            courseSelectionOverrides: {
+                'semester:D5': false,
+            },
+            courseGroups: [
+                { class_name: 'D5-3R-SHAM', course: 'D', hour: 14, module_code: 'D5', title: 'D', weekday: 2 },
+                { class_name: 'D5-5K-AUER', course: 'D', hour: 10, module_code: 'D5', title: 'D', weekday: 5 },
+                { class_name: 'D5-3U-DREI', course: 'D', hour: 1, module_code: 'D5', title: 'D', weekday: 6 },
+            ],
+            storedSemesterCourseItems: [
+                { code: 'D5', hours: 3, key: 'D5', label: 'D5' },
+            ],
+        })
+
+        await TimetableV2.methods.toggleMoreCoursesCard.call(context)
+
+        const moreCourse = context.moreCoursesCardItems.find((course) => course.label === 'D5')
+
+        TimetableV2.methods.toggleMoreCourseOffers.call(context, moreCourse)
+
+        const offeredCourses = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, moreCourse)
+        const [firstOffer, secondOffer] = offeredCourses
+
+        expect(offeredCourses).toHaveLength(3)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, firstOffer, moreCourse)).toBe(true)
+
+        TimetableV2.methods.toggleMoreOfferedCourseItem.call(context, firstOffer, moreCourse)
+
+        context.storedTimetableState = context.saveStoredTimetableState.mock.calls.at(-1)[0]
+
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, firstOffer, moreCourse)).toBe(false)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, secondOffer, moreCourse)).toBe(false)
+
+        TimetableV2.methods.toggleMoreOfferedCourseItem.call(context, secondOffer, moreCourse)
+
+        const savedState = context.saveStoredTimetableState.mock.calls.at(-1)[0]
+        context.storedTimetableState = savedState
+
+        expect(savedState.timetableV2Selection.moreOfferedCourseSelections).toMatchObject({
+            [firstOffer.selectionKey]: false,
+            [secondOffer.selectionKey]: true,
+        })
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, firstOffer, moreCourse)).toBe(false)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, secondOffer, moreCourse)).toBe(true)
     })
 
     it('does not mix ethics and religion offered courses', () => {
