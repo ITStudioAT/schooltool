@@ -17,6 +17,7 @@ use App\Services\StudentsTimetables\StudentTimetableCalculationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableCompletedCourseHistoryService;
 use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
+use App\Services\StudentsTimetables\StudentTimetableRememberedTtEntryService;
 use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
 use App\Services\StudentsTimetables\StudentTimetableV2StateService;
 use Illuminate\Contracts\Support\Responsable;
@@ -407,6 +408,45 @@ class StudentsTimetablesController extends Controller
                 $authUser,
                 $validated['course_group_keys'] ?? [],
             ),
+        ]);
+    }
+
+    public function ttEntryRememberedOffers(StudentTimetableRememberedTtEntryService $service): JsonResponse
+    {
+        $authUser = $this->studentsTimetablesUser();
+
+        return response()->json([
+            'data' => [
+                'offers' => $service->offersForUser($authUser),
+            ],
+        ]);
+    }
+
+    public function updateTtEntryRememberedOffers(Request $request, StudentTimetableRememberedTtEntryService $service): JsonResponse
+    {
+        $authUser = $this->studentsTimetablesUser();
+
+        $validated = $request->validate([
+            'offers' => ['array', 'max:100'],
+            'offers.*.key' => ['required', 'string', 'max:1000'],
+            'offers.*.name' => ['required', 'string', 'max:255'],
+            'offers.*.scheduleLabel' => ['nullable', 'string', 'max:255'],
+            'offers.*.entries' => ['required', 'array', 'max:500'],
+            'offers.*.entries.*.key' => ['required', 'string', 'max:1000'],
+            'offers.*.entries.*.dateLabel' => ['nullable', 'string', 'max:50'],
+            'offers.*.entries.*.dateValue' => ['nullable', 'date_format:Y-m-d'],
+            'offers.*.entries.*.active' => ['sometimes', 'boolean'],
+            'offers.*.entries.*.roomsLabel' => ['nullable', 'string', 'max:255'],
+            'offers.*.entries.*.scheduleLabel' => ['nullable', 'string', 'max:255'],
+            'offers.*.entries.*.timeFrom' => ['nullable', 'date_format:H:i'],
+            'offers.*.entries.*.timeUntil' => ['nullable', 'date_format:H:i'],
+        ]);
+
+        return response()->json([
+            'message' => 'Gemerkte Module wurden gespeichert.',
+            'data' => [
+                'offers' => $service->updateForUser($authUser, $validated['offers'] ?? []),
+            ],
         ]);
     }
 

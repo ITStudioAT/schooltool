@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import StudentsTimetables from '@/pages/admin/studentsTimetables/StudentsTimetables.vue'
 import SubjectsOverview from '@/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue'
 import TimetableV2 from '@/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue'
+import TtEntries from '@/pages/admin/studentsTimetables/ttEntries/TtEntries.vue'
 
 describe('Students timetable subjects overview', () => {
     it('keeps language alternatives together while splitting shared multi-module courses', () => {
@@ -150,6 +151,7 @@ describe('Students timetable subjects overview', () => {
 
         expect(componentSource).not.toContain("key: 'timetable'")
         expect(componentSource).toContain("key: 'subjects-overview'")
+        expect(componentSource).toContain("key: 'tt-entries'")
         expect(componentSource).toContain("key: 'imports'")
         expect(componentSource).toContain("roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator']")
         expect(componentSource).toContain("roles: ['super_admin', 'admin', 'studentstimetables_admin']")
@@ -157,6 +159,8 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain("meta: 'Center'")
         expect(componentSource).toContain("label: 'Stundenplan v2'")
         expect(componentSource).toContain("meta: 'Neu'")
+        expect(componentSource).toContain("label: 'TT-Einträge'")
+        expect(componentSource).toContain("meta: 'Kurse'")
         expect(componentSource).toContain("label: 'Importe'")
         expect(componentSource).toContain("meta: 'Stundenplan'")
         expect(componentSource).toContain("label: 'Fächer'")
@@ -169,9 +173,10 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain('st-nav__automatic-button')
         expect(componentSource).toContain('AUTOMATIC_TIMETABLE_OVERVIEW_PATH')
         expect(componentSource).toContain('/admin/students-timetables/subjects-overview/subject-plan')
-        expect(componentSource).toContain("const mainSectionKeys = ['timetable', 'timetable-v2', 'subjects-overview', 'import']")
+        expect(componentSource).toContain("const mainSectionKeys = ['timetable', 'timetable-v2', 'tt-entries', 'subjects-overview', 'import']")
         expect(componentSource).toContain("const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'")
         expect(componentSource).toContain("const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'")
+        expect(componentSource).toContain("const TT_ENTRIES_OVERVIEW_PATH = '/admin/students-timetables/tt-entries/overview'")
         expect(componentSource).toContain("redirectMissingSection()")
         expect(componentSource).toContain("redirectLegacySection(section)")
         expect(componentSource).toContain("this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })")
@@ -182,18 +187,24 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("activeNavigationKey === item.key")
         expect(componentSource).toContain('timetable: TIMETABLE_OVERVIEW_PATH')
         expect(componentSource).toContain("'timetable-v2': TIMETABLE_V2_OVERVIEW_PATH")
+        expect(componentSource).toContain("'tt-entries': TT_ENTRIES_OVERVIEW_PATH")
         expect(componentSource).toContain("imports: '/admin/students-timetables/timetable/imports'")
         expect(componentSource).toContain("import('./timetableV2/TimetableV2.vue')")
+        expect(componentSource).toContain("import('./ttEntries/TtEntries.vue')")
         expect(componentSource).toContain("import('./subjectsOverview/SubjectsOverview.vue')")
         expect(componentSource).not.toContain("import('./overview/Overview.vue')")
         expect(componentSource).not.toContain("import('./robot/RobotTimetable.vue')")
         expect(componentSource).toContain("<v-col v-if=\"main_action === 'timetable-v2'\" cols=\"12\">")
         expect(componentSource).toContain('<TimetableV2 />')
+        expect(componentSource).toContain("<v-col v-if=\"main_action === 'tt-entries'\" cols=\"12\">")
+        expect(componentSource).toContain('<TtEntries />')
         expect(componentSource).toContain("Import v-if=\"main_action === 'import'\"")
         expect(componentSource).not.toContain("RobotTimetable v-if=\"main_action === 'robot'\"")
         expect(componentSource).toContain("SubjectsOverview v-if=\"main_action === 'subjects-overview'\"")
         expect(componentSource).not.toContain("Overview v-if=\"main_action === 'overview'\"")
         expect(componentSource.indexOf("key: 'timetable-v2'"))
+            .toBeLessThan(componentSource.indexOf("key: 'tt-entries'"))
+        expect(componentSource.indexOf("key: 'tt-entries'"))
             .toBeLessThan(componentSource.indexOf("key: 'imports'"))
         expect(componentSource.indexOf("key: 'imports'"))
             .toBeLessThan(componentSource.indexOf("key: 'subjects-overview'"))
@@ -266,6 +277,231 @@ describe('Students timetable subjects overview', () => {
 
         expect(ctx.main_action).toBe('timetable-v2')
         expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v2/overview' })
+    })
+
+    it('opens the TT entries page from the module navigation', () => {
+        const methods = (StudentsTimetables as any).methods
+        const push = vi.fn()
+        const ctx: any = {
+            $router: {
+                push,
+            },
+            main_action: 'timetable-v2',
+        }
+
+        methods.handleNavigation.call(ctx, 'tt-entries')
+
+        expect(ctx.main_action).toBe('tt-entries')
+        expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/tt-entries/overview' })
+    })
+
+    it('shows TT entries navigation only to timetable admins', () => {
+        const computed = (StudentsTimetables as any).computed
+        const methods = (StudentsTimetables as any).methods
+        const ctx: any = {
+            ...methods,
+            configuredRoleNames: ['studentstimetables_admin'],
+        }
+
+        Object.defineProperty(ctx, 'allNavigationItems', {
+            get() {
+                return computed.allNavigationItems.call(ctx)
+            },
+        })
+
+        const adminNavigationKeys = computed.navigationItems.call(ctx).map(item => item.key)
+
+        ctx.configuredRoleNames = ['studentstimetables_moderator']
+
+        const moderatorNavigationKeys = computed.navigationItems.call(ctx).map(item => item.key)
+
+        expect(adminNavigationKeys).toContain('tt-entries')
+        expect(moderatorNavigationKeys).not.toContain('tt-entries')
+        expect(moderatorNavigationKeys).toContain('timetable-v2')
+        expect(moderatorNavigationKeys).toContain('subjects-overview')
+    })
+
+    it('redirects non-admins away from the TT entries route', () => {
+        const methods = (StudentsTimetables as any).methods
+        const replace = vi.fn()
+        const ctx: any = {
+            $route: {
+                params: {
+                    section: 'tt-entries',
+                },
+            },
+            $router: {
+                replace,
+            },
+            canManageStudentsTimetables: false,
+            main_action: 'tt-entries',
+        }
+
+        methods.redirectUnauthorizedSection.call(ctx)
+
+        expect(ctx.main_action).toBe('timetable-v2')
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v2/overview' })
+    })
+
+    it('groups TT entries meta-courses in one selectable card', () => {
+        const componentSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/ttEntries/TtEntries.vue',
+            'utf8',
+        )
+        const computed = (TtEntries as any).computed
+        const methods = (TtEntries as any).methods
+        const ctx: any = {
+            ...methods,
+            selectedMetaCourseKey: 'M',
+            selectedSubjectRowKey: '',
+            schoolHours: [
+                {
+                    hour: 3,
+                    from: '09:50:00',
+                    until: '10:40:00',
+                },
+            ],
+            courseGroups: [
+                {
+                    key: 'm1-offer',
+                    title: 'M1-3R-SCHM',
+                    display_label: 'M1 - 3R - SCHM',
+                    class_name: 'M1-3R-SCHM',
+                    student_group: '3R',
+                    teacher: 'SCHM',
+                    semester: 1,
+                    weekday: 2,
+                    hour: 3,
+                    rooms: ['101'],
+                },
+            ],
+            subjectMappings: [
+                {
+                    json_subject: 'ÖKO',
+                    tt_subject: 'OKON',
+                    is_active: true,
+                },
+            ],
+            subjectRows: [
+                {
+                    id: 1,
+                    json_code: 'M1',
+                    json_subject: 'M',
+                    name: 'Mathematik 1',
+                    semester: 1,
+                    branch: null,
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 2,
+                    json_code: 'M2',
+                    json_subject: 'M',
+                    name: 'Mathematik 2',
+                    semester: 2,
+                    branch: null,
+                    hours_per_week: 3,
+                    is_active: true,
+                },
+                {
+                    id: 3,
+                    json_code: 'INF2',
+                    json_subject: 'INF',
+                    name: 'Informatik 2',
+                    semester: 3,
+                    branch: 'wirtschaftskundlich',
+                    hours_per_week: 2,
+                    is_active: true,
+                },
+                {
+                    id: 4,
+                    json_code: 'F1',
+                    json_subject: 'F',
+                    name: 'Französisch 1',
+                    semester: 1,
+                    branch: null,
+                    hours_per_week: 4,
+                    is_active: false,
+                },
+                {
+                    id: 5,
+                    json_code: 'ÖKO2',
+                    json_subject: 'ÖKO',
+                    name: 'Ökonomie 2',
+                    semester: 4,
+                    branch: 'wirtschaftskundlich',
+                    hours_per_week: 4,
+                    is_active: true,
+                },
+            ],
+        }
+
+        Object.defineProperty(ctx, 'activeSubjectRows', {
+            get() {
+                return computed.activeSubjectRows.call(ctx)
+            },
+        })
+        Object.defineProperty(ctx, 'metaCourseItems', {
+            get() {
+                return computed.metaCourseItems.call(ctx)
+            },
+        })
+        Object.defineProperty(ctx, 'activeSubjectMappings', {
+            get() {
+                return computed.activeSubjectMappings.call(ctx)
+            },
+        })
+        Object.defineProperty(ctx, 'selectedMetaCourse', {
+            get() {
+                return computed.selectedMetaCourse.call(ctx)
+            },
+        })
+        Object.defineProperty(ctx, 'selectedMetaCourseRows', {
+            get() {
+                return computed.selectedMetaCourseRows.call(ctx)
+            },
+        })
+        Object.defineProperty(ctx, 'selectedSubjectRow', {
+            get() {
+                return computed.selectedSubjectRow.call(ctx)
+            },
+        })
+        Object.defineProperty(ctx, 'selectedSubjectCourseCode', {
+            get() {
+                return computed.selectedSubjectCourseCode.call(ctx)
+            },
+        })
+        Object.defineProperty(ctx, 'courseGroupsByCourseCode', {
+            get() {
+                return computed.courseGroupsByCourseCode.call(ctx)
+            },
+        })
+
+        ctx.selectedSubjectRowKey = methods.subjectRowKey.call(ctx, ctx.subjectRows[0])
+
+        expect(componentSource).toContain('<v-card rounded="lg" class="tt-entries-card">')
+        expect(componentSource).toContain('v-for="course in metaCourseItems"')
+        expect(componentSource).toContain('@click="selectMetaCourse(course.key)"')
+        expect(componentSource).toContain('v-for="offer in selectedSubjectOffers"')
+        expect(componentSource).toContain('this.ttSubjectForSubject(subject)')
+        expect(ctx.metaCourseItems.map(course => course.key)).toEqual(['INF', 'M', 'OEKO'])
+        expect(ctx.metaCourseItems.map(course => course.label)).toEqual(['INF', 'M', 'ÖKO'])
+        expect(ctx.metaCourseItems.map(course => course.countLabel)).toEqual(['1 Eintrag', '2 Einträge', '1 Eintrag'])
+        expect(methods.courseDisplayLabel.call(ctx, 'L/F/S')).toBe('L / F / SPA')
+        expect(methods.subjectRowMeta.call(ctx, ctx.subjectRows[2])).toBe('3. Sem. · 2 Std.')
+        expect(methods.subjectRowMeta.call(ctx, ctx.subjectRows[2])).not.toContain('wirtschaftskundlich')
+        expect(computed.selectedMetaCourseRows.call(ctx).map(subject => subject.json_code)).toEqual(['M1', 'M2'])
+        expect(computed.selectedSubjectOffers.call(ctx).map(offer => ({
+            name: offer.name,
+            roomsLabel: offer.roomsLabel,
+            scheduleLabel: offer.scheduleLabel,
+        }))).toEqual([
+            {
+                name: 'M1 - 3R - SCHM',
+                roomsLabel: '101',
+                scheduleLabel: 'Di 3. 09:50-10:40',
+            },
+        ])
     })
 
     it('starts the standalone timetable v2 page with student selection cards and dialog', () => {

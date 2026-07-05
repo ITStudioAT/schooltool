@@ -2597,6 +2597,9 @@ export default {
             return [
                 { displayLabel: '1. D - 5 - 3R - SHAM', key: 'D5-3R-SHAM', label: 'D5-3R-SHAM' },
                 { displayLabel: '2. E - 5 - 3R - HÖF', key: 'E5-3R-HOEF', label: 'E5-3R-HÖF' },
+                { displayLabel: '3. M - 4 - 3R - SCHM', key: 'M4-3R-SCHM', label: 'M4-3R-SCHM' },
+                { displayLabel: '4. M - 5 - 3R - SCHM', key: 'M5-3R-SCHM', label: 'M5-3R-SCHM' },
+                { displayLabel: '5. E - 6 - 3R - HÖF', key: 'E6-3R-HOEF', label: 'E6-3R-HÖF' },
             ].map((course) => ({
                 ...course,
                 scheduleLabel: this.selectedTimetableV2TestsCardScheduleLabelForCourse(course.key),
@@ -2604,23 +2607,39 @@ export default {
             }))
         },
         selectedTimetableV2TestsCardScheduleComparison() {
-            const matchingSlots = this.selectedTimetableV2TestsCardMatchingScheduleSlots
-            if (!matchingSlots.length) {
+            const matchingCourseItems = this.selectedTimetableV2TestsCardMatchingCourseScheduleItems
+            if (!matchingCourseItems.length) {
                 return {
                     color: 'warning',
                     label: 'Gleiche Tage/Uhrzeiten/Daten: Nein',
                 }
             }
 
+            const matchingLabels = matchingCourseItems
+                .map((course) => `${course.label}: ${this.compactScheduleSlotsLabel(course.matchingSlots, {
+                    showDateRanges: true,
+                })}`)
+                .filter(Boolean)
+
             return {
                 color: 'success',
-                label: `Gleiche Tage/Uhrzeiten/Daten: Ja - ${this.compactScheduleSlotsLabel(matchingSlots, {
-                    showDateRanges: true,
-                })}`,
+                label: `Gleiche Tage/Uhrzeiten/Daten: Ja - ${matchingLabels.join('; ')}`,
             }
         },
+        selectedTimetableV2TestsCardMatchingCourseScheduleItems() {
+            const [targetCourse, ...comparisonCourses] = this.selectedTimetableV2TestsCardCourseScheduleItems
+            if (!targetCourse) return []
+
+            return comparisonCourses
+                .map((course) => ({
+                    ...course,
+                    matchingSlots: this.selectedTimetableV2TestsCardMatchingScheduleSlotsForCourses(targetCourse.key, course.key),
+                }))
+                .filter((course) => course.matchingSlots.length)
+        },
         selectedTimetableV2TestsCardMatchingScheduleSlots() {
-            return this.selectedTimetableV2TestsCardMatchingScheduleSlotsForCourses('D5-3R-SHAM', 'E5-3R-HOEF')
+            return this.selectedTimetableV2TestsCardMatchingCourseScheduleItems
+                .flatMap((course) => course.matchingSlots)
         },
         selectedTimetableV2TestsCardScheduleLabel() {
             return this.selectedTimetableV2TestsCardScheduleLabelForCourse('D5-3R-SHAM')

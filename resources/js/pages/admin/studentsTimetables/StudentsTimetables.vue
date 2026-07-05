@@ -69,6 +69,9 @@
             <v-col v-if="main_action === 'timetable-v2'" cols="12">
                 <TimetableV2 />
             </v-col>
+            <v-col v-if="main_action === 'tt-entries'" cols="12">
+                <TtEntries />
+            </v-col>
             <Import v-if="main_action === 'import'" />
             <SubjectsOverview v-if="main_action === 'subjects-overview'" />
         </v-row>
@@ -84,19 +87,22 @@ import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
 const Timetable = defineAsyncComponent(() => import('./timetable/Timetable.vue'))
 const TimetableV2 = defineAsyncComponent(() => import('./timetableV2/TimetableV2.vue'))
+const TtEntries = defineAsyncComponent(() => import('./ttEntries/TtEntries.vue'))
 const Import = defineAsyncComponent(() => import('./import/Import.vue'))
 const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/SubjectsOverview.vue'))
 
 const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'
 const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'
+const TT_ENTRIES_OVERVIEW_PATH = '/admin/students-timetables/tt-entries/overview'
 const AUTOMATIC_TIMETABLE_OVERVIEW_PATH = `${TIMETABLE_OVERVIEW_PATH}/automatic`
-const mainSectionKeys = ['timetable', 'timetable-v2', 'subjects-overview', 'import']
+const mainSectionKeys = ['timetable', 'timetable-v2', 'tt-entries', 'subjects-overview', 'import']
 
 export default {
     components: {
         AdminSectionHero,
         Timetable,
         TimetableV2,
+        TtEntries,
         Import,
         SubjectsOverview,
     },
@@ -138,6 +144,13 @@ export default {
                     meta: 'Neu',
                     icon: 'mdi-calendar-edit-outline',
                     roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
+                },
+                {
+                    key: 'tt-entries',
+                    label: 'TT-Einträge',
+                    meta: 'Kurse',
+                    icon: 'mdi-format-list-bulleted-square',
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
                 },
                 {
                     key: 'imports',
@@ -189,6 +202,11 @@ export default {
                     icon: 'mdi-calendar-edit-outline',
                     note: 'Neue Stundenplan-Version.',
                 },
+                'tt-entries': {
+                    label: 'TT-Einträge',
+                    icon: 'mdi-format-list-bulleted-square',
+                    note: 'Meta-Kurse und TT-Einträge.',
+                },
                 import: {
                     label: 'Stundenplan',
                     icon: 'mdi-upload',
@@ -232,6 +250,7 @@ export default {
 
             if (section && mainSectionKeys.includes(section)) {
                 this.main_action = section
+                this.redirectUnauthorizedSection()
 
                 return
             }
@@ -260,8 +279,13 @@ export default {
         },
         redirectUnauthorizedSection() {
             if (
-                this.$route.params.section === 'timetable'
-                && this.$route.params.subsection === 'imports'
+                (
+                    (
+                        this.$route.params.section === 'timetable'
+                        && this.$route.params.subsection === 'imports'
+                    )
+                    || this.$route.params.section === 'tt-entries'
+                )
                 && !this.canManageStudentsTimetables
             ) {
                 this.main_action = 'timetable-v2'
@@ -290,6 +314,7 @@ export default {
             const paths = {
                 timetable: TIMETABLE_OVERVIEW_PATH,
                 'timetable-v2': TIMETABLE_V2_OVERVIEW_PATH,
+                'tt-entries': TT_ENTRIES_OVERVIEW_PATH,
                 'automatic-timetable': AUTOMATIC_TIMETABLE_OVERVIEW_PATH,
                 imports: '/admin/students-timetables/timetable/imports',
                 import: '/admin/students-timetables/import/overview',

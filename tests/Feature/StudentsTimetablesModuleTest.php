@@ -12,6 +12,7 @@ use App\Models\StudentTimetableEntry;
 use App\Models\StudentTimetableOverviewSelection;
 use App\Models\StudentTimetableRecognitionImport;
 use App\Models\StudentTimetableRecognitionRow;
+use App\Models\StudentTimetableRememberedTtEntry;
 use App\Models\StudentTimetableSubjectImport;
 use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
@@ -2714,6 +2715,82 @@ it('saves selected timetable overview courses in the database', function () {
         ->assertJsonCount(0, 'data.course_group_keys');
 
     expect(StudentTimetableOverviewSelection::query()->count())->toBe(0);
+});
+
+it('stores remembered tt entry module date status in the database', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill([
+        'schoolyear_id' => $schoolyear->id,
+    ])->save();
+
+    $payload = [
+        'offers' => [
+            [
+                'key' => 'offer-a|D1 - 1A - MAY',
+                'name' => 'D1 - 1A - MAY',
+                'scheduleLabel' => 'Di 12. 18:45-19:30',
+                'entries' => [
+                    [
+                        'key' => 'entry-a|2026-02-17|12',
+                        'dateLabel' => '17.02.2026',
+                        'dateValue' => '2026-02-17',
+                        'active' => false,
+                        'roomsLabel' => '101',
+                        'scheduleLabel' => 'Di. 12. 18:45-19:30',
+                        'timeFrom' => '18:45',
+                        'timeUntil' => '19:30',
+                    ],
+                    [
+                        'key' => 'entry-b|2026-02-24|12',
+                        'dateLabel' => '24.02.2026',
+                        'dateValue' => '2026-02-24',
+                        'active' => true,
+                        'roomsLabel' => '101',
+                        'scheduleLabel' => 'Di. 12. 18:45-19:30',
+                        'timeFrom' => '18:45',
+                        'timeUntil' => '19:30',
+                    ],
+                ],
+            ],
+        ],
+    ];
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/tt-entry-remembered-offers', $payload)
+        ->assertSuccessful()
+        ->assertJsonPath('message', 'Gemerkte Module wurden gespeichert.')
+        ->assertJsonPath('data.offers.0.name', 'D1 - 1A - MAY')
+        ->assertJsonPath('data.offers.0.entries.0.active', false)
+        ->assertJsonPath('data.offers.0.entries.1.active', true);
+
+    $this->assertDatabaseHas('student_timetable_remembered_tt_entries', [
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'offer_name' => 'D1 - 1A - MAY',
+        'entry_date' => '2026-02-17',
+        'entry_schedule_label' => 'Di. 12. 18:45-19:30',
+        'is_active' => false,
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/tt-entry-remembered-offers')
+        ->assertSuccessful()
+        ->assertJsonPath('data.offers.0.entries.0.active', false)
+        ->assertJsonPath('data.offers.0.entries.0.timeFrom', '18:45')
+        ->assertJsonPath('data.offers.0.entries.0.timeUntil', '19:30');
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/tt-entry-remembered-offers', [
+            'offers' => [],
+        ])
+        ->assertSuccessful()
+        ->assertJsonCount(0, 'data.offers');
+
+    expect(StudentTimetableRememberedTtEntry::query()->count())->toBe(0);
 });
 
 it('stores timetable v2 state per authenticated user and schoolyear', function () {
