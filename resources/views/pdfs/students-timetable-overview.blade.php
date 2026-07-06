@@ -186,16 +186,14 @@
                                 'status' => $cellStatus,
                                 'is_compact' => $isCompact,
                                 'is_fu' => ! $isCompact && ! empty($crs['is_fu']),
+                                'recurrence_label' => trim((string) ($crs['recurrence_label'] ?? '')),
+                                'recurrence_interval' => (int) ($crs['recurrence_interval'] ?? 0),
                             ]);
                         }
                     }
                 }
             }
         }
-        $allCourseSlots = $allCourseSlots
-            ->unique(fn (array $c): string => "{$c['semester']}|{$c['weekday']}|{$c['hour']}|{$c['label']}")
-            ->sortBy([['weekday_index', 'asc'], ['hour', 'asc'], ['label', 'asc']])
-            ->values();
         $slotTimeParts = function (array $slot): array {
             return array_map(
                 fn (string $time): string => trim($time),
@@ -212,7 +210,58 @@
                 ->implode(' · ');
         };
 
-        $mergeCourseOverviewSlots = function ($slots) use ($slotTimeParts, $mergeSlotDetails) {
+        $slotRecurrenceInterval = function (array $slot) use ($detailSeparatorPattern): int {
+            $explicitInterval = (int) ($slot['recurrence_interval'] ?? 0);
+            if ($explicitInterval > 1) {
+                return $explicitInterval;
+            }
+
+            $recurrenceSources = collect([
+                $slot['recurrence_label'] ?? '',
+                $slot['details'] ?? '',
+            ]);
+
+            return (int) ($recurrenceSources
+                ->flatMap(fn (string $source): array => preg_split($detailSeparatorPattern, $source) ?: [])
+                ->map(function (string $segment): int {
+                    if (preg_match('/(\d+)\s*-?\s*w/iu', trim($segment), $matches) !== 1) {
+                        return 1;
+                    }
+
+                    return (int) $matches[1];
+                })
+                ->filter(fn (int $interval): bool => $interval > 1)
+                ->first() ?? 1);
+        };
+
+        $slotRecurrenceSignature = function (array $slot) use ($courseTwoWeekParitySuffix, $slotRecurrenceInterval): string {
+            $interval = $slotRecurrenceInterval($slot);
+            $parity = $interval === 2
+                ? trim($courseTwoWeekParitySuffix((array) ($slot['dates'] ?? [])))
+                : '';
+
+            return implode('|', [
+                $interval,
+                $parity,
+            ]);
+        };
+        $courseDirectoryKey = fn (array $slot): string => implode('|', [
+            $slot['label'] ?? '',
+            $slotRecurrenceSignature($slot),
+        ]);
+
+        $allCourseSlots = $allCourseSlots
+            ->unique(fn (array $c): string => implode('|', [
+                $c['semester'],
+                $c['weekday'],
+                $c['hour'],
+                $c['label'],
+                $slotRecurrenceSignature($c),
+            ]))
+            ->sortBy([['weekday_index', 'asc'], ['hour', 'asc'], ['label', 'asc']])
+            ->values();
+
+        $mergeCourseOverviewSlots = function ($slots) use ($slotTimeParts, $mergeSlotDetails, $slotRecurrenceSignature) {
             $mergedSlots = collect();
 
             $slots
@@ -223,6 +272,7 @@
                     $slot['label'] ?? '',
                     $slot['status'] ?? '',
                     !empty($slot['is_fu']) ? 'fu' : 'regular',
+                    $slotRecurrenceSignature($slot),
                 ]))
                 ->each(function ($groupedSlots) use ($mergedSlots, $slotTimeParts, $mergeSlotDetails): void {
                     $currentSlot = null;
@@ -608,12 +658,13 @@
             ->all();
 
         $courseDirectory = $allCourseSlots
-            ->groupBy('label')
-            ->map(function ($slots, string $label) use ($directorySlotSummary, $directoryDetails, $directoryHints, $formatCourseDateGroups) {
+            ->groupBy($courseDirectoryKey)
+            ->map(function ($slots, string $key) use ($directorySlotSummary, $directoryDetails, $directoryHints, $formatCourseDateGroups) {
                 $dateGroups = $formatCourseDateGroups($slots);
 
                 return [
-                    'label' => $label,
+                    'key' => $key,
+                    'label' => $slots->first()['label'] ?? '',
                     'details' => $directoryDetails($slots),
                     'hints' => $directoryHints($slots),
                     'slots' => $directorySlotSummary($slots),
@@ -632,33 +683,11 @@
             })
             ->sortBy('label', SORT_NATURAL | SORT_FLAG_CASE)
             ->values();
-        $courseDirectoryHintsByLabel = $courseDirectory->mapWithKeys(fn (array $entry): array => [
-            $entry['label'] => $entry['hints'],
+        $courseDirectoryHintsByKey = $courseDirectory->mapWithKeys(fn (array $entry): array => [
+            $entry['key'] => $entry['hints'],
         ]);
 
-        $courseRecurrenceInterval = function (array $course) use ($detailSeparatorPattern): int {
-            $explicitInterval = (int) ($course['recurrence_interval'] ?? 0);
-            if ($explicitInterval > 1) {
-                return $explicitInterval;
-            }
-
-            $recurrenceSources = collect([
-                $course['recurrence_label'] ?? '',
-                $course['details'] ?? '',
-            ]);
-
-            return (int) ($recurrenceSources
-                ->flatMap(fn (string $source): array => preg_split($detailSeparatorPattern, $source) ?: [])
-                ->map(function (string $segment): int {
-                    if (preg_match('/(\d+)\s*-?\s*w/iu', trim($segment), $matches) !== 1) {
-                        return 1;
-                    }
-
-                    return (int) $matches[1];
-                })
-                ->filter(fn (int $interval): bool => $interval > 1)
-                ->first() ?? 1);
-        };
+        $courseRecurrenceInterval = $slotRecurrenceInterval;
 
         $parseTimetableDate = function (?string $date, ?int $fallbackYear = null): ?\Carbon\Carbon {
             $date = trim((string) $date);
@@ -1581,7 +1610,7 @@
                     <tbody>
                         @foreach($slots as $slot)
                             @php
-                                $slotHints = $courseDirectoryHintsByLabel->get($slot['label'], []);
+                                $slotHints = $courseDirectoryHintsByKey->get($courseDirectoryKey($slot), []);
                             @endphp
                             <tr>
                                 <td class="cell-weekday">{{ $slot['weekday'] }}</td>

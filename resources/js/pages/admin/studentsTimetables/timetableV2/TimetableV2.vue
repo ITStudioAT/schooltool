@@ -1018,8 +1018,19 @@
                                         <span class="students-timetable-v2-tests-card__course-label">
                                             {{ course.displayLabel }} ({{ course.typeLabel }}):
                                         </span>
+                                        <template v-if="course.scheduleLabels.length">
+                                            <v-chip
+                                                v-for="scheduleLabel in course.scheduleLabels"
+                                                :key="`${course.key}-${scheduleLabel}`"
+                                                size="small"
+                                                color="primary"
+                                                variant="tonal"
+                                                class="students-timetable-v2-tests-card__info">
+                                                {{ scheduleLabel }}
+                                            </v-chip>
+                                        </template>
                                         <v-chip
-                                            v-if="course.scheduleLabel"
+                                            v-else-if="course.scheduleLabel"
                                             size="small"
                                             color="primary"
                                             variant="tonal"
@@ -2635,11 +2646,15 @@ export default {
                 { displayLabel: '3. M - 4 - 3R - SCHM', key: 'M4-3R-SCHM', label: 'M4-3R-SCHM' },
                 { displayLabel: '4. M - 5 - 3R - SCHM', key: 'M5-3R-SCHM', label: 'M5-3R-SCHM' },
                 { displayLabel: '5. E - 6 - 3R - HÖF', key: 'E6-3R-HOEF', label: 'E6-3R-HÖF' },
-            ].map((course) => ({
-                ...course,
-                scheduleLabel: this.selectedTimetableV2TestsCardScheduleLabelForCourse(course.key),
-                typeLabel: this.selectedTimetableV2TestsCardCourseTypeLabelForCourse(course.key),
-            }))
+                { displayLabel: '6. INF - 2 - 4QS+7K - KRO', key: 'INF2-4QS+7K-KRO', label: 'INF2-4QS+7K-KRO', optional: true },
+            ]
+                .map((course) => ({
+                    ...course,
+                    scheduleLabel: this.selectedTimetableV2TestsCardScheduleLabelForCourse(course.key),
+                    scheduleLabels: this.selectedTimetableV2TestsCardScheduleLabelsForCourse(course.key),
+                    typeLabel: this.selectedTimetableV2TestsCardCourseTypeLabelForCourse(course.key),
+                }))
+                .filter((course) => course.optional !== true || course.scheduleLabels.length || course.scheduleLabel)
         },
         selectedTimetableV2TestsCardScheduleComparison() {
             const matchingCourseItems = this.selectedTimetableV2TestsCardMatchingCourseScheduleItems
@@ -4341,6 +4356,13 @@ export default {
                 showDateRanges: true,
             })
         },
+        selectedTimetableV2TestsCardScheduleLabelsForCourse(targetCourseKey) {
+            return this.selectedTimetableV2TestsCardScheduleSlotsForCourse(targetCourseKey)
+                .map((slot) => this.compactScheduleSlotsLabel([slot], {
+                    showDateRanges: true,
+                }))
+                .filter(Boolean)
+        },
         selectedTimetableV2TestsCardScheduleSlotsForCourse(targetCourseKey) {
             const courseGroupScheduleSlots = this.selectedTimetableV2TestsCardCourseGroupScheduleSlotsForCourse(targetCourseKey)
             if (courseGroupScheduleSlots.length) return courseGroupScheduleSlots
@@ -4427,6 +4449,8 @@ export default {
             if (this.courseLabelLooksLikeRKompaktunterricht(targetCourseKey)) return 'Kompakt'
             if (this.selectedTimetableV2TestsCardCourseGroupsForCourse(targetCourseKey)
                 .some((courseGroup) => this.offeredCourseIsKompaktunterricht(courseGroup))) return 'Kompakt'
+            if (this.selectedTimetableV2TestsCardCourseGroupsForCourse(targetCourseKey)
+                .some((courseGroup) => this.offeredCourseIsDistanceLearningCourse(courseGroup))) return 'Fern'
 
             const typeLabels = this.uniqueValues(this.selectedTimetableV2TestsCardSlotsForCourse(targetCourseKey)
                 .map(({ slot }) => this.selectedTimetableV2TestsCardCourseTypeLabelForSlot(slot)))
@@ -4438,7 +4462,7 @@ export default {
         },
         selectedTimetableV2TestsCardCourseTypeLabelForSlot(slot) {
             if (this.selectedTimetableV2SlotIsKompaktunterricht(slot)) return 'Kompakt'
-            if (slot?.isDistanceLearningCourse === true || slot?.distanceLearning === true || slot?.courseGroup?.distanceLearning === true) return 'Fern'
+            if (this.offeredCourseIsDistanceLearningCourse(slot)) return 'Fern'
 
             return 'Normal'
         },
@@ -8561,7 +8585,10 @@ export default {
         offeredCourseIsDistanceLearningCourse(course) {
             return course?.distanceLearning === true
                 || course?.isDistanceLearningCourse === true
+                || course?.is_fu === true
                 || course?.courseGroup?.distanceLearning === true
+                || course?.courseGroup?.isDistanceLearningCourse === true
+                || course?.courseGroup?.is_fu === true
         },
         toggleOfferedCourseItem(course) {
             const selectionKey = course?.selectionKey || this.offeredCourseSelectionKey(course)

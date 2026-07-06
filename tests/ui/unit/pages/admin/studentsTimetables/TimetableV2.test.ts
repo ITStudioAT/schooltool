@@ -1125,12 +1125,13 @@ describe('TimetableV2 route steps', () => {
         expect(source).not.toContain('v-if="timetableCalculationVisible" class="students-timetable-v2-result__meta"')
         expect(source).toContain(":class=\"{ 'students-timetable-v2-calculation-card--final': adoptedTimetableVisible }\"")
         expect(source).toMatch(/\.students-timetable-v2-calculation-card--final \{[\s\S]*border-color: rgba\(22, 163, 74, 0\.28\);[\s\S]*background: rgba\(240, 253, 244, 0\.96\);/u)
-        expect(source).toMatch(/class="students-timetable-v2-tests-card"[\s\S]*Tests[\s\S]*v-for="course in selectedTimetableV2TestsCardCourseScheduleItems"[\s\S]*\{\{ course\.displayLabel \}\} \(\{\{ course\.typeLabel \}\}\):[\s\S]*\{\{ course\.scheduleLabel \}\}[\s\S]*Vergleich:[\s\S]*selectedTimetableV2TestsCardScheduleComparison\.color[\s\S]*v-for="part in selectedTimetableV2TestsCardScheduleComparison\.parts"[\s\S]*students-timetable-v2-tests-card__comparison-course--inactive/u)
+        expect(source).toMatch(/class="students-timetable-v2-tests-card"[\s\S]*Tests[\s\S]*v-for="course in selectedTimetableV2TestsCardCourseScheduleItems"[\s\S]*\{\{ course\.displayLabel \}\} \(\{\{ course\.typeLabel \}\}\):[\s\S]*v-for="scheduleLabel in course\.scheduleLabels"[\s\S]*\{\{ scheduleLabel \}\}[\s\S]*\{\{ course\.scheduleLabel \}\}[\s\S]*Vergleich:[\s\S]*selectedTimetableV2TestsCardScheduleComparison\.color[\s\S]*v-for="part in selectedTimetableV2TestsCardScheduleComparison\.parts"[\s\S]*students-timetable-v2-tests-card__comparison-course--inactive/u)
         expect(source).toContain("{ displayLabel: '1. D - 5 - 3R - SHAM', key: 'D5-3R-SHAM', label: 'D5-3R-SHAM' }")
         expect(source).toContain("{ displayLabel: '2. E - 5 - 3R - HÖF', key: 'E5-3R-HOEF', label: 'E5-3R-HÖF' }")
         expect(source).toContain("{ displayLabel: '3. M - 4 - 3R - SCHM', key: 'M4-3R-SCHM', label: 'M4-3R-SCHM' }")
         expect(source).toContain("{ displayLabel: '4. M - 5 - 3R - SCHM', key: 'M5-3R-SCHM', label: 'M5-3R-SCHM' }")
         expect(source).toContain("{ displayLabel: '5. E - 6 - 3R - HÖF', key: 'E6-3R-HOEF', label: 'E6-3R-HÖF' }")
+        expect(source).toContain("{ displayLabel: '6. INF - 2 - 4QS+7K - KRO', key: 'INF2-4QS+7K-KRO', label: 'INF2-4QS+7K-KRO', optional: true }")
         expect(source).toContain("label: 'Gleiche Tage/Uhrzeiten/Daten: Nein'")
         expect(source).toContain("label: `Gleiche Tage/Uhrzeiten/Daten: Ja - ${matchingLabels.join('; ')}`")
         expect(source).toMatch(/\.students-timetable-v2-tests-card__comparison-course--inactive \{[\s\S]*text-decoration: line-through;[\s\S]*text-decoration-thickness: 2px;/u)
@@ -2096,7 +2097,7 @@ describe('TimetableV2 route steps', () => {
                 },
             ],
         })
-        expect(context.selectedTimetableV2TestsCardCourseScheduleItems).toEqual([
+        expect(context.selectedTimetableV2TestsCardCourseScheduleItems).toMatchObject([
             {
                 displayLabel: '1. D - 5 - 3R - SHAM',
                 key: 'D5-3R-SHAM',
@@ -2133,6 +2134,53 @@ describe('TimetableV2 route steps', () => {
                 typeLabel: 'Kompakt',
             },
         ])
+    })
+
+    it('shows INF2-4QS+7K-KRO dates and times separated by hour in the tests card', () => {
+        const context = timetableV2Context({
+            schoolHours: [
+                { hour: 14, from: '20:25:00', until: '21:10:00' },
+                { hour: 15, from: '21:10:00', until: '21:55:00' },
+            ],
+            courseGroups: [
+                {
+                    class_name: 'INF2-4QS+7K-KRO',
+                    dates: ['2026-02-20', '2026-02-27', '2026-03-06'],
+                    display_label: 'INF2-4QS+7K-KRO',
+                    hour: 14,
+                    is_fu: true,
+                    recurrence_interval: 1,
+                    title: 'INF2',
+                    weekday: 5,
+                },
+                {
+                    class_name: 'INF2-4QS+7K-KRO',
+                    dates: ['2026-02-20', '2026-03-06', '2026-03-20'],
+                    display_label: 'INF2-4QS+7K-KRO',
+                    hour: 15,
+                    is_fu: true,
+                    recurrence_interval: 2,
+                    title: 'INF2',
+                    weekday: 5,
+                },
+            ],
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        const course = context.selectedTimetableV2TestsCardCourseScheduleItems
+            .find((item) => item.key === 'INF2-4QS+7K-KRO')
+
+        expect(course).toMatchObject({
+            displayLabel: '6. INF - 2 - 4QS+7K - KRO',
+            key: 'INF2-4QS+7K-KRO',
+            label: 'INF2-4QS+7K-KRO',
+            scheduleLabel: 'Fr 14. 20:25-21:10 (20.02.(A), 27.02.(B), 06.03.(A)), Fr 15. 2-wöchig A 21:10-21:55 (20.02.(A), 06.03.(A), 20.03.(A))',
+            scheduleLabels: [
+                'Fr 14. 20:25-21:10 (20.02.(A), 27.02.(B), 06.03.(A))',
+                'Fr 15. 2-wöchig A 21:10-21:55 (20.02.(A), 06.03.(A), 20.03.(A))',
+            ],
+            typeLabel: 'Fern',
+        })
     })
 
     it('answers when D5-3R-SHAM and E5-3R-HÖF share the same day hour and dates in the tests card', () => {

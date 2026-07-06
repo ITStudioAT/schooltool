@@ -3700,6 +3700,92 @@ it('groups course directory dates by weekday in the overview pdf', function () {
     });
 });
 
+it('keeps mixed weekly and fortnightly course hours separate in the overview pdf directory', function () {
+    Pdf::fake();
+
+    $user = createStudentsTimetablesUserWithLicence();
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/overview/pdf', [
+            'title' => 'Stundenplan',
+            'schoolyear' => '2025/26',
+            'student' => '4QS',
+            'generated_at' => '31.05.2026, 20:00',
+            'weekdays' => [
+                ['label' => 'Fr'],
+            ],
+            'semesters' => [
+                [
+                    'label' => 'Semester',
+                    'date_range' => '16.02.2026 - 10.07.2026',
+                    'weeks' => [
+                        [
+                            'label' => '',
+                            'hours' => [
+                                [
+                                    'hour' => 14,
+                                    'from' => '20:25',
+                                    'until' => '21:10',
+                                    'cells' => [
+                                        [
+                                            'status' => 'filled',
+                                            'courses' => [
+                                                [
+                                                    'label' => 'INF2-4QS+7K-KRO',
+                                                    'details' => '1-wöchig',
+                                                    'dates' => ['2026-02-20', '2026-02-27', '2026-03-06'],
+                                                    'is_fu' => true,
+                                                    'recurrence_interval' => 1,
+                                                    'recurrence_label' => '1-wöchig',
+                                                ],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                    ],
+                                ],
+                                [
+                                    'hour' => 15,
+                                    'from' => '21:10',
+                                    'until' => '21:55',
+                                    'cells' => [
+                                        [
+                                            'status' => 'filled',
+                                            'courses' => [
+                                                [
+                                                    'label' => 'INF2-4QS+7K-KRO',
+                                                    'details' => '2-wöchig',
+                                                    'dates' => ['2026-02-20', '2026-03-06', '2026-03-20'],
+                                                    'is_fu' => true,
+                                                    'recurrence_interval' => 2,
+                                                    'recurrence_label' => '2-wöchig',
+                                                ],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ])
+        ->assertSuccessful();
+
+    Pdf::assertRespondedWithPdf(function ($pdf): bool {
+        $html = $pdf->getHtml();
+
+        return $pdf->viewName === 'pdfs.students-timetable-overview'
+            && ! str_contains($html, 'Fr 14.-15. 20:25 - 21:55')
+            && str_contains($html, '<td>Fr 14. 20:25 - 21:10</td>')
+            && str_contains($html, '<td>Fr 15. 21:10 - 21:55</td>')
+            && str_contains($html, '<td class="cell-hour">14.</td>')
+            && str_contains($html, '<td class="cell-hour">15.</td>')
+            && ! str_contains($html, '<td class="cell-hour">14.-15.</td>')
+            && substr_count($html, '<td class="cell-label">INF2-4QS+7K-KRO</td>') >= 4;
+    });
+});
+
 it('does not add recurrence week timetable pages to the overview pdf by default', function () {
     Pdf::fake();
 
