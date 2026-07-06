@@ -1125,7 +1125,7 @@ describe('TimetableV2 route steps', () => {
         expect(source).not.toContain('v-if="timetableCalculationVisible" class="students-timetable-v2-result__meta"')
         expect(source).toContain(":class=\"{ 'students-timetable-v2-calculation-card--final': adoptedTimetableVisible }\"")
         expect(source).toMatch(/\.students-timetable-v2-calculation-card--final \{[\s\S]*border-color: rgba\(22, 163, 74, 0\.28\);[\s\S]*background: rgba\(240, 253, 244, 0\.96\);/u)
-        expect(source).toMatch(/class="students-timetable-v2-tests-card"[\s\S]*Tests[\s\S]*v-for="course in selectedTimetableV2TestsCardCourseScheduleItems"[\s\S]*\{\{ course\.displayLabel \}\} \(\{\{ course\.typeLabel \}\}\):[\s\S]*\{\{ course\.scheduleLabel \}\}[\s\S]*Vergleich:[\s\S]*selectedTimetableV2TestsCardScheduleComparison\.color[\s\S]*\{\{ selectedTimetableV2TestsCardScheduleComparison\.label \}\}/u)
+        expect(source).toMatch(/class="students-timetable-v2-tests-card"[\s\S]*Tests[\s\S]*v-for="course in selectedTimetableV2TestsCardCourseScheduleItems"[\s\S]*\{\{ course\.displayLabel \}\} \(\{\{ course\.typeLabel \}\}\):[\s\S]*\{\{ course\.scheduleLabel \}\}[\s\S]*Vergleich:[\s\S]*selectedTimetableV2TestsCardScheduleComparison\.color[\s\S]*v-for="part in selectedTimetableV2TestsCardScheduleComparison\.parts"[\s\S]*students-timetable-v2-tests-card__comparison-course--inactive/u)
         expect(source).toContain("{ displayLabel: '1. D - 5 - 3R - SHAM', key: 'D5-3R-SHAM', label: 'D5-3R-SHAM' }")
         expect(source).toContain("{ displayLabel: '2. E - 5 - 3R - HÖF', key: 'E5-3R-HOEF', label: 'E5-3R-HÖF' }")
         expect(source).toContain("{ displayLabel: '3. M - 4 - 3R - SCHM', key: 'M4-3R-SCHM', label: 'M4-3R-SCHM' }")
@@ -1133,6 +1133,7 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain("{ displayLabel: '5. E - 6 - 3R - HÖF', key: 'E6-3R-HOEF', label: 'E6-3R-HÖF' }")
         expect(source).toContain("label: 'Gleiche Tage/Uhrzeiten/Daten: Nein'")
         expect(source).toContain("label: `Gleiche Tage/Uhrzeiten/Daten: Ja - ${matchingLabels.join('; ')}`")
+        expect(source).toMatch(/\.students-timetable-v2-tests-card__comparison-course--inactive \{[\s\S]*text-decoration: line-through;[\s\S]*text-decoration-thickness: 2px;/u)
         expect(source).not.toContain('{{ selectedTimetableV2SaturdayFreeTestLabel }}')
         expect(source).not.toContain('v-for="item in selectedTimetableV2TestCourseAnalysisItems"')
         expect(source).toMatch(/\.students-timetable-v2-tests-card \{[\s\S]*border: 1px solid rgba\(14, 165, 233, 0\.18\);/u)
@@ -2082,46 +2083,53 @@ describe('TimetableV2 route steps', () => {
         })
 
         expect(context.selectedTimetableV2TestsCardScheduleSlots).toHaveLength(2)
-        expect(context.selectedTimetableV2TestsCardScheduleLabel).toBe('Di 14. 2-wöchig 20:25-21:10 (24.02., 10.03., 24.03., 07.04., 21.04., 05.05., 12.05., 19.05., 02.06., 16.06., 30.06.), Di 15. 21:10-21:55 (17.02., 24.02., 03.03., 10.03., 17.03., 24.03., 07.04., 14.04., 21.04., 28.04., 05.05., 12.05., 19.05., 26.05., 02.06., 09.06., 16.06., 23.06., 30.06., 07.07.)')
+        expect(context.selectedTimetableV2TestsCardScheduleLabel).toBe('Di 14. 2-wöchig 20:25-21:10 (24.02.(B), 10.03.(B), 24.03.(B), 07.04.(B), 21.04.(B), 05.05.(B), 12.05.(A), 19.05.(B), 02.06.(B), 16.06.(B), 30.06.(B)), Di 15. 21:10-21:55 (17.02.(A), 24.02.(B), 03.03.(A), 10.03.(B), 17.03.(A), 24.03.(B), 07.04.(B), 14.04.(A), 21.04.(B), 28.04.(A), 05.05.(B), 12.05.(A), 19.05.(B), 26.05.(A), 02.06.(B), 09.06.(A), 16.06.(B), 23.06.(A), 30.06.(B), 07.07.(A))')
         expect(context.selectedTimetableV2TestsCardMatchingScheduleSlots).toEqual([])
-        expect(context.selectedTimetableV2TestsCardScheduleComparison).toEqual({
+        expect(context.selectedTimetableV2TestsCardScheduleComparison).toMatchObject({
             color: 'warning',
             label: 'Gleiche Tage/Uhrzeiten/Daten: Nein',
+            parts: [
+                {
+                    inactive: false,
+                    key: 'empty',
+                    text: 'Gleiche Tage/Uhrzeiten/Daten: Nein',
+                },
+            ],
         })
         expect(context.selectedTimetableV2TestsCardCourseScheduleItems).toEqual([
             {
                 displayLabel: '1. D - 5 - 3R - SHAM',
                 key: 'D5-3R-SHAM',
                 label: 'D5-3R-SHAM',
-                scheduleLabel: 'Di 14. 2-wöchig 20:25-21:10 (24.02., 10.03., 24.03., 07.04., 21.04., 05.05., 12.05., 19.05., 02.06., 16.06., 30.06.), Di 15. 21:10-21:55 (17.02., 24.02., 03.03., 10.03., 17.03., 24.03., 07.04., 14.04., 21.04., 28.04., 05.05., 12.05., 19.05., 26.05., 02.06., 09.06., 16.06., 23.06., 30.06., 07.07.)',
+                scheduleLabel: 'Di 14. 2-wöchig 20:25-21:10 (24.02.(B), 10.03.(B), 24.03.(B), 07.04.(B), 21.04.(B), 05.05.(B), 12.05.(A), 19.05.(B), 02.06.(B), 16.06.(B), 30.06.(B)), Di 15. 21:10-21:55 (17.02.(A), 24.02.(B), 03.03.(A), 10.03.(B), 17.03.(A), 24.03.(B), 07.04.(B), 14.04.(A), 21.04.(B), 28.04.(A), 05.05.(B), 12.05.(A), 19.05.(B), 26.05.(A), 02.06.(B), 09.06.(A), 16.06.(B), 23.06.(A), 30.06.(B), 07.07.(A))',
                 typeLabel: 'Kompakt',
             },
             {
                 displayLabel: '2. E - 5 - 3R - HÖF',
                 key: 'E5-3R-HOEF',
                 label: 'E5-3R-HÖF',
-                scheduleLabel: 'Di 14. 2-wöchig 20:25-21:10 (17.02., 03.03., 17.03., 14.04.), Mi 12.-13. 18:45-20:15 (06.05., 13.05.)',
+                scheduleLabel: 'Di 14. 2-wöchig A 20:25-21:10 (17.02.(A), 03.03.(A), 17.03.(A), 14.04.(A)), Mi 12.-13. 18:45-20:15 (06.05.(B), 13.05.(A))',
                 typeLabel: 'Kompakt',
             },
             {
                 displayLabel: '3. M - 4 - 3R - SCHM',
                 key: 'M4-3R-SCHM',
                 label: 'M4-3R-SCHM',
-                scheduleLabel: 'Fr 4. 2-wöchig 10:00-10:45 (20.02., 06.03.)',
+                scheduleLabel: 'Fr 4. 2-wöchig A 10:00-10:45 (20.02.(A), 06.03.(A))',
                 typeLabel: 'Kompakt',
             },
             {
                 displayLabel: '4. M - 5 - 3R - SCHM',
                 key: 'M5-3R-SCHM',
                 label: 'M5-3R-SCHM',
-                scheduleLabel: 'Fr 9. 16:20-17:05 (27.02., 13.03.)',
+                scheduleLabel: 'Fr 9. 16:20-17:05 (27.02.(B), 13.03.(B))',
                 typeLabel: 'Kompakt',
             },
             {
                 displayLabel: '5. E - 6 - 3R - HÖF',
                 key: 'E6-3R-HOEF',
                 label: 'E6-3R-HÖF',
-                scheduleLabel: 'Do 16. 21:55-22:40 (19.02., 05.03.)',
+                scheduleLabel: 'Do 16. 21:55-22:40 (19.02.(A), 05.03.(A))',
                 typeLabel: 'Kompakt',
             },
         ])
@@ -2180,20 +2188,25 @@ describe('TimetableV2 route steps', () => {
             timetableV2Step: 'timetable-calculation',
         })
 
-        expect(context.selectedTimetableV2TestsCardMatchingScheduleSlots).toEqual([
+        expect(context.selectedTimetableV2TestsCardMatchingScheduleSlots).toMatchObject([
             {
-                dateLabels: ['28.04.'],
-                dateRangeLabel: '28.04.',
+                dateLabels: ['28.04.(A)'],
+                dateRangeLabel: '28.04.(A)',
                 from: '18:45',
                 hour: 12,
+                matchingComparisonSlots: [
+                    expect.objectContaining({
+                        dateLabels: ['28.04.(A)', '12.05.(A)'],
+                    }),
+                ],
                 recurrenceLabel: '',
                 until: '19:30',
                 weekday: 2,
             },
         ])
-        expect(context.selectedTimetableV2TestsCardScheduleComparison).toEqual({
+        expect(context.selectedTimetableV2TestsCardScheduleComparison).toMatchObject({
             color: 'success',
-            label: 'Gleiche Tage/Uhrzeiten/Daten: Ja - E5-3R-HÖF: Di 12. 18:45-19:30 (28.04.)',
+            label: 'Gleiche Tage/Uhrzeiten/Daten: Ja - E5-3R-HÖF: Di 12. 18:45-19:30 (28.04.(A))',
         })
         expect(context.selectedTimetableV2TestsCardCourseScheduleItems.map(({ key, typeLabel }) => ({ key, typeLabel }))).toEqual([
             {
@@ -2253,25 +2266,118 @@ describe('TimetableV2 route steps', () => {
 
         expect(context.selectedTimetableV2TestsCardMatchingCourseScheduleItems).toEqual([
             expect.objectContaining({
+                hasInactiveCourseDate: false,
                 key: 'M5-3R-SCHM',
                 label: 'M5-3R-SCHM',
                 matchingSlots: [
-                    {
-                        dateLabels: ['05.05.'],
-                        dateRangeLabel: '05.05.',
+                    expect.objectContaining({
+                        dateLabels: ['05.05.(B)'],
+                        dateRangeLabel: '05.05.(B)',
                         from: '20:25',
                         hour: 14,
                         recurrenceLabel: '',
                         until: '21:10',
                         weekday: 2,
-                    },
+                    }),
                 ],
             }),
         ])
-        expect(context.selectedTimetableV2TestsCardScheduleComparison).toEqual({
+        expect(context.selectedTimetableV2TestsCardScheduleComparison).toMatchObject({
             color: 'success',
-            label: 'Gleiche Tage/Uhrzeiten/Daten: Ja - M5-3R-SCHM: Di 14. 20:25-21:10 (05.05.)',
+            label: 'Gleiche Tage/Uhrzeiten/Daten: Ja - M5-3R-SCHM: Di 14. 20:25-21:10 (05.05.(B))',
         })
+    })
+
+    it('crosses out matching tests card comparison courses for inactive course dates', () => {
+        const context = timetableV2Context({
+            schoolHours: [
+                { hour: 14, from: '20:25:00', until: '21:10:00' },
+            ],
+            timetableCalculationResult: {
+                selected_timetable: {
+                    slots: {
+                        '2-14-d5': {
+                            key: 'd5-shared-14',
+                            sourceLabel: 'D5-3R-SHAM',
+                            courseGroup: {
+                                dates: ['2026-05-12'],
+                                hour: 14,
+                                recurrence_interval: 2,
+                                weekday: 2,
+                            },
+                        },
+                        '2-14-e6': {
+                            key: 'e6-inactive-14',
+                            sourceLabel: 'E6-3R-HÖF',
+                            courseGroup: {
+                                dates: ['2026-05-12'],
+                                hour: 14,
+                                inactive_dates: ['2026-05-12'],
+                                recurrence_interval: 2,
+                                weekday: 2,
+                            },
+                        },
+                    },
+                },
+            },
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        expect(context.selectedTimetableV2TestsCardMatchingCourseScheduleItems).toEqual([
+            expect.objectContaining({
+                hasInactiveCourseDate: true,
+                key: 'E6-3R-HOEF',
+                label: 'E6-3R-HÖF',
+            }),
+        ])
+        expect(context.selectedTimetableV2TestsCardScheduleComparison).toMatchObject({
+            color: 'success',
+            label: 'Gleiche Tage/Uhrzeiten/Daten: Ja - E6-3R-HÖF: Di 14. 2-wöchig A 20:25-21:10 (12.05.(A))',
+            parts: [
+                {
+                    inactive: false,
+                    key: 'prefix',
+                    text: 'Gleiche Tage/Uhrzeiten/Daten: Ja - ',
+                },
+                {
+                    inactive: true,
+                    key: 'E6-3R-HOEF-label',
+                    text: 'E6-3R-HÖF',
+                },
+                {
+                    inactive: false,
+                    key: 'E6-3R-HOEF-schedule',
+                    text: ': Di 14. 2-wöchig A 20:25-21:10 (12.05.(A))',
+                },
+            ],
+        })
+    })
+
+    it('adds A or B to two-week recurrence labels when all dates use one ISO week parity', () => {
+        const context = timetableV2Context()
+
+        expect(context.selectedTimetableV2SlotRecurrenceLabel({
+            courseGroup: {
+                dates: ['2026-02-16', '2026-03-02'],
+                recurrence_interval: 2,
+            },
+        })).toBe('2-wöchig A')
+        expect(context.selectedTimetableV2SlotRecurrenceLabel({
+            courseGroup: {
+                dates: ['2026-02-23', '2026-03-09'],
+                recurrence_interval: 2,
+            },
+        })).toBe('2-wöchig B')
+        expect(context.selectedTimetableV2SlotRecurrenceLabel({
+            courseGroup: {
+                dates: ['2026-02-16', '2026-02-23'],
+                recurrence_interval: 2,
+            },
+        })).toBe('2-wöchig')
+        expect(context.offeredCourseScheduleRecurrenceLabel({
+            dates: ['2026-02-23', '2026-03-09'],
+            recurrence_interval: 2,
+        })).toBe('2-wöchig B')
     })
 
     it('formats the max free days timetable count and maximum label for the options card', () => {
@@ -8111,13 +8217,13 @@ describe('TimetableV2 route steps', () => {
             courses: [
                 {
                     label: 'INF2',
-                    details: 'INF2 - 1 - 5K - WE\n2-wöchig: 20.02.',
-                    dates: ['20.02.'],
+                    details: 'INF2 - 1 - 5K - WE\n2-wöchig A: 20.02.(A)',
+                    dates: ['2026-02-20'],
                 },
                 {
                     label: 'INF3',
-                    details: 'INF3 - 1 - 5K - WE\n06.03.',
-                    dates: ['06.03.'],
+                    details: 'INF3 - 1 - 5K - WE\n06.03.(A)',
+                    dates: ['2026-03-06'],
                 },
             ],
         })
@@ -10786,7 +10892,7 @@ describe('TimetableV2 route steps', () => {
                 dates: ['2026-03-05'],
             },
             isOccasional: true,
-        })).toBe('05.03.')
+        })).toBe('05.03.(A)')
         expect(TimetableV2.methods.selectedTimetableV2SlotConflicts.call(context, context.timetableCalculationResult.selected_timetable.slots['6-2'])).toHaveLength(1)
         expect(TimetableV2.methods.selectedTimetableV2ConflictLabel.call(context, context.timetableCalculationResult.selected_timetable.slots['6-2'].conflicts[0])).toBe('M1-Grp1-MAY 3-wöchig')
         expect(TimetableV2.methods.selectedTimetableV2ConflictLabel.call(context, context.timetableCalculationResult.selected_timetable.slots['6-2'].conflicts[0], context.timetableCalculationResult.selected_timetable.slots['6-2'])).toBe('M1-Grp1-MAY 3-wöchig (10.03., 17.03.)')
@@ -11439,7 +11545,7 @@ describe('TimetableV2 route steps', () => {
         expect(context.selectedTimetableV2ConflictTitle).toBe('Hinweise')
         expect(context.selectedTimetableV2ConflictIcon).toBe('mdi-information-outline')
         expect(context.selectedTimetableV2ApparentOverlapSummaryItems).toEqual([
-            'Di 14.: D5-3R-SHAM Termine (24.02., 10.03., 24.03., 07.04., 21.04., 05.05., 12.05., 19.05., 02.06., 16.06., 30.06.); E5-3R-HÖF Termine (17.02., 03.03., 17.03., 14.04.) - keine gleichen Termine.',
+            'Di 14.: D5-3R-SHAM Termine (24.02.(B), 10.03.(B), 24.03.(B), 07.04.(B), 21.04.(B), 05.05.(B), 12.05.(A), 19.05.(B), 02.06.(B), 16.06.(B), 30.06.(B)); E5-3R-HÖF Termine (17.02.(A), 03.03.(A), 17.03.(A), 14.04.(A)) - keine gleichen Termine.',
         ])
         expect(context.selectedTimetableV2ConflictSummaryItems).toEqual(context.selectedTimetableV2ApparentOverlapSummaryItems)
         expect(context.selectedTimetableV2ConflictResolutionOptions).toEqual([])
@@ -11449,10 +11555,10 @@ describe('TimetableV2 route steps', () => {
         expect(TimetableV2.methods.selectedTimetableV2SlotTimePatternLabel.call(context, displaySameSlotEntries[0], { showRegularRange: true }))
             .toBe('17.02.-14.4. (Kompakt)')
         expect(TimetableV2.methods.selectedTimetableV2SlotExactDateLabels.call(context, displaySameSlotEntries[0])).toEqual([
-            '17.02.',
-            '03.03.',
-            '17.03.',
-            '14.04.',
+            '17.02.(A)',
+            '03.03.(A)',
+            '17.03.(A)',
+            '14.04.(A)',
         ])
         expect(TimetableV2.methods.selectedTimetableV2CellClasses.call(context, 2, 14)).toMatchObject({
             'students-timetable-v2-result-grid__cell--conflict': false,

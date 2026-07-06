@@ -52,12 +52,17 @@ class StudentsTimetablesController extends Controller
         ]);
     }
 
-    public function courseGroups(StudentTimetableOverviewService $service): JsonResponse
-    {
+    public function courseGroups(
+        StudentTimetableOverviewService $service,
+        StudentTimetableRememberedTtEntryService $rememberedTtEntryService,
+    ): JsonResponse {
         $authUser = $this->studentsTimetablesUser();
 
         return response()->json([
-            'data' => $service->courseGroupsForUser($authUser),
+            'data' => $rememberedTtEntryService->courseGroupsWithInactiveDatesForUser(
+                $authUser,
+                $service->courseGroupsForUser($authUser),
+            ),
         ]);
     }
 
@@ -172,6 +177,7 @@ class StudentsTimetablesController extends Controller
         Request $request,
         StudentTimetableV2StateService $stateService,
         StudentTimetableOverviewService $overviewService,
+        StudentTimetableRememberedTtEntryService $rememberedTtEntryService,
         StudentTimetablesStudentOverviewService $studentOverviewService,
     ): JsonResponse {
         $authUser = $this->studentsTimetablesUser();
@@ -194,7 +200,10 @@ class StudentsTimetablesController extends Controller
         $selection = is_array($selection) ? $selection : [];
         $data = [
             'state' => $state,
-            'course_groups' => $overviewService->courseGroupsForUser($authUser),
+            'course_groups' => $rememberedTtEntryService->courseGroupsWithInactiveDatesForUser(
+                $authUser,
+                $overviewService->courseGroupsForUser($authUser),
+            ),
             'subjects' => $this->timetableV2SubjectRows($authUser),
         ];
 

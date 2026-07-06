@@ -17,7 +17,6 @@
             : $semesters;
         $semesterCount = $printSingleWeeks ? 1 : max(1, $semesters->count());
         $isTwoColumns = $semesterCount > 1;
-        $visibleCourseLimit = 2;
         $detailSeparatorPattern = '/\s*(?:·|\R)\s*/u';
         $dateRangeDetailPattern = '/^\d{1,2}\.\d{1,2}\.?(?:\d{2,4})?\s*-\s*\d{1,2}\.\d{1,2}\.?(?:\d{2,4})?$/u';
         $isHiddenDateRangeDetail = fn (string $segment): bool => preg_match($dateRangeDetailPattern, trim($segment)) === 1;
@@ -29,6 +28,90 @@
         $courseLearningModeLabel = fn (array $course): string => $isCompactCourse($course)
             ? 'Kompaktunterricht'
             : (! empty($course['is_fu']) ? 'Fernunterricht' : '');
+        $parseCourseWeekParityDate = function (?string $date): ?\Carbon\Carbon {
+            $date = trim((string) $date);
+            if ($date === '') {
+                return null;
+            }
+
+            foreach (['!Y-m-d', '!d.m.Y', '!d.m.y'] as $format) {
+                try {
+                    $parsedDate = \Carbon\Carbon::createFromFormat($format, $date);
+                } catch (\Throwable) {
+                    continue;
+                }
+
+                $errors = \Carbon\Carbon::getLastErrors();
+                if ($parsedDate && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))) {
+                    return $parsedDate->startOfDay();
+                }
+            }
+
+            try {
+                return \Carbon\Carbon::parse($date)->startOfDay();
+            } catch (\Throwable) {
+                return null;
+            }
+        };
+        $courseTwoWeekParitySuffix = function (array $dates) use ($parseCourseWeekParityDate): string {
+            $dateValues = collect($dates)
+                ->map(fn ($date): string => trim((string) $date))
+                ->filter()
+                ->values();
+
+            if ($dateValues->isEmpty()) {
+                return '';
+            }
+
+            $weekNumbers = $dateValues
+                ->map(fn (string $date): ?int => $parseCourseWeekParityDate($date)?->isoWeek());
+
+            if ($weekNumbers->count() !== $dateValues->count() || $weekNumbers->contains(null)) {
+                return '';
+            }
+
+            $parities = $weekNumbers
+                ->map(fn (int $weekNumber): int => $weekNumber % 2)
+                ->unique()
+                ->values();
+
+            if ($parities->count() !== 1) {
+                return '';
+            }
+
+            return $parities->first() === 0 ? ' A' : ' B';
+        };
+        $dateWeekParityLabel = fn (\Carbon\Carbon $date): string => $date->isoWeek() % 2 === 0 ? 'A' : 'B';
+        $formatDateWithWeekParity = fn (\Carbon\Carbon $date): string => "{$date->format('d.m.')}({$dateWeekParityLabel($date)})";
+        $appendTwoWeekParityToSegment = function (string $segment, array $dates) use ($courseTwoWeekParitySuffix): string {
+            $suffix = $courseTwoWeekParitySuffix($dates);
+            if ($suffix === '') {
+                return $segment;
+            }
+
+            return preg_replace_callback(
+                '/^(\s*2\s*-?\s*w(?:öchig|öching|ochig)?)(\s+[AB])?(\s*:|\s+|$)/iu',
+                fn (array $matches): string => empty($matches[2])
+                    ? "{$matches[1]}{$suffix}{$matches[3]}"
+                    : $matches[0],
+                $segment,
+                1,
+            ) ?? $segment;
+        };
+        $courseDetailsWithWeekParity = function (array $course) use ($appendTwoWeekParityToSegment): string {
+            $details = (string) ($course['details'] ?? '');
+            $dates = array_filter(array_map('trim', (array) ($course['dates'] ?? [])));
+
+            if (trim($details) === '' || $dates === []) {
+                return $details;
+            }
+
+            return collect(preg_split('/\R/u', $details) ?: [])
+                ->map(fn (string $line): string => collect(preg_split('/\s*·\s*/u', $line) ?: [])
+                    ->map(fn (string $segment): string => $appendTwoWeekParityToSegment($segment, $dates))
+                    ->implode(' · '))
+                ->implode("\n");
+        };
 
         $semesterMetrics = $metricSemesters->map(function (array $semester) {
             $weeks = collect($semester['weeks'] ?? []);
@@ -92,7 +175,7 @@
                             $isCompact = $isCompactCourse($crs);
                             $allCourseSlots->push([
                                 'label' => $crsLabel,
-                                'details' => trim((string) ($crs['details'] ?? '')),
+                                'details' => trim($courseDetailsWithWeekParity($crs)),
                                 'dates' => array_filter(array_map('trim', (array) ($crs['dates'] ?? []))),
                                 'semester' => $semLabel,
                                 'semester_range' => $semRange,
@@ -282,7 +365,7 @@
                 ->values();
 
             $remainingSegments = $segments
-                ->reject(fn (string $segment): bool => preg_match('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', $segment) === 1)
+                ->reject(fn (string $segment): bool => preg_match('/^(\d+)\s*-?\s*w(?:öchig|öching|ochig)?(?:\s+[AB])?$/iu', $segment) === 1)
                 ->reject(fn (string $segment): bool => preg_match('/^\d{1,2}\.\d{1,2}\.(\d{2,4})?$/u', $segment) === 1)
                 ->reject($isHiddenDateRangeDetail)
                 ->reject(fn (string $segment): bool => $hasCompactCourse
@@ -304,11 +387,13 @@
                 ->map(fn (string $segment): string => trim($segment))
                 ->filter()
                 ->map(function (string $segment): ?string {
-                    if (preg_match('/^(\d+)\s*-?\s*w(?:öchig)?$/iu', $segment, $matches) !== 1) {
+                    if (preg_match('/^(\d+)\s*-?\s*w(?:öchig|öching|ochig)?(?:\s+([AB]))?$/iu', $segment, $matches) !== 1) {
                         return null;
                     }
 
-                    return "{$matches[1]}-wöchentlich";
+                    $suffix = isset($matches[2]) && $matches[2] !== '' ? " {$matches[2]}" : '';
+
+                    return "{$matches[1]}-wöchentlich{$suffix}";
                 })
                 ->filter()
                 ->unique()
@@ -347,15 +432,17 @@
                     return '';
                 }
 
-                if ($hideCourseHintDetails && preg_match('/^(\d+\s*-?\s*w[^\s]*)(\s+.*)?$/iu', $segment, $matches) === 1) {
-                    return e(trim((string) ($matches[2] ?? '')));
+                if ($hideCourseHintDetails && preg_match('/^(\d+\s*-?\s*w[^\s]*(?:\s+[AB])?)([:\s].*)?$/iu', $segment, $matches) === 1) {
+                    $remainingText = preg_replace('/^\s*:\s*/u', '', (string) ($matches[2] ?? '')) ?: '';
+
+                    return e(trim($remainingText));
                 }
 
                 if ($hideCourseHintDetails && preg_match('/^(Fernunterricht|Kompakt(?:unterricht|kurs)?)(\s+.*)?$/iu', $segment, $matches) === 1) {
                     return e(trim((string) ($matches[2] ?? '')));
                 }
 
-                if (preg_match('/^(\d+\s*-?\s*w(?:öchig|öching)?)(\s+.*)?$/iu', $segment, $matches) === 1) {
+                if (preg_match('/^(\d+\s*-?\s*w(?:öchig|öching|ochig)?(?:\s+[AB])?)([:\s].*)?$/iu', $segment, $matches) === 1) {
                     $recurrence = e($matches[1]);
                     $remainingText = e($matches[2] ?? '');
 
@@ -423,17 +510,17 @@
             return trim($context) !== trim($sourceLine) ? trim($context) : '';
         };
 
-        $courseDetailsForRendering = function (array $course) use ($courseTitleSourceLine): string {
+        $courseDetailsForRendering = function (array $course) use ($courseDetailsWithWeekParity, $courseTitleSourceLine): string {
             $sourceLine = $courseTitleSourceLine($course);
 
-            return collect(preg_split('/\R/u', (string) ($course['details'] ?? '')) ?: [])
+            return collect(preg_split('/\R/u', $courseDetailsWithWeekParity($course)) ?: [])
                 ->map(fn (string $line): string => trim($line))
                 ->filter()
                 ->reject(fn (string $line): bool => $sourceLine !== '' && $line === $sourceLine)
                 ->implode("\n");
         };
 
-        $parseDirectoryDate = function (string $date): array {
+        $parseDirectoryDate = function (string $date) use ($formatDateWithWeekParity): array {
             $date = trim($date);
             $formats = [
                 '!Y-m-d' => 'Y-m-d',
@@ -458,7 +545,9 @@
 
                 return [
                     'key' => $parsedDate->format($sortFormat),
-                    'label' => $parsedDate->format('d.m.'),
+                    'label' => $sortFormat === 'Y-m-d'
+                        ? $formatDateWithWeekParity($parsedDate)
+                        : $parsedDate->format('d.m.'),
                 ];
             }
 
@@ -467,7 +556,7 @@
 
                 return [
                     'key' => $parsedDate->format('Y-m-d'),
-                    'label' => $parsedDate->format('d.m.'),
+                    'label' => $formatDateWithWeekParity($parsedDate),
                 ];
             } catch (\Throwable) {
                 return [
@@ -477,32 +566,63 @@
             }
         };
 
-        $formatCourseDates = fn ($slots) => $slots
-            ->flatMap(fn (array $slot): array => $slot['dates'] ?? [])
-            ->map(function (string $date) use ($parseDirectoryDate): ?array {
-                $date = trim($date);
-                if ($date === '') {
+        $formatCourseDateGroups = fn ($slots) => $slots
+            ->map(function (array $slot) use ($parseDirectoryDate): ?array {
+                $dates = collect($slot['dates'] ?? [])
+                    ->map(fn (string $date): string => trim($date))
+                    ->filter()
+                    ->map(fn (string $date): array => $parseDirectoryDate($date))
+                    ->unique('key')
+                    ->sortBy('key')
+                    ->values();
+
+                if ($dates->isEmpty()) {
                     return null;
                 }
 
-                return $parseDirectoryDate($date);
+                return [
+                    'dates' => $dates->all(),
+                    'weekday' => trim((string) ($slot['weekday'] ?? '')),
+                    'weekday_index' => (int) ($slot['weekday_index'] ?? 0),
+                ];
             })
             ->filter()
-            ->unique('key')
-            ->sortBy('key')
-            ->pluck('label')
+            ->groupBy(fn (array $group): string => "{$group['weekday_index']}|{$group['weekday']}")
+            ->map(function ($groups): array {
+                $firstGroup = $groups->first();
+
+                return [
+                    'dates' => $groups
+                        ->flatMap(fn (array $group): array => $group['dates'])
+                        ->unique('key')
+                        ->sortBy('key')
+                        ->pluck('label')
+                        ->values()
+                        ->all(),
+                    'weekday' => $firstGroup['weekday'] ?? '',
+                    'weekday_index' => (int) ($firstGroup['weekday_index'] ?? 0),
+                ];
+            })
+            ->sortBy([['weekday_index', 'asc'], ['weekday', 'asc']])
             ->values()
             ->all();
 
         $courseDirectory = $allCourseSlots
             ->groupBy('label')
-            ->map(function ($slots, string $label) use ($directorySlotSummary, $directoryDetails, $directoryHints, $formatCourseDates) {
+            ->map(function ($slots, string $label) use ($directorySlotSummary, $directoryDetails, $directoryHints, $formatCourseDateGroups) {
+                $dateGroups = $formatCourseDateGroups($slots);
+
                 return [
                     'label' => $label,
                     'details' => $directoryDetails($slots),
                     'hints' => $directoryHints($slots),
                     'slots' => $directorySlotSummary($slots),
-                    'dates' => $formatCourseDates($slots),
+                    'date_groups' => $dateGroups,
+                    'dates' => collect($dateGroups)
+                        ->flatMap(fn (array $dateGroup): array => $dateGroup['dates'])
+                        ->unique()
+                        ->values()
+                        ->all(),
                     'status' => $slots->contains('status', 'conflict') ? 'conflict'
                         : ($slots->contains('status', 'warning') ? 'warning'
                         : ($slots->contains('status', 'related') ? 'related' : 'filled')),
@@ -1153,6 +1273,17 @@
             line-height: 1.4;
         }
 
+        .directory-date-group {
+            display: block;
+        }
+
+        .directory-date-weekday {
+            color: #334155;
+            display: inline-block;
+            font-weight: 700;
+            margin-right: 1.2mm;
+        }
+
         .directory-date {
             display: inline-block;
             margin-right: 3mm;
@@ -1307,9 +1438,7 @@
                                                         @php
                                                             $courses = $cellCourses;
                                                             $hasDenseCourses = $courses->count() > 1;
-                                                            $courseLimitForCell = $courses->count() > $visibleCourseLimit ? max(1, $visibleCourseLimit - 1) : $visibleCourseLimit;
-                                                            $shownCourses = $courses->take($courseLimitForCell);
-                                                            $hiddenCourseCount = max(0, $courses->count() - $shownCourses->count());
+                                                            $shownCourses = $courses;
                                                         @endphp
 
                                                         @foreach($shownCourses as $course)
@@ -1342,12 +1471,6 @@
                                                                 @endif
                                                             </div>
                                                         @endforeach
-
-                                                        @if($hiddenCourseCount > 0)
-                                                            <div class="course-more">
-                                                                +{{ $hiddenCourseCount }} {{ $hiddenCourseCount === 1 ? 'weiterer Termin' : 'weitere Termine' }}
-                                                            </div>
-                                                        @endif
 
                                                         @if($cellMarkers->isNotEmpty())
                                                             <div class="markers">
@@ -1403,12 +1526,19 @@
                             <td class="cell-details">{!! $formatDetailsHtml($entry['details']) !!}</td>
                             <td>{{ $entry['slots'] }}</td>
                         </tr>
-                        @if(!empty($entry['dates']))
+                        @if(!empty($entry['date_groups']))
                             <tr class="directory-dates-row">
                                 <td></td>
                                 <td colspan="3" class="directory-dates-cell">
-                                    @foreach($entry['dates'] as $date)
-                                        <span class="directory-date">{{ $date }}</span>
+                                    @foreach($entry['date_groups'] as $dateGroup)
+                                        <div class="directory-date-group">
+                                            @if(trim((string) ($dateGroup['weekday'] ?? '')) !== '')
+                                                <span class="directory-date-weekday">{{ $dateGroup['weekday'] }}:</span>
+                                            @endif
+                                            @foreach($dateGroup['dates'] as $date)
+                                                <span class="directory-date">{{ $date }}</span>
+                                            @endforeach
+                                        </div>
                                     @endforeach
                                 </td>
                             </tr>

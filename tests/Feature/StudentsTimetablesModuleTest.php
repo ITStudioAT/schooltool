@@ -209,6 +209,101 @@ it('returns backend timetable availability for candidate courses', function () {
         ]);
 });
 
+it('can select higher backend timetable numbers created by required additional course variants', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-01',
+        'until' => '2027-07-01',
+    ]);
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $subjectRows = collect([
+        ['json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1'],
+        ['json_code' => 'INF2', 'json_subject' => 'INF', 'name' => 'Informatik 2'],
+    ])->map(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 1,
+        'branch' => 'common',
+        'json_code' => $subjectRow['json_code'],
+        'json_subject' => $subjectRow['json_subject'],
+        'name' => $subjectRow['name'],
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        'source' => 'test',
+    ]));
+
+    collect([
+        ['date' => '2026-09-07', 'period' => '1', 'course' => 'D1', 'subject' => 'Deutsch', 'class_name' => 'D1-A'],
+        ['date' => '2026-09-08', 'period' => '1', 'course' => 'INF2', 'subject' => 'Informatik', 'class_name' => 'INF2-A'],
+        ['date' => '2026-09-09', 'period' => '1', 'course' => 'INF2', 'subject' => 'Informatik', 'class_name' => 'INF2-B'],
+        ['date' => '2026-09-10', 'period' => '1', 'course' => 'INF2', 'subject' => 'Informatik', 'class_name' => 'INF2-C'],
+        ['date' => '2026-09-11', 'period' => '1', 'course' => 'INF2', 'subject' => 'Informatik', 'class_name' => 'INF2-D'],
+    ])->each(fn (array $entry, int $index): StudentTimetableEntry => StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'line_number' => $index + 1,
+        'date' => $entry['date'],
+        'semester' => 1,
+        'period' => $entry['period'],
+        'subject' => $entry['subject'],
+        'course' => $entry['course'],
+        'module_code' => $entry['course'],
+        'class_name' => $entry['class_name'],
+        'is_active' => true,
+    ]));
+
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
+
+    $courseKey = fn (StudentTimetableSubjectRow $row): string => implode('|', [
+        $row->id,
+        $row->semester,
+        $row->branch,
+        $row->json_code,
+        $row->json_subject,
+        $row->name,
+        $row->json_code,
+    ]);
+    $selectedCourseKey = $courseKey($subjectRows->firstWhere('json_code', 'D1'));
+    $selectedAdditionalCourseKey = $courseKey($subjectRows->firstWhere('json_code', 'INF2'));
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable', [
+            'selection' => [
+                'semester' => 1,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5],
+                'availableTimes' => [1],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [$selectedCourseKey],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [$selectedAdditionalCourseKey],
+            'selected_additional_courses_required' => true,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 4,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.full_green_timetable_count', 4)
+        ->assertJsonPath('data.additional_course_timetable_count', 4)
+        ->assertJsonPath('data.selected_timetable.number', 4)
+        ->assertJsonPath('data.selected_timetable.additionalCoursesAccepted', true)
+        ->assertJsonPath('data.selected_timetable.slots.5-1.courseGroup.class_name', 'INF2-D');
+});
+
 it('returns problem courses when selected courses have no available timetable options', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $schoolyear = Schoolyear::factory()->create([
@@ -386,6 +481,10 @@ it('ignores inactive remembered tt entry dates in backend timetable calculations
         ->update(['active_schoolyear_id' => $schoolyear->id]);
 
     $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+    $rememberingUser = User::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+    ]);
 
     $subjectRows = collect([
         ['json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1'],
@@ -432,7 +531,7 @@ it('ignores inactive remembered tt entry dates in backend timetable calculations
     StudentTimetableRememberedTtEntry::query()->create([
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
-        'user_id' => $user->id,
+        'user_id' => $rememberingUser->id,
         'offer_key_hash' => hash('sha256', 'D1-A'),
         'entry_key_hash' => hash('sha256', "{$dCourseGroup['key']}|2026-09-07|1"),
         'offer_key' => 'D1-A',
@@ -441,6 +540,30 @@ it('ignores inactive remembered tt entry dates in backend timetable calculations
         'entry_date' => '2026-09-07',
         'is_active' => false,
     ]);
+
+    $updatedCourseGroups = collect($this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/course-groups')
+        ->assertSuccessful()
+        ->json('data'));
+    $updatedDCourseGroup = $updatedCourseGroups->firstWhere('class_name', 'D1-A');
+
+    expect($updatedDCourseGroup)
+        ->not->toBeNull()
+        ->and($updatedDCourseGroup['has_inactive_remembered_dates'])->toBeTrue()
+        ->and($updatedDCourseGroup['inactive_dates'])->toBe(['2026-09-07'])
+        ->and($updatedDCourseGroup['dates'])->toBe(['2026-09-07', '2026-09-14']);
+
+    $bootstrapCourseGroups = collect($this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v2-selection-bootstrap')
+        ->assertSuccessful()
+        ->json('data.course_groups'));
+    $bootstrapDCourseGroup = $bootstrapCourseGroups->firstWhere('class_name', 'D1-A');
+
+    expect($bootstrapDCourseGroup)
+        ->not->toBeNull()
+        ->and($bootstrapDCourseGroup['has_inactive_remembered_dates'])->toBeTrue()
+        ->and($bootstrapDCourseGroup['inactive_dates'])->toBe(['2026-09-07'])
+        ->and($bootstrapDCourseGroup['dates'])->toBe(['2026-09-07', '2026-09-14']);
 
     $selectedCourseKeys = $subjectRows
         ->map(fn (StudentTimetableSubjectRow $row): string => implode('|', [
@@ -3243,7 +3366,9 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->downloadName === 'stundenplan.pdf'
             && $pdf->isDownload()
             && $pdf->contains('M2 - 2S - ALT')
-            && $pdf->contains('+2 weitere Termine')
+            && $pdf->contains('E2 - 1U - NIE')
+            && $pdf->contains('D2 - 1U - HER')
+            && ! $pdf->contains('+2 weitere Termine')
             && $pdf->contains('class="pdf-page"')
             && $pdf->contains('--pdf-scale:')
             && $pdf->contains('--pdf-row-height: 10.50mm;')
@@ -3368,7 +3493,7 @@ it('adds recurrence week timetable pages to the overview pdf', function () {
                                                 ],
                                                 [
                                                     'label' => 'ALT2A',
-                                                    'details' => '2-wöchig',
+                                                    'details' => '2-wöchig: 16.02.-02.03.',
                                                     'dates' => ['2026-02-16', '2026-03-02'],
                                                     'recurrence_label' => '2-wöchig',
                                                     'recurrence_interval' => 2,
@@ -3388,7 +3513,7 @@ it('adds recurrence week timetable pages to the overview pdf', function () {
                                             'courses' => [
                                                 [
                                                     'label' => 'ALT2B',
-                                                    'details' => '2-wöchig',
+                                                    'details' => '2-wöchig: 23.02.-09.03.',
                                                     'dates' => ['2026-02-23', '2026-03-09'],
                                                     'recurrence_label' => '2-wöchig',
                                                     'recurrence_interval' => 2,
@@ -3451,25 +3576,127 @@ it('adds recurrence week timetable pages to the overview pdf', function () {
             && $pdf->contains('Stundenplan - Woche 2')
             && $pdf->contains('Stundenplan - Woche 3')
             && $pdf->contains('<main class="pdf-page pdf-page--additional">')
+            && $pdf->contains('<span class="recurrence-detail">2-wöchig A</span>')
+            && $pdf->contains('<span class="recurrence-detail">2-wöchig B</span>')
+            && $pdf->contains('<span class="directory-date">16.02.(A)</span>')
+            && $pdf->contains('<span class="directory-date">23.02.(B)</span>')
+            && ! $pdf->contains('16.02. (A)')
             && str_contains($week1, 'REG1')
             && str_contains($week1, 'ALT2A')
+            && str_contains($week1, '16.02.-02.03.')
+            && ! str_contains($week1, ': 16.02.-02.03.')
             && ! str_contains($week1, 'ALT2B')
             && ! str_contains($week1, 'TRI3')
             && ! str_contains($week1, '1-wöchig')
             && ! str_contains($week1, '2-wöchig')
             && str_contains($week2, 'REG1')
             && str_contains($week2, 'ALT2B')
+            && str_contains($week2, '23.02.-09.03.')
+            && ! str_contains($week2, ': 23.02.-09.03.')
             && ! str_contains($week2, 'ALT2A')
             && ! str_contains($week2, 'TRI3')
             && ! str_contains($week2, '1-wöchig')
             && ! str_contains($week2, '2-wöchig')
             && str_contains($week3, 'REG1')
             && str_contains($week3, 'ALT2A')
+            && str_contains($week3, '16.02.-02.03.')
+            && ! str_contains($week3, ': 16.02.-02.03.')
             && str_contains($week3, 'TRI3')
             && ! str_contains($week3, 'ALT2B')
             && ! str_contains($week3, '1-wöchig')
             && ! str_contains($week3, '2-wöchig')
             && ! str_contains($week3, '3-wöchig');
+    });
+});
+
+it('groups course directory dates by weekday in the overview pdf', function () {
+    Pdf::fake();
+
+    $user = createStudentsTimetablesUserWithLicence();
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/overview/pdf', [
+            'title' => 'Stundenplan',
+            'schoolyear' => '2025/26',
+            'student' => '3R',
+            'generated_at' => '31.05.2026, 20:00',
+            'weekdays' => [
+                ['label' => 'Di'],
+                ['label' => 'Do'],
+            ],
+            'semesters' => [
+                [
+                    'label' => 'Semester',
+                    'date_range' => '16.02.2026 - 10.07.2026',
+                    'weeks' => [
+                        [
+                            'label' => '',
+                            'hours' => [
+                                [
+                                    'hour' => 14,
+                                    'from' => '20:25',
+                                    'until' => '21:10',
+                                    'cells' => [
+                                        [
+                                            'status' => 'filled',
+                                            'courses' => [
+                                                [
+                                                    'label' => 'E5-3R-HÖF',
+                                                    'details' => '2-wöchig',
+                                                    'dates' => ['2026-02-17', '2026-02-24', '2026-03-03'],
+                                                    'is_kompaktunterricht' => true,
+                                                    'recurrence_interval' => 2,
+                                                    'recurrence_label' => '2-wöchig',
+                                                ],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                        [
+                                            'status' => 'filled',
+                                            'courses' => [
+                                                [
+                                                    'label' => 'E5-3R-HÖF',
+                                                    'details' => '2-wöchig',
+                                                    'dates' => ['2026-02-19', '2026-02-26', '2026-03-05'],
+                                                    'is_kompaktunterricht' => true,
+                                                    'recurrence_interval' => 2,
+                                                    'recurrence_label' => '2-wöchig',
+                                                ],
+                                            ],
+                                            'markers' => [],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ])
+        ->assertSuccessful();
+
+    Pdf::assertRespondedWithPdf(function ($pdf): bool {
+        $html = $pdf->getHtml();
+        $diPosition = strpos($html, '<span class="directory-date-weekday">Di:</span>');
+        $doPosition = strpos($html, '<span class="directory-date-weekday">Do:</span>');
+        $firstTuesdayDatePosition = strpos($html, '<span class="directory-date">17.02.(A)</span>');
+        $lastTuesdayDatePosition = strpos($html, '<span class="directory-date">03.03.(A)</span>');
+        $firstThursdayDatePosition = strpos($html, '<span class="directory-date">19.02.(A)</span>');
+        $lastThursdayDatePosition = strpos($html, '<span class="directory-date">05.03.(A)</span>');
+
+        return $pdf->viewName === 'pdfs.students-timetable-overview'
+            && $pdf->contains('E5-3R-HÖF')
+            && $diPosition !== false
+            && $doPosition !== false
+            && $firstTuesdayDatePosition !== false
+            && $lastTuesdayDatePosition !== false
+            && $firstThursdayDatePosition !== false
+            && $lastThursdayDatePosition !== false
+            && $diPosition < $firstTuesdayDatePosition
+            && $firstTuesdayDatePosition < $lastTuesdayDatePosition
+            && $lastTuesdayDatePosition < $doPosition
+            && $doPosition < $firstThursdayDatePosition
+            && $firstThursdayDatePosition < $lastThursdayDatePosition;
     });
 });
 

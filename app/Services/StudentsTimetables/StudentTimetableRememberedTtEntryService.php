@@ -93,6 +93,27 @@ class StudentTimetableRememberedTtEntryService
     }
 
     /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @return list<array<string, mixed>>
+     */
+    public function courseGroupsWithInactiveDatesForUser(User $authUser, array $courseGroups): array
+    {
+        $inactiveDatesByCourseGroupKey = $this->inactiveDatesByCourseGroupKey($authUser);
+
+        if ($inactiveDatesByCourseGroupKey === []) {
+            return $courseGroups;
+        }
+
+        return collect($courseGroups)
+            ->map(fn (array $courseGroup): array => $this->courseGroupWithInactiveDates(
+                $courseGroup,
+                $inactiveDatesByCourseGroupKey,
+            ))
+            ->values()
+            ->all();
+    }
+
+    /**
      * @param  iterable<int, StudentTimetableRememberedTtEntry>  $entries
      * @return array<string, mixed>
      */
@@ -167,7 +188,6 @@ class StudentTimetableRememberedTtEntryService
         return StudentTimetableRememberedTtEntry::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $this->schoolyearIdForUser($authUser))
-            ->where('user_id', $authUser->id)
             ->where('is_active', false)
             ->whereNotNull('entry_date')
             ->get(['entry_key', 'entry_date'])
@@ -227,6 +247,29 @@ class StudentTimetableRememberedTtEntryService
             'first_date' => $activeDates[0],
             'last_date' => $activeDates[count($activeDates) - 1],
             'has_inactive_remembered_dates' => true,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     * @param  array<string, array<string, true>>  $inactiveDatesByCourseGroupKey
+     * @return array<string, mixed>
+     */
+    private function courseGroupWithInactiveDates(array $courseGroup, array $inactiveDatesByCourseGroupKey): array
+    {
+        $courseGroupKey = trim((string) ($courseGroup['key'] ?? ''));
+        $inactiveDates = array_keys($inactiveDatesByCourseGroupKey[$courseGroupKey] ?? []);
+
+        if ($inactiveDates === []) {
+            return $courseGroup;
+        }
+
+        sort($inactiveDates);
+
+        return [
+            ...$courseGroup,
+            'has_inactive_remembered_dates' => true,
+            'inactive_dates' => $inactiveDates,
         ];
     }
 

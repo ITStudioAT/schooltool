@@ -1039,7 +1039,12 @@
                                             :color="selectedTimetableV2TestsCardScheduleComparison.color"
                                             variant="tonal"
                                             class="students-timetable-v2-tests-card__info">
-                                            {{ selectedTimetableV2TestsCardScheduleComparison.label }}
+                                            <span
+                                                v-for="part in selectedTimetableV2TestsCardScheduleComparison.parts"
+                                                :key="part.key"
+                                                :class="{ 'students-timetable-v2-tests-card__comparison-course--inactive': part.inactive }">
+                                                {{ part.text }}
+                                            </span>
                                         </v-chip>
                                     </div>
                                 </v-card-text>
@@ -2642,6 +2647,11 @@ export default {
                 return {
                     color: 'warning',
                     label: 'Gleiche Tage/Uhrzeiten/Daten: Nein',
+                    parts: [{
+                        inactive: false,
+                        key: 'empty',
+                        text: 'Gleiche Tage/Uhrzeiten/Daten: Nein',
+                    }],
                 }
             }
 
@@ -2650,10 +2660,42 @@ export default {
                     showDateRanges: true,
                 })}`)
                 .filter(Boolean)
+            const parts = [{
+                inactive: false,
+                key: 'prefix',
+                text: 'Gleiche Tage/Uhrzeiten/Daten: Ja - ',
+            }]
+
+            matchingCourseItems.forEach((course, index) => {
+                const scheduleLabel = this.compactScheduleSlotsLabel(course.matchingSlots, { showDateRanges: true })
+                if (!scheduleLabel) return
+
+                if (index > 0) {
+                    parts.push({
+                        inactive: false,
+                        key: `${course.key}-separator`,
+                        text: '; ',
+                    })
+                }
+
+                parts.push(
+                    {
+                        inactive: course.hasInactiveCourseDate === true,
+                        key: `${course.key}-label`,
+                        text: course.label,
+                    },
+                    {
+                        inactive: false,
+                        key: `${course.key}-schedule`,
+                        text: `: ${scheduleLabel}`,
+                    },
+                )
+            })
 
             return {
                 color: 'success',
                 label: `Gleiche Tage/Uhrzeiten/Daten: Ja - ${matchingLabels.join('; ')}`,
+                parts,
             }
         },
         selectedTimetableV2TestsCardMatchingCourseScheduleItems() {
@@ -2661,10 +2703,15 @@ export default {
             if (!targetCourse) return []
 
             return comparisonCourses
-                .map((course) => ({
-                    ...course,
-                    matchingSlots: this.selectedTimetableV2TestsCardMatchingScheduleSlotsForCourses(targetCourse.key, course.key),
-                }))
+                .map((course) => {
+                    const matchingSlots = this.selectedTimetableV2TestsCardMatchingScheduleSlotsForCourses(targetCourse.key, course.key)
+
+                    return {
+                        ...course,
+                        hasInactiveCourseDate: matchingSlots.some((slot) => this.selectedTimetableV2TestsCardMatchingSlotHasInactiveCourseDate(slot)),
+                        matchingSlots,
+                    }
+                })
                 .filter((course) => course.matchingSlots.length)
         },
         selectedTimetableV2TestsCardMatchingScheduleSlots() {
@@ -3969,7 +4016,7 @@ export default {
             return {
                 label: this.selectedTimetableV2SlotTitle(slot),
                 details: this.adoptedTimetablePdfCourseDetails(slot),
-                dates: this.selectedTimetableV2SlotExactDateLabels(slot),
+                dates: this.selectedTimetableV2SlotExactDates(slot),
                 is_fu: slot?.isDistanceLearningCourse === true || slot?.courseGroup?.distanceLearning === true,
                 student_course_type: slot?.isAdditionalCourse === true ? 'additional' : '',
                 student_course_badge: slot?.isAdditionalCourse === true ? 'Zusatz' : '',
@@ -4309,6 +4356,7 @@ export default {
                         const exactDateLabels = this.selectedTimetableV2SlotExactDateLabels({ courseGroup })
                         const scheduleSlot = {
                             ...slot,
+                            courseGroup,
                             dateLabels: exactDateLabels,
                             dateRangeLabel: exactDateLabels.length ? exactDateLabels.join(', ') : slot.dateRangeLabel,
                         }
@@ -4350,6 +4398,8 @@ export default {
                     const dateRangeLabel = exactDateLabel || String(slot?.dateRangeLabel || this.courseGroupDateRangeLabel(courseGroup) || '').trim()
                     const recurrenceLabel = this.selectedTimetableV2SlotRecurrenceLabel(slot)
                     const scheduleSlot = {
+                        active: slot?.active,
+                        courseGroup,
                         dateLabels: exactDateLabels,
                         dateRangeLabel,
                         from: slot?.from || configuredTime.timeFrom || '',
@@ -4418,8 +4468,18 @@ export default {
         },
         selectedTimetableV2TestsCardMatchingScheduleSlotsForCourses(firstCourseKey, secondCourseKey) {
             const firstCourseSlots = this.selectedTimetableV2TestsCardScheduleSlotsForCourse(firstCourseKey)
-            const secondCourseSlotKeys = new Set(this.selectedTimetableV2TestsCardScheduleSlotsForCourse(secondCourseKey)
-                .flatMap((slot) => this.selectedTimetableV2TestsCardScheduleSlotComparisonKeys(slot)))
+            const secondCourseSlotsByComparisonKey = new Map()
+
+            this.selectedTimetableV2TestsCardScheduleSlotsForCourse(secondCourseKey)
+                .forEach((slot) => {
+                    this.selectedTimetableV2TestsCardScheduleSlotComparisonKeys(slot)
+                        .forEach((comparisonKey) => {
+                            const slots = secondCourseSlotsByComparisonKey.get(comparisonKey) || []
+
+                            slots.push(slot)
+                            secondCourseSlotsByComparisonKey.set(comparisonKey, slots)
+                        })
+                })
             const matchingSlotsByKey = new Map()
 
             firstCourseSlots.forEach((slot) => {
@@ -4427,19 +4487,55 @@ export default {
                 if (!comparisonBaseKey) return
 
                 const matchingDateLabels = this.selectedTimetableV2TestsCardScheduleSlotComparisonDateLabels(slot)
-                    .filter((dateLabel) => secondCourseSlotKeys.has(`${comparisonBaseKey}|${dateLabel}`))
+                    .filter((dateLabel) => secondCourseSlotsByComparisonKey.has(`${comparisonBaseKey}|${dateLabel}`))
                 if (!matchingDateLabels.length) return
 
                 const comparisonKey = `${comparisonBaseKey}|${matchingDateLabels.join(', ')}`
+                const matchingComparisonSlots = matchingDateLabels
+                    .flatMap((dateLabel) => secondCourseSlotsByComparisonKey.get(`${comparisonBaseKey}|${dateLabel}`) || [])
 
                 matchingSlotsByKey.set(comparisonKey, {
                     ...slot,
                     dateLabels: matchingDateLabels,
                     dateRangeLabel: matchingDateLabels.join(', '),
+                    matchingComparisonSlots,
                 })
             })
 
             return [...matchingSlotsByKey.values()]
+        },
+        selectedTimetableV2TestsCardMatchingSlotHasInactiveCourseDate(slot) {
+            const dateLabels = this.selectedTimetableV2TestsCardScheduleSlotComparisonDateLabels(slot)
+            const comparisonSlots = Array.isArray(slot?.matchingComparisonSlots) && slot.matchingComparisonSlots.length
+                ? slot.matchingComparisonSlots
+                : [slot]
+
+            return comparisonSlots.some((comparisonSlot) => this.selectedTimetableV2TestsCardScheduleSlotInactiveForDateLabels(comparisonSlot, dateLabels))
+        },
+        selectedTimetableV2TestsCardScheduleSlotInactiveForDateLabels(slot, dateLabels) {
+            if (slot?.active === false || slot?.is_active === false || slot?.isActive === false) return true
+            if (slot?.courseGroup?.active === false || slot?.courseGroup?.is_active === false || slot?.courseGroup?.isActive === false) return true
+
+            const inactiveDateLabels = this.selectedTimetableV2TestsCardInactiveDateLabelsForScheduleSlot(slot)
+            if (!inactiveDateLabels.length) return false
+
+            return dateLabels.some((dateLabel) => inactiveDateLabels.includes(dateLabel))
+        },
+        selectedTimetableV2TestsCardInactiveDateLabelsForScheduleSlot(slot) {
+            const inactiveDates = [
+                ...(Array.isArray(slot?.inactiveDates) ? slot.inactiveDates : []),
+                ...(Array.isArray(slot?.inactive_dates) ? slot.inactive_dates : []),
+                ...(Array.isArray(slot?.inactiveDateLabels) ? slot.inactiveDateLabels : []),
+                ...(Array.isArray(slot?.inactive_date_labels) ? slot.inactive_date_labels : []),
+                ...(Array.isArray(slot?.courseGroup?.inactiveDates) ? slot.courseGroup.inactiveDates : []),
+                ...(Array.isArray(slot?.courseGroup?.inactive_dates) ? slot.courseGroup.inactive_dates : []),
+                ...(Array.isArray(slot?.courseGroup?.inactiveDateLabels) ? slot.courseGroup.inactiveDateLabels : []),
+                ...(Array.isArray(slot?.courseGroup?.inactive_date_labels) ? slot.courseGroup.inactive_date_labels : []),
+            ]
+
+            return this.uniqueValues(inactiveDates
+                .map((date) => this.selectedTimetableV2CompactDateLabel(date))
+                .filter(Boolean))
         },
         selectedTimetableV2TestsCardScheduleSlotComparisonKeys(slot) {
             const comparisonBaseKey = this.selectedTimetableV2TestsCardScheduleSlotComparisonBaseKey(slot)
@@ -4470,12 +4566,61 @@ export default {
 
             return dateRangeLabel ? [dateRangeLabel] : []
         },
+        selectedTimetableV2IsoWeekNumber(date) {
+            if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null
+
+            const weekDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+            const dayNumber = weekDate.getUTCDay() || 7
+            weekDate.setUTCDate(weekDate.getUTCDate() + 4 - dayNumber)
+
+            const yearStart = new Date(Date.UTC(weekDate.getUTCFullYear(), 0, 1))
+
+            return Math.ceil((((weekDate - yearStart) / 86400000) + 1) / 7)
+        },
+        selectedTimetableV2TwoWeekParitySuffix(source) {
+            const dates = Array.isArray(source?.courseGroup?.dates)
+                ? source.courseGroup.dates
+                : (Array.isArray(source?.dates) ? source.dates : [])
+            const dateValues = dates
+                .map((date) => String(date || '').trim())
+                .filter(Boolean)
+
+            if (!dateValues.length) return ''
+
+            const weekNumbers = dateValues
+                .map((date) => this.normalizedDate(date))
+                .map((date) => this.selectedTimetableV2IsoWeekNumber(date))
+
+            if (weekNumbers.length !== dateValues.length || weekNumbers.some((weekNumber) => !Number.isInteger(weekNumber))) return ''
+
+            const parities = this.uniqueValues(weekNumbers.map((weekNumber) => weekNumber % 2))
+            if (parities.length !== 1) return ''
+
+            return parities[0] === 0 ? ' A' : ' B'
+        },
+        selectedTimetableV2WeekIntervalLabel(interval, source) {
+            const intervalNumber = Number(interval)
+            if (!Number.isInteger(intervalNumber) || intervalNumber <= 1) return ''
+
+            const label = `${intervalNumber}-wöchig`
+
+            return intervalNumber === 2
+                ? `${label}${this.selectedTimetableV2TwoWeekParitySuffix(source)}`
+                : label
+        },
         selectedTimetableV2SlotRecurrenceLabel(slot) {
-            const interval = this.courseGroupWeekInterval(slot?.courseGroup || slot)
-            if (Number.isInteger(interval) && interval > 1) return `${interval}-wöchig`
+            const courseGroup = slot?.courseGroup || slot
+            const interval = this.courseGroupWeekInterval(courseGroup)
+            const recurrenceSource = slot?.courseGroup ? slot : courseGroup
+            if (Number.isInteger(interval) && interval > 1) return this.selectedTimetableV2WeekIntervalLabel(interval, recurrenceSource)
 
             const recurrenceLabel = String(slot?.courseGroup?.recurrenceLabel || slot?.courseGroup?.recurrence_label || slot?.recurrenceLabel || slot?.recurrence_label || '').trim()
             if (!recurrenceLabel || /^w[öo]chentlich$/iu.test(recurrenceLabel) || /^1\s*-\s*w[öo]chig$/iu.test(recurrenceLabel)) return ''
+            if (/^2\s*-?\s*w(?:öchig|ochig)?(?:\s+[AB])?$/iu.test(recurrenceLabel)) {
+                return /\s+[AB]$/iu.test(recurrenceLabel)
+                    ? recurrenceLabel
+                    : `${recurrenceLabel}${this.selectedTimetableV2TwoWeekParitySuffix(recurrenceSource)}`
+            }
 
             return recurrenceLabel
         },
@@ -4507,13 +4652,17 @@ export default {
             return recurrenceLabel || (dateLabel ? `${dateLabel}${compactSuffix}` : '')
         },
         selectedTimetableV2SlotExactDateLabels(slot) {
+            return this.selectedTimetableV2SlotExactDates(slot)
+                .map((date) => this.formatCompactDateWithWeekValue(date))
+                .filter(Boolean)
+        },
+        selectedTimetableV2SlotExactDates(slot) {
             if (!Array.isArray(slot?.courseGroup?.dates)) return []
 
             return this.uniqueValues([...slot.courseGroup.dates]
+                .map((date) => String(date || '').trim())
                 .filter(Boolean)
-                .sort()
-                .map((date) => this.formatCompactDateValue(date))
-                .filter(Boolean))
+                .sort())
         },
         selectedTimetableV2DateLabelIsRange(label) {
             return /\d{1,2}\.\d{1,2}\.?\s*-\s*\d{1,2}\.\d{1,2}\.?/u.test(String(label || ''))
@@ -4699,7 +4848,7 @@ export default {
                 .filter((dateValue) => Number.isFinite(dateValue))
         },
         selectedTimetableV2CompactDateValue(dateLabel) {
-            const compactDateMatch = String(dateLabel || '').trim().match(/^(\d{1,2})\.(\d{1,2})\.?$/u)
+            const compactDateMatch = String(dateLabel || '').trim().match(/^(\d{1,2})\.(\d{1,2})\.?(?:\([AB]\))?$/u)
 
             if (!compactDateMatch) return NaN
 
@@ -4912,7 +5061,7 @@ export default {
             const sharedDates = this.uniqueValues(slotDates.filter((date) => conflictDateSet.has(date))).sort()
 
             return sharedDates.length <= 8
-                ? sharedDates.map((date) => this.formatCompactDateValue(date)).filter(Boolean)
+                ? sharedDates.map((date) => this.formatCompactDateWithWeekValue(date)).filter(Boolean)
                 : []
         },
         selectedTimetableV2DateLabelsFromText(text) {
@@ -4930,7 +5079,7 @@ export default {
                 return `${compactDateMatch[1].padStart(2, '0')}.${compactDateMatch[2].padStart(2, '0')}.`
             }
 
-            return this.formatCompactDateValue(normalizedValue)
+            return this.formatCompactDateWithWeekValue(normalizedValue)
         },
         selectedTimetableV2CourseProblemLabel(item) {
             return this.courseDisplayLabel(this.selectedTimetableV2RawCourseProblemLabel(item))
@@ -8819,9 +8968,16 @@ export default {
             if (courseGroup?.is_block || String(courseGroup?.block_label || '').trim()) return ''
 
             const interval = this.courseGroupWeekInterval(courseGroup)
-            if (interval) return `${interval}-wöchig`
+            if (interval) return this.selectedTimetableV2WeekIntervalLabel(interval, courseGroup)
 
-            return String(courseGroup?.recurrence_label || '').trim()
+            const recurrenceLabel = String(courseGroup?.recurrence_label || '').trim()
+            if (/^2\s*-?\s*w(?:öchig|ochig)?(?:\s+[AB])?$/iu.test(recurrenceLabel)) {
+                return /\s+[AB]$/iu.test(recurrenceLabel)
+                    ? recurrenceLabel
+                    : `${recurrenceLabel}${this.selectedTimetableV2TwoWeekParitySuffix(courseGroup)}`
+            }
+
+            return recurrenceLabel
         },
         courseGroupDateRangeLabel(courseGroup) {
             const dates = Array.isArray(courseGroup?.dates)
@@ -8846,6 +9002,19 @@ export default {
             const month = (date.getMonth() + 1).toString().padStart(2, '0')
 
             return `${day}.${month}.`
+        },
+        formatCompactDateWithWeekValue(value) {
+            const date = this.normalizedDate(value)
+            const label = this.formatCompactDateValue(value)
+            const weekLabel = this.selectedTimetableV2DateWeekParityLabel(date)
+
+            return label && weekLabel ? `${label}(${weekLabel})` : label
+        },
+        selectedTimetableV2DateWeekParityLabel(date) {
+            const weekNumber = this.selectedTimetableV2IsoWeekNumber(date)
+            if (!Number.isInteger(weekNumber)) return ''
+
+            return weekNumber % 2 === 0 ? 'A' : 'B'
         },
         normalizedDate(value) {
             const rawValue = String(value || '').trim()
@@ -12673,6 +12842,11 @@ export default {
     flex-wrap: wrap;
     white-space: normal;
     overflow-wrap: anywhere;
+}
+
+.students-timetable-v2-tests-card__comparison-course--inactive {
+    text-decoration: line-through;
+    text-decoration-thickness: 2px;
 }
 
 .students-timetable-v2-tests-card__course-label,

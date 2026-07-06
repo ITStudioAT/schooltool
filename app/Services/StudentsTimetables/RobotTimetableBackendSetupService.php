@@ -13,7 +13,7 @@ class RobotTimetableBackendSetupService
 {
     private const MAX_BACKEND_TIMETABLE_VARIATIONS = 200000;
 
-    private const TIMETABLE_VARIATION_CACHE_VERSION = 2;
+    private const TIMETABLE_VARIATION_CACHE_VERSION = 3;
 
     private const TIMETABLE_VARIATION_CACHE_TTL_MINUTES = 20;
 
@@ -3267,23 +3267,20 @@ class RobotTimetableBackendSetupService
                 return null;
             }
 
-            $additionalOptions = $this->additionalOptionsForTimetable(
+            $additionalOptions = $this->findSelectedAdditionalOptionsForTimetable(
                 $additionalCourseOptions,
                 $usedAllSummary ?? $this->emptyDateKeySummary(),
+                $remainingNumber,
             );
 
-            if (count($additionalOptions) !== count($additionalCourseOptions)) {
+            if ($additionalOptions === null) {
                 return null;
             }
 
-            $remainingNumber--;
-
-            return $remainingNumber === 0
-                ? [
-                    'options' => $selectedOptions,
-                    'additional_options' => $additionalOptions,
-                ]
-                : null;
+            return [
+                'options' => $selectedOptions,
+                'additional_options' => $additionalOptions,
+            ];
         }
 
         $usedAllSummary ??= $this->emptyDateKeySummary();
@@ -3299,6 +3296,27 @@ class RobotTimetableBackendSetupService
                 $isFullGreenCandidate,
                 $hasRegularConflict,
             );
+            $remainingCounts = $this->requiredAdditionalCourseTimetableCounts(
+                $courseOptions,
+                $additionalCourseOptions,
+                $courseIndex + 1,
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $nextState['is_full_green_candidate'],
+                $nextState['has_regular_conflict'],
+            );
+            $matchingCount = $remainingCounts[$selectedType] ?? 0;
+
+            if ($matchingCount <= 0) {
+                continue;
+            }
+
+            if ($remainingNumber > $matchingCount) {
+                $remainingNumber -= $matchingCount;
+
+                continue;
+            }
 
             $combination = $this->findSelectedCombinationWithAdditionalCourses(
                 $courseOptions,
@@ -3316,6 +3334,50 @@ class RobotTimetableBackendSetupService
 
             if ($combination !== null) {
                 return $combination;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}  $usedAllSummary
+     * @return ?list<array<string, mixed>>
+     */
+    private function findSelectedAdditionalOptionsForTimetable(
+        array $additionalCourseOptions,
+        array $usedAllSummary,
+        int &$remainingNumber,
+        int $additionalCourseIndex = 0,
+        array $selectedAdditionalOptions = [],
+    ): ?array {
+        if ($additionalCourseIndex >= count($additionalCourseOptions)) {
+            $remainingNumber--;
+
+            return $remainingNumber === 0 ? $selectedAdditionalOptions : null;
+        }
+
+        foreach ($additionalCourseOptions[$additionalCourseIndex] as $option) {
+            $allSummary = $option['all_date_summary'] ?? $this->dateKeySummary($option['date_keys'] ?? []);
+
+            if ($allSummary['has_overlap'] || $this->dateKeySummariesOverlap($usedAllSummary, $allSummary)) {
+                continue;
+            }
+
+            $selectedOptions = $this->findSelectedAdditionalOptionsForTimetable(
+                $additionalCourseOptions,
+                $this->mergeDateKeySummaries($usedAllSummary, $allSummary),
+                $remainingNumber,
+                $additionalCourseIndex + 1,
+                [
+                    ...$selectedAdditionalOptions,
+                    $this->additionalTimetableOption($option),
+                ],
+            );
+
+            if ($selectedOptions !== null) {
+                return $selectedOptions;
             }
         }
 
