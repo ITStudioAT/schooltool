@@ -1,5 +1,19 @@
 # UPDATES
 
+## 3.42.0
+
+### Major Updates
+
+### Konkrete Antworten auf E-Mails
+
+- Rolle Moderatoren für Lehrer. Diese können z. B. keine Importe durchführen
+- Studierende erahlten einen gesonderten Zugang
+- Anzeige z. B. M4 und M5 bei Khairi gebessert
+- Auswahl E2: richtig gestellt
+- Abgeschlossene Kurse sind neu buchbar
+- Vorauswahl der Module bereinigt
+- 2-wöchig abwechselnde Module werden jetzt richtig erkannt
+
 ## 3.41.8
 
 ### Fixes
@@ -8,6 +22,8 @@
 - Modulbezeichnungen vereinheitlicht
 - Kurse zu Module umbenannt
 - Darstellung zwei Module in der gleichen TT-Zelle, die sich nicht überschneiden: Konflikt entfernt.
+- Selektion/De-Selektion bei Mehr Kurse: Unstimmigkeiten gefixt.
+- Sprache, Religion Vorauswahl bei Studierenden gefixt
 
 ### Stundenplan mit Überschneidung
 

@@ -6029,7 +6029,7 @@ describe('TimetableV2 route steps', () => {
         expect(TimetableV2.methods.moreCourseOfferedCourseItemsAllDeselected.call(context, moreCourse)).toBe(true)
     })
 
-    it('selects available more course offers after explicit offer choices exist', async () => {
+    it('keeps remaining preselected more course offers selected when one offer is deselected', async () => {
         const context = timetableV2Context({
             courseSelectionOverrides: {
                 'semester:D5': false,
@@ -6051,7 +6051,7 @@ describe('TimetableV2 route steps', () => {
         TimetableV2.methods.toggleMoreCourseOffers.call(context, moreCourse)
 
         const offeredCourses = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, moreCourse)
-        const [firstOffer, secondOffer] = offeredCourses
+        const [firstOffer, secondOffer, thirdOffer] = offeredCourses
 
         expect(offeredCourses).toHaveLength(3)
         expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, firstOffer, moreCourse)).toBe(true)
@@ -6061,7 +6061,8 @@ describe('TimetableV2 route steps', () => {
         context.storedTimetableState = context.saveStoredTimetableState.mock.calls.at(-1)[0]
 
         expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, firstOffer, moreCourse)).toBe(false)
-        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, secondOffer, moreCourse)).toBe(false)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, secondOffer, moreCourse)).toBe(true)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, thirdOffer, moreCourse)).toBe(true)
 
         TimetableV2.methods.toggleMoreOfferedCourseItem.call(context, secondOffer, moreCourse)
 
@@ -6070,10 +6071,11 @@ describe('TimetableV2 route steps', () => {
 
         expect(savedState.timetableV2Selection.moreOfferedCourseSelections).toMatchObject({
             [firstOffer.selectionKey]: false,
-            [secondOffer.selectionKey]: true,
+            [secondOffer.selectionKey]: false,
         })
         expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, firstOffer, moreCourse)).toBe(false)
-        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, secondOffer, moreCourse)).toBe(true)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, secondOffer, moreCourse)).toBe(false)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, thirdOffer, moreCourse)).toBe(true)
     })
 
     it('does not mix ethics and religion offered courses', () => {
@@ -8026,6 +8028,80 @@ describe('TimetableV2 route steps', () => {
             { code: 'L1' },
             { code: 'L2' },
         ])).not.toHaveProperty('branch')
+    })
+
+    it('preselects ethics and Spanish from completed modules in the stored student context', () => {
+        const storedTimetableStudentContext = {
+            student: {
+                religion: 'evang. A.B.',
+                semesterLabel: 'Semester 5',
+                studentCode: 'RAS',
+            },
+            courses: {
+                completed: [
+                    { code: 'ETH1', grade: '4', label: 'ETH1' },
+                    { code: 'S1', grade: '4', label: 'S1' },
+                ],
+                failed: [],
+                missing: [],
+                planned: [],
+            },
+        }
+        const context = timetableV2Context({
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    language: 'S',
+                    religion: 'Rev',
+                    semester: 5,
+                },
+                transferredStudentContext: storedTimetableStudentContext,
+            },
+            storedTimetableStudentContext,
+            subjectRows: [
+                {
+                    id: 1,
+                    semester: 5,
+                    branch: 'common',
+                    json_code: 'S5',
+                    json_subject: 'L/F/S',
+                    name: 'Spanisch 5',
+                    hours_per_week: 3,
+                },
+            ],
+        })
+
+        expect(context.effectiveTimetableV2Selection).toMatchObject({
+            language: 'SPA',
+            religion: 'ETH',
+            semester: 5,
+        })
+        expect(TimetableV2.methods.studentOverviewSelectionPayload.call(context)).toMatchObject({
+            language: 'SPA',
+            religion: 'ETH',
+            semester: 5,
+        })
+        expect(TimetableV2.methods.selectionOptionSelected.call(
+            context,
+            { key: 'religion' },
+            { value: 'ETH' },
+        )).toBe(true)
+        expect(TimetableV2.methods.selectionOptionSelected.call(
+            context,
+            { key: 'religion' },
+            { value: 'Rev' },
+        )).toBe(false)
+        expect(TimetableV2.methods.selectionOptionSelected.call(
+            context,
+            { key: 'language' },
+            { value: 'SPA' },
+        )).toBe(true)
+        expect(TimetableV2.methods.selectionOptionSelected.call(
+            context,
+            { key: 'language' },
+            { value: 'L' },
+        )).toBe(false)
+        expect(context.storedSemesterCourseItems.map((course) => course.code)).toContain('SPA5')
     })
 
     it('preselects Ris from an islam student religion before generic completed religion courses', () => {

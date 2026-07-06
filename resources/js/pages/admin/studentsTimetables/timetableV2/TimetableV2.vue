@@ -3491,10 +3491,10 @@ export default {
             return Number.isFinite(semester) && semester > 0 ? semester : null
         },
         effectiveTimetableV2Selection() {
-            return {
+            return this.timetableV2SelectionWithCourseDefaults({
                 ...this.defaultNoStudentTimetableV2Selection(),
                 ...this.storedTimetableV2Selection,
-            }
+            }, this.storedTimetableStudentContext?.courses || {})
         },
         noStudentPlannedCourseItems() {
             if (!this.noStudentSelectedSemester) return []
@@ -8010,7 +8010,7 @@ export default {
                 .map((selectionKey) => this.moreOfferedCourseSelectionOverrides[selectionKey])
                 .filter((selected) => selected === true || selected === false)
 
-            return explicitSelections.length > 0
+            return explicitSelections.some((selected) => selected === true)
         },
         moreOfferedCourseSelectionSignature(moreOfferedCourseSelections = this.moreOfferedCourseSelectionOverrides) {
             const selections = moreOfferedCourseSelections && typeof moreOfferedCourseSelections === 'object' && !Array.isArray(moreOfferedCourseSelections)
@@ -9581,7 +9581,7 @@ export default {
             }
         },
         selectionOptionSelected(item, option) {
-            return String(this.storedTimetableV2Selection?.[item.key] || '') === String(option.value)
+            return String(this.effectiveTimetableV2Selection?.[item.key] || '') === String(option.value)
         },
         courseItemSelected(course, courseGroup) {
             const selectionKeys = this.courseSelectionKeys(course, courseGroup)
@@ -10813,29 +10813,71 @@ export default {
 
             return Object.entries(courseDefaults).reduce(
                 (nextSelection, [key, value]) => {
-                    if (!Object.prototype.hasOwnProperty.call(nextSelection, key)) {
+                    if (key === 'religion' && value === 'ETH') {
+                        nextSelection[key] = value
+
+                        return nextSelection
+                    }
+
+                    if (String(nextSelection[key] ?? '').trim() === '') {
                         nextSelection[key] = value
                     }
 
                     return nextSelection
                 },
-                { ...(selection || {}) }
+                this.normalizedTimetableV2Selection(selection)
             )
+        },
+        normalizedTimetableV2Selection(selection) {
+            const nextSelection = { ...(selection || {}) }
+            const optionGroups = {
+                artsSubject: this.artsSubjectOptions(),
+                language: this.languageOptions(),
+                religion: this.religionOptions(),
+            }
+
+            Object.entries(optionGroups).forEach(([key, options]) => {
+                const canonicalValue = this.canonicalSelectionOptionValue(options, nextSelection[key])
+
+                if (canonicalValue) {
+                    nextSelection[key] = canonicalValue
+                }
+            })
+
+            return nextSelection
+        },
+        canonicalSelectionOptionValue(options, value) {
+            const normalizedValue = this.normalizedCourseCode(value)
+
+            if (!normalizedValue) return ''
+
+            const normalizedBase = this.courseCodeWithoutModule(normalizedValue)
+            const matchingOption = (Array.isArray(options) ? options : []).find((option) =>
+                this.selectionCourseAliases(option?.value)
+                    .map((alias) => this.courseCodeWithoutModule(alias))
+                    .includes(normalizedBase)
+            )
+
+            return matchingOption?.value || ''
         },
         studentOverviewSelectionPayload() {
             return this.studentOverviewSelectionPayloadForSelection(this.storedTimetableV2Selection || {})
         },
         studentOverviewSelectionPayloadForSelection(selection) {
+            const selectionWithDefaults = this.timetableV2SelectionWithCourseDefaults(
+                selection,
+                this.storedTimetableStudentContext?.courses || {},
+            )
             const semester = this.semesterValueFromLabel(this.storedTimetableStudentContext?.student?.semesterLabel)
-                || selection.semester
+                || selectionWithDefaults.semester
 
             return Object.fromEntries(
                 [
                     ['semester', semester],
-                    ['religion', selection.religion],
-                    ['language', selection.language],
-                    ['branch', selection.branch],
-                    ['artsSubject', selection.artsSubject],
+                    ['religion', selectionWithDefaults.religion],
+                    ['language', selectionWithDefaults.language],
+                    ['branch', selectionWithDefaults.branch],
+                    ['artsSubject', selectionWithDefaults.artsSubject],
                 ].filter(([, value]) => String(value || '').trim() !== '')
             )
         },
@@ -10851,11 +10893,13 @@ export default {
                 : courseHistory?.completed
             const completedCourseCodes = this.studentCourseCodeSet(completedCourses)
             const visitedCourseCodes = this.studentVisitedCourseCodeSet(courseHistory)
+            const completedEthicsDefault = this.inferredSelectionOptionFromCourseCodes([{ value: 'ETH' }], completedCourseCodes)
+            const completedReligionDefault = this.inferredSelectionOptionFromCourseCodes(this.religionOptions(), completedCourseCodes)
             const studentReligionDefault = this.selectedStudentReligionDefault()
 
             return Object.fromEntries(
                 [
-                    ['religion', studentReligionDefault || this.inferredSelectionOptionFromCourseCodes(this.religionOptions(), completedCourseCodes)],
+                    ['religion', completedEthicsDefault || studentReligionDefault || completedReligionDefault],
                     ['language', this.inferredSelectionOptionFromCourseCodes(this.languageOptions(), completedCourseCodes)],
                     ['branch', this.inferredBranchFromCourseCodes(visitedCourseCodes)],
                     ['artsSubject', this.inferredSelectionOptionFromCourseCodes(this.artsSubjectOptions(), completedCourseCodes)],
