@@ -669,6 +669,11 @@ function timetableV2Context(overrides = {}) {
                 return TimetableV2.computed.offeredCourseSelectionOverrides.call(context)
             },
         },
+        includeNormalunterrichtCourseVariants: {
+            get() {
+                return TimetableV2.computed.includeNormalunterrichtCourseVariants.call(context)
+            },
+        },
         includeDistanceLearningCourseVariants: {
             get() {
                 return TimetableV2.computed.includeDistanceLearningCourseVariants.call(context)
@@ -3514,8 +3519,14 @@ describe('TimetableV2 route steps', () => {
         expect(TimetableV2.methods.moreCourseAvailabilityComplete.call(context)).toBe(true)
     })
 
-    it('opens more course offers without refreshing availability for that course', () => {
-        const requestMoreCourseAvailability = vi.fn()
+    it('opens more course offers and ensures offer availability is checked', () => {
+        const requestMoreCourseAvailability = vi.fn(() => Promise.resolve({
+            data: {
+                data: {
+                    availability: {},
+                },
+            },
+        }))
         const context = timetableV2Context({
             courseGroups: [
                 { class_name: 'BU2-4A-KOW', course: 'BU2', hour: 1, title: 'BU2', weekday: 1 },
@@ -3532,7 +3543,7 @@ describe('TimetableV2 route steps', () => {
         TimetableV2.methods.toggleMoreCourseOffers.call(context, moreCourse)
 
         expect(context.selectedMoreCourseKey).toBe(moreCourse.selectionKey)
-        expect(requestMoreCourseAvailability).not.toHaveBeenCalled()
+        expect(requestMoreCourseAvailability).toHaveBeenCalledWith([moreCourse], { includeOffers: true })
     })
 
     it('keeps selected more course offers open when the parent availability key becomes unavailable', () => {
@@ -4919,6 +4930,7 @@ describe('TimetableV2 route steps', () => {
                     completed: [
                         { code: 'D1', grade: '2' },
                         { code: 'D2', grade: '3' },
+                        { code: 'M2', grade: '2' },
                     ],
                     failed: [],
                     missing: [],
@@ -4949,6 +4961,397 @@ describe('TimetableV2 route steps', () => {
         })
 
         expect(payload.selected_course_keys).toContain('2|6|common|D4|D|Deutsch 4|D4')
+    })
+
+    it('keeps explicitly selected additional modules in the course review when the prerequisite is completed', () => {
+        let context: ReturnType<typeof timetableV2Context>
+        const transferredStudentContext = {
+            student: {
+                religion: 'evang. A.B.',
+                semesterLabel: 'Semester 5',
+            },
+            courses: {
+                completed: [
+                    { code: 'E1', grade: 'B' },
+                    { code: 'E2', grade: 'B' },
+                    { code: 'E3', grade: '4' },
+                    { code: 'E4', grade: '3' },
+                    { code: 'M1', grade: 'B' },
+                    { code: 'M2', grade: 'B' },
+                    { code: 'M3', grade: '3' },
+                ],
+                failed: [],
+                missing: [],
+                planned: [
+                    { code: 'M4', hours: 3, label: 'M4', semester: 4 },
+                ],
+                additional: [
+                    { code: 'E6', hours: 4, label: 'E6', semester: 6 },
+                ],
+            },
+        }
+        const saveStoredTimetableState = vi.fn((state) => {
+            context.storedTimetableState = state
+        })
+
+        context = timetableV2Context({
+            courseCardsVisible: true,
+            saveStoredTimetableState,
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    language: 'F',
+                    religion: 'Rev',
+                    semester: 5,
+                    courseSelections: {
+                        'additional:E6': true,
+                        'planned:M4': true,
+                        'semester:M5': true,
+                    },
+                },
+                transferredStudentContext,
+            },
+            subjectRows: [
+                { id: 1, semester: 4, branch: 'common', json_code: 'M4', json_subject: 'M', name: 'Mathematik 4', hours_per_week: 3 },
+                { id: 2, semester: 5, branch: 'common', json_code: 'E5', json_subject: 'E', name: 'Englisch 5', hours_per_week: 3 },
+                { id: 3, semester: 5, branch: 'common', json_code: 'M5', json_subject: 'M', name: 'Mathematik 5', hours_per_week: 3 },
+                { id: 4, semester: 6, branch: 'common', json_code: 'E6', json_subject: 'E', name: 'Englisch 6', hours_per_week: 4 },
+            ],
+        })
+
+        Object.defineProperty(context, 'storedTimetableStudentContext', {
+            configurable: true,
+            get() {
+                return TimetableV2.computed.storedTimetableStudentContext.call(context)
+            },
+        })
+        Object.defineProperty(context, 'storedAdditionalCourseItems', {
+            configurable: true,
+            get() {
+                return TimetableV2.computed.storedAdditionalCourseItems.call(context)
+            },
+        })
+
+        expect(context.storedAdditionalCourseItems.map((course) => course.code)).toContain('E6')
+        expect(context.selectedAdditionalCourseItems.map((course) => course.code)).toEqual(['E6'])
+        expect(context.selectedCourseItems.map((course) => course.code)).toEqual(['E5', 'E6', 'M4', 'M5'])
+
+        TimetableV2.methods.openCourseReview.call(context)
+
+        expect(saveStoredTimetableState).toHaveBeenCalledOnce()
+        expect(context.storedTimetableState.timetableV2Selection.courseSelections).toEqual({
+            'additional:E6': true,
+            'planned:M4': true,
+            'semester:M5': true,
+        })
+        expect(context.selectedCourseItems.map((course) => course.code)).toEqual(['E5', 'E6', 'M4', 'M5'])
+        expect(context.timetableV2Step).toBe('course-review')
+    })
+
+    it('keeps explicitly selected additional module chips when the additional course bucket is stale', () => {
+        const context = timetableV2Context({
+            storedTimetableStudentContext: {
+                student: {
+                    religion: 'evang. A.B.',
+                    semesterLabel: 'Semester 5',
+                },
+                courses: {
+                    completed: [
+                        { code: 'E1', grade: 'B' },
+                        { code: 'E2', grade: 'B' },
+                        { code: 'E3', grade: '4' },
+                        { code: 'E4', grade: '3' },
+                        { code: 'M1', grade: 'B' },
+                        { code: 'M2', grade: 'B' },
+                        { code: 'M3', grade: '3' },
+                    ],
+                    failed: [],
+                    missing: [],
+                    planned: [
+                        { code: 'M4', hours: 3, label: 'M4', semester: 4 },
+                    ],
+                    additional: [],
+                },
+            },
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    language: 'F',
+                    religion: 'Rev',
+                    semester: 5,
+                    courseSelections: {
+                        'additional:E6': true,
+                        'planned:M4': true,
+                        'semester:M5': true,
+                    },
+                },
+                transferredStudentContext: null,
+            },
+            subjectRows: [
+                { id: 1, semester: 4, branch: 'common', json_code: 'M4', json_subject: 'M', name: 'Mathematik 4', hours_per_week: 3 },
+                { id: 2, semester: 5, branch: 'common', json_code: 'E5', json_subject: 'E', name: 'Englisch 5', hours_per_week: 3 },
+                { id: 3, semester: 5, branch: 'common', json_code: 'M5', json_subject: 'M', name: 'Mathematik 5', hours_per_week: 3 },
+                { id: 4, semester: 6, branch: 'common', json_code: 'E6', json_subject: 'E', name: 'Englisch 6', hours_per_week: 4 },
+            ],
+        })
+
+        Object.defineProperty(context, 'storedAdditionalCourseItems', {
+            configurable: true,
+            get() {
+                return TimetableV2.computed.storedAdditionalCourseItems.call(context)
+            },
+        })
+
+        expect(context.storedAdditionalCourseItems.map((course) => course.code)).toEqual([])
+        expect(context.selectedCourseItems.map((course) => course.code)).toEqual(['E5', 'E6', 'M4', 'M5'])
+        expect(context.selectedCourseItems.find((course) => course.code === 'E6')).toMatchObject({
+            label: 'E6',
+            meta: '4 Std.',
+        })
+    })
+
+    it('keeps explicitly selected current module chips when the module is present in the calculated timetable', () => {
+        const context = timetableV2Context({
+            storedAdditionalCourseItems: [
+                { code: 'E6', hours: 4, key: 'E6', label: 'E6' },
+            ],
+            storedPlannedCourseItems: [
+                { code: 'M4', hours: 3, key: 'M4', label: 'M4' },
+            ],
+            storedSemesterCourseItems: [
+                { code: 'E5', hours: 3, key: 'E5', label: 'E5' },
+                { code: 'M5', hours: 3, key: 'M5', label: 'M5' },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    courseSelections: {
+                        'additional:E6': true,
+                        'planned:M4': true,
+                        'semester:D5': true,
+                        'semester:M5': true,
+                    },
+                },
+                transferredStudentContext: null,
+            },
+            subjectRows: [
+                { id: 1, semester: 5, branch: 'common', json_code: 'D5', json_subject: 'D', name: 'Deutsch 5', hours_per_week: 3 },
+            ],
+            timetableCalculationResult: {
+                selected_timetable: {
+                    slots: {
+                        '5-1': {
+                            code: 'D5',
+                            courseGroup: {
+                                course: 'D5',
+                                hour: 1,
+                                title: 'D5',
+                                weekday: 5,
+                            },
+                            name: 'D5',
+                        },
+                    },
+                },
+            },
+            timetableCalculationVisible: true,
+        })
+
+        expect(context.selectedTimetableV2CourseCodes.has('D5')).toBe(true)
+        expect(context.selectedCourseItems.map((course) => course.code)).toEqual(['D5', 'E5', 'E6', 'M4', 'M5'])
+        expect(context.selectedCourseItems.find((course) => course.code === 'D5')).toMatchObject({
+            label: 'D5',
+            meta: '3 Std.',
+        })
+    })
+
+    it('does not preselect a current module when the previous module is missing', () => {
+        const context = timetableV2Context({
+            storedTimetableStudentContext: {
+                student: {
+                    semesterLabel: 'Semester 5',
+                },
+                courses: {
+                    completed: [],
+                    failed: [
+                        { code: 'CH1', grade: '5' },
+                    ],
+                    missing: [
+                        { code: 'CH1', hours: 3, label: 'CH1' },
+                    ],
+                    planned: [],
+                },
+            },
+            subjectRows: [
+                {
+                    id: 1,
+                    semester: 5,
+                    branch: 'common',
+                    json_code: 'CH2',
+                    json_subject: 'CH',
+                    name: 'Chemie 2',
+                    hours_per_week: 3,
+                },
+            ],
+        })
+
+        const ch2Course = context.storedSemesterCourseItems[0]
+        const ch2CardItem = TimetableV2.methods.courseSelectionCardItem.call(context, ch2Course, 'semester')
+
+        expect(context.storedSemesterCourseItems.map((course) => course.code)).toEqual(['CH2'])
+        expect(TimetableV2.methods.courseItemUnavailable.call(context, ch2Course, 'semester')).toBe(false)
+        expect(TimetableV2.methods.courseItemDefaultSelected.call(context, ch2Course, 'semester')).toBe(false)
+        expect(TimetableV2.methods.courseItemSelected.call(context, ch2Course, 'semester')).toBe(false)
+        expect(ch2CardItem.color).toBe('success')
+        expect(ch2CardItem.selected).toBe(false)
+    })
+
+    it('marks current modules unavailable when the completed module prerequisite is too low', () => {
+        const context = timetableV2Context({
+            storedTimetableStudentContext: {
+                student: {
+                    semesterLabel: 'Semester 5',
+                },
+                courses: {
+                    completed: [
+                        { code: 'D3', grade: '2' },
+                        { code: 'SPA1', grade: '2' },
+                    ],
+                    failed: [],
+                    missing: [],
+                    planned: [],
+                },
+            },
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    language: 'SPA',
+                    semester: 5,
+                },
+                transferredStudentContext: null,
+            },
+            subjectRows: [
+                {
+                    id: 1,
+                    semester: 5,
+                    branch: 'common',
+                    json_code: 'D5',
+                    json_subject: 'D',
+                    name: 'Deutsch 5',
+                    hours_per_week: 3,
+                },
+                {
+                    id: 2,
+                    semester: 5,
+                    branch: 'common',
+                    json_code: 'L/F/S4',
+                    json_subject: 'L/F/S',
+                    name: 'Sprache 4',
+                    hours_per_week: 3,
+                },
+            ],
+        })
+
+        const d5Course = context.storedSemesterCourseItems.find((course) => course.code === 'D5')
+        const spa4Course = context.storedSemesterCourseItems.find((course) => course.code === 'SPA4')
+        const spa4CardItem = TimetableV2.methods.courseSelectionCardItem.call(context, spa4Course, 'semester')
+
+        expect(context.storedSemesterCourseItems.map((course) => course.code)).toEqual(['D5', 'SPA4'])
+        expect(TimetableV2.methods.courseItemUnavailable.call(context, d5Course, 'semester')).toBe(false)
+        expect(TimetableV2.methods.courseItemSelected.call(context, d5Course, 'semester')).toBe(true)
+        expect(TimetableV2.methods.courseItemUnavailable.call(context, spa4Course, 'semester')).toBe(true)
+        expect(TimetableV2.methods.courseItemSelected.call(context, spa4Course, 'semester')).toBe(false)
+        expect(spa4CardItem.color).toBe('error')
+        expect(spa4CardItem.ariaDisabled).toBe('true')
+        expect(spa4CardItem.unavailableReason).toBe('prerequisite')
+        expect(spa4CardItem.title).toBe('Voraussetzung nicht erfüllt')
+    })
+
+    it('lists previous selected language modules after changing languages', () => {
+        const context = timetableV2Context({
+            storedTimetableStudentContext: {
+                student: {
+                    semesterLabel: 'Semester 5',
+                },
+                courses: {
+                    completed: [
+                        { code: 'SPA1', grade: '2' },
+                    ],
+                    failed: [],
+                    missing: [],
+                    planned: [],
+                },
+            },
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    language: 'L',
+                    semester: 5,
+                },
+                transferredStudentContext: null,
+            },
+            subjectRows: [
+                {
+                    id: 1,
+                    semester: 1,
+                    branch: 'common',
+                    json_code: 'L/F/S1',
+                    json_subject: 'L/F/S',
+                    name: 'Sprache 1',
+                    hours_per_week: 3,
+                },
+                {
+                    id: 2,
+                    semester: 2,
+                    branch: 'common',
+                    json_code: 'L/F/S2',
+                    json_subject: 'L/F/S',
+                    name: 'Sprache 2',
+                    hours_per_week: 3,
+                },
+                {
+                    id: 3,
+                    semester: 4,
+                    branch: 'common',
+                    json_code: 'L/F/S3',
+                    json_subject: 'L/F/S',
+                    name: 'Sprache 3',
+                    hours_per_week: 3,
+                },
+                {
+                    id: 4,
+                    semester: 5,
+                    branch: 'common',
+                    json_code: 'L/F/S4',
+                    json_subject: 'L/F/S',
+                    name: 'Sprache 4',
+                    hours_per_week: 3,
+                },
+            ],
+        })
+
+        const l1Course = context.storedPlannedCourseItems.find((course) => course.code === 'L1')
+        const l2Course = context.storedPlannedCourseItems.find((course) => course.code === 'L2')
+        const l3Course = context.storedPlannedCourseItems.find((course) => course.code === 'L3')
+        const l4Course = context.storedSemesterCourseItems.find((course) => course.code === 'L4')
+        const l3CardItem = TimetableV2.methods.courseSelectionCardItem.call(context, l3Course, 'planned')
+        const l4CardItem = TimetableV2.methods.courseSelectionCardItem.call(context, l4Course, 'semester')
+
+        expect(context.storedPlannedCourseItems.map((course) => course.code)).toEqual(['L1', 'L2', 'L3'])
+        expect(context.storedSemesterCourseItems.map((course) => course.code)).toEqual(['L4'])
+        expect(TimetableV2.methods.courseItemUnavailable.call(context, l1Course, 'planned')).toBe(false)
+        expect(TimetableV2.methods.courseItemUnavailable.call(context, l2Course, 'planned')).toBe(false)
+        expect(TimetableV2.methods.courseItemUnavailable.call(context, l3Course, 'planned')).toBe(true)
+        expect(TimetableV2.methods.courseItemSelected.call(context, l3Course, 'planned')).toBe(false)
+        expect(TimetableV2.methods.courseItemUnavailable.call(context, l4Course, 'semester')).toBe(true)
+        expect(TimetableV2.methods.courseItemSelected.call(context, l4Course, 'semester')).toBe(false)
+        expect(l3CardItem.color).toBe('error')
+        expect(l3CardItem.ariaDisabled).toBe('true')
+        expect(l3CardItem.unavailableReason).toBe('prerequisite')
+        expect(l3CardItem.title).toBe('Voraussetzung nicht erfüllt')
+        expect(l4CardItem.color).toBe('error')
+        expect(l4CardItem.ariaDisabled).toBe('true')
+        expect(l4CardItem.unavailableReason).toBe('prerequisite')
+        expect(l4CardItem.title).toBe('Voraussetzung nicht erfüllt')
     })
 
     it('lists future planned courses as additional courses for the selected student semester', () => {
@@ -6076,6 +6479,98 @@ describe('TimetableV2 route steps', () => {
         expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, firstOffer, moreCourse)).toBe(false)
         expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, secondOffer, moreCourse)).toBe(false)
         expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, thirdOffer, moreCourse)).toBe(true)
+    })
+
+    it('reselects a deselected more course offer without deselecting other default offers', async () => {
+        const context = timetableV2Context({
+            courseSelectionOverrides: {
+                'semester:D5': false,
+            },
+            courseGroups: [
+                { class_name: 'D5-3R-SHAM', course: 'D', hour: 14, module_code: 'D5', title: 'D', weekday: 2 },
+                { class_name: 'D5-5K-AUER', course: 'D', hour: 10, module_code: 'D5', title: 'D', weekday: 5 },
+                { class_name: 'D5-3U-DREI', course: 'D', hour: 1, module_code: 'D5', title: 'D', weekday: 6 },
+            ],
+            storedSemesterCourseItems: [
+                { code: 'D5', hours: 3, key: 'D5', label: 'D5' },
+            ],
+        })
+
+        await TimetableV2.methods.toggleMoreCoursesCard.call(context)
+
+        const moreCourse = context.moreCoursesCardItems.find((course) => course.label === 'D5')
+
+        TimetableV2.methods.toggleMoreCourseOffers.call(context, moreCourse)
+
+        const [firstOffer, secondOffer, thirdOffer] = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, moreCourse)
+
+        TimetableV2.methods.toggleMoreOfferedCourseItem.call(context, firstOffer, moreCourse)
+        context.storedTimetableState = context.saveStoredTimetableState.mock.calls.at(-1)[0]
+
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, firstOffer, moreCourse)).toBe(false)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, secondOffer, moreCourse)).toBe(true)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, thirdOffer, moreCourse)).toBe(true)
+
+        TimetableV2.methods.toggleMoreOfferedCourseItem.call(context, firstOffer, moreCourse)
+
+        const savedState = context.saveStoredTimetableState.mock.calls.at(-1)[0]
+        context.storedTimetableState = savedState
+
+        expect(savedState.timetableV2Selection.moreOfferedCourseSelections).toBeUndefined()
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, firstOffer, moreCourse)).toBe(true)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, secondOffer, moreCourse)).toBe(true)
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, thirdOffer, moreCourse)).toBe(true)
+    })
+
+    it('does not treat explicit selected more course offers as a whitelist', async () => {
+        const context = timetableV2Context({
+            courseSelectionOverrides: {
+                'semester:D5': false,
+            },
+            courseGroups: [
+                { class_name: 'D5-3R-SHAM', course: 'D', hour: 14, module_code: 'D5', title: 'D', weekday: 2 },
+                { class_name: 'D5-5C-AUER', course: 'D', hour: 13, module_code: 'D5', title: 'D', weekday: 4 },
+                { class_name: 'D5-5K-AUER', course: 'D', hour: 10, module_code: 'D5', title: 'D', weekday: 5 },
+                { class_name: 'D5-3U-DREI', course: 'D', hour: 1, module_code: 'D5', title: 'D', weekday: 6 },
+            ],
+            storedSemesterCourseItems: [
+                { code: 'D5', hours: 3, key: 'D5', label: 'D5' },
+            ],
+        })
+
+        await TimetableV2.methods.toggleMoreCoursesCard.call(context)
+
+        const moreCourse = context.moreCoursesCardItems.find((course) => course.label === 'D5')
+
+        TimetableV2.methods.toggleMoreCourseOffers.call(context, moreCourse)
+
+        const [shamOffer, currentAuerOffer, selectedAuerOffer, dreiOffer] = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, moreCourse)
+        context.moreCourseAvailabilityByKey = {
+            [TimetableV2.methods.moreCourseOfferAvailabilityKey.call(context, moreCourse, shamOffer)]: false,
+            [TimetableV2.methods.moreCourseOfferAvailabilityKey.call(context, moreCourse, currentAuerOffer)]: false,
+            [TimetableV2.methods.moreCourseOfferAvailabilityKey.call(context, moreCourse, selectedAuerOffer)]: true,
+            [TimetableV2.methods.moreCourseOfferAvailabilityKey.call(context, moreCourse, dreiOffer)]: true,
+        }
+        context.storedTimetableState = {
+            selection: {},
+            timetableV2Selection: {
+                moreOfferedCourseSelections: {
+                    [selectedAuerOffer.selectionKey]: true,
+                },
+            },
+            transferredStudentContext: null,
+        }
+
+        expect(context.selectedMoreCourseOfferedCourseItems.map((course) => ({
+            selected: course.selected,
+            unavailable: course.unavailable,
+        }))).toEqual([
+            { selected: false, unavailable: true },
+            { selected: false, unavailable: true },
+            { selected: true, unavailable: false },
+            { selected: true, unavailable: false },
+        ])
+        expect(TimetableV2.methods.moreCourseChipColor.call(context, moreCourse)).toBe('warning')
     })
 
     it('does not mix ethics and religion offered courses', () => {
@@ -9918,7 +10413,7 @@ describe('TimetableV2 route steps', () => {
             selection: {},
             timetableV2Selection: {
                 moreOfferedCourseSelections: {
-                    [selectedOffer.selectionKey]: true,
+                    [deselectedOffer.selectionKey]: false,
                 },
             },
             transferredStudentContext: null,
@@ -10082,6 +10577,31 @@ describe('TimetableV2 route steps', () => {
             [offerSelectionKeys[0]]: true,
         })
 
+        context.selectedMoreCourseKey = moreCourse.selectionKey
+
+        expect(context.selectedMoreCourseOfferedCourseItems.map((course) => ({
+            available: course.classes['students-timetable-v2-offered-courses-card__item--available'],
+            selected: course.selected,
+            selectedClass: course.classes['students-timetable-v2-offered-courses-card__item--selected'],
+            unavailable: course.unavailable,
+            unavailableClass: course.classes['students-timetable-v2-offered-courses-card__item--unavailable'],
+        }))).toEqual([
+            {
+                available: true,
+                selected: true,
+                selectedClass: true,
+                unavailable: false,
+                unavailableClass: false,
+            },
+            {
+                available: false,
+                selected: false,
+                selectedClass: false,
+                unavailable: true,
+                unavailableClass: true,
+            },
+        ])
+
         const saveCallCount = context.saveStoredTimetableState.mock.calls.length
         TimetableV2.methods.toggleMoreOfferedCourseItem.call(context, offeredCourses[1], moreCourse)
 
@@ -10092,7 +10612,12 @@ describe('TimetableV2 route steps', () => {
             [offerAvailabilityKeys[0]]: true,
             [offerAvailabilityKeys[1]]: false,
         }
+        const displayContext = TimetableV2.methods.moreCoursesDisplayContext.call(context)
+        const displayedMoreCourse = TimetableV2.methods.displayedMoreCourseCardItem.call(context, moreCourse, displayContext)
+
         expect(TimetableV2.methods.moreCourseChipColor.call(context, moreCourse)).toBe('warning')
+        expect(displayedMoreCourse.color).toBe('warning')
+        expect(displayedMoreCourse.classes[0]).toBe('students-timetable-v2-more-courses-card__course--warning')
         expect(TimetableV2.methods.moreCourseOfferUnavailable.call(context, offeredCourses[0], moreCourse)).toBe(false)
         expect(TimetableV2.methods.moreCourseOfferDisabled.call(context, offeredCourses[0], moreCourse)).toBe(false)
         expect(TimetableV2.methods.moreCourseOfferUnavailable.call(context, offeredCourses[1], moreCourse)).toBe(true)
@@ -10620,7 +11145,7 @@ describe('TimetableV2 route steps', () => {
         expect(payload.selected_timetable_type).toBe('full_green')
     })
 
-    it('includes Fernunterricht and Kompaktunterricht course variants by default', () => {
+    it('includes Normalunterricht, Fernunterricht and Kompaktunterricht course variants by default', () => {
         const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
         const context = timetableV2Context({
             storedTimetableState: {
@@ -10628,11 +11153,19 @@ describe('TimetableV2 route steps', () => {
             },
         })
 
+        expect(source).toContain('label="Normalunterricht"')
         expect(source).toContain('label="Fernunterricht"')
         expect(source).toContain('label="Kompaktunterricht"')
         expect(source).toContain('v-if="courseReviewVisible && selectedCourseItemsClickable" class="students-timetable-v2-selected-courses-card__filters"')
+        expect(source.indexOf('label="Normalunterricht"')).toBeLessThan(source.indexOf('label="Fernunterricht"'))
+        expect(context.includeNormalunterrichtCourseVariants).toBe(true)
         expect(context.includeDistanceLearningCourseVariants).toBe(true)
         expect(context.includeKompaktunterrichtCourseVariants).toBe(true)
+        expect(context.offeredCourseSelected({
+            selectionKey: 'course::regular',
+            distanceLearning: false,
+            isKompaktunterricht: false,
+        })).toBe(true)
         expect(context.offeredCourseSelected({
             selectionKey: 'course::fu',
             distanceLearning: true,
@@ -10643,7 +11176,7 @@ describe('TimetableV2 route steps', () => {
         })).toBe(true)
     })
 
-    it('filters Fernunterricht and Kompaktunterricht course variants when unchecked', () => {
+    it('filters Normalunterricht, Fernunterricht and Kompaktunterricht course variants when unchecked', () => {
         const selectedCourse = {
             selectionKey: 'planned:INF1',
             offeredCourses: [
@@ -10670,18 +11203,208 @@ describe('TimetableV2 route steps', () => {
             offeredCourseItemsForSelectedCourse: (course) => course.offeredCourses,
             storedTimetableState: {
                 timetableV2Selection: {
+                    includeNormalunterrichtCourses: false,
                     includeDistanceLearningCourses: false,
                     includeKompaktunterrichtCourses: false,
                 },
             },
         })
 
+        expect(context.includeNormalunterrichtCourseVariants).toBe(false)
         expect(context.includeDistanceLearningCourseVariants).toBe(false)
         expect(context.includeKompaktunterrichtCourseVariants).toBe(false)
-        expect(context.offeredCourseSelected(selectedCourse.offeredCourses[0])).toBe(true)
+        expect(context.offeredCourseSelected(selectedCourse.offeredCourses[0])).toBe(false)
         expect(context.offeredCourseSelected(selectedCourse.offeredCourses[1])).toBe(false)
         expect(context.offeredCourseSelected(selectedCourse.offeredCourses[2])).toBe(false)
-        expect(context.timetableV2DeselectedOfferedCourseGroupKeys()).toEqual(['fu-key', 'compact-key'])
+        expect(context.timetableV2DeselectedOfferedCourseGroupKeys()).toEqual(['regular-key', 'fu-key', 'compact-key'])
+    })
+
+    it('keeps more module offers available independent of instruction course filters', () => {
+        const offeredCourses = [
+            {
+                selectionKey: 'additional:GW1::regular',
+                backendSelectionKey: 'regular-key',
+                distanceLearning: false,
+                isKompaktunterricht: false,
+            },
+            {
+                selectionKey: 'additional:GW1::fu',
+                backendSelectionKey: 'fu-key',
+                distanceLearning: true,
+            },
+            {
+                selectionKey: 'additional:GW1::compact',
+                backendSelectionKey: 'compact-key',
+                isKompaktunterricht: true,
+            },
+        ]
+        const saveStoredTimetableState = vi.fn()
+        const context = timetableV2Context({
+            offeredCourseItemsForSelectedCourse: () => offeredCourses,
+            saveStoredTimetableState,
+            storedAdditionalCourseItems: [
+                {
+                    code: 'GW1',
+                    hours: 3,
+                    key: 'GW1',
+                    label: 'GW1',
+                },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    includeNormalunterrichtCourses: false,
+                    includeKompaktunterrichtCourses: false,
+                },
+                transferredStudentContext: null,
+            },
+        })
+        const moreCourse = context.moreCoursesCardItems[0]
+
+        context.selectedMoreCourseKey = moreCourse.selectionKey
+
+        expect(context.selectedMoreCourseOfferedCourseItems.map((course) => course.selectionKey))
+            .toEqual(['additional:GW1::regular', 'additional:GW1::fu', 'additional:GW1::compact'])
+        expect(TimetableV2.methods.moreOfferedCourseSelectionsForSingleCourse.call(context, moreCourse))
+            .toEqual({
+                'additional:GW1::compact': true,
+                'additional:GW1::fu': true,
+                'additional:GW1::regular': true,
+            })
+        expect(TimetableV2.methods.moreCourseOfferDisabled.call(context, offeredCourses[0], moreCourse)).toBe(false)
+
+        TimetableV2.methods.toggleMoreOfferedCourseItem.call(context, offeredCourses[0], moreCourse)
+
+        expect(saveStoredTimetableState).toHaveBeenCalledOnce()
+        context.storedTimetableState = saveStoredTimetableState.mock.calls[0][0]
+        expect(TimetableV2.methods.moreCourseOfferedCourseItemsAnySelected.call(context, moreCourse)).toBe(true)
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(payload.selected_additional_course_keys).toEqual(['GW1'])
+        expect(payload.deselected_course_group_keys).toEqual(['regular-key'])
+    })
+
+    it('keeps explicitly re-added more modules in the calculation when instruction filters hide their offers', () => {
+        const context = timetableV2Context({
+            courseGroups: [
+                {
+                    class_name: 'D5-5C-SHAM',
+                    course: 'D',
+                    hour: 14,
+                    module_code: 'D5',
+                    title: 'D',
+                    weekday: 2,
+                },
+                {
+                    class_name: 'D5-5K-AUER',
+                    course: 'D',
+                    hour: 13,
+                    module_code: 'D5',
+                    title: 'D',
+                    weekday: 4,
+                },
+            ],
+            storedSemesterCourseItems: [
+                { code: 'D5', hours: 3, key: 'D5', label: 'D5' },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    courseSelections: {
+                        'semester:D5': true,
+                    },
+                    includeDistanceLearningCourses: false,
+                    includeNormalunterrichtCourses: false,
+                },
+                transferredStudentContext: null,
+            },
+        })
+        const d5Course = context.selectedCourseItems.find((course) => course.selectionKey === 'semester:D5')
+        const [selectedOffer, deselectedOffer] = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, d5Course)
+
+        context.storedTimetableState = {
+            ...context.storedTimetableState,
+            timetableV2Selection: {
+                ...context.storedTimetableState.timetableV2Selection,
+                offeredCourseSelections: {
+                    [deselectedOffer.selectionKey]: false,
+                },
+            },
+        }
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(context.selectedCourseItems.map((course) => course.selectionKey)).toContain('semester:D5')
+        expect(payload.selected_course_keys).toEqual(['D5'])
+        expect(payload.selected_additional_course_keys).toEqual([])
+        expect(payload.deselected_course_group_keys).toEqual([deselectedOffer.backendSelectionKey])
+        expect(payload.deselected_course_group_keys).not.toContain(selectedOffer.backendSelectionKey)
+    })
+
+    it('persists selected more module offers explicitly when instruction filters would otherwise hide them', async () => {
+        let context: ReturnType<typeof timetableV2Context>
+        const saveStoredTimetableState = vi.fn((state) => {
+            context.storedTimetableState = state
+        })
+
+        context = timetableV2Context({
+            calculateTimetables: vi.fn(() => Promise.resolve()),
+            courseGroups: [
+                {
+                    class_name: 'D5-5C-SHAM',
+                    course: 'D',
+                    hour: 14,
+                    module_code: 'D5',
+                    title: 'D',
+                    weekday: 2,
+                },
+            ],
+            saveStoredTimetableState,
+            storedSemesterCourseItems: [
+                { code: 'D5', hours: 3, key: 'D5', label: 'D5' },
+            ],
+            storedTimetableState: {
+                selection: {},
+                timetableV2Selection: {
+                    courseSelections: {
+                        'semester:D5': false,
+                    },
+                    includeNormalunterrichtCourses: false,
+                },
+                transferredStudentContext: null,
+            },
+            storedTimetableStateForSaving() {
+                return context.storedTimetableState
+            },
+            timetableCalculationResult: {
+                full_green_timetable_count: 1,
+                green_timetable_count: 0,
+                selected_timetable: { number: 1, type: 'full_green' },
+            },
+            timetableV2Step: 'timetable-calculation',
+        })
+
+        await TimetableV2.methods.openMoreCoursesCard.call(context)
+
+        const moreCourse = context.moreCoursesCardItems.find((course) => course.selectionKey === 'semester:D5')
+        const [selectedOffer] = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, moreCourse)
+
+        TimetableV2.methods.toggleMoreCourseOffers.call(context, moreCourse)
+        await TimetableV2.methods.applyMoreCoursesSelection.call(context)
+
+        expect(saveStoredTimetableState).toHaveBeenCalled()
+        expect(context.storedTimetableState.timetableV2Selection.courseSelections).toMatchObject({
+            'semester:D5': true,
+        })
+        expect(context.storedTimetableState.timetableV2Selection.offeredCourseSelections).toMatchObject({
+            [selectedOffer.selectionKey]: true,
+        })
+
+        const payload = TimetableV2.methods.timetableV2CalculationPayload.call(context)
+
+        expect(payload.selected_course_keys).toEqual(['D5'])
+        expect(payload.deselected_course_group_keys).toEqual([])
     })
 
     it('stores unchecked instruction course filters and removes them again when checked', () => {
@@ -10699,10 +11422,19 @@ describe('TimetableV2 route steps', () => {
             saveStoredTimetableState,
         })
 
+        TimetableV2.methods.updateInstructionCourseFilter.call(context, 'includeNormalunterrichtCourses', false)
         TimetableV2.methods.updateInstructionCourseFilter.call(context, 'includeDistanceLearningCourses', false)
         TimetableV2.methods.updateInstructionCourseFilter.call(context, 'includeKompaktunterrichtCourses', true)
 
         expect(saveStoredTimetableState).toHaveBeenNthCalledWith(1, {
+            selection: {},
+            timetableV2Selection: {
+                includeNormalunterrichtCourses: false,
+                includeKompaktunterrichtCourses: false,
+            },
+            transferredStudentContext: null,
+        })
+        expect(saveStoredTimetableState).toHaveBeenNthCalledWith(2, {
             selection: {},
             timetableV2Selection: {
                 includeDistanceLearningCourses: false,
@@ -10710,7 +11442,7 @@ describe('TimetableV2 route steps', () => {
             },
             transferredStudentContext: null,
         })
-        expect(saveStoredTimetableState).toHaveBeenNthCalledWith(2, {
+        expect(saveStoredTimetableState).toHaveBeenNthCalledWith(3, {
             selection: {},
             timetableV2Selection: {},
             transferredStudentContext: null,

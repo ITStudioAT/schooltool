@@ -13,6 +13,7 @@
 - Abgeschlossene Kurse sind neu buchbar
 - Vorauswahl der Module bereinigt
 - 2-wöchig abwechselnde Module werden jetzt richtig erkannt
+- Sprachwechsel: Module richtig gestellt
 
 ## 3.41.8
 
@@ -34,6 +35,7 @@
 
 - Ohne Auswahl wird der Dialog nicht mehr verlassen (ausser bei Abbruch)
 - UI-Design des Dialog verbessert
+- Liste der Studierenden alphabetisch
 
 ### Auswahl/Start
 

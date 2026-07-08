@@ -339,6 +339,7 @@ export default {
             return this.courseSelectionWouldExceedLimit(course, this.activeCourseSelections)
         },
         courseSelectionDisabledLabel(course, disabled) {
+            if (course.unavailableReason === 'prerequisite') return 'Voraussetzung nicht erfüllt'
             if (course.unavailable) return 'Kein angebotenes Modul vorhanden'
             if (disabled) return 'Maximum 10 Module / 30 Stunden erreicht'
 
