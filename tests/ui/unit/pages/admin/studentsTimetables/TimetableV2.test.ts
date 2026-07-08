@@ -8426,7 +8426,7 @@ describe('TimetableV2 route steps', () => {
         ])
     })
 
-    it('omits whole-semester date ranges from the adopted timetable PDF payload', () => {
+    it('keeps whole-semester date ranges for compact courses in the adopted timetable PDF payload', () => {
         const context = timetableV2Context({
             timetableV2Step: 'timetable-adoption',
             selectedSchoolyear: {
@@ -8464,7 +8464,7 @@ describe('TimetableV2 route steps', () => {
         const payload = context.adoptedTimetablePdfPayload()
         const tuesdayCell = payload.semesters[0].weeks[0].hours[0].cells[1]
 
-        expect(tuesdayCell.courses[0].details).toBe('M4-3U-ALT\nKompakt')
+        expect(tuesdayCell.courses[0].details).toBe('M4-3U-ALT\n16.02.-11.07. (Kompakt)')
     })
 
     it('omits regular date ranges from non-compact courses in the adopted timetable PDF payload', () => {
@@ -9990,6 +9990,7 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain('students-timetable-v2-offerchoices')
         expect(source).toMatch(/students-timetable-v2-review-card[\s\S]*students-timetable-v2-offerchoices[\s\S]*Gewählte Module/u)
         expect(source).toContain('v-for="module in offerChoiceModuleItems"')
+        expect(source).toContain('v-if="!adoptedTimetableVisible"')
         expect(source).toContain('size="large"')
         expect(source).toContain(':closable="selectedCourseItemsDeletable"')
         expect(source).toContain('close-icon="mdi-close"')
@@ -10042,8 +10043,12 @@ describe('TimetableV2 route steps', () => {
         }))
     })
 
-    it('shows offer choice modules on the calculation step', () => {
-        const context = timetableV2Context({
+    it('shows offer counts on calculation and only used module names on adoption', () => {
+        const offeredCourseSelections = {
+            'semester:D1::b': false,
+            'semester:E1::a': false,
+        }
+        const contextOptions = {
             selectedCourseItems: [
                 {
                     code: 'M1',
@@ -10093,20 +10098,26 @@ describe('TimetableV2 route steps', () => {
             },
             storedTimetableState: {
                 adaptedTimetableV2Selection: {
-                    offeredCourseSelections: {
-                        'semester:D1::b': false,
-                        'semester:E1::a': false,
-                    },
+                    offeredCourseSelections,
                 },
                 selection: {},
-                timetableV2Selection: {},
+                timetableV2Selection: {
+                    offeredCourseSelections,
+                },
                 transferredStudentContext: null,
             },
+        }
+        const calculationContext = timetableV2Context({
+            ...contextOptions,
             timetableCalculationVisible: true,
             timetableV2Step: 'timetable-calculation',
         })
+        const adoptionContext = timetableV2Context({
+            ...contextOptions,
+            timetableV2Step: 'timetable-adoption',
+        })
 
-        expect(context.offerChoiceModuleItems.map((module) => ({
+        expect(calculationContext.offerChoiceModuleItems.map((module) => ({
             countLabel: module.countLabel,
             label: module.label,
         }))).toEqual([
@@ -10119,6 +10130,7 @@ describe('TimetableV2 route steps', () => {
                 label: 'M1',
             },
         ])
+        expect(adoptionContext.offerChoiceModuleItems.map((module) => module.label)).toEqual(['D1', 'M1'])
     })
 
     it('can explicitly select offers that are excluded by instruction filters', () => {

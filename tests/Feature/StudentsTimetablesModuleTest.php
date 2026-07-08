@@ -3493,6 +3493,8 @@ it('creates a timetable overview pdf from posted timetable data', function () {
             && $pdf->contains('GWB1-1RU-RAI')
             && $pdf->contains('20.02.-10.7.')
             && ! $pdf->contains('3RU-KOW 20.02.-10.7. (Kompakt)')
+            && $pdf->contains('<span class="course-detail-line">21.02.-25.04.</span>')
+            && $pdf->contains('<span class="course-detail-line">20.02.-10.7.</span>')
             && ! $pdf->contains('<span class="course-detail-line">21.02.-25.04. (Kompakt)</span>')
             && ! $pdf->contains('<span class="course-detail-line">20.02.-10.7. (Kompakt)</span>')
             && ! $pdf->contains('CH1-3RU-KOW 20.02.-10.7. (Kompakt)')

@@ -102,7 +102,9 @@
                                 class="students-timetable-v2-offerchoices__module"
                                 @click:close.stop="removeSelectedCourseItem(module.course)">
                                 <span>{{ module.label }}</span>
-                                <span class="students-timetable-v2-offerchoices__meta">
+                                <span
+                                    v-if="!adoptedTimetableVisible"
+                                    class="students-timetable-v2-offerchoices__meta">
                                     {{ module.countLabel }}
                                 </span>
                             </v-chip>
@@ -4028,7 +4030,7 @@ export default {
         adoptedTimetablePdfCourseTimePatternLabel(slot) {
             const isKompaktunterricht = this.selectedTimetableV2SlotIsKompaktunterricht(slot)
             const timePatternLabel = this.selectedTimetableV2SlotTimePatternLabel(slot, {
-                hideWholeSemesterRange: true,
+                hideWholeSemesterRange: !isKompaktunterricht,
                 showRegularRange: isKompaktunterricht,
             })
 

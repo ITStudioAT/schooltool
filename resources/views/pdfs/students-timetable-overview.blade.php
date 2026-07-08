@@ -482,6 +482,12 @@
                     return '';
                 }
 
+                if ($hideCourseHintDetails
+                    && preg_match('/\bKompakt(?:unterricht|kurs)?\b/iu', $segment) === 1
+                    && preg_match('/\d{1,2}\.\d{1,2}\.?(?:\d{2,4})?\s*-\s*\d{1,2}\.\d{1,2}\.?(?:\d{2,4})?/u', $segment) === 1) {
+                    return e($stripCompactMarkerText($segment));
+                }
+
                 if ($hideCourseHintDetails && preg_match('/^(\d+\s*-?\s*w[^\s]*(?:\s+[AB])?)([:\s].*)?$/iu', $segment, $matches) === 1) {
                     $remainingText = preg_replace('/^\s*:\s*/u', '', (string) ($matches[2] ?? '')) ?: '';
 
@@ -1622,7 +1628,7 @@
                                         <span class="course-hint">{{ $hint }}</span>
                                     @endforeach
                                 </td>
-                                <td class="cell-details">{!! $formatDetailsHtml($slot['details'], ! empty($slot['is_compact']), true) !!}</td>
+                                <td class="cell-details">{!! $formatDetailsHtml($slot['details'], false, true) !!}</td>
                             </tr>
                         @endforeach
                     </tbody>
