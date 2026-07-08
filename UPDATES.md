@@ -25,6 +25,14 @@
 - Darstellung zwei Module in der gleichen TT-Zelle, die sich nicht überschneiden: Konflikt entfernt.
 - Selektion/De-Selektion bei Mehr Kurse: Unstimmigkeiten gefixt.
 - Sprache, Religion Vorauswahl bei Studierenden gefixt
+- Neu gewählte Module werden nicht mehr unter "Weitere Module" angezeigt
+
+### Neuer Menüpunkt TT-Einträge
+
+- Hier können alle Module bzw. deren Angebot und Einträge ausgewählt werden.
+- Die Auswahl scheint unter _Gemerkte Module_ auf.
+- Unter _Gemerkte Module_ werden alle Termine und Überschneidungen angezeigt
+- Unter _Gemerkte Module_ können Termine gestrichen werden, um Überschneidungen zu vermeiden
 
 ### Stundenplan mit Überschneidung
 

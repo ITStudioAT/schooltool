@@ -22,7 +22,7 @@ class StudentTimetableOverviewService
 
     private const CACHE_STALE_SECONDS = 120 * 60;
 
-    private const CACHE_VERSION = 4;
+    private const CACHE_VERSION = 5;
 
     /**
      * @return list<array<string, mixed>>
@@ -159,6 +159,8 @@ class StudentTimetableOverviewService
                 'date',
                 'semester',
                 'period',
+                'starts_at',
+                'ends_at',
                 'subject',
                 'module_code',
                 'teacher',
@@ -226,6 +228,8 @@ class StudentTimetableOverviewService
             'semester' => (int) $entry->semester,
             'weekday' => $weekday,
             'hour' => $hour,
+            'starts_at' => $this->cleanText($entry->starts_at),
+            'ends_at' => $this->cleanText($entry->ends_at),
             'subject' => $this->cleanText($entry->subject),
             'module_code' => $this->cleanText($entry->module_code),
             'teacher' => $this->cleanText($entry->teacher),
@@ -282,6 +286,8 @@ class StudentTimetableOverviewService
             'semester' => (int) $firstEntry['semester'],
             'weekday' => (int) $firstEntry['weekday'],
             'hour' => (int) $firstEntry['hour'],
+            'starts_at' => $firstEntry['starts_at'],
+            'ends_at' => $firstEntry['ends_at'],
             'title' => $this->courseTitle($firstEntry, $subjectMappings),
             'display_label' => $this->displayLabel($firstEntry, $entries, $subjectMappings),
             'subject' => $firstEntry['subject'],

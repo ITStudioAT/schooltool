@@ -128,6 +128,28 @@ it('stores real Untis TT rows without putting lesson times into subject and teac
         ->and($entry->module_code)->toBe('PH2');
 });
 
+it('exposes imported lesson times in timetable course groups', function () {
+    $filePath = "{$this->storageDirectory}/untis-course-groups-with-times.txt";
+    File::put($filePath, 'TT	82	20260217	14	20:25	21:10	5C	D5-5C-AUER	D				1		156100');
+
+    $this->service->createImport(
+        $this->user,
+        'untis-course-groups-with-times.txt',
+        'untis-course-groups-with-times.txt',
+        'app/private/testing/student-timetables/untis-course-groups-with-times.txt',
+        $this->schoolyear->id,
+    );
+
+    $courseGroups = (new StudentTimetableOverviewService)->courseGroupsForUser($this->user);
+    $courseGroup = collect($courseGroups)->firstWhere('class_name', 'D5-5C-AUER');
+
+    expect($courseGroup)->toMatchArray([
+        'hour' => 14,
+        'starts_at' => '20:25',
+        'ends_at' => '21:10',
+    ]);
+});
+
 it('extracts module codes from real Untis class names for matching subject overview modules', function () {
     $filePath = "{$this->storageDirectory}/untis-module-codes.txt";
     File::put($filePath, implode(PHP_EOL, [

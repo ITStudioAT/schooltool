@@ -4059,13 +4059,20 @@ class RobotTimetableBackendSetupService
      */
     private function courseOptions(array $course, array $courseGroups, array $subjectMappings, array $settings): array
     {
+        $selectedCourseGroupKeys = $this->stringList($settings['selected_course_group_keys'] ?? []);
         $deselectedCourseGroupKeys = $this->stringList($settings['deselected_course_group_keys'] ?? []);
+        $hasSelectedCourseGroupKeys = $this->courseHasSelectedCourseGroupKeys($course, $selectedCourseGroupKeys);
 
         return collect($courseGroups)
             ->filter(fn (array $courseGroup): bool => $this->courseGroupMatchesCourse($courseGroup, $course, $subjectMappings))
             ->filter(fn (array $courseGroup): bool => $this->courseGroupAvailable($courseGroup, $settings))
             ->groupBy(fn (array $courseGroup): string => $this->courseGroupOptionLabel($courseGroup))
             ->reject(fn (Collection $groups, string $label): bool => $label === '')
+            ->when(
+                $hasSelectedCourseGroupKeys,
+                fn (Collection $groups): Collection => $groups
+                    ->filter(fn (Collection $groups, string $label): bool => $this->courseGroupSelected($course, $label, $selectedCourseGroupKeys)),
+            )
             ->reject(fn (Collection $groups, string $label): bool => $this->courseGroupDeselected($course, $label, $deselectedCourseGroupKeys))
             ->map(function (Collection $groups, string $label) use ($course): array {
                 $courseGroups = $groups->values()->all();
@@ -4665,6 +4672,72 @@ class RobotTimetableBackendSetupService
             ->map(fn (string $courseKey): string => collect([$courseKey, $label])->filter()->implode('|'))
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  list<string>  $selectedCourseGroupKeys
+     */
+    private function courseHasSelectedCourseGroupKeys(array $course, array $selectedCourseGroupKeys): bool
+    {
+        return collect($selectedCourseGroupKeys)
+            ->contains(fn (string $selectedCourseGroupKey): bool => $this->courseGroupKeyBelongsToCourse($course, $selectedCourseGroupKey));
+    }
+
+    /**
+     * @param  list<string>  $selectedCourseGroupKeys
+     */
+    private function courseGroupSelected(array $course, string $label, array $selectedCourseGroupKeys): bool
+    {
+        return collect($selectedCourseGroupKeys)
+            ->contains(fn (string $selectedCourseGroupKey): bool => $this->courseGroupKeyMatchesCourseLabel($course, $label, $selectedCourseGroupKey));
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     */
+    private function courseGroupKeyBelongsToCourse(array $course, string $courseGroupKey): bool
+    {
+        [$courseKey, $label] = array_pad(explode('|', $courseGroupKey, 2), 2, '');
+
+        if (trim($label) === '') {
+            return false;
+        }
+
+        return $this->courseKeyMatchesCourse($course, $courseKey);
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     */
+    private function courseGroupKeyMatchesCourseLabel(array $course, string $label, string $courseGroupKey): bool
+    {
+        [$courseKey, $courseGroupLabel] = array_pad(explode('|', $courseGroupKey, 2), 2, '');
+
+        return trim($courseGroupLabel) === $label
+            && $this->courseKeyMatchesCourse($course, $courseKey);
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     */
+    private function courseKeyMatchesCourse(array $course, string $courseKey): bool
+    {
+        $courseKey = trim($courseKey);
+
+        if ($courseKey === '') {
+            return false;
+        }
+
+        if (in_array($courseKey, [
+            (string) ($course['key'] ?? ''),
+            (string) ($course['code'] ?? ''),
+        ], true)) {
+            return true;
+        }
+
+        $courseCode = $this->selectedCourseCodeFromKey($courseKey);
+
+        return $courseCode !== '' && in_array($courseCode, $this->courseAliases($course), true);
     }
 
     /**

@@ -467,6 +467,86 @@ it('excludes deselected offered course groups from backend timetable calculation
         ->not->toContain('E2-2A-RAI');
 });
 
+it('limits backend timetable course groups to explicitly selected offered groups', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-01',
+        'sem_2_start' => '2027-02-16',
+        'until' => '2027-07-01',
+    ]);
+
+    SchoolTool::query()
+        ->where('school_id', $user->school_id)
+        ->update(['active_schoolyear_id' => $schoolyear->id]);
+
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'semester' => 2,
+        'branch' => 'common',
+        'json_code' => 'E6',
+        'json_subject' => 'E',
+        'name' => 'Englisch 6',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => 1,
+        'source' => 'test',
+    ]);
+
+    collect([
+        ['date' => '2026-09-07', 'period' => '13', 'class_name' => 'E6-3R-HÖF'],
+        ['date' => '2026-09-08', 'period' => '14', 'class_name' => 'E6-6F-KÖN'],
+    ])->each(fn (array $entry, int $index): StudentTimetableEntry => StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'line_number' => $index + 1,
+        'date' => $entry['date'],
+        'semester' => 2,
+        'period' => $entry['period'],
+        'subject' => 'E',
+        'course' => 'E',
+        'module_code' => 'E6',
+        'class_name' => $entry['class_name'],
+        'is_active' => true,
+    ]));
+
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
+
+    $response = $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable', [
+            'selection' => [
+                'semester' => 2,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [13, 14],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => ['E6-1'],
+            'selected_course_group_keys' => ['E6|E6-3R-HÖF'],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => ['E6|E6-6F-KÖN'],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.timetable_variation_count', 1)
+        ->assertJsonPath('data.selected_timetable.slots.1-13.courseGroup.class_name', 'E6-3R-HÖF');
+
+    expect(json_encode($response->json('data.selected_timetable'), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE))
+        ->toContain('E6-3R-HÖF')
+        ->not->toContain('E6-6F-KÖN');
+});
+
 it('ignores inactive remembered tt entry dates in backend timetable calculations', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $schoolyear = Schoolyear::factory()->create([

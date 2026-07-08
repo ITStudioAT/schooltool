@@ -213,6 +213,8 @@ class StudentTimetableCalculationSettingsService
             'selected_course_keys.*' => ['string', 'max:255'],
             'deselected_course_keys' => ['array'],
             'deselected_course_keys.*' => ['string', 'max:255'],
+            'selected_course_group_keys' => ['array'],
+            'selected_course_group_keys.*' => ['string', 'max:255'],
             'deselected_course_group_keys' => ['array'],
             'deselected_course_group_keys.*' => ['string', 'max:255'],
             'selected_additional_course_keys' => ['array'],
