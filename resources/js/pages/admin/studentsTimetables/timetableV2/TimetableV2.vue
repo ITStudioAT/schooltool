@@ -1453,54 +1453,54 @@
                 cols="12"
                 class="students-timetable-v2-card-column students-timetable-v2-student-card-stack">
                 <div class="ttv2-strip">
-                    <div v-if="studentCardVisible" class="ttv2-strip__student">
-                        <div class="ttv2-strip__student-icon">
-                            <v-icon icon="mdi-account-school-outline" size="18" />
-                        </div>
-                        <div class="ttv2-strip__student-info">
-                            <span class="ttv2-strip__student-name">{{ storedTimetableStudentLabel }}</span>
-                            <span v-if="storedTimetableStudentReligionMeta() || storedTimetableStudentEmail" class="ttv2-strip__student-meta">
-                                <span v-if="storedTimetableStudentReligionMeta()" class="ttv2-strip__student-religion">
-                                    {{ storedTimetableStudentReligionMeta() }}
+                    <div class="ttv2-strip__identity-row">
+                        <div v-if="studentCardVisible" class="ttv2-strip__student">
+                            <div class="ttv2-strip__student-icon" aria-hidden="true">
+                                {{ storedTimetableStudentInitials }}
+                            </div>
+                            <div class="ttv2-strip__student-info">
+                                <span class="ttv2-strip__student-name">{{ storedTimetableStudentLabel }}</span>
+                                <span v-if="storedTimetableStudentReligionMeta() || storedTimetableStudentEmail" class="ttv2-strip__student-meta">
+                                    <span v-if="storedTimetableStudentReligionMeta()" class="ttv2-strip__student-religion">
+                                        {{ storedTimetableStudentReligionMeta() }}
+                                    </span>
+                                    <span v-if="storedTimetableStudentReligionMeta() && storedTimetableStudentEmail" aria-hidden="true">·</span>
+                                    <button
+                                        v-if="storedTimetableStudentEmail"
+                                        type="button"
+                                        class="ttv2-strip__student-email"
+                                        :class="{ 'ttv2-strip__student-email--copied': copiedStudentEmailCode === storedTimetableStudentCode }"
+                                        :title="copiedStudentEmailCode === storedTimetableStudentCode ? 'Kopiert!' : `E-Mail kopieren: ${storedTimetableStudentEmail}`"
+                                        @click.stop="copyStoredTimetableStudentEmail">
+                                        <span>{{ storedTimetableStudentEmail }}</span>
+                                        <v-icon :icon="copiedStudentEmailCode === storedTimetableStudentCode ? 'mdi-check' : 'mdi-content-copy'" size="11" />
+                                    </button>
                                 </span>
-                                <button
-                                    v-if="storedTimetableStudentEmail"
-                                    type="button"
-                                    class="ttv2-strip__student-email"
-                                    :class="{ 'ttv2-strip__student-email--copied': copiedStudentEmailCode === storedTimetableStudentCode }"
-                                    :title="copiedStudentEmailCode === storedTimetableStudentCode ? 'Kopiert!' : `E-Mail kopieren: ${storedTimetableStudentEmail}`"
-                                    @click.stop="copyStoredTimetableStudentEmail">
-                                    <v-icon icon="mdi-email-outline" size="12" />
-                                    <span>{{ storedTimetableStudentEmail }}</span>
-                                    <v-icon :icon="copiedStudentEmailCode === storedTimetableStudentCode ? 'mdi-check' : 'mdi-content-copy'" size="11" />
-                                </button>
-                            </span>
+                            </div>
+                            <div class="ttv2-strip__student-actions">
+                                <v-btn
+                                    icon="mdi-pencil"
+                                    variant="text"
+                                    density="compact"
+                                    size="x-small"
+                                    title="Student bearbeiten"
+                                    @click.stop="openStudentDialog" />
+                                <v-btn
+                                    v-if="storedTimetableStudentContext"
+                                    icon="mdi-close"
+                                    variant="text"
+                                    density="compact"
+                                    size="x-small"
+                                    title="Student entfernen"
+                                    @click.stop="clearStoredTimetableStudent" />
+                            </div>
                         </div>
-                        <div class="ttv2-strip__student-actions">
-                            <v-btn
-                                icon="mdi-pencil"
-                                variant="text"
-                                density="compact"
-                                size="x-small"
-                                title="Student bearbeiten"
-                                @click.stop="openStudentDialog" />
-                            <v-btn
-                                v-if="storedTimetableStudentContext"
-                                icon="mdi-close"
-                                variant="text"
-                                density="compact"
-                                size="x-small"
-                                title="Student entfernen"
-                                @click.stop="clearStoredTimetableStudent" />
+
+                        <div v-if="!studentCardVisible && selectionCardVisible" class="ttv2-strip__no-student">
+                            <v-icon icon="mdi-account-off-outline" size="18" />
+                            <span>Ohne Studierenden</span>
                         </div>
                     </div>
-
-                    <div v-if="!studentCardVisible && selectionCardVisible" class="ttv2-strip__no-student">
-                        <v-icon icon="mdi-account-off-outline" size="16" />
-                        <span>Ohne Studierenden</span>
-                    </div>
-
-                    <div v-if="selectionCardVisible" class="ttv2-strip__divider" />
 
                     <div v-if="selectionCardVisible" class="ttv2-strip__selections">
                         <div
@@ -1510,17 +1510,19 @@
                             role="group"
                             :aria-label="item.label"
                             :title="item.label">
+                            <span class="ttv2-strip__sel-label">{{ item.label }}</span>
                             <div v-if="item.options?.length" class="ttv2-strip__sel-chips">
                                 <v-chip
                                     v-for="option in item.options"
                                     :key="option.value"
                                     size="small"
                                     density="default"
-                                    :color="selectionOptionSelected(item, option) ? 'success' : undefined"
-                                    :variant="selectionOptionSelected(item, option) ? 'flat' : 'outlined'"
                                     class="ttv2-strip__sel-chip"
+                                    :class="{ 'ttv2-strip__sel-chip--selected': selectionOptionSelected(item, option) }"
+                                    variant="flat"
                                     :aria-pressed="selectionOptionSelected(item, option) ? 'true' : 'false'"
                                     @click="selectTimetableSelectionOption(item.key, option.value)">
+                                    <v-icon v-if="selectionOptionSelected(item, option)" icon="mdi-check" size="14" />
                                     {{ option.title }}
                                 </v-chip>
                             </div>
@@ -1536,20 +1538,25 @@
             <v-col v-if="courseCardsVisible" cols="12" class="students-timetable-v2-card-column">
                 <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-visited-courses-card">
                     <v-card-title class="students-timetable-v2-visited-courses-card__title">
-                        Besuchte Module
+                        <span>Besuchte Module</span>
+                        <span class="students-timetable-v2-visited-courses-card__legend" aria-label="Legende">
+                            <span><i class="students-timetable-v2-visited-courses-card__legend-dot students-timetable-v2-visited-courses-card__legend-dot--completed"></i> Bestanden</span>
+                            <span><i class="students-timetable-v2-visited-courses-card__legend-dot students-timetable-v2-visited-courses-card__legend-dot--failed"></i> Negativ</span>
+                        </span>
                     </v-card-title>
                     <v-card-text class="students-timetable-v2-visited-courses-card__content">
                         <div v-if="visitedCourseItems.length" class="students-timetable-v2-visited-courses-card__list">
                             <v-chip
                                 v-for="course in visitedCourseItems"
                                 :key="course.key"
-                                :color="course.color"
-                                variant="tonal"
+                                variant="flat"
                                 size="small"
                                 label
                                 class="students-timetable-v2-visited-courses-card__chip"
+                                :class="`students-timetable-v2-visited-courses-card__chip--${course.status}`"
                                 :title="course.title">
                                 <span class="students-timetable-v2-visited-courses-card__course">{{ course.label }}</span>
+                                <span v-if="course.status === 'failed'" class="students-timetable-v2-visited-courses-card__negative-badge">NEG</span>
                                 <span class="students-timetable-v2-visited-courses-card__grade">{{ course.grade }}</span>
                             </v-chip>
                         </div>
@@ -1571,7 +1578,7 @@
                 @apply-course-selections="applyDraftCourseSelections" />
 
             <v-col v-if="courseCardsVisible && selectedCourseLimitReached" cols="12" class="students-timetable-v2-card-column">
-                <v-alert type="info" variant="tonal" density="compact" icon="mdi-information-outline">
+                <v-alert type="info" variant="tonal" density="compact" icon="mdi-information-outline" class="students-timetable-v2-limit-alert">
                     <div>Maximum erreicht: Negative Module und Frühere Module dürfen zusammen höchstens 10 Module und 30 Stunden ergeben.</div>
                     <div>Wählen Sie ein Modul ab, um ein anderes Modul auszuwählen.</div>
                 </v-alert>
@@ -1580,34 +1587,40 @@
             <v-col v-if="restartCardVisible" cols="12" class="students-timetable-v2-card-column">
                 <v-card rounded="lg" class="students-timetable-v2-card students-timetable-v2-restart-card">
                     <v-card-text class="students-timetable-v2-restart-card__content">
-                        <v-btn
-                            color="error"
-                            variant="tonal"
-                            size="large"
-                            prepend-icon="mdi-restart"
-                            @click="restartTimetableV2">
-                            Neustart
-                        </v-btn>
-                        <v-btn
-                            v-if="courseCardsVisible && courseLimitPreselectionResetAvailable"
-                            color="primary"
-                            variant="tonal"
-                            size="large"
-                            prepend-icon="mdi-tune-variant"
-                            @click="applyCourseLimitPreselection(true)">
-                            Vorauswahl zurücksetzen
-                        </v-btn>
-                        <v-btn
-                            v-if="courseCardsVisible"
-                            color="success"
-                            variant="tonal"
-                            size="large"
-                            class="students-timetable-v2-restart-card__automatic-button"
-                            append-icon="mdi-arrow-right"
-                            :disabled="selectedCourseLimitExceeded"
-                            @click="openCourseReview">
-                            Weiter
-                        </v-btn>
+                        <div v-if="courseCardsVisible" class="students-timetable-v2-restart-card__summary">
+                            <span>Ausgewählt: <strong>{{ selectedCourseLimitSummary.countLabel }}</strong></span>
+                            <span>{{ selectedCourseLimitSummary.hoursLabel }}</span>
+                            <span class="students-timetable-v2-restart-card__limit">Maximal 10 Module / 30 Std.</span>
+                        </div>
+                        <div class="students-timetable-v2-restart-card__actions">
+                            <v-btn
+                                color="error"
+                                variant="outlined"
+                                size="large"
+                                prepend-icon="mdi-restart"
+                                @click="restartTimetableV2">
+                                Neustart
+                            </v-btn>
+                            <v-btn
+                                v-if="courseCardsVisible && courseLimitPreselectionResetAvailable"
+                                class="students-timetable-v2-restart-card__preselection-button"
+                                variant="outlined"
+                                size="large"
+                                prepend-icon="mdi-tune-variant"
+                                @click="applyCourseLimitPreselection(true)">
+                                Vorauswahl zurücksetzen
+                            </v-btn>
+                            <v-btn
+                                v-if="courseCardsVisible"
+                                variant="flat"
+                                size="large"
+                                class="students-timetable-v2-restart-card__automatic-button"
+                                append-icon="mdi-arrow-right"
+                                :disabled="selectedCourseLimitExceeded"
+                                @click="openCourseReview">
+                                Weiter
+                            </v-btn>
+                        </div>
                     </v-card-text>
                 </v-card>
             </v-col>
@@ -1994,11 +2007,8 @@ export default {
         noStudentCourseSelectionMode() {
             return !this.storedTimetableStudentContext && this.timetableStartMode === 'without-student'
         },
-        missingCourseCardVisible() {
-            return this.courseCardsVisible && this.storedMissingCourseCardItems.length > 0
-        },
         courseCardMdColumns() {
-            return this.missingCourseCardVisible ? 3 : 4
+            return 3
         },
         courseSelectionCards() {
             return [
@@ -2008,7 +2018,6 @@ export default {
                     items: this.storedCompletedCourseItems.map((course) => this.courseSelectionCardItem(course, 'completed')),
                     key: 'completed',
                     mdColumns: 12,
-                    summaryChips: this.courseSelectionCardSummaryChips(this.storedCompletedCourseSummary, 'success'),
                     title: 'Abgeschlossene Module',
                     visible: this.courseCardsVisible,
                 },
@@ -2017,16 +2026,14 @@ export default {
                     emptyLabel: 'Keine negativen Module gefunden.',
                     items: this.storedMissingCourseCardItems.map((course) => this.courseSelectionCardItem(course, 'missing')),
                     key: 'missing',
-                    summaryChips: this.courseSelectionCardSummaryChips(this.storedMissingCourseCardSummary, 'success'),
                     title: 'Negative Module',
-                    visible: this.missingCourseCardVisible,
+                    visible: this.courseCardsVisible,
                 },
                 {
                     courseGroup: 'planned',
                     emptyLabel: 'Keine vorgesehenen Module gefunden.',
                     items: this.storedPlannedCourseItems.map((course) => this.courseSelectionCardItem(course, 'planned')),
                     key: 'planned',
-                    summaryChips: this.courseSelectionCardSummaryChips(this.storedPlannedCourseSummary, 'success'),
                     title: 'Frühere Module',
                     visible: this.courseCardsVisible,
                 },
@@ -2035,7 +2042,6 @@ export default {
                     emptyLabel: 'Keine aktuellen Module gefunden.',
                     items: this.storedSemesterCourseItems.map((course) => this.courseSelectionCardItem(course, 'semester')),
                     key: 'semester',
-                    summaryChips: this.courseSelectionCardSummaryChips(this.storedSemesterCourseSummary, 'success'),
                     title: 'Aktuelle Module',
                     visible: this.courseCardsVisible,
                 },
@@ -2044,7 +2050,6 @@ export default {
                     emptyLabel: 'Keine zusätzlichen Module gefunden.',
                     items: this.storedAdditionalCourseItems.map((course) => this.courseSelectionCardItem(course, 'additional')),
                     key: 'additional',
-                    summaryChips: this.courseSelectionCardSummaryChips(this.storedAdditionalCourseSummary, 'success'),
                     title: 'Zusätzliche Module',
                     visible: this.courseCardsVisible,
                 },
@@ -2089,6 +2094,12 @@ export default {
             if (!label) return 'Kein Student'
 
             return label
+        },
+        storedTimetableStudentInitials() {
+            const [studentName = ''] = this.storedTimetableStudentLabel.split('·')
+            const nameParts = studentName.trim().split(/\s+/u).filter(Boolean)
+
+            return nameParts.slice(0, 2).map((namePart) => namePart.charAt(0)).join('').toUpperCase() || '–'
         },
         storedTimetableStudentEmail() {
             const storedEmail = String(this.storedTimetableStudentContext?.student?.email || '').trim()
@@ -9888,20 +9899,6 @@ export default {
                 return false
             })
         },
-        courseSelectionCardSummaryChips(summary, color) {
-            return [
-                {
-                    color,
-                    key: 'count',
-                    label: summary.countLabel,
-                },
-                {
-                    color,
-                    key: 'hours',
-                    label: summary.hoursLabel,
-                },
-            ]
-        },
         courseSelectionCardItem(course, courseGroup) {
             const selected = this.courseItemSelected(course, courseGroup)
             const unavailableReason = this.courseItemUnavailableReason(course, courseGroup)
@@ -9945,7 +9942,6 @@ export default {
 
             return {
                 ...course,
-                color: status === 'failed' ? 'error' : 'success',
                 grade,
                 key: `${status}-${String(course?.key || label || grade).trim()}`,
                 label,
@@ -11669,9 +11665,9 @@ export default {
     width: 100%;
     height: 100%;
     flex-direction: column;
-    border: 1px solid rgba(37, 99, 235, 0.12);
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+    border: 1px solid var(--schedule-border);
+    background: #ffffff;
+    box-shadow: none;
 }
 
 .students-timetable-v2-card :deep(.v-card-text) {
@@ -11696,40 +11692,37 @@ export default {
 }
 
 .ttv2-strip {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    display: grid;
+    gap: 18px;
     width: 100%;
     flex: 1 1 100%;
-    border: 1px solid rgba(37, 99, 235, 0.12);
-    border-radius: 14px;
-    padding: 8px 14px;
-    background: rgba(255, 255, 255, 0.94);
-    min-height: 48px;
-    flex-wrap: wrap;
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+    border: 0;
+    border-radius: 12px;
+    padding: 0;
+    background: #ffffff;
+    box-shadow: none;
 }
 
 .students-timetable-v2-stepper {
     width: 100%;
-    border: 1px solid rgba(37, 99, 235, 0.12);
-    border-radius: 14px;
-    background: rgba(255, 255, 255, 0.94) !important;
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+    border: 0;
+    border-radius: 0;
+    background: #ffffff !important;
+    box-shadow: none;
     overflow: hidden;
 }
 
 .students-timetable-v2-stepper :deep(.v-stepper-header) {
-    min-height: 54px;
+    min-height: 60px;
     box-shadow: none;
 }
 
 .students-timetable-v2-stepper :deep(.v-stepper-item) {
     position: relative;
-    min-height: 54px;
+    min-height: 60px;
     padding: 8px 12px;
-    border-radius: 12px;
-    color: rgba(var(--v-theme-on-surface), 0.7);
+    border-radius: 0;
+    color: var(--schedule-muted);
     transition:
         background-color 0.18s ease,
         box-shadow 0.18s ease,
@@ -11737,35 +11730,50 @@ export default {
 }
 
 .students-timetable-v2-stepper :deep(.v-stepper-item--selected) {
-    background: rgba(37, 99, 235, 0.12);
-    color: rgb(var(--v-theme-primary));
-    box-shadow:
-        inset 0 0 0 1px rgba(37, 99, 235, 0.32),
-        0 6px 14px rgba(37, 99, 235, 0.12);
+    background: transparent;
+    color: var(--schedule-heading);
+    box-shadow: none;
 }
 
 .students-timetable-v2-stepper :deep(.v-stepper-item--complete:not(.v-stepper-item--selected)) {
-    color: rgba(var(--v-theme-success), 0.94);
+    color: var(--schedule-accent);
 }
 
 .students-timetable-v2-stepper :deep(.v-stepper-item__avatar.v-avatar) {
-    font-weight: 900;
+    width: 28px;
+    height: 28px;
+    background: #e0e3eb !important;
+    color: var(--schedule-muted) !important;
+    font-size: 0.8rem;
+    font-weight: 700;
 }
 
 .students-timetable-v2-stepper :deep(.v-stepper-item--selected .v-stepper-item__avatar.v-avatar) {
-    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.18);
-    transform: scale(1.08);
+    background: var(--schedule-accent) !important;
+    color: #ffffff !important;
+    box-shadow: none;
+    transform: none;
 }
 
 .students-timetable-v2-stepper :deep(.v-stepper-item__title) {
-    font-size: 0.82rem;
-    font-weight: 800;
+    font-size: 0.86rem;
+    font-weight: 600;
     letter-spacing: 0;
 }
 
 .students-timetable-v2-stepper :deep(.v-stepper-item--selected .v-stepper-item__title) {
-    font-size: 0.9rem;
-    font-weight: 900;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.ttv2-strip__identity-row {
+    display: flex;
+    align-items: center;
+    min-height: 76px;
+    border: 1px solid var(--schedule-border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    background: #f7f8fb;
 }
 
 .ttv2-strip__student {
@@ -11780,12 +11788,14 @@ export default {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 9px;
-    background: rgba(219, 234, 254, 0.9);
-    color: #2563eb;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--schedule-accent);
+    color: #ffffff;
     flex-shrink: 0;
+    font-size: 0.84rem;
+    font-weight: 700;
 }
 
 .ttv2-strip__student-info {
@@ -11796,8 +11806,8 @@ export default {
 }
 
 .ttv2-strip__student-name {
-    color: #0f172a;
-    font-size: 0.92rem;
+    color: var(--schedule-heading);
+    font-size: 0.94rem;
     font-weight: 700;
     line-height: 1.2;
     white-space: nowrap;
@@ -11813,9 +11823,9 @@ export default {
 }
 
 .ttv2-strip__student-religion {
-    color: #0369a1;
-    font-size: 0.68rem;
-    font-weight: 700;
+    color: var(--schedule-muted);
+    font-size: 0.78rem;
+    font-weight: 500;
     line-height: 1;
 }
 
@@ -11825,9 +11835,9 @@ export default {
     gap: 3px;
     border: none;
     background: none;
-    color: #2563eb;
-    font-size: 0.68rem;
-    font-weight: 600;
+    color: var(--schedule-muted);
+    font-size: 0.78rem;
+    font-weight: 500;
     cursor: pointer;
     padding: 0;
     line-height: 1;
@@ -11836,7 +11846,7 @@ export default {
 
 .ttv2-strip__student-email:hover,
 .ttv2-strip__student-email:focus-visible {
-    color: #1d4ed8;
+    color: var(--schedule-accent-dark);
 }
 
 .ttv2-strip__student-email--copied {
@@ -11849,6 +11859,7 @@ export default {
     gap: 2px;
     flex-shrink: 0;
     color: #475569;
+    margin-left: auto;
 }
 
 .ttv2-strip__no-student {
@@ -11860,82 +11871,143 @@ export default {
     font-weight: 700;
 }
 
-.ttv2-strip__divider {
-    width: 1px;
-    height: 28px;
-    background: rgba(37, 99, 235, 0.14);
-    flex-shrink: 0;
-}
-
 .ttv2-strip__selections {
-    display: flex;
-    align-items: stretch;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: start;
+    gap: 16px;
     min-width: 0;
-    flex-wrap: wrap;
-    flex: 1;
 }
 
 .ttv2-strip__sel-group {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    display: grid;
+    align-items: start;
+    gap: 8px;
     min-width: 0;
-    min-height: 42px;
-    padding: 6px 8px;
-    border: 1px solid rgba(37, 99, 235, 0.12);
-    border-radius: 10px;
-    background: rgba(248, 250, 252, 0.86);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.ttv2-strip__sel-label {
+    color: var(--schedule-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
 }
 
 .ttv2-strip__sel-chips {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
     flex-wrap: wrap;
 }
 
 .ttv2-strip__sel-chip {
     cursor: pointer;
-    min-height: 28px;
+    min-height: 30px;
+    border: 1.5px solid transparent !important;
+    border-radius: 8px !important;
+    background: #f1f2f6 !important;
+    color: #5b6472 !important;
     font-size: 0.78rem !important;
+    font-weight: 600;
+    box-shadow: none !important;
+}
+
+.ttv2-strip__sel-chip:hover {
+    border-color: #c7c9f5 !important;
+    color: var(--schedule-accent-dark) !important;
+}
+
+.ttv2-strip__sel-chip--selected {
+    border-color: var(--schedule-accent-dark) !important;
+    background: var(--schedule-accent) !important;
+    color: #ffffff !important;
     font-weight: 700;
-    border-color: rgba(37, 99, 235, 0.2) !important;
-}
-
-.ttv2-strip__sel-chip:not(.v-chip--variant-flat) {
-    color: #334155 !important;
-}
-
-.ttv2-strip__sel-chip:not(.v-chip--variant-flat):hover {
-    background: rgba(219, 234, 254, 0.78) !important;
-    color: #1d4ed8 !important;
+    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.35) !important;
 }
 
 .students-timetable-v2-visited-courses-card__title {
-    color: #0f172a;
-    font-size: 1rem;
-    font-weight: 900;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    color: var(--schedule-heading);
+    font-size: 0.94rem;
+    font-weight: 700;
+}
+
+.students-timetable-v2-visited-courses-card__legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--schedule-muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.students-timetable-v2-visited-courses-card__legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.students-timetable-v2-visited-courses-card__legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+}
+
+.students-timetable-v2-visited-courses-card__legend-dot--completed {
+    border: 1px solid #d7dae2;
+    background: #f1f2f6;
+}
+
+.students-timetable-v2-visited-courses-card__legend-dot--failed {
+    background: #8f1f16;
 }
 
 .students-timetable-v2-visited-courses-card__content {
-    padding-top: 0;
+    padding-top: 2px;
 }
 
 .students-timetable-v2-visited-courses-card__list {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     flex-wrap: wrap;
 }
 
 .students-timetable-v2-visited-courses-card__chip {
-    font-weight: 800;
+    border: 1px solid #d7dae2 !important;
+    border-radius: 8px !important;
+    background: #f1f2f6 !important;
+    color: #3d4451 !important;
+    font-weight: 600;
+    box-shadow: none !important;
+}
+
+.students-timetable-v2-visited-courses-card__chip--failed {
+    border-color: #f3b9b3 !important;
+    background: #fdecea !important;
+    color: #8f1f16 !important;
 }
 
 .students-timetable-v2-visited-courses-card__course {
     margin-right: 6px;
+}
+
+.students-timetable-v2-visited-courses-card__negative-badge {
+    border-radius: 5px;
+    padding: 1px 5px;
+    background: #8f1f16;
+    color: #ffffff;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
 }
 
 .students-timetable-v2-visited-courses-card__grade {
@@ -11944,7 +12016,7 @@ export default {
     min-height: 18px;
     padding: 0 6px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.78);
     font-size: 0.72rem;
     font-weight: 900;
 }
@@ -11952,8 +12024,8 @@ export default {
 .ttv2-strip__sel-meta {
     border-radius: 999px;
     padding: 1px 7px;
-    background: rgba(219, 234, 254, 0.78);
-    color: #1d4ed8;
+    background: #f1f2f6;
+    color: #5b6472;
     font-size: 0.7rem;
     font-weight: 700;
     white-space: nowrap;
@@ -11961,7 +12033,7 @@ export default {
 }
 
 .ttv2-strip__sel-value {
-    color: #0f172a;
+    color: var(--schedule-heading);
     font-size: 0.82rem;
     font-weight: 700;
     white-space: nowrap;
@@ -11978,23 +12050,26 @@ export default {
 
 @media (max-width: 640px) {
     .ttv2-strip {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 8px;
-        padding: 10px 12px;
+        gap: 14px;
     }
 
     .ttv2-strip__student {
         flex-wrap: wrap;
     }
 
-    .ttv2-strip__divider {
-        width: 100%;
-        height: 1px;
+    .ttv2-strip__selections {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
     }
 
+    .ttv2-strip__identity-row {
+        padding: 14px;
+    }
+}
+
+@media (min-width: 641px) and (max-width: 1100px) {
     .ttv2-strip__selections {
-        gap: 8px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -12086,13 +12161,70 @@ export default {
 
 .students-timetable-v2-restart-card__content {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 16px;
     justify-content: space-between;
+    border-radius: 12px;
+    padding: 16px 20px !important;
+    background: #eef1ff;
+}
+
+.students-timetable-v2-restart-card {
+    border: 0;
+    background: #eef1ff;
+}
+
+.students-timetable-v2-restart-card__summary {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+    color: #3d4451;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.students-timetable-v2-restart-card__summary strong {
+    color: var(--schedule-accent);
+    font-weight: 800;
+}
+
+.students-timetable-v2-restart-card__limit {
+    color: var(--schedule-muted);
+    font-weight: 500;
+}
+
+.students-timetable-v2-restart-card__actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+
+.students-timetable-v2-restart-card__actions :deep(.v-btn) {
+    border-radius: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.students-timetable-v2-restart-card__preselection-button {
+    border-color: #c7c9f5 !important;
+    color: var(--schedule-accent-dark) !important;
 }
 
 .students-timetable-v2-restart-card__automatic-button {
-    margin-left: auto;
+    background: var(--schedule-accent) !important;
+    color: #ffffff !important;
+    box-shadow: 0 6px 14px rgba(79, 70, 229, 0.26);
+}
+
+.students-timetable-v2-limit-alert {
+    border-color: #c7c9f5 !important;
+    background: #eef1ff !important;
+    color: #4338ca !important;
 }
 
 .students-timetable-v2-restart-card__navigation-actions {

@@ -6,20 +6,22 @@
         :key="card.key"
         cols="12"
         :md="card.mdColumns"
-        class="students-timetable-v2-card-column">
-        <v-card rounded="lg" class="students-timetable-v2-card">
+        class="students-timetable-v2-card-column"
+        :class="{
+            'students-timetable-v2-card-column--completed': card.courseGroup === 'completed',
+        }">
+        <v-card
+            rounded="lg"
+            class="students-timetable-v2-card students-timetable-v2-course-card"
+            :class="`students-timetable-v2-course-card--${card.courseGroup}`">
             <v-card-title class="students-timetable-v2-course-card-title">
-                <span>{{ card.title }}</span>
-                <span v-if="card.actions?.length" class="students-timetable-v2-course-card-title__meta">
-                    <span class="students-timetable-v2-course-card-title__chips">
-                        <v-chip
-                            v-for="summaryChip in card.summaryChips"
-                            :key="summaryChip.key"
-                            size="x-small"
-                            :color="summaryChip.color"
-                            variant="tonal">
-                            {{ summaryChip.label }}
-                        </v-chip>
+                <span class="students-timetable-v2-course-card-title__copy">
+                    <span>{{ card.title }}</span>
+                    <small v-if="card.courseGroup === 'completed'">— zum Auswählen anklicken</small>
+                </span>
+                <span class="students-timetable-v2-course-card-title__meta">
+                    <span v-if="card.courseGroup !== 'completed'" class="students-timetable-v2-course-card-title__summary">
+                        {{ card.summaryLabel }}
                     </span>
                     <span class="students-timetable-v2-course-card-title__actions">
                         <v-btn
@@ -36,18 +38,8 @@
                             @click.stop="setGroupSelection(card.courseGroup, action.selected)" />
                     </span>
                 </span>
-                <span v-else class="students-timetable-v2-course-card-title__chips">
-                    <v-chip
-                        v-for="summaryChip in card.summaryChips"
-                        :key="summaryChip.key"
-                        size="x-small"
-                        :color="summaryChip.color"
-                        variant="tonal">
-                        {{ summaryChip.label }}
-                    </v-chip>
-                </span>
             </v-card-title>
-            <v-card-text>
+            <v-card-text class="students-timetable-v2-course-card__content">
                 <v-progress-linear
                     v-if="studentCompletedCoursesLoading"
                     indeterminate
@@ -70,8 +62,7 @@
                     <v-chip
                         v-for="course in card.items"
                         :key="course.key"
-                        :color="course.color"
-                        :variant="course.variant"
+                        variant="flat"
                         class="students-timetable-v2-completed-courses__item students-timetable-v2-completed-courses__item--toggle students-timetable-v2-course-selection-interactive"
                         :class="course.classes"
                         role="button"
@@ -96,25 +87,6 @@
                 </v-alert>
             </v-card-text>
         </v-card>
-    </v-col>
-
-    <v-col v-if="displayedCards.length" cols="12" class="students-timetable-v2-card-column">
-        <v-alert
-            type="info"
-            variant="tonal"
-            density="compact"
-            icon="mdi-counter">
-            <div class="students-timetable-v2-course-selection-summary">
-                <span>Ausgewählt</span>
-                <v-chip size="x-small" color="primary" variant="tonal">
-                    {{ selectedCourseLimitSummary.countLabel }}
-                </v-chip>
-                <v-chip size="x-small" color="primary" variant="tonal">
-                    {{ selectedCourseLimitSummary.hoursLabel }}
-                </v-chip>
-                <span>Maximal 10/30</span>
-            </div>
-        </v-alert>
     </v-col>
 </template>
 
@@ -160,29 +132,24 @@ export default {
             return this.cards.filter((card) => card.visible)
         },
         displayedCards() {
-            return this.visibleCards.map((card) => ({
-                ...card,
-                actions: this.displayedCardActions(card),
-                items: card.items.map((course) => this.displayedCourseItem(course)),
-                mdColumns: card.mdColumns || this.courseCardMdColumns,
-                summaryChips: card.summaryChipsVisible === false
-                    ? []
-                    : this.courseSelectionCardSummaryChips(this.selectedCourseSummaryForCard(card), this.cardSummaryColor(card)),
-            }))
+            const courseSelectionLimitSummary = this.courseSelectionLimitSummary(this.activeCourseSelections)
+
+            return this.visibleCards.map((card) => {
+                const selectedCourseSummary = this.selectedCourseSummaryForCard(card)
+
+                return {
+                    ...card,
+                    actions: this.displayedCardActions(card, courseSelectionLimitSummary),
+                    items: card.items.map((course) => this.displayedCourseItem(course, courseSelectionLimitSummary)),
+                    mdColumns: card.mdColumns || this.courseCardMdColumns,
+                    summaryLabel: `${selectedCourseSummary.countLabel} · ${selectedCourseSummary.hoursLabel}`,
+                }
+            })
         },
         activeCourseSelections() {
             return this.draftCourseSelections && typeof this.draftCourseSelections === 'object' && !Array.isArray(this.draftCourseSelections)
                 ? this.draftCourseSelections
                 : this.normalizedCourseSelections(this.courseSelections)
-        },
-        selectedCourseLimitItems() {
-            return this.visibleCards
-                .flatMap((card) => card.items)
-                .filter((course) => ['completed', 'missing', 'semester', 'planned'].includes(course.courseGroup))
-                .filter((course) => this.courseSelected(course, this.activeCourseSelections))
-        },
-        selectedCourseLimitSummary() {
-            return this.courseItemsSummary(this.selectedCourseLimitItems)
         },
         cardRosterSignature() {
             return JSON.stringify(this.visibleCards.map((card) => ({
@@ -254,19 +221,20 @@ export default {
 
             return course.defaultSelected === true
         },
-        displayedCourseItem(course) {
+        displayedCourseItem(
+            course,
+            courseSelectionLimitSummary = this.courseSelectionLimitSummary(this.activeCourseSelections),
+        ) {
             const selected = this.courseSelected(course)
-            const disabled = this.courseSelectionDisabled(course, selected)
+            const disabled = this.courseSelectionDisabled(course, selected, courseSelectionLimitSummary)
 
             return {
                 ...course,
                 ariaDisabled: disabled ? 'true' : 'false',
                 ariaPressed: selected ? 'true' : 'false',
                 classes: this.courseClasses(course, selected, disabled),
-                color: this.courseColor(course, selected),
                 selected,
                 title: this.courseSelectionDisabledLabel(course, disabled),
-                variant: this.courseVariant(course, selected),
             }
         },
         courseClasses(course, selected, disabled) {
@@ -278,19 +246,19 @@ export default {
                 'students-timetable-v2-completed-courses__item--unavailable': course.unavailable,
             }
         },
-        courseColor(course) {
-            return course.color
-        },
-        courseVariant(course, selected) {
-            if (course.courseGroup === 'additional') return selected ? 'tonal' : 'outlined'
-
-            return selected || course.unavailable ? 'tonal' : 'outlined'
-        },
-        courseSelectionDisabled(course, selected = this.courseSelected(course)) {
+        courseSelectionDisabled(
+            course,
+            selected = this.courseSelected(course),
+            courseSelectionLimitSummary = null,
+        ) {
             if (course.unavailable) return true
             if (selected) return false
 
-            return this.courseSelectionWouldExceedLimit(course, this.activeCourseSelections)
+            return this.courseSelectionWouldExceedLimit(
+                course,
+                this.activeCourseSelections,
+                courseSelectionLimitSummary,
+            )
         },
         courseSelectionDisabledLabel(course, disabled) {
             if (course.unavailableReason === 'prerequisite') return 'Voraussetzung nicht erfüllt'
@@ -299,21 +267,31 @@ export default {
 
             return undefined
         },
-        courseSelectionWouldExceedLimit(course, courseSelections = this.activeCourseSelections) {
+        courseSelectionWouldExceedLimit(
+            course,
+            courseSelections = this.activeCourseSelections,
+            courseSelectionLimitSummary = null,
+        ) {
             if (!['completed', 'missing', 'semester', 'planned'].includes(course.courseGroup)) return false
             if (course.unavailable) return false
             if (this.courseSelected(course, courseSelections)) return false
 
+            const selectedCourseLimitSummary = courseSelectionLimitSummary
+                || this.courseSelectionLimitSummary(courseSelections)
+
+            return selectedCourseLimitSummary.count + 1 > 10
+                || selectedCourseLimitSummary.hours + this.courseHoursNumber(course) > 30
+        },
+        courseSelectionLimitSummary(courseSelections = this.activeCourseSelections) {
             const selectedCourses = this.visibleCards
                 .flatMap((card) => card.items)
                 .filter((courseItem) => ['completed', 'missing', 'semester', 'planned'].includes(courseItem.courseGroup))
                 .filter((courseItem) => this.courseSelected(courseItem, courseSelections))
-            const selectedCourseCount = selectedCourses.length
-            const selectedCourseHours = selectedCourses
-                .reduce((hours, courseItem) => hours + this.courseHoursNumber(courseItem), 0)
 
-            return selectedCourseCount + 1 > 10
-                || selectedCourseHours + this.courseHoursNumber(course) > 30
+            return {
+                count: selectedCourses.length,
+                hours: selectedCourses.reduce((hours, courseItem) => hours + this.courseHoursNumber(courseItem), 0),
+            }
         },
         toggleCourse(course) {
             if (!course?.selectionKey) return
@@ -386,15 +364,19 @@ export default {
 
             this.setDraftCourseSelections(courseSelections)
         },
-        displayedCardActions(card) {
+        displayedCardActions(card, courseSelectionLimitSummary = null) {
             if (!card.actions?.length) return []
 
             return card.actions.map((action) => ({
                 ...action,
-                disabled: this.courseGroupActionDisabled(card.courseGroup, action.selected),
+                disabled: this.courseGroupActionDisabled(
+                    card.courseGroup,
+                    action.selected,
+                    courseSelectionLimitSummary,
+                ),
             }))
         },
-        courseGroupActionDisabled(courseGroup, selected) {
+        courseGroupActionDisabled(courseGroup, selected, courseSelectionLimitSummary = null) {
             const courseItems = this.visibleCards
                 .filter((card) => card.courseGroup === courseGroup)
                 .flatMap((card) => card.items)
@@ -409,30 +391,17 @@ export default {
 
                 return courseItems
                     .filter((course) => !this.courseSelected(course, courseSelections))
-                    .some((course) => this.courseSelectionWouldExceedLimit(course, courseSelections))
+                    .some((course) => this.courseSelectionWouldExceedLimit(
+                        course,
+                        courseSelections,
+                        courseSelectionLimitSummary,
+                    ))
             }
 
             return courseItems.every((course) => !this.courseSelected(course))
         },
         selectedCourseSummaryForCard(card) {
             return this.courseItemsSummary(card.items.filter((course) => this.courseSelected(course)))
-        },
-        cardSummaryColor(card) {
-            return 'success'
-        },
-        courseSelectionCardSummaryChips(summary, color) {
-            return [
-                {
-                    color,
-                    key: 'count',
-                    label: summary.countLabel,
-                },
-                {
-                    color,
-                    key: 'hours',
-                    label: summary.hoursLabel,
-                },
-            ]
         },
         courseItemsSummary(courseItems) {
             const courses = Array.isArray(courseItems) ? courseItems : []
@@ -468,9 +437,9 @@ export default {
     width: 100%;
     height: 100%;
     flex-direction: column;
-    border: 1px solid rgba(37, 99, 235, 0.12);
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+    border: 1px solid #e7e9ef;
+    background: #ffffff;
+    box-shadow: none;
 }
 
 .students-timetable-v2-card :deep(.v-card-text) {
@@ -483,6 +452,11 @@ export default {
     min-width: 0;
 }
 
+.students-timetable-v2-card-column--completed {
+    flex: 0 0 100%;
+    max-width: 100%;
+}
+
 .students-timetable-v2-row-break {
     flex-basis: 100%;
     width: 0;
@@ -493,15 +467,31 @@ export default {
 .students-timetable-v2-course-card-title {
     display: flex;
     align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    min-height: 44px;
+    border-bottom: 1px solid #e7e9ef;
+    padding: 10px 16px;
+    color: #1e2433;
+    font-size: 0.84rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.students-timetable-v2-course-card-title__copy {
+    display: inline-flex;
+    align-items: center;
     gap: 8px;
     flex-wrap: wrap;
 }
 
-.students-timetable-v2-course-card-title__chips {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
+.students-timetable-v2-course-card-title__copy small {
+    color: #8991a3;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
 }
 
 .students-timetable-v2-course-card-title__meta {
@@ -519,61 +509,112 @@ export default {
     gap: 4px;
 }
 
-.students-timetable-v2-course-selection-summary {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    font-size: 0.82rem;
-    font-weight: 800;
+.students-timetable-v2-course-card-title__summary {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.students-timetable-v2-course-card--completed .students-timetable-v2-course-card-title {
+    border-bottom: 0;
+    padding: 16px 18px 6px;
+    background: #ffffff;
+    font-size: 0.94rem;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.students-timetable-v2-course-card--missing {
+    border-color: #f3b9b3;
+}
+
+.students-timetable-v2-course-card--missing .students-timetable-v2-course-card-title {
+    border-bottom-color: #f3b9b3;
+    background: #fdecea;
+    color: #8f1f16;
+}
+
+.students-timetable-v2-course-card--planned {
+    border-color: #d7dae2;
+}
+
+.students-timetable-v2-course-card--planned .students-timetable-v2-course-card-title {
+    border-bottom-color: #d7dae2;
+    background: #f1f2f6;
+    color: #5b6472;
+}
+
+.students-timetable-v2-course-card--semester {
+    border-color: #bbf7d0;
+}
+
+.students-timetable-v2-course-card--semester .students-timetable-v2-course-card-title {
+    border-bottom-color: #bbf7d0;
+    background: #f0fdf4;
+    color: #15803d;
+}
+
+.students-timetable-v2-course-card--additional {
+    border-color: #c7c9f5;
+}
+
+.students-timetable-v2-course-card--additional .students-timetable-v2-course-card-title {
+    border-bottom-color: #c7c9f5;
+    background: #eef1ff;
+    color: #4338ca;
+}
+
+.students-timetable-v2-course-card__content {
+    min-height: 64px;
+    padding: 14px 16px !important;
+}
+
+.students-timetable-v2-course-card--completed .students-timetable-v2-course-card__content {
+    padding: 8px 18px 18px !important;
 }
 
 .students-timetable-v2-completed-courses__list {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-}
-
-.students-timetable-v2-course-card-footer {
-    min-height: 0;
-    padding: 0 16px 14px;
-    color: rgba(15, 23, 42, 0.62);
-    font-size: 0.72rem;
-    font-weight: 700;
-    line-height: 1.25;
+    gap: 8px;
 }
 
 .students-timetable-v2-completed-courses__item {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    border: 1px solid rgba(14, 165, 233, 0.18);
+    border: 1px solid #d7dae2;
     border-radius: 8px;
-    padding: 5px 7px;
-    background: rgba(248, 250, 252, 0.88);
-    color: #0f172a;
+    padding: 5px 10px;
+    background: #ffffff;
+    color: #3d4451;
     font-size: 0.78rem;
-    font-weight: 700;
+    font-weight: 600;
 }
 
 .students-timetable-v2-completed-courses__item--completed {
-    border-color: rgba(22, 163, 74, 0.18);
-    background: rgba(240, 253, 244, 0.78);
+    border: 1.5px dashed #c7cbd6;
 }
 
 .students-timetable-v2-completed-courses__item--missing {
-    border-color: rgba(22, 163, 74, 0.18);
-    background: rgba(240, 253, 244, 0.78);
+    border-color: #f3b9b3;
+    color: #8f1f16;
 }
 
 .students-timetable-v2-completed-courses__item--semester {
-    border-color: rgba(22, 163, 74, 0.18);
-    background: rgba(240, 253, 244, 0.78);
+    border-color: #bbf7d0;
+    color: #15803d;
+}
+
+.students-timetable-v2-completed-courses__item--planned {
+    border-color: #d7dae2;
+    color: #5b6472;
 }
 
 .students-timetable-v2-completed-courses__item--additional {
-    border-color: rgba(22, 163, 74, 0.18);
-    background: rgba(240, 253, 244, 0.78);
+    border-color: #c7c9f5;
+    color: #4338ca;
 }
 
 .students-timetable-v2-completed-courses__item--toggle {
@@ -581,15 +622,16 @@ export default {
 }
 
 .students-timetable-v2-completed-courses__item--deselected {
-    background: rgba(255, 255, 255, 0.86);
+    background: #ffffff !important;
     box-shadow: none;
 }
 
 .students-timetable-v2-completed-courses__item--selected {
-    border-color: #15803d !important;
-    background: #16a34a !important;
+    border-color: var(--schedule-accent-dark) !important;
+    background: var(--schedule-accent) !important;
     color: #ffffff !important;
-    box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.34);
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.38);
 }
 
 .students-timetable-v2-completed-courses__item--selected .students-timetable-v2-completed-courses__item-meta {
@@ -599,9 +641,11 @@ export default {
 
 .students-timetable-v2-completed-courses__item--limit-disabled {
     cursor: not-allowed;
-    border-color: rgba(14, 116, 144, 0.42);
-    background: rgba(236, 254, 255, 0.96);
-    color: #155e75;
+    border-color: #d7dae2 !important;
+    background: #f1f2f6 !important;
+    color: #8991a3 !important;
+    box-shadow: none;
+    opacity: 0.74;
 }
 
 .students-timetable-v2-completed-courses__item--limit-disabled span:first-child {
@@ -610,9 +654,10 @@ export default {
 
 .students-timetable-v2-completed-courses__item--unavailable {
     cursor: not-allowed;
-    border-color: rgba(220, 38, 38, 0.38);
-    background: rgba(254, 226, 226, 0.94);
-    color: #991b1b;
+    border-color: #f3b9b3 !important;
+    background: #fdecea !important;
+    color: #8f1f16 !important;
+    box-shadow: none;
 }
 
 .students-timetable-v2-completed-courses__item--unavailable span:first-child {
@@ -622,7 +667,8 @@ export default {
 .students-timetable-v2-completed-courses__item-meta {
     border-radius: 999px;
     padding: 1px 6px;
-    background: rgba(255, 255, 255, 0.72);
+    background: #f1f2f6;
+    color: #8991a3;
     font-size: 0.7rem;
     font-weight: 800;
 }
@@ -630,5 +676,11 @@ export default {
 .students-timetable-v2-completed-courses__loading,
 .students-timetable-v2-completed-courses__alert {
     margin-top: 2px;
+}
+
+@media (max-width: 960px) {
+    .students-timetable-v2-course-card-title {
+        align-items: flex-start;
+    }
 }
 </style>

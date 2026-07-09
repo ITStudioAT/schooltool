@@ -1,80 +1,79 @@
 <template>
     <v-container fluid class="students-timetables-page ma-0 w-100 pa-2">
-        <AdminSectionHero
-            class="mb-3"
-            eyebrow="Stundenpläne"
-            title="Schülerstundenpläne"
-            :active-section="activeSection"
-            :chips="headerChips">
-            <template #chips>
-                <v-menu :disabled="automaticTimetableRouteActive">
-                    <template #activator="{ props }">
-                        <v-chip
-                            v-bind="props"
-                            size="small"
-                            variant="flat"
-                            color="light-blue-lighten-3"
-                            prepend-icon="mdi-calendar-month-outline"
-                            append-icon="mdi-menu-down"
-                            :disabled="automaticTimetableRouteActive"
-                            :style="{ cursor: automaticTimetableRouteActive ? 'default' : 'pointer' }">
-                            {{ selectedSchoolyearLabel }}
-                        </v-chip>
-                    </template>
-                    <v-list density="compact" max-height="300">
-                        <v-list-item
-                            v-for="sy in schoolyears"
-                            :key="sy.id"
-                            :active="sy.id === config?.selected_schoolyear?.id"
-                            @click="switchSchoolyear(sy.id)">
-                            <v-list-item-title>{{ sy.name }}</v-list-item-title>
-                        </v-list-item>
-                    </v-list>
-                </v-menu>
-            </template>
-        </AdminSectionHero>
+        <div class="students-timetables-shell">
+            <AdminSectionHero
+                class="students-timetables-hero"
+                eyebrow="Stundenpläne"
+                title="Schülerstundenpläne"
+                primary-color="#1e2433"
+                secondary-color="#1e2433"
+                :active-section="activeSection"
+                :chips="headerChips">
+                <template #chips>
+                    <v-menu :disabled="automaticTimetableRouteActive">
+                        <template #activator="{ props }">
+                            <v-chip
+                                v-bind="props"
+                                size="small"
+                                variant="flat"
+                                prepend-icon="mdi-calendar-month-outline"
+                                append-icon="mdi-menu-down"
+                                class="students-timetables-hero__schoolyear"
+                                :disabled="automaticTimetableRouteActive"
+                                :style="{ cursor: automaticTimetableRouteActive ? 'default' : 'pointer' }">
+                                {{ selectedSchoolyearLabel }}
+                            </v-chip>
+                        </template>
+                        <v-list density="compact" max-height="300">
+                            <v-list-item
+                                v-for="sy in schoolyears"
+                                :key="sy.id"
+                                :active="sy.id === config?.selected_schoolyear?.id"
+                                @click="switchSchoolyear(sy.id)">
+                                <v-list-item-title>{{ sy.name }}</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-menu>
+                </template>
+            </AdminSectionHero>
 
-        <v-sheet v-if="!automaticTimetableRouteActive" rounded="xl" class="st-nav mb-2">
-            <div class="st-nav__buttons">
+            <v-sheet v-if="!automaticTimetableRouteActive" class="st-nav">
+                <div class="st-nav__buttons">
+                    <v-btn
+                        v-for="item in navigationItems"
+                        :key="item.key"
+                        variant="text"
+                        class="st-nav__button"
+                        :class="activeNavigationKey === item.key ? 'st-nav__button--active' : 'st-nav__button--idle'"
+                        @click="handleNavigation(item.key)">
+                        <span class="st-nav__button-copy">
+                            <span class="st-nav__button-title">{{ item.label }}</span>
+                        </span>
+                    </v-btn>
+                </div>
+
                 <v-btn
-                    v-for="item in navigationItems"
-                    :key="item.key"
-                    rounded="xl"
-                    :color="activeNavigationKey === item.key ? 'primary' : 'secondary'"
-                    :variant="activeNavigationKey === item.key ? 'flat' : 'tonal'"
-                    class="st-nav__button"
-                    :class="activeNavigationKey === item.key ? 'st-nav__button--active' : 'st-nav__button--idle'"
-                    @click="handleNavigation(item.key)">
-                    <v-icon size="18" :icon="item.icon" class="mr-2" />
-                    <span class="st-nav__button-copy">
-                        <span class="st-nav__button-title">{{ item.label }}</span>
-                        <span class="st-nav__button-meta">{{ item.meta }}</span>
-                    </span>
-                </v-btn>
-            </div>
+                    class="st-nav__settings-button"
+                    icon="mdi-cog"
+                    size="small"
+                    variant="text"
+                    title="Einstellungen"
+                    aria-label="Einstellungen"
+                    to="/admin/settings?tab=students_timetables" />
+            </v-sheet>
 
-            <v-btn
-                class="st-nav__settings-button"
-                icon="mdi-cog"
-                size="small"
-                variant="tonal"
-                color="primary"
-                title="Einstellungen"
-                aria-label="Einstellungen"
-                to="/admin/settings?tab=students_timetables" />
-        </v-sheet>
-
-        <v-row class="w-100" dense>
-            <Timetable v-if="main_action === 'timetable'" />
-            <v-col v-if="main_action === 'timetable-v2'" cols="12">
-                <TimetableV2 />
-            </v-col>
-            <v-col v-if="main_action === 'tt-entries'" cols="12">
-                <TtEntries />
-            </v-col>
-            <Import v-if="main_action === 'import'" />
-            <SubjectsOverview v-if="main_action === 'subjects-overview'" />
-        </v-row>
+            <v-row class="students-timetables-content w-100" dense>
+                <Timetable v-if="main_action === 'timetable'" />
+                <v-col v-if="main_action === 'timetable-v2'" cols="12">
+                    <TimetableV2 />
+                </v-col>
+                <v-col v-if="main_action === 'tt-entries'" cols="12">
+                    <TtEntries />
+                </v-col>
+                <Import v-if="main_action === 'import'" />
+                <SubjectsOverview v-if="main_action === 'subjects-overview'" />
+            </v-row>
+        </div>
     </v-container>
 </template>
 
@@ -335,17 +334,82 @@ export default {
 
 <style scoped>
 .students-timetables-page {
-    background: linear-gradient(180deg, #f1f6fd 0%, #e8f1fb 100%);
+    --schedule-accent: #4f46e5;
+    --schedule-accent-dark: #4338ca;
+    --schedule-border: #e7e9ef;
+    --schedule-heading: #1e2433;
+    --schedule-muted: #8991a3;
+    background: #eef0f3;
     min-height: 100vh;
+    font-family: inherit;
+}
+
+.students-timetables-shell {
+    max-width: 1760px;
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid rgba(30, 36, 51, 0.06);
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(20, 20, 40, 0.08), 0 18px 48px rgba(30, 36, 51, 0.08);
+}
+
+.students-timetables-hero {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #1e2433 !important;
+}
+
+.students-timetables-hero :deep(.admin-section-hero__bg-orb) {
+    display: none;
+}
+
+.students-timetables-hero :deep(.admin-section-hero__eyebrow) {
+    color: #9aa3b5;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    opacity: 1;
+}
+
+.students-timetables-hero :deep(.admin-section-hero__title) {
+    margin-top: 6px;
+    font-size: clamp(1.55rem, 2.2vw, 1.75rem);
+    font-weight: 800;
+}
+
+.students-timetables-hero :deep(.admin-section-hero__chips) {
+    margin-top: 14px;
+}
+
+.students-timetables-hero :deep(.admin-section-hero__focus-card) {
+    border-color: rgba(255, 255, 255, 0.12);
+    border-radius: 12px !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    box-shadow: none !important;
+}
+
+.students-timetables-hero :deep(.v-chip:not(.students-timetables-hero__schoolyear)) {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #c7cdda !important;
+    box-shadow: none !important;
+}
+
+.students-timetables-hero__schoolyear {
+    background: var(--schedule-accent) !important;
+    color: #ffffff !important;
+    font-weight: 700;
+    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.32);
 }
 
 .st-nav {
-    border: 1px solid rgba(37, 99, 235, 0.16);
-    background: rgba(255, 255, 255, 0.86);
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.07);
-    padding: 10px;
+    border-bottom: 1px solid var(--schedule-border);
+    border-radius: 0 !important;
+    background: #ffffff;
+    box-shadow: none;
+    padding: 16px 32px 0;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 8px;
 }
 
@@ -358,36 +422,38 @@ export default {
 
 .st-nav__settings-button {
     flex: 0 0 auto;
+    margin-bottom: 7px;
+    color: #5b6472 !important;
 }
 
 .st-nav__button {
-    height: 40px !important;
-    padding: 0 14px;
+    min-height: 44px !important;
+    border-radius: 10px 10px 0 0 !important;
+    padding: 0 18px;
     text-transform: none;
     letter-spacing: 0;
     justify-content: flex-start;
-    border: 1px solid transparent !important;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease !important;
+    border: 0 !important;
+    border-bottom: 3px solid transparent !important;
+    color: #5b6472 !important;
+    transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease !important;
 }
 
 .st-nav__button--idle {
-    background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(219, 234, 254, 0.92) 100%) !important;
-    color: #1e3a8a !important;
-    border-color: rgba(37, 99, 235, 0.2) !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86), 0 6px 14px rgba(148, 163, 184, 0.12) !important;
+    background: transparent !important;
+    box-shadow: none !important;
 }
 
 .st-nav__button--idle:hover {
-    background: linear-gradient(180deg, rgba(239, 246, 255, 1) 0%, rgba(191, 219, 254, 0.98) 100%) !important;
-    color: #1d4ed8 !important;
-    border-color: rgba(37, 99, 235, 0.28) !important;
+    background: #f7f8fb !important;
+    color: var(--schedule-accent-dark) !important;
 }
 
 .st-nav__button--active {
-    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%) !important;
-    color: #ffffff !important;
-    border-color: rgba(30, 64, 175, 0.5) !important;
-    box-shadow: 0 12px 22px rgba(37, 99, 235, 0.24) !important;
+    border-bottom-color: var(--schedule-accent) !important;
+    background: #eef1ff !important;
+    color: var(--schedule-accent) !important;
+    box-shadow: none !important;
 }
 
 .st-nav__button-copy {
@@ -398,26 +464,22 @@ export default {
 }
 
 .st-nav__button-title {
-    font-weight: 650;
-    font-size: 0.92rem;
+    font-weight: 700;
+    font-size: 0.88rem;
 }
 
-.st-nav__button-meta {
-    font-size: 0.72rem;
-    opacity: 0.9;
-}
-
-.st-nav__button--idle .st-nav__button-meta {
-    color: rgba(30, 64, 175, 0.9);
-}
-
-.st-nav__button--active .st-nav__button-meta {
-    color: rgba(255, 255, 255, 0.92);
+.students-timetables-content {
+    margin: 0 !important;
+    padding: 20px 24px 32px;
 }
 
 @media (max-width: 700px) {
     .students-timetables-page {
         padding-inline: 0 !important;
+    }
+
+    .students-timetables-shell {
+        border-radius: 0;
     }
 
     .students-timetables-page > :deep(.v-row) {
@@ -431,7 +493,7 @@ export default {
 
 @media (max-width: 640px) {
     .st-nav {
-        padding: 8px;
+        padding: 10px 12px 0;
     }
 
     .st-nav__buttons {
@@ -439,8 +501,8 @@ export default {
     }
 
     .st-nav__button {
-        flex: 1 1 100%;
-        height: 36px !important;
+        flex: 1 1 auto;
+        min-height: 38px !important;
         padding: 0 12px;
     }
 
@@ -452,8 +514,8 @@ export default {
         font-size: 0.84rem;
     }
 
-    .st-nav__button-meta {
-        font-size: 0.66rem;
+    .students-timetables-content {
+        padding: 12px 6px 22px;
     }
 }
 </style>
