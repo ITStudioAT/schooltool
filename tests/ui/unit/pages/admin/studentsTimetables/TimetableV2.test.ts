@@ -48,7 +48,6 @@ function timetableV2Context(overrides = {}) {
         pendingStoredTimetableState: null,
         pendingRemovedSelectedCourseKeys: {},
         draftCourseSelections: null,
-        courseSelectionDraftPending: false,
         storedTimetableStateSaveRequestId: 0,
         storedTimetableStateSaveTimer: null,
         storedTimetableStateSaving: false,
@@ -1150,7 +1149,7 @@ describe('TimetableV2 route steps', () => {
         )
 
         expect(moreCoursesHeaderActionsSource).not.toContain('@click="applyMoreCoursesSelection"')
-        expect(source).toMatch(/prepend-icon="mdi-tune-variant"\s+:disabled="!courseLimitPreselectionResetAvailable"\s+@click="applyCourseLimitPreselection\(true\)">\s+Vorauswahl zurücksetzen/u)
+        expect(source).toMatch(/v-if="courseCardsVisible && courseLimitPreselectionResetAvailable"[\s\S]*prepend-icon="mdi-tune-variant"\s+@click="applyCourseLimitPreselection\(true\)">\s+Vorauswahl zurücksetzen/u)
         expect(source).toContain(':icon="timetableCalculationLoadingIcon"')
         expect(source).toContain('{{ timetableCalculationLoadingLabel }}')
         expect(source).toContain('students-timetable-v2-card-column students-timetable-v2-selected-courses-column')
@@ -3459,16 +3458,12 @@ describe('TimetableV2 route steps', () => {
         expect(courseSelectionCardsSource).toContain('@click="toggleCourse(course)"')
         expect(courseSelectionCardsSource).toContain('students-timetable-v2-completed-courses__item--toggle')
         expect(courseSelectionCardsSource).toMatch(/\.students-timetable-v2-completed-courses__item--additional \{[\s\S]*border-color: rgba\(22, 163, 74, 0\.18\);[\s\S]*background: rgba\(240, 253, 244, 0\.78\);/u)
-        expect(courseSelectionCardsSource).toContain('v-if="courseSelectionDraftChanged"')
-        expect(courseSelectionCardsSource).toContain('@click="$emit(\'apply-course-selections\', activeCourseSelections)"')
-        expect(courseSelectionCardsSource).toContain('@click="resetDraftCourseSelections"')
-        expect(courseSelectionCardsSource).toContain("emits: ['apply-course-selections', 'draft-change', 'draft-selections-change']")
-        expect(courseSelectionCardsSource).toContain("this.$emit('draft-change', this.courseSelectionDraftChanged)")
-        expect(courseSelectionCardsSource).toContain("this.$emit('draft-change', false)")
-        expect(courseSelectionCardsSource).toContain("this.$emit('draft-selections-change', this.activeCourseSelections)")
-        expect(courseSelectionCardsSource).toContain("this.$emit('draft-selections-change', null)")
-        expect(courseSelectionCardsSource).toContain('students-timetable-v2-course-selection-draft-action')
-        expect(courseSelectionCardsSource).toContain('Abbruch')
+        expect(courseSelectionCardsSource).toContain("emits: ['apply-course-selections']")
+        expect(courseSelectionCardsSource).toContain("this.$emit('apply-course-selections', this.activeCourseSelections)")
+        expect(courseSelectionCardsSource).not.toContain('courseSelectionDraftChanged')
+        expect(courseSelectionCardsSource).not.toContain('students-timetable-v2-course-selection-draft-action')
+        expect(courseSelectionCardsSource).not.toContain('Übernehmen')
+        expect(courseSelectionCardsSource).not.toContain('Abbruch')
 
         const context = timetableV2Context({
             storedAdditionalCourseItems: [
@@ -3622,11 +3617,6 @@ describe('TimetableV2 route steps', () => {
                     return CourseSelectionCards.computed.cardRosterSignature.call(context)
                 },
             },
-            courseSelectionDraftChanged: {
-                get() {
-                    return CourseSelectionCards.computed.courseSelectionDraftChanged.call(context)
-                },
-            },
             visibleCards: {
                 get() {
                     return CourseSelectionCards.computed.visibleCards.call(context)
@@ -3641,7 +3631,7 @@ describe('TimetableV2 route steps', () => {
         expect(context.draftCourseSelections).toEqual({
             'completed:D1': true,
         })
-        expect(context.$emit).toHaveBeenCalledWith('draft-selections-change', {
+        expect(context.$emit).toHaveBeenCalledWith('apply-course-selections', {
             'completed:D1': true,
         })
 
@@ -3701,11 +3691,6 @@ describe('TimetableV2 route steps', () => {
                     return CourseSelectionCards.computed.activeCourseSelections.call(context)
                 },
             },
-            courseSelectionDraftChanged: {
-                get() {
-                    return CourseSelectionCards.computed.courseSelectionDraftChanged.call(context)
-                },
-            },
             visibleCards: {
                 get() {
                     return CourseSelectionCards.computed.visibleCards.call(context)
@@ -3718,7 +3703,7 @@ describe('TimetableV2 route steps', () => {
         CourseSelectionCards.methods.toggleCourse.call(context, semesterCourse)
 
         expect(context.draftCourseSelections).toEqual({})
-        expect(context.$emit).toHaveBeenCalledWith('draft-selections-change', {})
+        expect(context.$emit).toHaveBeenCalledWith('apply-course-selections', {})
     })
 
     it('lists visited completed and failed courses alphabetically with grades and status colors', () => {
@@ -5090,6 +5075,18 @@ describe('TimetableV2 route steps', () => {
         }
 
         expect(context.courseLimitPreselectionResetAvailable).toBe(true)
+    })
+
+    it('keeps restart at the far left and only shows the course preselection reset when available', () => {
+        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const restartCardStart = source.indexOf('<v-col v-if="restartCardVisible"')
+        const restartCardActionsSource = source.slice(
+            restartCardStart,
+            source.indexOf('</v-col>', restartCardStart),
+        )
+
+        expect(restartCardActionsSource).toMatch(/Neustart[\s\S]*v-if="courseCardsVisible && courseLimitPreselectionResetAvailable"[\s\S]*Vorauswahl zurücksetzen[\s\S]*class="students-timetable-v2-restart-card__automatic-button"[\s\S]*Weiter/u)
+        expect(restartCardActionsSource).not.toContain(':disabled="!courseLimitPreselectionResetAvailable"')
     })
 
     it('keeps active course card selections when opening course review from selection', () => {
@@ -8718,6 +8715,69 @@ describe('TimetableV2 route steps', () => {
         })
     })
 
+    it('preselects the first student when search results are shown', () => {
+        const selectStudentDraft = vi.fn()
+        const students = [
+            { student_code: '1001', first_name: 'Ella', last_name: 'GEHMACHER' },
+            { student_code: '1002', first_name: 'Luis', last_name: 'SOLLEDER' },
+        ]
+        const context = {
+            normalizedStudentCode: TimetableV2.methods.normalizedStudentCode,
+            selectStudentDraft,
+            studentSelectionDraft: {
+                studentCode: null,
+            },
+            studentSelectionExplicitlyCleared: false,
+        }
+
+        TimetableV2.watch.filteredStudentResults.call(context, students)
+
+        expect(selectStudentDraft).toHaveBeenCalledOnce()
+        expect(selectStudentDraft).toHaveBeenCalledWith('1001')
+    })
+
+    it('keeps the drafted student when that student remains in the filtered results', () => {
+        const selectStudentDraft = vi.fn()
+        const students = [
+            { student_code: '1001', first_name: 'Ella', last_name: 'GEHMACHER' },
+            { student_code: '1002', first_name: 'Luis', last_name: 'SOLLEDER' },
+        ]
+        const context = {
+            normalizedStudentCode: TimetableV2.methods.normalizedStudentCode,
+            selectStudentDraft,
+            studentSelectionDraft: {
+                studentCode: '1002',
+            },
+            studentSelectionExplicitlyCleared: false,
+        }
+
+        TimetableV2.watch.filteredStudentResults.call(context, students)
+
+        expect(selectStudentDraft).not.toHaveBeenCalled()
+        expect(context.studentSelectionDraft.studentCode).toBe('1002')
+    })
+
+    it('keeps an explicitly cleared student draft empty when search results change', () => {
+        const students = [
+            { student_code: '1001', first_name: 'Ella', last_name: 'GEHMACHER' },
+            { student_code: '1002', first_name: 'Luis', last_name: 'SOLLEDER' },
+        ]
+        const context = {
+            normalizedStudentCode: TimetableV2.methods.normalizedStudentCode,
+            selectStudentDraft: TimetableV2.methods.selectStudentDraft,
+            studentSelectionDraft: {
+                studentCode: '1002',
+            },
+            studentSelectionExplicitlyCleared: false,
+        }
+
+        TimetableV2.methods.selectStudentDraft.call(context, null)
+        TimetableV2.watch.filteredStudentResults.call(context, students)
+
+        expect(context.studentSelectionDraft.studentCode).toBeNull()
+        expect(context.studentSelectionExplicitlyCleared).toBe(true)
+    })
+
     it('keeps the student dialog open when updating without a selected student', () => {
         const context = timetableV2Context({
             robotStudents: [],
@@ -9256,18 +9316,16 @@ describe('TimetableV2 route steps', () => {
 
         expect(TimetableV2.computed.timetableV2PageActionsDisabled.call(context)).toBe(false)
         expect(source).toContain("'students-timetable-v2-page--actions-disabled': timetableV2PageActionsDisabled")
-        expect(source).toContain("'students-timetable-v2-page--draft-pending': courseSelectionDraftPending")
-        expect(source).toContain('@draft-change="courseSelectionDraftPending = $event"')
-        expect(source).toContain('@draft-selections-change="setDraftCourseSelections"')
+        expect(source).toContain('@apply-course-selections="applyDraftCourseSelections"')
+        expect(source).not.toContain("'students-timetable-v2-page--draft-pending': courseSelectionDraftPending")
+        expect(source).not.toContain('@draft-change="courseSelectionDraftPending = $event"')
+        expect(source).not.toContain('@draft-selections-change="setDraftCourseSelections"')
         expect(source).toContain(':inert="timetableV2PageActionsDisabled ? \'\' : null"')
         expect(source).toContain('v-if="timetableV2PageLoading"')
         expect(source).toContain('students-timetable-v2-loading-dots')
         expect(source).toContain('.students-timetable-v2-page--actions-disabled :deep(button)')
         expect(source).toContain('.students-timetable-v2-page--actions-disabled :deep([role="button"])')
-        expect(source).toContain('.students-timetable-v2-page--draft-pending :deep(button)')
-        expect(source).toContain('.students-timetable-v2-page--draft-pending :deep([role="button"])')
-        expect(source).toContain('.students-timetable-v2-page--draft-pending :deep(.students-timetable-v2-course-selection-draft-action)')
-        expect(source).toContain('.students-timetable-v2-page--draft-pending :deep(.students-timetable-v2-course-selection-interactive)')
+        expect(source).not.toContain('.students-timetable-v2-page--draft-pending')
         expect(source).toContain('@keyframes students-timetable-v2-loading-dots')
     })
 

@@ -3,7 +3,6 @@
         class="students-timetable-v2-page"
         :class="{
             'students-timetable-v2-page--actions-disabled': timetableV2PageActionsDisabled,
-            'students-timetable-v2-page--draft-pending': courseSelectionDraftPending,
         }"
         :aria-busy="timetableV2PageActionsDisabled ? 'true' : 'false'"
         :inert="timetableV2PageActionsDisabled ? '' : null">
@@ -1567,12 +1566,9 @@
                 :course-card-md-columns="courseCardMdColumns"
                 :course-cards-error="studentCompletedCoursesError || subjectRowsError"
                 :course-selections="storedCourseSelectionOverrides"
-                :page-actions-disabled="timetableV2PageActionsDisabled"
                 :student-completed-courses-loading="studentCompletedCoursesLoading"
                 :subject-rows-loading="subjectRowsLoading"
-                @apply-course-selections="applyDraftCourseSelections"
-                @draft-change="courseSelectionDraftPending = $event"
-                @draft-selections-change="setDraftCourseSelections" />
+                @apply-course-selections="applyDraftCourseSelections" />
 
             <v-col v-if="courseCardsVisible && selectedCourseLimitReached" cols="12" class="students-timetable-v2-card-column">
                 <v-alert type="info" variant="tonal" density="compact" icon="mdi-information-outline">
@@ -1593,12 +1589,11 @@
                             Neustart
                         </v-btn>
                         <v-btn
-                            v-if="courseCardsVisible"
+                            v-if="courseCardsVisible && courseLimitPreselectionResetAvailable"
                             color="primary"
                             variant="tonal"
                             size="large"
                             prepend-icon="mdi-tune-variant"
-                            :disabled="!courseLimitPreselectionResetAvailable"
                             @click="applyCourseLimitPreselection(true)">
                             Vorauswahl zurücksetzen
                         </v-btn>
@@ -1793,7 +1788,6 @@ export default {
             storedTimetableStateSaveRequestId: 0,
             storedTimetableStateSaveTimer: null,
             draftCourseSelections: null,
-            courseSelectionDraftPending: false,
             studentDialogOpen: false,
             studentCompletedCoursesError: '',
             studentCompletedCoursesLoading: false,
@@ -1808,6 +1802,7 @@ export default {
             studentSelectionDraft: {
                 studentCode: null,
             },
+            studentSelectionExplicitlyCleared: false,
             courseGroups: [],
             courseGroupsRevision: 0,
             courseGroupsError: '',
@@ -3540,6 +3535,21 @@ export default {
         '$route.query.moreCourse'() {
             this.applyTimetableV2RouteFromRoute()
         },
+        filteredStudentResults(students) {
+            if (this.studentSelectionExplicitlyCleared) return
+
+            const draftedStudentCode = this.normalizedStudentCode(this.studentSelectionDraft.studentCode)
+            const draftedStudentStillVisible = draftedStudentCode !== null
+                && students.some((student) => this.normalizedStudentCode(student?.student_code) === draftedStudentCode)
+
+            if (draftedStudentStillVisible) return
+
+            const [firstStudent] = students
+
+            if (!firstStudent) return
+
+            this.selectStudentDraft(firstStudent.student_code)
+        },
     },
 
     async mounted() {
@@ -3614,6 +3624,7 @@ export default {
             this.studentSelectionDraft = {
                 studentCode: null,
             }
+            this.studentSelectionExplicitlyCleared = false
             this.studentCompletedCoursesError = ''
             this.studentCompletedCoursesLoading = false
             this.subjectRowsError = ''
@@ -7976,11 +7987,9 @@ export default {
             }
 
             this.draftCourseSelections = this.normalizedCourseSelections(courseSelections)
-            this.courseSelectionDraftPending = this.courseSelectionDraftChanged
         },
         resetDraftCourseSelections() {
             this.draftCourseSelections = null
-            this.courseSelectionDraftPending = false
         },
         applyDraftCourseSelections(courseSelections = this.draftCourseSelections) {
             const normalizedCourseSelections = this.normalizedCourseSelections(courseSelections)
@@ -9343,6 +9352,7 @@ export default {
             this.studentSelectionDraft = {
                 studentCode: this.normalizedStudentCode(this.storedTimetableStudentContext?.student?.studentCode),
             }
+            this.studentSelectionExplicitlyCleared = false
             this.studentSearch = ''
             this.studentDialogOpen = true
             await this.loadRobotStudents()
@@ -9619,7 +9629,10 @@ export default {
             )
         },
         selectStudentDraft(studentCode) {
-            this.studentSelectionDraft.studentCode = this.normalizedStudentCode(studentCode)
+            const normalizedStudentCode = this.normalizedStudentCode(studentCode)
+
+            this.studentSelectionDraft.studentCode = normalizedStudentCode
+            this.studentSelectionExplicitlyCleared = normalizedStudentCode === null
         },
         submitStudentSearch() {
             if (this.studentSearchReady && this.filteredStudentResults.length === 1) {
@@ -11614,21 +11627,6 @@ export default {
     cursor: default !important;
     opacity: 0.5;
     pointer-events: none;
-}
-
-.students-timetable-v2-page--draft-pending :deep(button),
-.students-timetable-v2-page--draft-pending :deep(.v-btn),
-.students-timetable-v2-page--draft-pending :deep([role="button"]) {
-    cursor: default !important;
-    opacity: 0.5;
-    pointer-events: none;
-}
-
-.students-timetable-v2-page--draft-pending :deep(.students-timetable-v2-course-selection-draft-action),
-.students-timetable-v2-page--draft-pending :deep(.students-timetable-v2-course-selection-interactive) {
-    cursor: pointer !important;
-    opacity: 1;
-    pointer-events: auto;
 }
 
 .students-timetable-v2-initial-loader {

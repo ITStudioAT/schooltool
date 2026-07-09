@@ -113,30 +113,6 @@
                     {{ selectedCourseLimitSummary.hoursLabel }}
                 </v-chip>
                 <span>Maximal 10/30</span>
-                <v-btn
-                    v-if="courseSelectionDraftChanged"
-                    color="success"
-                    variant="flat"
-                    size="default"
-                    density="default"
-                    prepend-icon="mdi-check"
-                    class="students-timetable-v2-course-selection-draft-action"
-                    :disabled="pageActionsDisabled"
-                    @click="$emit('apply-course-selections', activeCourseSelections)">
-                    Übernehmen
-                </v-btn>
-                <v-btn
-                    v-if="courseSelectionDraftChanged"
-                    color="warning"
-                    variant="tonal"
-                    size="default"
-                    density="default"
-                    prepend-icon="mdi-close"
-                    class="students-timetable-v2-course-selection-draft-action"
-                    :disabled="pageActionsDisabled"
-                    @click="resetDraftCourseSelections">
-                    Abbruch
-                </v-btn>
             </div>
         </v-alert>
     </v-col>
@@ -161,10 +137,6 @@ export default {
             type: Object,
             default: () => ({}),
         },
-        pageActionsDisabled: {
-            type: Boolean,
-            default: false,
-        },
         studentCompletedCoursesLoading: {
             type: Boolean,
             default: false,
@@ -175,7 +147,7 @@ export default {
         },
     },
 
-    emits: ['apply-course-selections', 'draft-change', 'draft-selections-change'],
+    emits: ['apply-course-selections'],
 
     data() {
         return {
@@ -202,14 +174,6 @@ export default {
             return this.draftCourseSelections && typeof this.draftCourseSelections === 'object' && !Array.isArray(this.draftCourseSelections)
                 ? this.draftCourseSelections
                 : this.normalizedCourseSelections(this.courseSelections)
-        },
-        courseSelectionDraftChanged() {
-            if (!this.draftCourseSelections || typeof this.draftCourseSelections !== 'object' || Array.isArray(this.draftCourseSelections)) {
-                return false
-            }
-
-            return this.courseSelectionSignature(this.draftCourseSelections)
-                !== this.courseSelectionSignature(this.courseSelections)
         },
         selectedCourseLimitItems() {
             return this.visibleCards
@@ -258,13 +222,6 @@ export default {
                     .filter(([, selected]) => selected === true || selected === false),
             )
         },
-        selectionSignatureEntries(courseSelections = {}) {
-            return Object.entries(this.normalizedCourseSelections(courseSelections))
-                .sort(([firstKey], [secondKey]) => firstKey.localeCompare(secondKey, 'de-AT'))
-        },
-        courseSelectionSignature(courseSelections = {}) {
-            return JSON.stringify(this.selectionSignatureEntries(courseSelections))
-        },
         uniqueValues(values) {
             return (Array.isArray(values) ? values : []).filter((value, index, allValues) => allValues.indexOf(value) === index)
         },
@@ -283,13 +240,10 @@ export default {
         },
         setDraftCourseSelections(courseSelections = {}) {
             this.draftCourseSelections = this.normalizedCourseSelections(courseSelections)
-            this.$emit('draft-change', this.courseSelectionDraftChanged)
-            this.$emit('draft-selections-change', this.activeCourseSelections)
+            this.$emit('apply-course-selections', this.activeCourseSelections)
         },
         resetDraftCourseSelections() {
             this.draftCourseSelections = null
-            this.$emit('draft-change', false)
-            this.$emit('draft-selections-change', null)
         },
         courseSelected(course, courseSelections = this.activeCourseSelections) {
             if (course.unavailable) return false
