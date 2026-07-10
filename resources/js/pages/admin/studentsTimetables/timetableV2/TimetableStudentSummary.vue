@@ -309,7 +309,7 @@ export default {
 
 .timetable-student-summary__selections--editable {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     align-items: start;
     gap: 16px;
 }

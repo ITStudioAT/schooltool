@@ -6,7 +6,23 @@
 
 - Bei Auswahl eines neuen Studierenden, wird der 1. in der Liste automatisch markiert
 - Auswahl oder Abwahl von Modulen wird sofort übernommen
-- UI-Design improved
+- UI-Design verbessert
+- Neustart-Button links
+
+### Module-Seite
+
+- UI-Design verbessert
+
+### Stundenplan-Seite
+
+- Mehr Module: Funktionalität und Design verbessert
+- Optionen: Immer nur eine Option gleichzeitig anwendbar
+- Optionen: Werden wieder angezeigt
+- UI-Design verbessert
+
+### System
+
+- Upgrade Laravel 13.19.0
 
 ## 3.42.0
 
