@@ -1,5 +1,13 @@
 # UPDATES
 
+## 3.42.1
+
+### Auswahl-Seite
+
+- Bei Auswahl eines neuen Studierenden, wird der 1. in der Liste automatisch markiert
+- Auswahl oder Abwahl von Modulen wird sofort übernommen
+- UI-Design improved
+
 ## 3.42.0
 
 ### Major Updates
