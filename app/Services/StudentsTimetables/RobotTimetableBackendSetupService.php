@@ -13,9 +13,14 @@ class RobotTimetableBackendSetupService
 {
     private const MAX_BACKEND_TIMETABLE_VARIATIONS = 200000;
 
-    private const TIMETABLE_VARIATION_CACHE_VERSION = 3;
+    private const TIMETABLE_VARIATION_CACHE_VERSION = 4;
 
     private const TIMETABLE_VARIATION_CACHE_TTL_MINUTES = 20;
+
+    /**
+     * @var array<string, mixed>
+     */
+    private array $runtimeCache = [];
 
     public function __construct(
         private StudentTimetableRememberedTtEntryService $rememberedTtEntryService,
@@ -34,6 +39,8 @@ class RobotTimetableBackendSetupService
         array $evaluationCriteria = [],
         array $selectedQualityCriterionKeys = [],
     ): array {
+        $this->resetRuntimeCache();
+
         $subjectRows = StudentTimetableSubjectRow::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
@@ -90,7 +97,7 @@ class RobotTimetableBackendSetupService
             'quality_counters' => $variationResult['quality_counters'],
             'all_quality_criteria_count' => $variationResult['all_quality_criteria_count'],
             'selected_quality_criteria_count' => $variationResult['selected_quality_criteria_count'],
-            'conflicting_additional_course_keys' => $this->conflictingAdditionalCourseKeys(
+            'conflicting_additional_course_keys' => $this->conflictingAdditionalCourseKeysFromInput(
                 $subjectRows,
                 $subjectMappings,
                 $courseGroups,
@@ -108,6 +115,31 @@ class RobotTimetableBackendSetupService
      * @return list<string>
      */
     public function conflictingAdditionalCourseKeys(
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+        ?array $selectedTimetable,
+    ): array {
+        $this->resetRuntimeCache();
+
+        return $this->conflictingAdditionalCourseKeysFromInput(
+            $subjectRows,
+            $subjectMappings,
+            $courseGroups,
+            $settings,
+            $selectedTimetable,
+        );
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @return list<string>
+     */
+    private function conflictingAdditionalCourseKeysFromInput(
         array $subjectRows,
         array $subjectMappings,
         array $courseGroups,
@@ -205,6 +237,8 @@ class RobotTimetableBackendSetupService
         array $evaluationCriteria,
         array $selectedQualityCriterionKeys = [],
     ): array {
+        $this->resetRuntimeCache();
+
         $subjectRows = StudentTimetableSubjectRow::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
@@ -252,6 +286,8 @@ class RobotTimetableBackendSetupService
         array $selectedQualityCriterionKeys = [],
         bool $availabilityOnly = false,
     ): array {
+        $this->resetRuntimeCache();
+
         $subjectRows = StudentTimetableSubjectRow::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
@@ -279,15 +315,37 @@ class RobotTimetableBackendSetupService
             $evaluationCriteria,
         );
 
-        if ($availabilityOnly && $selectedQualityCriterionKeys === []) {
-            $base = $this->timetableVariationBase(
-                $subjectRows,
-                $subjectMappings,
-                $courseGroups,
-                $settings,
-                $evaluationCriteria,
-                $selectedQualityCriterionKeys,
-            );
+        if ($availabilityOnly) {
+            $selectedTimetable = null;
+            $baseInput = null;
+
+            if ($selectedQualityCriterionKeys === []) {
+                $baseCacheKey = $this->timetableVariationBaseCacheKey(
+                    $authUser,
+                    $subjectRows,
+                    $subjectMappings,
+                    $courseGroups,
+                    $settings,
+                    $evaluationCriteria,
+                    $selectedQualityCriterionKeys,
+                );
+                $base = $this->rememberedTimetableVariationBase(
+                    $baseCacheKey,
+                    $subjectRows,
+                    $subjectMappings,
+                    $courseGroups,
+                    $settings,
+                    $evaluationCriteria,
+                    $selectedQualityCriterionKeys,
+                );
+                $selectedTimetable = $this->rememberedSelectedTimetable(
+                    $baseCacheKey,
+                    $base,
+                    $settings,
+                    $evaluationCriteria,
+                );
+                $baseInput = $this->timetableVariationInputFromBase($base);
+            }
 
             return $this->courseAvailabilityFromSharedInput(
                 $subjectRows,
@@ -295,7 +353,10 @@ class RobotTimetableBackendSetupService
                 $courseGroups,
                 $settings,
                 $candidateCourses,
-                $this->selectedTimetableFromBase($base, $settings, $evaluationCriteria),
+                $selectedTimetable,
+                $baseInput,
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
             );
         }
 
@@ -337,8 +398,11 @@ class RobotTimetableBackendSetupService
         array $settings,
         array $candidateCourses,
         ?array $selectedTimetable = null,
+        ?array $baseInput = null,
+        array $evaluationCriteria = [],
+        array $selectedQualityCriterionKeys = [],
     ): array {
-        $baseInput = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
+        $baseInput ??= $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
         $availableCoursesByKey = $this->availableCoursesByKey($subjectRows, $subjectMappings, $courseGroups, $settings);
         $selectedTimetableOccupiedCourseGroups = $selectedTimetable === null
             ? null
@@ -396,8 +460,8 @@ class RobotTimetableBackendSetupService
             $validTimetableCount = $this->validTimetableCountForAvailabilityInput(
                 $candidateInput,
                 $candidateSettings,
-                [],
-                [],
+                $evaluationCriteria,
+                $selectedQualityCriterionKeys,
                 true,
             );
 
@@ -1024,6 +1088,8 @@ class RobotTimetableBackendSetupService
         array $evaluationCriteria,
         array $selectedQualityCriterionKeys = [],
     ): array {
+        $this->resetRuntimeCache();
+
         if ($evaluationCriteria === []) {
             return [
                 'quality_counters' => [],
@@ -1121,6 +1187,8 @@ class RobotTimetableBackendSetupService
         array $evaluationCriteria = [],
         array $selectedQualityCriterionKeys = [],
     ): array {
+        $this->resetRuntimeCache();
+
         return $this->calculateTimetableVariationsFromBase(
             $this->timetableVariationBase(
                 $subjectRows,
@@ -1153,6 +1221,8 @@ class RobotTimetableBackendSetupService
         array $evaluationCriteria = [],
         array $selectedQualityCriterionKeys = [],
     ): array {
+        $this->resetRuntimeCache();
+
         $baseCacheKey = $this->timetableVariationBaseCacheKey(
             $authUser,
             $subjectRows,
@@ -1163,7 +1233,50 @@ class RobotTimetableBackendSetupService
             $selectedQualityCriterionKeys,
         );
 
-        $base = Cache::remember(
+        $base = $this->rememberedTimetableVariationBase(
+            $baseCacheKey,
+            $subjectRows,
+            $subjectMappings,
+            $courseGroups,
+            $settings,
+            $evaluationCriteria,
+            $selectedQualityCriterionKeys,
+        );
+        $selectedTimetable = $this->rememberedSelectedTimetable(
+            $baseCacheKey,
+            $base,
+            $settings,
+            $evaluationCriteria,
+        );
+
+        return $this->calculateTimetableVariationsFromBase(
+            $base,
+            $settings,
+            $evaluationCriteria,
+            $selectedTimetable,
+            true,
+        );
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @return array<string, mixed>
+     */
+    private function rememberedTimetableVariationBase(
+        string $baseCacheKey,
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+        array $evaluationCriteria,
+        array $selectedQualityCriterionKeys,
+    ): array {
+        return Cache::remember(
             $baseCacheKey,
             now()->addMinutes(self::TIMETABLE_VARIATION_CACHE_TTL_MINUTES),
             fn (): array => $this->timetableVariationBase(
@@ -1175,20 +1288,24 @@ class RobotTimetableBackendSetupService
                 $selectedQualityCriterionKeys,
             ),
         );
+    }
 
-        $selectedTimetableCacheKey = $this->selectedTimetableCacheKey($baseCacheKey, $settings);
-        $selectedTimetable = Cache::remember(
-            $selectedTimetableCacheKey,
+    /**
+     * @param  array<string, mixed>  $base
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @return array<string, mixed>|null
+     */
+    private function rememberedSelectedTimetable(
+        string $baseCacheKey,
+        array $base,
+        array $settings,
+        array $evaluationCriteria,
+    ): ?array {
+        return Cache::remember(
+            $this->selectedTimetableCacheKey($baseCacheKey, $settings),
             now()->addMinutes(self::TIMETABLE_VARIATION_CACHE_TTL_MINUTES),
             fn (): ?array => $this->selectedTimetableFromBase($base, $settings, $evaluationCriteria),
-        );
-
-        return $this->calculateTimetableVariationsFromBase(
-            $base,
-            $settings,
-            $evaluationCriteria,
-            $selectedTimetable,
-            true,
         );
     }
 
@@ -1246,8 +1363,11 @@ class RobotTimetableBackendSetupService
         );
 
         return [
+            'selected_courses' => $input['selected_courses'],
             'course_options' => $input['course_options'],
+            'additional_courses' => $input['additional_courses'],
             'additional_course_options' => $input['additional_course_options'],
+            'has_missing_options' => $input['has_missing_options'],
             'problem_courses' => $input['problem_courses'],
             'counts' => $counts,
             'quality_summary' => $qualityResult['summary'],
@@ -1261,6 +1381,22 @@ class RobotTimetableBackendSetupService
             'selected_quality_criteria_count' => $selectedQualityCriterionKeys === []
                 ? 0
                 : $selectedQualitySubset['total'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $base
+     * @return array{selected_courses: list<array<string, mixed>>, course_options: list<list<array<string, mixed>>>, additional_courses: list<array<string, mixed>>, additional_course_options: list<list<array<string, mixed>>>, has_missing_options: bool, problem_courses: list<array<string, mixed>>}
+     */
+    private function timetableVariationInputFromBase(array $base): array
+    {
+        return [
+            'selected_courses' => $base['selected_courses'],
+            'course_options' => $base['course_options'],
+            'additional_courses' => $base['additional_courses'],
+            'additional_course_options' => $base['additional_course_options'],
+            'has_missing_options' => $base['has_missing_options'],
+            'problem_courses' => $base['problem_courses'],
         ];
     }
 
@@ -1338,7 +1474,12 @@ class RobotTimetableBackendSetupService
         array $selectedQualityCriterionKeys,
     ): string {
         $cacheSettings = $settings;
-        unset($cacheSettings['selected_timetable_number'], $cacheSettings['include_quality_counters']);
+        unset(
+            $cacheSettings['availability_only'],
+            $cacheSettings['candidate_courses'],
+            $cacheSettings['include_quality_counters'],
+            $cacheSettings['selected_timetable_number'],
+        );
 
         return 'students-timetables:timetable-v2:base:'.hash('sha256', json_encode($this->canonicalCacheValue([
             'version' => self::TIMETABLE_VARIATION_CACHE_VERSION,
@@ -3946,11 +4087,16 @@ class RobotTimetableBackendSetupService
      */
     private function courseGroupDates(array $courseGroup): array
     {
-        if (! is_array($courseGroup['dates'] ?? null)) {
-            return [];
+        $cacheKey = $this->courseGroupCacheKey($courseGroup);
+        if (array_key_exists($cacheKey, $this->runtimeCache['courseGroupDates'] ?? [])) {
+            return $this->runtimeCache['courseGroupDates'][$cacheKey];
         }
 
-        return collect($courseGroup['dates'])
+        if (! is_array($courseGroup['dates'] ?? null)) {
+            return $this->runtimeCache['courseGroupDates'][$cacheKey] = [];
+        }
+
+        return $this->runtimeCache['courseGroupDates'][$cacheKey] = collect($courseGroup['dates'])
             ->map(fn (mixed $date): string => trim((string) $date))
             ->filter()
             ->unique()
@@ -4059,11 +4205,47 @@ class RobotTimetableBackendSetupService
      */
     private function courseOptions(array $course, array $courseGroups, array $subjectMappings, array $settings): array
     {
-        $selectedCourseGroupKeys = $this->stringList($settings['selected_course_group_keys'] ?? []);
         $deselectedCourseGroupKeys = $this->stringList($settings['deselected_course_group_keys'] ?? []);
+
+        return collect($this->courseOptionsBeforeDeselection($course, $courseGroups, $subjectMappings, $settings))
+            ->reject(fn (array $option): bool => $this->courseGroupDeselected(
+                $course,
+                (string) ($option['label'] ?? ''),
+                $deselectedCourseGroupKeys,
+            ))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  array<string, mixed>  $settings
+     * @return list<array{label: string, course: array<string, mixed>, course_groups: list<array<string, mixed>>, date_keys: list<string>}>
+     */
+    private function courseOptionsBeforeDeselection(
+        array $course,
+        array $courseGroups,
+        array $subjectMappings,
+        array $settings,
+    ): array {
+        $selectedCourseGroupKeys = $this->stringList($settings['selected_course_group_keys'] ?? []);
+        $cacheSelectedCourseGroupKeys = $selectedCourseGroupKeys;
+        sort($cacheSelectedCourseGroupKeys, SORT_STRING);
+        $cacheKey = hash('sha256', json_encode($this->canonicalCacheValue([
+            'constraints' => $settings['constraints'] ?? [],
+            'course' => $this->courseCacheKey($course),
+            'selected_course_group_keys' => $cacheSelectedCourseGroupKeys,
+        ]), JSON_THROW_ON_ERROR));
+
+        if (array_key_exists($cacheKey, $this->runtimeCache['courseOptionsBeforeDeselection'] ?? [])) {
+            return $this->runtimeCache['courseOptionsBeforeDeselection'][$cacheKey];
+        }
+
         $hasSelectedCourseGroupKeys = $this->courseHasSelectedCourseGroupKeys($course, $selectedCourseGroupKeys);
 
-        return collect($courseGroups)
+        $options = collect($courseGroups)
             ->filter(fn (array $courseGroup): bool => $this->courseGroupMatchesCourse($courseGroup, $course, $subjectMappings))
             ->filter(fn (array $courseGroup): bool => $this->courseGroupAvailable($courseGroup, $settings))
             ->groupBy(fn (array $courseGroup): string => $this->courseGroupOptionLabel($courseGroup))
@@ -4073,7 +4255,6 @@ class RobotTimetableBackendSetupService
                 fn (Collection $groups): Collection => $groups
                     ->filter(fn (Collection $groups, string $label): bool => $this->courseGroupSelected($course, $label, $selectedCourseGroupKeys)),
             )
-            ->reject(fn (Collection $groups, string $label): bool => $this->courseGroupDeselected($course, $label, $deselectedCourseGroupKeys))
             ->map(function (Collection $groups, string $label) use ($course): array {
                 $courseGroups = $groups->values()->all();
                 $regularCourseGroups = collect($courseGroups)
@@ -4104,6 +4285,8 @@ class RobotTimetableBackendSetupService
             ->sortBy(fn (array $option): string => $this->optionSortValue($option))
             ->values()
             ->all();
+
+        return $this->runtimeCache['courseOptionsBeforeDeselection'][$cacheKey] = $options;
     }
 
     /**
@@ -4321,13 +4504,27 @@ class RobotTimetableBackendSetupService
      */
     private function courseGroupMatchesCourse(array $courseGroup, array $course, array $subjectMappings): bool
     {
-        $courseAliases = $this->courseAliases($course);
-
-        if (! collect($courseAliases)->contains(fn (string $alias): bool => in_array($alias, $this->courseGroupCodes($courseGroup, $subjectMappings), true))) {
-            return false;
+        $cacheKey = $this->courseGroupCacheKey($courseGroup).'|'.$this->courseCacheKey($course);
+        if (array_key_exists($cacheKey, $this->runtimeCache['courseGroupMatchesCourse'] ?? [])) {
+            return $this->runtimeCache['courseGroupMatchesCourse'][$cacheKey];
         }
 
-        return ! $this->courseGroupHasConflictingModule($courseGroup, $courseAliases, $subjectMappings);
+        $courseAliases = $this->courseAliases($course);
+        if ($courseAliases === []) {
+            return $this->runtimeCache['courseGroupMatchesCourse'][$cacheKey] = false;
+        }
+
+        $courseGroupCodes = $this->courseGroupCodes($courseGroup, $subjectMappings);
+
+        if (! collect($courseAliases)->contains(fn (string $alias): bool => in_array($alias, $courseGroupCodes, true))) {
+            return $this->runtimeCache['courseGroupMatchesCourse'][$cacheKey] = false;
+        }
+
+        return $this->runtimeCache['courseGroupMatchesCourse'][$cacheKey] = ! $this->courseGroupHasConflictingModule(
+            $courseGroup,
+            $courseAliases,
+            $subjectMappings,
+        );
     }
 
     /**
@@ -4362,7 +4559,9 @@ class RobotTimetableBackendSetupService
      */
     private function courseAliases(array $course): array
     {
-        return collect([
+        $cacheKey = $this->courseCacheKey($course);
+
+        return $this->runtimeCache['courseAliases'][$cacheKey] ??= collect([
             $course['code'] ?? '',
             ...(is_array($course['ttCodes'] ?? null) ? $course['ttCodes'] : []),
         ])
@@ -4385,7 +4584,9 @@ class RobotTimetableBackendSetupService
      */
     private function courseGroupCodes(array $courseGroup, array $subjectMappings): array
     {
-        return collect([
+        $cacheKey = $this->courseGroupCacheKey($courseGroup);
+
+        return $this->runtimeCache['courseGroupCodes'][$cacheKey] ??= collect([
             ...$this->courseGroupLeadingCodes($courseGroup),
             ...collect([
                 $courseGroup['course'] ?? '',
@@ -4406,7 +4607,9 @@ class RobotTimetableBackendSetupService
      */
     private function courseGroupLeadingCodes(array $courseGroup): array
     {
-        return collect([
+        $cacheKey = $this->courseGroupCacheKey($courseGroup);
+
+        return $this->runtimeCache['courseGroupLeadingCodes'][$cacheKey] ??= collect([
             $courseGroup['class_name'] ?? '',
             $courseGroup['display_label'] ?? '',
             $courseGroup['title'] ?? '',
@@ -4466,13 +4669,17 @@ class RobotTimetableBackendSetupService
     private function normalizedCourseModuleBase(string $value, array $subjectMappings): string
     {
         $normalizedValue = $this->normalizedCourseCode($value);
+        if (array_key_exists($normalizedValue, $this->runtimeCache['normalizedCourseModuleBase'] ?? [])) {
+            return $this->runtimeCache['normalizedCourseModuleBase'][$normalizedValue];
+        }
+
         $mapping = collect($this->activeSubjectMappings($subjectMappings))
             ->first(fn (array $subjectMapping): bool => in_array($normalizedValue, [
                 $this->normalizedCourseCode($subjectMapping['json_subject'] ?? ''),
                 $this->normalizedCourseCode($subjectMapping['tt_subject'] ?? ''),
             ], true));
 
-        return $this->normalizedCourseCode($mapping['json_subject'] ?? '') ?: $normalizedValue;
+        return $this->runtimeCache['normalizedCourseModuleBase'][$normalizedValue] = $this->normalizedCourseCode($mapping['json_subject'] ?? '') ?: $normalizedValue;
     }
 
     /**
@@ -4481,7 +4688,7 @@ class RobotTimetableBackendSetupService
      */
     private function activeSubjectMappings(array $subjectMappings): array
     {
-        return collect($subjectMappings)
+        return $this->runtimeCache['activeSubjectMappings'] ??= collect($subjectMappings)
             ->filter(fn (array $mapping): bool => ($mapping['is_active'] ?? true) !== false)
             ->values()
             ->all();
@@ -4808,20 +5015,17 @@ class RobotTimetableBackendSetupService
      */
     private function courseGroupDateSlotKeysForGroup(array $courseGroup): array
     {
+        $cacheKey = $this->courseGroupCacheKey($courseGroup);
+        if (array_key_exists($cacheKey, $this->runtimeCache['courseGroupDateSlotKeysForGroup'] ?? [])) {
+            return $this->runtimeCache['courseGroupDateSlotKeysForGroup'][$cacheKey];
+        }
+
         $weekday = (string) ($courseGroup['weekday'] ?? '');
         $hour = (string) ($courseGroup['hour'] ?? '');
-        $dates = is_array($courseGroup['dates'] ?? null)
-            ? collect($courseGroup['dates'])
-                ->map(fn (mixed $date): string => trim((string) $date))
-                ->filter()
-                ->unique()
-                ->sort()
-                ->values()
-                ->all()
-            : [];
+        $dates = $this->courseGroupDates($courseGroup);
 
         if ($dates === []) {
-            return ["weekly|{$weekday}|{$hour}"];
+            return $this->runtimeCache['courseGroupDateSlotKeysForGroup'][$cacheKey] = ["weekly|{$weekday}|{$hour}"];
         }
 
         $dateKeys = collect($dates)
@@ -4829,21 +5033,21 @@ class RobotTimetableBackendSetupService
             ->all();
 
         if ($this->isOccasionalCourseGroup($courseGroup)) {
-            return $dateKeys;
+            return $this->runtimeCache['courseGroupDateSlotKeysForGroup'][$cacheKey] = $dateKeys;
         }
 
         if (! $this->usesContinuousRegularDateRange($courseGroup)) {
-            return $dateKeys;
+            return $this->runtimeCache['courseGroupDateSlotKeysForGroup'][$cacheKey] = $dateKeys;
         }
 
         $rangeStart = $this->dateMonthDayOrdinal($dates[0] ?? '');
         $rangeEnd = $this->dateMonthDayOrdinal($dates[count($dates) - 1] ?? '');
 
         if ($rangeStart === null || $rangeEnd === null) {
-            return $dateKeys;
+            return $this->runtimeCache['courseGroupDateSlotKeysForGroup'][$cacheKey] = $dateKeys;
         }
 
-        return [
+        return $this->runtimeCache['courseGroupDateSlotKeysForGroup'][$cacheKey] = [
             ...$dateKeys,
             "range|{$rangeStart}|{$rangeEnd}|{$weekday}|{$hour}",
         ];
@@ -4907,6 +5111,11 @@ class RobotTimetableBackendSetupService
      */
     private function dateKeySummary(array $dateKeys): array
     {
+        $signature = implode("\n", $dateKeys);
+        if (array_key_exists($signature, $this->runtimeCache['dateKeySummary'] ?? [])) {
+            return $this->runtimeCache['dateKeySummary'][$signature];
+        }
+
         $summary = $this->emptyDateKeySummary();
 
         foreach ($dateKeys as $dateKey) {
@@ -4958,7 +5167,7 @@ class RobotTimetableBackendSetupService
             || $this->stringSetsIntersect($summary['weekly'], $summary['dated_weekly'])
             || $this->weeklyKeysOverlapRanges($summary['weekly'], $summary['ranges']);
 
-        return $summary;
+        return $this->runtimeCache['dateKeySummary'][$signature] = $summary;
     }
 
     /**
@@ -5147,7 +5356,49 @@ class RobotTimetableBackendSetupService
 
     private function normalizedCourseCode(string $value): string
     {
-        return preg_replace('/\s+/u', '', mb_strtoupper(trim($value), 'UTF-8')) ?: '';
+        return $this->runtimeCache['normalizedCourseCode'][$value] ??= (preg_replace('/\s+/u', '', mb_strtoupper(trim($value), 'UTF-8')) ?: '');
+    }
+
+    private function resetRuntimeCache(): void
+    {
+        $this->runtimeCache = [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function courseGroupCacheKey(array $courseGroup): string
+    {
+        return hash('sha256', serialize([
+            'key' => $courseGroup['key'] ?? '',
+            'semester' => $courseGroup['semester'] ?? '',
+            'weekday' => $courseGroup['weekday'] ?? '',
+            'hour' => $courseGroup['hour'] ?? '',
+            'dates_count' => $courseGroup['dates_count'] ?? '',
+            'recurrence_type' => $courseGroup['recurrence_type'] ?? '',
+            'recurrence_interval' => $courseGroup['recurrence_interval'] ?? '',
+            'has_inactive_remembered_dates' => (bool) ($courseGroup['has_inactive_remembered_dates'] ?? false),
+            'class_name' => $courseGroup['class_name'] ?? '',
+            'display_label' => $courseGroup['display_label'] ?? '',
+            'title' => $courseGroup['title'] ?? '',
+            'course' => $courseGroup['course'] ?? '',
+            'module_code' => $courseGroup['module_code'] ?? '',
+            'subject' => $courseGroup['subject'] ?? '',
+            'dates' => is_array($courseGroup['dates'] ?? null) ? $courseGroup['dates'] : [],
+        ]));
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     */
+    private function courseCacheKey(array $course): string
+    {
+        return hash('sha256', serialize([
+            'key' => $course['key'] ?? '',
+            'code' => $course['code'] ?? '',
+            'ttCode' => $course['ttCode'] ?? '',
+            'ttCodes' => is_array($course['ttCodes'] ?? null) ? $course['ttCodes'] : [],
+        ]));
     }
 
     private function courseCodeWithoutModule(string $value): string

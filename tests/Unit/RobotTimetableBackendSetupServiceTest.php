@@ -174,6 +174,158 @@ it('keeps alternating two weekly course offers available when their date ranges 
     ]);
 });
 
+it('keeps selected quality criteria when availability reuses the shared timetable input', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $method = $reflection->getMethod('courseAvailabilityFromSharedInput');
+    $method->setAccessible(true);
+
+    $mathematicsKey = '1|1|common|M1|M|Mathematik 1|M1';
+    $germanKey = '2|1|common|D1|D|Deutsch 1|D1';
+    $availability = $method->invokeArgs($service, [
+        [
+            [
+                'id' => 1,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'M1',
+                'json_subject' => 'M',
+                'name' => 'Mathematik 1',
+                'tt_subject' => 'M',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+            [
+                'id' => 2,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D',
+                'hours_per_week' => 2,
+                'is_active' => true,
+            ],
+        ],
+        [],
+        [
+            [
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'M1-A',
+                'display_label' => 'M1-A',
+                'title' => 'M1-A',
+                'course' => 'M1',
+                'subject' => 'Mathematik',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'weekday' => 2,
+                'hour' => 1,
+                'class_name' => 'D1-FU',
+                'display_label' => 'D1-FU',
+                'title' => 'D1-FU',
+                'course' => 'D1',
+                'subject' => 'Deutsch',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        [
+            'selection' => [
+                'semester' => 1,
+                'religion' => 'ETH',
+                'branch' => '',
+                'artsSubject' => 'ME',
+                'language' => 'L',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1],
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => [$mathematicsKey],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+            'selected_quality_criteria_required' => true,
+        ],
+        [
+            [
+                'availability_key' => 'missing:D1',
+                'course_key' => $germanKey,
+                'course_group' => 'missing',
+            ],
+        ],
+        null,
+        null,
+        [
+            [
+                'key' => 'avoid_distance_learning',
+                'label' => 'Kein Fernunterricht',
+                'enabled' => true,
+                'priority' => 1,
+                'option' => 'none',
+            ],
+        ],
+        ['avoid_distance_learning'],
+    ]);
+
+    expect($availability['missing:D1'])->toBe([
+        'available' => false,
+        'valid_timetable_count' => 0,
+    ]);
+});
+
+it('uses collision-safe identities for request-local course memoization', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $courseGroupCacheKey = $reflection->getMethod('courseGroupCacheKey');
+    $courseGroupCacheKey->setAccessible(true);
+    $courseCacheKey = $reflection->getMethod('courseCacheKey');
+    $courseCacheKey->setAccessible(true);
+
+    $firstCourseGroupKey = $courseGroupCacheKey->invoke($service, [
+        'key' => 'A|B',
+        'semester' => 'C',
+    ]);
+    $secondCourseGroupKey = $courseGroupCacheKey->invoke($service, [
+        'key' => 'A',
+        'semester' => 'B|C',
+    ]);
+    $firstCourseKey = $courseCacheKey->invoke($service, [
+        'key' => 'A|B',
+        'code' => 'C',
+    ]);
+    $secondCourseKey = $courseCacheKey->invoke($service, [
+        'key' => 'A',
+        'code' => 'B|C',
+    ]);
+
+    expect($firstCourseGroupKey)->not->toBe($secondCourseGroupKey)
+        ->and($firstCourseKey)->not->toBe($secondCourseKey);
+});
+
+it('resets request-local memoization for direct conflicting additional course calculations', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $reflection = new ReflectionClass($service);
+    $runtimeCache = $reflection->getProperty('runtimeCache');
+    $runtimeCache->setValue($service, [
+        'activeSubjectMappings' => [
+            ['json_subject' => 'D', 'tt_subject' => 'D1'],
+        ],
+    ]);
+
+    $result = $service->conflictingAdditionalCourseKeys([], [], [], [], null);
+
+    expect($result)->toBe([])
+        ->and($runtimeCache->getValue($service))->toBe([]);
+});
+
 it('resolves generic religion availability candidates to the selected religion course', function () {
     $service = app(RobotTimetableBackendSetupService::class);
     $reflection = new ReflectionClass($service);
@@ -1171,7 +1323,7 @@ it('accepts legacy compact selected course keys by course code', function () {
         ->and($result['full_green_timetable_count'])->toBe(1);
 });
 
-it('reuses the cached timetable calculation base when only the selected timetable number changes', function () {
+it('reuses the cached timetable calculation base across selection and availability requests', function () {
     $service = app(RobotTimetableBackendSetupService::class);
     $authUser = new User([
         'school_id' => 1,
@@ -1302,6 +1454,23 @@ it('reuses the cached timetable calculation base when only the selected timetabl
             'selected_timetable_number' => 2,
         ],
     );
+    $availabilityResult = $service->calculateCachedTimetableVariationsForUser(
+        authUser: $authUser,
+        subjectRows: $subjectRows,
+        subjectMappings: [],
+        courseGroups: $courseGroups,
+        settings: [
+            ...$settings,
+            'availability_only' => true,
+            'candidate_courses' => [
+                [
+                    'availability_key' => 'additional:INF2',
+                    'course_key' => 'INF2',
+                    'course_group' => 'additional',
+                ],
+            ],
+        ],
+    );
 
     $baseKeys = array_values(array_filter(
         $rememberedKeys,
@@ -1314,10 +1483,13 @@ it('reuses the cached timetable calculation base when only the selected timetabl
 
     expect($firstResult['selected_timetable']['number'])->toBe(1)
         ->and($secondResult['selected_timetable']['number'])->toBe(2)
-        ->and($baseKeys)->toHaveCount(2)
+        ->and($availabilityResult['selected_timetable']['number'])->toBe(1)
+        ->and($baseKeys)->toHaveCount(3)
         ->and($baseKeys[0])->toBe($baseKeys[1])
-        ->and($selectedTimetableKeys)->toHaveCount(2)
-        ->and($selectedTimetableKeys[0])->not->toBe($selectedTimetableKeys[1]);
+        ->and($baseKeys[0])->toBe($baseKeys[2])
+        ->and($selectedTimetableKeys)->toHaveCount(3)
+        ->and($selectedTimetableKeys[0])->not->toBe($selectedTimetableKeys[1])
+        ->and($selectedTimetableKeys[0])->toBe($selectedTimetableKeys[2]);
 });
 
 it('counts timetable variations without Saturday appointments', function () {

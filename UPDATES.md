@@ -1,5 +1,12 @@
 # UPDATES
 
+## 3.42.2
+
+### Schülerstundenpläne
+- Geschwindigkeit der Berechnungen verbessert
+- Bei Übernahme: Alle Konflikte werden genau aufgeschlüsselt
+- Speichern-Button: Richtiger Name
+
 ## 3.42.1
 
 ### Auswahl-Seite

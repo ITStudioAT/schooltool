@@ -23,8 +23,10 @@ use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\StudentsTimetables\RecognitionImportService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
+use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Spatie\LaravelPdf\Facades\Pdf;
@@ -910,6 +912,14 @@ it('can short circuit backend timetable availability after finding one valid tim
         ->assertJsonPath('data.availability.additional:INF2.valid_timetable_count', 4);
 
     $this->actingAs($user)
+        ->postJson('/api/admin/students-timetables/robot/backend-timetable', $payload)
+        ->assertSuccessful()
+        ->assertJsonPath('data.timetable_variation_count', 4)
+        ->assertJsonPath('data.selected_timetable.type', 'full_green');
+
+    Event::fake([CacheHit::class]);
+
+    $this->actingAs($user)
         ->postJson('/api/admin/students-timetables/robot/backend-timetable-availability', [
             ...$payload,
             'availability_only' => true,
@@ -917,6 +927,15 @@ it('can short circuit backend timetable availability after finding one valid tim
         ->assertSuccessful()
         ->assertJsonPath('data.availability.additional:INF2.available', true)
         ->assertJsonPath('data.availability.additional:INF2.valid_timetable_count', 1);
+
+    Event::assertDispatched(
+        CacheHit::class,
+        fn (CacheHit $event): bool => str_starts_with($event->key, 'students-timetables:timetable-v2:base:'),
+    );
+    Event::assertDispatched(
+        CacheHit::class,
+        fn (CacheHit $event): bool => str_starts_with($event->key, 'students-timetables:timetable-v2:selected:'),
+    );
 
     $this->actingAs($user)
         ->postJson('/api/admin/students-timetables/robot/backend-timetable-availability', [

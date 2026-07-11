@@ -8863,6 +8863,28 @@ describe('TimetableV2 route steps', () => {
         }
     })
 
+    it('uses the student name in the adopted timetable save button for both label orders', () => {
+        const nameFirstContext = timetableV2Context({
+            adoptedTimetableStudentContextSnapshot: {
+                student: {
+                    label: 'FRUK Alan · 3R · Semester 5',
+                    studentCode: '50112620250275',
+                },
+            },
+        })
+        const classFirstContext = timetableV2Context({
+            adoptedTimetableStudentContextSnapshot: {
+                student: {
+                    label: '3R · FRUK Alan · Semester 5',
+                    studentCode: '50112620250275',
+                },
+            },
+        })
+
+        expect(nameFirstContext.adoptedPublishedTimetableStudentName).toBe('FRUK Alan')
+        expect(classFirstContext.adoptedPublishedTimetableStudentName).toBe('FRUK Alan')
+    })
+
     it('clears the adopted timetable save report on restart', () => {
         const context = timetableV2Context({
             adoptedPublishedTimetableReport: {
@@ -12173,6 +12195,123 @@ describe('TimetableV2 route steps', () => {
             'GWB1-1C-HÖF Mo 12. überschneidet sich mit INF3-8AB-MAY.',
             'M1-3A-MAY Mi 5. überschneidet sich mit D1-3A-GOS.',
         ])
+    })
+
+    it('shows all shared dates for every conflict summary', () => {
+        const ch2Dates = [
+            '2026-02-24',
+            '2026-03-10',
+            '2026-03-24',
+            '2026-04-07',
+            '2026-04-21',
+            '2026-05-05',
+            '2026-05-19',
+            '2026-06-02',
+            '2026-06-16',
+            '2026-06-30',
+        ]
+        const context = timetableV2Context({
+            adoptedTimetableCalculationResult: {
+                selected_timetable: {
+                    number: 1,
+                    slots: {
+                        '2-13': {
+                            code: 'E5',
+                            sourceLabel: 'E5-3R-HÖF',
+                            courseGroup: {
+                                dates: ch2Dates.slice(0, 5),
+                                hour: 13,
+                                weekday: 2,
+                            },
+                            conflicts: [
+                                {
+                                    code: 'CH2',
+                                    sourceLabel: 'CH2-5K-PLA',
+                                    courseGroup: {
+                                        dates: ch2Dates,
+                                        hour: 13,
+                                        recurrence_interval: 2,
+                                        weekday: 2,
+                                    },
+                                },
+                            ],
+                        },
+                        '2-14': {
+                            code: 'D5',
+                            sourceLabel: 'D5-3R-SHAM',
+                            courseGroup: {
+                                dates: ch2Dates,
+                                hour: 14,
+                                weekday: 2,
+                            },
+                            conflicts: [
+                                {
+                                    code: 'CH2',
+                                    sourceLabel: 'CH2-5K-PLA',
+                                    courseGroup: {
+                                        dates: ch2Dates,
+                                        hour: 14,
+                                        recurrence_interval: 2,
+                                        weekday: 2,
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+            adoptedTimetableSelectedNumber: 1,
+            timetableV2Step: 'timetable-adoption',
+        })
+
+        expect(context.selectedTimetableV2ConflictSummaryItems).toEqual([
+            'E5-3R-HÖF Di 13. überschneidet sich mit CH2-5K-PLA 2-wöchig B (24.02.(B), 10.03.(B), 24.03.(B), 07.04.(B), 21.04.(B)).',
+            'D5-3R-SHAM Di 14. überschneidet sich mit CH2-5K-PLA 2-wöchig B (24.02.(B), 10.03.(B), 24.03.(B), 07.04.(B), 21.04.(B), 05.05.(B), 19.05.(B), 02.06.(B), 16.06.(B), 30.06.(B)).',
+        ])
+    })
+
+    it('keeps slot-specific dates when adding multi-slot courses to an adopted timetable', () => {
+        const offeredCourse = {
+            code: 'CH2',
+            courseGroup: {
+                dates: ['2026-02-24', '2026-03-10'],
+                hour: 13,
+                recurrence_interval: 2,
+                weekday: 2,
+            },
+            groupSelectionLabel: 'CH2-5K-PLA',
+        }
+        const selectedCourse = {
+            code: 'CH2',
+            courseGroup: 'planned',
+            label: 'CH2',
+        }
+        const scheduleSlot = {
+            courseGroup: {
+                dates: ['2026-02-17', '2026-02-24', '2026-03-03'],
+                hour: 14,
+                recurrence_interval: 1,
+                weekday: 2,
+            },
+            hour: 14,
+            recurrenceInterval: 1,
+            weekday: 2,
+        }
+        const context = timetableV2Context()
+
+        expect(TimetableV2.methods.adoptedTimetableSlotFromOfferedCourse.call(
+            context,
+            offeredCourse,
+            selectedCourse,
+            scheduleSlot,
+        )).toMatchObject({
+            courseGroup: {
+                dates: ['2026-02-17', '2026-02-24', '2026-03-03'],
+                hour: 14,
+                recurrence_interval: 1,
+                weekday: 2,
+            },
+        })
     })
 
     it('recommends removing the full course even when alternative offers are available', () => {

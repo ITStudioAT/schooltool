@@ -2144,8 +2144,10 @@ export default {
                 .split('·')
                 .map((part) => part.trim())
                 .filter(Boolean)
+            const studentNamePart = labelParts.find((part) =>
+                /\s/u.test(part) && !/^Semester(?:\s|$)/iu.test(part))
 
-            if (labelParts.length >= 2) return labelParts[1]
+            if (studentNamePart) return studentNamePart
 
             return label || 'Student'
         },
@@ -4707,9 +4709,7 @@ export default {
             const conflictDateSet = new Set(conflictDates)
             const sharedDates = this.uniqueValues(slotDates.filter((date) => conflictDateSet.has(date))).sort()
 
-            return sharedDates.length <= 8
-                ? sharedDates.map((date) => this.formatCompactDateWithWeekValue(date)).filter(Boolean)
-                : []
+            return sharedDates.map((date) => this.formatCompactDateWithWeekValue(date)).filter(Boolean)
         },
         selectedTimetableV2DateLabelsFromText(text) {
             const dateMatches = String(text || '').match(/\d{4}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}\.?/gu) || []
@@ -6822,6 +6822,7 @@ export default {
 
             const courseGroup = {
                 ...(offeredCourse?.courseGroup || {}),
+                ...(scheduleSlot?.courseGroup || {}),
                 hour,
                 weekday,
             }
