@@ -234,6 +234,7 @@ describe('Teaching page navigation', () => {
             show_works: true,
             show_print: false,
             show_dates: false,
+            show_table: false,
             show_curriculum: false,
             show_attendance: false,
             show_performances: false,
@@ -273,6 +274,7 @@ describe('Teaching page navigation', () => {
             show_works: true,
             show_print: false,
             show_dates: false,
+            show_table: false,
             show_curriculum: false,
             show_attendance: false,
             show_performances: false,
@@ -418,6 +420,7 @@ describe('Teaching page navigation', () => {
         expect(source).toContain("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })")
         expect(source).toContain("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })")
         expect(source).toContain("panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })")
+        expect(source).toContain("panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })")
         expect(source).toContain("panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })")
         expect(source).toContain("panels.push({ id: 'attendance', label: 'Anwesenheit', icon: 'mdi-table' })")
         expect(source).toContain("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })")
@@ -425,6 +428,8 @@ describe('Teaching page navigation', () => {
         expect(source.indexOf("panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })"))
         expect(source.indexOf("panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })"))
+            .toBeLessThan(source.indexOf("panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })"))
+        expect(source.indexOf("panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })"))
         expect(source.indexOf("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })"))
@@ -435,8 +440,9 @@ describe('Teaching page navigation', () => {
         expect(source.indexOf("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })"))
         expect(source).toContain("<CoursePrint />")
-        expect(source).toContain("const validPanels = ['students', 'dates', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']")
+        expect(source).toContain("const validPanels = ['students', 'dates', 'table', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']")
         expect(source).toContain('v-if="selected_course && secondaryOverviewPanelSelection && action != \'teaching_course_new_or_edit\'"')
+        expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'table\'" class="mt-n6"')
         expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'curriculum\'" class="mt-n6"')
         expect(source).toContain('data-testid="teaching-curriculum-card"')
     })
@@ -452,7 +458,7 @@ describe('Teaching page navigation', () => {
         expect(source).not.toContain('toolbar-width-xl-')
     })
 
-    it('uses the same overview card column width for students and secondary panels', async () => {
+    it('lets the table panel use the full content width', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/overview/Overview.vue', 'utf8')
         )
@@ -461,6 +467,9 @@ describe('Teaching page navigation', () => {
         expect(source).toContain('md="8"')
         expect(source).toContain('lg="7"')
         expect(source).toContain('xl="6"')
+        expect(source).toContain(':md="secondaryOverviewPanelSelection === \'table\' ? 12 : 8"')
+        expect(source).toContain(':lg="secondaryOverviewPanelSelection === \'table\' ? 12 : 7"')
+        expect(source).toContain(':xl="secondaryOverviewPanelSelection === \'table\' ? 12 : 6"')
         expect(source).not.toContain('isGradesMode')
         expect(source).toContain('.teaching-overview-card-col {')
         expect(source).toContain('flex-grow: 0;')

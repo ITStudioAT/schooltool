@@ -24,6 +24,7 @@ describe('Teaching settings page', () => {
         expect(panelsWithPermission.map((panel: { id: string }) => panel.id)).toEqual([
             'basic',
             'behaviour',
+            'entries',
             'notifications',
             'schemas',
             'my_holidays',
@@ -39,6 +40,7 @@ describe('Teaching settings page', () => {
 
         expect(panels.map((panel: { id: string }) => panel.id)).toEqual([
             'basic',
+            'entries',
             'notifications',
             'schemas',
             'my_holidays',
@@ -65,6 +67,7 @@ describe('Teaching settings page', () => {
             availablePanels: [
                 { id: 'basic' },
                 { id: 'behaviour' },
+                { id: 'entries' },
                 { id: 'notifications' },
                 { id: 'schemas' },
             ],
@@ -84,6 +87,7 @@ describe('Teaching settings page', () => {
             availablePanels: [
                 { id: 'basic' },
                 { id: 'behaviour' },
+                { id: 'entries' },
                 { id: 'notifications' },
                 { id: 'schemas' },
             ],
@@ -313,6 +317,10 @@ describe('Teaching settings page', () => {
         const source = readFileSync(componentPath, 'utf8')
 
         expect(source).toContain('<template #header-actions>')
+        expect(source).toContain('import Entries from \'./components/Entries.vue\'')
+        expect(source).toContain('<v-window-item value="entries">')
+        expect(source).toContain('<Entries />')
+        expect(source).toContain("{ id: 'entries', label: 'Einträge', icon: 'mdi-format-list-bulleted-type' }")
         expect(source).toContain('activeSchoolyearLabel() {')
         expect(source).toContain('<span class="teaching-settings-toolbar-btn-copy">')
         expect(source).toContain('<span class="teaching-settings-toolbar-btn-meta">{{ activeSchoolyearLabel }}</span>')

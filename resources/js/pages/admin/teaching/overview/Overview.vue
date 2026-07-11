@@ -50,9 +50,9 @@
 
     <v-col
         cols="12"
-        md="8"
-        lg="7"
-        xl="6"
+        :md="secondaryOverviewPanelSelection === 'table' ? 12 : 8"
+        :lg="secondaryOverviewPanelSelection === 'table' ? 12 : 7"
+        :xl="secondaryOverviewPanelSelection === 'table' ? 12 : 6"
         class="teaching-overview-card-col"
         v-if="selected_course && secondaryOverviewPanelSelection && action != 'teaching_course_new_or_edit'"
         :style="contentLockStyle">
@@ -71,6 +71,12 @@
         <v-row v-if="secondaryOverviewPanelSelection === 'dates'" class="mt-n6">
             <v-col>
                 <CourseDates />
+            </v-col>
+        </v-row>
+
+        <v-row v-if="secondaryOverviewPanelSelection === 'table'" class="mt-n6">
+            <v-col>
+                <CourseTable />
             </v-col>
         </v-row>
 
@@ -320,6 +326,7 @@ import CourseStudents from './components/CourseStudents.vue'
 import CourseStudent from './components/CourseStudent.vue'
 import CourseInfos from './components/CourseInfos.vue'
 import CourseDates from './components/CourseDates.vue'
+import CourseTable from './components/CourseTable.vue'
 import CourseWorks from './components/CourseWorks.vue'
 import CoursePrint from './components/CoursePrint.vue'
 import MyTimetable from './components/MyTimetable.vue'
@@ -328,7 +335,7 @@ import PerformancesDummy from '../more/components/PerformancesDummy.vue'
 import PerformancesPlusDummy from '../more/components/PerformancesPlusDummy.vue'
 
 export default {
-    components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, CoursePrint, MyTimetable, AttendanceMatrix, PerformancesDummy, PerformancesPlusDummy },
+    components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseTable, CourseWorks, CoursePrint, MyTimetable, AttendanceMatrix, PerformancesDummy, PerformancesPlusDummy },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -375,6 +382,7 @@ export default {
             'show_infos',
             'show_works',
             'show_dates',
+            'show_table',
             'show_curriculum',
             'show_print',
             'show_attendance',
@@ -392,7 +400,7 @@ export default {
             return this.action_2 === 'course_student_view' || !!this.selected_course_student
         },
         secondaryOverviewPanelSelection() {
-            const secondaryPanels = ['infos', 'dates', 'works', 'print', 'curriculum']
+            const secondaryPanels = ['infos', 'dates', 'table', 'works', 'print', 'curriculum']
             const selectedPanel = this.functionalPanelSelection
 
             return secondaryPanels.includes(selectedPanel) ? selectedPanel : null
@@ -568,6 +576,7 @@ export default {
             if (this.selected_course) {
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
                 panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
+                panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
                 panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })
@@ -586,6 +595,7 @@ export default {
                 if (this.show_works) return 'works'
                 if (this.show_print) return 'print'
                 if (this.show_dates) return 'dates'
+                if (this.show_table) return 'table'
                 if (this.show_curriculum) return 'curriculum'
                 if (this.show_attendance) return 'attendance'
                 if (this.show_performances) return 'performances'
@@ -598,6 +608,7 @@ export default {
                 this.show_works = value === 'works'
                 this.show_print = value === 'print'
                 this.show_dates = value === 'dates'
+                this.show_table = value === 'table'
                 this.show_curriculum = value === 'curriculum'
                 this.show_attendance = value === 'attendance'
                 this.show_performances = value === 'performances'
@@ -628,7 +639,7 @@ export default {
             if (!this._urlPanelRestored) {
                 const urlPanel = this.$route?.query?.panel
                 const urlGrades = this.$route?.query?.grades
-                const validPanels = ['students', 'dates', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']
+                const validPanels = ['students', 'dates', 'table', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']
                 this._urlPanelRestored = true
                 this._lastCourseId = newCourse.id
                 if (urlPanel && validPanels.includes(urlPanel)) {
@@ -637,6 +648,7 @@ export default {
                     this.show_works = urlPanel === 'works'
                     this.show_print = urlPanel === 'print'
                     this.show_dates = urlPanel === 'dates'
+                    this.show_table = urlPanel === 'table'
                     this.show_curriculum = urlPanel === 'curriculum'
                     this.show_attendance = urlPanel === 'attendance'
                     this.show_performances = urlPanel === 'performances'
@@ -649,6 +661,7 @@ export default {
                     this.show_works = false
                     this.show_print = false
                     this.show_dates = false
+                    this.show_table = false
                     this.show_curriculum = false
                     this.show_attendance = false
                     this.show_performances = false
@@ -667,6 +680,7 @@ export default {
             this.show_works = false
             this.show_print = false
             this.show_dates = false
+            this.show_table = false
             this.show_curriculum = false
             this.show_attendance = false
             this.show_performances = false

@@ -51,6 +51,14 @@
                     </v-row>
                 </v-window-item>
 
+                <v-window-item value="entries">
+                    <v-row class="w-100 ma-0" dense>
+                        <v-col cols="12" class="teaching-settings-panel-col">
+                            <Entries />
+                        </v-col>
+                    </v-row>
+                </v-window-item>
+
                 <v-window-item value="schemas">
                     <v-row class="w-100 ma-0" dense>
                         <v-col cols="12" class="teaching-settings-panel-col">
@@ -282,12 +290,13 @@ import Grading from './components/Grading.vue'
 import CategoryEvaluation from './components/CategoryEvaluation.vue'
 import BasicSettings from './components/BasicSettings.vue'
 import Behaviour from './components/Behaviour.vue'
+import Entries from './components/Entries.vue'
 import Notifications from './components/Notifications.vue'
 import MyHolidays from './components/MyHolidays.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
-    components: { WorksAndGrades, Grading, CategoryEvaluation, BasicSettings, Behaviour, Notifications, MyHolidays, ItsGridBox },
+    components: { WorksAndGrades, Grading, CategoryEvaluation, BasicSettings, Behaviour, Entries, Notifications, MyHolidays, ItsGridBox },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -402,6 +411,7 @@ export default {
         availablePanels() {
             const panels = [
                 { id: 'basic', label: 'Grundeinstellungen', icon: 'mdi-cog-outline' },
+                { id: 'entries', label: 'Einträge', icon: 'mdi-format-list-bulleted-type' },
                 { id: 'notifications', label: 'Verständigungen', icon: 'mdi-bell-outline' },
                 { id: 'schemas', label: 'Benotungsschemas', icon: 'mdi-book-cog-outline' },
             ]

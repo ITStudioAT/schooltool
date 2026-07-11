@@ -24,6 +24,7 @@ describe('Teaching overview controls', () => {
             show_infos: true,
             show_works: true,
             show_dates: true,
+            show_table: true,
             show_curriculum: true,
             show_attendance: true,
             show_performances: true,
@@ -38,6 +39,7 @@ describe('Teaching overview controls', () => {
         expect(ctx.show_infos).toBe(false)
         expect(ctx.show_works).toBe(false)
         expect(ctx.show_dates).toBe(false)
+        expect(ctx.show_table).toBe(false)
         expect(ctx.show_curriculum).toBe(false)
         expect(ctx.show_attendance).toBe(false)
         expect(ctx.show_performances).toBe(false)
@@ -50,6 +52,7 @@ describe('Teaching overview controls', () => {
             show_infos: true,
             show_works: false,
             show_dates: false,
+            show_table: false,
             show_attendance: false,
             show_performances: false,
         }
@@ -65,6 +68,7 @@ describe('Teaching overview controls', () => {
             show_infos: false,
             show_works: false,
             show_dates: false,
+            show_table: false,
             show_curriculum: false,
             show_attendance: false,
             show_performances: false,
@@ -78,6 +82,7 @@ describe('Teaching overview controls', () => {
         expect(ctx.show_students).toBe(false)
         expect(ctx.show_performances).toBe(true)
         expect(ctx.show_infos).toBe(false)
+        expect(ctx.show_table).toBe(false)
         expect(ctx.show_curriculum).toBe(false)
         ;(Overview as any).computed.functionalPanelSelection.set.call(ctx, null)
         expect(ctx.show_performances).toBe(false)
@@ -91,6 +96,7 @@ describe('Teaching overview controls', () => {
             show_infos: false,
             show_works: false,
             show_dates: false,
+            show_table: false,
             show_curriculum: false,
             show_attendance: false,
             show_performances: false,
@@ -125,6 +131,7 @@ describe('Teaching overview controls', () => {
             show_works: false,
             show_print: false,
             show_dates: true,
+            show_table: false,
             show_curriculum: false,
             show_attendance: false,
             show_performances: false,
@@ -139,8 +146,10 @@ describe('Teaching overview controls', () => {
         expect(ctx.secondaryOverviewPanelSelection).toBeNull()
         expect(source).not.toContain('<CourseDates compact-student-view />')
         expect(source).not.toContain('<v-row v-if="show_students">')
-        expect(source).toContain(':md="isGradesMode ? 8 : 6"')
+        expect(source).toContain(':md="secondaryOverviewPanelSelection === \'table\' ? 12 : 8"')
         expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'dates\'" class="mt-n6"')
+        expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'table\'" class="mt-n6"')
+        expect(source).toContain('<CourseTable />')
     })
 
     it('aligns course dates and curriculum assignments by week', () => {
