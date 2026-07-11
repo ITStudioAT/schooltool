@@ -1070,6 +1070,55 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
+        async replaceFileAttachment(attachmentId, cardId, file) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(attachmentId)
+
+            if (!Number.isFinite(id) || id <= 0 || !file) {
+                notification.notify({
+                    message: 'Ungültige Datei.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const formData = new FormData()
+                formData.append('file', file)
+
+                const response = await axios.post('/api/admin/materials/attachments/' + id + '/file', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                    },
+                })
+
+                notification.notify({
+                    message: 'Anhang aktualisiert.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                if (cardId) {
+                    await this.show(cardId)
+                }
+
+                return response?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Anhang konnte nicht aktualisiert werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async renameAttachment(attachmentId, cardId, name) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

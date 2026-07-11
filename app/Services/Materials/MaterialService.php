@@ -1604,6 +1604,55 @@ class MaterialService
         }
     }
 
+    public function replaceFileAttachment(MaterialCardAttachment $attachment, UploadedFile $file): MaterialCardAttachment
+    {
+        if ($attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE) {
+            throw ValidationException::withMessages([
+                'file' => 'Nur Datei-Anhänge können aktualisiert werden.',
+            ]);
+        }
+
+        $card = $attachment->materialCard()->firstOrFail();
+        $originalFileName = (string) $file->getClientOriginalName();
+        $newPath = $file->storeAs(
+            $this->materialAttachmentDirectory($card),
+            $this->materialAttachmentStoredFileNameFromOriginalName($originalFileName),
+            config('filesystems.default')
+        );
+
+        if ($newPath === false) {
+            throw ValidationException::withMessages([
+                'file' => 'Datei konnte nicht gespeichert werden.',
+            ]);
+        }
+
+        $oldPath = trim((string) ($attachment->file_path ?? ''));
+
+        try {
+            $attachment->update([
+                'url' => null,
+                'source_url' => null,
+                'file_path' => $newPath,
+                'mime_type' => $this->normalizeMimeType((string) ($file->getMimeType() ?: $file->getClientMimeType() ?: '')),
+                'size_bytes' => $file->getSize(),
+                'downloaded_at' => null,
+            ]);
+            $card->touch();
+        } catch (\Throwable $exception) {
+            $this->deleteAttachmentFileFromAllDisks($newPath);
+
+            throw $exception;
+        }
+
+        if ($oldPath !== '' && $oldPath !== $newPath) {
+            $this->deleteAttachmentFileFromAllDisks($oldPath);
+        }
+
+        $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+
+        return $attachment->fresh();
+    }
+
     public function updateAttachmentName(MaterialCardAttachment $attachment, string $name): MaterialCardAttachment
     {
         $normalizedName = $this->normalizeOptionalName($name);
@@ -6325,9 +6374,13 @@ class MaterialService
         }
 
         foreach ($this->attachmentStorageDiskCandidates(true) as $diskName) {
-            $disk = Storage::disk($diskName);
-            if ($disk->exists($path)) {
-                $disk->delete($path);
+            try {
+                $disk = Storage::disk($diskName);
+                if ($disk->exists($path)) {
+                    $disk->delete($path);
+                }
+            } catch (\Throwable) {
+                continue;
             }
         }
     }

@@ -2993,6 +2993,77 @@ test('attachment rename updates stored attachment name', function () {
     expect($attachment->fresh()->name)->toBe('Neue Bezeichnung');
 });
 
+test('file attachment can be replaced and removes the old file', function () {
+    Storage::fake('local');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Excel Grundlagen',
+        'keywords' => [],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $uploadResponse = $this->post('/api/admin/materials/cards/'.$card->id.'/attachments/file', [
+        'file' => UploadedFile::fake()->create('excel-alt.xlsx', 12, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+        'name' => 'test_excel_grundlagen',
+    ]);
+
+    $attachment = MaterialCardAttachment::findOrFail($uploadResponse->json('id'));
+    $oldPath = $attachment->file_path;
+    $card->forceFill(['updated_at' => now()->subDay()])->saveQuietly();
+    $oldUpdatedAt = $card->fresh()->updated_at;
+
+    $response = $this->post('/api/admin/materials/attachments/'.$attachment->id.'/file', [
+        'file' => UploadedFile::fake()->create('excel-neu.xlsx', 24, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+    ]);
+
+    $response->assertSuccessful()
+        ->assertJsonFragment([
+            'id' => $attachment->id,
+            'name' => 'test_excel_grundlagen',
+            'mime_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+
+    $updatedAttachment = $attachment->fresh();
+
+    expect($updatedAttachment->file_path)->not->toBe($oldPath)
+        ->and($updatedAttachment->size_bytes)->toBe(24 * 1024)
+        ->and($updatedAttachment->source_url)->toBeNull()
+        ->and($updatedAttachment->downloaded_at)->toBeNull()
+        ->and($card->fresh()->updated_at->greaterThan($oldUpdatedAt))->toBeTrue();
+
+    Storage::disk('local')->assertMissing($oldPath);
+    Storage::disk('local')->assertExists($updatedAttachment->file_path);
+});
+
+test('file attachment replacement validation keeps the old file', function () {
+    Storage::fake('local');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Excel Grundlagen',
+        'keywords' => [],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $uploadResponse = $this->post('/api/admin/materials/cards/'.$card->id.'/attachments/file', [
+        'file' => UploadedFile::fake()->create('excel-alt.xlsx', 12, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+    ]);
+
+    $attachment = MaterialCardAttachment::findOrFail($uploadResponse->json('id'));
+    $oldPath = $attachment->file_path;
+
+    $this->postJson('/api/admin/materials/attachments/'.$attachment->id.'/file')
+        ->assertInvalid(['file']);
+
+    expect($attachment->fresh()->file_path)->toBe($oldPath);
+    Storage::disk('local')->assertExists($oldPath);
+});
+
 test('attachment delete removes file from storage', function () {
     Storage::fake('local');
 

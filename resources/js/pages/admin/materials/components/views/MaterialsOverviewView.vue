@@ -914,6 +914,9 @@
         :preview-attachment-fn="previewAttachment"
         :is-downloading-attachment-fn="isDownloadingAttachment"
         :download-attachment-fn="downloadAttachment"
+        :can-replace-attachment-fn="canReplaceDetailAttachment"
+        :is-replacing-attachment-fn="isAttachmentSaving"
+        :replace-attachment-fn="replaceDetailAttachment"
         :is-editable-text-attachment-fn="isEditableTextAttachment"
         :download-attachment-docx-fn="downloadAttachmentDocx"
         :format-date-time-fn="formatDateTime"
@@ -5864,6 +5867,41 @@ export default {
         },
         detailAttachments(card) {
             return Array.isArray(card?.attachments) ? card.attachments : []
+        },
+        canReplaceDetailAttachment(attachment) {
+            return (
+                String(attachment?.attachment_type || '').trim() === 'file' &&
+                !this.detailDialogReadOnlyActions &&
+                this.cardAllowsAttachmentDelete(this.detailDialogCard)
+            )
+        },
+        async replaceDetailAttachment(attachment, file) {
+            const attachmentId = Number(attachment?.id)
+            const cardId = Number(this.detailDialogCard?.id)
+            if (!Number.isFinite(attachmentId) || attachmentId <= 0 || !Number.isFinite(cardId) || cardId <= 0 || !file) return false
+            if (!this.canReplaceDetailAttachment(attachment)) {
+                this.notifyLinkedPermissionRestriction('Anhänge dürfen nur mit VOLLZUGRIFF aktualisiert werden.')
+                return false
+            }
+            if (this.isAttachmentSaving(attachmentId)) return false
+
+            this.markAttachmentSaving(attachmentId, true)
+
+            try {
+                const updated = await this.materialCardStore.replaceFileAttachment(attachmentId, cardId, file)
+                if (!updated) return false
+
+                const selectedCard = this.materialCardStore?.selected_card
+                if (Number(selectedCard?.id || 0) !== cardId) return false
+
+                this.detailDialogCard = this.sanitizeDialogCard(selectedCard)
+                this.mergeCardIntoOverview(selectedCard)
+                this.refreshAllListedAttachmentBytes()
+
+                return true
+            } finally {
+                this.markAttachmentSaving(attachmentId, false)
+            }
         },
         openEditFromDetail() {
             if (!this.detailDialogCard || this.detailDialogLoading || this.isDeletingDetail) return

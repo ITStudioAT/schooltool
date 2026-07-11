@@ -634,6 +634,23 @@ class MaterialController extends Controller
         return response()->noContent();
     }
 
+    public function replaceFileAttachment(
+        MaterialCardFileAttachmentStoreRequest $request,
+        MaterialCardAttachment $material_card_attachment,
+        MaterialService $service
+    ) {
+        $authUser = $this->authorizeForMaterials();
+        $material_card_attachment->loadMissing('materialCard');
+        $this->assertIsOwner($authUser->id, (int) $material_card_attachment->materialCard->user_id);
+        $this->assertLinkedCardAllowsAttachmentDelete($service, $authUser, $material_card_attachment->materialCard);
+        $validated = $request->validated();
+
+        $attachment = $service->replaceFileAttachment($material_card_attachment, $validated['file']);
+        $service->propagateLinkedWritableCardFromTarget($authUser, $material_card_attachment->materialCard);
+
+        return response()->json(new MaterialCardAttachmentResource($attachment), 200);
+    }
+
     public function updateAttachment(
         MaterialCardAttachmentUpdateRequest $request,
         MaterialCardAttachment $material_card_attachment,

@@ -138,6 +138,17 @@
                                             @click="downloadAttachmentFn(attachment)" />
 
                                         <v-btn
+                                            v-if="attachment.attachment_type === 'file' && canReplaceAttachmentFn(attachment)"
+                                            icon="mdi-file-replace-outline"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            :title="'Aktualisieren'"
+                                            :loading="isReplacingAttachmentFn(attachment.id)"
+                                            :disabled="isDeleting"
+                                            @click="selectReplacementFile(attachment)" />
+
+                                        <v-btn
                                             v-if="isEditableTextAttachmentFn(attachment)"
                                             icon="mdi-file-word-outline"
                                             size="small"
@@ -190,13 +201,64 @@
             </v-card-actions>
         </v-card>
     </v-dialog>
+
+    <v-dialog v-model="replacementDialogOpen" max-width="620" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="d-flex align-center ga-2">
+                <v-icon icon="mdi-file-replace-outline" color="primary" />
+                <span>Anhang aktualisieren</span>
+            </v-card-title>
+
+            <v-card-text>
+                <div class="text-body-2 mb-3">
+                    Neue Datei für
+                    <strong>{{ pendingReplacementAttachment ? attachmentDisplayNameFn(pendingReplacementAttachment) : '' }}</strong>
+                    auswählen. Nach erfolgreichem Upload wird die bisherige Datei gelöscht.
+                </div>
+
+                <file-pond
+                    v-if="replacementDialogOpen"
+                    ref="replacementPond"
+                    name="replacement-file"
+                    :allow-multiple="false"
+                    :allow-replace="true"
+                    :allow-revert="false"
+                    :allow-remove="true"
+                    :allow-process="false"
+                    :instant-upload="false"
+                    :disabled="replacementDialogBusy"
+                    :label-idle="'<strong>Neue Datei hierher ziehen oder <i>klicken</i></strong>'"
+                    @addfile="handleReplacementFileAdded"
+                    @removefile="handleReplacementFileRemoved" />
+            </v-card-text>
+
+            <v-card-actions class="px-6 pb-6 pt-2 justify-end ga-2">
+                <v-btn variant="text" :disabled="replacementDialogBusy" @click="closeReplacementDialog">Abbrechen</v-btn>
+                <v-btn
+                    color="primary"
+                    variant="flat"
+                    prepend-icon="mdi-file-replace-outline"
+                    :loading="replacementDialogBusy"
+                    :disabled="!replacementFile || replacementDialogBusy"
+                    @click="confirmReplacement">
+                    Aktualisieren
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script>
+import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
+import 'filepond/dist/filepond.min.css'
+import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
+
+const FilePond = vueFilePond(FilePondPluginFileValidateType)
 const functionProp = { type: Function, required: true }
 
 export default {
     name: 'MaterialDetailDialog',
+    components: { FilePond },
     props: {
         modelValue: { type: Boolean, required: true },
         loading: { type: Boolean, default: false },
@@ -222,6 +284,9 @@ export default {
         previewAttachmentFn: functionProp,
         isDownloadingAttachmentFn: functionProp,
         downloadAttachmentFn: functionProp,
+        canReplaceAttachmentFn: functionProp,
+        isReplacingAttachmentFn: functionProp,
+        replaceAttachmentFn: functionProp,
         isEditableTextAttachmentFn: functionProp,
         downloadAttachmentDocxFn: functionProp,
         formatDateTimeFn: functionProp,
@@ -231,6 +296,49 @@ export default {
         openEditFn: functionProp,
     },
     emits: ['update:modelValue'],
+    data() {
+        return {
+            pendingReplacementAttachment: null,
+            replacementDialogOpen: false,
+            replacementFile: null,
+        }
+    },
+    computed: {
+        replacementDialogBusy() {
+            const attachmentId = Number(this.pendingReplacementAttachment?.id || 0)
+            return attachmentId > 0 && this.isReplacingAttachmentFn(attachmentId)
+        },
+    },
+    methods: {
+        selectReplacementFile(attachment) {
+            this.pendingReplacementAttachment = attachment
+            this.replacementFile = null
+            this.replacementDialogOpen = true
+        },
+        handleReplacementFileAdded(error, fileItem) {
+            this.replacementFile = error ? null : fileItem?.file || null
+        },
+        handleReplacementFileRemoved() {
+            this.replacementFile = null
+        },
+        closeReplacementDialog() {
+            if (this.replacementDialogBusy) return
+
+            this.replacementDialogOpen = false
+            this.pendingReplacementAttachment = null
+            this.replacementFile = null
+        },
+        async confirmReplacement() {
+            const attachment = this.pendingReplacementAttachment
+            const file = this.replacementFile
+            if (!attachment || !file || this.replacementDialogBusy) return
+
+            const replaced = await this.replaceAttachmentFn(attachment, file)
+            if (replaced) {
+                this.closeReplacementDialog()
+            }
+        },
+    },
 }
 </script>
 

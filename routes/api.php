@@ -599,6 +599,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/materials/cards/{material_card}/attachments/image-url', [MaterialController::class, 'storeRemoteImageAttachment']);
         Route::post('/admin/materials/cards/{material_card}/attachments/file', [MaterialController::class, 'storeFileAttachment']);
         Route::post('/admin/materials/cards/{material_card}/attachments/file-temp', [MaterialController::class, 'storeTempFileAttachment']);
+        Route::post('/admin/materials/attachments/{material_card_attachment}/file', [MaterialController::class, 'replaceFileAttachment']);
         Route::patch('/admin/materials/attachments/{material_card_attachment}', [MaterialController::class, 'updateAttachment']);
         Route::get('/admin/materials/attachments/{material_card_attachment}/text-content', [MaterialController::class, 'textAttachmentContent']);
         Route::patch('/admin/materials/attachments/{material_card_attachment}/text-content', [MaterialController::class, 'updateTextAttachmentContent']);

@@ -7,6 +7,9 @@
 - Bei Übernahme: Alle Konflikte werden genau aufgeschlüsselt
 - Speichern-Button: Richtiger Name
 
+### Materialien
+- Material-Details: Angehängte Dateien können jetzt einfach ersetzt werden.
+
 ## 3.42.1
 
 ### Auswahl-Seite
