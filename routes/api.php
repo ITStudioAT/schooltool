@@ -552,6 +552,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/admin/materials/storage-audit/sync-operations/{operationId}', [MaterialStorageAuditController::class, 'syncStatus'])->middleware(['auth:sanctum']);
     Route::delete('/admin/materials/storage-audit/database-only-materials', [MaterialStorageAuditController::class, 'destroyDatabaseOnlyMaterials'])->middleware(['auth:sanctum']);
     Route::delete('/admin/materials/storage-audit/database-only-attachments/{attachmentId}', [MaterialStorageAuditController::class, 'destroyDatabaseOnlyAttachment'])->middleware(['auth:sanctum']);
+    Route::get('/admin/materials/attachments/{material_card_attachment}/word-document.docx', [MaterialController::class, 'openAttachmentInWord'])
+        ->middleware('signed')
+        ->name('admin.materials.attachments.openInWord');
 
     /* SANCTUM - admin, materials_admin, materials_moderator */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:materials_access', 'tool-licensed:Materialientool,auto,scope:materials_access'])->group(function () {
@@ -607,6 +610,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/materials/attachments/{material_card_attachment}/preview', [MaterialController::class, 'previewAttachment']);
         Route::get('/admin/materials/attachments/{material_card_attachment}/download', [MaterialController::class, 'downloadAttachment']);
         Route::get('/admin/materials/attachments/{material_card_attachment}/download-docx', [MaterialController::class, 'downloadAttachmentDocx']);
+        Route::get('/admin/materials/attachments/{material_card_attachment}/word-desktop-url', [MaterialController::class, 'wordDesktopUrl']);
         Route::get('/admin/materials/shares', [MaterialShareController::class, 'index']);
         Route::patch('/admin/materials/shares/{material_share_rule}', [MaterialShareController::class, 'updateRule']);
         Route::post('/admin/materials/shares/targets', [MaterialShareController::class, 'storeTarget']);

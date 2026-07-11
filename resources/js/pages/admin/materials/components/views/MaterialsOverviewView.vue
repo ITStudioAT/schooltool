@@ -841,6 +841,17 @@
                                         @click="downloadAttachment(row)" />
 
                                     <v-btn
+                                        v-if="isWordDocumentAttachment(row)"
+                                        icon="mdi-microsoft-word"
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        :title="'In Word öffnen'"
+                                        :loading="isOpeningWordAttachment(row.id)"
+                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                        @click="openAttachmentInWord(row)" />
+
+                                    <v-btn
                                         v-if="isEditableTextAttachment(row)"
                                         icon="mdi-file-word-outline"
                                         size="small"
@@ -914,6 +925,9 @@
         :preview-attachment-fn="previewAttachment"
         :is-downloading-attachment-fn="isDownloadingAttachment"
         :download-attachment-fn="downloadAttachment"
+        :is-word-document-attachment-fn="isWordDocumentAttachment"
+        :is-opening-word-attachment-fn="isOpeningWordAttachment"
+        :open-attachment-in-word-fn="openAttachmentInWord"
         :can-replace-attachment-fn="canReplaceDetailAttachment"
         :is-replacing-attachment-fn="isAttachmentSaving"
         :replace-attachment-fn="replaceDetailAttachment"
@@ -1137,6 +1151,17 @@
                                             :loading="isDownloadingAttachment(row.id)"
                                             :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
                                             @click="downloadAttachment(row)" />
+
+                                        <v-btn
+                                            v-if="isWordDocumentAttachment(row)"
+                                            icon="mdi-microsoft-word"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            :title="'In Word öffnen'"
+                                            :loading="isOpeningWordAttachment(row.id)"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                            @click="openAttachmentInWord(row)" />
 
                                         <v-btn
                                             v-else-if="row.url"
@@ -1657,6 +1682,7 @@ export default {
             createSharedContext: null,
             editForm: createDefaultEditForm(),
             downloadingAttachmentIds: [],
+            openingWordAttachmentIds: [],
             previewingAttachmentIds: [],
             savingAttachmentIds: [],
             deletingAttachmentIds: [],
@@ -7643,6 +7669,52 @@ ${content}
         isDownloadingAttachment(attachmentId) {
             const id = Number(attachmentId)
             return this.downloadingAttachmentIds.includes(id)
+        },
+        isOpeningWordAttachment(attachmentId) {
+            const id = Number(attachmentId)
+            return this.openingWordAttachmentIds.includes(id)
+        },
+        isWordDocumentAttachment(attachment) {
+            if (String(attachment?.attachment_type || '').trim() !== 'file') return false
+
+            const name = String(attachment?.name || attachment?.file_path || '')
+                .trim()
+                .toLowerCase()
+            const mimeType = String(attachment?.mime_type || '')
+                .trim()
+                .toLowerCase()
+
+            return name.endsWith('.docx') || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        },
+        async openAttachmentInWord(attachment) {
+            const id = Number(attachment?.id)
+            if (!Number.isFinite(id) || id <= 0 || !this.isWordDocumentAttachment(attachment)) return
+            if (this.isOpeningWordAttachment(id)) return
+
+            const downloadUrl = String(attachment?.download_url || '').trim()
+            const queryStart = downloadUrl.indexOf('?')
+            const accessQuery = queryStart >= 0 ? downloadUrl.slice(queryStart) : ''
+            this.openingWordAttachmentIds = [...this.openingWordAttachmentIds, id]
+
+            try {
+                const response = await axios.get(`/api/admin/materials/attachments/${id}/word-desktop-url${accessQuery}`)
+                const documentUrl = String(response?.data?.url || '').trim()
+                if (!documentUrl) {
+                    throw new Error('Word URL missing')
+                }
+
+                window.location.href = `ms-word:ofv|u|${documentUrl}`
+            } catch (error) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'DOCX konnte nicht in Word geöffnet werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.openingWordAttachmentIds = this.openingWordAttachmentIds.filter((item) => item !== id)
+            }
         },
         isPreviewingAttachment(attachmentId) {
             const id = Number(attachmentId)

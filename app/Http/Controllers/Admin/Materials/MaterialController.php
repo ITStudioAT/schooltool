@@ -32,16 +32,20 @@ use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\Materials\MaterialService;
 use App\Services\Materials\MaterialWorkspaceService;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use PhpOffice\PhpWord\Element\Section;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Shared\Html;
 use PhpOffice\PhpWord\Style\Language;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MaterialController extends Controller
 {
@@ -776,6 +780,80 @@ class MaterialController extends Controller
         );
     }
 
+    public function wordDesktopUrl(MaterialCardAttachment $material_card_attachment, Request $request): JsonResponse
+    {
+        $authUser = $this->authorizeForMaterials();
+        $material_card_attachment->loadMissing('materialCard');
+        $this->assertCanReadAttachment($authUser, $material_card_attachment, $request);
+        $allowSharedDiskFallback = $this->isSharedInboxAttachmentReadable($authUser, $material_card_attachment, $request);
+
+        if (! $this->isWordDocumentAttachment($material_card_attachment)) {
+            abort(422, 'In Word öffnen ist nur für DOCX-Dateien verfügbar.');
+        }
+
+        $wordUrl = URL::temporarySignedRoute(
+            'admin.materials.attachments.openInWord',
+            now()->addMinutes(10),
+            [
+                'material_card_attachment' => $material_card_attachment->id,
+                'shared' => $allowSharedDiskFallback ? 1 : 0,
+            ]
+        );
+
+        return response()->json([
+            'url' => $wordUrl,
+        ]);
+    }
+
+    public function openAttachmentInWord(MaterialCardAttachment $material_card_attachment, Request $request): StreamedResponse
+    {
+        if (! $this->isWordDocumentAttachment($material_card_attachment)) {
+            abort(404, 'DOCX-Datei nicht gefunden.');
+        }
+
+        $relativePath = (string) ($material_card_attachment->file_path ?? '');
+        if ($relativePath === '') {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $disk = $this->resolveAttachmentStorageDisk($relativePath, $request->boolean('shared'));
+        if ($disk === null) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $stream = $disk->readStream($relativePath);
+        if (! is_resource($stream)) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $name = $this->safeAttachmentDownloadName(
+            $material_card_attachment->name ?: basename($relativePath)
+        );
+
+        return response()->streamDownload(
+            static function () use ($stream): void {
+                try {
+                    while (! feof($stream)) {
+                        $chunk = fread($stream, 8192);
+                        if ($chunk === false) {
+                            break;
+                        }
+
+                        echo $chunk;
+                    }
+                } finally {
+                    fclose($stream);
+                }
+            },
+            $name,
+            [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
+            ]
+        );
+    }
+
     public function downloadAttachmentDocx(MaterialCardAttachment $material_card_attachment, Request $request)
     {
         $authUser = $this->authorizeForMaterials();
@@ -966,6 +1044,19 @@ class MaterialController extends Controller
         }
 
         abort(403, 'Sie dürfen nur eigene Materialkarten verwalten.');
+    }
+
+    private function isWordDocumentAttachment(MaterialCardAttachment $attachment): bool
+    {
+        if ($attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE || ! $attachment->file_path) {
+            return false;
+        }
+
+        $name = Str::lower((string) ($attachment->name ?: basename((string) $attachment->file_path)));
+        $mimeType = Str::lower(trim((string) $attachment->mime_type));
+
+        return Str::endsWith($name, '.docx')
+            || $mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     }
 
     private function isSharedInboxAttachmentReadable(User $authUser, MaterialCardAttachment $attachment, Request $request): bool

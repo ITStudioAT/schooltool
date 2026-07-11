@@ -2695,6 +2695,81 @@ test('adding file attachment stores file and allows download', function () {
     expect(strtolower((string) $previewResponse->headers->get('content-type')))->toContain('application/pdf');
 });
 
+test('owner can open a docx attachment through a temporary signed Word URL', function () {
+    Storage::fake('local');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Word Desktop',
+        'keywords' => [],
+    ]);
+
+    $path = "materials/cards/{$card->id}/arbeitsblatt.docx";
+    Storage::disk('local')->put($path, 'docx-content');
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'arbeitsblatt.docx',
+        'file_path' => $path,
+        'mime_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'size_bytes' => 12,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $response = $this->getJson("/api/admin/materials/attachments/{$attachment->id}/word-desktop-url")
+        ->assertSuccessful()
+        ->assertJsonStructure(['url']);
+
+    $wordUrl = (string) $response->json('url');
+
+    expect($wordUrl)
+        ->toContain("/api/admin/materials/attachments/{$attachment->id}/word-document.docx")
+        ->toContain('signature=');
+
+    $this->get($wordUrl)
+        ->assertSuccessful()
+        ->assertDownload('arbeitsblatt.docx')
+        ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+});
+
+test('Word document endpoint rejects unsigned URLs and non-docx attachments', function () {
+    Storage::fake('local');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Word Desktop Sicherheit',
+        'keywords' => [],
+    ]);
+
+    $pdfPath = "materials/cards/{$card->id}/arbeitsblatt.pdf";
+    Storage::disk('local')->put($pdfPath, 'pdf-content');
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'arbeitsblatt.pdf',
+        'file_path' => $pdfPath,
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 11,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->getJson("/api/admin/materials/attachments/{$attachment->id}/word-desktop-url")
+        ->assertUnprocessable();
+
+    $unsignedUrl = route('admin.materials.attachments.openInWord', [
+        'material_card_attachment' => $attachment->id,
+        'shared' => 0,
+    ]);
+
+    $this->get($unsignedUrl)->assertForbidden();
+});
+
 test('adding file attachment on s3 keeps canonical relative materials path structure', function () {
     Config::set('filesystems.default', 's3');
     Storage::fake('s3');

@@ -138,6 +138,17 @@
                                             @click="downloadAttachmentFn(attachment)" />
 
                                         <v-btn
+                                            v-if="isWordDocumentAttachmentFn(attachment)"
+                                            icon="mdi-microsoft-word"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            :title="'In Word öffnen'"
+                                            :loading="isOpeningWordAttachmentFn(attachment.id)"
+                                            :disabled="isDeleting"
+                                            @click="openAttachmentInWordFn(attachment)" />
+
+                                        <v-btn
                                             v-if="attachment.attachment_type === 'file' && canReplaceAttachmentFn(attachment)"
                                             icon="mdi-file-replace-outline"
                                             size="small"
@@ -284,6 +295,9 @@ export default {
         previewAttachmentFn: functionProp,
         isDownloadingAttachmentFn: functionProp,
         downloadAttachmentFn: functionProp,
+        isWordDocumentAttachmentFn: functionProp,
+        isOpeningWordAttachmentFn: functionProp,
+        openAttachmentInWordFn: functionProp,
         canReplaceAttachmentFn: functionProp,
         isReplacingAttachmentFn: functionProp,
         replaceAttachmentFn: functionProp,
