@@ -755,7 +755,7 @@ describe('CourseTable', () => {
         expect(source).toContain("'course-table-entry-cell--interactive': tableView === 'entries'")
         expect(source).toContain("'course-table-entry-cell--absent': tableView === 'entries' && !isStudentPresentForCourseDate(student, courseDate)")
         expect(source).toContain('.course-table-entry-cell--absent {')
-        expect(source).toContain('background: rgba(var(--v-theme-error), 0.22) !important;')
+        expect(source).toContain('background: rgba(var(--v-theme-error), 0.14) !important;')
         expect(source).toContain('data-testid="course-table-entry-cell-badges"')
         expect(source).toContain("v-if=\"tableView === 'entries' && entriesForCell(student, courseDate).length\"")
         expect(source).toContain('v-for="entry in entriesForCell(student, courseDate)"')

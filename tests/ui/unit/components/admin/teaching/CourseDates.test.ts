@@ -91,6 +91,15 @@ describe('CourseDates course-specific schema', () => {
         expect(source).toContain('width: 100%;')
     })
 
+    it('does not show the obsolete attendance checked state for dates', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+
+        expect(source).not.toContain('Anwesenheit geprüft')
+        expect(source).not.toContain('isAttendanceChecked')
+        expect(source).not.toContain('attendance_checked')
+        expect(source).not.toContain('att_checked:1')
+    })
+
     it('renders the hour chips next to the date', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
         const dateTitlePosition = source.indexOf('class="course-date-title"')

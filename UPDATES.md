@@ -3,16 +3,20 @@
 ## 3.42.3
 
 ### Lehrertool
+
 - Synchronisierung der Schuldaten von online zu lokal
+- Neue Einträge für Beurteilungen
 
 ## 3.42.2
 
 ### Schülerstundenpläne
+
 - Geschwindigkeit der Berechnungen verbessert
 - Bei Übernahme: Alle Konflikte werden genau aufgeschlüsselt
 - Speichern-Button: Richtiger Name
 
 ### Materialien
+
 - Material-Details: Angehängte Dateien können jetzt einfach ersetzt werden.
 
 ### System

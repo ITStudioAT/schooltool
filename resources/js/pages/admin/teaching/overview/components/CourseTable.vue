@@ -1398,7 +1398,7 @@ export default {
 }
 
 .course-table-entry-cell--absent {
-    background: rgba(var(--v-theme-error), 0.22) !important;
+    background: rgba(var(--v-theme-error), 0.14) !important;
 }
 
 .course-table-entry-cell--interactive:hover,

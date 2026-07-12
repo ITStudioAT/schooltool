@@ -1,0 +1,145 @@
+<?php
+
+use App\Models\Licence;
+use App\Models\School;
+use App\Models\SchoolTool;
+use App\Models\Schoolyear;
+use App\Models\TeachingEntryArea;
+use App\Models\TeachingEntryDefinition;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
+
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
+    $this->school = School::factory()->create();
+    $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+        'teaching_visible_admin' => true,
+    ]);
+    $licence = Licence::firstOrCreate(['name' => 'Lehrertool'], ['long_name' => 'Lehrertool', 'is_selectable' => true]);
+    $this->school->licences()->attach($licence->id, ['valid_until' => now()->addYear()->toDateString()]);
+    $this->teacher = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id]);
+    $this->teacher->assignRole('teacher');
+    $this->otherTeacher = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id]);
+    $this->otherTeacher->assignRole('teacher');
+    $this->area = definitionAreaFor($this->teacher, $this->schoolyear, 'Unterstufe');
+    $this->otherArea = definitionAreaFor($this->teacher, $this->schoolyear, 'Oberstufe');
+    $this->foreignArea = definitionAreaFor($this->otherTeacher, $this->schoolyear, 'Fremd');
+});
+
+function definitionAreaFor(User $user, Schoolyear $schoolyear, string $name): TeachingEntryArea
+{
+    return TeachingEntryArea::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'name' => $name,
+    ]);
+}
+
+function teachingEntryFor(User $user, Schoolyear $year, TeachingEntryArea $area, array $attributes = []): TeachingEntryDefinition
+{
+    return TeachingEntryDefinition::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $year->id,
+        'user_id' => $user->id,
+        'teaching_entry_area_id' => $area->id,
+        'short_name' => 'M',
+        'name' => 'Mitarbeit',
+        'category' => 'Benotung',
+        'has_properties' => true,
+        'properties_mode' => 'fixed',
+        'fixed_properties' => ['+', '-'],
+        ...$attributes,
+    ]);
+}
+
+function validEntryPayload(TeachingEntryArea $area, array $attributes = []): array
+{
+    return [
+        'teaching_entry_area_id' => $area->id,
+        'short_name' => 'A',
+        'name' => 'Abfrage',
+        'category' => 'Benotung',
+        'has_properties' => true,
+        'properties_mode' => 'fixed',
+        'fixed_properties' => ['+', '-'],
+        ...$attributes,
+    ];
+}
+
+test('entry definitions require authentication and a teaching role', function () {
+    $this->getJson('/api/admin/teaching/entry_definitions')->assertUnauthorized();
+    $user = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id]);
+    $user->assignRole('user');
+    $this->actingAs($user, 'sanctum')->getJson('/api/admin/teaching/entry_definitions')->assertForbidden();
+});
+
+test('index returns only owned definitions', function () {
+    $entry = teachingEntryFor($this->teacher, $this->schoolyear, $this->area);
+    teachingEntryFor($this->otherTeacher, $this->schoolyear, $this->foreignArea);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson('/api/admin/teaching/entry_definitions')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $entry->id)
+        ->assertJsonPath('data.0.teaching_entry_area_id', $this->area->id);
+});
+
+test('store creates and normalizes a definition', function () {
+    $response = $this->actingAs($this->teacher, 'sanctum')->postJson(
+        '/api/admin/teaching/entry_definitions',
+        validEntryPayload($this->area, ['short_name' => 'ab', 'name' => '  Kurze Abfrage  '])
+    );
+
+    $response->assertCreated()
+        ->assertJsonPath('data.short_name', 'AB')
+        ->assertJsonPath('data.name', 'Kurze Abfrage')
+        ->assertJsonPath('data.teaching_entry_area_id', $this->area->id);
+});
+
+test('short names are unique within an area and foreign areas are rejected', function () {
+    teachingEntryFor($this->teacher, $this->schoolyear, $this->area);
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/teaching/entry_definitions', validEntryPayload($this->area, ['short_name' => 'M']))
+        ->assertUnprocessable()->assertJsonValidationErrors('short_name');
+    $this->postJson('/api/admin/teaching/entry_definitions', validEntryPayload($this->otherArea, ['short_name' => 'M']))
+        ->assertCreated();
+    $this->postJson('/api/admin/teaching/entry_definitions', validEntryPayload($this->foreignArea))
+        ->assertUnprocessable()->assertJsonValidationErrors('teaching_entry_area_id');
+});
+
+test('update can move an entry to another area and clears irrelevant properties', function () {
+    $entry = teachingEntryFor($this->teacher, $this->schoolyear, $this->area);
+    $response = $this->actingAs($this->teacher, 'sanctum')->putJson(
+        "/api/admin/teaching/entry_definitions/{$entry->id}",
+        validEntryPayload($this->otherArea, [
+            'short_name' => 'I', 'name' => 'Information', 'category' => 'Weitere',
+            'has_properties' => false, 'properties_mode' => 'fixed', 'fixed_properties' => ['ignored'],
+        ])
+    );
+
+    $response->assertOk()
+        ->assertJsonPath('data.teaching_entry_area_id', $this->otherArea->id)
+        ->assertJsonPath('data.properties_mode', 'free')
+        ->assertJsonPath('data.fixed_properties', []);
+});
+
+test('update and destroy reject foreign entries and destroy removes an owned entry', function () {
+    $foreign = teachingEntryFor($this->otherTeacher, $this->schoolyear, $this->foreignArea);
+    $owned = teachingEntryFor($this->teacher, $this->schoolyear, $this->area, ['short_name' => 'A']);
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->putJson("/api/admin/teaching/entry_definitions/{$foreign->id}", validEntryPayload($this->area))->assertForbidden();
+    $this->deleteJson("/api/admin/teaching/entry_definitions/{$foreign->id}")->assertForbidden();
+    $this->deleteJson("/api/admin/teaching/entry_definitions/{$owned->id}")->assertNoContent();
+    $this->assertModelMissing($owned);
+});

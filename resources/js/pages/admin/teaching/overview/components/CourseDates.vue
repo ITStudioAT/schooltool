@@ -120,13 +120,6 @@
                                         variant="tonal"
                                         title="Schülerliste anzeigen"
                                         @click="switchToStudents(courseDate)" />
-                                    <v-icon
-                                        v-if="isAttendanceChecked(courseDate)"
-                                        size="18"
-                                        color="success"
-                                        title="Anwesenheit geprüft">
-                                        mdi-check-circle
-                                    </v-icon>
                                     <v-chip
                                         v-if="hasStatus(courseDate, 'free')"
                                         size="x-small"
@@ -1322,11 +1315,6 @@ export default {
         },
         hasStatus(courseDate, status) {
             return Array.isArray(courseDate.status) && courseDate.status.includes(status)
-        },
-        isAttendanceChecked(courseDate) {
-            if (typeof courseDate?.attendance_checked === 'boolean') return courseDate.attendance_checked
-            const status = Array.isArray(courseDate?.status) ? courseDate.status : []
-            return status.includes('att_checked:1')
         },
         isDateToday(courseDate) {
             if (!courseDate?.date) return false

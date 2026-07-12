@@ -1,102 +1,174 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import Entries from '@/pages/admin/teaching/settings/components/Entries.vue'
 
-describe('Teaching entries settings preview', () => {
-    it('normalizes short names to two uppercase letters', () => {
-        const data = (Entries as any).data()
+function entryFixture(overrides = {}) {
+    return {
+        id: 1,
+        teaching_entry_area_id: 10,
+        short_name: 'M',
+        name: 'Mitarbeit',
+        category: 'Benotung',
+        has_properties: true,
+        properties_mode: 'fixed',
+        fixed_properties: ['+', '-'],
+        ...overrides,
+    }
+}
+
+describe('Teaching entries settings', () => {
+    it('filters entries by area and category', () => {
         const ctx = {
-            entries: [
-                {
-                    short_name: 'abc',
-                },
-            ],
-        }
-
-        ;(Entries as any).methods.normalizeShortName.call(ctx, 0)
-
-        expect(ctx.entries[0].short_name).toBe('AB')
-        ;(Entries as any).methods.normalizeShortName.call(ctx, ctx.entries[0])
-
-        expect(ctx.entries[0].short_name).toBe('AB')
-        expect(data.activeCategory).toBe('Benotung')
-        expect(data.categoryOptions).toEqual(['Benotung', 'Verhalten', 'Weitere'])
-    })
-
-    it('filters entries by the active top-level category tab', () => {
-        const data = (Entries as any).data()
-        const ctx = {
+            activeAreaId: 20,
             activeCategory: 'Verhalten',
-            entries: data.entries,
+            entries: [entryFixture(), entryFixture({ id: 2, teaching_entry_area_id: 20, category: 'Verhalten' })],
         }
 
-        const entries = (Entries as any).computed.filteredEntries.call(ctx)
-
-        expect(entries.map((entry: { short_name: string }) => entry.short_name)).toEqual(['V'])
+        expect((Entries as any).computed.filteredEntries.call(ctx).map((entry: any) => entry.id)).toEqual([2])
     })
 
-    it('opens and closes a persistent edit dialog for the selected entry', () => {
+    it('opens a blank entry in the selected area', () => {
         const methods = (Entries as any).methods
-        const entry = {
-            short_name: 'M',
-            name: 'Mitarbeit',
-        }
-        const ctx = {
+        const ctx: any = {
+            areas: [{ id: 10, name: 'Unterstufe' }],
+            activeAreaId: 10,
+            activeCategory: 'Weitere',
+            selectedEntryId: 8,
+            entryForm: null,
+            formErrors: {},
             editDialogOpen: false,
-            selectedEntry: null,
+            createEmptyEntry: methods.createEmptyEntry,
         }
 
-        methods.openEditDialog.call(ctx, entry)
+        methods.openCreateDialog.call(ctx)
 
+        expect(ctx.entryForm.teaching_entry_area_id).toBe(10)
+        expect(ctx.entryForm.category).toBe('Weitere')
         expect(ctx.editDialogOpen).toBe(true)
-        expect(ctx.selectedEntry).toBe(entry)
-
-        methods.closeEditDialog.call(ctx)
-
-        expect(ctx.editDialogOpen).toBe(false)
-        expect(ctx.selectedEntry).toBeNull()
     })
 
-    it('renders the version 2 preview fields without persistence', () => {
-        const source = readFileSync(
-            resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'),
-            'utf8',
-        )
+    it('creates and renames areas through their API', async () => {
+        const methods = (Entries as any).methods
+        const post = vi.fn().mockResolvedValue({ data: { data: { id: 10, name: 'Unterstufe', entry_count: 0 } } })
+        const put = vi.fn().mockResolvedValue({ data: { data: { id: 10, name: 'Mittelstufe', entry_count: 0 } } })
+        ;(globalThis as any).axios = { post, put }
+        const ctx: any = {
+            areas: [],
+            activeAreaId: null,
+            editingAreaId: null,
+            areaForm: { name: '  Unterstufe  ' },
+            areaFormErrors: {},
+            areaDialogOpen: true,
+            isSavingArea: false,
+            closeAreaDialog: methods.closeAreaDialog,
+            notifyError: vi.fn(),
+        }
 
-        expect(source).toContain('title="Einträge"')
-        expect(source).toContain('Version 2')
-        expect(source).toContain('Noch ohne Speichern')
-        expect(source).toContain("activeCategory: 'Benotung'")
-        expect(source).toContain('v-model="activeCategory"')
-        expect(source).toContain("categoryOptions: ['Benotung', 'Verhalten', 'Weitere']")
-        expect(source).toContain('<v-tabs')
-        expect(source).toContain('class="entry-settings-category-tabs"')
-        expect(source).toContain('<v-tab')
-        expect(source).toContain('v-for="category in categoryOptions"')
-        expect(source).toContain(':value="category"')
-        expect(source).toContain('v-for="entry in filteredEntries"')
-        expect(source).toContain('filteredEntries()')
-        expect(source).toContain('class="entry-settings-list bg-transparent"')
-        expect(source).toContain('class="entry-settings-list-row px-0"')
-        expect(source).toContain('.entry-settings-list-row:not(:last-child)')
-        expect(source).not.toContain('<v-divider')
-        expect(source).toContain('class="entry-settings-short-name"')
-        expect(source).toContain('class="entry-settings-name"')
-        expect(source).toContain('icon="mdi-pencil"')
-        expect(source).toContain(':title="`${entry.short_name} bearbeiten`"')
-        expect(source).toContain('@click="openEditDialog(entry)"')
-        expect(source).toContain('<v-dialog v-model="editDialogOpen" persistent max-width="520">')
-        expect(source).toContain('Eintrag bearbeiten')
-        expect(source).toContain('v-if="selectedEntry"')
-        expect(source).toContain('@click="closeEditDialog"')
-        expect(source).toContain('selectedEntry: null')
-        expect(source).toContain("category: 'Weitere'")
-        expect(source).toContain("short_name: 'M'")
-        expect(source).toContain("name: 'Mitarbeit'")
-        expect(source).not.toContain('v-text-field')
-        expect(source).not.toContain('v-combobox')
-        expect(source).not.toContain('label="Eigenschaften"')
-        expect(source).not.toContain('saveSettings')
+        await methods.saveArea.call(ctx)
+        expect(ctx.areas[0].name).toBe('Unterstufe')
+        expect(post).toHaveBeenCalledWith('/api/admin/teaching/entry_areas', { name: 'Unterstufe' })
+
+        ctx.editingAreaId = 10
+        ctx.areaForm = { name: 'Mittelstufe' }
+        await methods.saveArea.call(ctx)
+        expect(ctx.areas[0].name).toBe('Mittelstufe')
+        expect(put).toHaveBeenCalledWith('/api/admin/teaching/entry_areas/10', { name: 'Mittelstufe' })
+    })
+
+    it('removes only empty areas after confirmation', async () => {
+        const methods = (Entries as any).methods
+        const deleteRequest = vi.fn().mockResolvedValue({})
+        ;(globalThis as any).axios = { delete: deleteRequest }
+        const ctx: any = {
+            areas: [
+                { id: 10, name: 'Leer' },
+                { id: 20, name: 'Unterstufe' },
+            ],
+            entries: [entryFixture({ teaching_entry_area_id: 20 })],
+            activeAreaId: 10,
+            deleteAreaId: null,
+            areaDeleteDialogOpen: false,
+            isDeletingArea: false,
+            entryCountForArea: methods.entryCountForArea,
+            closeAreaDeleteDialog: methods.closeAreaDeleteDialog,
+            notifyError: vi.fn(),
+        }
+
+        methods.openDeleteAreaDialog.call(ctx, ctx.areas[0])
+        await methods.confirmAreaDelete.call(ctx)
+
+        expect(ctx.areas.map((area: any) => area.id)).toEqual([20])
+        expect(deleteRequest).toHaveBeenCalledWith('/api/admin/teaching/entry_areas/10')
+    })
+
+    it('copies every returned entry from a source area into the active area', async () => {
+        const methods = (Entries as any).methods
+        const copiedEntries = [entryFixture({ id: 20, teaching_entry_area_id: 10 }), entryFixture({ id: 21, teaching_entry_area_id: 10, short_name: 'A' })]
+        const post = vi.fn().mockResolvedValue({ data: { data: copiedEntries, copied_count: 2 } })
+        ;(globalThis as any).axios = { post }
+        const ctx: any = {
+            entries: [entryFixture({ teaching_entry_area_id: 20 })],
+            activeAreaId: 10,
+            selectedSourceAreaId: 20,
+            entryCopyDialogOpen: true,
+            entryCopyErrors: {},
+            isCopyingEntries: false,
+            closeEntryCopyDialog: methods.closeEntryCopyDialog,
+            notifyError: vi.fn(),
+            notifySuccess: vi.fn(),
+        }
+
+        await methods.copyEntriesFromArea.call(ctx)
+
+        expect(post).toHaveBeenCalledWith('/api/admin/teaching/entry_areas/10/entry-copies', { source_area_id: 20 })
+        expect(ctx.entries.slice(-2)).toEqual(copiedEntries)
+        expect(ctx.entryCopyDialogOpen).toBe(false)
+        expect(ctx.notifySuccess).toHaveBeenCalledWith('2 Einträge wurden übernommen.')
+    })
+
+    it('renders all area cards in a wrapping grid and persistent CRUD dialogs without dropdowns', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
+        const areasTitleIndex = source.indexOf('title="Bereiche"')
+        const entriesTitleIndex = source.indexOf('<div class="text-h6 font-weight-bold">Einträge</div>')
+
+        expect(areasTitleIndex).toBeGreaterThanOrEqual(0)
+        expect(entriesTitleIndex).toBeGreaterThan(areasTitleIndex)
+        expect(source).toContain('Aktiver Bereich: {{ activeAreaName }}')
+        expect(source).toContain('@click="openEntryCopyDialog"')
+        expect(source).toContain('v-model="entryCopyDialogOpen"')
+        expect(source).toContain('Einträge übernehmen')
+        expect(source).toContain('Quellbereich auswählen')
+        expect(source).toContain('@click="copyEntriesFromArea"')
+        expect(source).toContain('class="entry-area-grid mt-4"')
+        expect(source).toContain('grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))')
+        expect(source).toContain('class="entry-area-card"')
+        expect(source).toContain('@click="activeAreaId = area.id"')
+        expect(source).not.toContain('<v-slide-group')
+        expect(source).toContain('@click="openCreateAreaDialog"')
+        expect(source).toContain('class="entry-area-actions"')
+        expect(source).toContain('@click="openEditAreaDialog(area)"')
+        expect(source).toContain('>Bearbeiten</v-btn>')
+        expect(source).toContain('Löschen')
+        expect(source).toContain('@click="confirmAreaDelete"')
+        expect(source).toContain("axios.get('/api/admin/teaching/entry_areas')")
+        expect(source).not.toContain('v-model="entryForm.teaching_entry_area_id"')
+        expect(source).not.toContain('v-model="entryForm.category"')
+        expect(source).not.toContain('categorySelectionOptions')
+        expect(source).not.toContain('<strong>Bereich / Oberbegriff</strong>')
+        expect(source).not.toContain('<strong>Kategorie</strong>')
+        expect(source).toContain('class="entry-property-chip"')
+        expect(source).toContain("entry.has_properties && entry.properties_mode === 'free'")
+        expect(source).toContain('class="entry-property-chip entry-free-input-chip"')
+        expect(source).toContain('Freie Eingabe')
+        expect(source).not.toContain('mdi-tag-outline')
+        expect(source).toContain('class="entry-properties-combobox mt-4"')
+        expect(source).toContain('.entry-properties-combobox :deep(.v-chip)')
+        expect(source).toContain('height: 42px !important')
+        expect(source).not.toContain('teaching_schema_id')
+        expect(source).not.toContain('<v-select')
+        expect(source).not.toContain('Feste Eigenschaften')
+        expect(source).not.toContain('areaExamples')
+        expect(source).not.toContain('area-example-row')
     })
 })

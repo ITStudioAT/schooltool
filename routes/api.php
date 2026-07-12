@@ -72,6 +72,9 @@ use App\Http\Controllers\Admin\Teaching\SchoolHourController;
 use App\Http\Controllers\Admin\Teaching\TeachingBackupController;
 use App\Http\Controllers\Admin\Teaching\TeachingController;
 use App\Http\Controllers\Admin\Teaching\TeachingCourseController;
+use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaController;
+use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaEntryCopiesController;
+use App\Http\Controllers\Admin\Teaching\TeachingEntryDefinitionController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UserHopperAccountController;
 use App\Http\Controllers\Admin\UserWithRoleController;
@@ -530,6 +533,13 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/course_date_materials/attachments/{attachment}/download', [CourseDateController::class, 'downloadAdoptedAttachment']);
         Route::apiResource('/admin/teaching/holidays', HolidayController::class)->only(['index', 'store', 'destroy']);
         Route::apiResource('/admin/teaching/school_hours', SchoolHourController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::apiResource('/admin/teaching/entry_definitions', TeachingEntryDefinitionController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->parameters(['entry_definitions' => 'entryDefinition']);
+        Route::apiResource('/admin/teaching/entry_areas', TeachingEntryAreaController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->parameters(['entry_areas' => 'entryArea']);
+        Route::post('/admin/teaching/entry_areas/{entryArea}/entry-copies', [TeachingEntryAreaEntryCopiesController::class, 'store']);
         Route::apiResource('/admin/teaching/my_holidays', MyHolidayController::class)
             ->only(['index', 'store', 'destroy'])
             ->parameters(['my_holidays' => 'my_holiday']);
