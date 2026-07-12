@@ -104,11 +104,20 @@ describe('CourseTable', () => {
         }
     })
 
-    it('toggles attendance marker visibility from the command row', () => {
+    it('toggles attendance marker visibility and stores the view in the URL', () => {
         const methods = (CourseTable as any).methods
         const initialData = (CourseTable as any).data()
+        const replace = vi.fn().mockResolvedValue(undefined)
         const ctx = {
             showAttendanceMarkers: initialData.showAttendanceMarkers,
+            $route: {
+                path: '/admin/teaching',
+                query: {
+                    course: '5',
+                    panel: 'table',
+                },
+            },
+            $router: { replace },
         }
 
         expect(ctx.showAttendanceMarkers).toBe(true)
@@ -116,9 +125,41 @@ describe('CourseTable', () => {
         methods.toggleAttendanceMarkers.call(ctx)
 
         expect(ctx.showAttendanceMarkers).toBe(false)
+        expect(replace).toHaveBeenLastCalledWith({
+            path: '/admin/teaching',
+            query: {
+                course: '5',
+                panel: 'table',
+                view: 'plain',
+            },
+        })
 
         methods.toggleAttendanceMarkers.call(ctx)
 
+        expect(ctx.showAttendanceMarkers).toBe(true)
+        expect(replace).toHaveBeenLastCalledWith({
+            path: '/admin/teaching',
+            query: {
+                course: '5',
+                panel: 'table',
+                view: 'attendance',
+            },
+        })
+    })
+
+    it('restores attendance marker visibility from the URL view', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            showAttendanceMarkers: true,
+        }
+
+        methods.restoreAttendanceView.call(ctx, 'plain')
+        expect(ctx.showAttendanceMarkers).toBe(false)
+
+        methods.restoreAttendanceView.call(ctx, 'attendance')
+        expect(ctx.showAttendanceMarkers).toBe(true)
+
+        methods.restoreAttendanceView.call(ctx, undefined)
         expect(ctx.showAttendanceMarkers).toBe(true)
     })
 
@@ -141,6 +182,157 @@ describe('CourseTable', () => {
             open: true,
             present: false,
         })
+    })
+
+    it('opens and closes the cell entry dialog for a student and course date', () => {
+        const methods = (CourseTable as any).methods
+        const student = { id: 10, first_name: 'Anna', last_name: 'Berger' }
+        const courseDate = { id: 7, date: '2026-03-09' }
+        const ctx = {
+            entrySaving: false,
+            entryDialog: {
+                courseDate: null,
+                open: false,
+                student: null,
+            },
+            entryForm: {
+                description: 'Alt',
+                grade: '2',
+                type: 'T',
+            },
+            entryFormOpen: true,
+            cancelNewCellEntry() {
+                methods.cancelNewCellEntry.call(this)
+            },
+        }
+
+        methods.openEntryDialog.call(ctx, student, courseDate)
+
+        expect(ctx.entryDialog).toEqual({
+            courseDate,
+            open: true,
+            student,
+        })
+
+        methods.closeEntryDialog.call(ctx)
+
+        expect(ctx.entryDialog).toEqual({
+            courseDate: null,
+            open: false,
+            student: null,
+        })
+        expect(ctx.entryFormOpen).toBe(false)
+    })
+
+    it('shows all assessment, behaviour, and notification entries for the selected cell only', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            entryStore: {
+                courseEntries: [
+                    { id: 1, user_id: 10, date: '2026-03-09', type: 'T', grade: '2' },
+                    { id: 2, user_id: 10, date: '2026-03-09T08:00:00', type: 'M', grade: '+' },
+                    { id: 3, user_id: 11, date: '2026-03-09', type: 'T', grade: '1' },
+                    { id: 4, user_id: 10, date: '2026-03-10', type: 'T', grade: '3' },
+                ],
+            },
+            behaviourEntryStore: {
+                courseEntries: [
+                    { id: 5, user_id: 10, date: '2026-03-09', kind: 'behaviour', type: 'V' },
+                    { id: 6, user_id: 10, date: '2026-03-09', kind: 'notification', type: 'I' },
+                    { id: 7, user_id: 11, date: '2026-03-09', kind: 'behaviour', type: 'V' },
+                ],
+            },
+            registeredStudentUserId: methods.registeredStudentUserId,
+            normalizeDateKey: methods.normalizeDateKey,
+            dateKey: methods.dateKey,
+        }
+
+        const entries = methods.entriesForCell.call(ctx, { id: 10, user_id: 10 }, { date: '2026-03-09' })
+
+        expect(entries.map((entry: { uid: string }) => entry.uid)).toEqual([
+            'assessment-2',
+            'assessment-1',
+            'behaviour-5',
+            'behaviour-6',
+        ])
+    })
+
+    it('builds compact labels for entries rendered inside table cells', () => {
+        const methods = (CourseTable as any).methods
+
+        expect(methods.compactCellEntryLabel.call({}, {
+            kind: 'assessment',
+            type: 'T',
+            effective_grade: '2',
+        })).toBe('T: 2')
+        expect(methods.compactCellEntryLabel.call({}, {
+            kind: 'assessment',
+            type: 'M',
+            grade: '+',
+        })).toBe('M: +')
+        expect(methods.compactCellEntryLabel.call({}, {
+            kind: 'behaviour',
+            type: 'V',
+        })).toBe('V')
+        expect(methods.compactCellEntryLabel.call({}, {
+            kind: 'notification',
+            type: 'I',
+        })).toBe('I')
+    })
+
+    it('saves a new entry for the selected student and date', async () => {
+        const methods = (CourseTable as any).methods
+        const store = vi.fn().mockResolvedValue({ data: { id: 12 } })
+        const ctx = {
+            canSaveCellEntry: true,
+            entrySaving: false,
+            entryStore: { store },
+            selected_course: { id: 20 },
+            registeredEntryStudentId: 10,
+            entryDialog: { courseDate: { date: '2026-03-09' } },
+            entryForm: {
+                description: 'Gute Mitarbeit',
+                grade: '+',
+                type: 'M',
+            },
+            entryFormOpen: true,
+            normalizeDateKey: methods.normalizeDateKey,
+            dateKey: methods.dateKey,
+            cancelNewCellEntry() {
+                methods.cancelNewCellEntry.call(this)
+            },
+        }
+
+        await methods.saveCellEntry.call(ctx)
+
+        expect(store).toHaveBeenCalledWith({
+            teaching_course_id: 20,
+            user_id: 10,
+            type: 'M',
+            grade: '+',
+            date: '2026-03-09',
+            description: 'Gute Mitarbeit',
+        })
+        expect(ctx.entryFormOpen).toBe(false)
+        expect(ctx.entrySaving).toBe(false)
+    })
+
+    it('keeps the entry dialog target cell selected while the dialog is open', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            entryDialog: {
+                courseDate: { id: 7 },
+                open: true,
+                student: { id: 10 },
+            },
+        }
+
+        expect(methods.isEntryDialogCellSelected.call(ctx, { id: 10 }, { id: 7 })).toBe(true)
+        expect(methods.isEntryDialogCellSelected.call(ctx, { id: 11 }, { id: 7 })).toBe(false)
+        expect(methods.isEntryDialogCellSelected.call(ctx, { id: 10 }, { id: 8 })).toBe(false)
+
+        ctx.entryDialog.open = false
+        expect(methods.isEntryDialogCellSelected.call(ctx, { id: 10 }, { id: 7 })).toBe(false)
     })
 
     it('builds bulk attendance maps where present clears absences and absent stores all students', () => {
@@ -228,6 +420,37 @@ describe('CourseTable', () => {
         expect(attendance).toEqual({ 10: false, 12: false })
         expect(methods.isStudentPresentForCourseDate.call(ctx, { id: 10 }, { attendance })).toBe(false)
         expect(methods.isStudentPresentForCourseDate.call(ctx, { id: 11 }, { attendance })).toBe(true)
+    })
+
+    it('calculates student presence percentages from eligible course dates', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            sortedCourseDates: [
+                { id: 1, attendance: {} },
+                { id: 2, attendance: { 10: false } },
+                { id: 3, attendance: {} },
+                { id: 4, attendance: { 10: false } },
+            ],
+            isAttendanceToggleable: (courseDate: { id: number }) => courseDate.id !== 4,
+            isStudentPresentForCourseDate(student: { id: number }, courseDate: Record<string, unknown>) {
+                return methods.isStudentPresentForCourseDate.call(this, student, courseDate)
+            },
+            getAttendanceMap: methods.getAttendanceMap,
+            sanitizeAttendanceMap: methods.sanitizeAttendanceMap,
+            isAttendancePresentValue: methods.isAttendancePresentValue,
+        }
+
+        expect(methods.studentPresencePercentage.call(ctx, { id: 10 })).toBe(67)
+    })
+
+    it('does not calculate a presence percentage without eligible course dates', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            sortedCourseDates: [{ id: 1, attendance: {} }],
+            isAttendanceToggleable: () => false,
+        }
+
+        expect(methods.studentPresencePercentage.call(ctx, { id: 10 })).toBeNull()
     })
 
     it('toggles and persists attendance for an eligible table cell', async () => {
@@ -333,7 +556,21 @@ describe('CourseTable', () => {
         expect(source).not.toContain('transform: rotate(90deg);')
         expect(source).toContain('v-for="courseDate in sortedCourseDates"')
         expect(source).toContain('v-for="(student, studentIndex) in sortedSelectedStudents"')
-        expect(source).toContain('class="course-table-entry-cell"')
+        expect(source).toContain('class="course-table-entry-cell course-table-entry-cell--interactive"')
+        expect(source).toContain('data-testid="course-table-entry-cell-badges"')
+        expect(source).toContain('v-for="entry in entriesForCell(student, courseDate)"')
+        expect(source).toContain('compactCellEntryLabel(entry)')
+        expect(source).toContain("'course-table-entry-cell--selected': isEntryDialogCellSelected(student, courseDate)")
+        expect(source).toContain('@click="openEntryDialog(student, courseDate)"')
+        expect(source).toContain('@keydown.enter.prevent="openEntryDialog(student, courseDate)"')
+        expect(source).toContain('<v-dialog v-model="entryDialog.open" persistent max-width="680">')
+        expect(source).toContain('data-testid="course-table-cell-entry-list"')
+        expect(source).toContain('In dieser Zelle sind noch keine Einträge vorhanden.')
+        expect(source).toContain('data-testid="course-table-cell-add-entry"')
+        expect(source).toContain('Neuen Eintrag hinzufügen')
+        expect(source).toContain('data-testid="course-table-cell-entry-form"')
+        expect(source).toContain('.course-table-entry-cell--interactive:hover,')
+        expect(source).toContain('.course-table-entry-cell--selected {')
         expect(source).toContain('class="course-table-attendance-marker"')
         expect(source).toContain('v-if="showAttendanceMarkers && isAttendanceToggleable(courseDate)"')
         expect(source).toContain('@click.stop="toggleStudentAttendance(student, courseDate)"')
@@ -342,6 +579,11 @@ describe('CourseTable', () => {
         expect(source).toContain('studentSexIcon(student)')
         expect(source).toContain('studentFirstName(student)')
         expect(source).toContain('class="course-table-student-class"')
+        expect(source).toContain('class="course-table-student-name"')
+        expect(source).toContain('class="course-table-presence-percentage"')
+        expect(source).toContain('studentPresencePercentage(student)')
+        expect(source).toContain('justify-content: space-between;')
+        expect(source).toContain('text-align: right;')
         expect(source).toContain('class="course-table-date-weekday"')
         expect(source).toContain('class="course-table-date-title"')
         expect(source).toContain('text-align: center;')

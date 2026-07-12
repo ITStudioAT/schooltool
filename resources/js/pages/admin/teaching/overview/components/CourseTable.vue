@@ -91,7 +91,14 @@
                                 :key="`student-${student.id}`"
                                 class="course-table-row">
                                 <th scope="row" class="course-table-student-cell">
-                                    <div class="course-table-main-text">{{ studentLastName(student) }}</div>
+                                    <div class="course-table-main-text">
+                                        <span class="course-table-student-name">{{ studentLastName(student) }}</span>
+                                        <span
+                                            v-if="showAttendanceMarkers && studentPresencePercentage(student) !== null"
+                                            class="course-table-presence-percentage">
+                                            {{ studentPresencePercentage(student) }} %
+                                        </span>
+                                    </div>
                                     <div class="course-table-student-subline">
                                         <v-icon
                                             v-if="studentSexIcon(student)"
@@ -111,18 +118,41 @@
                                     :key="`student-${student.id}-date-${courseDate.id || courseDate.date}`">
                                     <td
                                         v-if="!isFreeCourseDate(courseDate)"
-                                        class="course-table-entry-cell">
-                                        <v-btn
-                                            v-if="showAttendanceMarkers && isAttendanceToggleable(courseDate)"
-                                            class="course-table-attendance-marker"
-                                            :color="isStudentPresentForCourseDate(student, courseDate) ? 'success' : 'error'"
-                                            density="compact"
-                                            :icon="isStudentPresentForCourseDate(student, courseDate) ? 'mdi-check' : 'mdi-close'"
-                                            :loading="isAttendanceCellSaving(student, courseDate)"
-                                            size="x-small"
-                                            :title="attendanceMarkerTitle(student, courseDate)"
-                                            variant="tonal"
-                                            @click.stop="toggleStudentAttendance(student, courseDate)" />
+                                        class="course-table-entry-cell course-table-entry-cell--interactive"
+                                        :class="{ 'course-table-entry-cell--selected': isEntryDialogCellSelected(student, courseDate) }"
+                                        role="button"
+                                        tabindex="0"
+                                        @click="openEntryDialog(student, courseDate)"
+                                        @keydown.enter.prevent="openEntryDialog(student, courseDate)"
+                                        @keydown.space.prevent="openEntryDialog(student, courseDate)">
+                                        <div class="course-table-entry-cell-content">
+                                            <div
+                                                v-if="entriesForCell(student, courseDate).length"
+                                                class="course-table-entry-cell-badges"
+                                                data-testid="course-table-entry-cell-badges">
+                                                <v-chip
+                                                    v-for="entry in entriesForCell(student, courseDate)"
+                                                    :key="entry.uid"
+                                                    class="course-table-entry-cell-badge"
+                                                    size="x-small"
+                                                    :color="cellEntryColor(entry)"
+                                                    variant="tonal"
+                                                    :title="entry.description || cellEntryTypeLabel(entry)">
+                                                    {{ compactCellEntryLabel(entry) }}
+                                                </v-chip>
+                                            </div>
+                                            <v-btn
+                                                v-if="showAttendanceMarkers && isAttendanceToggleable(courseDate)"
+                                                class="course-table-attendance-marker"
+                                                :color="isStudentPresentForCourseDate(student, courseDate) ? 'success' : 'error'"
+                                                density="compact"
+                                                :icon="isStudentPresentForCourseDate(student, courseDate) ? 'mdi-check' : 'mdi-close'"
+                                                :loading="isAttendanceCellSaving(student, courseDate)"
+                                                size="x-small"
+                                                :title="attendanceMarkerTitle(student, courseDate)"
+                                                variant="tonal"
+                                                @click.stop="toggleStudentAttendance(student, courseDate)" />
+                                        </div>
                                     </td>
                                     <td
                                         v-else-if="studentIndex === 0"
@@ -174,6 +204,131 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+
+        <v-dialog v-model="entryDialog.open" persistent max-width="680">
+            <v-card>
+                <v-card-title class="text-subtitle-1 font-weight-bold d-flex align-center ga-2">
+                    <v-icon size="20">mdi-format-list-bulleted</v-icon>
+                    Einträge
+                    <v-chip size="x-small" color="primary" variant="tonal">{{ cellEntries.length }}</v-chip>
+                </v-card-title>
+                <v-divider />
+                <v-card-text class="d-flex flex-column ga-3">
+                    <div class="d-flex flex-wrap ga-3 text-body-2">
+                        <div><strong>Schüler:in:</strong> {{ studentName(entryDialog.student) }}</div>
+                        <div><strong>Termin:</strong> {{ compactCourseDateTitle(entryDialog.courseDate) }}</div>
+                    </div>
+
+                    <section>
+                        <div class="text-caption font-weight-bold text-medium-emphasis mb-2">Vorhandene Einträge</div>
+                        <div v-if="cellEntries.length" class="course-table-cell-entry-list" data-testid="course-table-cell-entry-list">
+                            <div
+                                v-for="entry in cellEntries"
+                                :key="entry.uid"
+                                class="course-table-cell-entry">
+                                <div class="d-flex align-center flex-wrap ga-2">
+                                    <v-chip size="x-small" :color="cellEntryColor(entry)" variant="tonal">
+                                        {{ cellEntryKindLabel(entry) }}
+                                    </v-chip>
+                                    <strong class="text-body-2">{{ cellEntryTypeLabel(entry) }}</strong>
+                                    <v-chip
+                                        v-if="entry.kind === 'assessment'"
+                                        size="x-small"
+                                        color="success"
+                                        variant="tonal">
+                                        {{ entry.effective_grade || entry.grade || 'offen' }}
+                                    </v-chip>
+                                    <v-chip v-if="entry.source === 'course_work'" size="x-small" color="info" variant="outlined">
+                                        Aus Arbeit
+                                    </v-chip>
+                                </div>
+                                <div v-if="entry.description" class="text-caption text-medium-emphasis mt-1">
+                                    {{ entry.description }}
+                                </div>
+                            </div>
+                        </div>
+                        <v-alert v-else type="info" variant="tonal" density="compact">
+                            In dieser Zelle sind noch keine Einträge vorhanden.
+                        </v-alert>
+                    </section>
+
+                    <v-divider />
+
+                    <section>
+                        <div class="text-caption font-weight-bold text-medium-emphasis mb-2">Mögliche Aktionen</div>
+                        <v-btn
+                            v-if="!entryFormOpen"
+                            data-testid="course-table-cell-add-entry"
+                            color="primary"
+                            prepend-icon="mdi-plus"
+                            variant="tonal"
+                            :disabled="!canCreateCellEntry"
+                            @click="startNewCellEntry">
+                            Neuen Eintrag hinzufügen
+                        </v-btn>
+
+                        <v-alert v-if="!registeredEntryStudentId" type="warning" variant="tonal" density="compact" class="mt-2">
+                            Für importierte Schüler:innen ohne Benutzerkonto können keine Einträge angelegt werden.
+                        </v-alert>
+                        <v-alert v-else-if="!availableEntryTypes.length" type="warning" variant="tonal" density="compact" class="mt-2">
+                            Für dieses Fach sind keine Eintragstypen konfiguriert.
+                        </v-alert>
+
+                        <div v-if="entryFormOpen" class="course-table-cell-entry-form" data-testid="course-table-cell-entry-form">
+                            <div class="text-caption text-medium-emphasis mb-1">Typ</div>
+                            <div class="d-flex flex-wrap ga-1 mb-3">
+                                <v-btn
+                                    v-for="item in availableEntryTypes"
+                                    :key="item.value"
+                                    size="small"
+                                    :variant="entryForm.type === item.value ? 'flat' : 'tonal'"
+                                    :color="entryForm.type === item.value ? 'primary' : 'default'"
+                                    @click="selectCellEntryType(item.value)">
+                                    {{ item.title }}
+                                </v-btn>
+                            </div>
+
+                            <div class="text-caption text-medium-emphasis mb-1">Note</div>
+                            <div v-if="availableEntryGrades.length" class="d-flex flex-wrap ga-1 mb-3">
+                                <v-btn
+                                    v-for="item in availableEntryGrades"
+                                    :key="item.value"
+                                    size="small"
+                                    :variant="entryForm.grade === item.value ? 'flat' : 'tonal'"
+                                    :color="entryForm.grade === item.value ? 'success' : 'default'"
+                                    @click="entryForm.grade = entryForm.grade === item.value ? '' : item.value">
+                                    {{ item.title }}
+                                </v-btn>
+                            </div>
+                            <div v-else class="text-caption text-medium-emphasis mb-3">Bitte zuerst einen Typ wählen.</div>
+
+                            <v-textarea
+                                v-model="entryForm.description"
+                                label="Beschreibung"
+                                rows="2"
+                                :counter="1024"
+                                :maxlength="1024" />
+
+                            <div class="d-flex justify-end ga-2">
+                                <v-btn variant="text" :disabled="entrySaving" @click="cancelNewCellEntry">Abbrechen</v-btn>
+                                <v-btn
+                                    color="success"
+                                    variant="flat"
+                                    :loading="entrySaving"
+                                    :disabled="!canSaveCellEntry"
+                                    @click="saveCellEntry">
+                                    Speichern
+                                </v-btn>
+                            </div>
+                        </div>
+                    </section>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="flat" color="primary" :disabled="entrySaving" @click="closeEntryDialog">Schließen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </ItsGridBox>
 </template>
 
@@ -181,8 +336,10 @@
 import { mapWritableState } from 'pinia'
 import { parseLocalDate } from '@/helpers/date'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 
 export default {
     data() {
@@ -193,20 +350,49 @@ export default {
                 present: true,
             },
             bulkAttendanceSaving: false,
+            behaviourEntryStore: null,
             courseDateStore: null,
+            entryDialog: {
+                courseDate: null,
+                open: false,
+                student: null,
+            },
+            entryForm: {
+                description: '',
+                grade: '',
+                type: '',
+            },
+            entryFormOpen: false,
+            entrySaving: false,
+            entryStore: null,
             savingAttendanceCells: {},
             showAttendanceMarkers: true,
         }
     },
 
-    mounted() {
+    beforeMount() {
+        this.behaviourEntryStore = useCourseBehaviourEntryStore()
+        this.entryStore = useCourseStudentEntryStore()
+    },
+
+    async mounted() {
         this.courseDateStore = useCourseDateStore()
+        this.restoreAttendanceView(this.$route?.query?.view)
+        await this.loadCourseEntries()
         this.scrollToInitialCourseDate()
     },
 
     watch: {
+        '$route.query.view'(view) {
+            this.restoreAttendanceView(view)
+        },
         sortedCourseDates() {
             this.scrollToInitialCourseDate()
+        },
+        selected_course(course) {
+            if (course?.id) {
+                this.loadCourseEntries(course.id)
+            }
         },
     },
 
@@ -241,6 +427,43 @@ export default {
                 ? this.compactCourseDateTitle(this.bulkAttendanceDialog.courseDate)
                 : ''
         },
+        cellEntries() {
+            return this.entriesForCell(this.entryDialog.student, this.entryDialog.courseDate)
+        },
+        selectedTeachingSchema() {
+            return this.selected_course?.teacher_teaching_schema || null
+        },
+        availableEntryTypes() {
+            const works = Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
+
+            return works
+                .filter((work) => work?.short_name)
+                .map((work) => ({
+                    title: work.name ? `${work.short_name} - ${work.name}` : work.short_name,
+                    value: work.short_name,
+                }))
+        },
+        availableEntryGrades() {
+            const works = Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
+            const work = works.find((item) => item?.short_name === this.entryForm.type)
+            const grades = Array.isArray(work?.grades) ? work.grades : []
+
+            return grades
+                .filter((grade) => grade?.grade)
+                .map((grade) => ({
+                    title: grade.name ? `${grade.grade} (${grade.name})` : grade.grade,
+                    value: grade.grade,
+                }))
+        },
+        registeredEntryStudentId() {
+            return this.registeredStudentUserId(this.entryDialog.student)
+        },
+        canCreateCellEntry() {
+            return Boolean(this.registeredEntryStudentId && this.availableEntryTypes.length)
+        },
+        canSaveCellEntry() {
+            return Boolean(this.canCreateCellEntry && this.entryForm.type && !this.entrySaving)
+        },
     },
 
     methods: {
@@ -268,8 +491,167 @@ export default {
         freeCourseDateReason(courseDate) {
             return String(courseDate?.free_reason || '').trim() || 'Frei'
         },
+        restoreAttendanceView(view) {
+            this.showAttendanceMarkers = view !== 'plain'
+        },
         toggleAttendanceMarkers() {
             this.showAttendanceMarkers = !this.showAttendanceMarkers
+
+            if (!this.$route || !this.$router) return
+
+            this.$router.replace({
+                path: this.$route.path,
+                query: {
+                    ...this.$route.query,
+                    view: this.showAttendanceMarkers ? 'attendance' : 'plain',
+                },
+            }).catch(() => {})
+        },
+        openEntryDialog(student, courseDate) {
+            this.cancelNewCellEntry()
+            this.entryDialog = {
+                courseDate,
+                open: true,
+                student,
+            }
+        },
+        closeEntryDialog() {
+            if (this.entrySaving) return
+
+            this.cancelNewCellEntry()
+            this.entryDialog = {
+                courseDate: null,
+                open: false,
+                student: null,
+            }
+        },
+        async loadCourseEntries(courseId = this.selected_course?.id) {
+            if (!courseId || !this.entryStore || !this.behaviourEntryStore) return
+
+            await Promise.all([
+                this.entryStore.indexByCourse(courseId),
+                this.behaviourEntryStore.indexByCourse(courseId),
+            ])
+        },
+        registeredStudentUserId(student) {
+            if (!student) return null
+            if (Object.prototype.hasOwnProperty.call(student, 'user_id')) {
+                return student.user_id || null
+            }
+
+            return student.id || null
+        },
+        entriesForCell(student, courseDate) {
+            const userId = this.registeredStudentUserId(student)
+            const dateKey = this.normalizeDateKey(courseDate?.date)
+            if (!userId || !dateKey) return []
+
+            const assessmentEntries = (this.entryStore?.courseEntries || [])
+                .filter((entry) => String(entry?.user_id) === String(userId) && this.normalizeDateKey(entry?.date) === dateKey)
+                .map((entry) => ({
+                    ...entry,
+                    kind: 'assessment',
+                    uid: `assessment-${entry.id}`,
+                }))
+            const behaviourEntries = (this.behaviourEntryStore?.courseEntries || [])
+                .filter((entry) => String(entry?.user_id) === String(userId) && this.normalizeDateKey(entry?.date) === dateKey)
+                .map((entry) => ({
+                    ...entry,
+                    kind: entry.kind || 'behaviour',
+                    uid: `behaviour-${entry.id}`,
+                }))
+
+            return [...assessmentEntries, ...behaviourEntries].sort((first, second) => {
+                const kindComparison = String(first.kind || '').localeCompare(String(second.kind || ''))
+                if (kindComparison !== 0) return kindComparison
+
+                return String(first.type || '').localeCompare(String(second.type || ''), 'de', { sensitivity: 'base' })
+            })
+        },
+        cellEntryKindLabel(entry) {
+            if (entry?.kind === 'assessment') return 'Bewertung'
+            if (entry?.kind === 'notification') return 'Verständigung'
+
+            return 'Verhalten'
+        },
+        cellEntryColor(entry) {
+            if (entry?.kind === 'assessment') return 'primary'
+            if (entry?.kind === 'notification') return 'secondary'
+
+            return 'warning'
+        },
+        cellEntryTypeLabel(entry) {
+            const type = String(entry?.type || '').trim()
+            if (!type) return 'Eintrag'
+
+            if (entry?.kind === 'assessment') {
+                const works = Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
+                const work = works.find((item) => item?.short_name === type)
+                return work?.name ? `${type} - ${work.name}` : type
+            }
+
+            const definitions = entry?.kind === 'notification'
+                ? this.selected_course?.teacher_teaching_notifications
+                : this.selected_course?.teacher_teaching_behaviour
+            const definition = (Array.isArray(definitions) ? definitions : []).find((item) => item?.short_name === type)
+
+            return definition?.name ? `${type} - ${definition.name}` : type
+        },
+        compactCellEntryLabel(entry) {
+            const type = String(entry?.type || '').trim() || 'Eintrag'
+            if (entry?.kind !== 'assessment') return type
+
+            const grade = String(entry?.effective_grade || entry?.grade || '').trim()
+
+            return grade ? `${type}: ${grade}` : type
+        },
+        startNewCellEntry() {
+            if (!this.canCreateCellEntry) return
+
+            this.entryForm = {
+                description: '',
+                grade: '',
+                type: '',
+            }
+            this.entryFormOpen = true
+        },
+        cancelNewCellEntry() {
+            this.entryFormOpen = false
+            this.entryForm = {
+                description: '',
+                grade: '',
+                type: '',
+            }
+        },
+        selectCellEntryType(type) {
+            this.entryForm.type = this.entryForm.type === type ? '' : type
+            this.entryForm.grade = ''
+        },
+        async saveCellEntry() {
+            if (!this.canSaveCellEntry) return
+
+            this.entrySaving = true
+            try {
+                const response = await this.entryStore.store({
+                    teaching_course_id: this.selected_course.id,
+                    user_id: this.registeredEntryStudentId,
+                    type: this.entryForm.type,
+                    grade: this.entryForm.grade || null,
+                    date: this.normalizeDateKey(this.entryDialog.courseDate?.date) || null,
+                    description: String(this.entryForm.description || '').trim() || null,
+                })
+                if (response) {
+                    this.cancelNewCellEntry()
+                }
+            } finally {
+                this.entrySaving = false
+            }
+        },
+        isEntryDialogCellSelected(student, courseDate) {
+            if (!this.entryDialog.open) return false
+
+            return String(this.entryDialog.student?.id) === String(student?.id)
+                && String(this.entryDialog.courseDate?.id) === String(courseDate?.id)
         },
         openBulkAttendanceDialog(courseDate, present) {
             if (!this.isAttendanceToggleable(courseDate)) return
@@ -356,6 +738,14 @@ export default {
             const attendance = this.getAttendanceMap(courseDate)
 
             return this.isAttendancePresentValue(attendance[String(student.id)])
+        },
+        studentPresencePercentage(student) {
+            const attendanceDates = this.sortedCourseDates.filter((courseDate) => this.isAttendanceToggleable(courseDate))
+            if (!attendanceDates.length) return null
+
+            const presentDates = attendanceDates.filter((courseDate) => this.isStudentPresentForCourseDate(student, courseDate))
+
+            return Math.round((presentDates.length / attendanceDates.length) * 100)
         },
         getAttendanceMap(courseDate) {
             if (!courseDate) return {}
@@ -757,10 +1147,28 @@ export default {
 }
 
 .course-table-main-text {
+    align-items: center;
     color: #172033;
+    display: flex;
     font-weight: 500;
+    justify-content: space-between;
     line-height: 1.12;
+    min-width: 0;
+    width: 100%;
+}
+
+.course-table-student-name {
+    min-width: 0;
     overflow-wrap: anywhere;
+}
+
+.course-table-presence-percentage {
+    color: #166534;
+    flex-shrink: 0;
+    font-size: 0.76rem;
+    font-weight: 750;
+    margin-left: 12px;
+    text-align: right;
 }
 
 .course-table-student-subline {
@@ -783,6 +1191,66 @@ export default {
 .course-table-entry-cell {
     background: #ffffff;
     text-align: center;
+}
+
+.course-table-entry-cell--interactive {
+    cursor: pointer;
+    outline: none;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.course-table-entry-cell--interactive:hover,
+.course-table-entry-cell--interactive:focus-visible {
+    background: #dbeafe !important;
+    box-shadow: inset 0 0 0 2px #3b82f6;
+}
+
+.course-table-entry-cell--selected {
+    background: #bfdbfe !important;
+    box-shadow: inset 0 0 0 3px #1d4ed8;
+}
+
+.course-table-entry-cell-content {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    justify-content: center;
+}
+
+.course-table-entry-cell-badges {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    justify-content: center;
+    max-width: 100%;
+}
+
+.course-table-entry-cell-badge {
+    font-size: 0.66rem;
+    font-weight: 700;
+    max-width: 82px;
+}
+
+.course-table-cell-entry-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.course-table-cell-entry {
+    background: #f8fafc;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.course-table-cell-entry-form {
+    background: #f8fafc;
+    border: 1px solid rgba(37, 99, 235, 0.2);
+    border-radius: 10px;
+    padding: 12px;
 }
 
 .course-table-attendance-marker {
