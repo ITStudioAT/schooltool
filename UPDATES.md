@@ -10,6 +10,10 @@
 ### Materialien
 - Material-Details: Angehängte Dateien können jetzt einfach ersetzt werden.
 
+### System
+
+- New composer deploy command
+
 ## 3.42.1
 
 ### Auswahl-Seite
