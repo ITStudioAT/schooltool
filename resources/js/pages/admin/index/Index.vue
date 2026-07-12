@@ -476,6 +476,9 @@ export default {
         this.healthStore = useHealthStore()
         this.schoolStore = useSchoolStore()
         this.adminStore.is_loading++
+        if (this.config?.is_auth && !this.config?.environment_versions) {
+            await this.adminStore.loadConfig({ includeSchoolInfos: true, includeEnvironmentVersions: true })
+        }
         if (this.config?.is_auth) {
             if (this.config?.school_infos) {
                 this.schoolStore.applySchoolInfos(this.config.school_infos)

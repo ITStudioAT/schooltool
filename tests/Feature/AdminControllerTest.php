@@ -119,7 +119,18 @@ test('config returns user data when authenticated', function () {
         ]);
 });
 
-test('authenticated config includes environment versions', function () {
+test('authenticated config excludes environment versions by default', function () {
+    Process::fake();
+
+    $this->actingAs($this->user)
+        ->getJson('/api/admin/config')
+        ->assertSuccessful()
+        ->assertJsonMissingPath('environment_versions');
+
+    Process::assertDidntRun(fn (): bool => true);
+});
+
+test('authenticated config can include environment versions', function () {
     Cache::forget('admin.environment_versions');
     Cache::forget('admin.environment_versions.v2');
     Cache::forget('admin.environment_versions.v3');
@@ -137,7 +148,7 @@ test('authenticated config includes environment versions', function () {
 
     $this->actingAs($this->user);
 
-    $this->getJson('/api/admin/config')
+    $this->getJson('/api/admin/config?include_environment_versions=1')
         ->assertSuccessful()
         ->assertJsonPath('environment_versions.app', config('schooltool.version', 'x.x.x'))
         ->assertJsonPath('environment_versions.laravel', app()->version())
@@ -224,7 +235,7 @@ test('authenticated config checks common linux aliases and paths automatically',
 
     $this->actingAs($this->user);
 
-    $this->getJson('/api/admin/config')
+    $this->getJson('/api/admin/config?include_environment_versions=1')
         ->assertSuccessful()
         ->assertJsonPath('environment_versions.composer', '2.8.12')
         ->assertJsonPath('environment_versions.npm', '10.9.2')

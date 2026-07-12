@@ -87,7 +87,7 @@
                             <v-divider class="crud-actions-divider" />
                             <div class="crud-actions-secondary">
                                 <v-btn
-                                    v-if="selected_schools.length == 1"
+                                    v-if="selected_schools.length === 1"
                                     block
                                     color="primary"
                                     variant="tonal"
@@ -95,6 +95,18 @@
                                     prepend-icon="mdi-pencil"
                                     @click="editSchool(selected_schools[0])">
                                     Ändern
+                                </v-btn>
+
+                                <v-btn
+                                    v-if="selected_schools.length === 1"
+                                    block
+                                    color="info"
+                                    variant="tonal"
+                                    rounded="lg"
+                                    class="crud-action-btn-offset"
+                                    prepend-icon="mdi-cloud-sync-outline"
+                                    @click="openCloudwaysSyncDialog">
+                                    Synchronisieren
                                 </v-btn>
 
                                 <v-btn
@@ -210,6 +222,80 @@
             </v-card-text>
         </v-card>
     </v-dialog>
+
+    <v-dialog v-model="cloudways_sync_dialog" persistent max-width="760" scrollable>
+        <v-card class="crud-dialog-card ai-glass-panel">
+            <div class="crud-dialog-head">
+                <div>
+                    <div class="admin-card-eyebrow crud-delete-eyebrow">Lokale Daten ersetzen</div>
+                    <div class="admin-card-title" style="margin-top: 4px">Mit Cloudways synchronisieren</div>
+                </div>
+
+                <v-btn
+                    icon="mdi-close"
+                    variant="text"
+                    rounded="lg"
+                    :disabled="is_synchronizing"
+                    @click="closeCloudwaysSyncDialog" />
+            </div>
+
+            <v-card-text class="crud-dialog-body">
+                <template v-if="!cloudways_sync_result">
+                    <v-alert type="warning" variant="tonal" prominent class="mb-4">
+                        Alle bestehenden lokalen Daten der ausgewählten Schule werden vollständig durch die Cloudways-Daten ersetzt.
+                        Andere lokale Schulen bleiben unverändert.
+                    </v-alert>
+
+                    <div class="empty-state crud-form-section">
+                        <div class="admin-card-title">{{ selectedSchool?.long_name }}</div>
+                        <div class="kpi-sub mt-2">
+                            {{ cloudways_sync_preview?.rows || 0 }} Datensätze aus
+                            {{ cloudways_sync_preview?.tables || 0 }} Tabellen wurden auf Cloudways gefunden.
+                        </div>
+                        <div class="kpi-sub mt-2">
+                            Es werden ausschließlich Datenbankeinträge synchronisiert. Dateien, Anhänge, Bilder, Logos, PDFs und Importdateien
+                            werden nicht heruntergeladen. Sitzungen, API-Tokens, Passwort-Reset-Tokens, Queue- und Cache-Daten werden nicht übernommen.
+                        </div>
+                        <div class="kpi-sub mt-2">
+                            Vor dem Ersetzen wird eine verschlüsselte lokale Sicherung der bisherigen Schuldaten erstellt. Bei einem Fehler wird die
+                            Datenbanktransaktion vollständig zurückgerollt.
+                        </div>
+                    </div>
+
+                    <v-text-field
+                        v-model="cloudways_sync_confirmation"
+                        class="mt-4"
+                        :label="`Zur Bestätigung exakt eingeben: ${selectedSchool?.long_name || ''}`"
+                        :disabled="is_synchronizing"
+                        autocomplete="off" />
+                </template>
+
+                <v-alert v-else type="success" variant="tonal" prominent>
+                    <div class="font-weight-bold">Synchronisierung abgeschlossen</div>
+                    <div class="mt-2">
+                        {{ cloudways_sync_result.rows }} Datensätze aus {{ cloudways_sync_result.tables }} Tabellen wurden übernommen.
+                    </div>
+                    <div class="mt-2 text-caption">Sicherung: {{ cloudways_sync_result.backup_path }}</div>
+                </v-alert>
+            </v-card-text>
+
+            <v-card-actions class="d-flex justify-space-between pa-4">
+                <v-btn color="secondary" variant="text" :disabled="is_synchronizing" @click="closeCloudwaysSyncDialog">
+                    {{ cloudways_sync_result ? 'Schließen' : 'Abbrechen' }}
+                </v-btn>
+                <v-btn
+                    v-if="!cloudways_sync_result"
+                    color="error"
+                    variant="flat"
+                    prepend-icon="mdi-cloud-sync-outline"
+                    :loading="is_synchronizing"
+                    :disabled="!cloudwaysSyncConfirmationMatches || is_synchronizing"
+                    @click="synchronizeCloudwaysSchool">
+                    Lokale Schuldaten ersetzen
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script>
@@ -246,6 +332,11 @@ export default {
             is_valid: false,
             upload_file: null,
             is_uploading: false,
+            cloudways_sync_dialog: false,
+            cloudways_sync_confirmation: '',
+            cloudways_sync_preview: null,
+            cloudways_sync_result: null,
+            is_synchronizing: false,
         }
     },
 
@@ -284,6 +375,14 @@ export default {
                 current_page: this.meta?.current_page ?? 1,
                 last_page: this.meta?.last_page ?? 1,
             }
+        },
+        selectedSchool() {
+            if (this.selected_schools.length !== 1) return null
+
+            return this.schools.find((school) => school.id === this.selected_schools[0]) || null
+        },
+        cloudwaysSyncConfirmationMatches() {
+            return this.cloudways_sync_confirmation === (this.selectedSchool?.long_name || '')
         },
     },
 
@@ -341,6 +440,43 @@ export default {
             const school = this.schools.find((s) => s.id === school_id)
             this.data = JSON.parse(JSON.stringify(school))
             this.action = 'edit_school'
+        },
+        async openCloudwaysSyncDialog() {
+            if (!this.selectedSchool) return
+
+            const preview = await this.schoolStore.previewCloudwaysSchoolSynchronization(this.selectedSchool.id)
+            if (!preview) return
+
+            this.cloudways_sync_confirmation = ''
+            this.cloudways_sync_preview = preview
+            this.cloudways_sync_result = null
+            this.cloudways_sync_dialog = true
+        },
+        closeCloudwaysSyncDialog() {
+            if (this.is_synchronizing) return
+
+            this.cloudways_sync_dialog = false
+            this.cloudways_sync_confirmation = ''
+            this.cloudways_sync_preview = null
+            this.cloudways_sync_result = null
+        },
+        async synchronizeCloudwaysSchool() {
+            if (!this.selectedSchool || !this.cloudwaysSyncConfirmationMatches || this.is_synchronizing) return
+
+            this.is_synchronizing = true
+
+            try {
+                const result = await this.schoolStore.synchronizeCloudwaysSchool(
+                    this.selectedSchool.id,
+                    this.cloudways_sync_confirmation,
+                )
+                if (!result) return
+
+                this.cloudways_sync_result = result
+                await this.schoolStore.index()
+            } finally {
+                this.is_synchronizing = false
+            }
         },
         abort() {
             this.action = ''

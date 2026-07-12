@@ -133,11 +133,11 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                 this.is_loading++
                 this.api_response = null
                 try {
-                    this.api_response = await axios.get('/api/admin/config', {
-                        params: {
-                            include_school_infos: options.includeSchoolInfos ? 1 : undefined,
-                        },
-                    })
+                    const params = {}
+                    if (options.includeSchoolInfos) params.include_school_infos = 1
+                    if (options.includeEnvironmentVersions) params.include_environment_versions = 1
+
+                    this.api_response = await axios.get('/api/admin/config', Object.keys(params).length ? { params } : {})
                     this.config = this.api_response.data
                     this.selected_school = this.config?.selected_school
                     this.selected_schoolyear = this.config?.selected_schoolyear

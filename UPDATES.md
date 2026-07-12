@@ -1,5 +1,10 @@
 # UPDATES
 
+## 3.42.3
+
+### Lehrertool
+- Synchronisierung der Schuldaten von online zu lokal
+
 ## 3.42.2
 
 ### Schülerstundenpläne

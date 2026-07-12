@@ -5,17 +5,24 @@ import Overview from '@/pages/admin/teaching/overview/Overview.vue'
 
 describe('Teaching overview controls', () => {
     it('refreshes courses and school hours together', async () => {
-        const courseIndex = vi.fn().mockResolvedValue(true)
+        let resolveCourses: () => void = () => {}
+        const coursePromise = new Promise<void>((resolve) => {
+            resolveCourses = resolve
+        })
+        const courseIndex = vi.fn().mockReturnValue(coursePromise)
         const schoolHourIndex = vi.fn().mockResolvedValue(true)
         const ctx = {
             courseStore: { index: courseIndex },
             schoolHourStore: { index: schoolHourIndex },
         }
 
-        await (Overview as any).methods.refreshOverviewData.call(ctx)
+        const refreshPromise = (Overview as any).methods.refreshOverviewData.call(ctx)
 
         expect(courseIndex).toHaveBeenCalledTimes(1)
         expect(schoolHourIndex).toHaveBeenCalledTimes(1)
+
+        resolveCourses()
+        await refreshPromise
     })
 
     it('resets to students panel defaults when selected course changes', () => {
@@ -146,7 +153,7 @@ describe('Teaching overview controls', () => {
         expect(ctx.secondaryOverviewPanelSelection).toBeNull()
         expect(source).not.toContain('<CourseDates compact-student-view />')
         expect(source).not.toContain('<v-row v-if="show_students">')
-        expect(source).toContain(':md="secondaryOverviewPanelSelection === \'table\' ? 12 : 8"')
+        expect(source).toContain(':md="[\'dates\', \'table\'].includes(secondaryOverviewPanelSelection) ? 12 : 8"')
         expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'dates\'" class="mt-n6"')
         expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'table\'" class="mt-n6"')
         expect(source).toContain('<CourseTable />')

@@ -50,9 +50,9 @@
 
     <v-col
         cols="12"
-        :md="secondaryOverviewPanelSelection === 'table' ? 12 : 8"
-        :lg="secondaryOverviewPanelSelection === 'table' ? 12 : 7"
-        :xl="secondaryOverviewPanelSelection === 'table' ? 12 : 6"
+        :md="['dates', 'table'].includes(secondaryOverviewPanelSelection) ? 12 : 8"
+        :lg="['dates', 'table'].includes(secondaryOverviewPanelSelection) ? 12 : 7"
+        :xl="['dates', 'table'].includes(secondaryOverviewPanelSelection) ? 12 : 6"
         class="teaching-overview-card-col"
         v-if="selected_course && secondaryOverviewPanelSelection && action != 'teaching_course_new_or_edit'"
         :style="contentLockStyle">
@@ -337,7 +337,7 @@ import PerformancesPlusDummy from '../more/components/PerformancesPlusDummy.vue'
 export default {
     components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseTable, CourseWorks, CoursePrint, MyTimetable, AttendanceMatrix, PerformancesDummy, PerformancesPlusDummy },
 
-    async beforeMount() {
+    beforeMount() {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
         this.curriculumStore = useCurriculumStore()
@@ -345,11 +345,7 @@ export default {
         this.teachingStore = useTeachingStore()
         this.selected_course_student = null
         this.action_2 = ''
-        if (!this.teachingStore.settings) {
-            await this.teachingStore.loadSettings()
-        }
         this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
-        await this.refreshOverviewData()
     },
 
     unmounted() {},
@@ -720,8 +716,7 @@ export default {
 
     methods: {
         async refreshOverviewData() {
-            await this.courseStore.index()
-            await this.schoolHourStore.index()
+            await Promise.all([this.courseStore.index(), this.schoolHourStore.index()])
         },
         async loadCurricula() {
             if (this.curriculumLoading || !this.curriculumStore) {

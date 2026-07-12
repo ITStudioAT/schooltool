@@ -63,6 +63,27 @@ return [
             ]) : [],
         ],
 
+        'cloudways' => [
+            'driver' => 'mysql',
+            'host' => env('CLOUDWAYS_DB_HOST'),
+            'port' => env('CLOUDWAYS_DB_PORT', '3306'),
+            'database' => env('CLOUDWAYS_DB_DATABASE'),
+            'username' => env('CLOUDWAYS_DB_USERNAME'),
+            'password' => env('CLOUDWAYS_DB_PASSWORD'),
+            'unix_socket' => '',
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                PDO::ATTR_TIMEOUT => env('CLOUDWAYS_DB_TIMEOUT', 15),
+                PDO::MYSQL_ATTR_SSL_CA => env('CLOUDWAYS_DB_SSL_CA'),
+                PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => env('CLOUDWAYS_DB_SSL_VERIFY', true),
+            ], static fn (mixed $value): bool => $value !== null && $value !== '') : [],
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

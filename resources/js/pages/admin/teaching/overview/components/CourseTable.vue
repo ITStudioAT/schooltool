@@ -20,29 +20,33 @@
             </div>
         </template>
 
+        <v-card
+            class="course-table-view-card mb-3"
+            color="primary"
+            data-testid="course-table-view-card"
+            variant="tonal">
+            <v-card-text class="d-flex align-center flex-wrap ga-3">
+                <v-tabs
+                    v-model="tableView"
+                    class="course-table-view-tabs"
+                    color="primary"
+                    density="compact"
+                    @update:model-value="changeTableView">
+                    <v-tab value="attendance" prepend-icon="mdi-account-check">
+                        Anwesenheit
+                    </v-tab>
+                    <v-tab value="entries" prepend-icon="mdi-format-list-bulleted">
+                        Einträge
+                    </v-tab>
+                </v-tabs>
+            </v-card-text>
+        </v-card>
+
         <v-card variant="outlined" class="course-table-card">
             <v-card-text class="pa-0">
                 <div ref="courseTableScroll" class="course-table-scroll">
                     <table class="course-table" data-testid="course-table">
                         <thead>
-                            <tr class="course-table-command-row">
-                                <th
-                                    class="course-table-command-cell"
-                                    :colspan="tableColumnCount"
-                                    scope="colgroup">
-                                    <div class="course-table-command-bar">
-                                        <v-btn
-                                            class="course-table-command-button"
-                                            :color="showAttendanceMarkers ? 'success' : undefined"
-                                            density="comfortable"
-                                            :icon="showAttendanceMarkers ? 'mdi-account-check' : 'mdi-account-off-outline'"
-                                            size="small"
-                                            :title="showAttendanceMarkers ? 'Anwesenheit ausblenden' : 'Anwesenheit anzeigen'"
-                                            variant="tonal"
-                                            @click="toggleAttendanceMarkers" />
-                                    </div>
-                                </th>
-                            </tr>
                             <tr class="course-table-title-row">
                                 <th class="course-table-student-col">
                                     <div class="course-table-header-label">Schüler:in</div>
@@ -60,7 +64,7 @@
                                             {{ courseDateHoursLabel(courseDate) }}
                                         </div>
                                         <div
-                                            v-if="showAttendanceMarkers && isAttendanceToggleable(courseDate)"
+                                            v-if="tableView === 'attendance' && isAttendanceToggleable(courseDate)"
                                             class="course-table-date-attendance-actions">
                                             <v-btn
                                                 class="course-table-date-attendance-action"
@@ -94,7 +98,7 @@
                                     <div class="course-table-main-text">
                                         <span class="course-table-student-name">{{ studentLastName(student) }}</span>
                                         <span
-                                            v-if="showAttendanceMarkers && studentPresencePercentage(student) !== null"
+                                            v-if="tableView === 'attendance' && studentPresencePercentage(student) !== null"
                                             class="course-table-presence-percentage">
                                             {{ studentPresencePercentage(student) }} %
                                         </span>
@@ -118,16 +122,20 @@
                                     :key="`student-${student.id}-date-${courseDate.id || courseDate.date}`">
                                     <td
                                         v-if="!isFreeCourseDate(courseDate)"
-                                        class="course-table-entry-cell course-table-entry-cell--interactive"
-                                        :class="{ 'course-table-entry-cell--selected': isEntryDialogCellSelected(student, courseDate) }"
-                                        role="button"
-                                        tabindex="0"
+                                        class="course-table-entry-cell"
+                                        :class="{
+                                            'course-table-entry-cell--interactive': tableView === 'entries',
+                                            'course-table-entry-cell--absent': tableView === 'entries' && !isStudentPresentForCourseDate(student, courseDate),
+                                            'course-table-entry-cell--selected': isEntryDialogCellSelected(student, courseDate),
+                                        }"
+                                        :role="tableView === 'entries' ? 'button' : undefined"
+                                        :tabindex="tableView === 'entries' ? 0 : undefined"
                                         @click="openEntryDialog(student, courseDate)"
                                         @keydown.enter.prevent="openEntryDialog(student, courseDate)"
                                         @keydown.space.prevent="openEntryDialog(student, courseDate)">
                                         <div class="course-table-entry-cell-content">
                                             <div
-                                                v-if="entriesForCell(student, courseDate).length"
+                                                v-if="tableView === 'entries' && entriesForCell(student, courseDate).length"
                                                 class="course-table-entry-cell-badges"
                                                 data-testid="course-table-entry-cell-badges">
                                                 <v-chip
@@ -142,7 +150,7 @@
                                                 </v-chip>
                                             </div>
                                             <v-btn
-                                                v-if="showAttendanceMarkers && isAttendanceToggleable(courseDate)"
+                                                v-if="tableView === 'attendance' && isAttendanceToggleable(courseDate)"
                                                 class="course-table-attendance-marker"
                                                 :color="isStudentPresentForCourseDate(student, courseDate) ? 'success' : 'error'"
                                                 density="compact"
@@ -241,6 +249,26 @@
                                     <v-chip v-if="entry.source === 'course_work'" size="x-small" color="info" variant="outlined">
                                         Aus Arbeit
                                     </v-chip>
+                                    <v-spacer />
+                                    <div v-if="canModifyCellEntry(entry)" class="d-flex ga-1">
+                                        <v-btn
+                                            :data-testid="`course-table-cell-edit-entry-${entry.uid}`"
+                                            density="compact"
+                                            icon="mdi-pencil"
+                                            size="x-small"
+                                            title="Eintrag bearbeiten"
+                                            variant="text"
+                                            @click="startEditingCellEntry(entry)" />
+                                        <v-btn
+                                            :data-testid="`course-table-cell-delete-entry-${entry.uid}`"
+                                            color="error"
+                                            density="compact"
+                                            icon="mdi-delete"
+                                            size="x-small"
+                                            title="Eintrag löschen"
+                                            variant="text"
+                                            @click="openDeleteEntryDialog(entry)" />
+                                    </div>
                                 </div>
                                 <div v-if="entry.description" class="text-caption text-medium-emphasis mt-1">
                                     {{ entry.description }}
@@ -275,6 +303,9 @@
                         </v-alert>
 
                         <div v-if="entryFormOpen" class="course-table-cell-entry-form" data-testid="course-table-cell-entry-form">
+                            <div class="text-subtitle-2 font-weight-bold mb-3">
+                                {{ entryForm.id ? 'Eintrag bearbeiten' : 'Neuen Eintrag anlegen' }}
+                            </div>
                             <div class="text-caption text-medium-emphasis mb-1">Typ</div>
                             <div class="d-flex flex-wrap ga-1 mb-3">
                                 <v-btn
@@ -288,19 +319,21 @@
                                 </v-btn>
                             </div>
 
-                            <div class="text-caption text-medium-emphasis mb-1">Note</div>
-                            <div v-if="availableEntryGrades.length" class="d-flex flex-wrap ga-1 mb-3">
-                                <v-btn
-                                    v-for="item in availableEntryGrades"
-                                    :key="item.value"
-                                    size="small"
-                                    :variant="entryForm.grade === item.value ? 'flat' : 'tonal'"
-                                    :color="entryForm.grade === item.value ? 'success' : 'default'"
-                                    @click="entryForm.grade = entryForm.grade === item.value ? '' : item.value">
-                                    {{ item.title }}
-                                </v-btn>
-                            </div>
-                            <div v-else class="text-caption text-medium-emphasis mb-3">Bitte zuerst einen Typ wählen.</div>
+                            <template v-if="entryForm.kind === 'assessment'">
+                                <div class="text-caption text-medium-emphasis mb-1">Note</div>
+                                <div v-if="availableEntryGrades.length" class="d-flex flex-wrap ga-1 mb-3">
+                                    <v-btn
+                                        v-for="item in availableEntryGrades"
+                                        :key="item.value"
+                                        size="small"
+                                        :variant="entryForm.grade === item.value ? 'flat' : 'tonal'"
+                                        :color="entryForm.grade === item.value ? 'success' : 'default'"
+                                        @click="entryForm.grade = entryForm.grade === item.value ? '' : item.value">
+                                        {{ item.title }}
+                                    </v-btn>
+                                </div>
+                                <div v-else class="text-caption text-medium-emphasis mb-3">Bitte zuerst einen Typ wählen.</div>
+                            </template>
 
                             <v-textarea
                                 v-model="entryForm.description"
@@ -329,6 +362,26 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+
+        <v-dialog v-model="deleteEntryDialog.open" persistent max-width="460">
+            <v-card>
+                <v-card-title class="text-subtitle-1 font-weight-bold">Eintrag löschen</v-card-title>
+                <v-card-text>
+                    Den Eintrag <strong>{{ deleteEntryLabel }}</strong> wirklich löschen?
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn :disabled="entryDeleting" variant="text" @click="closeDeleteEntryDialog">Abbrechen</v-btn>
+                    <v-btn
+                        color="error"
+                        :loading="entryDeleting"
+                        variant="flat"
+                        @click="confirmDeleteCellEntry">
+                        Löschen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </ItsGridBox>
 </template>
 
@@ -352,6 +405,11 @@ export default {
             bulkAttendanceSaving: false,
             behaviourEntryStore: null,
             courseDateStore: null,
+            courseEntriesRequestPromise: null,
+            deleteEntryDialog: {
+                entry: null,
+                open: false,
+            },
             entryDialog: {
                 courseDate: null,
                 open: false,
@@ -359,14 +417,20 @@ export default {
             },
             entryForm: {
                 description: '',
+                doneDate: null,
                 grade: '',
+                id: null,
+                kind: 'assessment',
+                dueDate: null,
                 type: '',
+                uid: null,
             },
             entryFormOpen: false,
+            entryDeleting: false,
             entrySaving: false,
             entryStore: null,
             savingAttendanceCells: {},
-            showAttendanceMarkers: true,
+            tableView: 'attendance',
         }
     },
 
@@ -377,20 +441,25 @@ export default {
 
     async mounted() {
         this.courseDateStore = useCourseDateStore()
-        this.restoreAttendanceView(this.$route?.query?.view)
-        await this.loadCourseEntries()
+        this.restoreTableView(this.$route?.query?.view)
+        if (this.tableView === 'entries') {
+            await this.loadCourseEntries()
+        }
         this.scrollToInitialCourseDate()
     },
 
     watch: {
-        '$route.query.view'(view) {
-            this.restoreAttendanceView(view)
+        async '$route.query.view'(view) {
+            this.restoreTableView(view)
+            if (this.tableView === 'entries') {
+                await this.loadCourseEntries()
+            }
         },
-        sortedCourseDates() {
+        courseDateScrollSignature() {
             this.scrollToInitialCourseDate()
         },
         selected_course(course) {
-            if (course?.id) {
+            if (course?.id && this.tableView === 'entries') {
                 this.loadCourseEntries(course.id)
             }
         },
@@ -400,6 +469,13 @@ export default {
         ...mapWritableState(useAdminStore, ['action']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useCourseStore, ['selected_course', 'students_sort_mode']),
+        courseDateScrollSignature() {
+            const courseId = this.selected_course?.id || ''
+            const courseDates = this.sortedCourseDates
+                .map((courseDate) => `${courseDate?.id || ''}:${this.normalizeDateKey(courseDate?.date) || ''}`)
+
+            return [courseId, ...courseDates].join('|')
+        },
         sortedCourseDates() {
             const dates = Array.isArray(this.selected_course?.course_dates) ? [...this.selected_course.course_dates] : []
 
@@ -434,6 +510,19 @@ export default {
             return this.selected_course?.teacher_teaching_schema || null
         },
         availableEntryTypes() {
+            if (this.entryForm.kind !== 'assessment') {
+                const definitions = this.entryForm.kind === 'notification'
+                    ? this.selected_course?.teacher_teaching_notifications
+                    : this.selected_course?.teacher_teaching_behaviour
+
+                return (Array.isArray(definitions) ? definitions : [])
+                    .filter((definition) => definition?.short_name)
+                    .map((definition) => ({
+                        title: definition.name ? `${definition.short_name} - ${definition.name}` : definition.short_name,
+                        value: definition.short_name,
+                    }))
+            }
+
             const works = Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
 
             return works
@@ -444,6 +533,8 @@ export default {
                 }))
         },
         availableEntryGrades() {
+            if (this.entryForm.kind !== 'assessment') return []
+
             const works = Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
             const work = works.find((item) => item?.short_name === this.entryForm.type)
             const grades = Array.isArray(work?.grades) ? work.grades : []
@@ -462,7 +553,12 @@ export default {
             return Boolean(this.registeredEntryStudentId && this.availableEntryTypes.length)
         },
         canSaveCellEntry() {
-            return Boolean(this.canCreateCellEntry && this.entryForm.type && !this.entrySaving)
+            const hasAvailableType = this.availableEntryTypes.some((item) => item.value === this.entryForm.type)
+
+            return Boolean(this.registeredEntryStudentId && hasAvailableType && !this.entrySaving)
+        },
+        deleteEntryLabel() {
+            return this.deleteEntryDialog.entry ? this.cellEntryTypeLabel(this.deleteEntryDialog.entry) : 'Eintrag'
         },
     },
 
@@ -486,16 +582,26 @@ export default {
             return `${sortedHours.map((hour) => `${hour}.`).join(', ')} Std`
         },
         isFreeCourseDate(courseDate) {
-            return Array.isArray(courseDate?.status) && courseDate.status.includes('free')
+            const statuses = Array.isArray(courseDate?.status) ? courseDate.status : []
+
+            return statuses.some((status) => ['free', 'entfaellt'].includes(status))
         },
         freeCourseDateReason(courseDate) {
-            return String(courseDate?.free_reason || '').trim() || 'Frei'
+            const reason = String(courseDate?.free_reason || '').trim()
+            if (reason) return reason
+
+            return courseDate?.status?.includes('entfaellt') ? 'Entfällt' : 'Frei'
         },
-        restoreAttendanceView(view) {
-            this.showAttendanceMarkers = view !== 'plain'
+        restoreTableView(view) {
+            this.tableView = ['entries', 'plain'].includes(view) ? 'entries' : 'attendance'
         },
-        toggleAttendanceMarkers() {
-            this.showAttendanceMarkers = !this.showAttendanceMarkers
+        changeTableView(view) {
+            const nextView = view === 'entries' ? 'entries' : 'attendance'
+            this.tableView = nextView
+
+            if (nextView === 'entries') {
+                this.loadCourseEntries()
+            }
 
             if (!this.$route || !this.$router) return
 
@@ -503,11 +609,13 @@ export default {
                 path: this.$route.path,
                 query: {
                     ...this.$route.query,
-                    view: this.showAttendanceMarkers ? 'attendance' : 'plain',
+                    view: nextView,
                 },
             }).catch(() => {})
         },
         openEntryDialog(student, courseDate) {
+            if (this.tableView !== 'entries') return
+
             this.cancelNewCellEntry()
             this.entryDialog = {
                 courseDate,
@@ -527,11 +635,19 @@ export default {
         },
         async loadCourseEntries(courseId = this.selected_course?.id) {
             if (!courseId || !this.entryStore || !this.behaviourEntryStore) return
+            if (this.courseEntriesRequestPromise) return this.courseEntriesRequestPromise
 
-            await Promise.all([
+            const requestPromise = Promise.all([
                 this.entryStore.indexByCourse(courseId),
                 this.behaviourEntryStore.indexByCourse(courseId),
             ])
+            this.courseEntriesRequestPromise = requestPromise
+
+            try {
+                return await requestPromise
+            } finally {
+                this.courseEntriesRequestPromise = null
+            }
         },
         registeredStudentUserId(student) {
             if (!student) return null
@@ -610,8 +726,28 @@ export default {
 
             this.entryForm = {
                 description: '',
+                doneDate: null,
                 grade: '',
+                id: null,
+                kind: 'assessment',
+                dueDate: null,
                 type: '',
+                uid: null,
+            }
+            this.entryFormOpen = true
+        },
+        startEditingCellEntry(entry) {
+            if (!this.canModifyCellEntry(entry)) return
+
+            this.entryForm = {
+                description: String(entry.description || ''),
+                doneDate: entry.done_date || null,
+                grade: entry.kind === 'assessment' ? String(entry.grade || '') : '',
+                id: entry.id,
+                kind: entry.kind || 'behaviour',
+                dueDate: entry.due_date || null,
+                type: String(entry.type || ''),
+                uid: entry.uid,
             }
             this.entryFormOpen = true
         },
@@ -619,9 +755,17 @@ export default {
             this.entryFormOpen = false
             this.entryForm = {
                 description: '',
+                doneDate: null,
                 grade: '',
+                id: null,
+                kind: 'assessment',
+                dueDate: null,
                 type: '',
+                uid: null,
             }
+        },
+        canModifyCellEntry(entry) {
+            return Boolean(entry?.id && entry?.source !== 'course_work')
         },
         selectCellEntryType(type) {
             this.entryForm.type = this.entryForm.type === type ? '' : type
@@ -632,19 +776,83 @@ export default {
 
             this.entrySaving = true
             try {
-                const response = await this.entryStore.store({
-                    teaching_course_id: this.selected_course.id,
-                    user_id: this.registeredEntryStudentId,
-                    type: this.entryForm.type,
-                    grade: this.entryForm.grade || null,
-                    date: this.normalizeDateKey(this.entryDialog.courseDate?.date) || null,
-                    description: String(this.entryForm.description || '').trim() || null,
-                })
+                const date = this.normalizeDateKey(this.entryDialog.courseDate?.date) || null
+                const description = String(this.entryForm.description || '').trim() || null
+                let response
+
+                if (!this.entryForm.id) {
+                    response = await this.entryStore.store({
+                        teaching_course_id: this.selected_course.id,
+                        user_id: this.registeredEntryStudentId,
+                        type: this.entryForm.type,
+                        grade: this.entryForm.grade || null,
+                        date,
+                        description,
+                    })
+                } else if (this.entryForm.kind === 'assessment') {
+                    response = await this.entryStore.update({
+                        id: this.entryForm.id,
+                        type: this.entryForm.type,
+                        grade: this.entryForm.grade || null,
+                        date,
+                        description,
+                    })
+                } else {
+                    response = await this.behaviourEntryStore.update({
+                        id: this.entryForm.id,
+                        kind: this.entryForm.kind,
+                        type: this.entryForm.type,
+                        date,
+                        description,
+                        is_due: Boolean(this.entryForm.dueDate),
+                        due_date: this.entryForm.dueDate,
+                        is_done: Boolean(this.entryForm.doneDate),
+                        done_date: this.entryForm.doneDate,
+                    })
+                }
+
                 if (response) {
                     this.cancelNewCellEntry()
                 }
             } finally {
                 this.entrySaving = false
+            }
+        },
+        openDeleteEntryDialog(entry) {
+            if (!this.canModifyCellEntry(entry)) return
+
+            this.deleteEntryDialog = {
+                entry,
+                open: true,
+            }
+        },
+        closeDeleteEntryDialog() {
+            if (this.entryDeleting) return
+
+            this.deleteEntryDialog = {
+                entry: null,
+                open: false,
+            }
+        },
+        async confirmDeleteCellEntry() {
+            const entry = this.deleteEntryDialog.entry
+            if (!this.canModifyCellEntry(entry) || this.entryDeleting) return
+
+            this.entryDeleting = true
+            try {
+                const store = entry.kind === 'assessment' ? this.entryStore : this.behaviourEntryStore
+                const deleted = await store.destroy(entry.id)
+                if (deleted) {
+                    if (this.entryForm.uid === entry.uid) {
+                        this.cancelNewCellEntry()
+                    }
+                    this.deleteEntryDialog = {
+                        entry: null,
+                        open: false,
+                    }
+                }
+            } finally {
+                this.entryDeleting = false
             }
         },
         isEntryDialogCellSelected(student, courseDate) {
@@ -994,6 +1202,14 @@ export default {
 </script>
 
 <style scoped>
+.course-table-view-card {
+    border: 1px solid rgba(37, 99, 235, 0.22);
+}
+
+.course-table-view-tabs {
+    flex-shrink: 0;
+}
+
 .course-table-card {
     border: 1px solid rgba(37, 99, 235, 0.16);
     overflow: hidden;
@@ -1029,34 +1245,6 @@ export default {
     text-align: left;
     top: 0;
     z-index: 3;
-}
-
-.course-table-command-cell {
-    height: 36px;
-    padding: 5px 7px;
-    top: 0;
-    z-index: 5 !important;
-}
-
-.course-table-command-bar {
-    align-items: center;
-    display: flex;
-    gap: 6px;
-    justify-content: flex-start;
-    left: 7px;
-    min-height: 24px;
-    position: sticky;
-    width: fit-content;
-}
-
-.course-table-command-button {
-    height: 28px;
-    min-width: 28px;
-    width: 28px;
-}
-
-.course-table-title-row th {
-    top: 36px;
 }
 
 .course-table-student-col,
@@ -1193,10 +1381,24 @@ export default {
     text-align: center;
 }
 
+@media (max-width: 600px) {
+    .course-table-view-tabs {
+        width: 100%;
+    }
+
+    .course-table-view-tabs :deep(.v-tab) {
+        flex: 1;
+    }
+}
+
 .course-table-entry-cell--interactive {
     cursor: pointer;
     outline: none;
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.course-table-entry-cell--absent {
+    background: rgba(var(--v-theme-error), 0.22) !important;
 }
 
 .course-table-entry-cell--interactive:hover,

@@ -40,6 +40,20 @@ describe('Admin store config loading', () => {
         expect(store.selected_schoolyear).toEqual(payload.selected_schoolyear)
     })
 
+    it('requests expensive dashboard config only when asked', async () => {
+        const store = useAdminStore()
+        vi.mocked(globalThis.axios.get).mockResolvedValueOnce({ data: {} } as never)
+
+        await store.loadConfig({ includeSchoolInfos: true, includeEnvironmentVersions: true })
+
+        expect(globalThis.axios.get).toHaveBeenCalledWith('/api/admin/config', {
+            params: {
+                include_school_infos: 1,
+                include_environment_versions: 1,
+            },
+        })
+    })
+
     it('reuses the same in-flight config request for concurrent callers', async () => {
         const store = useAdminStore()
         const payload = {

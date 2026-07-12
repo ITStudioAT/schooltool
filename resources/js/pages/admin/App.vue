@@ -120,7 +120,11 @@ export default {
         this.adminStore.is_loading++
         this.adminStore.initialize(this.$router)
         if (!this.adminStore.config) {
-            await this.adminStore.loadConfig({ includeSchoolInfos: this.isAdminHomeRoute() })
+            const isAdminHomeRoute = this.isAdminHomeRoute()
+            await this.adminStore.loadConfig({
+                includeSchoolInfos: isAdminHomeRoute,
+                includeEnvironmentVersions: isAdminHomeRoute,
+            })
         }
         this.adminStore.is_loading--
     },

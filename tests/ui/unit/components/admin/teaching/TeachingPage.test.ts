@@ -72,6 +72,47 @@ describe('Teaching page navigation', () => {
         expect(schoolHourStoreMock.index).toHaveBeenCalledTimes(1)
     })
 
+    it('loads independent teaching page data concurrently', async () => {
+        let resolveHopperAccounts: () => void = () => {}
+        const hopperAccountsPromise = new Promise<void>((resolve) => {
+            resolveHopperAccounts = resolve
+        })
+        const schoolStoreMock = {
+            loadHopperAccounts: vi.fn().mockReturnValue(hopperAccountsPromise),
+        }
+        const courseStoreMock = {
+            courses: [],
+            index: vi.fn().mockResolvedValue(true),
+        }
+        const schoolHourStoreMock = {
+            school_hours: [],
+            index: vi.fn().mockResolvedValue(true),
+        }
+        const teachingStoreMock = {
+            settings: null,
+            loadSettings: vi.fn().mockResolvedValue(true),
+        }
+
+        vi.mocked(useAdminStore).mockReturnValue({ config: {} } as never)
+        vi.mocked(useSchoolStore).mockReturnValue(schoolStoreMock as never)
+        vi.mocked(useCourseStore).mockReturnValue(courseStoreMock as never)
+        vi.mocked(useSchoolHourStore).mockReturnValue(schoolHourStoreMock as never)
+        vi.mocked(useTeachingStore).mockReturnValue(teachingStoreMock as never)
+
+        const ctx: Record<string, unknown> = {
+            ensureCourseStore: (Teaching as any).methods.ensureCourseStore,
+        }
+        const beforeMountPromise = (Teaching as any).beforeMount.call(ctx)
+
+        expect(schoolStoreMock.loadHopperAccounts).toHaveBeenCalledTimes(1)
+        expect(teachingStoreMock.loadSettings).toHaveBeenCalledTimes(1)
+        expect(courseStoreMock.index).toHaveBeenCalledTimes(1)
+        expect(schoolHourStoreMock.index).toHaveBeenCalledTimes(1)
+
+        resolveHopperAccounts()
+        await beforeMountPromise
+    })
+
     it('skips loading teaching settings on beforeMount when already present', async () => {
         const adminStoreMock = { config: {} }
         const schoolStoreMock = {
@@ -458,7 +499,7 @@ describe('Teaching page navigation', () => {
         expect(source).not.toContain('toolbar-width-xl-')
     })
 
-    it('lets the table panel use the full content width', async () => {
+    it('lets the dates and table panels use the full content width', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/overview/Overview.vue', 'utf8')
         )
@@ -467,9 +508,9 @@ describe('Teaching page navigation', () => {
         expect(source).toContain('md="8"')
         expect(source).toContain('lg="7"')
         expect(source).toContain('xl="6"')
-        expect(source).toContain(':md="secondaryOverviewPanelSelection === \'table\' ? 12 : 8"')
-        expect(source).toContain(':lg="secondaryOverviewPanelSelection === \'table\' ? 12 : 7"')
-        expect(source).toContain(':xl="secondaryOverviewPanelSelection === \'table\' ? 12 : 6"')
+        expect(source).toContain(':md="[\'dates\', \'table\'].includes(secondaryOverviewPanelSelection) ? 12 : 8"')
+        expect(source).toContain(':lg="[\'dates\', \'table\'].includes(secondaryOverviewPanelSelection) ? 12 : 7"')
+        expect(source).toContain(':xl="[\'dates\', \'table\'].includes(secondaryOverviewPanelSelection) ? 12 : 6"')
         expect(source).not.toContain('isGradesMode')
         expect(source).toContain('.teaching-overview-card-col {')
         expect(source).toContain('flex-grow: 0;')

@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\ABA\AbaController;
 use App\Http\Controllers\Admin\ABA\AbaExtractionController;
 use App\Http\Controllers\Admin\ABA\AbaSettingsController;
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Admin\CloudwaysSchoolSynchronizationController;
 use App\Http\Controllers\Admin\GroupController;
 use App\Http\Controllers\Admin\HealthController;
 use App\Http\Controllers\Admin\ImpersonationController;
@@ -787,6 +788,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - super_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:super_admin_access'])->group(function () {
+        Route::post('/admin/schools/{school}/cloudways-sync/preview', [CloudwaysSchoolSynchronizationController::class, 'preview']);
+        Route::post('/admin/schools/{school}/cloudways-sync', [CloudwaysSchoolSynchronizationController::class, 'store']);
         Route::post('/admin/delete_log', [LogController::class, 'deleteLog']);
         Route::post('/admin/restart_queues', [LogController::class, 'restartQueues']);
         Route::get('/admin/impersonation/schools', [ImpersonationController::class, 'schools']);

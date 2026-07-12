@@ -79,12 +79,15 @@ class AdminController extends Controller
 
         // $viaRemember = Auth::viaRemember();
 
-        $data = $this->getConfigData($request->boolean('include_school_infos'));
+        $data = $this->getConfigData(
+            $request->boolean('include_school_infos'),
+            $request->boolean('include_environment_versions'),
+        );
 
         return response()->json($data, 200);
     }
 
-    private function getConfigData(bool $includeSchoolInfos = false)
+    private function getConfigData(bool $includeSchoolInfos = false, bool $includeEnvironmentVersions = false)
     {
         $navigationService = new AdminNavigationService;
 
@@ -163,7 +166,7 @@ class AdminController extends Controller
 
         $data['health']['queue_working'] = true;
 
-        if ($user) {
+        if ($user && $includeEnvironmentVersions) {
             $data['environment_versions'] = $this->environmentVersions();
         }
 

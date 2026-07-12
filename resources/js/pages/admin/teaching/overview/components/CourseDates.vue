@@ -7,21 +7,23 @@
         v-if="selected_course"
         :disabled="isGridDisabled">
         <template #title>
-            <div>Termine – {{ selected_course.title }} ({{ selectedCourseClasses }})</div>
+            <div class="course-dates-title-row d-flex align-center flex-wrap ga-3">
+                <div>Termine – {{ selected_course.title }} ({{ selectedCourseClasses }})</div>
+                <div v-if="semesterCount === 2" class="course-date-semester-selection d-flex justify-start">
+                    <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
+                        <v-btn :value="1" size="small">1. Sem</v-btn>
+                        <v-btn :value="2" size="small">2. Sem</v-btn>
+                        <v-btn :value="3" size="small">Sem 1+2</v-btn>
+                    </v-btn-toggle>
+                </div>
+            </div>
         </template>
         <template #header-actions>
             <v-btn icon="mdi-plus" size="small" variant="tonal" @click="newDates" :disabled="isEditingContent || isSavingContent || action === 'new_course_dates'" />
         </template>
-        <v-card tile flat color="transparent" class="w-100" :disabled="action != '' || isSavingContent">
+        <v-card v-if="compactStudentView" tile flat color="transparent" class="w-100" :disabled="action != '' || isSavingContent">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <div class="d-flex flex-wrap align-center ga-2 mt-2 w-100">
-                    <div v-if="semesterCount === 2" class="course-date-semester-selection d-flex justify-start">
-                        <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
-                            <v-btn :value="1" size="small">1. Sem</v-btn>
-                            <v-btn :value="2" size="small">2. Sem</v-btn>
-                            <v-btn :value="3" size="small">Sem 1+2</v-btn>
-                        </v-btn-toggle>
-                    </div>
                     <div v-if="compactStudentView" class="ml-auto d-flex">
                         <v-btn-toggle
                             v-model="dateRangeSelection"
@@ -70,10 +72,11 @@
                         <div class="d-flex flex-column ga-2 w-100 h-100 cursor-pointer" @click="selectCourseDate(courseDate)">
                             <div class="course-date-header d-flex align-start ga-2 w-100">
                                 <div class="course-date-left d-flex flex-column">
-                                    <div class="d-flex align-center ga-2">
+                                    <div class="d-flex align-center flex-wrap ga-2">
                                         <div class="course-date-title">
                                             {{ getWeekday(courseDate.date) }}, {{ formatDate(courseDate.date) }}
                                         </div>
+                                        <v-chip v-for="h in courseDate.hours" :key="h" size="x-small" variant="tonal">{{ h }}. Std</v-chip>
                                         <v-chip
                                             v-if="highlightedDateId === courseDate.id"
                                             size="x-small"
@@ -82,14 +85,14 @@
                                             class="course-date-icon font-weight-bold px-2">
                                             {{ isDateToday(courseDate) ? 'Heute' : 'Nächster' }}
                                         </v-chip>
-                                    </div>
-                                    <div class="course-date-hours text-caption text-medium-emphasis d-flex align-center ga-1 mt-1">
-                                        <v-chip v-for="h in courseDate.hours" :key="h" size="x-small" variant="tonal" class="mr-1">{{ h }}. Std</v-chip>
-                                        <v-chip v-if="hasStatus(courseDate, 'free') && courseDate.free_reason" size="x-small" color="success" variant="outlined">
+                                        <v-chip
+                                            v-if="hasStatus(courseDate, 'free') && courseDate.free_reason"
+                                            size="x-small"
+                                            color="success"
+                                            variant="outlined"
+                                            class="course-date-free-reason">
                                             {{ courseDate.free_reason }}
                                         </v-chip>
-                                    </div>
-                                    <div v-if="courseWorksForDate(courseDate).length" class="course-date-works d-flex align-center flex-wrap ga-1 mt-2">
                                         <v-chip
                                             v-for="work in courseWorksForDate(courseDate)"
                                             :key="`course-date-${courseDate.id}-work-${work.key}`"
@@ -102,6 +105,11 @@
                                             @click.stop="openCourseWork(work)">
                                             {{ work.label }}
                                         </v-chip>
+                                        <span
+                                            v-if="courseDateHasContent(courseDate)"
+                                            class="course-date-inline-content text-body-2 text-medium-emphasis">
+                                            {{ courseDateInlineContent(courseDate) }}
+                                        </span>
                                     </div>
                                 </div>
                                 <div class="course-date-actions d-flex align-center ga-1 ml-auto flex-shrink-0" @click.stop>
@@ -182,11 +190,10 @@
                                     </div>
                                 </div>
                             <div
-                                v-if="courseDateHasContent(courseDate) || courseDateAdoptedMaterials(courseDate).length"
+                                v-if="courseDateAdoptedMaterials(courseDate).length"
                                 class="course-date-curriculum-inline pl-1 pr-2"
                                 @click.stop>
                                 <div class="course-date-curriculum-stack">
-                                    <div v-if="courseDateHasContent(courseDate)" class="course-date-curriculum-stack__content" v-html="courseDateDisplayHtml(courseDate)"></div>
                                     <div
                                         v-for="group in courseDateAdoptedMaterialGroups(courseDate)"
                                         :key="`${courseDate.id}-adopted-group-${group.key}`"
@@ -1119,7 +1126,7 @@ export default {
             if (!date) return ''
             const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
-            return d.toLocaleDateString('de-DE', { weekday: 'long' })
+            return d.toLocaleDateString('de-DE', { weekday: 'short' })
         },
         formatDate(date) {
             if (!date) return ''
@@ -1159,12 +1166,11 @@ export default {
             }
 
             return content
-                .replace(/<br\s*\/?>/gi, '\n')
-                .replace(/<\/p>/gi, '\n')
+                .replace(/<br\s*\/?>/gi, ' ')
+                .replace(/<\/p>/gi, ' ')
                 .replace(/<[^>]+>/g, ' ')
                 .replace(/&nbsp;/gi, ' ')
-                .replace(/[^\S\n]+/g, ' ')
-                .replace(/\n /g, '\n')
+                .replace(/\s+/g, ' ')
                 .trim()
         },
         toDateString(date) {
@@ -1867,17 +1873,16 @@ export default {
 </script>
 
 <style scoped>
-.course-dates-grid {
-    padding: 8px;
-    gap: 20px;
+.course-dates-title-row {
+    min-width: 0;
 }
 
-@media (min-width: 900px) {
-    .course-dates-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        align-items: stretch;
-    }
+.course-dates-grid {
+    padding: 8px;
+    gap: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
 }
 
 .v-list-item {
@@ -1937,6 +1942,12 @@ export default {
     flex: 0 0 auto;
 }
 
+.course-date-inline-content {
+    flex: 1 1 240px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
 .course-date-header {
     min-width: 0;
 }
@@ -1947,12 +1958,7 @@ export default {
     min-width: 0;
 }
 
-.course-date-hours {
-    min-width: 0;
-}
-
-.course-date-works {
-    max-width: 100%;
+.course-date-free-reason {
     min-width: 0;
 }
 

@@ -63,24 +63,86 @@ describe('CourseDates course-specific schema', () => {
         expect(source).not.toContain('show_dates = false')
     })
 
-    it('shows a left aligned semester selector and keeps the date range selector compact only', () => {
+    it('shows the semester selector in the course title row and keeps the date range selector compact only', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const titleRowPosition = source.indexOf('class="course-dates-title-row')
+        const semesterSelectionPosition = source.indexOf('class="course-date-semester-selection')
+        const headerActionsPosition = source.indexOf('<template #header-actions>')
 
+        expect(titleRowPosition).toBeLessThan(semesterSelectionPosition)
+        expect(semesterSelectionPosition).toBeLessThan(headerActionsPosition)
         expect(source).toContain('class="course-date-semester-selection d-flex justify-start"')
         expect(source).toContain('<v-btn :value="1" size="small">1. Sem</v-btn>')
         expect(source).toContain('<v-btn :value="2" size="small">2. Sem</v-btn>')
         expect(source).toContain('<v-btn :value="3" size="small">Sem 1+2</v-btn>')
         expect(source.indexOf('course-date-semester-selection')).toBeLessThan(source.indexOf('dateRangeSelection'))
+        expect(source).toContain('<v-card v-if="compactStudentView" tile flat color="transparent"')
         expect(source).toContain('<div v-if="compactStudentView" class="ml-auto d-flex">')
         expect(source).not.toContain('!compactStudentView && semesterCount === 2')
     })
 
-    it('keeps both desktop date columns the same width', () => {
+    it('renders each date as a full-width row', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
 
-        expect(source).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);')
+        expect(source).toContain('.course-dates-grid {\n    padding: 8px;\n    gap: 8px;')
+        expect(source).toContain('grid-template-columns: minmax(0, 1fr);')
+        expect(source).not.toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);')
         expect(source).toContain('min-width: 0;')
         expect(source).toContain('width: 100%;')
+    })
+
+    it('renders the hour chips next to the date', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const dateTitlePosition = source.indexOf('class="course-date-title"')
+        const hourChipPosition = source.indexOf('<v-chip v-for="h in courseDate.hours"')
+        const highlightedDatePosition = source.indexOf('v-if="highlightedDateId === courseDate.id"')
+
+        expect(source).toContain('class="d-flex align-center flex-wrap ga-2"')
+        expect(dateTitlePosition).toBeLessThan(hourChipPosition)
+        expect(hourChipPosition).toBeLessThan(highlightedDatePosition)
+        expect(source).not.toContain('class="course-date-hours')
+    })
+
+    it('uses abbreviated German weekday labels', () => {
+        const methods = (CourseDates as any).methods
+
+        expect(methods.getWeekday('2026-07-13')).toBe('Mo')
+        expect(methods.getWeekday('2026-07-14')).toBe('Di')
+    })
+
+    it('renders the date content in the date row', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const hourChipPosition = source.indexOf('<v-chip v-for="h in courseDate.hours"')
+        const inlineContentPosition = source.indexOf('class="course-date-inline-content text-body-2 text-medium-emphasis"')
+        const dateActionsPosition = source.indexOf('class="course-date-actions')
+
+        expect(hourChipPosition).toBeLessThan(inlineContentPosition)
+        expect(inlineContentPosition).toBeLessThan(dateActionsPosition)
+        expect(source).toContain('{{ courseDateInlineContent(courseDate) }}')
+        expect(source).toContain('v-if="courseDateAdoptedMaterials(courseDate).length"')
+        expect(source).not.toContain('v-html="courseDateDisplayHtml(courseDate)"')
+    })
+
+    it('renders assigned work chips in the date row', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const hourChipPosition = source.indexOf('<v-chip v-for="h in courseDate.hours"')
+        const workChipPosition = source.indexOf('v-for="work in courseWorksForDate(courseDate)"')
+        const inlineContentPosition = source.indexOf('class="course-date-inline-content text-body-2 text-medium-emphasis"')
+
+        expect(hourChipPosition).toBeLessThan(workChipPosition)
+        expect(workChipPosition).toBeLessThan(inlineContentPosition)
+        expect(source).not.toContain('class="course-date-works')
+    })
+
+    it('renders the free-day reason chip in the date row', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const hourChipPosition = source.indexOf('<v-chip v-for="h in courseDate.hours"')
+        const freeDayChipPosition = source.indexOf('class="course-date-free-reason"')
+        const workChipPosition = source.indexOf('v-for="work in courseWorksForDate(courseDate)"')
+
+        expect(hourChipPosition).toBeLessThan(freeDayChipPosition)
+        expect(freeDayChipPosition).toBeLessThan(workChipPosition)
+        expect(source).not.toContain('class="course-date-free-reason text-caption')
     })
 
     it('keeps date action buttons visible beside long assigned work labels', () => {

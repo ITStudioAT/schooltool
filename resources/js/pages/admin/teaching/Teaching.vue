@@ -182,16 +182,20 @@ export default {
         this.courseStore = this.ensureCourseStore()
         this.schoolHourStore = useSchoolHourStore()
         const teachingStore = useTeachingStore()
-        await this.schoolStore.loadHopperAccounts()
+
+        const requests = [this.schoolStore.loadHopperAccounts()]
+
         if (!teachingStore.settings) {
-            await teachingStore.loadSettings()
+            requests.push(teachingStore.loadSettings())
         }
         if (!this.courseStore.courses.length) {
-            await this.courseStore.index()
+            requests.push(this.courseStore.index())
         }
         if (!this.schoolHourStore.school_hours.length) {
-            await this.schoolHourStore.index()
+            requests.push(this.schoolHourStore.index())
         }
+
+        await Promise.all(requests)
     },
 
     mounted() {

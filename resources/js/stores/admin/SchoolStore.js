@@ -31,6 +31,7 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
         school_infos_load_promise: null,
         school_licence_users_load_key: null,
         school_licence_users_load_promise: null,
+        cloudways_sync_preview: null,
     }),
 
     actions: {
@@ -361,6 +362,59 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
                     type: 'error',
                     timeout: this.timeout,
                 })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async previewCloudwaysSchoolSynchronization(schoolId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            this.cloudways_sync_preview = null
+
+            try {
+                const response = await axios.post(`/api/admin/schools/${schoolId}/cloudways-sync/preview`)
+                this.cloudways_sync_preview = response.data?.data || null
+
+                return this.cloudways_sync_preview
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Cloudways-Synchronisierung konnte nicht vorbereitet werden.',
+                    type: 'error',
+                    timeout: 5000,
+                })
+
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async synchronizeCloudwaysSchool(schoolId, confirmation) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+
+            try {
+                const response = await axios.post(`/api/admin/schools/${schoolId}/cloudways-sync`, { confirmation })
+                notification.notify({
+                    message: response.data?.message || 'Die Schule wurde aus Cloudways synchronisiert.',
+                    type: 'success',
+                    timeout: 5000,
+                })
+
+                return response.data?.data || true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Cloudways-Synchronisierung ist fehlgeschlagen.',
+                    type: 'error',
+                    timeout: 7000,
+                })
+
                 return false
             } finally {
                 adminStore.is_loading--
