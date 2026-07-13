@@ -90,6 +90,52 @@
                             </tr>
                         </thead>
                         <tbody>
+                            <tr v-if="tableView === 'entries'" class="course-table-work-row">
+                                <th scope="row" class="course-table-work-label">
+                                    <div class="course-table-work-label-content">
+                                        <v-icon color="primary" size="18">mdi-clipboard-text</v-icon>
+                                        <span>Arbeiten</span>
+                                    </div>
+                                </th>
+                                <td
+                                    v-for="courseDate in sortedCourseDates"
+                                    :key="`date-work-${courseDate.id || courseDate.date}`"
+                                    class="course-table-work-cell"
+                                    :class="{
+                                        'course-table-work-cell--free': isFreeCourseDate(courseDate),
+                                        'course-table-work-cell--selected': isWorkDialogCellSelected(courseDate),
+                                    }"
+                                    role="button"
+                                    tabindex="0"
+                                    :title="`${compactCourseDateTitle(courseDate)}: Arbeiten öffnen`"
+                                    @click="openWorkDialog(courseDate)"
+                                    @keydown.enter.prevent="openWorkDialog(courseDate)"
+                                    @keydown.space.prevent="openWorkDialog(courseDate)">
+                                    <div class="course-table-work-list">
+                                        <v-icon
+                                            v-if="!courseWorksForDate(courseDate).length"
+                                            class="course-table-work-empty-icon"
+                                            color="primary"
+                                            size="18">
+                                            mdi-plus-circle-outline
+                                        </v-icon>
+                                        <div
+                                            v-for="work in courseWorksForDate(courseDate)"
+                                            :key="work.key"
+                                            class="course-table-work-summary"
+                                            :class="{ 'course-table-work-summary--group': work.isGroupWork }"
+                                            :title="work.title">
+                                            <div class="course-table-work-summary-meta">
+                                                <v-icon size="13">mdi-clipboard-text</v-icon>
+                                                <span>{{ work.work.type || 'Arbeit' }}</span>
+                                            </div>
+                                            <strong class="course-table-work-summary-title">
+                                                {{ work.work.title || work.label }}
+                                            </strong>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
                             <tr
                                 v-for="(student, studentIndex) in sortedSelectedStudents"
                                 :key="`student-${student.id}`"
@@ -138,16 +184,36 @@
                                                 v-if="tableView === 'entries' && entriesForCell(student, courseDate).length"
                                                 class="course-table-entry-cell-badges"
                                                 data-testid="course-table-entry-cell-badges">
-                                                <v-chip
-                                                    v-for="entry in entriesForCell(student, courseDate)"
-                                                    :key="entry.uid"
-                                                    class="course-table-entry-cell-badge"
-                                                    size="x-small"
-                                                    :color="cellEntryColor(entry)"
-                                                    variant="tonal"
-                                                    :title="entry.description || cellEntryTypeLabel(entry)">
-                                                    {{ compactCellEntryLabel(entry) }}
-                                                </v-chip>
+                                                <div
+                                                    v-if="supplementaryEntriesForCell(student, courseDate).length"
+                                                    class="course-table-entry-cell-badge-row"
+                                                    data-testid="course-table-entry-cell-supplementary-row">
+                                                    <v-chip
+                                                        v-for="entry in supplementaryEntriesForCell(student, courseDate)"
+                                                        :key="entry.uid"
+                                                        class="course-table-entry-cell-badge"
+                                                        size="x-small"
+                                                        :color="cellEntryColor(entry)"
+                                                        variant="tonal"
+                                                        :title="entry.description || cellEntryTypeLabel(entry)">
+                                                        {{ compactCellEntryLabel(entry) }}
+                                                    </v-chip>
+                                                </div>
+                                                <div
+                                                    v-if="compactPerformanceEntriesForCell(student, courseDate).length"
+                                                    class="course-table-entry-cell-badge-row"
+                                                    data-testid="course-table-entry-cell-performance-row">
+                                                    <v-chip
+                                                        v-for="entry in compactPerformanceEntriesForCell(student, courseDate)"
+                                                        :key="entry.uid"
+                                                        class="course-table-entry-cell-badge"
+                                                        size="x-small"
+                                                        :color="cellEntryColor(entry)"
+                                                        variant="tonal"
+                                                        :title="entry.description || cellEntryTypeLabel(entry)">
+                                                        {{ compactCellEntryLabel(entry) }}
+                                                    </v-chip>
+                                                </div>
                                             </div>
                                             <v-btn
                                                 v-if="tableView === 'attendance' && isAttendanceToggleable(courseDate)"
@@ -181,6 +247,160 @@
                 </div>
             </v-card-text>
         </v-card>
+
+        <v-dialog v-model="workDialog.open" persistent max-width="720">
+            <v-card>
+                <v-card-title class="text-subtitle-1 font-weight-bold d-flex align-center ga-2">
+                    <v-icon size="20">mdi-clipboard-text</v-icon>
+                    Arbeiten
+                    <v-chip size="x-small" color="primary" variant="tonal">{{ workDialogDateTitle }}</v-chip>
+                </v-card-title>
+                <v-divider />
+                <v-card-text class="d-flex flex-column ga-4">
+                    <section>
+                        <div class="d-flex align-center ga-2 mb-2">
+                            <div class="text-caption font-weight-bold text-medium-emphasis">Arbeiten an diesem Termin</div>
+                            <v-chip size="x-small" color="primary" variant="tonal">{{ dateWorkAssignments.length }}</v-chip>
+                        </div>
+                        <div v-if="dateWorkAssignments.length" class="course-table-date-work-list">
+                            <div
+                                v-for="assignment in dateWorkAssignments"
+                                :key="assignment.key"
+                                class="course-table-date-work-item">
+                                <div class="course-table-date-work-main">
+                                    <div class="d-flex align-center flex-wrap ga-2">
+                                        <v-chip
+                                            size="x-small"
+                                            :color="assignment.isGroupWork ? 'success' : 'primary'"
+                                            variant="tonal">
+                                            {{ assignment.work.type || 'Arbeit' }}
+                                        </v-chip>
+                                        <strong class="text-body-2">{{ assignment.work.title || assignment.label }}</strong>
+                                    </div>
+                                    <div class="text-caption text-medium-emphasis mt-1">{{ assignment.label }}</div>
+                                    <div v-if="assignment.work.description" class="text-caption mt-1">
+                                        {{ assignment.work.description }}
+                                    </div>
+                                </div>
+                                <div class="d-flex ga-1">
+                                    <v-btn
+                                        :data-testid="`course-table-date-edit-work-${assignment.id}`"
+                                        density="compact"
+                                        icon="mdi-pencil"
+                                        size="x-small"
+                                        title="Arbeit bearbeiten"
+                                        variant="text"
+                                        @click="startEditingDateWork(assignment.work)" />
+                                    <v-btn
+                                        :data-testid="`course-table-date-delete-work-${assignment.id}`"
+                                        color="error"
+                                        density="compact"
+                                        icon="mdi-delete"
+                                        size="x-small"
+                                        title="Arbeit löschen"
+                                        variant="text"
+                                        @click="openDeleteWorkDialog(assignment.work)" />
+                                </div>
+                            </div>
+                        </div>
+                        <v-alert v-else type="info" variant="tonal" density="compact">
+                            Für diesen Termin ist noch keine Arbeit vorhanden.
+                        </v-alert>
+                    </section>
+
+                    <v-divider />
+
+                    <section>
+                        <v-btn
+                            v-if="!workDialogFormOpen"
+                            data-testid="course-table-date-create-work"
+                            color="primary"
+                            prepend-icon="mdi-plus"
+                            variant="tonal"
+                            @click="startCreatingDateWork">
+                            Neue Arbeit
+                        </v-btn>
+
+                        <div v-if="workDialogFormOpen" class="course-table-date-work-form">
+                            <div class="text-subtitle-2 font-weight-bold mb-3">
+                                {{ workDialogForm.id ? 'Arbeit bearbeiten' : 'Neue Arbeit erstellen' }}
+                            </div>
+                            <div class="text-caption text-medium-emphasis mb-1">Typ</div>
+                            <div class="d-flex flex-wrap ga-1 mb-3">
+                                <v-btn
+                                    v-for="item in availableWorkTypes"
+                                    :key="item.value"
+                                    size="small"
+                                    :variant="workDialogForm.type === item.value ? 'flat' : 'tonal'"
+                                    :color="workDialogForm.type === item.value ? 'primary' : 'default'"
+                                    @click="workDialogForm.type = item.value">
+                                    {{ item.title }}
+                                </v-btn>
+                            </div>
+                            <v-alert v-if="!availableWorkTypes.length" type="warning" variant="tonal" density="compact" class="mb-3">
+                                Für diesen Kurs sind keine Arbeitstypen konfiguriert.
+                            </v-alert>
+                            <v-text-field
+                                v-model="workDialogForm.title"
+                                label="Titel"
+                                maxlength="255"
+                                :disabled="workSaving" />
+                            <v-textarea
+                                v-model="workDialogForm.description"
+                                label="Beschreibung"
+                                rows="3"
+                                maxlength="1024"
+                                :disabled="workSaving" />
+                            <v-alert
+                                v-if="workDialogForm.is_group_work"
+                                type="info"
+                                variant="tonal"
+                                density="compact"
+                                class="mb-3">
+                                Gruppen und gruppenspezifische Termine bleiben unverändert.
+                            </v-alert>
+                            <div class="d-flex justify-end ga-2">
+                                <v-btn variant="text" :disabled="workSaving" @click="cancelDateWorkForm">Abbrechen</v-btn>
+                                <v-btn
+                                    color="success"
+                                    variant="flat"
+                                    :loading="workSaving"
+                                    :disabled="!canSaveDateWork"
+                                    @click="saveDateWork">
+                                    Speichern
+                                </v-btn>
+                            </div>
+                        </div>
+                    </section>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        :disabled="workSaving || workDeleting"
+                        @click="closeWorkDialog">
+                        Schließen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="deleteWorkDialog.open" persistent max-width="460">
+            <v-card>
+                <v-card-title class="text-subtitle-1 font-weight-bold">Arbeit löschen</v-card-title>
+                <v-card-text>
+                    Die Arbeit <strong>{{ deleteWorkLabel }}</strong> und ihre verknüpften Einträge wirklich löschen?
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn :disabled="workDeleting" variant="text" @click="closeDeleteWorkDialog">Abbrechen</v-btn>
+                    <v-btn color="error" :loading="workDeleting" variant="flat" @click="confirmDeleteDateWork">
+                        Löschen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <v-dialog v-model="bulkAttendanceDialog.open" persistent max-width="460">
             <v-card>
@@ -393,6 +613,7 @@ import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBeha
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
+import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 
 export default {
     data() {
@@ -406,9 +627,15 @@ export default {
             behaviourEntryStore: null,
             courseDateStore: null,
             courseEntriesRequestPromise: null,
+            courseWorkStore: null,
+            courseWorksRequestPromise: null,
             deleteEntryDialog: {
                 entry: null,
                 open: false,
+            },
+            deleteWorkDialog: {
+                open: false,
+                work: null,
             },
             entryDialog: {
                 courseDate: null,
@@ -431,12 +658,33 @@ export default {
             entryStore: null,
             savingAttendanceCells: {},
             tableView: 'attendance',
+            workDeleting: false,
+            workDialog: {
+                courseDate: null,
+                open: false,
+            },
+            workDialogForm: {
+                date_for_all_groups: '',
+                description: '',
+                groups: [],
+                group_size: null,
+                id: null,
+                is_group_work: false,
+                is_random_groups: false,
+                status: [],
+                teaching_course_id: null,
+                title: '',
+                type: '',
+            },
+            workDialogFormOpen: false,
+            workSaving: false,
         }
     },
 
     beforeMount() {
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
         this.entryStore = useCourseStudentEntryStore()
+        this.courseWorkStore = useCourseWorkStore()
     },
 
     async mounted() {
@@ -445,6 +693,7 @@ export default {
         if (this.tableView === 'entries') {
             await this.loadCourseEntries()
         }
+        await this.loadCourseWorks()
         this.scrollToInitialCourseDate()
     },
 
@@ -462,6 +711,9 @@ export default {
             if (course?.id && this.tableView === 'entries') {
                 this.loadCourseEntries(course.id)
             }
+            if (course?.id) {
+                this.loadCourseWorks(course.id)
+            }
         },
     },
 
@@ -469,6 +721,7 @@ export default {
         ...mapWritableState(useAdminStore, ['action']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useCourseStore, ['selected_course', 'students_sort_mode']),
+        ...mapWritableState(useCourseWorkStore, ['courseWorks']),
         courseDateScrollSignature() {
             const courseId = this.selected_course?.id || ''
             const courseDates = this.sortedCourseDates
@@ -545,6 +798,33 @@ export default {
                     title: grade.name ? `${grade.grade} (${grade.name})` : grade.grade,
                     value: grade.grade,
                 }))
+        },
+        availableWorkTypes() {
+            const works = Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
+
+            return works
+                .filter((work) => work?.short_name)
+                .map((work) => ({
+                    title: work.name ? `${work.short_name} - ${work.name}` : work.short_name,
+                    value: work.short_name,
+                }))
+        },
+        dateWorkAssignments() {
+            return this.courseWorksForDate(this.workDialog.courseDate)
+        },
+        workDialogDateTitle() {
+            return this.workDialog.courseDate ? this.compactCourseDateTitle(this.workDialog.courseDate) : ''
+        },
+        canSaveDateWork() {
+            const hasAvailableType = this.availableWorkTypes.some((item) => item.value === this.workDialogForm.type)
+
+            return Boolean(hasAvailableType && !this.workSaving)
+        },
+        deleteWorkLabel() {
+            const work = this.deleteWorkDialog.work
+            if (!work) return 'Arbeit'
+
+            return work.title || work.type || 'Arbeit'
         },
         registeredEntryStudentId() {
             return this.registeredStudentUserId(this.entryDialog.student)
@@ -649,6 +929,207 @@ export default {
                 this.courseEntriesRequestPromise = null
             }
         },
+        async loadCourseWorks(courseId = this.selected_course?.id) {
+            if (!courseId || !this.courseWorkStore?.index) return
+            if (this.courseWorksRequestPromise) return this.courseWorksRequestPromise
+
+            const requestPromise = this.courseWorkStore.index(courseId)
+            this.courseWorksRequestPromise = requestPromise
+
+            try {
+                return await requestPromise
+            } finally {
+                this.courseWorksRequestPromise = null
+            }
+        },
+        courseWorksForDate(courseDate) {
+            const date = this.normalizeDateKey(courseDate?.date)
+            if (!date) return []
+
+            return (this.courseWorks || [])
+                .map((work) => this.courseWorkAssignmentForDate(work, date))
+                .filter(Boolean)
+        },
+        courseWorkAssignmentForDate(work, date) {
+            if (!work?.id || !date) return null
+
+            if (work.is_group_work) {
+                return this.groupWorkAssignmentForDate(work, date)
+            }
+
+            const groupDates = (Array.isArray(work.groups) ? work.groups : [])
+                .map((group) => this.normalizeDateKey(group?.date))
+                .filter(Boolean)
+
+            if (this.normalizeDateKey(work.date_for_all_groups) !== date && !groupDates.includes(date)) {
+                return null
+            }
+
+            return this.courseWorkAssignmentPayload(work, 'Einzelarbeit')
+        },
+        groupWorkAssignmentForDate(work, date) {
+            const groups = Array.isArray(work.groups) ? work.groups : []
+            const matchingGroupIndexes = []
+            const fallbackDate = this.normalizeDateKey(work.date_for_all_groups)
+            const hasExplicitGroupDates = groups.some((group) => this.normalizeDateKey(group?.date))
+
+            groups.forEach((group, index) => {
+                const groupDate = this.normalizeDateKey(group?.date) || fallbackDate
+                if (groupDate === date) {
+                    matchingGroupIndexes.push(index + 1)
+                }
+            })
+
+            if (!matchingGroupIndexes.length && (hasExplicitGroupDates || fallbackDate !== date)) {
+                return null
+            }
+
+            const totalGroups = groups.length
+            const suffix = matchingGroupIndexes.length && matchingGroupIndexes.length < totalGroups
+                ? `Gr. ${matchingGroupIndexes.join(', ')}`
+                : 'alle Gruppen'
+
+            return this.courseWorkAssignmentPayload(work, suffix, true)
+        },
+        courseWorkAssignmentPayload(work, suffix, isGroupWork = false) {
+            const type = String(work.type || 'Arbeit').trim()
+            const title = String(work.title || '').trim()
+            const baseLabel = title ? `${type}: ${title}` : type
+            const label = suffix ? `${baseLabel} (${suffix})` : baseLabel
+
+            return {
+                id: work.id,
+                isGroupWork,
+                key: `${work.id}-${suffix || 'work'}`,
+                label,
+                title: label,
+                work,
+            }
+        },
+        openWorkDialog(courseDate) {
+            this.cancelDateWorkForm()
+            this.workDialog = {
+                courseDate,
+                open: true,
+            }
+        },
+        closeWorkDialog() {
+            if (this.workSaving || this.workDeleting) return
+
+            this.cancelDateWorkForm()
+            this.closeDeleteWorkDialog()
+            this.workDialog = {
+                courseDate: null,
+                open: false,
+            }
+        },
+        isWorkDialogCellSelected(courseDate) {
+            if (!this.workDialog.open) return false
+
+            return this.courseDateScrollKey(this.workDialog.courseDate) === this.courseDateScrollKey(courseDate)
+        },
+        emptyDateWorkForm() {
+            return {
+                date_for_all_groups: this.normalizeDateKey(this.workDialog.courseDate?.date),
+                description: '',
+                groups: [],
+                group_size: null,
+                id: null,
+                is_group_work: false,
+                is_random_groups: false,
+                status: [],
+                teaching_course_id: this.selected_course?.id || null,
+                title: '',
+                type: '',
+            }
+        },
+        startCreatingDateWork() {
+            this.workDialogForm = this.emptyDateWorkForm()
+            this.workDialogFormOpen = true
+        },
+        startEditingDateWork(work) {
+            if (!work?.id) return
+
+            this.workDialogForm = {
+                ...this.emptyDateWorkForm(),
+                ...work,
+                date_for_all_groups: this.normalizeDateKey(work.date_for_all_groups),
+                description: String(work.description || ''),
+                groups: Array.isArray(work.groups) ? work.groups : [],
+                status: Array.isArray(work.status) ? work.status : [],
+                title: String(work.title || ''),
+                type: String(work.type || ''),
+            }
+            this.workDialogFormOpen = true
+        },
+        cancelDateWorkForm() {
+            this.workDialogForm = this.emptyDateWorkForm()
+            this.workDialogFormOpen = false
+        },
+        async saveDateWork() {
+            if (!this.canSaveDateWork) return
+
+            this.workSaving = true
+            try {
+                const payload = {
+                    ...this.workDialogForm,
+                    date_for_all_groups: this.workDialogForm.id
+                        ? this.normalizeDateKey(this.workDialogForm.date_for_all_groups) || null
+                        : this.normalizeDateKey(this.workDialog.courseDate?.date) || null,
+                    description: String(this.workDialogForm.description || '').trim() || null,
+                    teaching_course_id: this.selected_course?.id || this.workDialogForm.teaching_course_id,
+                    title: String(this.workDialogForm.title || '').trim() || null,
+                    type: this.workDialogForm.type || null,
+                }
+                const response = payload.id
+                    ? await this.courseWorkStore.update(payload)
+                    : await this.courseWorkStore.store(payload)
+
+                if (!response) return
+
+                await this.loadCourseWorks()
+                this.cancelDateWorkForm()
+            } finally {
+                this.workSaving = false
+            }
+        },
+        openDeleteWorkDialog(work) {
+            if (!work?.id) return
+
+            this.deleteWorkDialog = {
+                open: true,
+                work,
+            }
+        },
+        closeDeleteWorkDialog() {
+            if (this.workDeleting) return
+
+            this.deleteWorkDialog = {
+                open: false,
+                work: null,
+            }
+        },
+        async confirmDeleteDateWork() {
+            const work = this.deleteWorkDialog.work
+            if (!work?.id || this.workDeleting) return
+
+            this.workDeleting = true
+            try {
+                const deleted = await this.courseWorkStore.destroy(work.id)
+                if (!deleted) return
+
+                if (String(this.workDialogForm.id) === String(work.id)) {
+                    this.cancelDateWorkForm()
+                }
+                await this.loadCourseWorks()
+                this.deleteWorkDialog = {
+                    open: false,
+                    work: null,
+                }
+            } finally {
+                this.workDeleting = false
+            }
+        },
         registeredStudentUserId(student) {
             if (!student) return null
             if (Object.prototype.hasOwnProperty.call(student, 'user_id')) {
@@ -682,6 +1163,66 @@ export default {
                 if (kindComparison !== 0) return kindComparison
 
                 return String(first.type || '').localeCompare(String(second.type || ''), 'de', { sensitivity: 'base' })
+            })
+        },
+        supplementaryEntriesForCell(student, courseDate) {
+            return this.entriesForCell(student, courseDate)
+                .filter((entry) => entry.kind !== 'assessment')
+        },
+        performanceEntriesForCell(student, courseDate) {
+            return this.entriesForCell(student, courseDate)
+                .filter((entry) => entry.kind === 'assessment')
+        },
+        compactPerformanceEntriesForCell(student, courseDate) {
+            const entriesByType = new Map()
+
+            this.performanceEntriesForCell(student, courseDate).forEach((entry) => {
+                const type = String(entry?.type || '').trim()
+                const typeKey = type ? type.toLocaleLowerCase('de-AT') : entry.uid
+                const grade = String(entry?.effective_grade || entry?.grade || '').trim()
+
+                if (!entriesByType.has(typeKey)) {
+                    entriesByType.set(typeKey, {
+                        entry: {
+                            ...entry,
+                            description: null,
+                            effective_grade: '',
+                            grade: '',
+                            uid: `assessment-group-${typeKey}`,
+                        },
+                        grades: [],
+                    })
+                }
+
+                if (grade) {
+                    entriesByType.get(typeKey).grades.push(grade)
+                }
+            })
+
+            return [...entriesByType.values()].map(({ entry, grades }) => ({
+                ...entry,
+                effective_grade: this.sortedCompactEntryGrades(grades).join(', '),
+            }))
+        },
+        sortedCompactEntryGrades(grades) {
+            const gradePriority = new Map([
+                ['++', 0],
+                ['+', 1],
+                ['+/-', 2],
+                ['±', 2],
+                ['-', 3],
+                ['--', 4],
+            ])
+
+            return [...new Set(grades)].sort((first, second) => {
+                const firstPriority = gradePriority.get(first)
+                const secondPriority = gradePriority.get(second)
+
+                if (firstPriority !== undefined || secondPriority !== undefined) {
+                    return (firstPriority ?? Number.MAX_SAFE_INTEGER) - (secondPriority ?? Number.MAX_SAFE_INTEGER)
+                }
+
+                return first.localeCompare(second, 'de', { numeric: true, sensitivity: 'base' })
             })
         },
         cellEntryKindLabel(entry) {
@@ -1319,6 +1860,140 @@ export default {
     line-height: 1.25;
 }
 
+.course-table-work-label,
+.course-table-work-cell {
+    background: linear-gradient(180deg, #eff6ff 0%, #e8f1ff 100%);
+    border-bottom: 2px solid rgba(37, 99, 235, 0.38) !important;
+    border-top: 2px solid rgba(37, 99, 235, 0.38);
+    height: 58px;
+}
+
+.course-table-work-label {
+    color: #1d4ed8;
+    font-size: 0.78rem;
+    font-weight: 850;
+    left: 0;
+    position: sticky;
+    z-index: 2;
+}
+
+.course-table-work-label-content {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+}
+
+.course-table-work-cell--free {
+    background: linear-gradient(180deg, #ecfdf3 0%, #dcfce7 100%);
+}
+
+.course-table-work-cell {
+    cursor: pointer;
+    outline: none;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.course-table-work-cell:hover,
+.course-table-work-cell:focus-visible {
+    background: #dbeafe;
+    box-shadow: inset 0 0 0 2px #3b82f6;
+}
+
+.course-table-work-cell--selected {
+    background: #bfdbfe;
+    box-shadow: inset 0 0 0 3px #1d4ed8;
+}
+
+.course-table-work-list {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    justify-content: center;
+    max-width: 118px;
+    min-height: 40px;
+}
+
+.course-table-work-empty-icon {
+    opacity: 0.45;
+    transition: opacity 0.15s ease, scale 0.15s ease;
+}
+
+.course-table-work-cell:hover .course-table-work-empty-icon,
+.course-table-work-cell:focus-visible .course-table-work-empty-icon {
+    opacity: 1;
+    scale: 1.12;
+}
+
+.course-table-work-summary {
+    background: rgba(37, 99, 235, 0.12);
+    border: 1px solid rgba(37, 99, 235, 0.3);
+    border-radius: 7px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+    box-sizing: border-box;
+    color: #1e3a8a;
+    max-width: 112px;
+    min-width: 112px;
+    padding: 5px 6px;
+    text-align: left;
+}
+
+.course-table-work-summary--group {
+    background: rgba(22, 163, 74, 0.12);
+    border-color: rgba(22, 163, 74, 0.32);
+    color: #166534;
+}
+
+.course-table-work-summary-meta {
+    align-items: center;
+    display: flex;
+    font-size: 0.62rem;
+    font-weight: 800;
+    gap: 3px;
+    line-height: 1;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+}
+
+.course-table-work-summary-title {
+    display: -webkit-box;
+    font-size: 0.7rem;
+    font-weight: 800;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-height: 1.25;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+.course-table-date-work-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.course-table-date-work-item {
+    align-items: flex-start;
+    background: #f8fafc;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    padding: 10px 12px;
+}
+
+.course-table-date-work-main {
+    min-width: 0;
+}
+
+.course-table-date-work-form {
+    background: #f8fafc;
+    border: 1px solid rgba(37, 99, 235, 0.2);
+    border-radius: 10px;
+    padding: 12px;
+}
+
 .course-table-row {
     background: #ffffff;
     transition: background 0.15s ease, box-shadow 0.15s ease;
@@ -1421,6 +2096,15 @@ export default {
 }
 
 .course-table-entry-cell-badges {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    justify-content: center;
+    max-width: 100%;
+}
+
+.course-table-entry-cell-badge-row {
     align-items: center;
     display: flex;
     flex-wrap: wrap;

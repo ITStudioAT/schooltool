@@ -110,6 +110,176 @@ describe('CourseTable', () => {
         expect(methods.freeCourseDateReason.call({}, { status: ['entfaellt'] })).toBe('Entfällt')
     })
 
+    it('shows works at their corresponding dates including group-specific dates', () => {
+        const methods = (CourseTable as any).methods
+        const ctx: Record<string, any> = {
+            courseWorks: [
+                {
+                    id: 1,
+                    type: 'GA',
+                    title: 'Projekt',
+                    is_group_work: true,
+                    date_for_all_groups: '2026-05-10',
+                    groups: [
+                        { date: '2026-05-16', student_ids: [1, 2] },
+                        { date: '2026-05-17', student_ids: [3, 4] },
+                        { date: '2026-05-16T00:00:00.000000Z', student_ids: [5, 6] },
+                    ],
+                },
+                {
+                    id: 2,
+                    type: 'SA',
+                    title: 'Schularbeit',
+                    is_group_work: false,
+                    date_for_all_groups: '2026-05-16',
+                    groups: [],
+                },
+            ],
+        }
+        Object.assign(ctx, methods)
+
+        const assignments = methods.courseWorksForDate.call(ctx, { date: '2026-05-16' })
+
+        expect(assignments.map((assignment: Record<string, any>) => assignment.label)).toEqual([
+            'GA: Projekt (Gr. 1, 3)',
+            'SA: Schularbeit (Einzelarbeit)',
+        ])
+        expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-18' })).toEqual([])
+    })
+
+    it('opens the persistent work dialog for the selected date', () => {
+        const methods = (CourseTable as any).methods
+        const courseDate = { id: 7, date: '2026-05-16' }
+        const ctx = {
+            workDialog: {
+                courseDate: null,
+                open: false,
+            },
+            cancelDateWorkForm: vi.fn(),
+        }
+
+        methods.openWorkDialog.call(ctx, courseDate)
+
+        expect(ctx.cancelDateWorkForm).toHaveBeenCalledTimes(1)
+        expect(ctx.workDialog).toEqual({ courseDate, open: true })
+    })
+
+    it('creates a work for the date selected in the dialog', async () => {
+        const methods = (CourseTable as any).methods
+        const store = vi.fn().mockResolvedValue({ data: { id: 12 } })
+        const loadCourseWorks = vi.fn().mockResolvedValue(true)
+        const cancelDateWorkForm = vi.fn()
+        const ctx = {
+            canSaveDateWork: true,
+            courseWorkStore: { store },
+            loadCourseWorks,
+            cancelDateWorkForm,
+            selected_course: { id: 20 },
+            workDialog: { courseDate: { date: '2026-05-16' }, open: true },
+            workDialogForm: {
+                date_for_all_groups: '',
+                description: 'Kapitel 4',
+                groups: [],
+                group_size: null,
+                id: null,
+                is_group_work: false,
+                is_random_groups: false,
+                status: [],
+                teaching_course_id: 20,
+                title: 'Schularbeit',
+                type: 'SA',
+            },
+            workSaving: false,
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+        }
+
+        await methods.saveDateWork.call(ctx)
+
+        expect(store).toHaveBeenCalledWith({
+            date_for_all_groups: '2026-05-16',
+            description: 'Kapitel 4',
+            groups: [],
+            group_size: null,
+            id: null,
+            is_group_work: false,
+            is_random_groups: false,
+            status: [],
+            teaching_course_id: 20,
+            title: 'Schularbeit',
+            type: 'SA',
+        })
+        expect(loadCourseWorks).toHaveBeenCalledTimes(1)
+        expect(cancelDateWorkForm).toHaveBeenCalledTimes(1)
+        expect(ctx.workSaving).toBe(false)
+    })
+
+    it('updates a work while preserving its group assignments', async () => {
+        const methods = (CourseTable as any).methods
+        const update = vi.fn().mockResolvedValue({ data: { id: 12 } })
+        const groups = [{ date: '2026-05-16', student_ids: [1, 2], grade: '2' }]
+        const ctx = {
+            canSaveDateWork: true,
+            courseWorkStore: { update },
+            loadCourseWorks: vi.fn().mockResolvedValue(true),
+            cancelDateWorkForm: vi.fn(),
+            selected_course: { id: 20 },
+            workDialog: { courseDate: { date: '2026-05-16' }, open: true },
+            workDialogForm: {
+                date_for_all_groups: '2026-05-16',
+                description: 'Überarbeitet',
+                groups,
+                group_size: 2,
+                id: 12,
+                is_group_work: true,
+                is_random_groups: false,
+                status: [],
+                teaching_course_id: 20,
+                title: 'Projekt',
+                type: 'GA',
+            },
+            workSaving: false,
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+        }
+
+        await methods.saveDateWork.call(ctx)
+
+        expect(update).toHaveBeenCalledWith(expect.objectContaining({
+            id: 12,
+            date_for_all_groups: '2026-05-16',
+            description: 'Überarbeitet',
+            groups,
+            is_group_work: true,
+            title: 'Projekt',
+            type: 'GA',
+        }))
+    })
+
+    it('removes a work from the date dialog after confirmation', async () => {
+        const methods = (CourseTable as any).methods
+        const destroy = vi.fn().mockResolvedValue(true)
+        const loadCourseWorks = vi.fn().mockResolvedValue(true)
+        const cancelDateWorkForm = vi.fn()
+        const work = { id: 12, title: 'Schularbeit' }
+        const ctx = {
+            courseWorkStore: { destroy },
+            deleteWorkDialog: { open: true, work },
+            loadCourseWorks,
+            cancelDateWorkForm,
+            workDeleting: false,
+            workDialogForm: { id: 12 },
+        }
+
+        await methods.confirmDeleteDateWork.call(ctx)
+
+        expect(destroy).toHaveBeenCalledWith(12)
+        expect(loadCourseWorks).toHaveBeenCalledTimes(1)
+        expect(cancelDateWorkForm).toHaveBeenCalledTimes(1)
+        expect(ctx.deleteWorkDialog).toEqual({ open: false, work: null })
+        expect(ctx.workDeleting).toBe(false)
+    })
+
     it('only enables attendance markers for non-free dates that are not in the future', () => {
         const methods = (CourseTable as any).methods
         vi.useFakeTimers()
@@ -306,6 +476,44 @@ describe('CourseTable', () => {
             'behaviour-5',
             'behaviour-6',
         ])
+    })
+
+    it('separates behaviour and other entries from performance entries in table cells', () => {
+        const methods = (CourseTable as any).methods
+        const entries = [
+            { uid: 'assessment-1', kind: 'assessment' },
+            { uid: 'behaviour-2', kind: 'behaviour' },
+            { uid: 'behaviour-3', kind: 'notification' },
+            { uid: 'assessment-4', kind: 'assessment' },
+        ]
+        const ctx = {
+            entriesForCell: vi.fn().mockReturnValue(entries),
+        }
+
+        expect(methods.supplementaryEntriesForCell.call(ctx, { id: 10 }, { id: 7 }))
+            .toEqual([entries[1], entries[2]])
+        expect(methods.performanceEntriesForCell.call(ctx, { id: 10 }, { id: 7 }))
+            .toEqual([entries[0], entries[3]])
+    })
+
+    it('compacts performance entries with the same type into one cell chip', () => {
+        const methods = (CourseTable as any).methods
+        const entries = [
+            { uid: 'assessment-1', kind: 'assessment', type: 'MA', grade: '-' },
+            { uid: 'assessment-2', kind: 'assessment', type: 'MA', grade: '+' },
+            { uid: 'assessment-3', kind: 'assessment', type: 'MA', effective_grade: '+' },
+            { uid: 'assessment-4', kind: 'assessment', type: 'SA', grade: '2' },
+        ]
+        const ctx = {
+            performanceEntriesForCell: vi.fn().mockReturnValue(entries),
+            sortedCompactEntryGrades: methods.sortedCompactEntryGrades,
+        }
+
+        const compactEntries = methods.compactPerformanceEntriesForCell.call(ctx, { id: 10 }, { id: 7 })
+
+        expect(compactEntries).toHaveLength(2)
+        expect(compactEntries.map((entry: Record<string, unknown>) => methods.compactCellEntryLabel.call({}, entry)))
+            .toEqual(['MA: +, -', 'SA: 2'])
     })
 
     it('builds compact labels for entries rendered inside table cells', () => {
@@ -724,6 +932,26 @@ describe('CourseTable', () => {
         expect(source).toContain('Einträge')
         expect(source).toContain('position: sticky;')
         expect(source).toContain('class="course-table-title-row"')
+        expect(source).toContain('class="course-table-work-row"')
+        expect(source).toContain('class="course-table-work-label-content"')
+        expect(source).toContain('<span>Arbeiten</span>')
+        expect(source).toContain('mdi-plus-circle-outline')
+        expect(source).toContain('v-for="work in courseWorksForDate(courseDate)"')
+        expect(source).toContain('class="course-table-work-summary"')
+        expect(source).toContain('class="course-table-work-summary-title"')
+        expect(source).toContain('{{ work.work.title || work.label }}')
+        expect(source).toContain('<v-icon size="13">mdi-clipboard-text</v-icon>')
+        expect(source).toContain('@click="openWorkDialog(courseDate)"')
+        expect(source).toContain('@keydown.enter.prevent="openWorkDialog(courseDate)"')
+        expect(source).toContain('<v-dialog v-model="workDialog.open" persistent max-width="720">')
+        expect(source).toContain('data-testid="course-table-date-create-work"')
+        expect(source).toContain('course-table-date-edit-work-${assignment.id}')
+        expect(source).toContain('course-table-date-delete-work-${assignment.id}')
+        expect(source).toContain('<v-dialog v-model="deleteWorkDialog.open" persistent max-width="460">')
+        expect(source).toContain('@click="saveDateWork"')
+        expect(source).toContain('@click="confirmDeleteDateWork"')
+        expect(source.indexOf('class="course-table-title-row"')).toBeLessThan(source.indexOf('class="course-table-work-row"'))
+        expect(source.indexOf('class="course-table-work-row"')).toBeLessThan(source.indexOf('v-for="(student, studentIndex) in sortedSelectedStudents"'))
         expect(source).toContain('class="course-table-date-attendance-actions"')
         expect(source).toContain('class="course-table-date-attendance-action"')
         expect(source).toContain('@click.stop="openBulkAttendanceDialog(courseDate, true)"')
@@ -758,7 +986,12 @@ describe('CourseTable', () => {
         expect(source).toContain('background: rgba(var(--v-theme-error), 0.14) !important;')
         expect(source).toContain('data-testid="course-table-entry-cell-badges"')
         expect(source).toContain("v-if=\"tableView === 'entries' && entriesForCell(student, courseDate).length\"")
-        expect(source).toContain('v-for="entry in entriesForCell(student, courseDate)"')
+        expect(source).toContain('data-testid="course-table-entry-cell-supplementary-row"')
+        expect(source).toContain('v-for="entry in supplementaryEntriesForCell(student, courseDate)"')
+        expect(source).toContain('data-testid="course-table-entry-cell-performance-row"')
+        expect(source).toContain('v-for="entry in compactPerformanceEntriesForCell(student, courseDate)"')
+        expect(source.indexOf('data-testid="course-table-entry-cell-supplementary-row"'))
+            .toBeLessThan(source.indexOf('data-testid="course-table-entry-cell-performance-row"'))
         expect(source).toContain('compactCellEntryLabel(entry)')
         expect(source).toContain("'course-table-entry-cell--selected': isEntryDialogCellSelected(student, courseDate)")
         expect(source).toContain('@click="openEntryDialog(student, courseDate)"')
