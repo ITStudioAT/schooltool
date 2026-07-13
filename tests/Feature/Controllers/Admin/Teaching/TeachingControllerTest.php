@@ -287,6 +287,35 @@ describe('school isolation', function () {
             expect($record['school_id'])->toBe($this->school->id);
         }
     });
+
+    test('only returns records from users own schoolyear', function () {
+        $this->withoutMiddleware();
+        $this->actingAs($this->admin, 'sanctum');
+
+        $currentSchoolyearRecords = Import116::factory()->count(2)->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        Import116::factory()->count(3)->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $response = $this->getJson('/api/admin/teaching/search116');
+
+        $response->assertOk();
+
+        expect($response->json('data'))->toHaveCount(2)
+            ->and(collect($response->json('data'))->pluck('id')->all())
+            ->toEqualCanonicalizing($currentSchoolyearRecords->pluck('id')->all());
+    });
 });
 
 // ============================================================================

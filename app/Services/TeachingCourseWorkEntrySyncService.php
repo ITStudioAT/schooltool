@@ -416,7 +416,8 @@ class TeachingCourseWorkEntrySyncService
             $importAliasId = (int) ($courseStudent->import116_id ?: 0);
             $studentId = $this->courseService->resolveCourseStudentUserId(
                 $courseStudent,
-                (int) $course->school_id
+                (int) $course->school_id,
+                $course->schoolyear_id ? (int) $course->schoolyear_id : null
             ) ?? 0;
 
             if (! $studentId) {

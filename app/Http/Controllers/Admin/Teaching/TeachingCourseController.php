@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Teaching\CourseResource;
 use App\Http\Resources\Admin\Teaching\StudentResource;
 use App\Models\Import116;
+use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCurriculum;
+use App\Models\TeachingEntryArea;
 use App\Models\User;
 use App\Services\TeachingCourseService;
 use App\Services\TeachingCourseWorkEntrySyncService;
@@ -22,6 +24,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 
 class TeachingCourseController extends Controller
 {
@@ -37,6 +40,7 @@ class TeachingCourseController extends Controller
         $coursesQuery = TeachingCourse::with([
             'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour,teaching_student_grade_columns_by_schoolyear',
             'teachingCurriculum:id,school_id,schoolyear_id,user_id,title,description,semester_count',
+            'teachingEntryArea:id,name',
             'teachingCourseDates' => fn ($q) => $q->orderBy('date')->orderByRaw('JSON_EXTRACT(hours, "$[0]")'),
             'teachingCourseDates.materials.attachments',
             'teachingCourseStudents',
@@ -79,13 +83,26 @@ class TeachingCourseController extends Controller
             : User::whereIn('id', $userIds)->get()->keyBy('id');
         $importsById = $importIds->isEmpty()
             ? collect()
-            : Import116::where('school_id', $auth_user->school_id)->whereIn('id', $importIds)->get()->keyBy('id');
+            : Import116::query()
+                ->where('school_id', $auth_user->school_id)
+                ->where('schoolyear_id', $auth_user->schoolyear_id)
+                ->whereIn('id', $importIds)
+                ->get()
+                ->keyBy('id');
 
         $teachingService = new TeachingService;
         $schemaCache = [];
+        $authEntryAreas = $this->teachingEntryAreasForUser($auth_user, $auth_user->schoolyear_id, $auth_user->school_id);
+        $entryAreaCache = [
+            implode(':', [
+                (string) $auth_user->id,
+                (string) $auth_user->school_id,
+                (string) $auth_user->schoolyear_id,
+            ]) => $authEntryAreas,
+        ];
         $removalReasonsByCourseId = $service->removalReasonsForCourses($courses);
 
-        $courses->each(function (TeachingCourse $course) use ($auth_user, $studentsById, $importsById, $request, $teachingService, &$schemaCache, $removalReasonsByCourseId) {
+        $courses->each(function (TeachingCourse $course) use ($auth_user, $studentsById, $importsById, $request, $teachingService, &$schemaCache, &$entryAreaCache, $removalReasonsByCourseId) {
             $removalReasons = $removalReasonsByCourseId[(int) $course->id] ?? [];
             $courseActor = $this->teachingCourseActor($auth_user, $course);
             $courseSchema = $this->teachingSchemaForCourse($courseActor, $course, $teachingService, $schemaCache);
@@ -113,6 +130,7 @@ class TeachingCourseController extends Controller
             $course->setAttribute('students', $activeStudents);
             $course->setAttribute('students_deleted', $deletedStudents);
             $course->setAttribute('teacher_teaching_schema', $courseSchema);
+            $course->setAttribute('teacher_teaching_entry_areas', $this->teachingEntryAreasForCourse($courseActor, $course, $entryAreaCache));
             $course->setAttribute('teacher_teaching_behaviour', $this->teachingBehaviourForSchoolyear($courseActor, $course->schoolyear_id));
             $course->setAttribute('teacher_teaching_notifications', $this->teachingNotificationsForSchoolyear($courseActor, $course->schoolyear_id));
             $course->setAttribute('teacher_teaching_show_behaviour', (bool) ($courseActor->teaching_show_behaviour ?? true));
@@ -128,6 +146,8 @@ class TeachingCourseController extends Controller
         return response()->json([
             'data' => CourseResource::collection($courses),
             'classes' => $classes,
+            'entry_areas' => $authEntryAreas,
+            'uses_entry_areas_for_grading_schema' => $this->usesEntryAreasForSchoolyear($auth_user->schoolyear_id),
         ]);
     }
 
@@ -233,7 +253,15 @@ class TeachingCourseController extends Controller
             ->distinct()
             ->orderBy('class')
             ->pluck('class');
-        $schemaIds = (new TeachingService)->schemaIdsForUser($auth_user, $auth_user->schoolyear_id);
+        $usesEntryAreasForGradingSchema = $this->usesEntryAreasForSchoolyear($auth_user->schoolyear_id);
+        $teachingService = new TeachingService;
+
+        if ($usesEntryAreasForGradingSchema) {
+            $teachingService->ensureDefaultSchema($auth_user, $auth_user->schoolyear_id);
+        }
+
+        $schemaIds = $teachingService->schemaIdsForUser($auth_user, $auth_user->schoolyear_id);
+        $entryAreaRule = $this->entryAreaRuleForUser($auth_user, $auth_user->schoolyear_id);
         $curriculumRule = Rule::exists(TeachingCurriculum::query()->getModel()->getTable(), 'id')
             ->where(fn (Builder $query) => $query
                 ->where('school_id', $auth_user->school_id)
@@ -245,6 +273,7 @@ class TeachingCourseController extends Controller
             'classes' => 'required|array|min:1',
             'classes.*' => ['required', 'string', Rule::in($classes)],
             'students' => 'nullable|array',
+            'students.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $auth_user->school_id, $auth_user->schoolyear_id)],
             'students.*.stars' => 'nullable|array',
             'students.*.stars.*.id' => 'nullable|string|max:64',
             'students.*.stars.*.value' => 'nullable|integer|in:1',
@@ -252,11 +281,15 @@ class TeachingCourseController extends Controller
             'students.*.stars.*.date' => 'nullable|date',
             'students.*.canceled_at' => 'nullable|date',
             'students_info' => 'nullable|array',
+            'students_info.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $auth_user->school_id, $auth_user->schoolyear_id)],
             'students_info.*.canceled_at' => 'nullable|date',
             'students_deleted' => 'nullable|array',
+            'students_deleted.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $auth_user->school_id, $auth_user->schoolyear_id)],
             'students_deleted_info' => 'nullable|array',
+            'students_deleted_info.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $auth_user->school_id, $auth_user->schoolyear_id)],
             'students_deleted_info.*.canceled_at' => 'nullable|date',
-            'teaching_schema_id' => ['required', 'string', 'max:36', Rule::in($schemaIds)],
+            'teaching_schema_id' => [Rule::excludeIf($usesEntryAreasForGradingSchema), 'required', 'string', 'max:36', Rule::in($schemaIds)],
+            'teaching_entry_area_id' => [Rule::excludeIf(! $usesEntryAreasForGradingSchema), 'required', 'integer', $entryAreaRule],
             'teaching_curriculum_id' => ['nullable', 'integer', $curriculumRule],
         ]);
 
@@ -284,7 +317,8 @@ class TeachingCourseController extends Controller
             'user_id' => $auth_user->id,
             'title' => $validated['title'],
             'classes' => $sortedClasses,
-            'teaching_schema_id' => $validated['teaching_schema_id'] ?? null,
+            'teaching_schema_id' => $validated['teaching_schema_id'] ?? $schemaIds->first(),
+            'teaching_entry_area_id' => $validated['teaching_entry_area_id'] ?? null,
             'teaching_curriculum_id' => $validated['teaching_curriculum_id'] ?? null,
         ]);
 
@@ -319,7 +353,15 @@ class TeachingCourseController extends Controller
             ->orderBy('class')
             ->pluck('class');
         $courseActor = $this->teachingCourseActor($auth_user, $course);
-        $schemaIds = (new TeachingService)->schemaIdsForUser($courseActor, $course->schoolyear_id);
+        $usesEntryAreasForGradingSchema = $this->usesEntryAreasForSchoolyear($course->schoolyear_id);
+        $teachingService = new TeachingService;
+
+        if ($usesEntryAreasForGradingSchema) {
+            $teachingService->ensureDefaultSchema($courseActor, $course->schoolyear_id);
+        }
+
+        $schemaIds = $teachingService->schemaIdsForUser($courseActor, $course->schoolyear_id);
+        $entryAreaRule = $this->entryAreaRuleForUser($courseActor, $course->schoolyear_id);
         $curriculumRule = Rule::exists(TeachingCurriculum::query()->getModel()->getTable(), 'id')
             ->where(fn (Builder $query) => $query
                 ->where('school_id', $course->school_id)
@@ -332,6 +374,7 @@ class TeachingCourseController extends Controller
             'classes' => 'required|array|min:1',
             'classes.*' => ['required', 'string', Rule::in($classes)],
             'students' => 'nullable|array',
+            'students.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $course->school_id, $course->schoolyear_id)],
             'students.*.stars' => 'nullable|array',
             'students.*.stars.*.id' => 'nullable|string|max:64',
             'students.*.stars.*.value' => 'nullable|integer|in:1',
@@ -339,11 +382,15 @@ class TeachingCourseController extends Controller
             'students.*.stars.*.date' => 'nullable|date',
             'students.*.canceled_at' => 'nullable|date',
             'students_info' => 'nullable|array',
+            'students_info.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $course->school_id, $course->schoolyear_id)],
             'students_info.*.canceled_at' => 'nullable|date',
             'students_deleted' => 'nullable|array',
+            'students_deleted.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $course->school_id, $course->schoolyear_id)],
             'students_deleted_info' => 'nullable|array',
+            'students_deleted_info.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $course->school_id, $course->schoolyear_id)],
             'students_deleted_info.*.canceled_at' => 'nullable|date',
-            'teaching_schema_id' => ['required', 'string', 'max:36', Rule::in($schemaIds)],
+            'teaching_schema_id' => [Rule::excludeIf($usesEntryAreasForGradingSchema), 'required', 'string', 'max:36', Rule::in($schemaIds)],
+            'teaching_entry_area_id' => [Rule::excludeIf(! $usesEntryAreasForGradingSchema), 'required', 'integer', $entryAreaRule],
             'teaching_curriculum_id' => ['nullable', 'integer', $curriculumRule],
         ]);
 
@@ -369,7 +416,10 @@ class TeachingCourseController extends Controller
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
             'classes' => $sortedClasses,
-            'teaching_schema_id' => $validated['teaching_schema_id'],
+            'teaching_schema_id' => $validated['teaching_schema_id'] ?? $course->teaching_schema_id ?? $schemaIds->first(),
+            'teaching_entry_area_id' => array_key_exists('teaching_entry_area_id', $validated)
+                ? $validated['teaching_entry_area_id']
+                : $course->teaching_entry_area_id,
             'teaching_curriculum_id' => $validated['teaching_curriculum_id'] ?? null,
         ]);
 
@@ -428,6 +478,83 @@ class TeachingCourseController extends Controller
         $schema = $schemaCache[$cacheKey]->get($schemaId);
 
         return is_array($schema) ? Arr::only($schema, ['id', 'name', 'works', 'grading']) : null;
+    }
+
+    /**
+     * @param  array<string, array<int, array{id: int, name: string}>>  $entryAreaCache
+     * @return array<int, array{id: int, name: string}>
+     */
+    private function teachingEntryAreasForCourse(User $courseActor, TeachingCourse $course, array &$entryAreaCache): array
+    {
+        $cacheKey = implode(':', [
+            (string) $courseActor->id,
+            (string) $course->school_id,
+            (string) $course->schoolyear_id,
+        ]);
+
+        if (! array_key_exists($cacheKey, $entryAreaCache)) {
+            $entryAreaCache[$cacheKey] = $this->teachingEntryAreasForUser($courseActor, $course->schoolyear_id, $course->school_id);
+        }
+
+        return $entryAreaCache[$cacheKey];
+    }
+
+    /** @return array<int, array{id: int, name: string}> */
+    private function teachingEntryAreasForUser(User $user, ?int $schoolyearId, ?int $schoolId): array
+    {
+        if (! $schoolyearId || ! $schoolId) {
+            return [];
+        }
+
+        return TeachingEntryArea::query()
+            ->whereBelongsTo($user)
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (TeachingEntryArea $entryArea): array => [
+                'id' => (int) $entryArea->id,
+                'name' => $entryArea->name,
+            ])
+            ->all();
+    }
+
+    private function entryAreaRuleForUser(User $user, ?int $schoolyearId): Exists
+    {
+        return Rule::exists((new TeachingEntryArea)->getTable(), 'id')
+            ->where(fn (Builder $query) => $query
+                ->where('school_id', $user->school_id)
+                ->where('schoolyear_id', $schoolyearId)
+                ->where('user_id', $user->id));
+    }
+
+    private function import116RuleForSchoolyear(int $schoolId, ?int $schoolyearId): Exists
+    {
+        return Rule::exists((new Import116)->getTable(), 'id')
+            ->where(fn (Builder $query) => $query
+                ->where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId));
+    }
+
+    private function usesEntryAreasForSchoolyear(?int $schoolyearId): bool
+    {
+        if (! $schoolyearId) {
+            return false;
+        }
+
+        $schoolyear = Schoolyear::query()->find($schoolyearId, ['concerns', 'name', 'from']);
+
+        if (! $schoolyear) {
+            return false;
+        }
+
+        foreach ([$schoolyear->concerns, $schoolyear->name, $schoolyear->from] as $schoolyearLabel) {
+            if (preg_match('/(?:19|20)\d{2}/', (string) $schoolyearLabel, $matches) === 1) {
+                return (int) $matches[0] >= 2026;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -513,6 +640,10 @@ class TeachingCourseController extends Controller
         Request $request,
         array $removalReasons = []
     ): ?array {
+        if ($courseStudent->import116_id && ! $importsById->has((int) $courseStudent->import116_id)) {
+            return null;
+        }
+
         $source = $this->courseStudentPayloadSource($courseStudent, $studentsById, $importsById);
 
         if ($source === 'user') {

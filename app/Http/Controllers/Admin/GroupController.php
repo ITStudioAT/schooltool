@@ -2138,7 +2138,13 @@ class GroupController extends Controller
                 }
 
                 if ($studentName !== '') {
-                    $contacts[$key]['children'][$studentName] = $studentName;
+                    $contacts[$key]['children'][(int) $row->id] = [
+                        'id' => (int) $row->id,
+                        'name' => $studentName,
+                        'last_name' => trim((string) ($row->last_name ?? '')),
+                        'first_name' => trim((string) ($row->first_name ?? '')),
+                        'schoolclass' => $schoolclass,
+                    ];
                 }
                 if ($schoolclass !== '') {
                     $contacts[$key]['classes'][$schoolclass] = $schoolclass;
@@ -2148,14 +2154,31 @@ class GroupController extends Controller
 
         return collect($contacts)
             ->map(function (array $contact) {
-                $children = array_values($contact['children']);
-                sort($children, SORT_NATURAL | SORT_FLAG_CASE);
+                $children = collect($contact['children'])
+                    ->sort(function (array $left, array $right): int {
+                        $lastNameComparison = strnatcasecmp(
+                            trim((string) ($left['last_name'] ?? '')),
+                            trim((string) ($right['last_name'] ?? '')),
+                        );
+
+                        if ($lastNameComparison !== 0) {
+                            return $lastNameComparison;
+                        }
+
+                        return strnatcasecmp(
+                            trim((string) ($left['first_name'] ?? '')),
+                            trim((string) ($right['first_name'] ?? '')),
+                        );
+                    })
+                    ->values()
+                    ->all();
                 $classes = array_values($contact['classes']);
                 sort($classes, SORT_NATURAL | SORT_FLAG_CASE);
 
-                $contact['children_label'] = implode(', ', $children);
+                $contact['children'] = $children;
+                $contact['children_label'] = collect($children)->pluck('name')->implode(', ');
                 $contact['schoolclass'] = implode(', ', $classes);
-                unset($contact['children'], $contact['classes']);
+                unset($contact['classes']);
 
                 return $contact;
             })
@@ -2909,7 +2932,7 @@ class GroupController extends Controller
     }
 
     /**
-     * @param  array{name:string,email:string,phone:string,schoolclass?:string|null,children_label?:string|null,id?:string}  $contact
+     * @param  array{name:string,email:string,phone:string,schoolclass?:string|null,children_label?:string|null,children?:array<int, array<string, mixed>>,id?:string}  $contact
      * @return array<string, mixed>
      */
     private function payloadForParentContact(int $schoolId, int $schoolyearId, array $contact): array
@@ -2931,6 +2954,7 @@ class GroupController extends Controller
             'display_phone' => $contact['phone'] ?? null,
             'display_schoolclass' => $contact['schoolclass'] ?? null,
             'display_children_label' => $contact['children_label'] ?? null,
+            'children' => $contact['children'] ?? [],
             'member_type_label' => 'Eltern',
             'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
             'linked_user_status' => $linkedUser
@@ -3063,6 +3087,7 @@ class GroupController extends Controller
             'schoolclass' => $payload['display_schoolclass'] ?? null,
             'phone' => $payload['display_phone'] ?? null,
             'children_label' => $payload['display_children_label'] ?? null,
+            'children' => $payload['children'] ?? [],
             'member_type_label' => $payload['member_type_label'] ?? null,
             'member_provider' => $provider,
             'member_ref' => $memberRef,

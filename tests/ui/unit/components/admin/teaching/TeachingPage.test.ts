@@ -556,6 +556,18 @@ describe('Teaching page navigation', () => {
         expect(source).toContain('title="Neues Fach anlegen"')
     })
 
+    it('keeps the course list visible with an empty state when no courses exist', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/Teaching.vue', 'utf8')
+        )
+
+        expect(source).toContain('v-if="main_action === \'overview\'"')
+        expect(source).not.toContain('v-if="courses.length && main_action === \'overview\'"')
+        expect(source).toContain('v-if="!courses.length" class="teaching-subnav__empty" role="status"')
+        expect(source).toContain('Noch keine Fächer vorhanden.')
+        expect(source).toContain('.teaching-subnav__empty {')
+    })
+
     it('stacks subnav actions below a two-column course grid on small screens', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/Teaching.vue', 'utf8')

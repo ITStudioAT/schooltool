@@ -64,6 +64,55 @@ describe('Admin Teaching CourseStore', () => {
         expect(store.selected_course?.students_info).toEqual([{ id: 10, first_name: 'Anna' }])
     })
 
+    it('stores the authenticated users entry areas from the course index response', async () => {
+        axiosMock.get.mockResolvedValue({
+            data: {
+                data: [],
+                classes: ['1A'],
+                entry_areas: [
+                    { id: 11, name: 'DGB' },
+                    { id: 4, name: 'INF' },
+                ],
+                uses_entry_areas_for_grading_schema: true,
+            },
+        })
+
+        const store = useCourseStore()
+
+        await expect(store.index()).resolves.toBe(true)
+        expect(store.entry_areas).toEqual([
+            { id: 11, name: 'DGB' },
+            { id: 4, name: 'INF' },
+        ])
+        expect(store.uses_entry_areas_for_grading_schema).toBe(true)
+    })
+
+    it('stores a course with a Bereich and without a legacy schema in new schoolyears', async () => {
+        axiosMock.post.mockResolvedValue({ data: { id: 5 } })
+        const store = useCourseStore()
+        store.uses_entry_areas_for_grading_schema = true
+        const payload = {
+            title: 'Mathematik',
+            teaching_schema_id: null,
+            teaching_entry_area_id: 11,
+            students: [],
+            students_deleted: [],
+        }
+
+        await expect(store.store(payload)).resolves.toEqual({ id: 5 })
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/teaching/courses', payload)
+        expect(notifyMock).not.toHaveBeenCalled()
+    })
+
+    it('rejects a legacy schema without a Bereich in new schoolyears', async () => {
+        const store = useCourseStore()
+        store.uses_entry_areas_for_grading_schema = true
+
+        await expect(store.store({ teaching_schema_id: 'legacy', teaching_entry_area_id: null })).resolves.toBe(false)
+        expect(axiosMock.post).not.toHaveBeenCalled()
+        expect(notifyMock).toHaveBeenCalledWith(expect.objectContaining({ status: 422 }))
+    })
+
     it('refreshCourseById returns null when course does not exist after reload', async () => {
         axiosMock.get.mockResolvedValue({
             data: {
@@ -82,9 +131,11 @@ describe('Admin Teaching CourseStore', () => {
 
     it('reuses the same in-flight course index request for concurrent callers', async () => {
         let resolveRequest: ((value: unknown) => void) | null = null
-        axiosMock.get.mockReturnValueOnce(new Promise((resolve) => {
-            resolveRequest = resolve
-        }))
+        axiosMock.get.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveRequest = resolve
+            })
+        )
 
         const store = useCourseStore()
         const firstRequest = store.index()

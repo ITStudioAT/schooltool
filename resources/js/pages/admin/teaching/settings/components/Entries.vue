@@ -42,8 +42,62 @@
                 <div class="text-subtitle-1 font-weight-bold">Ersten Bereich anlegen</div>
                 <div class="text-body-2 text-medium-emphasis">Zum Beispiel Unterstufe, Oberstufe oder Wahlpflichtfach.</div>
             </div>
-            <v-btn color="primary" variant="flat" rounded="lg" @click="openCreateAreaDialog">Bereich erstellen</v-btn>
+            <div class="entry-empty-actions">
+                <v-btn
+                    v-if="previousYearImportOffer"
+                    color="primary"
+                    variant="tonal"
+                    rounded="lg"
+                    prepend-icon="mdi-calendar-import"
+                    @click="openPreviousYearImport">
+                    Aus Vorjahr übernehmen
+                </v-btn>
+                <v-btn color="primary" variant="flat" rounded="lg" @click="openCreateAreaDialog">Bereich erstellen</v-btn>
+            </div>
         </div>
+
+        <v-dialog v-model="previousYearImportDialogOpen" persistent max-width="560">
+            <v-card rounded="xl">
+                <v-card-title class="dialog-header">
+                    <div class="dialog-title-group">
+                        <span class="dialog-icon"><v-icon icon="mdi-calendar-import" /></span>
+                        <div>
+                            <div class="dialog-eyebrow">Bereiche</div>
+                            <div>Aus dem Vorjahr übernehmen?</div>
+                        </div>
+                    </div>
+                </v-card-title>
+                <v-card-text class="dialog-body">
+                    <v-alert type="info" variant="tonal">
+                        Für das aktuelle Schuljahr sind noch keine Bereiche vorhanden. Möchten Sie
+                        <strong>
+                            {{ previousYearImportOffer?.area_count }}
+                            {{ previousYearImportOffer?.area_count === 1 ? 'Bereich' : 'Bereiche' }}
+                        </strong>
+                        mit
+                        <strong>
+                            {{ previousYearImportOffer?.entry_count }}
+                            {{ previousYearImportOffer?.entry_count === 1 ? 'Eintrag' : 'Einträgen' }}
+                        </strong>
+                        aus dem Schuljahr
+                        <strong>{{ previousYearImportOffer?.schoolyear?.label }}</strong>
+                        übernehmen?
+                    </v-alert>
+                </v-card-text>
+                <v-card-actions class="dialog-actions">
+                    <v-btn variant="text" :disabled="isImportingPreviousYear" @click="declinePreviousYearImport">Nein</v-btn>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        rounded="lg"
+                        prepend-icon="mdi-calendar-import"
+                        :loading="isImportingPreviousYear"
+                        @click="importPreviousYearAreas">
+                        Übernehmen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <template v-if="areas.length">
             <div class="entry-section-header mt-7">
@@ -348,12 +402,15 @@ export default {
             areaDialogOpen: false,
             areaDeleteDialogOpen: false,
             entryCopyDialogOpen: false,
+            previousYearImportDialogOpen: false,
+            previousYearImportOffer: null,
             isLoading: false,
             isSaving: false,
             isDeleting: false,
             isSavingArea: false,
             isDeletingArea: false,
             isCopyingEntries: false,
+            isImportingPreviousYear: false,
             selectedEntryId: null,
             deleteEntryId: null,
             editingAreaId: null,
@@ -423,6 +480,7 @@ export default {
                 const [areaResponse, entryResponse] = await Promise.all([axios.get('/api/admin/teaching/entry_areas'), axios.get('/api/admin/teaching/entry_definitions')])
                 this.areas = areaResponse.data?.data || []
                 this.entries = entryResponse.data?.data || []
+                this.previousYearImportOffer = areaResponse.data?.meta?.previous_year_import || null
                 if (!this.areas.some((area) => area.id === this.activeAreaId)) this.activeAreaId = this.areas[0]?.id || null
             } catch (error) {
                 this.notifyError(error)
@@ -561,6 +619,36 @@ export default {
                 this.notifyError(error)
             } finally {
                 this.isCopyingEntries = false
+            }
+        },
+        openPreviousYearImport() {
+            if (!this.previousYearImportOffer) return
+            this.previousYearImportDialogOpen = true
+        },
+        declinePreviousYearImport() {
+            if (this.isImportingPreviousYear) return
+            this.previousYearImportDialogOpen = false
+        },
+        async importPreviousYearAreas() {
+            if (!this.previousYearImportOffer) return
+
+            this.isImportingPreviousYear = true
+            try {
+                const response = await axios.post('/api/admin/teaching/entry-area-imports')
+                this.areas = response.data?.data?.areas || []
+                this.entries = response.data?.data?.entries || []
+                this.activeAreaId = this.areas[0]?.id || null
+                this.previousYearImportOffer = null
+                this.previousYearImportDialogOpen = false
+                const importedAreaCount = Number(response.data.imported_area_count || 0)
+                const importedEntryCount = Number(response.data.imported_entry_count || 0)
+                this.notifySuccess(
+                    `${importedAreaCount} ${importedAreaCount === 1 ? 'Bereich' : 'Bereiche'} und ${importedEntryCount} ${importedEntryCount === 1 ? 'Eintrag' : 'Einträge'} wurden übernommen.`,
+                )
+            } catch (error) {
+                this.notifyError(error)
+            } finally {
+                this.isImportingPreviousYear = false
             }
         },
         openCreateAreaDialog() {
@@ -750,6 +838,12 @@ export default {
 }
 .entry-empty-area > div:nth-child(2) {
     flex: 1;
+}
+.entry-empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
 }
 .entry-tabs {
     border-bottom: 1px solid rgba(var(--v-border-color), 0.15);

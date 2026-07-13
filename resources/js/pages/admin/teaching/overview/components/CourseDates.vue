@@ -50,6 +50,16 @@
                 </v-chip>
                 <v-spacer />
                 <v-chip
+                    v-if="selectedCourseEntryAreaName"
+                    size="small"
+                    color="secondary"
+                    variant="tonal"
+                    class="course-date-entry-area-chip"
+                    prepend-icon="mdi-layers-triple-outline"
+                    title="Zugewiesener Eintragsbereich">
+                    {{ selectedCourseEntryAreaName }}
+                </v-chip>
+                <v-chip
                     v-if="selectedCourseCurriculumTitle"
                     size="small"
                     color="primary"
@@ -736,6 +746,9 @@ export default {
             if (!curriculum?.id) return ''
 
             return curriculum.title || `Curriculum #${curriculum.id}`
+        },
+        selectedCourseEntryAreaName() {
+            return String(this.selected_course?.teaching_entry_area?.name || '').trim()
         },
         semesterCount() {
             const grading = this.selectedCourseSchema?.grading || {}

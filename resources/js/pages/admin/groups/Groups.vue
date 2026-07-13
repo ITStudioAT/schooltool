@@ -581,13 +581,20 @@
                             <template v-if="assignUsersDialog.readOnly">
                                 <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
                                     <div>
-                                        <div class="admin-card-eyebrow">Mitglieder</div>
+                                        <div class="admin-card-eyebrow">
+                                            {{ isParentGroup(assignUsersDialog.group) ? 'Schüler:innen und Eltern' : 'Mitglieder' }}
+                                        </div>
                                         <div class="text-caption text-medium-emphasis">
-                                            Registrierte Einträge sind mit einem Symbol markiert.
+                                            <template v-if="isParentGroup(assignUsersDialog.group)">
+                                                Nach Nachname des Kindes sortiert. Die Eltern stehen direkt beim jeweiligen Kind.
+                                            </template>
+                                            <template v-else>
+                                                Registrierte Einträge sind mit einem Symbol markiert.
+                                            </template>
                                         </div>
                                     </div>
                                     <v-chip color="secondary" variant="flat" size="x-small">
-                                        {{ readOnlyCombinedMembers().length }}
+                                        {{ isParentGroup(assignUsersDialog.group) ? `${readOnlyParentGroups().length} Kinder` : readOnlyCombinedMembers().length }}
                                     </v-chip>
                                 </div>
                                 <div class="sa-empty" v-if="readOnlyCombinedMembersLoading()">
@@ -595,6 +602,39 @@
                                 </div>
                                 <div class="sa-empty" v-else-if="readOnlyCombinedMembers().length === 0">
                                     {{ readOnlyCombinedMembersEmptyText() }}
+                                </div>
+                                <div v-else-if="isParentGroup(assignUsersDialog.group)" class="groups-parent-members-list">
+                                    <section
+                                        v-for="student in paginatedReadOnlyParentGroups()"
+                                        :key="`readonly-student-${student.key}`"
+                                        class="groups-parent-member-group">
+                                        <div class="groups-parent-member-header">
+                                            <div class="font-weight-bold text-body-2">{{ student.name }}</div>
+                                            <div v-if="student.schoolclass" class="text-caption text-medium-emphasis">
+                                                Klasse: {{ student.schoolclass }}
+                                            </div>
+                                        </div>
+                                        <div class="groups-parent-member-parents">
+                                            <div
+                                                v-for="parent in student.parents"
+                                                :key="`readonly-student-${student.key}-parent-${readOnlyMemberKey(parent) || parent.id}`"
+                                                class="groups-parent-member-parent">
+                                                <div class="d-flex align-center ga-2">
+                                                    <div class="font-weight-bold text-body-2">{{ parent.name }}</div>
+                                                    <v-icon
+                                                        v-if="parent.is_registered"
+                                                        size="16"
+                                                        color="success"
+                                                        title="Registriert">
+                                                        mdi-check-circle
+                                                    </v-icon>
+                                                </div>
+                                                <div class="text-caption text-medium-emphasis">{{ parent.email || 'Keine E-Mail' }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="parent.phone">Telefon: {{ parent.phone }}</div>
+                                                <div class="text-caption text-warning" v-if="parent.status_label">{{ parent.status_label }}</div>
+                                            </div>
+                                        </div>
+                                    </section>
                                 </div>
                                 <div class="groups-assign-list" v-else>
                                     <div class="groups-assign-list-item" v-for="member in paginatedReadOnlyCombinedMembers()" :key="`readonly-member-${readOnlyMemberKey(member) || member.id}`">
@@ -621,14 +661,14 @@
                                     </div>
                                 </div>
                                 <div
-                                    v-if="!readOnlyCombinedMembersLoading() && shouldPaginateDialogList(readOnlyCombinedMembers().length)"
+                                    v-if="!readOnlyCombinedMembersLoading() && shouldPaginateDialogList(readOnlyPaginationItemCount())"
                                     class="groups-list-pagination">
                                     <div class="text-caption text-medium-emphasis">
-                                        {{ dialogPaginationSummary(readOnlyCombinedMembers().length, assignUsersDialog.readOnlyPage) }}
+                                        {{ dialogPaginationSummary(readOnlyPaginationItemCount(), assignUsersDialog.readOnlyPage) }}
                                     </div>
                                     <v-pagination
                                         v-model="assignUsersDialog.readOnlyPage"
-                                        :length="dialogPaginationPageCount(readOnlyCombinedMembers().length)"
+                                        :length="dialogPaginationPageCount(readOnlyPaginationItemCount())"
                                         :total-visible="5"
                                         active-color="primary"
                                         density="comfortable" />
@@ -2348,6 +2388,83 @@ export default {
                 this.assignUsersDialog.readOnlyPage,
             )
         },
+        memberChildren(member) {
+            const structuredChildren = Array.isArray(member?.children) ? member.children : []
+            if (structuredChildren.length > 0) {
+                return structuredChildren.map((child) => ({
+                    id: Number(child?.id || 0) || null,
+                    name: String(child?.name || '').trim(),
+                    last_name: String(child?.last_name || '').trim(),
+                    first_name: String(child?.first_name || '').trim(),
+                    schoolclass: String(child?.schoolclass || member?.schoolclass || '').trim(),
+                })).filter((child) => child.name !== '')
+            }
+
+            return String(member?.children_label || '')
+                .split(',')
+                .map((name) => name.trim())
+                .filter((name) => name !== '')
+                .map((name) => ({
+                    id: null,
+                    name,
+                    last_name: name,
+                    first_name: '',
+                    schoolclass: String(member?.schoolclass || '').trim(),
+                }))
+        },
+        readOnlyParentGroups() {
+            if (!this.isParentGroup(this.assignUsersDialog.group)) return []
+
+            const groupsByStudent = new Map()
+            for (const parent of this.readOnlyCombinedMembers()) {
+                for (const child of this.memberChildren(parent)) {
+                    const normalizedName = child.name.toLocaleLowerCase('de')
+                    const studentKey = child.id
+                        ? `import116:${child.id}`
+                        : `${normalizedName}:${child.schoolclass.toLocaleLowerCase('de')}`
+
+                    if (!groupsByStudent.has(studentKey)) {
+                        groupsByStudent.set(studentKey, {
+                            key: studentKey,
+                            ...child,
+                            parentsByKey: new Map(),
+                        })
+                    }
+
+                    const group = groupsByStudent.get(studentKey)
+                    const parentKey = this.readOnlyMemberKey(parent) || String(parent?.id || parent?.name || '')
+                    group.parentsByKey.set(parentKey, parent)
+                }
+            }
+
+            return [...groupsByStudent.values()]
+                .map(({ parentsByKey, ...student }) => ({
+                    ...student,
+                    parents: this.sortReadOnlyMembers([...parentsByKey.values()]),
+                }))
+                .sort((left, right) => {
+                    const lastNameComparison = left.last_name.localeCompare(right.last_name, 'de', { sensitivity: 'base', numeric: true })
+                    if (lastNameComparison !== 0) return lastNameComparison
+
+                    const firstNameComparison = left.first_name.localeCompare(right.first_name, 'de', { sensitivity: 'base', numeric: true })
+                    if (firstNameComparison !== 0) return firstNameComparison
+
+                    return left.name.localeCompare(right.name, 'de', { sensitivity: 'base', numeric: true })
+                })
+        },
+        paginatedReadOnlyParentGroups() {
+            return this.dialogPaginationSlice(
+                this.readOnlyParentGroups(),
+                this.assignUsersDialog.readOnlyPage,
+            )
+        },
+        readOnlyPaginationItemCount() {
+            if (this.isParentGroup(this.assignUsersDialog.group)) {
+                return this.readOnlyParentGroups().length
+            }
+
+            return this.readOnlyCombinedMembers().length
+        },
         paginatedAssignedMembers() {
             return this.dialogPaginationSlice(
                 this.assignUsersDialog.members,
@@ -2482,7 +2599,7 @@ export default {
             )
             this.assignUsersDialog.readOnlyPage = this.normalizedDialogPage(
                 this.assignUsersDialog.readOnlyPage,
-                this.readOnlyCombinedMembers().length,
+                this.readOnlyPaginationItemCount(),
             )
         },
         isSelectedGroup(type, groupId) {
@@ -3551,6 +3668,32 @@ export default {
 .groups-assign-list {
     display: grid;
     gap: 10px;
+}
+
+.groups-parent-members-list {
+    display: grid;
+    gap: 12px;
+}
+
+.groups-parent-member-group {
+    overflow: hidden;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.groups-parent-member-header {
+    padding: 10px 14px;
+    background: rgba(57, 73, 171, 0.08);
+}
+
+.groups-parent-member-parents {
+    display: grid;
+}
+
+.groups-parent-member-parent {
+    padding: 10px 14px 10px 28px;
+    border-top: 1px solid rgba(16, 38, 58, 0.08);
 }
 
 .groups-assign-selection-panel {

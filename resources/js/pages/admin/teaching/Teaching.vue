@@ -65,12 +65,16 @@
         </v-sheet>
 
         <v-sheet
-            v-if="courses.length && main_action === 'overview'"
+            v-if="main_action === 'overview'"
             rounded="xl"
             class="teaching-subnav mb-2"
             :class="{ 'is-locked': isNavigationLocked || isStudentDetailActive }">
             <div class="teaching-subnav__inner">
                 <div class="teaching-subnav__courses">
+                    <div v-if="!courses.length" class="teaching-subnav__empty" role="status">
+                        <v-icon icon="mdi-invoice-list-outline" color="primary" size="20" />
+                        <span>Noch keine Fächer vorhanden.</span>
+                    </div>
                     <v-btn
                         v-if="selected_course"
                         size="small"
@@ -850,6 +854,16 @@ export default {
     flex: 1;
 }
 
+.teaching-subnav__empty {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    color: rgba(30, 58, 138, 0.82);
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
 .teaching-subnav__course-btn {
     text-transform: none;
     letter-spacing: 0;
@@ -917,6 +931,11 @@ export default {
         grid-column: 1 / -1;
         justify-self: start;
         width: auto;
+    }
+
+    .teaching-subnav__empty {
+        grid-column: 1 / -1;
+        justify-content: center;
     }
 
     .teaching-subnav__actions {

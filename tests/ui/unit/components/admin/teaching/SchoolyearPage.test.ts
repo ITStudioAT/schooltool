@@ -66,6 +66,7 @@ describe('Teaching schoolyear page', () => {
         const methods = (Schoolyear as any).methods
         const setActiveSchoolyear = vi.fn().mockResolvedValue(true)
         const loadConfig = vi.fn().mockResolvedValue(true)
+        const indexCourses = vi.fn().mockResolvedValue(true)
 
         const ctx: Record<string, unknown> = {
             is_loading: false,
@@ -80,13 +81,24 @@ describe('Teaching schoolyear page', () => {
             adminStore: {
                 loadConfig,
             },
+            courseStore: {
+                selected_course: { id: 5 },
+                selected_course_id: 5,
+                selected_course_student: { id: 20 },
+                index: indexCourses,
+            },
             isActiveSchoolyear: methods.isActiveSchoolyear,
+            clearSelectedCourse: methods.clearSelectedCourse,
         }
 
         await methods.activateSelectedSchoolyear.call(ctx)
 
         expect(setActiveSchoolyear).toHaveBeenCalledWith(11)
         expect(loadConfig).toHaveBeenCalledTimes(1)
+        expect(indexCourses).toHaveBeenCalledTimes(1)
+        expect((ctx.courseStore as Record<string, unknown>).selected_course).toBeNull()
+        expect((ctx.courseStore as Record<string, unknown>).selected_course_id).toBeNull()
+        expect((ctx.courseStore as Record<string, unknown>).selected_course_student).toBeNull()
         expect(ctx.pending_schoolyear_id).toBeNull()
         expect(ctx.is_loading).toBe(false)
     })

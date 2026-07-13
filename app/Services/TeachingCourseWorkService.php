@@ -23,7 +23,11 @@ class TeachingCourseWorkService
 
         $studentIds = [];
         foreach ($students as $student) {
-            $resolvedId = $this->courseService->resolveCourseStudentUserId($student, (int) $course->school_id);
+            $resolvedId = $this->courseService->resolveCourseStudentUserId(
+                $student,
+                (int) $course->school_id,
+                $course->schoolyear_id ? (int) $course->schoolyear_id : null
+            );
             if ($resolvedId) {
                 $studentIds[] = $resolvedId;
             }
@@ -45,7 +49,7 @@ class TeachingCourseWorkService
      *
      * @return array<int, array>
      */
-    public function normalizeWorkGroupsStudentIds(array $groups, int $schoolId): array
+    public function normalizeWorkGroupsStudentIds(array $groups, int $schoolId, ?int $schoolyearId = null): array
     {
         $normalized = [];
 
@@ -56,7 +60,7 @@ class TeachingCourseWorkService
 
             $studentIds = [];
             foreach (($group['student_ids'] ?? []) as $studentId) {
-                $resolvedId = $this->courseService->resolveStudentIdFromNumeric((int) $studentId, $schoolId);
+                $resolvedId = $this->courseService->resolveStudentIdFromNumeric((int) $studentId, $schoolId, $schoolyearId);
                 if ($resolvedId) {
                     $studentIds[] = $resolvedId;
                 }
@@ -68,7 +72,7 @@ class TeachingCourseWorkService
                 if (! is_array($gradeItem)) {
                     continue;
                 }
-                $resolvedId = $this->courseService->resolveStudentIdFromNumeric((int) ($gradeItem['student_id'] ?? 0), $schoolId);
+                $resolvedId = $this->courseService->resolveStudentIdFromNumeric((int) ($gradeItem['student_id'] ?? 0), $schoolId, $schoolyearId);
                 if (! $resolvedId) {
                     continue;
                 }
@@ -83,7 +87,7 @@ class TeachingCourseWorkService
                 if (! is_array($commentItem)) {
                     continue;
                 }
-                $resolvedId = $this->courseService->resolveStudentIdFromNumeric((int) ($commentItem['student_id'] ?? 0), $schoolId);
+                $resolvedId = $this->courseService->resolveStudentIdFromNumeric((int) ($commentItem['student_id'] ?? 0), $schoolId, $schoolyearId);
                 if (! $resolvedId) {
                     continue;
                 }
@@ -98,7 +102,7 @@ class TeachingCourseWorkService
                 if (! is_array($pointsItem)) {
                     continue;
                 }
-                $resolvedId = $this->courseService->resolveStudentIdFromNumeric((int) ($pointsItem['student_id'] ?? 0), $schoolId);
+                $resolvedId = $this->courseService->resolveStudentIdFromNumeric((int) ($pointsItem['student_id'] ?? 0), $schoolId, $schoolyearId);
                 if (! $resolvedId) {
                     continue;
                 }
@@ -160,7 +164,8 @@ class TeachingCourseWorkService
 
         $validated['groups'] = $this->normalizeWorkGroupsStudentIds(
             $validated['groups'] ?? [],
-            $schoolId
+            $schoolId,
+            $course->schoolyear_id ? (int) $course->schoolyear_id : null
         );
 
         return $validated;

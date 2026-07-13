@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Teaching\StoreTeachingEntryAreaRequest;
 use App\Http\Requests\Admin\Teaching\UpdateTeachingEntryAreaRequest;
 use App\Http\Resources\Admin\Teaching\TeachingEntryAreaResource;
+use App\Models\Schoolyear;
 use App\Models\TeachingEntryArea;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -26,7 +27,13 @@ class TeachingEntryAreaController extends Controller
             ->orderBy('name')
             ->get();
 
-        return TeachingEntryAreaResource::collection($areas);
+        return TeachingEntryAreaResource::collection($areas)->additional([
+            'meta' => [
+                'previous_year_import' => $areas->isEmpty()
+                    ? $this->previousYearImportOffer($user)
+                    : null,
+            ],
+        ]);
     }
 
     public function store(StoreTeachingEntryAreaRequest $request): JsonResponse
@@ -63,6 +70,15 @@ class TeachingEntryAreaController extends Controller
             ], 409);
         }
 
+        $courseCount = $entryArea->teachingCourses()->count();
+
+        if ($courseCount > 0) {
+            return response()->json([
+                'message' => 'Dieser Bereich wird noch als Benotungsschema verwendet und kann nicht gelöscht werden.',
+                'course_count' => $courseCount,
+            ], 409);
+        }
+
         $entryArea->delete();
 
         return response()->noContent();
@@ -88,5 +104,88 @@ class TeachingEntryAreaController extends Controller
             || $area->schoolyear_id !== $user->schoolyear_id) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+    }
+
+    /**
+     * @return array{
+     *     schoolyear: array{id: int, label: string},
+     *     area_count: int,
+     *     entry_count: int,
+     * }|null
+     */
+    private function previousYearImportOffer(User $user): ?array
+    {
+        $previousSchoolyear = $this->previousSchoolyearForImport($user->selectedSchoolyear);
+
+        if (! $previousSchoolyear) {
+            return null;
+        }
+
+        $sourceAreas = TeachingEntryArea::query()
+            ->whereBelongsTo($user)
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $previousSchoolyear->id)
+            ->withCount('entryDefinitions')
+            ->get();
+
+        if ($sourceAreas->isEmpty()) {
+            return null;
+        }
+
+        return [
+            'schoolyear' => [
+                'id' => (int) $previousSchoolyear->id,
+                'label' => (string) ($previousSchoolyear->concerns ?: $previousSchoolyear->name),
+            ],
+            'area_count' => $sourceAreas->count(),
+            'entry_count' => (int) $sourceAreas->sum('entry_definitions_count'),
+        ];
+    }
+
+    private function previousSchoolyearForImport(?Schoolyear $schoolyear): ?Schoolyear
+    {
+        if (! $schoolyear) {
+            return null;
+        }
+
+        $previousConcern = $this->previousSchoolyearConcern($schoolyear->concerns);
+
+        if ($previousConcern === null) {
+            return null;
+        }
+
+        return Schoolyear::query()
+            ->where('school_id', $schoolyear->school_id)
+            ->get()
+            ->first(fn (Schoolyear $candidate): bool => $this->normalizeSchoolyearConcern($candidate->concerns) === $previousConcern);
+    }
+
+    private function previousSchoolyearConcern(?string $value): ?string
+    {
+        $normalizedValue = $this->normalizeSchoolyearConcern($value);
+
+        if (! preg_match('/^(\d{4})\/(\d{2})$/', $normalizedValue, $matches)) {
+            return null;
+        }
+
+        $startYear = (int) $matches[1];
+        $endYear = (int) substr((string) ($startYear + 1), -2);
+
+        return sprintf('%d/%02d', $startYear - 1, $endYear - 1);
+    }
+
+    private function normalizeSchoolyearConcern(?string $value): string
+    {
+        if (! is_string($value)) {
+            return '';
+        }
+
+        preg_match('/(\d{4})\/(\d{2}|\d{4})/', $value, $matches);
+
+        if ($matches === []) {
+            return '';
+        }
+
+        return sprintf('%s/%s', $matches[1], substr($matches[2], -2));
     }
 }

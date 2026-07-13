@@ -294,6 +294,51 @@ describe('resolveStudentIds', function () {
 // ============================================================================
 
 describe('resolveCourseStudentEntries', function () {
+    test('ignores import students from another schoolyear when syncing a course', function () {
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        $teacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'teacher-schoolyear@test.com',
+        ]);
+
+        $otherSchoolyearImport = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'import_user_id' => $teacher->id,
+            'email' => 'student-other-schoolyear@test.com',
+        ]);
+
+        $payload = [[
+            'id' => $otherSchoolyearImport->id,
+            'import116_id' => $otherSchoolyearImport->id,
+            'first_name' => $otherSchoolyearImport->first_name,
+            'last_name' => $otherSchoolyearImport->last_name,
+            'class' => $otherSchoolyearImport->class,
+            'email' => $otherSchoolyearImport->email,
+        ]];
+
+        $entries = $this->service->resolveCourseStudentEntries(
+            $payload,
+            $this->school->id,
+            $this->schoolyear->id,
+        );
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $teacher->id,
+        ]);
+
+        $this->service->syncCourseStudents($course, $payload, []);
+
+        expect($entries)->toBeEmpty()
+            ->and($course->teachingCourseStudents()->exists())->toBeFalse();
+    });
+
     test('uses import reference when payload looks like import student and numeric id collides', function () {
         $collisionId = 9001;
 

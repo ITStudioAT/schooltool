@@ -4,6 +4,7 @@ use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\TeachingCourse;
 use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
 use App\Models\User;
@@ -48,6 +49,7 @@ function teachingEntryAreaFor(User $user, Schoolyear $schoolyear, string $name):
 
 test('areas require authentication and a teaching role', function () {
     $this->getJson('/api/admin/teaching/entry_areas')->assertUnauthorized();
+    $this->postJson('/api/admin/teaching/entry-area-imports')->assertUnauthorized();
 
     $user = User::factory()->create([
         'school_id' => $this->school->id,
@@ -55,6 +57,7 @@ test('areas require authentication and a teaching role', function () {
     ]);
     $user->assignRole('user');
     $this->actingAs($user, 'sanctum')->getJson('/api/admin/teaching/entry_areas')->assertForbidden();
+    $this->postJson('/api/admin/teaching/entry-area-imports')->assertForbidden();
 });
 
 test('index returns only owned areas with entry counts', function () {
@@ -73,6 +76,124 @@ test('index returns only owned areas with entry counts', function () {
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.name', 'Unterstufe')
         ->assertJsonPath('data.0.entry_count', 1);
+});
+
+test('index offers a previous schoolyear import only when the current year has no areas', function () {
+    $this->schoolyear->update(['concerns' => '2026/27']);
+    $previousSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+        'concerns' => '2025/26',
+    ]);
+    $sourceArea = teachingEntryAreaFor($this->teacher, $previousSchoolyear, 'Unterstufe');
+    TeachingEntryDefinition::factory()->count(2)->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $previousSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $sourceArea->id,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson('/api/admin/teaching/entry_areas')
+        ->assertOk()
+        ->assertJsonPath('meta.previous_year_import.schoolyear.id', $previousSchoolyear->id)
+        ->assertJsonPath('meta.previous_year_import.schoolyear.label', '2025/26')
+        ->assertJsonPath('meta.previous_year_import.area_count', 1)
+        ->assertJsonPath('meta.previous_year_import.entry_count', 2);
+
+    teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Aktuell');
+
+    $this->getJson('/api/admin/teaching/entry_areas')
+        ->assertOk()
+        ->assertJsonPath('meta.previous_year_import', null);
+});
+
+test('imports owned areas and entries from the previous schoolyear', function () {
+    $this->schoolyear->update(['concerns' => '2026/27']);
+    $previousSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+        'concerns' => '2025/26',
+    ]);
+    $underSchoolArea = teachingEntryAreaFor($this->teacher, $previousSchoolyear, 'Unterstufe');
+    $upperSchoolArea = teachingEntryAreaFor($this->teacher, $previousSchoolyear, 'Oberstufe');
+    $foreignArea = teachingEntryAreaFor($this->otherTeacher, $previousSchoolyear, 'Fremd');
+    TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $previousSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $underSchoolArea->id,
+        'short_name' => 'M',
+        'name' => 'Mitarbeit',
+        'fixed_properties' => ['+', '-'],
+    ]);
+    TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $previousSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $upperSchoolArea->id,
+        'short_name' => 'A',
+        'name' => 'Abfrage',
+        'category' => 'Weitere',
+        'has_notifications' => true,
+        'notification_recipients' => ['parents'],
+    ]);
+    TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $previousSchoolyear->id,
+        'user_id' => $this->otherTeacher->id,
+        'teaching_entry_area_id' => $foreignArea->id,
+        'short_name' => 'F',
+    ]);
+
+    $response = $this->actingAs($this->teacher, 'sanctum')
+        ->postJson('/api/admin/teaching/entry-area-imports');
+
+    $response->assertCreated()
+        ->assertJsonPath('imported_area_count', 2)
+        ->assertJsonPath('imported_entry_count', 2)
+        ->assertJsonCount(2, 'data.areas')
+        ->assertJsonCount(2, 'data.entries');
+
+    $copiedUnderSchoolArea = TeachingEntryArea::query()
+        ->where('user_id', $this->teacher->id)
+        ->where('schoolyear_id', $this->schoolyear->id)
+        ->where('name', 'Unterstufe')
+        ->firstOrFail();
+
+    expect($underSchoolArea->entryDefinitions()->count())->toBe(1)
+        ->and($upperSchoolArea->entryDefinitions()->count())->toBe(1)
+        ->and($copiedUnderSchoolArea->entryDefinitions()->firstOrFail()->fixed_properties)->toBe(['+', '-'])
+        ->and(TeachingEntryArea::query()
+            ->where('user_id', $this->teacher->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->where('name', 'Fremd')
+            ->exists())->toBeFalse();
+});
+
+test('previous schoolyear import is rejected when current areas already exist', function () {
+    $this->schoolyear->update(['concerns' => '2026/27']);
+    $previousSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+        'concerns' => '2025/26',
+    ]);
+    teachingEntryAreaFor($this->teacher, $previousSchoolyear, 'Unterstufe');
+    teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Aktuell');
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->postJson('/api/admin/teaching/entry-area-imports')
+        ->assertConflict();
+});
+
+test('previous schoolyear import is rejected when no source areas exist', function () {
+    $this->schoolyear->update(['concerns' => '2026/27']);
+    Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+        'concerns' => '2025/26',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->postJson('/api/admin/teaching/entry-area-imports')
+        ->assertUnprocessable()
+        ->assertJsonPath('message', 'Im vorherigen Schuljahr sind keine Bereiche vorhanden.');
 });
 
 test('store trims names and rejects duplicate names', function () {
@@ -116,6 +237,23 @@ test('destroy removes an empty area and protects an area with entries', function
         ->assertJsonPath('entry_count', 1);
 
     $this->assertModelMissing($emptyArea);
+    $this->assertModelExists($usedArea);
+});
+
+test('destroy protects an area used as a course grading schema', function () {
+    $usedArea = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Unterstufe');
+    TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $usedArea->id,
+    ]);
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->deleteJson("/api/admin/teaching/entry_areas/{$usedArea->id}")
+        ->assertConflict()
+        ->assertJsonPath('course_count', 1);
+
     $this->assertModelExists($usedArea);
 });
 

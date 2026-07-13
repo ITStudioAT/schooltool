@@ -35,7 +35,7 @@
                     </v-row>
                 </v-window-item>
 
-                <v-window-item v-if="showBehaviourEnabled" value="behaviour">
+                <v-window-item v-if="usesLegacyTeachingSettings && showBehaviourEnabled" value="behaviour">
                     <v-row class="w-100 ma-0" dense>
                         <v-col cols="12" class="teaching-settings-panel-col">
                             <Behaviour />
@@ -43,7 +43,7 @@
                     </v-row>
                 </v-window-item>
 
-                <v-window-item value="notifications">
+                <v-window-item v-if="usesLegacyTeachingSettings" value="notifications">
                     <v-row class="w-100 ma-0" dense>
                         <v-col cols="12" class="teaching-settings-panel-col">
                             <Notifications />
@@ -54,12 +54,12 @@
                 <v-window-item value="entries">
                     <v-row class="w-100 ma-0" dense>
                         <v-col cols="12" class="teaching-settings-panel-col">
-                            <Entries />
+                            <Entries :key="config?.selected_schoolyear?.id || 'no-schoolyear'" />
                         </v-col>
                     </v-row>
                 </v-window-item>
 
-                <v-window-item value="schemas">
+                <v-window-item v-if="usesLegacyTeachingSettings" value="schemas">
                     <v-row class="w-100 ma-0" dense>
                         <v-col cols="12" class="teaching-settings-panel-col">
                             <ItsGridBox variant="overview" color="primary" title="Benotungsschemas" icon="mdi-book-cog-outline" class="w-100">
@@ -303,10 +303,17 @@ export default {
         this.teachingStore = useTeachingStore()
         this.courseStore = useCourseStore()
         this.schoolyearStore = useSchoolyearStore()
-        await Promise.all([this.teachingStore.loadSettings(), this.courseStore.index(), this.schoolyearStore.index()])
-        if (this.schemas.length) {
+        await this.teachingStore.loadSettings()
+
+        if (this.usesLegacyTeachingSettings) {
+            await Promise.all([this.courseStore.index(), this.schoolyearStore.index()])
+        }
+
+        if (this.usesLegacyTeachingSettings && this.schemas.length) {
             this.selected_schema_id = this.schemas[0].id
         }
+
+        this.ensureActivePanelAvailable()
     },
 
     data() {
@@ -408,16 +415,26 @@ export default {
         showBehaviourEnabled() {
             return this.settings?.teaching_show_behaviour !== false
         },
+        usesLegacyTeachingSettings() {
+            const schoolyear = this.parseSchoolyearConcern(this.activeSchoolyearConcern)
+
+            return !schoolyear || schoolyear.startYear <= 2025
+        },
         availablePanels() {
             const panels = [
                 { id: 'basic', label: 'Grundeinstellungen', icon: 'mdi-cog-outline' },
                 { id: 'entries', label: 'Einträge', icon: 'mdi-format-list-bulleted-type' },
-                { id: 'notifications', label: 'Verständigungen', icon: 'mdi-bell-outline' },
-                { id: 'schemas', label: 'Benotungsschemas', icon: 'mdi-book-cog-outline' },
             ]
 
-            if (this.showBehaviourEnabled) {
-                panels.splice(2, 0, { id: 'behaviour', label: 'Verhalten', icon: 'mdi-account-alert-outline' })
+            if (this.usesLegacyTeachingSettings) {
+                if (this.showBehaviourEnabled) {
+                    panels.push({ id: 'behaviour', label: 'Verhalten', icon: 'mdi-account-alert-outline' })
+                }
+
+                panels.push(
+                    { id: 'notifications', label: 'Verständigungen', icon: 'mdi-bell-outline' },
+                    { id: 'schemas', label: 'Benotungsschemas', icon: 'mdi-book-cog-outline' },
+                )
             }
 
             if (this.canManageOwnHolidays) {
@@ -456,6 +473,9 @@ export default {
                 this.active_panel = 'basic'
             }
         },
+        usesLegacyTeachingSettings() {
+            this.ensureActivePanelAvailable()
+        },
     },
 
     methods: {
@@ -482,6 +502,15 @@ export default {
                 return
             }
             this.active_panel = panel
+        },
+        ensureActivePanelAvailable() {
+            const activePanelIsAvailable = this.availablePanels.some((panel) => panel.id === this.active_panel)
+
+            if (activePanelIsAvailable) {
+                return
+            }
+
+            this.active_panel = this.availablePanels.some((panel) => panel.id === 'entries') ? 'entries' : 'basic'
         },
         isSchemaPanelActive(panel) {
             return this.active_schema_panel === panel

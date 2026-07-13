@@ -7,6 +7,8 @@ export const useCourseStore = defineStore('AdminCourseStore', {
         return {
             courses: [],
             classes: [],
+            entry_areas: [],
+            uses_entry_areas_for_grading_schema: false,
             selected_course: null,
             selected_course_id: null,
             selected_course_student: null,
@@ -94,6 +96,8 @@ export const useCourseStore = defineStore('AdminCourseStore', {
                     const response = await axios.get(`/api/admin/teaching/courses`, {})
                     this.courses = response.data.data
                     this.classes = response.data.classes
+                    this.entry_areas = response.data.entry_areas || []
+                    this.uses_entry_areas_for_grading_schema = Boolean(response.data.uses_entry_areas_for_grading_schema)
                     if (selectedId) {
                         this.selected_course = this.courses.find((c) => c.id === selectedId) || null
                         this.ensureCourseStudentCollections(this.selected_course)
@@ -144,7 +148,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
 
-            if (!data?.teaching_schema_id) {
+            if (!(this.uses_entry_areas_for_grading_schema ? data?.teaching_entry_area_id : data?.teaching_schema_id)) {
                 notification.notify({
                     status: 422,
                     message: 'Bitte ein Benotungsschema auswählen.',
@@ -177,7 +181,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
 
-            if (!data?.teaching_schema_id) {
+            if (!(this.uses_entry_areas_for_grading_schema ? data?.teaching_entry_area_id : data?.teaching_schema_id)) {
                 notification.notify({
                     status: 422,
                     message: 'Bitte ein Benotungsschema auswählen.',

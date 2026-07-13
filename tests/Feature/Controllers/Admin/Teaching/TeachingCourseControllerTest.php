@@ -23,6 +23,7 @@ use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWorkGroupStudent;
 use App\Models\TeachingCurriculum;
+use App\Models\TeachingEntryArea;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use App\Services\TeachingStudentPerformancePdfService;
@@ -68,6 +69,8 @@ beforeEach(function () {
 
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
+        'name' => '2025/26',
+        'concerns' => '2025/26',
     ]);
 
     // Create test users with different roles
@@ -159,7 +162,8 @@ describe('index', function () {
         $response = $this->getJson('/api/admin/teaching/courses');
 
         $response->assertStatus(200)
-            ->assertJsonStructure(['data', 'classes']);
+            ->assertJsonStructure(['data', 'classes'])
+            ->assertJsonPath('uses_entry_areas_for_grading_schema', false);
     });
 
     test('courses index does not query per course date for attendance metadata', function () {
@@ -304,6 +308,42 @@ describe('index', function () {
             ->assertJsonPath('data.0.students.0.last_name', 'Husic')
             ->assertJsonPath('data.0.students.0.schoolclass', '5A')
             ->assertJsonPath('data.0.students.0.sem_1_grade', 'NB');
+    });
+
+    test('does not return course students linked to an import from another schoolyear', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+            'name' => '2024/25',
+            'concerns' => '2024/25',
+        ]);
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $oldImport = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'import_user_id' => $this->teacher->id,
+            'user_id' => $student->id,
+        ]);
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Deutsch',
+            'classes' => ['1A'],
+        ]);
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'import116_id' => $oldImport->id,
+        ]);
+
+        $this->getJson('/api/admin/teaching/courses')
+            ->assertOk()
+            ->assertJsonCount(0, 'data.0.students');
     });
 
     test('includes the course owners schoolyear scoped teaching definitions in the course payload', function () {
@@ -1088,6 +1128,47 @@ describe('student performances pdf', function () {
 // Store Tests
 // ============================================================================
 
+test('course index returns the assigned entry area and owner-scoped options', function () {
+    $this->actingAs($this->admin, 'sanctum');
+    $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+
+    $teacherEntryArea = TeachingEntryArea::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'name' => 'DGB',
+    ]);
+    $adminEntryArea = TeachingEntryArea::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'name' => 'Admin-Bereich',
+    ]);
+    TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Digitale Grundbildung',
+        'classes' => ['1A'],
+        'teaching_schema_id' => $this->schemaId,
+        'teaching_entry_area_id' => $teacherEntryArea->id,
+    ]);
+
+    $this->getJson('/api/admin/teaching/courses')
+        ->assertOk()
+        ->assertJsonPath('data.0.teaching_entry_area.id', $teacherEntryArea->id)
+        ->assertJsonPath('data.0.teaching_entry_area.name', 'DGB')
+        ->assertJsonPath('data.0.teacher_teaching_entry_areas', [[
+            'id' => $teacherEntryArea->id,
+            'name' => 'DGB',
+        ]])
+        ->assertJsonPath('entry_areas', [[
+            'id' => $adminEntryArea->id,
+            'name' => 'Admin-Bereich',
+        ]])
+        ->assertJsonPath('uses_entry_areas_for_grading_schema', true);
+});
+
 describe('store', function () {
     test('returns 401 when user is not authenticated', function () {
         $response = $this->postJson('/api/admin/teaching/courses', [
@@ -1128,6 +1209,90 @@ describe('store', function () {
             'schoolyear_id' => $this->schoolyear->id,
             'user_id' => $this->admin->id,
         ]);
+    });
+
+    test('cannot import a student from another schoolyear into a course', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+            'name' => '2024/25',
+            'concerns' => '2024/25',
+        ]);
+        $oldImport = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $this->postJson('/api/admin/teaching/courses', [
+            'title' => 'Mathematik',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+            'students' => [$oldImport->id],
+            'students_info' => [[
+                'id' => $oldImport->id,
+                'import116_id' => $oldImport->id,
+                'first_name' => $oldImport->first_name,
+                'last_name' => $oldImport->last_name,
+                'class' => $oldImport->class,
+            ]],
+        ])->assertInvalid(['students_info.0.import116_id']);
+
+        expect(TeachingCourse::query()->where('title', 'Mathematik')->exists())->toBeFalse();
+    });
+
+    test('admin can assign one of their entry areas when creating a course', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+
+        $entryArea = TeachingEntryArea::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'name' => 'Unterstufe',
+        ]);
+
+        $this->postJson('/api/admin/teaching/courses', [
+            'title' => 'Mathematik',
+            'classes' => ['1A'],
+            'teaching_entry_area_id' => $entryArea->id,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('teaching_entry_area_id', $entryArea->id);
+
+        $course = TeachingCourse::query()->where('title', 'Mathematik')->firstOrFail();
+
+        expect($course->teaching_entry_area_id)->toBe($entryArea->id)
+            ->and($course->teaching_schema_id)->toBe($this->schemaId);
+    });
+
+    test('cannot assign another teachers entry area when creating a course', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+
+        $entryArea = TeachingEntryArea::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+        ]);
+
+        $this->postJson('/api/admin/teaching/courses', [
+            'title' => 'Mathematik',
+            'classes' => ['1A'],
+            'teaching_entry_area_id' => $entryArea->id,
+        ])->assertJsonValidationErrors('teaching_entry_area_id');
+    });
+
+    test('requires an entry area instead of a legacy schema from 2026/27 onward', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+
+        $this->postJson('/api/admin/teaching/courses', [
+            'title' => 'Mathematik',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+        ])->assertJsonValidationErrors('teaching_entry_area_id');
     });
 
     test('teaching_admin can create course', function () {
@@ -1334,6 +1499,58 @@ describe('update', function () {
         $course->refresh();
         expect($course->title)->toBe('Updated Title')
             ->and($course->classes)->toBe(['1A', '1B']);
+    });
+
+    test('admin assigns an entry area owned by the course teacher and cannot clear it', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
+
+        $teacherEntryArea = TeachingEntryArea::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'name' => 'DGB',
+        ]);
+        $adminEntryArea = TeachingEntryArea::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'name' => 'Admin',
+        ]);
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Digitale Grundbildung',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+        $payload = [
+            'title' => $course->title,
+            'classes' => $course->classes,
+        ];
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", [
+            ...$payload,
+            'teaching_entry_area_id' => $teacherEntryArea->id,
+        ])
+            ->assertOk()
+            ->assertJsonPath('teaching_entry_area_id', $teacherEntryArea->id);
+
+        expect($course->refresh()->teaching_entry_area_id)->toBe($teacherEntryArea->id);
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", [
+            ...$payload,
+            'teaching_entry_area_id' => $adminEntryArea->id,
+        ])->assertJsonValidationErrors('teaching_entry_area_id');
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", [
+            ...$payload,
+            'teaching_entry_area_id' => null,
+        ])
+            ->assertJsonValidationErrors('teaching_entry_area_id');
+
+        expect($course->refresh()->teaching_entry_area_id)->toBe($teacherEntryArea->id);
     });
 
     test('teaching_admin can update course', function () {

@@ -7,6 +7,9 @@
 - Synchronisierung der Schuldaten von online zu lokal
 - Neue Einträge für Beurteilungen
 - Veraltens- und weitere Einträge: Verständigungsoptionen vorgesehen
+- Bereiche/Einträge auf neues Schuljahr übernehmen
+- Import116-Datei: Strenge Abgrenzung nach Schuljahr
+- Schülergruppen: Neue Gruppierung/Sortierung
 
 ## 3.42.2
 

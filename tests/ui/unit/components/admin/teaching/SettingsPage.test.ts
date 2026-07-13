@@ -18,6 +18,7 @@ describe('Teaching settings page', () => {
         const ctx = {
             canManageOwnHolidays: true,
             showBehaviourEnabled: true,
+            usesLegacyTeachingSettings: true,
         }
         const panelsWithPermission = (Settings as any).computed.availablePanels.call(ctx)
 
@@ -35,6 +36,7 @@ describe('Teaching settings page', () => {
         const ctx = {
             canManageOwnHolidays: true,
             showBehaviourEnabled: false,
+            usesLegacyTeachingSettings: true,
         }
         const panels = (Settings as any).computed.availablePanels.call(ctx)
 
@@ -58,6 +60,53 @@ describe('Teaching settings page', () => {
         }
 
         expect((Settings as any).computed.activeSchoolyearLabel.call(ctx)).toBe('Schuljahr 2025/26')
+    })
+
+    it('removes legacy settings panels from schoolyear 2026/27 onward', () => {
+        const methods = (Settings as any).methods
+        const schoolyearContext = {
+            activeSchoolyearConcern: '2026/27',
+            normalizeSchoolyearConcern: methods.normalizeSchoolyearConcern,
+            parseSchoolyearConcern: methods.parseSchoolyearConcern,
+        }
+        const usesLegacyTeachingSettings = (Settings as any).computed.usesLegacyTeachingSettings.call(schoolyearContext)
+        const panels = (Settings as any).computed.availablePanels.call({
+            canManageOwnHolidays: true,
+            showBehaviourEnabled: true,
+            usesLegacyTeachingSettings,
+        })
+
+        expect(usesLegacyTeachingSettings).toBe(false)
+        expect(panels.map((panel: { id: string }) => panel.id)).toEqual([
+            'basic',
+            'entries',
+            'my_holidays',
+        ])
+    })
+
+    it('keeps legacy settings panels through schoolyear 2025/26', () => {
+        const methods = (Settings as any).methods
+        const schoolyearContext = {
+            activeSchoolyearConcern: '2025/26',
+            normalizeSchoolyearConcern: methods.normalizeSchoolyearConcern,
+            parseSchoolyearConcern: methods.parseSchoolyearConcern,
+        }
+
+        expect((Settings as any).computed.usesLegacyTeachingSettings.call(schoolyearContext)).toBe(true)
+    })
+
+    it('falls back to entries when a legacy settings panel is unavailable', () => {
+        const context = {
+            active_panel: 'schemas',
+            availablePanels: [
+                { id: 'basic' },
+                { id: 'entries' },
+            ],
+        }
+
+        ;(Settings as any).methods.ensureActivePanelAvailable.call(context)
+
+        expect(context.active_panel).toBe('entries')
     })
 
     it('activates only allowed primary panels', () => {
@@ -319,7 +368,7 @@ describe('Teaching settings page', () => {
         expect(source).toContain('<template #header-actions>')
         expect(source).toContain('import Entries from \'./components/Entries.vue\'')
         expect(source).toContain('<v-window-item value="entries">')
-        expect(source).toContain('<Entries />')
+        expect(source).toContain('<Entries :key="config?.selected_schoolyear?.id || \'no-schoolyear\'" />')
         expect(source).toContain("{ id: 'entries', label: 'Einträge', icon: 'mdi-format-list-bulleted-type' }")
         expect(source).toContain('activeSchoolyearLabel() {')
         expect(source).toContain('<span class="teaching-settings-toolbar-btn-copy">')

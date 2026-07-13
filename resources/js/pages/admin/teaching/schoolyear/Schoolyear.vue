@@ -97,6 +97,7 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
+import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
@@ -105,6 +106,7 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.schoolyearStore = useSchoolyearStore()
+        this.courseStore = useCourseStore()
         await this.schoolyearStore.index()
         this.syncSelectedSchoolyear()
     },
@@ -113,6 +115,7 @@ export default {
         return {
             adminStore: null,
             schoolyearStore: null,
+            courseStore: null,
             is_loading: false,
             pending_schoolyear_id: null,
             selected_schoolyear_id: null,
@@ -225,10 +228,17 @@ export default {
             try {
                 await this.schoolyearStore.setActiveSchoolyear(schoolyear.id)
                 await this.adminStore.loadConfig()
+                this.clearSelectedCourse()
+                await this.courseStore.index()
             } finally {
                 this.pending_schoolyear_id = null
                 this.is_loading = false
             }
+        },
+        clearSelectedCourse() {
+            this.courseStore.selected_course = null
+            this.courseStore.selected_course_id = null
+            this.courseStore.selected_course_student = null
         },
     },
 }

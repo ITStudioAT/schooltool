@@ -1250,6 +1250,44 @@ test('parent school groups use child registration status and expose registered v
     expect((string) ($allParents->firstWhere('name', 'Mutter Importiert')['member_ref'] ?? ''))->toStartWith('import116.parent_contact:');
 });
 
+test('parent school group contacts expose children sorted by student last name', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    foreach ([
+        ['last_name' => 'Zander', 'first_name' => 'Anna', 'student_code' => '7202'],
+        ['last_name' => 'Adler', 'first_name' => 'Zoe', 'student_code' => '7201'],
+    ] as $student) {
+        Import116::query()->create([
+            'school_id' => (int) $this->school->id,
+            'schoolyear_id' => (int) $this->schoolyear->id,
+            'class' => '1A',
+            'student_code' => $student['student_code'],
+            'last_name' => $student['last_name'],
+            'first_name' => $student['first_name'],
+            'mother_name' => 'Gemeinsame Mutter',
+            'mother_email' => 'shared.mother@test.local',
+            'import_date' => now(),
+            'import_user_id' => (int) $this->adminUser->id,
+        ]);
+    }
+
+    $groups = collect($this->getJson('/api/admin/groups')->assertSuccessful()->json('data'));
+    $parentGroup = $groups->firstWhere('name', '1A Eltern');
+
+    expect($parentGroup)->not->toBeNull();
+
+    $contacts = collect(
+        $this->getJson('/api/admin/groups/'.(int) $parentGroup['id'].'/source-members')
+            ->assertSuccessful()
+            ->json('data')
+    );
+    $mother = $contacts->firstWhere('email', 'shared.mother@test.local');
+
+    expect($mother)->not->toBeNull()
+        ->and(collect($mother['children'] ?? [])->pluck('last_name')->all())->toBe(['Adler', 'Zander'])
+        ->and(collect($mother['children'] ?? [])->pluck('name')->all())->toBe(['Adler Zoe', 'Zander Anna']);
+});
+
 test('teacher source members expose assignable provider references', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 

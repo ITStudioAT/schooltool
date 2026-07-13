@@ -66,9 +66,9 @@ class TeachingCourseService
         return [];
     }
 
-    public function resolveStudentIds($value, int $schoolId): array
+    public function resolveStudentIds($value, int $schoolId, ?int $schoolyearId = null): array
     {
-        $entries = $this->resolveCourseStudentEntries($value, $schoolId);
+        $entries = $this->resolveCourseStudentEntries($value, $schoolId, $schoolyearId);
         $ids = [];
 
         foreach ($entries as $entry) {
@@ -112,9 +112,9 @@ class TeachingCourseService
         return $entries;
     }
 
-    public function resolveStudentEntries($value, int $schoolId): array
+    public function resolveStudentEntries($value, int $schoolId, ?int $schoolyearId = null): array
     {
-        $entries = $this->resolveCourseStudentEntries($value, $schoolId);
+        $entries = $this->resolveCourseStudentEntries($value, $schoolId, $schoolyearId);
 
         return array_values(array_map(function (array $entry) {
             return [
@@ -135,14 +135,14 @@ class TeachingCourseService
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function resolveCourseStudentEntries($value, int $schoolId): array
+    public function resolveCourseStudentEntries($value, int $schoolId, ?int $schoolyearId = null): array
     {
         $items = $this->normalizeStudentItems($value);
         $entries = [];
 
         foreach ($items as $item) {
             $data = (is_array($item) || is_object($item)) ? (array) $item : ['id' => $item];
-            $reference = $this->resolveStudentReferenceFromItem($item, $schoolId);
+            $reference = $this->resolveStudentReferenceFromItem($item, $schoolId, $schoolyearId);
 
             if (! $reference) {
                 continue;
@@ -183,8 +183,9 @@ class TeachingCourseService
             return;
         }
 
-        $activeEntries = $this->resolveCourseStudentEntries($studentsPayload, $schoolId);
-        $deletedEntries = $this->resolveCourseStudentEntries($studentsDeletedPayload, $schoolId);
+        $schoolyearId = $course->schoolyear_id ? (int) $course->schoolyear_id : null;
+        $activeEntries = $this->resolveCourseStudentEntries($studentsPayload, $schoolId, $schoolyearId);
+        $deletedEntries = $this->resolveCourseStudentEntries($studentsDeletedPayload, $schoolId, $schoolyearId);
 
         $activeByKey = [];
         foreach ($activeEntries as $entry) {
@@ -362,10 +363,14 @@ class TeachingCourseService
         return $protectedByCourse;
     }
 
-    public function findImportIdInSchool(int $id, int $schoolId): ?int
+    public function findImportIdInSchool(int $id, int $schoolId, ?int $schoolyearId = null): ?int
     {
-        $import = Import116::find($id);
-        if (! $import || (int) $import->school_id !== $schoolId) {
+        $import = Import116::query()
+            ->where('school_id', $schoolId)
+            ->when($schoolyearId, fn ($query) => $query->where('schoolyear_id', $schoolyearId))
+            ->find($id);
+
+        if (! $import) {
             return null;
         }
 
@@ -422,11 +427,14 @@ class TeachingCourseService
         }
     }
 
-    public function resolveStudentIdFromNumeric(int $id, int $schoolId): ?int
+    public function resolveStudentIdFromNumeric(int $id, int $schoolId, ?int $schoolyearId = null): ?int
     {
         // Check both User and Import116 tables
         $user = User::find($id);
-        $import = Import116::find($id);
+        $import = Import116::query()
+            ->where('school_id', $schoolId)
+            ->when($schoolyearId, fn ($query) => $query->where('schoolyear_id', $schoolyearId))
+            ->find($id);
 
         $userBelongsToSchool = $user && (int) $user->school_id === $schoolId;
         $importBelongsToSchool = $import && (int) $import->school_id === $schoolId;
@@ -554,15 +562,22 @@ class TeachingCourseService
         return $userId;
     }
 
-    public function resolveCourseStudentUserId(TeachingCourseStudent $courseStudent, int $schoolId): ?int
+    public function resolveCourseStudentUserId(TeachingCourseStudent $courseStudent, int $schoolId, ?int $schoolyearId = null): ?int
     {
         $user = $courseStudent->user_id
             ? User::query()->where('school_id', $schoolId)->find((int) $courseStudent->user_id)
             : null;
 
         $import = $courseStudent->import116_id
-            ? Import116::query()->where('school_id', $schoolId)->find((int) $courseStudent->import116_id)
+            ? Import116::query()
+                ->where('school_id', $schoolId)
+                ->when($schoolyearId, fn ($query) => $query->where('schoolyear_id', $schoolyearId))
+                ->find((int) $courseStudent->import116_id)
             : null;
+
+        if ($courseStudent->import116_id && ! $import) {
+            return null;
+        }
 
         if ($import && (! $user || ! $this->studentUserMatchesImport($user, $import))) {
             return $this->findOrCreateUserIdFromImport($import, $schoolId);
@@ -607,13 +622,13 @@ class TeachingCourseService
         return $user->id;
     }
 
-    private function resolveStudentReferenceFromItem(mixed $item, int $schoolId): ?array
+    private function resolveStudentReferenceFromItem(mixed $item, int $schoolId, ?int $schoolyearId): ?array
     {
         if (is_array($item) || is_object($item)) {
             $data = (array) $item;
 
             if (isset($data['import116_id']) && is_numeric($data['import116_id'])) {
-                $importId = $this->findImportIdInSchool((int) $data['import116_id'], $schoolId);
+                $importId = $this->findImportIdInSchool((int) $data['import116_id'], $schoolId, $schoolyearId);
                 if ($importId) {
                     $import = Import116::find($importId);
                     if ($import) {
@@ -625,6 +640,8 @@ class TeachingCourseService
 
                     return ['user_id' => null, 'import116_id' => $importId];
                 }
+
+                return null;
             }
 
             if (isset($data['user_id']) && is_numeric($data['user_id'])) {
@@ -636,7 +653,7 @@ class TeachingCourseService
 
             // Legacy clients may send only `id` for Import116 rows.
             // If payload clearly looks like an Import116 student, prefer that source.
-            $contextualImportReference = $this->resolveStudentReferenceFromContextualImportId($data, $schoolId);
+            $contextualImportReference = $this->resolveStudentReferenceFromContextualImportId($data, $schoolId, $schoolyearId);
             if ($contextualImportReference) {
                 return $contextualImportReference;
             }
@@ -644,7 +661,7 @@ class TeachingCourseService
             // Prefer email over ambiguous id - email unambiguously identifies the person
             $email = isset($data['email']) ? trim((string) $data['email']) : '';
             if ($email !== '') {
-                $reference = $this->resolveStudentReferenceByEmail($email, $schoolId, $data);
+                $reference = $this->resolveStudentReferenceByEmail($email, $schoolId, $data, $schoolyearId);
                 if ($reference) {
                     return $reference;
                 }
@@ -652,30 +669,30 @@ class TeachingCourseService
 
             // Fallback: resolve by ambiguous id (could be user_id or import116_id)
             if (isset($data['id']) && is_numeric($data['id'])) {
-                $reference = $this->resolveStudentReferenceFromNumeric((int) $data['id'], $schoolId);
+                $reference = $this->resolveStudentReferenceFromNumeric((int) $data['id'], $schoolId, $schoolyearId);
                 if ($reference) {
                     return $reference;
                 }
             }
         } elseif (is_numeric($item)) {
-            return $this->resolveStudentReferenceFromNumeric((int) $item, $schoolId);
+            return $this->resolveStudentReferenceFromNumeric((int) $item, $schoolId, $schoolyearId);
         } elseif (is_string($item)) {
             $email = trim($item);
             if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                return $this->resolveStudentReferenceByEmail($email, $schoolId, []);
+                return $this->resolveStudentReferenceByEmail($email, $schoolId, [], $schoolyearId);
             }
         }
 
         return null;
     }
 
-    private function resolveStudentReferenceFromContextualImportId(array $data, int $schoolId): ?array
+    private function resolveStudentReferenceFromContextualImportId(array $data, int $schoolId, ?int $schoolyearId): ?array
     {
         if (! isset($data['id']) || ! is_numeric($data['id'])) {
             return null;
         }
 
-        $importId = $this->findImportIdInSchool((int) $data['id'], $schoolId);
+        $importId = $this->findImportIdInSchool((int) $data['id'], $schoolId, $schoolyearId);
         if (! $importId) {
             return null;
         }
@@ -729,14 +746,14 @@ class TeachingCourseService
         return true;
     }
 
-    private function resolveStudentReferenceFromNumeric(int $id, int $schoolId): ?array
+    private function resolveStudentReferenceFromNumeric(int $id, int $schoolId, ?int $schoolyearId): ?array
     {
-        $resolvedUserId = $this->resolveStudentIdFromNumeric($id, $schoolId);
+        $resolvedUserId = $this->resolveStudentIdFromNumeric($id, $schoolId, $schoolyearId);
         if ($resolvedUserId) {
             return ['user_id' => $resolvedUserId, 'import116_id' => null];
         }
 
-        $fallbackImportId = $this->findImportIdInSchool($id, $schoolId);
+        $fallbackImportId = $this->findImportIdInSchool($id, $schoolId, $schoolyearId);
         if ($fallbackImportId) {
             $import = Import116::find($fallbackImportId);
             if ($import) {
@@ -752,14 +769,13 @@ class TeachingCourseService
         return null;
     }
 
-    private function resolveStudentReferenceByEmail(string $email, int $schoolId, array $data): ?array
+    private function resolveStudentReferenceByEmail(string $email, int $schoolId, array $data, ?int $schoolyearId): ?array
     {
+        $data['schoolyear_id'] ??= $schoolyearId;
         $resolvedUserId = $this->findOrCreateUserIdByEmail($email, $schoolId, $data);
         if ($resolvedUserId) {
             return ['user_id' => $resolvedUserId, 'import116_id' => null];
         }
-
-        $schoolyearId = $data['schoolyear_id'] ?? null;
 
         $importQuery = Import116::where('school_id', $schoolId)
             ->where('email', $email);

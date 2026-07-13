@@ -63,6 +63,24 @@ describe('CourseDates course-specific schema', () => {
         expect(source).not.toContain('show_dates = false')
     })
 
+    it('shows the assigned entry area in the dates card header', () => {
+        const computed = (CourseDates as any).computed
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const context = {
+            selected_course: {
+                teaching_entry_area: {
+                    id: 11,
+                    name: 'DGB',
+                },
+            },
+        }
+
+        expect(computed.selectedCourseEntryAreaName.call(context)).toBe('DGB')
+        expect(source).toContain('v-if="selectedCourseEntryAreaName"')
+        expect(source).toContain('class="course-date-entry-area-chip"')
+        expect(source).toContain('title="Zugewiesener Eintragsbereich"')
+    })
+
     it('shows the semester selector in the course title row and keeps the date range selector compact only', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
         const titleRowPosition = source.indexOf('class="course-dates-title-row')

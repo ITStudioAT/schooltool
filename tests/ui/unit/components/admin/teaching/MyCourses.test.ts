@@ -104,11 +104,65 @@ describe('MyCourses counts', () => {
         expect(ctx.newCourseCalled).toBe(1)
     })
 
+    it('requires the schoolyear-specific grading schema selection', () => {
+        const computed = (MyCourses as any).computed.hasSelectedGradingSchema
+
+        expect(
+            computed.call({
+                uses_entry_areas_for_grading_schema: false,
+                data: { teaching_schema_id: 'legacy-schema', teaching_entry_area_id: null },
+            })
+        ).toBe(true)
+        expect(
+            computed.call({
+                uses_entry_areas_for_grading_schema: true,
+                data: { teaching_schema_id: 'legacy-schema', teaching_entry_area_id: null },
+            })
+        ).toBe(false)
+        expect(
+            computed.call({
+                uses_entry_areas_for_grading_schema: true,
+                data: { teaching_schema_id: null, teaching_entry_area_id: 11 },
+            })
+        ).toBe(true)
+    })
+
+    it('renders legacy schemas through 2025/26 and Bereiche afterward', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/MyCourses.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('v-if="uses_entry_areas_for_grading_schema"')
+        expect(source).toContain('v-for="item in entryAreaItems"')
+        expect(source).toContain('data.teaching_entry_area_id === item.value')
+        expect(source).toContain('v-for="item in schemaItems"')
+        expect(source).toContain('data.teaching_schema_id === item.value')
+        expect(source).toContain('Keine Benotungsschemas unter Einstellungen &gt; Einträge vorhanden.')
+    })
+
+    it('offers course-owner entry areas and binds the assignment in the course form', () => {
+        const entryAreaItems = (MyCourses as any).computed.entryAreaItems.call({
+            data: {
+                id: 6,
+                teacher_teaching_entry_areas: [
+                    { id: 5, name: 'M-INF Unterstufe' },
+                    { id: 11, name: 'DGB' },
+                ],
+            },
+            entry_areas: [{ id: 99, name: 'Admin-Bereich' }],
+        })
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/MyCourses.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(entryAreaItems).toEqual([
+            { title: 'DGB', value: 11 },
+            { title: 'M-INF Unterstufe', value: 5 },
+        ])
+        expect(source).toContain('v-for="item in entryAreaItems"')
+        expect(source).toContain('data.teaching_entry_area_id = data.teaching_entry_area_id === item.value ? null : item.value')
+    })
+
     it('uses a two-column course button layout on small screens', () => {
-        const componentPath = resolve(
-            process.cwd(),
-            'resources/js/pages/admin/teaching/overview/components/MyCourses.vue',
-        )
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/MyCourses.vue')
         const source = readFileSync(componentPath, 'utf8')
 
         expect(source).toContain('class="my-courses-v1-chip-group"')
@@ -123,10 +177,7 @@ describe('MyCourses counts', () => {
     })
 
     it('moves course actions into a dedicated small-screen row', () => {
-        const componentPath = resolve(
-            process.cwd(),
-            'resources/js/pages/admin/teaching/overview/components/MyCourses.vue',
-        )
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/MyCourses.vue')
         const source = readFileSync(componentPath, 'utf8')
         const editButtonIndex = source.indexOf('icon="mdi-pencil"')
         const deleteButtonIndex = source.indexOf('icon="mdi-delete"')

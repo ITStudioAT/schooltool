@@ -2,7 +2,15 @@
     <ItsGridBox variant="overview" color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action != '' || isSavingCourse">
         <template #header-actions>
             <div class="my-courses-header-actions">
-                <v-btn v-if="action !== 'teaching_course_new_or_edit'" class="my-courses-header-action--new" icon="mdi-plus" size="small" variant="tonal" title="Fach anlegen" :disabled="isSavingCourse" @click="newCourse" />
+                <v-btn
+                    v-if="action !== 'teaching_course_new_or_edit'"
+                    class="my-courses-header-action--new"
+                    icon="mdi-plus"
+                    size="small"
+                    variant="tonal"
+                    title="Fach anlegen"
+                    :disabled="isSavingCourse"
+                    @click="newCourse" />
                 <v-btn
                     v-if="action !== 'teaching_course_new_or_edit'"
                     :icon="courses_view_variant === 'v1' ? 'mdi-view-grid-outline' : 'mdi-format-list-bulleted'"
@@ -19,9 +27,9 @@
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <v-card tile flat color="transparent" class="w-100">
                     <div
+                        v-if="courses_view_variant === 'v1'"
                         class="d-flex flex-row flex-wrap ga-2 align-center w-100 my-courses-v1-wrap"
-                        :class="{ 'my-courses-v1-group--disabled': isStudentDetailActive }"
-                        v-if="courses_view_variant === 'v1'">
+                        :class="{ 'my-courses-v1-group--disabled': isStudentDetailActive }">
                         <v-chip-group v-model="selected_course_id" column class="my-courses-v1-chip-group">
                             <v-chip
                                 v-for="course in courses"
@@ -63,31 +71,60 @@
                             </div>
                             <div class="my-courses-v2-card__title">{{ course.title }}</div>
                             <div class="my-courses-v2-card__classes" v-if="secondaryCourseClasses(course).length">
-                                <span
-                                    v-for="classItem in secondaryCourseClasses(course)"
-                                    :key="`course-${course.id}-class-${classItem}`"
-                                    class="my-courses-v2-card__class-chip">
+                                <span v-for="classItem in secondaryCourseClasses(course)" :key="`course-${course.id}-class-${classItem}`" class="my-courses-v2-card__class-chip">
                                     {{ classItem }}
                                 </span>
                             </div>
                         </button>
                     </div>
 
-                    <div v-if="!courses.length" class="text-caption text-medium-emphasis">
-                        Noch keine Fächer vorhanden.
-                    </div>
+                    <div v-if="!courses.length" class="text-caption text-medium-emphasis">Noch keine Fächer vorhanden.</div>
+
                 </v-card>
 
                 <div class="w-100 d-flex flex-row justify-end my-courses-course-actions" v-if="action !== 'teaching_course_new_or_edit' || selected_course">
                     <div class="d-flex flex-row align-center ga-2 my-courses-course-actions__buttons">
                         <template v-if="selected_course">
-                            <v-btn flat tile size="small" color="primary" icon="mdi-pencil" :disabled="isSavingCourse" @click="editCourse(selected_course)" v-if="delete_level == 0" />
+                            <v-btn
+                                flat
+                                tile
+                                size="small"
+                                color="primary"
+                                icon="mdi-pencil"
+                                :disabled="isSavingCourse"
+                                @click="editCourse(selected_course)"
+                                v-if="delete_level == 0" />
                             <v-btn flat tile size="small" color="warning" icon="mdi-delete" :disabled="isSavingCourse" @click="delete_level++" v-if="delete_level == 0" />
                             <v-btn flat tile size="small" color="success" icon="mdi-delete-off" :disabled="isSavingCourse" @click="delete_level = 0" v-if="delete_level == 1" />
-                            <v-btn flat tile size="small" color="error" icon="mdi-delete" :loading="isDeletingCourse" :disabled="isSavingCourse" @click="deleteCourse(selected_course)" v-if="delete_level == 1" />
+                            <v-btn
+                                flat
+                                tile
+                                size="small"
+                                color="error"
+                                icon="mdi-delete"
+                                :loading="isDeletingCourse"
+                                :disabled="isSavingCourse"
+                                @click="deleteCourse(selected_course)"
+                                v-if="delete_level == 1" />
                         </template>
-                        <v-btn class="my-courses-course-actions__new" icon="mdi-plus" size="small" variant="tonal" title="Fach anlegen" :disabled="isSavingCourse" @click="newCourse" v-if="action !== 'teaching_course_new_or_edit'" />
-                        <v-btn v-if="selected_course" size="small" variant="outlined" color="white" icon="mdi-close" title="Auswahl aufheben" :disabled="isSavingCourse" @click="clearSelectedCourse" />
+                        <v-btn
+                            class="my-courses-course-actions__new"
+                            icon="mdi-plus"
+                            size="small"
+                            variant="tonal"
+                            title="Fach anlegen"
+                            :disabled="isSavingCourse"
+                            @click="newCourse"
+                            v-if="action !== 'teaching_course_new_or_edit'" />
+                        <v-btn
+                            v-if="selected_course"
+                            size="small"
+                            variant="outlined"
+                            color="white"
+                            icon="mdi-close"
+                            title="Auswahl aufheben"
+                            :disabled="isSavingCourse"
+                            @click="clearSelectedCourse" />
                     </div>
                 </div>
             </v-card-text>
@@ -104,12 +141,24 @@
                 <v-btn icon="mdi-close" size="x-small" variant="text" :disabled="isSavingCourse" @click="abortNewCourse" />
             </v-card-title>
             <v-divider />
-            <v-card-text style="max-height: 75vh; overflow-y: auto;" :style="isSavingCourse ? 'pointer-events:none; opacity:0.6' : ''">
+            <v-card-text style="max-height: 75vh; overflow-y: auto" :style="isSavingCourse ? 'pointer-events:none; opacity:0.6' : ''">
                 <v-form ref="form" v-model="is_valid" class="mb-4">
                     <div class="text-caption text-medium-emphasis mb-2">Bitte geben Sie die Felder ein (* = Pflichtfeld)</div>
                     <v-text-field autofocus v-model="data.title" label="Bezeichnung *" :rules="[required(), maxLength(255)]" />
                     <div class="text-caption text-medium-emphasis mt-3 mb-1">Benotungsschema *</div>
-                    <div class="d-flex flex-wrap ga-1">
+                    <div v-if="uses_entry_areas_for_grading_schema" class="d-flex flex-wrap ga-1">
+                        <v-btn
+                            v-for="item in entryAreaItems"
+                            :key="item.value"
+                            :variant="data.teaching_entry_area_id === item.value ? 'flat' : 'tonal'"
+                            :color="data.teaching_entry_area_id === item.value ? 'primary' : 'default'"
+                            size="small"
+                            @click="data.teaching_entry_area_id = data.teaching_entry_area_id === item.value ? null : item.value">
+                            {{ item.title }}
+                        </v-btn>
+                        <span v-if="!entryAreaItems.length" class="text-caption text-medium-emphasis">Keine Benotungsschemas unter Einstellungen &gt; Einträge vorhanden.</span>
+                    </div>
+                    <div v-else class="d-flex flex-wrap ga-1">
                         <v-btn
                             v-for="item in schemaItems"
                             :key="item.value"
@@ -139,12 +188,7 @@
                             {{ activeSelectedStudentsCount }}
                         </v-chip>
                         <div class="w-100 d-flex flex-wrap align-center justify-end ga-2 mt-1 course-edit-students-actions-row">
-                            <v-btn-toggle
-                                v-model="students_sort_mode"
-                                mandatory
-                                density="compact"
-                                color="primary"
-                                class="course-edit-students-sort-toggle">
+                            <v-btn-toggle v-model="students_sort_mode" mandatory density="compact" color="primary" class="course-edit-students-sort-toggle">
                                 <v-btn size="x-small" value="class_last_name" class="course-edit-students-sort-toggle-btn">Klasse, Name</v-btn>
                                 <v-btn size="x-small" value="last_name_first_name" class="course-edit-students-sort-toggle-btn">Name</v-btn>
                             </v-btn-toggle>
@@ -168,13 +212,7 @@
                                         {{ student.remove_block_reason || 'Entfernen nicht möglich, bitte stornieren.' }}
                                     </div>
                                     <v-spacer />
-                                    <v-btn
-                                        v-if="isStudentRemovable(student)"
-                                        size="x-small"
-                                        color="error"
-                                        variant="tonal"
-                                        prepend-icon="mdi-minus"
-                                        @click="removeStudent(student)">
+                                    <v-btn v-if="isStudentRemovable(student)" size="x-small" color="error" variant="tonal" prepend-icon="mdi-minus" @click="removeStudent(student)">
                                         Entfernen
                                     </v-btn>
                                     <v-btn
@@ -186,15 +224,7 @@
                                         @click="uncancelStudent(student)">
                                         Storno aufheben
                                     </v-btn>
-                                    <v-btn
-                                        v-else
-                                        size="x-small"
-                                        color="warning"
-                                        variant="tonal"
-                                        prepend-icon="mdi-cancel"
-                                        @click="cancelStudent(student)">
-                                        Stornieren
-                                    </v-btn>
+                                    <v-btn v-else size="x-small" color="warning" variant="tonal" prepend-icon="mdi-cancel" @click="cancelStudent(student)">Stornieren</v-btn>
                                 </div>
                             </v-list-item>
                             <v-list-item v-if="!sortedSelectedStudents.length">
@@ -225,12 +255,7 @@
                                 clearable
                                 @keyup.enter="searchStudents"
                                 @click:clear="clearStudentSearch" />
-                            <v-btn
-                                color="primary"
-                                variant="tonal"
-                                icon="mdi-magnify"
-                                :loading="student_search_loading"
-                                @click="searchStudents" />
+                            <v-btn color="primary" variant="tonal" icon="mdi-magnify" :loading="student_search_loading" @click="searchStudents" />
                         </div>
                         <v-list density="compact" class="mt-1 pa-0" v-if="student_search_results.length">
                             <v-list-item v-for="student in student_search_results" :key="student.id">
@@ -265,12 +290,7 @@
                             {{ filteredImport116Students.length }}
                         </v-chip>
                         <v-spacer />
-                        <v-btn-toggle
-                            v-model="students_sort_mode"
-                            mandatory
-                            density="compact"
-                            color="primary"
-                            class="course-edit-students-sort-toggle">
+                        <v-btn-toggle v-model="students_sort_mode" mandatory density="compact" color="primary" class="course-edit-students-sort-toggle">
                             <v-btn size="x-small" value="class_last_name" class="course-edit-students-sort-toggle-btn">Klasse, Name</v-btn>
                             <v-btn size="x-small" value="last_name_first_name" class="course-edit-students-sort-toggle-btn">Name</v-btn>
                         </v-btn-toggle>
@@ -312,8 +332,12 @@
                     variant="tonal"
                     :loading="isSavingCourseDetails"
                     :disabled="isSavingCourse"
-                    v-if="data.title && data?.classes?.length > 0 && data.teaching_schema_id"
-                    @click="$refs.form.validate().then((v) => { if (v.valid) save(data) })">
+                    v-if="data.title && data?.classes?.length > 0 && hasSelectedGradingSchema"
+                    @click="
+                        $refs.form.validate().then((v) => {
+                            if (v.valid) save(data)
+                        })
+                    ">
                     {{ data.id ? 'Aktualisieren' : 'Speichern' }}
                 </v-btn>
             </v-card-actions>
@@ -373,9 +397,30 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_my_courses']),
+        ...mapWritableState(useCourseStore, [
+            'courses',
+            'classes',
+            'entry_areas',
+            'uses_entry_areas_for_grading_schema',
+            'selected_course',
+            'selected_course_id',
+            'selected_course_student',
+            'show_my_courses',
+        ]),
         schemaItems() {
-            return (this.teachingStore?.schemas || []).map((s) => ({ title: s.name, value: s.id })).sort((a, b) => a.title.localeCompare(b.title))
+            return (this.teachingStore?.schemas || [])
+                .map((schema) => ({ title: schema.name, value: schema.id }))
+                .sort((firstSchema, secondSchema) => firstSchema.title.localeCompare(secondSchema.title))
+        },
+        entryAreaItems() {
+            const courseEntryAreas = Array.isArray(this.data?.teacher_teaching_entry_areas) ? this.data.teacher_teaching_entry_areas : this.entry_areas
+
+            return (Array.isArray(courseEntryAreas) ? courseEntryAreas : [])
+                .map((entryArea) => ({ title: entryArea.name, value: Number(entryArea.id) }))
+                .sort((firstEntryArea, secondEntryArea) => firstEntryArea.title.localeCompare(secondEntryArea.title))
+        },
+        hasSelectedGradingSchema() {
+            return this.uses_entry_areas_for_grading_schema ? Boolean(this.data?.teaching_entry_area_id) : Boolean(this.data?.teaching_schema_id)
         },
         filteredImport116Students() {
             const list = this.import116_students_local || []
@@ -386,10 +431,12 @@ export default {
 
             if (!selectedEmails.size) return [...list].sort((a, b) => this.compareStudentsBySelectedSort(a, b))
 
-            return list.filter((student) => {
-                const email = (student.email || '').toString().trim().toLowerCase()
-                return !email || !selectedEmails.has(email)
-            }).sort((a, b) => this.compareStudentsBySelectedSort(a, b))
+            return list
+                .filter((student) => {
+                    const email = (student.email || '').toString().trim().toLowerCase()
+                    return !email || !selectedEmails.has(email)
+                })
+                .sort((a, b) => this.compareStudentsBySelectedSort(a, b))
         },
         sortedSelectedStudents() {
             const list = this.data?.students_info || []
@@ -600,11 +647,13 @@ export default {
             const email = (student.email || '').toString().trim().toLowerCase()
 
             // Check for duplicates by ID and by email
-            const isDuplicateById = this.data.students.some(id => String(id) === String(student.id))
-            const isDuplicateByEmail = email && this.data.students_info.some(s => {
-                const existingEmail = (s.email || '').toString().trim().toLowerCase()
-                return existingEmail && existingEmail === email
-            })
+            const isDuplicateById = this.data.students.some((id) => String(id) === String(student.id))
+            const isDuplicateByEmail =
+                email &&
+                this.data.students_info.some((s) => {
+                    const existingEmail = (s.email || '').toString().trim().toLowerCase()
+                    return existingEmail && existingEmail === email
+                })
 
             if (!isDuplicateById && !isDuplicateByEmail) {
                 this.data.students.push(student.id)
@@ -639,7 +688,7 @@ export default {
             if (this.data.students.includes(student.id)) return true
             const email = (student.email || '').toString().trim().toLowerCase()
             if (!email) return false
-            return this.data.students_info.some(s => {
+            return this.data.students_info.some((s) => {
                 const existingEmail = (s.email || '').toString().trim().toLowerCase()
                 return existingEmail && existingEmail === email
             })
@@ -753,7 +802,7 @@ export default {
         },
 
         async save(data) {
-            if (!data?.teaching_schema_id) return
+            if (!this.hasSelectedGradingSchema) return
 
             await this.runCourseMutation('save', async () => {
                 const source = data
@@ -890,6 +939,8 @@ export default {
                 students_info: [],
                 students_deleted: [],
                 students_deleted_info: [],
+                teaching_schema_id: null,
+                teaching_entry_area_id: null,
             }
             this.selected_course = null
             this.selected_course_id = null
@@ -1015,7 +1066,10 @@ export default {
     padding: 12px;
     text-align: left;
     cursor: pointer;
-    transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+    transition:
+        transform 0.12s ease,
+        box-shadow 0.12s ease,
+        border-color 0.12s ease;
 }
 
 .my-courses-v2-card:disabled {

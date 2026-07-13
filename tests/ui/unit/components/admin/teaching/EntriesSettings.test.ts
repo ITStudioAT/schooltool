@@ -197,6 +197,73 @@ describe('Teaching entries settings', () => {
         expect(ctx.notifySuccess).toHaveBeenCalledWith('2 Einträge wurden übernommen.')
     })
 
+    it('loads the previous schoolyear offer without opening the dialog', async () => {
+        const methods = (Entries as any).methods
+        const previousYearImport = {
+            schoolyear: { id: 5, label: '2025/26' },
+            area_count: 2,
+            entry_count: 7,
+        }
+        const get = vi.fn().mockImplementation((url: string) => {
+            if (url === '/api/admin/teaching/entry_areas') {
+                return Promise.resolve({ data: { data: [], meta: { previous_year_import: previousYearImport } } })
+            }
+
+            return Promise.resolve({ data: { data: [] } })
+        })
+        ;(globalThis as any).axios = { get }
+        const ctx: any = {
+            areas: [],
+            entries: [],
+            activeAreaId: null,
+            isLoading: false,
+            previousYearImportOffer: null,
+            previousYearImportDialogOpen: false,
+            notifyError: vi.fn(),
+        }
+
+        await methods.loadData.call(ctx)
+
+        expect(ctx.previousYearImportOffer).toEqual(previousYearImport)
+        expect(ctx.previousYearImportDialogOpen).toBe(false)
+
+        methods.openPreviousYearImport.call(ctx)
+        expect(ctx.previousYearImportDialogOpen).toBe(true)
+    })
+
+    it('imports previous schoolyear areas and entries into the local view', async () => {
+        const methods = (Entries as any).methods
+        const areas = [{ id: 30, name: 'Unterstufe', entry_count: 1 }]
+        const entries = [entryFixture({ id: 40, teaching_entry_area_id: 30 })]
+        const post = vi.fn().mockResolvedValue({
+            data: {
+                data: { areas, entries },
+                imported_area_count: 1,
+                imported_entry_count: 1,
+            },
+        })
+        ;(globalThis as any).axios = { post }
+        const ctx: any = {
+            areas: [],
+            entries: [],
+            activeAreaId: null,
+            previousYearImportOffer: { schoolyear: { id: 5, label: '2025/26' } },
+            previousYearImportDialogOpen: true,
+            isImportingPreviousYear: false,
+            notifyError: vi.fn(),
+            notifySuccess: vi.fn(),
+        }
+
+        await methods.importPreviousYearAreas.call(ctx)
+
+        expect(post).toHaveBeenCalledWith('/api/admin/teaching/entry-area-imports')
+        expect(ctx.areas).toEqual(areas)
+        expect(ctx.entries).toEqual(entries)
+        expect(ctx.activeAreaId).toBe(30)
+        expect(ctx.previousYearImportDialogOpen).toBe(false)
+        expect(ctx.notifySuccess).toHaveBeenCalledWith('1 Bereich und 1 Eintrag wurden übernommen.')
+    })
+
     it('renders all area cards in a wrapping grid and persistent CRUD dialogs without dropdowns', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
         const areasTitleIndex = source.indexOf('title="Bereiche"')
@@ -222,6 +289,11 @@ describe('Teaching entries settings', () => {
         expect(source).toContain('Löschen')
         expect(source).toContain('@click="confirmAreaDelete"')
         expect(source).toContain("axios.get('/api/admin/teaching/entry_areas')")
+        expect(source).toContain('v-model="previousYearImportDialogOpen"')
+        expect(source).toContain('@click="openPreviousYearImport"')
+        expect(source).toContain('Aus Vorjahr übernehmen')
+        expect(source).toContain('Aus dem Vorjahr übernehmen?')
+        expect(source).toContain("axios.post('/api/admin/teaching/entry-area-imports')")
         expect(source).not.toContain('v-model="entryForm.teaching_entry_area_id"')
         expect(source).not.toContain('v-model="entryForm.category"')
         expect(source).not.toContain('categorySelectionOptions')

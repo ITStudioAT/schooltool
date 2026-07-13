@@ -34,4 +34,9 @@ class TeachingEntryArea extends Model
     {
         return $this->hasMany(TeachingEntryDefinition::class);
     }
+
+    public function teachingCourses(): HasMany
+    {
+        return $this->hasMany(TeachingCourse::class);
+    }
 }

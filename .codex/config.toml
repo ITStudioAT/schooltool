@@ -22,12 +22,5 @@ url = "https://mcp.vue-mcp.org/mcp"
 [mcp_servers.vuetify-mcp]
 url = "https://mcp.vuetifyjs.com/mcp"
 
-[mcp_servers.context7]
-command = "npx"
-args = [
-    "-y",
-    "@upstash/context7-mcp@latest",
-]
-
 [mcp_servers.vue-app-mcp]
 url = "http://localhost:5173/__mcp/sse"

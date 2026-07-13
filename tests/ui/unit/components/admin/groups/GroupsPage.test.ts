@@ -834,6 +834,41 @@ describe('Groups page header', () => {
         expect(rows.map((row: any) => row.id)).toEqual([2, 1, 3])
     })
 
+    it('groups parents below students sorted by the student last name', () => {
+        const methods = (Groups as any).methods
+        const parents = [
+            {
+                id: 'parent-b',
+                name: 'Berta Elternteil',
+                children: [
+                    { id: 2, name: 'Zander Anna', last_name: 'Zander', first_name: 'Anna', schoolclass: '1A' },
+                    { id: 1, name: 'Adler Zoe', last_name: 'Adler', first_name: 'Zoe', schoolclass: '1A' },
+                ],
+            },
+            {
+                id: 'parent-a',
+                name: 'Anton Elternteil',
+                children: [
+                    { id: 1, name: 'Adler Zoe', last_name: 'Adler', first_name: 'Zoe', schoolclass: '1A' },
+                ],
+            },
+        ]
+        const ctx = {
+            assignUsersDialog: { group: { id: 12, type: 'school', name: '1A Eltern', is_parent_group: true } },
+            isParentGroup: vi.fn(() => true),
+            readOnlyCombinedMembers: vi.fn(() => parents),
+            memberChildren: methods.memberChildren,
+            readOnlyMemberKey: methods.readOnlyMemberKey,
+            sortReadOnlyMembers: methods.sortReadOnlyMembers,
+        }
+
+        const groups = methods.readOnlyParentGroups.call(ctx)
+
+        expect(groups.map((group: any) => group.name)).toEqual(['Adler Zoe', 'Zander Anna'])
+        expect(groups[0].parents.map((parent: any) => parent.name)).toEqual(['Anton Elternteil', 'Berta Elternteil'])
+        expect(groups[1].parents.map((parent: any) => parent.name)).toEqual(['Berta Elternteil'])
+    })
+
     it('builds provider-based assignment payloads and selected member batches', () => {
         const methods = (Groups as any).methods
         const ctx = {
@@ -954,6 +989,7 @@ describe('Groups page header', () => {
             dialogPaginationSize: methods.dialogPaginationSize,
             dialogPaginationPageCount: methods.dialogPaginationPageCount,
             normalizedDialogPage: methods.normalizedDialogPage,
+            readOnlyPaginationItemCount: vi.fn(() => 150),
         }
 
         methods.syncDialogPagination.call(ctx)
@@ -1123,12 +1159,13 @@ describe('Groups page header', () => {
         expect(source).toContain("metaLabel: '(automatisch erstellt)'")
         expect(source).toContain('readOnlyCombinedMembers()')
         expect(source).toContain('paginatedReadOnlyCombinedMembers()')
+        expect(source).toContain('paginatedReadOnlyParentGroups()')
         expect(source).toContain('paginatedAssignedMembers()')
         expect(source).toContain('readOnlyCombinedMembersLoading()')
         expect(source).toContain("return 'Lade Mitglieder ...'")
         expect(source).toContain("return 'Keine Schulmitglieder gefunden.'")
         expect(source).toContain('dialogPaginationSize()')
-        expect(source).toContain('shouldPaginateDialogList(readOnlyCombinedMembers().length)')
+        expect(source).toContain('shouldPaginateDialogList(readOnlyPaginationItemCount())')
         expect(source).toContain('shouldPaginateDialogList(assignUsersDialog.members.length)')
         expect(source).toContain('dialogPaginationSummary(')
         expect(source).toContain('v-model="assignUsersDialog.readOnlyPage"')

@@ -32,6 +32,7 @@ class TeachingCourse extends Model
         'students_deleted',
         'reminder',
         'teaching_schema_id',
+        'teaching_entry_area_id',
         'teaching_curriculum_id',
         'teaching_student_grade_columns',
     ];
@@ -154,6 +155,11 @@ class TeachingCourse extends Model
     public function teachingCurriculum(): BelongsTo
     {
         return $this->belongsTo(TeachingCurriculum::class);
+    }
+
+    public function teachingEntryArea(): BelongsTo
+    {
+        return $this->belongsTo(TeachingEntryArea::class);
     }
 
     public function teachingCourseDates(): HasMany
