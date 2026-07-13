@@ -13,6 +13,8 @@ function entryFixture(overrides = {}) {
         has_properties: true,
         properties_mode: 'fixed',
         fixed_properties: ['+', '-'],
+        has_notifications: false,
+        notification_recipients: [],
         ...overrides,
     }
 }
@@ -46,6 +48,74 @@ describe('Teaching entries settings', () => {
         expect(ctx.entryForm.teaching_entry_area_id).toBe(10)
         expect(ctx.entryForm.category).toBe('Weitere')
         expect(ctx.editDialogOpen).toBe(true)
+    })
+
+    it('saves notifications instead of properties for behaviour and other entries', async () => {
+        const methods = (Entries as any).methods
+        const post = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { id: 2, ...payload } } }))
+        ;(globalThis as any).axios = { post }
+
+        for (const category of ['Verhalten', 'Weitere']) {
+            const ctx: any = {
+                areas: [{ id: 10, name: 'Unterstufe' }],
+                entries: [],
+                entryForm: entryFixture({
+                    category,
+                    has_notifications: true,
+                    notification_recipients: ['class_teacher', 'parents'],
+                }),
+                selectedEntryId: null,
+                activeAreaId: 10,
+                activeCategory: category,
+                canSaveEntry: true,
+                formErrors: {},
+                isSaving: false,
+                normalizeShortName: methods.normalizeShortName,
+                closeEditDialog: methods.closeEditDialog,
+                notifyError: vi.fn(),
+            }
+
+            await methods.saveEntry.call(ctx)
+
+            expect(post).toHaveBeenLastCalledWith(
+                '/api/admin/teaching/entry_definitions',
+                expect.objectContaining({
+                    category,
+                    has_properties: false,
+                    properties_mode: 'free',
+                    fixed_properties: [],
+                    has_notifications: true,
+                    notification_recipients: ['class_teacher', 'parents'],
+                }),
+            )
+        }
+    })
+
+    it('clears stale notification recipients for grading entries', async () => {
+        const methods = (Entries as any).methods
+        const post = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { id: 2, ...payload } } }))
+        ;(globalThis as any).axios = { post }
+        const ctx: any = {
+            areas: [{ id: 10, name: 'Unterstufe' }],
+            entries: [],
+            entryForm: entryFixture({ has_notifications: true, notification_recipients: ['student'] }),
+            selectedEntryId: null,
+            activeAreaId: 10,
+            activeCategory: 'Benotung',
+            canSaveEntry: true,
+            formErrors: {},
+            isSaving: false,
+            normalizeShortName: methods.normalizeShortName,
+            closeEditDialog: methods.closeEditDialog,
+            notifyError: vi.fn(),
+        }
+
+        await methods.saveEntry.call(ctx)
+
+        expect(post).toHaveBeenCalledWith(
+            '/api/admin/teaching/entry_definitions',
+            expect.objectContaining({ has_notifications: false, notification_recipients: [] }),
+        )
     })
 
     it('creates and renames areas through their API', async () => {
@@ -157,6 +227,14 @@ describe('Teaching entries settings', () => {
         expect(source).not.toContain('categorySelectionOptions')
         expect(source).not.toContain('<strong>Bereich / Oberbegriff</strong>')
         expect(source).not.toContain('<strong>Kategorie</strong>')
+        expect(source).toContain('<section v-if="entryForm.category === \'Benotung\'" class="form-section">\n                        <div class="properties-heading">')
+        expect(source).toContain('<section v-else class="form-section">')
+        expect(source).toContain('<strong>Verständigungen</strong>')
+        expect(source).toContain('v-model="entryForm.has_notifications"')
+        expect(source).toContain('label="Klassenvorstand"')
+        expect(source).toContain('label="Eltern"')
+        expect(source).toContain('label="Schüler:in"')
+        expect(source).toContain('<div v-if="entry.category === \'Benotung\'" class="entry-properties">')
         expect(source).toContain('class="entry-property-chip"')
         expect(source).toContain("entry.has_properties && entry.properties_mode === 'free'")
         expect(source).toContain('class="entry-property-chip entry-free-input-chip"')

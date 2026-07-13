@@ -56,6 +56,8 @@ function teachingEntryFor(User $user, Schoolyear $year, TeachingEntryArea $area,
         'has_properties' => true,
         'properties_mode' => 'fixed',
         'fixed_properties' => ['+', '-'],
+        'has_notifications' => false,
+        'notification_recipients' => [],
         ...$attributes,
     ]);
 }
@@ -70,6 +72,8 @@ function validEntryPayload(TeachingEntryArea $area, array $attributes = []): arr
         'has_properties' => true,
         'properties_mode' => 'fixed',
         'fixed_properties' => ['+', '-'],
+        'has_notifications' => false,
+        'notification_recipients' => [],
         ...$attributes,
     ];
 }
@@ -105,6 +109,74 @@ test('store creates and normalizes a definition', function () {
         ->assertJsonPath('data.teaching_entry_area_id', $this->area->id);
 });
 
+test('store persists scoped notification recipients for behaviour entries and removes properties', function () {
+    $response = $this->actingAs($this->teacher, 'sanctum')->postJson(
+        '/api/admin/teaching/entry_definitions',
+        validEntryPayload($this->area, [
+            'category' => 'Verhalten',
+            'has_properties' => true,
+            'has_notifications' => true,
+            'notification_recipients' => ['class_teacher', 'parents'],
+        ])
+    );
+
+    $response->assertCreated()
+        ->assertJsonPath('data.has_properties', false)
+        ->assertJsonPath('data.properties_mode', 'free')
+        ->assertJsonPath('data.fixed_properties', [])
+        ->assertJsonPath('data.has_notifications', true)
+        ->assertJsonPath('data.notification_recipients', ['class_teacher', 'parents']);
+
+    $entry = TeachingEntryDefinition::query()->findOrFail($response->json('data.id'));
+
+    expect($entry->user_id)->toBe($this->teacher->id)
+        ->and($entry->school_id)->toBe($this->school->id)
+        ->and($entry->schoolyear_id)->toBe($this->schoolyear->id)
+        ->and($entry->notification_recipients)->toBe(['class_teacher', 'parents']);
+});
+
+test('notification recipients are validated', function () {
+    $this->actingAs($this->teacher, 'sanctum')->postJson(
+        '/api/admin/teaching/entry_definitions',
+        validEntryPayload($this->area, [
+            'category' => 'Weitere',
+            'has_notifications' => true,
+            'notification_recipients' => ['parents', 'unknown'],
+        ])
+    )->assertUnprocessable()->assertJsonValidationErrors('notification_recipients.1');
+});
+
+test('grading entries and disabled notifications clear recipients', function () {
+    $entry = teachingEntryFor($this->teacher, $this->schoolyear, $this->area, [
+        'category' => 'Verhalten',
+        'has_notifications' => true,
+        'notification_recipients' => ['parents'],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')->putJson(
+        "/api/admin/teaching/entry_definitions/{$entry->id}",
+        validEntryPayload($this->area, [
+            'short_name' => 'M',
+            'has_notifications' => true,
+            'notification_recipients' => ['student'],
+        ])
+    )->assertOk()
+        ->assertJsonPath('data.has_notifications', false)
+        ->assertJsonPath('data.notification_recipients', []);
+
+    $this->putJson(
+        "/api/admin/teaching/entry_definitions/{$entry->id}",
+        validEntryPayload($this->area, [
+            'short_name' => 'M',
+            'category' => 'Weitere',
+            'has_notifications' => false,
+            'notification_recipients' => ['class_teacher'],
+        ])
+    )->assertOk()
+        ->assertJsonPath('data.has_notifications', false)
+        ->assertJsonPath('data.notification_recipients', []);
+});
+
 test('short names are unique within an area and foreign areas are rejected', function () {
     teachingEntryFor($this->teacher, $this->schoolyear, $this->area);
     $this->actingAs($this->teacher, 'sanctum');
@@ -123,14 +195,17 @@ test('update can move an entry to another area and clears irrelevant properties'
         "/api/admin/teaching/entry_definitions/{$entry->id}",
         validEntryPayload($this->otherArea, [
             'short_name' => 'I', 'name' => 'Information', 'category' => 'Weitere',
-            'has_properties' => false, 'properties_mode' => 'fixed', 'fixed_properties' => ['ignored'],
+            'has_properties' => true, 'properties_mode' => 'fixed', 'fixed_properties' => ['ignored'],
+            'has_notifications' => true, 'notification_recipients' => ['student'],
         ])
     );
 
     $response->assertOk()
         ->assertJsonPath('data.teaching_entry_area_id', $this->otherArea->id)
         ->assertJsonPath('data.properties_mode', 'free')
-        ->assertJsonPath('data.fixed_properties', []);
+        ->assertJsonPath('data.fixed_properties', [])
+        ->assertJsonPath('data.has_notifications', true)
+        ->assertJsonPath('data.notification_recipients', ['student']);
 });
 
 test('update and destroy reject foreign entries and destroy removes an owned entry', function () {

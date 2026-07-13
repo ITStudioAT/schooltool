@@ -74,7 +74,7 @@
                     <div class="entry-row-content">
                         <v-chip class="entry-short-chip" color="primary" variant="flat">{{ entry.short_name }}</v-chip>
                         <span class="entry-name" :title="entry.name">{{ entry.name }}</span>
-                        <div class="entry-properties">
+                        <div v-if="entry.category === 'Benotung'" class="entry-properties">
                             <v-chip v-if="entry.has_properties && entry.properties_mode === 'free'" class="entry-property-chip entry-free-input-chip" color="info" variant="tonal">
                                 Freie Eingabe
                             </v-chip>
@@ -231,7 +231,7 @@
                         </v-row>
                     </section>
 
-                    <section class="form-section">
+                    <section v-if="entryForm.category === 'Benotung'" class="form-section">
                         <div class="properties-heading">
                             <div class="form-heading mb-0">
                                 <v-icon icon="mdi-tune-variant" color="primary" />
@@ -262,6 +262,44 @@
                                     closable-chips
                                     clearable
                                     :error-messages="formErrors.fixed_properties" />
+                            </div>
+                        </v-expand-transition>
+                    </section>
+
+                    <section v-else class="form-section">
+                        <div class="properties-heading">
+                            <div class="form-heading mb-0">
+                                <v-icon icon="mdi-bell-outline" color="primary" />
+                                <strong>Verständigungen</strong>
+                            </div>
+                            <v-switch v-model="entryForm.has_notifications" color="primary" hide-details inset aria-label="Verständigungen aktivieren" />
+                        </div>
+                        <v-expand-transition>
+                            <div v-if="entryForm.has_notifications" class="notification-options mt-4">
+                                <v-checkbox
+                                    v-model="entryForm.notification_recipients"
+                                    value="class_teacher"
+                                    label="Klassenvorstand"
+                                    color="primary"
+                                    density="compact"
+                                    hide-details
+                                    multiple />
+                                <v-checkbox
+                                    v-model="entryForm.notification_recipients"
+                                    value="parents"
+                                    label="Eltern"
+                                    color="primary"
+                                    density="compact"
+                                    hide-details
+                                    multiple />
+                                <v-checkbox
+                                    v-model="entryForm.notification_recipients"
+                                    value="student"
+                                    label="Schüler:in"
+                                    color="primary"
+                                    density="compact"
+                                    hide-details
+                                    multiple />
                             </div>
                         </v-expand-transition>
                     </section>
@@ -325,7 +363,17 @@ export default {
             areaFormErrors: {},
             entryCopyErrors: {},
             areaForm: { name: '' },
-            entryForm: { teaching_entry_area_id: null, short_name: '', name: '', category: 'Benotung', has_properties: false, properties_mode: 'free', fixed_properties: [] },
+            entryForm: {
+                teaching_entry_area_id: null,
+                short_name: '',
+                name: '',
+                category: 'Benotung',
+                has_properties: false,
+                properties_mode: 'free',
+                fixed_properties: [],
+                has_notifications: false,
+                notification_recipients: [],
+            },
         }
     },
 
@@ -350,7 +398,10 @@ export default {
                 String(this.entryForm.short_name).trim() &&
                 String(this.entryForm.name).trim() &&
                 this.areas.some((area) => area.id === this.entryForm.teaching_entry_area_id) &&
-                (!this.entryForm.has_properties || this.entryForm.properties_mode !== 'fixed' || this.entryForm.fixed_properties.length)
+                (this.entryForm.category !== 'Benotung' ||
+                    !this.entryForm.has_properties ||
+                    this.entryForm.properties_mode !== 'fixed' ||
+                    this.entryForm.fixed_properties.length)
             )
         },
         entryPendingDeletion() {
@@ -397,6 +448,8 @@ export default {
                 has_properties: false,
                 properties_mode: 'free',
                 fixed_properties: [],
+                has_notifications: false,
+                notification_recipients: [],
             }
         },
         openCreateDialog() {
@@ -407,7 +460,11 @@ export default {
         },
         openEditDialog(entry) {
             this.selectedEntryId = entry.id
-            this.entryForm = { ...entry, fixed_properties: [...entry.fixed_properties] }
+            this.entryForm = {
+                ...entry,
+                fixed_properties: [...entry.fixed_properties],
+                notification_recipients: [...(entry.notification_recipients || [])],
+            }
             this.formErrors = {}
             this.editDialogOpen = true
         },
@@ -419,14 +476,22 @@ export default {
         async saveEntry() {
             if (!this.canSaveEntry) return
             this.normalizeShortName(this.entryForm)
+            const hasProperties = this.entryForm.category === 'Benotung' && this.entryForm.has_properties
+            const hasNotifications = this.entryForm.category !== 'Benotung' && this.entryForm.has_notifications
+            const allowedNotificationRecipients = ['class_teacher', 'parents', 'student']
             const payload = {
                 ...this.entryForm,
                 name: this.entryForm.name.trim(),
+                has_properties: hasProperties,
                 fixed_properties:
-                    this.entryForm.has_properties && this.entryForm.properties_mode === 'fixed'
+                    hasProperties && this.entryForm.properties_mode === 'fixed'
                         ? [...new Set(this.entryForm.fixed_properties.map((value) => String(value).trim()).filter(Boolean))]
                         : [],
-                properties_mode: this.entryForm.has_properties ? this.entryForm.properties_mode : 'free',
+                properties_mode: hasProperties ? this.entryForm.properties_mode : 'free',
+                has_notifications: hasNotifications,
+                notification_recipients: hasNotifications
+                    ? [...new Set(this.entryForm.notification_recipients.filter((recipient) => allowedNotificationRecipients.includes(recipient)))]
+                    : [],
             }
             this.isSaving = true
             this.formErrors = {}
@@ -838,6 +903,11 @@ export default {
     height: auto !important;
     gap: 10px;
 }
+.notification-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
 .choice-card {
     display: flex !important;
     align-items: center;
@@ -879,6 +949,7 @@ export default {
         display: none;
     }
     .choice-grid,
+    .notification-options,
     .entry-copy-area-grid {
         grid-template-columns: 1fr;
     }

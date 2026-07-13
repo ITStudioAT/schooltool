@@ -15,12 +15,21 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
         $fixedProperties = collect($this->input('fixed_properties', []))
             ->map(fn (mixed $property): string => trim((string) $property))
             ->all();
+        $notificationRecipients = $this->input('notification_recipients', []);
+
+        if (is_array($notificationRecipients)) {
+            $notificationRecipients = collect($notificationRecipients)
+                ->map(fn (mixed $recipient): string => trim((string) $recipient))
+                ->all();
+        }
 
         $this->merge([
             'teaching_entry_area_id' => (int) $this->input('teaching_entry_area_id'),
             'short_name' => Str::of((string) $this->input('short_name'))->trim()->upper()->toString(),
             'name' => Str::of((string) $this->input('name'))->trim()->toString(),
             'fixed_properties' => $fixedProperties,
+            'has_notifications' => $this->input('has_notifications', false),
+            'notification_recipients' => $notificationRecipients,
         ]);
     }
 
@@ -73,6 +82,14 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
                 'max:20',
             ],
             'fixed_properties.*' => ['required', 'string', 'max:50', 'distinct:strict'],
+            'has_notifications' => ['required', 'boolean'],
+            'notification_recipients' => ['array', 'max:3'],
+            'notification_recipients.*' => [
+                'required',
+                'string',
+                Rule::in(['class_teacher', 'parents', 'student']),
+                'distinct:strict',
+            ],
         ];
     }
 }

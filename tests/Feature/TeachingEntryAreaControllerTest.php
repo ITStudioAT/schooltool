@@ -138,8 +138,9 @@ test('copies all entries from one owned area to another', function () {
         'teaching_entry_area_id' => $sourceArea->id,
         'short_name' => 'A',
         'name' => 'Abfrage',
-        'has_properties' => true,
-        'properties_mode' => 'free',
+        'category' => 'Weitere',
+        'has_notifications' => true,
+        'notification_recipients' => ['class_teacher', 'student'],
     ]);
 
     $response = $this->actingAs($this->teacher, 'sanctum')->postJson(
@@ -154,7 +155,11 @@ test('copies all entries from one owned area to another', function () {
     expect($sourceArea->entryDefinitions()->count())->toBe(2)
         ->and($targetArea->entryDefinitions()->count())->toBe(2)
         ->and($targetArea->entryDefinitions()->where('short_name', 'M')->firstOrFail()->fixed_properties)
-        ->toBe(['+', '-']);
+        ->toBe(['+', '-'])
+        ->and($targetArea->entryDefinitions()->where('short_name', 'A')->firstOrFail()->has_notifications)
+        ->toBeTrue()
+        ->and($targetArea->entryDefinitions()->where('short_name', 'A')->firstOrFail()->notification_recipients)
+        ->toBe(['class_teacher', 'student']);
 });
 
 test('rejects copying when a short name already exists in the target area', function () {

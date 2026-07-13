@@ -417,7 +417,7 @@ export default {
             ]
 
             if (this.showBehaviourEnabled) {
-                panels.splice(1, 0, { id: 'behaviour', label: 'Verhalten', icon: 'mdi-account-alert-outline' })
+                panels.splice(2, 0, { id: 'behaviour', label: 'Verhalten', icon: 'mdi-account-alert-outline' })
             }
 
             if (this.canManageOwnHolidays) {

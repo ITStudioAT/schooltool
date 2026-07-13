@@ -23,16 +23,21 @@ class TeachingEntryDefinition extends Model
         'has_properties',
         'properties_mode',
         'fixed_properties',
+        'has_notifications',
+        'notification_recipients',
     ];
 
     protected $attributes = [
         'has_properties' => false,
         'properties_mode' => 'free',
+        'has_notifications' => false,
     ];
 
     protected $casts = [
         'has_properties' => 'boolean',
         'fixed_properties' => 'array',
+        'has_notifications' => 'boolean',
+        'notification_recipients' => 'array',
     ];
 
     public function school(): BelongsTo

@@ -49,6 +49,8 @@ class TeachingEntryDefinitionFactory extends Factory
             'has_properties' => false,
             'properties_mode' => 'free',
             'fixed_properties' => [],
+            'has_notifications' => false,
+            'notification_recipients' => [],
         ];
     }
 }

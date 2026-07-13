@@ -6,6 +6,7 @@
 
 - Synchronisierung der Schuldaten von online zu lokal
 - Neue Einträge für Beurteilungen
+- Veraltens- und weitere Einträge: Verständigungsoptionen vorgesehen
 
 ## 3.42.2
 

@@ -23,6 +23,8 @@ class TeachingEntryDefinitionResource extends JsonResource
             'has_properties' => $this->has_properties,
             'properties_mode' => $this->properties_mode,
             'fixed_properties' => $this->fixed_properties ?? [],
+            'has_notifications' => $this->has_notifications,
+            'notification_recipients' => $this->notification_recipients ?? [],
         ];
     }
 }

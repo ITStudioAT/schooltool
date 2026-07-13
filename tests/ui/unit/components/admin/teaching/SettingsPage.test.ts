@@ -23,8 +23,8 @@ describe('Teaching settings page', () => {
 
         expect(panelsWithPermission.map((panel: { id: string }) => panel.id)).toEqual([
             'basic',
-            'behaviour',
             'entries',
+            'behaviour',
             'notifications',
             'schemas',
             'my_holidays',

@@ -77,17 +77,27 @@ class TeachingEntryDefinitionController extends Controller
      *     category: string,
      *     has_properties: bool,
      *     properties_mode: string,
-     *     fixed_properties: array<int, string>
+     *     fixed_properties: array<int, string>,
+     *     has_notifications: bool,
+     *     notification_recipients: array<int, string>
      * }
      */
     private function entryPayload(array $validated): array
     {
-        $hasProperties = (bool) $validated['has_properties'];
+        $isGradingEntry = $validated['category'] === 'Benotung';
+        $hasProperties = $isGradingEntry && (bool) $validated['has_properties'];
         $propertiesMode = $hasProperties ? $validated['properties_mode'] : 'free';
         $fixedProperties = $hasProperties && $propertiesMode === 'fixed'
             ? collect($validated['fixed_properties'] ?? [])
                 ->map(fn (string $property): string => trim($property))
                 ->filter()
+                ->unique()
+                ->values()
+                ->all()
+            : [];
+        $hasNotifications = ! $isGradingEntry && (bool) $validated['has_notifications'];
+        $notificationRecipients = $hasNotifications
+            ? collect($validated['notification_recipients'] ?? [])
                 ->unique()
                 ->values()
                 ->all()
@@ -101,6 +111,8 @@ class TeachingEntryDefinitionController extends Controller
             'has_properties' => $hasProperties,
             'properties_mode' => $propertiesMode,
             'fixed_properties' => $fixedProperties,
+            'has_notifications' => $hasNotifications,
+            'notification_recipients' => $notificationRecipients,
         ];
     }
 
