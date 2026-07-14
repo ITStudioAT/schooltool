@@ -277,6 +277,7 @@ class Import116Controller extends Controller
 
         $payload = [
             'id' => (int) $run->id,
+            'user_id' => $run->user_id ? (int) $run->user_id : null,
             'status' => (string) $run->status,
             'started_at' => optional($run->started_at)->toISOString(),
             'finished_at' => optional($run->finished_at)->toISOString(),

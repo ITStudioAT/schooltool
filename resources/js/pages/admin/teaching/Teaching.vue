@@ -152,6 +152,7 @@
             <Search v-if="main_action === 'search'" />
             <Schoolyear v-if="main_action === 'schoolyear'" />
             <DataBackup v-if="main_action === 'datensicherung'" />
+            <TestEnvironment v-if="main_action === 'testumgebung'" />
             <Curricula v-if="main_action === 'curricula'" />
         </v-row>
     </v-container>
@@ -175,10 +176,11 @@ const Admin = defineAsyncComponent(() => import('./admin/Admin.vue'))
 const Search = defineAsyncComponent(() => import('./search/Search.vue'))
 const Schoolyear = defineAsyncComponent(() => import('./schoolyear/Schoolyear.vue'))
 const DataBackup = defineAsyncComponent(() => import('./backup/DataBackup.vue'))
+const TestEnvironment = defineAsyncComponent(() => import('./testEnvironment/TestEnvironment.vue'))
 const Curricula = defineAsyncComponent(() => import('./curricula/Curricula.vue'))
 
 export default {
-    components: { AdminSectionHero, Overview, Settings, Admin, Search, Schoolyear, DataBackup, Curricula },
+    components: { AdminSectionHero, Overview, Settings, Admin, Search, Schoolyear, DataBackup, TestEnvironment, Curricula },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -431,6 +433,11 @@ export default {
                     icon: 'mdi-database-arrow-down-outline',
                     note: 'Sicherungen vorbereiten und verwalten.',
                 },
+                testumgebung: {
+                    label: 'Test-Umgebung 2026/27',
+                    icon: 'mdi-flask-outline',
+                    note: 'Temporäre Import-116-Testdaten einrichten oder vollständig löschen.',
+                },
                 curricula: {
                     label: 'Curricula',
                     icon: 'mdi-book-education-outline',
@@ -481,6 +488,13 @@ export default {
                     label: 'Datensicherung',
                     meta: 'Export & Sicherung',
                     icon: 'mdi-database-arrow-down-outline',
+                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin']),
+                },
+                {
+                    key: 'testumgebung',
+                    label: 'Test-Umgebung 26/27',
+                    meta: 'Temporäre Testdaten',
+                    icon: 'mdi-flask-outline',
                     visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin']),
                 },
             ].filter((item) => item.visible)

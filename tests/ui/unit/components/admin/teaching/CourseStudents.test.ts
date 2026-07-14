@@ -190,6 +190,62 @@ describe('CourseStudents selected date label', () => {
     })
 })
 
+describe('CourseStudents attendance editing', () => {
+    it.each([
+        ['2025/26', true],
+        ['2026/27', false],
+        ['2027/28', false],
+    ])('allows attendance editing for %s: %s', (concerns, expected) => {
+        const canEditAttendance = (CourseStudents as any).computed.canEditAttendance
+
+        expect(canEditAttendance.call({
+            config: { selected_schoolyear: { concerns } },
+        })).toBe(expected)
+    })
+
+    it('recognizes a school year embedded in its name', () => {
+        const canEditAttendance = (CourseStudents as any).computed.canEditAttendance
+
+        expect(canEditAttendance.call({
+            config: { selected_schoolyear: { name: 'Schuljahr 2026/27' } },
+        })).toBe(false)
+    })
+
+    it('removes the attendance actions from the student panel from 2026/27 onward', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
+        )
+
+        expect(source).toContain('v-if="canEditAttendance && selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"')
+        expect(source).toContain('v-if="canEditAttendance && selectedCourseDateForCourse"')
+    })
+
+    it('does not toggle one student when attendance editing is disabled', () => {
+        const getAttendanceMap = vi.fn()
+
+        ;(CourseStudents as any).methods.toggleStudentPresence.call({
+            canEditAttendance: false,
+            selectedCourseDateForCourse: { id: 277 },
+            getAttendanceMap,
+        }, { id: 16 })
+
+        expect(getAttendanceMap).not.toHaveBeenCalled()
+    })
+
+    it('does not check attendance when attendance editing is disabled', async () => {
+        const persistAttendance = vi.fn()
+
+        await (CourseStudents as any).methods.toggleAttendanceChecked.call({
+            canEditAttendance: false,
+            selectedCourseDateForCourse: { id: 277 },
+            savingAttendance: false,
+            persistAttendance,
+        })
+
+        expect(persistAttendance).not.toHaveBeenCalled()
+    })
+})
+
 describe('CourseStudents course-specific schema', () => {
     it('prefers the selected course schema snapshot for works and semester count', () => {
         const computed = (CourseStudents as any).computed

@@ -27,6 +27,11 @@ class CourseResource extends JsonResource
             'teaching_entry_area' => $this->whenLoaded('teachingEntryArea', fn (): ?array => $this->teachingEntryArea ? [
                 'id' => (int) $this->teachingEntryArea->id,
                 'name' => $this->teachingEntryArea->name,
+                'entry_definitions' => TeachingEntryDefinitionResource::collection(
+                    $this->teachingEntryArea->relationLoaded('entryDefinitions')
+                        ? $this->teachingEntryArea->entryDefinitions
+                        : collect()
+                ),
             ] : null),
             'course_dates' => CourseDateResource::collection($this->whenLoaded('teachingCourseDates')),
         ]);

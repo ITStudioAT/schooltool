@@ -24,6 +24,7 @@ use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWorkGroupStudent;
 use App\Models\TeachingCurriculum;
 use App\Models\TeachingEntryArea;
+use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use App\Services\TeachingStudentPerformancePdfService;
@@ -1144,6 +1145,24 @@ test('course index returns the assigned entry area and owner-scoped options', fu
         'user_id' => $this->admin->id,
         'name' => 'Admin-Bereich',
     ]);
+    $gradingEntry = TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $teacherEntryArea->id,
+        'short_name' => 'MA',
+        'name' => 'Mitarbeit',
+        'category' => 'Benotung',
+    ]);
+    $behaviourEntry = TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $teacherEntryArea->id,
+        'short_name' => 'E',
+        'name' => 'Ermahnung',
+        'category' => 'Verhalten',
+    ]);
     TeachingCourse::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
@@ -1158,6 +1177,8 @@ test('course index returns the assigned entry area and owner-scoped options', fu
         ->assertOk()
         ->assertJsonPath('data.0.teaching_entry_area.id', $teacherEntryArea->id)
         ->assertJsonPath('data.0.teaching_entry_area.name', 'DGB')
+        ->assertJsonPath('data.0.teaching_entry_area.entry_definitions.0.id', $gradingEntry->id)
+        ->assertJsonPath('data.0.teaching_entry_area.entry_definitions.1.id', $behaviourEntry->id)
         ->assertJsonPath('data.0.teacher_teaching_entry_areas', [[
             'id' => $teacherEntryArea->id,
             'name' => 'DGB',

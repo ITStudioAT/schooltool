@@ -76,6 +76,7 @@ use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaEntryCopiesController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaImportsController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryDefinitionController;
+use App\Http\Controllers\Admin\Teaching\TeachingTestEnvironmentController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UserHopperAccountController;
 use App\Http\Controllers\Admin\UserWithRoleController;
@@ -497,6 +498,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/backups/{backup}/restore-full', [TeachingBackupController::class, 'restoreFull']);
         Route::delete('/admin/teaching/backups/{backup}', [TeachingBackupController::class, 'destroy']);
         Route::get('/admin/teaching/backups/{backup}/download', [TeachingBackupController::class, 'download']);
+        Route::get('/admin/teaching/test-environment', [TeachingTestEnvironmentController::class, 'index']);
+        Route::post('/admin/teaching/test-environment', [TeachingTestEnvironmentController::class, 'store']);
+        Route::delete('/admin/teaching/test-environment', [TeachingTestEnvironmentController::class, 'destroy']);
         Route::get('/admin/teaching/courses/{course}/performances_pdf', [TeachingCourseController::class, 'coursePerformancesPdf']);
         Route::get('/admin/teaching/courses/{course}/grades_pdf', [TeachingCourseController::class, 'courseGradesPdf']);
         Route::get('/admin/teaching/courses/{course}/students/{course_student}/performances_pdf', [TeachingCourseController::class, 'studentPerformancesPdf']);

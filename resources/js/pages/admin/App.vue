@@ -118,15 +118,18 @@ export default {
         })
         this.routeNavigation.registerRouteNavigationHooks()
         this.adminStore.is_loading++
-        this.adminStore.initialize(this.$router)
-        if (!this.adminStore.config) {
-            const isAdminHomeRoute = this.isAdminHomeRoute()
-            await this.adminStore.loadConfig({
-                includeSchoolInfos: isAdminHomeRoute,
-                includeEnvironmentVersions: isAdminHomeRoute,
-            })
+        try {
+            this.adminStore.initialize(this.$router)
+            if (!this.adminStore.config) {
+                const isAdminHomeRoute = this.isAdminHomeRoute()
+                await this.adminStore.loadConfig({
+                    includeSchoolInfos: isAdminHomeRoute,
+                    includeEnvironmentVersions: isAdminHomeRoute,
+                })
+            }
+        } finally {
+            this.adminStore.is_loading = Math.max(0, Number(this.adminStore.is_loading || 0) - 1)
         }
-        this.adminStore.is_loading--
     },
     unmounted() {
         this.routeNavigation?.unregisterRouteNavigationHooks()

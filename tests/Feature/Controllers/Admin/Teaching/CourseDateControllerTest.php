@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
@@ -147,6 +148,35 @@ it('toggles one student absence on and off via toggle_student_id', function () {
 
     $courseDate->refresh();
     expect($courseDate->attendance)->toBe([]);
+});
+
+it('persists an import student identifier toggled from the attendance table', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $importStudent = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->studentA->id,
+    ]);
+    $this->course->teachingCourseStudents()
+        ->where('user_id', $this->studentA->id)
+        ->update(['import116_id' => $importStudent->id]);
+
+    $courseDate = TeachingCourseDate::create([
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-02-12',
+        'hours' => [2],
+        'status' => [],
+        'attendance' => [],
+        'attendance_checked' => false,
+    ]);
+
+    $this->patchJson("/api/admin/teaching/course_dates/{$courseDate->id}/status", [
+        'toggle_student_id' => $importStudent->id,
+        'attendance_checked' => false,
+    ])->assertOk();
+
+    expect($courseDate->fresh()->attendance)->toBe(['s_'.$importStudent->id => false]);
 });
 
 it('normalizes indexed legacy attendance keys to real student ids on toggle', function () {

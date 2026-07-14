@@ -34,7 +34,7 @@
                         </div>
                     </v-alert>
                     <v-alert v-if="is_upload_error" type="error" class="mt-2">Upload fehlgeschlagen.</v-alert>
-                    <v-btn v-if="is_upload_finished || is_upload_error" color="warning" flat tile class="mt-2" @click="resetUpload">Neu hochladen</v-btn>
+                    <v-btn v-if="is_upload_finished || is_upload_error" color="warning" flat tile class="mt-2" :disabled="is_importing" @click="resetUpload">Neu hochladen</v-btn>
 
                     <v-divider class="my-4" />
 
@@ -183,6 +183,8 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import FileUpload from '@/pages/components/FileUpload.vue'
 
+const importStatusPollDelay = 1500
+
 export default {
     components: { ItsGridBox, FileUpload },
 
@@ -197,22 +199,12 @@ export default {
     },
 
     mounted() {
-        this.onImportFinished = async (event) => {
-            this.is_importing = false
-            this.last_import_116_at = new Date().toISOString()
-            const payload = event?.detail?.data || {}
-            if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
-                this.run_action_message = `Import abgeschlossen: +${payload.created ?? 0} / ~${payload.updated ?? 0} / -${payload.deleted ?? 0}`
-            }
-            await this.loadRuns()
-        }
-        window.addEventListener('import116-finished', this.onImportFinished)
+        window.addEventListener('import116-finished', this.handleImportFinished)
     },
 
     unmounted() {
-        if (this.onImportFinished) {
-            window.removeEventListener('import116-finished', this.onImportFinished)
-        }
+        this.stopImportStatusPolling()
+        window.removeEventListener('import116-finished', this.handleImportFinished)
     },
 
     data() {
@@ -222,7 +214,10 @@ export default {
             is_upload_error: false,
             refresh_file_pond: false,
             is_importing: false,
-            onImportFinished: null,
+            import_poll_timeout_id: null,
+            import_poll_generation: 0,
+            import_run_baseline_id: 0,
+            active_import_run_id: null,
             last_import_116_at: null,
             runs: [],
             runs_meta: { reset_max_runs: 0, available_reset_runs: 0, history_limit: 0 },
@@ -281,6 +276,88 @@ export default {
         },
         canDeleteImport(run) {
             return !!run && !!run.id
+        },
+        async handleImportFinished(event) {
+            const detail = event?.detail || {}
+            const payload = detail?.data || {}
+            const runId = Number(payload?.run_id || 0)
+
+            if (runId && runId <= Number(this.import_run_baseline_id || 0)) return
+            if (runId && this.active_import_run_id && runId !== Number(this.active_import_run_id)) return
+
+            this.reconcileImportRun({
+                id: runId || this.active_import_run_id,
+                status: Number(detail?.status) === 200 ? 'completed' : 'failed',
+                finished_at: new Date().toISOString(),
+                counts: payload?.counts || payload,
+                error_message: detail?.message || 'Import 116 fehlgeschlagen.',
+            })
+            await this.loadRuns()
+        },
+        startImportStatusPolling() {
+            this.stopImportStatusPolling()
+            const generation = this.import_poll_generation
+            this.scheduleImportStatusPoll(generation)
+        },
+        stopImportStatusPolling() {
+            if (this.import_poll_timeout_id !== null) {
+                window.clearTimeout(this.import_poll_timeout_id)
+                this.import_poll_timeout_id = null
+            }
+            this.import_poll_generation += 1
+        },
+        scheduleImportStatusPoll(generation) {
+            if (!this.is_importing || generation !== this.import_poll_generation) return
+            this.import_poll_timeout_id = window.setTimeout(() => {
+                this.import_poll_timeout_id = null
+                this.pollImportStatus(generation)
+            }, importStatusPollDelay)
+        },
+        async pollImportStatus(generation) {
+            if (!this.is_importing || generation !== this.import_poll_generation) return
+
+            await this.loadRuns()
+            if (!this.is_importing || generation !== this.import_poll_generation) return
+
+            const currentUserId = Number(this.config?.user?.id || 0)
+            let run = this.active_import_run_id
+                ? this.runs.find((item) => Number(item?.id) === Number(this.active_import_run_id))
+                : null
+
+            if (!run) {
+                run = (this.runs || [])
+                    .filter((item) => {
+                        const belongsToCurrentUpload = Number(item?.id || 0) > Number(this.import_run_baseline_id || 0)
+                        const belongsToCurrentUser = !item?.user_id || !currentUserId || Number(item.user_id) === currentUserId
+                        return belongsToCurrentUpload && belongsToCurrentUser
+                    })
+                    .sort((left, right) => Number(left.id) - Number(right.id))[0]
+            }
+
+            if (run) {
+                this.active_import_run_id = Number(run.id)
+                if (run.status === 'completed' || run.status === 'failed') {
+                    this.reconcileImportRun(run)
+                    return
+                }
+            }
+
+            this.scheduleImportStatusPoll(generation)
+        },
+        reconcileImportRun(run) {
+            this.stopImportStatusPolling()
+            this.is_importing = false
+
+            if (run?.status === 'completed') {
+                const counts = run?.counts || {}
+                this.last_import_116_at = run?.finished_at || new Date().toISOString()
+                this.run_action_error = ''
+                this.run_action_message = `Import abgeschlossen: +${counts.inserted ?? counts.created ?? 0} / ~${counts.updated ?? 0} / -${counts.deleted ?? 0}`
+                return
+            }
+
+            this.run_action_message = ''
+            this.run_action_error = run?.error_message || 'Import 116 fehlgeschlagen.'
         },
         async loadRuns() {
             this.is_loading_runs = true
@@ -411,22 +488,28 @@ export default {
             return type
         },
         onUploadStart() {
+            this.stopImportStatusPolling()
             this.is_upload_finished = false
             this.is_upload_error = false
             this.run_action_message = ''
             this.run_action_error = ''
+            this.import_run_baseline_id = Math.max(0, ...(this.runs || []).map((run) => Number(run?.id || 0)))
+            this.active_import_run_id = null
             if (this.config?.is_auth) this.adminStore.initializeEcho()
             this.is_importing = true
         },
         fileUploadFinished() {
             this.is_upload_finished = true
+            this.startImportStatusPolling()
         },
         uploadError() {
+            this.stopImportStatusPolling()
             this.is_upload_error = true
             this.refresh_file_pond = !this.refresh_file_pond
             this.is_importing = false
         },
         resetUpload() {
+            this.stopImportStatusPolling()
             this.is_upload_finished = false
             this.is_upload_error = false
             this.refresh_file_pond = !this.refresh_file_pond

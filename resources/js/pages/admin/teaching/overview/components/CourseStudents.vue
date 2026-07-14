@@ -10,7 +10,7 @@
         </template>
         <div class="students-action-bar d-flex align-center ga-2 mx-3 mt-2 flex-wrap">
             <v-btn
-                v-if="selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"
+                v-if="canEditAttendance && selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"
                 size="small"
                 class="students-attendance-check-btn"
                 :variant="'flat'"
@@ -150,7 +150,7 @@
                                         class="flex-grow-0" />
                                     <div class="student-presence student-presence--left">
                                         <v-btn
-                                            v-if="selectedCourseDateForCourse"
+                                            v-if="canEditAttendance && selectedCourseDateForCourse"
                                             :key="`presence-${student.id}-${isStudentPresentForSelectedDate(student.id) ? '1' : '0'}`"
                                             size="x-small"
                                             :color="isStudentPresentForSelectedDate(student.id) ? 'success' : 'error'"
@@ -446,6 +446,14 @@ export default {
         },
         schoolSem2StartDate() {
             return this.config?.selected_schoolyear?.sem_2_start || null
+        },
+        canEditAttendance() {
+            const schoolyearLabel = this.config?.selected_schoolyear?.concerns
+                || this.config?.selected_schoolyear?.name
+                || ''
+            const schoolyearMatch = String(schoolyearLabel).match(/(\d{4})\/(\d{2}|\d{4})/)
+
+            return !schoolyearMatch || Number(schoolyearMatch[1]) < 2026
         },
         countSem2StartDate() {
             return this.schoolSem2StartDate || this.config?.user?.teaching_count_for_semester_2_date || null
@@ -1196,7 +1204,7 @@ export default {
             return false
         },
         toggleStudentPresence(student) {
-            if (!student?.id || !this.selectedCourseDateForCourse) return
+            if (!this.canEditAttendance || !student?.id || !this.selectedCourseDateForCourse) return
             const date = this.selectedCourseDateForCourse
             const attendance = this.getAttendanceMap(date)
             const key = String(student.id)
@@ -1219,7 +1227,7 @@ export default {
             this.hasUnsavedAttendanceChanges = true
         },
         async toggleAttendanceChecked() {
-            if (!this.selectedCourseDateForCourse || this.savingAttendance) return
+            if (!this.canEditAttendance || !this.selectedCourseDateForCourse || this.savingAttendance) return
             const date = this.selectedCourseDateForCourse
             const attendance = { ...this.getAttendanceMap(date) }
 

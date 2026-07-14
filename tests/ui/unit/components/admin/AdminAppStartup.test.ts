@@ -53,5 +53,29 @@ describe('Admin app startup', () => {
             includeSchoolInfos: false,
             includeEnvironmentVersions: false,
         })
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('releases the startup loading state when config loading throws unexpectedly', async () => {
+        const adminStoreMock = {
+            is_loading: 0,
+            initialize: vi.fn(),
+            loadConfig: vi.fn(async () => {
+                throw new Error('network aborted')
+            }),
+        }
+
+        vi.mocked(useAdminStore).mockReturnValue(adminStoreMock as never)
+        vi.mocked(useSchoolStore).mockReturnValue({} as never)
+        vi.mocked(useAdminRouteNavigation).mockReturnValue({ registerRouteNavigationHooks: vi.fn() } as never)
+
+        const ctx: any = {
+            $router: {},
+            $route: { path: '/admin/teaching' },
+            isAdminHomeRoute: (AdminApp as any).methods.isAdminHomeRoute,
+        }
+
+        await expect((AdminApp as any).beforeMount.call(ctx)).rejects.toThrow('network aborted')
+        expect(adminStoreMock.is_loading).toBe(0)
     })
 })

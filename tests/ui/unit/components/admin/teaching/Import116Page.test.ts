@@ -15,6 +15,82 @@ describe('Teaching import116 page', () => {
         globalThis.axios = axiosMock as never
     })
 
+    it('reconciles a completed import and clears the running state', () => {
+        const stopImportStatusPolling = vi.fn()
+        const ctx: Record<string, unknown> = {
+            is_importing: true,
+            last_import_116_at: null,
+            run_action_message: '',
+            run_action_error: 'old error',
+            stopImportStatusPolling,
+        }
+
+        ;(Import116 as any).methods.reconcileImportRun.call(ctx, {
+            status: 'completed',
+            finished_at: '2026-07-14T05:00:00.000Z',
+            counts: { inserted: 4, updated: 2, deleted: 1 },
+        })
+
+        expect(stopImportStatusPolling).toHaveBeenCalledTimes(1)
+        expect(ctx.is_importing).toBe(false)
+        expect(ctx.last_import_116_at).toBe('2026-07-14T05:00:00.000Z')
+        expect(ctx.run_action_error).toBe('')
+        expect(ctx.run_action_message).toBe('Import abgeschlossen: +4 / ~2 / -1')
+    })
+
+    it('shows failed imports as errors instead of successes', async () => {
+        const reconcileImportRun = vi.fn()
+        const loadRuns = vi.fn().mockResolvedValue(undefined)
+        const ctx: Record<string, unknown> = {
+            import_run_baseline_id: 20,
+            active_import_run_id: 21,
+            reconcileImportRun,
+            loadRuns,
+        }
+
+        await (Import116 as any).methods.handleImportFinished.call(ctx, {
+            detail: {
+                status: 500,
+                message: 'Import 116 fehlgeschlagen.',
+                data: { run_id: 21 },
+            },
+        })
+
+        expect(reconcileImportRun).toHaveBeenCalledWith(expect.objectContaining({
+            id: 21,
+            status: 'failed',
+            error_message: 'Import 116 fehlgeschlagen.',
+        }))
+        expect(loadRuns).toHaveBeenCalledTimes(1)
+    })
+
+    it('polls for the current user run when the Echo event is missed', async () => {
+        const reconcileImportRun = vi.fn()
+        const scheduleImportStatusPoll = vi.fn()
+        const ctx: Record<string, any> = {
+            is_importing: true,
+            import_poll_generation: 3,
+            import_run_baseline_id: 40,
+            active_import_run_id: null,
+            config: { user: { id: 7 } },
+            runs: [],
+            reconcileImportRun,
+            scheduleImportStatusPoll,
+        }
+        ctx.loadRuns = vi.fn().mockImplementation(async () => {
+            ctx.runs = [
+                { id: 41, user_id: 8, status: 'completed' },
+                { id: 42, user_id: 7, status: 'completed', counts: { inserted: 1 } },
+            ]
+        })
+
+        await (Import116 as any).methods.pollImportStatus.call(ctx, 3)
+
+        expect(ctx.active_import_run_id).toBe(42)
+        expect(reconcileImportRun).toHaveBeenCalledWith(ctx.runs[1])
+        expect(scheduleImportStatusPoll).not.toHaveBeenCalled()
+    })
+
     it('computes canRestoreSelection from selected depth and run meta limits', () => {
         const ctx = {
             run_tracking_error: '',

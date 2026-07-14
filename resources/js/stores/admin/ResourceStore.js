@@ -1,5 +1,5 @@
-import { useAdminStore } from "@/stores/admin/AdminStore";
-import { useNotificationStore } from "@/stores/spa/NotificationStore";
+import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 export function createResourceStore(modelName) {
     return {
@@ -22,98 +22,98 @@ export function createResourceStore(modelName) {
         actions() {
             return {
                 initialize(router) {
-                    this.router = router;
+                    this.router = router
                 },
 
                 async index() {
-                    const notification = useNotificationStore();
-                    const adminStore = useAdminStore();
-                    adminStore.is_loading++;
+                    const notification = useNotificationStore()
+                    const adminStore = useAdminStore()
+                    adminStore.is_loading++
                     try {
-                        const response = await axios.get(`/api/admin/${modelName}`);
-                        this.items = response.data;
-                        return true;
+                        const response = await axios.get(`/api/admin/${modelName}`)
+                        this.items = response.data
+                        return true
                     } catch (error) {
                         notification.notify({
-                            status: error.response.status,
-                            message: error.response.data.message || 'Fehler passiert.',
+                            status: error.response?.status,
+                            message: error.response?.data?.message || 'Fehler passiert.',
                             type: 'error',
                             timeout: this.timeout,
-                        });
-                        return false;
+                        })
+                        return false
                     } finally {
-                        this.is_loading = false;
+                        adminStore.is_loading = Math.max(0, Number(adminStore.is_loading || 0) - 1)
                     }
                 },
 
                 async show(id) {
-                    const notification = useNotificationStore();
-                    const adminStore = useAdminStore();
-                    adminStore.is_loading++;
+                    const notification = useNotificationStore()
+                    const adminStore = useAdminStore()
+                    adminStore.is_loading++
                     try {
-                        const response = await axios.get(`/api/admin/${modelName}/${id}`);
-                        this.item = response.data;
-                        return true;
+                        const response = await axios.get(`/api/admin/${modelName}/${id}`)
+                        this.item = response.data
+                        return true
                     } catch (error) {
                         notification.notify({
-                            status: error.response.status,
-                            message: error.response.data.message || 'Fehler passiert.',
+                            status: error.response?.status,
+                            message: error.response?.data?.message || 'Fehler passiert.',
                             type: 'error',
                             timeout: this.timeout,
-                        });
-                        return false;
+                        })
+                        return false
                     } finally {
-                        adminStore.is_loading--;
+                        adminStore.is_loading = Math.max(0, Number(adminStore.is_loading || 0) - 1)
                     }
                 },
 
                 async update(data) {
 
-                    const notification = useNotificationStore();
-                    const adminStore = useAdminStore();
-                    adminStore.is_loading++;
+                    const notification = useNotificationStore()
+                    const adminStore = useAdminStore()
+                    adminStore.is_loading++
                     try {
-                        const response = await axios.put(`/api/admin/${modelName}/${data.id}`, data);
+                        const response = await axios.put(`/api/admin/${modelName}/${data.id}`, data)
                         if (response.data.answer) {
-                            this.api_answer = response.data;
+                            this.api_answer = response.data
                         } else {
-                            this.item = response.data;
+                            this.item = response.data
                         }
-                        return true;
+                        return true
                     } catch (error) {
                         notification.notify({
-                            status: error.response.status,
-                            message: error.response.data.message || 'Fehler passiert.',
+                            status: error.response?.status,
+                            message: error.response?.data?.message || 'Fehler passiert.',
                             type: 'error',
                             timeout: this.timeout,
-                        });
-                        return false;
+                        })
+                        return false
                     } finally {
-                        adminStore.is_loading--;
+                        adminStore.is_loading = Math.max(0, Number(adminStore.is_loading || 0) - 1)
                     }
                 },
 
                 async destroy(data) {
-                    const notification = useNotificationStore();
-                    const adminStore = useAdminStore();
-                    adminStore.is_loading++;
+                    const notification = useNotificationStore()
+                    const adminStore = useAdminStore()
+                    adminStore.is_loading++
                     try {
-                        const response = await axios.delete('/api/admin/users/' + data.id, {});
-                        return true;
+                        await axios.delete('/api/admin/users/' + data.id, {})
+                        return true
                     } catch (error) {
                         notification.notify({
-                            status: error.response.status,
-                            message: error.response.data.message || 'Fehler passiert.',
+                            status: error.response?.status,
+                            message: error.response?.data?.message || 'Fehler passiert.',
                             type: 'error',
                             timeout: this.timeout,
-                        });
-                        return false;
+                        })
+                        return false
                     } finally {
-                        adminStore.is_loading--;
+                        adminStore.is_loading = Math.max(0, Number(adminStore.is_loading || 0) - 1)
                     }
                 },
 
-            };
-        }
-    };
+            }
+        },
+    }
 }

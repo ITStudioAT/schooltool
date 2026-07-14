@@ -181,7 +181,7 @@ describe('Teaching page navigation', () => {
 
         const items = (Teaching as any).computed.visibleNavigationItems.call(ctx)
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'search', 'schoolyear', 'curricula', 'settings', 'datensicherung'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'search', 'schoolyear', 'curricula', 'settings', 'datensicherung', 'testumgebung'])
     })
 
     it('builds hero chips from selected school context', () => {

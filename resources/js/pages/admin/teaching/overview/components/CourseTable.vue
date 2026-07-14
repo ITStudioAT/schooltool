@@ -253,11 +253,44 @@
                 <v-card-title class="text-subtitle-1 font-weight-bold d-flex align-center ga-2">
                     <v-icon size="20">mdi-clipboard-text</v-icon>
                     Arbeiten
-                    <v-chip size="x-small" color="primary" variant="tonal">{{ workDialogDateTitle }}</v-chip>
+                    <v-date-input
+                        v-if="workDialogFormOpen && workDialogDateEditing"
+                        v-model="workDialogForm.date_for_all_groups"
+                        class="course-table-date-work-date-input"
+                        data-testid="course-table-date-work-date-input"
+                        density="compact"
+                        hide-details
+                        label="Datum"
+                        variant="outlined"
+                        @update:model-value="applyWorkDialogDate">
+                        <template #day="{ item, props }">
+                            <v-btn
+                                v-bind="props"
+                                :color="workDialogCourseDateKeys.includes(item.isoDate) ? 'primary' : props.color"
+                                :variant="workDialogCourseDateKeys.includes(item.isoDate) && !item.isSelected ? 'tonal' : props.variant">
+                                {{ item.localized }}
+                            </v-btn>
+                        </template>
+                    </v-date-input>
+                    <template v-else>
+                        <v-chip
+                            data-testid="course-table-date-edit-work-date"
+                            color="primary"
+                            size="x-small"
+                            variant="tonal"
+                            :class="{ 'cursor-pointer': workDialogFormOpen && !workSaving }"
+                            :role="workDialogFormOpen ? 'button' : undefined"
+                            :tabindex="workDialogFormOpen && !workSaving ? 0 : undefined"
+                            @click="beginWorkDialogDateEditing"
+                            @keydown.enter.prevent="beginWorkDialogDateEditing"
+                            @keydown.space.prevent="beginWorkDialogDateEditing">
+                            {{ workDialogDateTitle }}
+                        </v-chip>
+                    </template>
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="d-flex flex-column ga-4">
-                    <section>
+                    <section v-if="!workDialogFormOpen">
                         <div class="d-flex align-center ga-2 mb-2">
                             <div class="text-caption font-weight-bold text-medium-emphasis">Arbeiten an diesem Termin</div>
                             <v-chip size="x-small" color="primary" variant="tonal">{{ dateWorkAssignments.length }}</v-chip>
@@ -266,7 +299,12 @@
                             <div
                                 v-for="assignment in dateWorkAssignments"
                                 :key="assignment.key"
-                                class="course-table-date-work-item">
+                                class="course-table-date-work-item cursor-pointer"
+                                role="button"
+                                tabindex="0"
+                                @click="startEditingDateWork(assignment.work)"
+                                @keydown.enter.self.prevent="startEditingDateWork(assignment.work)"
+                                @keydown.space.self.prevent="startEditingDateWork(assignment.work)">
                                 <div class="course-table-date-work-main">
                                     <div class="d-flex align-center flex-wrap ga-2">
                                         <v-chip
@@ -290,7 +328,7 @@
                                         size="x-small"
                                         title="Arbeit bearbeiten"
                                         variant="text"
-                                        @click="startEditingDateWork(assignment.work)" />
+                                        @click.stop="startEditingDateWork(assignment.work)" />
                                     <v-btn
                                         :data-testid="`course-table-date-delete-work-${assignment.id}`"
                                         color="error"
@@ -299,7 +337,7 @@
                                         size="x-small"
                                         title="Arbeit löschen"
                                         variant="text"
-                                        @click="openDeleteWorkDialog(assignment.work)" />
+                                        @click.stop="openDeleteWorkDialog(assignment.work)" />
                                 </div>
                             </div>
                         </div>
@@ -322,45 +360,298 @@
                         </v-btn>
 
                         <div v-if="workDialogFormOpen" class="course-table-date-work-form">
-                            <div class="text-subtitle-2 font-weight-bold mb-3">
-                                {{ workDialogForm.id ? 'Arbeit bearbeiten' : 'Neue Arbeit erstellen' }}
-                            </div>
-                            <div class="text-caption text-medium-emphasis mb-1">Typ</div>
-                            <div class="d-flex flex-wrap ga-1 mb-3">
-                                <v-btn
-                                    v-for="item in availableWorkTypes"
-                                    :key="item.value"
-                                    size="small"
-                                    :variant="workDialogForm.type === item.value ? 'flat' : 'tonal'"
-                                    :color="workDialogForm.type === item.value ? 'primary' : 'default'"
-                                    @click="workDialogForm.type = item.value">
-                                    {{ item.title }}
-                                </v-btn>
-                            </div>
-                            <v-alert v-if="!availableWorkTypes.length" type="warning" variant="tonal" density="compact" class="mb-3">
-                                Für diesen Kurs sind keine Arbeitstypen konfiguriert.
-                            </v-alert>
-                            <v-text-field
-                                v-model="workDialogForm.title"
-                                label="Titel"
-                                maxlength="255"
-                                :disabled="workSaving" />
-                            <v-textarea
-                                v-model="workDialogForm.description"
-                                label="Beschreibung"
-                                rows="3"
-                                maxlength="1024"
-                                :disabled="workSaving" />
-                            <v-alert
-                                v-if="workDialogForm.is_group_work"
-                                type="info"
-                                variant="tonal"
+                            <v-tabs
+                                v-model="workDialogTab"
+                                color="primary"
                                 density="compact"
-                                class="mb-3">
-                                Gruppen und gruppenspezifische Termine bleiben unverändert.
-                            </v-alert>
-                            <div class="d-flex justify-end ga-2">
-                                <v-btn variant="text" :disabled="workSaving" @click="cancelDateWorkForm">Abbrechen</v-btn>
+                                class="mb-3"
+                                :disabled="workDialogTypeEditing || workDialogModeEditing">
+                                <v-tab value="work">Arbeit</v-tab>
+                                <v-tab v-if="workDialogForm.is_group_work" value="groups">Gruppen</v-tab>
+                            </v-tabs>
+                            <v-window v-model="workDialogTab">
+                                <v-window-item value="work">
+                                    <div
+                                        class="course-table-work-meta-row mb-3"
+                                        :class="{
+                                            'course-table-work-meta-row--single':
+                                                workDialogTypeEditing || workDialogModeEditing,
+                                        }">
+                                        <div v-if="!workDialogModeEditing">
+                                            <div class="text-caption text-medium-emphasis mb-1">Typ</div>
+                                            <div v-if="workDialogForm.id && !workDialogTypeEditing" class="d-flex align-center ga-1">
+                                                <v-chip
+                                                    data-testid="course-table-date-edit-work-type"
+                                                    title="Arbeitstyp bearbeiten"
+                                                    color="primary"
+                                                    variant="tonal"
+                                                    :disabled="workSaving || workDialogModeEditing"
+                                                    @click="beginDateWorkTypeEditing">
+                                                    {{ selectedDateWorkTypeTitle }}
+                                                </v-chip>
+                                            </div>
+                                            <div v-else class="d-flex flex-wrap ga-1">
+                                                <v-btn
+                                                    v-for="item in availableWorkTypes"
+                                                    :key="item.value"
+                                                    size="small"
+                                                    :variant="selectedDateWorkTypeValue === item.value ? 'flat' : 'tonal'"
+                                                    :color="selectedDateWorkTypeValue === item.value ? 'primary' : 'default'"
+                                                    @click="selectDateWorkType(item.value)">
+                                                    {{ item.title }}
+                                                </v-btn>
+                                            </div>
+                                            <div v-if="workDialogForm.id && workDialogTypeEditing" class="d-flex justify-end ga-2 mt-2">
+                                                <v-btn variant="text" :disabled="workSaving" @click="cancelDateWorkTypeEditing">Abbrechen</v-btn>
+                                                <v-btn color="primary" variant="flat" :disabled="!canConfirmDateWorkType" @click="confirmDateWorkTypeEditing">OK</v-btn>
+                                            </div>
+                                            <v-alert v-if="!availableWorkTypes.length" type="warning" variant="tonal" density="compact" class="mt-2">
+                                                Für diesen Kurs sind keine Arbeitstypen konfiguriert.
+                                            </v-alert>
+                                        </div>
+                                        <div v-if="!workDialogTypeEditing">
+                                            <div class="text-caption text-medium-emphasis mb-1">Arbeitsform</div>
+                                            <v-btn-toggle
+                                                v-if="!workDialogForm.id"
+                                                v-model="workDialogForm.is_group_work"
+                                                data-testid="course-table-date-create-work-mode"
+                                                color="primary"
+                                                density="compact"
+                                                mandatory
+                                                variant="outlined"
+                                                :disabled="workSaving">
+                                                <v-btn :value="false">Einzelarbeit</v-btn>
+                                                <v-btn :value="true">Gruppenarbeit</v-btn>
+                                            </v-btn-toggle>
+                                            <div v-else-if="!workDialogModeEditing" class="d-flex align-center ga-1">
+                                                <v-chip
+                                                    data-testid="course-table-date-edit-work-mode"
+                                                    title="Arbeitsform bearbeiten"
+                                                    color="primary"
+                                                    variant="tonal"
+                                                    :disabled="workSaving || workDialogTypeEditing"
+                                                    @click="beginDateWorkModeEditing">
+                                                    {{ selectedDateWorkModeTitle }}
+                                                </v-chip>
+                                            </div>
+                                            <div v-else>
+                                                <v-btn-toggle
+                                                    v-model="workDialogModeDraft"
+                                                    color="primary"
+                                                    density="compact"
+                                                    mandatory
+                                                    variant="outlined"
+                                                    :disabled="workSaving">
+                                                    <v-btn :value="false">Einzelarbeit</v-btn>
+                                                    <v-btn :value="true">Gruppenarbeit</v-btn>
+                                                </v-btn-toggle>
+                                                <div class="d-flex justify-end ga-2 mt-2">
+                                                    <v-btn variant="text" :disabled="workSaving" @click="cancelDateWorkModeEditing">Abbrechen</v-btn>
+                                                    <v-btn color="primary" variant="flat" :disabled="!canConfirmDateWorkMode" @click="confirmDateWorkModeEditing">OK</v-btn>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <v-text-field
+                                        v-model="workDialogForm.title"
+                                        label="Titel"
+                                        maxlength="255"
+                                        :disabled="workSaving" />
+                                    <v-textarea
+                                        v-model="workDialogForm.description"
+                                        label="Beschreibung"
+                                        rows="3"
+                                        maxlength="1024"
+                                        :disabled="workSaving" />
+                                </v-window-item>
+                                <v-window-item v-if="workDialogForm.is_group_work" value="groups">
+                                    <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-3">
+                                        <div
+                                            v-if="hasSavedRandomGroupConfiguration"
+                                            class="d-flex align-center flex-wrap ga-1">
+                                            <span class="text-body-2 font-weight-bold">Zufällige Gruppen</span>
+                                            <v-chip color="primary" variant="tonal">
+                                                {{ workDialogForm.group_size }} Mitglieder pro Gruppe
+                                            </v-chip>
+                                        </div>
+                                        <v-btn
+                                            v-else
+                                            data-testid="course-table-date-random-groups"
+                                            prepend-icon="mdi-shuffle-variant"
+                                            variant="tonal"
+                                            :disabled="workSaving || maxRandomGroupSize < 2"
+                                            @click="openRandomGroupsDialog">
+                                            Zufällige Gruppen
+                                        </v-btn>
+                                        <v-btn
+                                            v-if="hasUnassignedWorkGroupStudents"
+                                            color="primary"
+                                            prepend-icon="mdi-plus"
+                                            variant="tonal"
+                                            :disabled="workSaving"
+                                            @click="addWorkDialogGroup">
+                                            Neue Gruppe
+                                        </v-btn>
+                                        <span v-else class="text-body-2 font-weight-medium text-success">Alles Ok</span>
+                                    </div>
+                                    <v-card
+                                        v-if="unassignedWorkGroupStudents.length"
+                                        class="pa-3 mb-3"
+                                        variant="outlined">
+                                        <div class="d-flex align-center flex-wrap ga-2 mb-2">
+                                            <strong class="text-body-2">Nicht zugeordnet</strong>
+                                            <v-chip color="warning" size="x-small" variant="tonal">
+                                                {{ unassignedWorkGroupStudents.length }} offen
+                                            </v-chip>
+                                        </div>
+                                        <div class="d-flex flex-wrap ga-1">
+                                            <v-chip
+                                                v-for="student in unassignedWorkGroupStudents"
+                                                :key="`unassigned-work-group-student-${student.value}`"
+                                                class="course-table-work-group-student-chip"
+                                                color="warning"
+                                                size="small"
+                                                variant="tonal"
+                                                :disabled="workSaving"
+                                                :draggable="!workSaving"
+                                                @dragstart="startUnassignedWorkGroupStudentDrag($event, student.value)"
+                                                @dragend="finishWorkGroupStudentDrag">
+                                                {{ student.title }}
+                                            </v-chip>
+                                        </div>
+                                    </v-card>
+                                    <div v-if="workDialogGroups.length" class="d-flex flex-column ga-3">
+                                        <v-card
+                                            v-for="(group, groupIndex) in workDialogGroups"
+                                            :key="`work-dialog-group-${groupIndex}`"
+                                            variant="outlined"
+                                            class="pa-3 course-table-work-group-card cursor-pointer"
+                                            :class="{
+                                                'course-table-work-group-card--drop-target':
+                                                    workDialogStudentDrag.targetGroupIndex === groupIndex,
+                                            }"
+                                            role="button"
+                                            tabindex="0"
+                                            @click="openWorkDialogGroupDetails(groupIndex)"
+                                            @keydown.enter.self.prevent="openWorkDialogGroupDetails(groupIndex)"
+                                            @keydown.space.self.prevent="openWorkDialogGroupDetails(groupIndex)"
+                                            @dragenter.prevent="setWorkGroupStudentDropTarget(groupIndex)"
+                                            @dragover.prevent
+                                            @drop.prevent="dropWorkGroupStudent(groupIndex)">
+                                            <div class="d-flex align-center flex-wrap ga-2 mb-2">
+                                                <strong class="text-body-2">{{ group.name || `Gruppe ${groupIndex + 1}` }}</strong>
+                                                <v-chip size="x-small" variant="tonal">
+                                                    {{ workGroupMemberCountTitle(group) }}
+                                                </v-chip>
+                                                <v-spacer />
+                                                <v-date-input
+                                                    v-if="workDialogGroupDateEditingIndex === groupIndex"
+                                                    v-model="group.date"
+                                                    class="course-table-work-group-date-input"
+                                                    :data-testid="`course-table-date-work-group-date-input-${groupIndex}`"
+                                                    density="compact"
+                                                    hide-details
+                                                    label="Gruppendatum"
+                                                    variant="outlined"
+                                                    :disabled="workSaving"
+                                                    @click.stop
+                                                    @update:model-value="applyWorkDialogGroupDate(groupIndex, $event)">
+                                                    <template #day="{ item, props }">
+                                                        <v-btn
+                                                            v-bind="props"
+                                                            :color="workDialogCourseDateKeys.includes(item.isoDate) ? 'primary' : props.color"
+                                                            :variant="workDialogCourseDateKeys.includes(item.isoDate) && !item.isSelected ? 'tonal' : props.variant">
+                                                            {{ item.localized }}
+                                                        </v-btn>
+                                                    </template>
+                                                </v-date-input>
+                                                <v-chip
+                                                    v-else
+                                                    :data-testid="`course-table-date-edit-work-group-date-${groupIndex}`"
+                                                    color="primary"
+                                                    size="x-small"
+                                                    variant="tonal"
+                                                    :class="{ 'cursor-pointer': !workSaving }"
+                                                    :disabled="workSaving"
+                                                    @click.stop="beginWorkDialogGroupDateEditing(groupIndex)"
+                                                    @keydown.enter.prevent="beginWorkDialogGroupDateEditing(groupIndex)"
+                                                    @keydown.space.prevent="beginWorkDialogGroupDateEditing(groupIndex)">
+                                                    {{ group.date ? formatDateShort(group.date) : 'Ohne Datum' }}
+                                                </v-chip>
+                                                <v-btn
+                                                    v-if="group._is_new"
+                                                    color="error"
+                                                    density="compact"
+                                                    icon="mdi-delete"
+                                                    size="x-small"
+                                                    title="Neue Gruppe entfernen"
+                                                    variant="text"
+                                                    :disabled="workSaving"
+                                                    @click.stop="removeWorkDialogGroup(groupIndex)" />
+                                                <v-icon size="18">mdi-chevron-right</v-icon>
+                                            </div>
+                                            <v-autocomplete
+                                                v-if="group._is_new"
+                                                v-model="group.student_ids"
+                                                :items="workGroupStudentItems(groupIndex)"
+                                                chips
+                                                closable-chips
+                                                density="compact"
+                                                label="Schüler:innen"
+                                                multiple
+                                                variant="outlined"
+                                                hint="Mindestens eine Person auswählen."
+                                                no-data-text="Keine weiteren Schüler:innen verfügbar."
+                                                persistent-hint
+                                                :disabled="workSaving"
+                                                @click.stop>
+                                                <template #chip="{ internalItem }">
+                                                    <v-chip
+                                                        class="course-table-work-group-student-chip"
+                                                        closable
+                                                        :disabled="workSaving"
+                                                        :draggable="!workSaving"
+                                                        @click.stop
+                                                        @dragstart.stop="startWorkGroupStudentDrag($event, groupIndex, internalItem.value)"
+                                                        @dragend="finishWorkGroupStudentDrag"
+                                                        @click:close="removeWorkGroupStudent(groupIndex, internalItem.value)">
+                                                        {{ internalItem.title }}
+                                                    </v-chip>
+                                                </template>
+                                            </v-autocomplete>
+                                            <div v-else-if="workGroupStudentNames(group).length" class="d-flex flex-wrap ga-1">
+                                                <v-chip
+                                                    v-for="(studentNameValue, studentIndex) in workGroupStudentNames(group)"
+                                                    :key="`${studentIndex}-${studentNameValue}`"
+                                                    class="course-table-work-group-student-chip"
+                                                    size="small"
+                                                    color="primary"
+                                                    closable
+                                                    :disabled="workSaving"
+                                                    :draggable="!workSaving"
+                                                    variant="tonal"
+                                                    @click.stop
+                                                    @dragstart="startWorkGroupStudentDrag($event, groupIndex, group.student_ids[studentIndex])"
+                                                    @dragend="finishWorkGroupStudentDrag"
+                                                    @click:close="removeWorkGroupStudent(groupIndex, group.student_ids[studentIndex])">
+                                                    {{ studentNameValue }}
+                                                </v-chip>
+                                            </div>
+                                            <div v-else class="text-caption text-medium-emphasis">Keine Schüler:innen zugeordnet.</div>
+                                        </v-card>
+                                    </div>
+                                    <v-alert v-else type="info" variant="tonal" density="compact">
+                                        Für diese Gruppenarbeit sind noch keine Gruppen definiert.
+                                    </v-alert>
+                                </v-window-item>
+                            </v-window>
+                            <div class="d-flex justify-end ga-2 mt-4">
+                                <v-btn
+                                    variant="text"
+                                    :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing"
+                                    @click="cancelDateWorkForm">
+                                    Abbrechen
+                                </v-btn>
                                 <v-btn
                                     color="success"
                                     variant="flat"
@@ -373,7 +664,7 @@
                         </div>
                     </section>
                 </v-card-text>
-                <v-card-actions>
+                <v-card-actions v-if="!workDialogFormOpen">
                     <v-spacer />
                     <v-btn
                         color="primary"
@@ -381,6 +672,108 @@
                         :disabled="workSaving || workDeleting"
                         @click="closeWorkDialog">
                         Schließen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="workDialogGroupDetails.open" persistent max-width="720">
+            <v-card v-if="workDialogGroupDetailsGroup">
+                <v-card-title class="d-flex align-center ga-2 text-subtitle-1 font-weight-bold">
+                    <v-icon size="20">mdi-account-group</v-icon>
+                    {{ workDialogGroupDetailsGroup.name || `Gruppe ${workDialogGroupDetails.groupIndex + 1}` }}
+                </v-card-title>
+                <v-divider />
+                <v-card-text class="d-flex flex-column ga-4">
+                    <v-textarea
+                        v-model="workDialogGroupDetailsGroup.comment"
+                        label="Beschreibung"
+                        rows="3"
+                        :counter="1024"
+                        :maxlength="1024"
+                        variant="outlined"
+                        :disabled="workSaving" />
+                    <div>
+                        <div class="text-subtitle-2 font-weight-bold mb-2">Benotung</div>
+                        <div
+                            v-if="workGroupGradeRows(workDialogGroupDetailsGroup).length"
+                            class="d-flex flex-column ga-2">
+                            <v-card
+                                v-for="row in workGroupGradeRows(workDialogGroupDetailsGroup)"
+                                :key="`work-group-grade-${workDialogGroupDetails.groupIndex}-${row.studentId}`"
+                                class="pa-2"
+                                variant="outlined">
+                                <div class="course-table-work-group-grade-grid">
+                                    <div class="text-body-2 font-weight-medium">{{ row.studentName }}</div>
+                                    <v-select
+                                        v-if="availableWorkGradeItems.length"
+                                        :model-value="row.grade"
+                                        :items="availableWorkGradeItems"
+                                        clearable
+                                        density="compact"
+                                        hide-details
+                                        label="Note"
+                                        variant="outlined"
+                                        :disabled="workSaving"
+                                        @update:model-value="setWorkGroupStudentGrade(workDialogGroupDetails.groupIndex, row.studentId, $event)" />
+                                    <v-text-field
+                                        v-else
+                                        :model-value="row.grade"
+                                        density="compact"
+                                        hide-details
+                                        label="Note"
+                                        :maxlength="50"
+                                        variant="outlined"
+                                        :disabled="workSaving"
+                                        @update:model-value="setWorkGroupStudentGrade(workDialogGroupDetails.groupIndex, row.studentId, $event)" />
+                                </div>
+                            </v-card>
+                        </div>
+                        <div v-else class="text-body-2 text-medium-emphasis">
+                            Dieser Gruppe sind keine Schüler:innen zugeordnet.
+                        </div>
+                    </div>
+                </v-card-text>
+                <v-divider />
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn color="primary" variant="flat" :disabled="workSaving" @click="closeWorkDialogGroupDetails">
+                        Schließen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="randomGroupsDialog.open" persistent max-width="420">
+            <v-card>
+                <v-card-title class="text-subtitle-1 font-weight-bold">Zufällige Gruppen</v-card-title>
+                <v-card-text>
+                    <v-text-field
+                        v-model.number="randomGroupsDialog.groupSize"
+                        autofocus
+                        data-testid="course-table-random-group-size"
+                        type="number"
+                        min="2"
+                        :max="maxRandomGroupSize"
+                        step="1"
+                        label="Mitglieder pro Gruppe"
+                        :hint="`Mindestens 2, höchstens ${maxRandomGroupSize} Mitglieder.`"
+                        persistent-hint
+                        @keydown.enter.prevent="confirmRandomGroupSize" />
+                    <div v-if="randomGroupSizePreview" class="text-body-2 mt-3">
+                        <span class="font-weight-bold">Gruppengrößen:</span>
+                        {{ randomGroupSizePreview }}
+                    </div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeRandomGroupsDialog">Abbrechen</v-btn>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        :disabled="!canConfirmRandomGroupSize"
+                        @click="confirmRandomGroupSize">
+                        Erstellen
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -656,6 +1049,10 @@ export default {
             entryDeleting: false,
             entrySaving: false,
             entryStore: null,
+            randomGroupsDialog: {
+                groupSize: 2,
+                open: false,
+            },
             savingAttendanceCells: {},
             tableView: 'attendance',
             workDeleting: false,
@@ -663,6 +1060,7 @@ export default {
                 courseDate: null,
                 open: false,
             },
+            workDialogDateEditing: false,
             workDialogForm: {
                 date_for_all_groups: '',
                 description: '',
@@ -677,6 +1075,21 @@ export default {
                 type: '',
             },
             workDialogFormOpen: false,
+            workDialogGroupDetails: {
+                groupIndex: null,
+                open: false,
+            },
+            workDialogGroupDateEditingIndex: null,
+            workDialogModeDraft: false,
+            workDialogModeEditing: false,
+            workDialogStudentDrag: {
+                sourceGroupIndex: null,
+                studentId: null,
+                targetGroupIndex: null,
+            },
+            workDialogTab: 'work',
+            workDialogTypeDraft: '',
+            workDialogTypeEditing: false,
             workSaving: false,
         }
     },
@@ -715,12 +1128,25 @@ export default {
                 this.loadCourseWorks(course.id)
             }
         },
+        'workDialogForm.is_group_work'(isGroupWork, wasGroupWork) {
+            if (
+                isGroupWork
+                && !wasGroupWork
+                && this.isGeneratedEmptyIndividualWorkGroups(this.workDialogForm.groups)
+            ) {
+                this.workDialogForm.groups = []
+            }
+
+            if (!isGroupWork) {
+                this.workDialogTab = 'work'
+            }
+        },
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'students_sort_mode']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'students_sort_mode', 'uses_entry_areas_for_grading_schema']),
         ...mapWritableState(useCourseWorkStore, ['courseWorks']),
         courseDateScrollSignature() {
             const courseId = this.selected_course?.id || ''
@@ -800,7 +1226,13 @@ export default {
                 }))
         },
         availableWorkTypes() {
-            const works = Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
+            const assignedEntryArea = this.selected_course?.teaching_entry_area || null
+            const entryDefinitions = Array.isArray(assignedEntryArea?.entry_definitions)
+                ? assignedEntryArea.entry_definitions.filter((entry) => entry?.category === 'Benotung')
+                : []
+            const works = this.uses_entry_areas_for_grading_schema && assignedEntryArea?.id
+                ? entryDefinitions
+                : Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
 
             return works
                 .filter((work) => work?.short_name)
@@ -809,16 +1241,139 @@ export default {
                     value: work.short_name,
                 }))
         },
+        availableWorkGradeItems() {
+            const assignedEntryArea = this.selected_course?.teaching_entry_area || null
+            const entryDefinitions = Array.isArray(assignedEntryArea?.entry_definitions)
+                ? assignedEntryArea.entry_definitions.filter((entry) => entry?.category === 'Benotung')
+                : []
+            const works = this.uses_entry_areas_for_grading_schema && assignedEntryArea?.id
+                ? entryDefinitions
+                : Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
+            const selectedWork = works.find((work) => work?.short_name === this.workDialogForm.type)
+            const grades = Array.isArray(selectedWork?.grades) ? selectedWork.grades : []
+
+            return grades
+                .filter((grade) => grade?.grade)
+                .map((grade) => ({
+                    title: grade.name ? `${grade.grade} (${grade.name})` : grade.grade,
+                    value: grade.grade,
+                }))
+        },
         dateWorkAssignments() {
             return this.courseWorksForDate(this.workDialog.courseDate)
         },
+        workDialogGroups() {
+            return Array.isArray(this.workDialogForm.groups) ? this.workDialogForm.groups : []
+        },
+        workDialogGroupDetailsGroup() {
+            const groupIndex = this.workDialogGroupDetails.groupIndex
+
+            return Number.isInteger(groupIndex) ? this.workDialogGroups[groupIndex] || null : null
+        },
+        workDialogCourseDateKeys() {
+            return this.sortedCourseDates
+                .filter((courseDate) => courseDate?.date)
+                .map((courseDate) => this.normalizeDateKey(courseDate?.date))
+                .filter(Boolean)
+        },
         workDialogDateTitle() {
-            return this.workDialog.courseDate ? this.compactCourseDateTitle(this.workDialog.courseDate) : ''
+            const date = this.workDialogFormOpen
+                ? this.normalizeDateKey(this.workDialogForm.date_for_all_groups)
+                : this.normalizeDateKey(this.workDialog.courseDate?.date)
+
+            return date ? this.compactCourseDateTitle({ date }) : 'Ohne Datum'
         },
         canSaveDateWork() {
             const hasAvailableType = this.availableWorkTypes.some((item) => item.value === this.workDialogForm.type)
+            const hasIncompleteNewGroup = this.workDialogForm.is_group_work
+                && this.workDialogGroups.some((group) => group?._is_new && !group.student_ids?.length)
 
-            return Boolean(hasAvailableType && !this.workSaving)
+            return Boolean(
+                hasAvailableType
+                && !hasIncompleteNewGroup
+                && !this.workSaving
+                && !this.workDialogTypeEditing
+                && !this.workDialogModeEditing
+            )
+        },
+        canConfirmDateWorkMode() {
+            return Boolean(!this.workSaving && typeof this.workDialogModeDraft === 'boolean')
+        },
+        canConfirmDateWorkType() {
+            return Boolean(
+                !this.workSaving
+                && this.availableWorkTypes.some((item) => item.value === this.workDialogTypeDraft)
+            )
+        },
+        canConfirmRandomGroupSize() {
+            const groupSize = Number(this.randomGroupsDialog.groupSize)
+
+            return Number.isInteger(groupSize) && groupSize >= 2 && groupSize <= this.maxRandomGroupSize
+        },
+        maxRandomGroupSize() {
+            return this.sortedSelectedStudents.length
+        },
+        hasSavedRandomGroupConfiguration() {
+            const groupSize = Number(this.workDialogForm.group_size)
+
+            return Boolean(
+                this.workDialogForm.id
+                && this.workDialogForm.is_random_groups
+                && Number.isInteger(groupSize)
+                && groupSize >= 2
+            )
+        },
+        unassignedWorkGroupStudents() {
+            const assignedStudentIds = new Set(
+                this.workDialogGroups.flatMap((group) => (
+                    Array.isArray(group?.student_ids) ? group.student_ids.map((studentId) => String(studentId)) : []
+                ))
+            )
+            const listedStudentIds = new Set()
+
+            return this.sortedSelectedStudents.flatMap((student) => {
+                const studentId = this.registeredStudentUserId(student) || student?.id
+                if (
+                    !studentId
+                    || assignedStudentIds.has(String(studentId))
+                    || listedStudentIds.has(String(studentId))
+                ) {
+                    return []
+                }
+
+                listedStudentIds.add(String(studentId))
+
+                return [{
+                    title: this.studentName(student),
+                    value: studentId,
+                }]
+            })
+        },
+        hasUnassignedWorkGroupStudents() {
+            return this.unassignedWorkGroupStudents.length > 0
+        },
+        randomGroupSizePreview() {
+            if (!this.canConfirmRandomGroupSize) return ''
+
+            return this.randomGroupSizes(
+                this.maxRandomGroupSize,
+                Number(this.randomGroupsDialog.groupSize)
+            ).join(' | ')
+        },
+        selectedDateWorkTypeValue() {
+            if (this.workDialogForm.id && this.workDialogTypeEditing) {
+                return this.workDialogTypeDraft
+            }
+
+            return this.workDialogForm.type
+        },
+        selectedDateWorkTypeTitle() {
+            const selectedType = this.availableWorkTypes.find((item) => item.value === this.workDialogForm.type)
+
+            return selectedType?.title || this.workDialogForm.type || 'Kein Typ'
+        },
+        selectedDateWorkModeTitle() {
+            return this.workDialogForm.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit'
         },
         deleteWorkLabel() {
             const work = this.deleteWorkDialog.work
@@ -987,7 +1542,7 @@ export default {
             const totalGroups = groups.length
             const suffix = matchingGroupIndexes.length && matchingGroupIndexes.length < totalGroups
                 ? `Gr. ${matchingGroupIndexes.join(', ')}`
-                : 'alle Gruppen'
+                : 'Gruppenarbeit'
 
             return this.courseWorkAssignmentPayload(work, suffix, true)
         },
@@ -1007,10 +1562,15 @@ export default {
             }
         },
         openWorkDialog(courseDate) {
+            const shouldStartCreating = this.courseWorksForDate(courseDate).length === 0
+
             this.cancelDateWorkForm()
             this.workDialog = {
                 courseDate,
                 open: true,
+            }
+            if (shouldStartCreating) {
+                this.startCreatingDateWork()
             }
         },
         closeWorkDialog() {
@@ -1045,25 +1605,223 @@ export default {
         },
         startCreatingDateWork() {
             this.workDialogForm = this.emptyDateWorkForm()
+            this.workDialogDateEditing = false
+            this.workDialogModeDraft = false
+            this.workDialogModeEditing = false
+            this.workDialogTab = 'work'
+            this.workDialogTypeDraft = ''
+            this.workDialogTypeEditing = false
             this.workDialogFormOpen = true
         },
         startEditingDateWork(work) {
             if (!work?.id) return
+
+            const groups = this.cloneDateWorkGroups(work.groups)
 
             this.workDialogForm = {
                 ...this.emptyDateWorkForm(),
                 ...work,
                 date_for_all_groups: this.normalizeDateKey(work.date_for_all_groups),
                 description: String(work.description || ''),
-                groups: Array.isArray(work.groups) ? work.groups : [],
+                groups: work.is_group_work && this.isGeneratedEmptyIndividualWorkGroups(groups) ? [] : groups,
+                is_group_work: !!work.is_group_work,
                 status: Array.isArray(work.status) ? work.status : [],
                 title: String(work.title || ''),
                 type: String(work.type || ''),
             }
+            this.workDialogDateEditing = false
+            this.workDialogModeDraft = false
+            this.workDialogModeEditing = false
+            this.workDialogTab = 'work'
+            this.workDialogTypeDraft = ''
+            this.workDialogTypeEditing = false
             this.workDialogFormOpen = true
         },
+        cloneDateWorkGroups(groups) {
+            const cloneStudentValues = (values) => {
+                if (Array.isArray(values)) {
+                    return values.map((value) => (
+                        value && typeof value === 'object' ? { ...value } : value
+                    ))
+                }
+                if (values && typeof values === 'object') {
+                    return Object.fromEntries(Object.entries(values).map(([studentId, value]) => [
+                        studentId,
+                        value && typeof value === 'object' ? { ...value } : value,
+                    ]))
+                }
+
+                return []
+            }
+
+            return (Array.isArray(groups) ? groups : []).map((group) => ({
+                ...group,
+                comments: cloneStudentValues(group?.comments),
+                grades: cloneStudentValues(group?.grades),
+                points: cloneStudentValues(group?.points),
+                student_ids: Array.isArray(group?.student_ids) ? [...group.student_ids] : [],
+            }))
+        },
+        beginDateWorkTypeEditing() {
+            this.workDialogTypeDraft = this.workDialogForm.type
+            this.workDialogTypeEditing = true
+        },
+        selectDateWorkType(type) {
+            if (this.workDialogForm.id && this.workDialogTypeEditing) {
+                this.workDialogTypeDraft = type
+
+                return
+            }
+
+            this.workDialogForm.type = type
+        },
+        cancelDateWorkTypeEditing() {
+            this.workDialogTypeDraft = ''
+            this.workDialogTypeEditing = false
+        },
+        confirmDateWorkTypeEditing() {
+            if (!this.canConfirmDateWorkType) return
+
+            this.workDialogForm.type = this.workDialogTypeDraft
+            this.workDialogTypeDraft = ''
+            this.workDialogTypeEditing = false
+        },
+        beginDateWorkModeEditing() {
+            this.workDialogModeDraft = !!this.workDialogForm.is_group_work
+            this.workDialogModeEditing = true
+        },
+        cancelDateWorkModeEditing() {
+            this.workDialogModeDraft = false
+            this.workDialogModeEditing = false
+        },
+        confirmDateWorkModeEditing() {
+            if (!this.canConfirmDateWorkMode) return
+
+            this.workDialogForm.is_group_work = this.workDialogModeDraft
+            this.workDialogModeDraft = false
+            this.workDialogModeEditing = false
+        },
+        beginWorkDialogDateEditing() {
+            if (!this.workDialogFormOpen || this.workSaving) return
+
+            this.workDialogDateEditing = true
+        },
+        applyWorkDialogDate(value) {
+            const date = this.normalizeDateKey(value)
+            if (!date) return
+
+            const courseDate = this.sortedCourseDates.find((item) => this.normalizeDateKey(item?.date) === date) || { date }
+            this.workDialogForm.date_for_all_groups = date
+            if (Array.isArray(this.workDialogForm.groups)) {
+                this.workDialogForm.groups.forEach((group) => {
+                    group.date = date
+                })
+            }
+            this.workDialog = {
+                ...this.workDialog,
+                courseDate,
+            }
+            this.workDialogDateEditing = false
+        },
+        beginWorkDialogGroupDateEditing(groupIndex) {
+            if (this.workSaving || !this.workDialogGroups[groupIndex]) return
+
+            this.workDialogGroupDateEditingIndex = groupIndex
+        },
+        applyWorkDialogGroupDate(groupIndex, value) {
+            const date = this.normalizeDateKey(value)
+            const group = this.workDialogGroups[groupIndex]
+            if (!date || !group) return
+
+            group.date = date
+            this.workDialogGroupDateEditingIndex = null
+        },
+        openRandomGroupsDialog() {
+            const savedGroupSize = Number(this.workDialogForm.group_size)
+            const isSavedGroupSizeValid = Number.isInteger(savedGroupSize)
+                && savedGroupSize >= 2
+                && savedGroupSize <= this.maxRandomGroupSize
+
+            this.randomGroupsDialog = {
+                groupSize: isSavedGroupSizeValid ? savedGroupSize : 2,
+                open: true,
+            }
+        },
+        closeRandomGroupsDialog() {
+            this.randomGroupsDialog.open = false
+        },
+        confirmRandomGroupSize() {
+            if (!this.canConfirmRandomGroupSize) return
+
+            const groupSize = Number(this.randomGroupsDialog.groupSize)
+
+            this.workDialogForm.group_size = groupSize
+            this.workDialogForm.is_random_groups = true
+            this.generateRandomWorkDialogGroups(groupSize)
+            this.closeRandomGroupsDialog()
+        },
+        generateRandomWorkDialogGroups(groupSize) {
+            const studentIds = this.sortedSelectedStudents
+                .map((student) => this.registeredStudentUserId(student) || student?.id)
+                .filter(Boolean)
+            const shuffledStudentIds = [...new Set(studentIds)]
+
+            for (let currentIndex = shuffledStudentIds.length - 1; currentIndex > 0; currentIndex -= 1) {
+                const randomIndex = Math.floor(Math.random() * (currentIndex + 1))
+                ;[shuffledStudentIds[currentIndex], shuffledStudentIds[randomIndex]] = [
+                    shuffledStudentIds[randomIndex],
+                    shuffledStudentIds[currentIndex],
+                ]
+            }
+
+            let startIndex = 0
+            const studentGroups = this.randomGroupSizes(shuffledStudentIds.length, groupSize).map((size) => {
+                const studentGroup = shuffledStudentIds.slice(startIndex, startIndex + size)
+                startIndex += size
+
+                return studentGroup
+            })
+
+            this.workDialogForm.groups = studentGroups.map((groupStudentIds) => ({
+                _is_new: true,
+                student_ids: groupStudentIds,
+                date: this.workDialogForm.date_for_all_groups || '',
+                comment: '',
+                grade: '',
+                grades: {},
+                comments: {},
+                points: {},
+                use_individual_grades: false,
+            }))
+        },
+        randomGroupSizes(studentCount, groupSize) {
+            const groupSizes = []
+
+            for (let remainingStudents = studentCount; remainingStudents > 0; remainingStudents -= groupSize) {
+                groupSizes.push(Math.min(groupSize, remainingStudents))
+            }
+
+            if (groupSizes.length > 1 && groupSizes.at(-1) === 1) {
+                groupSizes[0] += 1
+                groupSizes.pop()
+            }
+
+            return groupSizes
+        },
         cancelDateWorkForm() {
+            this.closeRandomGroupsDialog()
             this.workDialogForm = this.emptyDateWorkForm()
+            this.workDialogDateEditing = false
+            this.workDialogGroupDetails = {
+                groupIndex: null,
+                open: false,
+            }
+            this.workDialogGroupDateEditingIndex = null
+            this.workDialogModeDraft = false
+            this.workDialogModeEditing = false
+            this.workDialogTab = 'work'
+            this.workDialogTypeDraft = ''
+            this.workDialogTypeEditing = false
             this.workDialogFormOpen = false
         },
         async saveDateWork() {
@@ -1073,9 +1831,9 @@ export default {
             try {
                 const payload = {
                     ...this.workDialogForm,
-                    date_for_all_groups: this.workDialogForm.id
-                        ? this.normalizeDateKey(this.workDialogForm.date_for_all_groups) || null
-                        : this.normalizeDateKey(this.workDialog.courseDate?.date) || null,
+                    date_for_all_groups: this.normalizeDateKey(this.workDialogForm.date_for_all_groups)
+                        || this.normalizeDateKey(this.workDialog.courseDate?.date)
+                        || null,
                     description: String(this.workDialogForm.description || '').trim() || null,
                     teaching_course_id: this.selected_course?.id || this.workDialogForm.teaching_course_id,
                     title: String(this.workDialogForm.title || '').trim() || null,
@@ -1137,6 +1895,333 @@ export default {
             }
 
             return student.id || null
+        },
+        isGeneratedEmptyIndividualWorkGroups(groups) {
+            if (!Array.isArray(groups) || groups.length < 2) return false
+
+            const assignedStudentIds = new Set()
+            const hasValue = (value) => value !== null && value !== undefined && String(value).trim() !== ''
+            const collectionHasValue = (collection, property) => {
+                const items = Array.isArray(collection)
+                    ? collection
+                    : collection && typeof collection === 'object' ? Object.values(collection) : []
+
+                return items.some((item) => hasValue(
+                    item && typeof item === 'object' ? item[property] : item
+                ))
+            }
+            const collectionMatchesStudent = (collection, studentId) => {
+                if (!Array.isArray(collection)) return true
+
+                return collection.every((item) => !item?.student_id || String(item.student_id) === studentId)
+            }
+
+            return groups.every((group) => {
+                const studentIds = Array.isArray(group?.student_ids) ? group.student_ids : []
+                if (studentIds.length !== 1) return false
+
+                const studentId = String(studentIds[0] || '')
+                if (!studentId || assignedStudentIds.has(studentId)) return false
+                if (hasValue(group?.name) || hasValue(group?.grade) || hasValue(group?.comment)) return false
+                if (collectionHasValue(group?.grades, 'grade')) return false
+                if (collectionHasValue(group?.comments, 'comment')) return false
+                if (collectionHasValue(group?.points, 'points')) return false
+                if (!collectionMatchesStudent(group?.grades, studentId)) return false
+                if (!collectionMatchesStudent(group?.comments, studentId)) return false
+                if (!collectionMatchesStudent(group?.points, studentId)) return false
+
+                assignedStudentIds.add(studentId)
+
+                return true
+            })
+        },
+        workGroupStudentName(studentId) {
+            const student = this.sortedSelectedStudents.find((courseStudent) => [
+                courseStudent?.id,
+                courseStudent?.import116_id,
+                this.registeredStudentUserId(courseStudent),
+            ].some((candidateId) => String(candidateId || '') === String(studentId)))
+
+            return student ? this.studentName(student) : `Schüler:in #${studentId}`
+        },
+        workGroupStudentNames(group) {
+            const studentIds = Array.isArray(group?.student_ids) ? group.student_ids : []
+
+            return studentIds.map((studentId) => this.workGroupStudentName(studentId))
+        },
+        workGroupStudentGrade(group, studentId) {
+            const grades = Array.isArray(group?.grades)
+                ? group.grades
+                : group?.grades && typeof group.grades === 'object'
+                    ? Object.entries(group.grades).map(([savedStudentId, savedGrade]) => ({
+                        student_id: savedStudentId,
+                        grade: savedGrade && typeof savedGrade === 'object' ? savedGrade.grade : savedGrade,
+                    }))
+                    : []
+            const individualGrade = grades.find(
+                (grade) => String(grade?.student_id) === String(studentId)
+            )
+
+            return String(individualGrade?.grade ?? group?.grade ?? '')
+        },
+        workGroupGradeRows(group) {
+            const studentIds = Array.isArray(group?.student_ids) ? group.student_ids : []
+
+            return studentIds.map((studentId) => ({
+                grade: this.workGroupStudentGrade(group, studentId),
+                studentId,
+                studentName: this.workGroupStudentName(studentId),
+            }))
+        },
+        setWorkGroupStudentGrade(groupIndex, studentId, value) {
+            const group = this.workDialogGroups[groupIndex]
+            if (!group) return
+
+            const grades = (Array.isArray(group.student_ids) ? group.student_ids : []).map((groupStudentId) => ({
+                student_id: groupStudentId,
+                grade: this.workGroupStudentGrade(group, groupStudentId),
+            }))
+            const studentGrade = grades.find(
+                (grade) => String(grade.student_id) === String(studentId)
+            )
+            if (!studentGrade) return
+
+            studentGrade.grade = String(value ?? '')
+            group.grade = ''
+            group.grades = grades
+            group.use_individual_grades = true
+        },
+        openWorkDialogGroupDetails(groupIndex) {
+            if (this.workSaving || !this.workDialogGroups[groupIndex]) return
+
+            this.workDialogGroupDetails = {
+                groupIndex,
+                open: true,
+            }
+        },
+        closeWorkDialogGroupDetails() {
+            if (this.workSaving) return
+
+            this.workDialogGroupDetails = {
+                groupIndex: null,
+                open: false,
+            }
+        },
+        workGroupMemberCountTitle(group) {
+            const memberCount = Array.isArray(group?.student_ids) ? group.student_ids.length : 0
+
+            return `${memberCount} ${memberCount === 1 ? 'Mitglied' : 'Mitglieder'}`
+        },
+        workGroupStudentItems(groupIndex) {
+            const currentGroupIds = new Set(
+                (this.workDialogGroups[groupIndex]?.student_ids || []).map((studentId) => String(studentId))
+            )
+            const assignedToOtherGroups = new Set()
+
+            this.workDialogGroups.forEach((group, index) => {
+                if (index === groupIndex) return
+
+                ;(group?.student_ids || []).forEach((studentId) => assignedToOtherGroups.add(String(studentId)))
+            })
+
+            return this.sortedSelectedStudents
+                .map((student) => ({
+                    title: this.studentName(student),
+                    value: this.registeredStudentUserId(student) || student?.id,
+                }))
+                .filter((item) => item.value && (
+                    currentGroupIds.has(String(item.value)) || !assignedToOtherGroups.has(String(item.value))
+                ))
+        },
+        startWorkGroupStudentDrag(event, sourceGroupIndex, studentId) {
+            const sourceGroup = this.workDialogGroups[sourceGroupIndex]
+            const hasStudent = Array.isArray(sourceGroup?.student_ids)
+                && sourceGroup.student_ids.some((groupStudentId) => String(groupStudentId) === String(studentId))
+
+            if (this.workSaving || !hasStudent) {
+                event?.preventDefault?.()
+
+                return
+            }
+
+            this.workDialogStudentDrag = {
+                sourceGroupIndex,
+                studentId,
+                targetGroupIndex: null,
+            }
+            if (event?.dataTransfer) {
+                event.dataTransfer.effectAllowed = 'move'
+                event.dataTransfer.setData('text/plain', String(studentId))
+            }
+        },
+        startUnassignedWorkGroupStudentDrag(event, studentId) {
+            const hasStudent = this.unassignedWorkGroupStudents.some(
+                (student) => String(student.value) === String(studentId)
+            )
+            if (this.workSaving || !hasStudent) {
+                event?.preventDefault?.()
+
+                return
+            }
+
+            this.workDialogStudentDrag = {
+                sourceGroupIndex: -1,
+                studentId,
+                targetGroupIndex: null,
+            }
+            if (event?.dataTransfer) {
+                event.dataTransfer.effectAllowed = 'move'
+                event.dataTransfer.setData('text/plain', String(studentId))
+            }
+        },
+        setWorkGroupStudentDropTarget(targetGroupIndex) {
+            const sourceGroupIndex = this.workDialogStudentDrag.sourceGroupIndex
+            if (!Number.isInteger(sourceGroupIndex) || sourceGroupIndex === targetGroupIndex) return
+
+            if (this.workDialogStudentDrag.targetGroupIndex === targetGroupIndex) return
+
+            this.workDialogStudentDrag = {
+                ...this.workDialogStudentDrag,
+                targetGroupIndex,
+            }
+        },
+        dropWorkGroupStudent(targetGroupIndex) {
+            const { sourceGroupIndex, studentId } = this.workDialogStudentDrag
+            if (sourceGroupIndex === -1 && studentId !== null) {
+                this.assignUnassignedWorkGroupStudent(targetGroupIndex, studentId)
+            } else if (Number.isInteger(sourceGroupIndex) && studentId !== null) {
+                this.moveWorkGroupStudentToGroup(sourceGroupIndex, targetGroupIndex, studentId)
+            }
+
+            this.finishWorkGroupStudentDrag()
+        },
+        moveWorkGroupStudentToGroup(sourceGroupIndex, targetGroupIndex, studentId) {
+            if (sourceGroupIndex === targetGroupIndex) return false
+
+            const sourceGroup = this.workDialogGroups[sourceGroupIndex]
+            const targetGroup = this.workDialogGroups[targetGroupIndex]
+            if (!sourceGroup || !targetGroup || !Array.isArray(sourceGroup.student_ids)) return false
+
+            const sourceStudentIndex = sourceGroup.student_ids.findIndex(
+                (groupStudentId) => String(groupStudentId) === String(studentId)
+            )
+            if (sourceStudentIndex < 0) return false
+
+            if (!Array.isArray(targetGroup.student_ids)) {
+                targetGroup.student_ids = []
+            }
+            if (targetGroup.student_ids.some((groupStudentId) => String(groupStudentId) === String(studentId))) {
+                return false
+            }
+
+            const [movedStudentId] = sourceGroup.student_ids.splice(sourceStudentIndex, 1)
+            targetGroup.student_ids.push(movedStudentId)
+
+            const studentValueProperties = ['grades', 'comments', 'points']
+            studentValueProperties.forEach((property) => {
+                const sourceItems = Array.isArray(sourceGroup[property])
+                    ? sourceGroup[property]
+                    : sourceGroup[property] && typeof sourceGroup[property] === 'object'
+                        ? Object.values(sourceGroup[property])
+                        : []
+                const targetItems = Array.isArray(targetGroup[property])
+                    ? targetGroup[property]
+                    : targetGroup[property] && typeof targetGroup[property] === 'object'
+                        ? Object.values(targetGroup[property])
+                        : []
+                const movedItems = sourceItems.filter(
+                    (item) => String(item?.student_id) === String(studentId)
+                )
+
+                sourceGroup[property] = sourceItems.filter(
+                    (item) => String(item?.student_id) !== String(studentId)
+                )
+                targetGroup[property] = [
+                    ...targetItems.filter((item) => String(item?.student_id) !== String(studentId)),
+                    ...movedItems,
+                ]
+            })
+
+            return true
+        },
+        assignUnassignedWorkGroupStudent(targetGroupIndex, studentId) {
+            const targetGroup = this.workDialogGroups[targetGroupIndex]
+            const student = this.unassignedWorkGroupStudents.find(
+                (unassignedStudent) => String(unassignedStudent.value) === String(studentId)
+            )
+            if (!targetGroup || !student) return false
+
+            if (!Array.isArray(targetGroup.student_ids)) {
+                targetGroup.student_ids = []
+            }
+            if (targetGroup.student_ids.some((groupStudentId) => String(groupStudentId) === String(student.value))) {
+                return false
+            }
+
+            targetGroup.student_ids.push(student.value)
+
+            return true
+        },
+        finishWorkGroupStudentDrag() {
+            this.workDialogStudentDrag = {
+                sourceGroupIndex: null,
+                studentId: null,
+                targetGroupIndex: null,
+            }
+        },
+        removeWorkGroupStudent(groupIndex, studentId) {
+            if (this.workSaving) return false
+
+            const group = this.workDialogGroups[groupIndex]
+            if (!group || !Array.isArray(group.student_ids)) return false
+
+            const studentIndex = group.student_ids.findIndex(
+                (groupStudentId) => String(groupStudentId) === String(studentId)
+            )
+            if (studentIndex < 0) return false
+
+            group.student_ids.splice(studentIndex, 1)
+            const studentValueProperties = ['grades', 'comments', 'points']
+            studentValueProperties.forEach((property) => {
+                const values = Array.isArray(group[property])
+                    ? group[property]
+                    : group[property] && typeof group[property] === 'object'
+                        ? Object.values(group[property])
+                        : []
+
+                group[property] = values.filter(
+                    (item) => String(item?.student_id) !== String(studentId)
+                )
+            })
+
+            return true
+        },
+        addWorkDialogGroup() {
+            if (!Array.isArray(this.workDialogForm.groups)) {
+                this.workDialogForm.groups = []
+            }
+
+            this.workDialogForm.groups.push({
+                _is_new: true,
+                student_ids: [],
+                date: this.workDialogForm.date_for_all_groups || '',
+                comment: '',
+                grade: '',
+                grades: {},
+                comments: {},
+                points: {},
+                use_individual_grades: false,
+            })
+        },
+        removeWorkDialogGroup(groupIndex) {
+            if (!this.workDialogForm.groups?.[groupIndex]?._is_new) return
+
+            this.workDialogForm.groups.splice(groupIndex, 1)
+            if (this.workDialogGroupDetails.groupIndex === groupIndex) {
+                this.closeWorkDialogGroupDetails()
+            } else if (this.workDialogGroupDetails.groupIndex > groupIndex) {
+                this.workDialogGroupDetails.groupIndex -= 1
+            }
         },
         entriesForCell(student, courseDate) {
             const userId = this.registeredStudentUserId(student)
@@ -1466,12 +2551,8 @@ export default {
         },
         isAttendanceToggleable(courseDate) {
             if (!courseDate?.id) return false
-            if (this.isFreeCourseDate(courseDate)) return false
 
-            const dateKey = this.normalizeDateKey(courseDate?.date)
-            if (!dateKey) return false
-
-            return dateKey <= this.dateKey(new Date())
+            return !this.isFreeCourseDate(courseDate)
         },
         attendanceCellKey(student, courseDate) {
             return `${courseDate?.id || 'date'}:${student?.id || 'student'}`
@@ -1589,7 +2670,7 @@ export default {
 
             try {
                 const response = await this.courseDateStore?.updateStatus(courseDate.id, {
-                    attendance: nextAttendance,
+                    toggle_student_id: student.id,
                     attendance_checked: this.isAttendanceChecked(courseDate),
                 })
                 if (response) {
@@ -1972,6 +3053,11 @@ export default {
     gap: 8px;
 }
 
+.course-table-date-work-date-input {
+    flex: 0 1 220px;
+    min-width: 180px;
+}
+
 .course-table-date-work-item {
     align-items: flex-start;
     background: #f8fafc;
@@ -1992,6 +3078,57 @@ export default {
     border: 1px solid rgba(37, 99, 235, 0.2);
     border-radius: 10px;
     padding: 12px;
+}
+
+.course-table-work-meta-row {
+    align-items: start;
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.course-table-work-meta-row--single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.course-table-work-group-card {
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.course-table-work-group-card--drop-target {
+    background: rgba(37, 99, 235, 0.08);
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+
+.course-table-work-group-date-input {
+    flex: 0 1 210px;
+    min-width: 180px;
+}
+
+.course-table-work-group-student-chip {
+    cursor: grab;
+}
+
+.course-table-work-group-student-chip:active {
+    cursor: grabbing;
+}
+
+.course-table-work-group-grade-grid {
+    align-items: center;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+}
+
+@media (max-width: 600px) {
+    .course-table-work-meta-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .course-table-work-group-grade-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 .course-table-row {

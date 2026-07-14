@@ -2,7 +2,7 @@
 
 ## 3.42.3
 
-### Lehrertool
+### Unterrichtstool
 
 - Synchronisierung der Schuldaten von online zu lokal
 - Neue Einträge für Beurteilungen
@@ -10,6 +10,10 @@
 - Bereiche/Einträge auf neues Schuljahr übernehmen
 - Import116-Datei: Strenge Abgrenzung nach Schuljahr
 - Schülergruppen: Neue Gruppierung/Sortierung
+- Import116: Beschleunigen des Imports
+- Testumgebung 2026/27 erzeugen
+- Schüler:innen-Anwesenheiten auch im Vorhinein erfassbar
+- Auswahl neuer Arbeiten ab 2026/27
 
 ## 3.42.2
 

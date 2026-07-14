@@ -49,17 +49,16 @@ class CourseWorkController extends Controller
         $course = TeachingCourse::findOrFail($request->input('teaching_course_id'));
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
-        $allowedTypes = $entryService->allowedTypesForSchema(
+        $allowedTypes = $entryService->allowedTypesForCourse(
             $this->teachingCourseActor($auth_user, $course),
-            $course->teaching_schema_id,
-            $course->schoolyear_id
+            $course
         );
         $typeRules = ['nullable', 'string', 'max:255'];
         if (! empty($allowedTypes)) {
             $typeRules[] = Rule::in($allowedTypes);
         }
 
-        $validated = $request->validate($this->workValidationRules($typeRules, true));
+        $validated = $request->validate($this->workValidationRules($typeRules, true, $course));
 
         $validated = $workService->prepareWorkData($validated, $course, (int) $auth_user->school_id);
 
@@ -103,17 +102,16 @@ class CourseWorkController extends Controller
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
-        $allowedTypes = $entryService->allowedTypesForSchema(
+        $allowedTypes = $entryService->allowedTypesForCourse(
             $this->teachingCourseActor($auth_user, $course),
-            $course->teaching_schema_id,
-            $course->schoolyear_id
+            $course
         );
         $typeRules = ['nullable', 'string', 'max:255'];
         if (! empty($allowedTypes)) {
             $typeRules[] = Rule::in($allowedTypes);
         }
 
-        $validated = $request->validate($this->workValidationRules($typeRules, false));
+        $validated = $request->validate($this->workValidationRules($typeRules, false, $course));
 
         $validated = $workService->prepareWorkData($validated, $course, (int) $auth_user->school_id, $course_work->is_group_work);
 
@@ -145,14 +143,18 @@ class CourseWorkController extends Controller
     /**
      * Return the shared validation rules for store/update of a course work.
      */
-    private function workValidationRules(array $typeRules, bool $isStore): array
+    private function workValidationRules(array $typeRules, bool $isStore, TeachingCourse $course): array
     {
+        $maximumGroupSize = $course->teachingCourseStudents()
+            ->whereNull('canceled_at')
+            ->count();
+
         $rules = [
             'type' => $typeRules,
             'title' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:1024',
             'is_group_work' => 'sometimes|boolean',
-            'group_size' => 'nullable|integer|min:2|max:50',
+            'group_size' => "nullable|integer|min:2|max:{$maximumGroupSize}",
             'is_random_groups' => 'sometimes|boolean',
             'date_for_all_groups' => 'nullable|date',
             'groups' => 'nullable|array',

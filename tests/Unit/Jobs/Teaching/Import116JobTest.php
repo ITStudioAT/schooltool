@@ -16,6 +16,7 @@
 use App\Events\Import116FinishedEvent;
 use App\Jobs\Teaching\Import116Job;
 use App\Models\Import116;
+use App\Models\Import116Run;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
@@ -25,6 +26,7 @@ use App\Models\UserGroup;
 use App\Models\UserGroupMember;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Queue\InteractsWithQueue;
@@ -108,6 +110,14 @@ describe('job construction', function () {
         $job = new Import116Job($this->admin, 'test/path');
 
         expect($job)->toBeInstanceOf(ShouldQueue::class);
+    });
+
+    test('uses a timeout below the queue retry window', function () {
+        $job = new Import116Job($this->admin, 'test/path');
+
+        expect($job->timeout)->toBe(600)
+            ->and($job->failOnTimeout)->toBeTrue()
+            ->and($job->timeout)->toBeLessThan((int) config('queue.connections.redis.retry_after'));
     });
 });
 
@@ -304,12 +314,111 @@ describe('import record handling', function () {
         ]);
     });
 
+    test('aggregates repeated address rows before persisting a student', function () {
+        $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+
+        foreach ([
+            ['Eigen', 'student@example.test', '0664000001', null],
+            ['Vater', 'father@example.test', '0664000002', 'Max Vater'],
+            ['Mutter', 'mother@example.test', '0664000003', 'Mia Mutter'],
+        ] as [$addressType, $email, $phone, $addressName]) {
+            $writer->addRow([
+                'Klasse' => '5A',
+                'Schülerkennzahl' => 'STU-MERGED-001',
+                'Familienname' => 'Mustermann',
+                'Vorname' => 'Max',
+                'Geschlecht' => 'm',
+                'Adressart' => $addressType,
+                'Name (Anschrift)' => $addressName,
+                'Mailadresse' => $email,
+                'Mobiltelefon' => $phone,
+            ]);
+        }
+        $writer->close();
+
+        (new Import116Job($this->admin, $relativePath, $this->schoolyear->id, '116.xlsx'))->handle();
+
+        $record = Import116::query()
+            ->where('school_id', $this->school->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->where('student_code', 'STU-MERGED-001')
+            ->sole();
+        $run = Import116Run::query()->latest('id')->firstOrFail();
+
+        expect(Import116::query()->where('student_code', 'STU-MERGED-001')->count())->toBe(1)
+            ->and($record->email)->toBe('student@example.test')
+            ->and($record->phone_1)->toBe('0664000001')
+            ->and($record->father_name)->toBe('Max Vater')
+            ->and($record->father_email)->toBe('father@example.test')
+            ->and($record->father_phone_1)->toBe('0664000002')
+            ->and($record->mother_name)->toBe('Mia Mutter')
+            ->and($record->mother_email)->toBe('mother@example.test')
+            ->and($record->mother_phone_1)->toBe('0664000003')
+            ->and($run->counts['processed_rows'])->toBe(3)
+            ->and($run->counts['seen_students'])->toBe(1);
+    });
+
+    test('creates inactive placeholder users with distinct low-cost random passwords', function () {
+        config(['hashing.bcrypt.rounds' => 12]);
+
+        $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        foreach (['NOEMAIL-001', 'NOEMAIL-002'] as $studentCode) {
+            $writer->addRow([
+                'Klasse' => '5A',
+                'Schülerkennzahl' => $studentCode,
+                'Familienname' => 'OhneMail',
+                'Vorname' => $studentCode,
+                'Adressart' => 'Eigen',
+                'Mailadresse' => '',
+            ]);
+        }
+        $writer->close();
+
+        (new Import116Job($this->admin, $relativePath, $this->schoolyear->id, '116.xlsx'))->handle();
+
+        $placeholderUsers = User::query()
+            ->where('school_id', $this->school->id)
+            ->where('email', 'like', 'noemail.%@schooltool.noemail')
+            ->orderBy('id')
+            ->get();
+
+        expect($placeholderUsers)->toHaveCount(2)
+            ->and($placeholderUsers[0]->password)->not->toBe($placeholderUsers[1]->password);
+
+        foreach ($placeholderUsers as $placeholderUser) {
+            expect((bool) $placeholderUser->is_active)->toBeFalse()
+                ->and($placeholderUser->email_verified_at)->toBeNull()
+                ->and(password_get_info($placeholderUser->password)['algoName'])->toBe('bcrypt')
+                ->and(password_get_info($placeholderUser->password)['options']['cost'])->toBe(4)
+                ->and(password_verify('password', $placeholderUser->password))->toBeFalse();
+        }
+    });
+
     test('factory creates records for correct school', function () {
         $record = Import116::factory()->forSchool($this->school)->create([
             'import_user_id' => $this->admin->id,
         ]);
 
         expect($record->school_id)->toBe($this->school->id);
+    });
+
+    test('enforces one student record per school year', function () {
+        $attributes = [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'UNIQUE-001',
+            'import_user_id' => $this->admin->id,
+        ];
+        Import116::factory()->create($attributes);
+
+        expect(fn () => Import116::factory()->create($attributes))->toThrow(QueryException::class);
+
+        $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+        Import116::factory()->create([...$attributes, 'schoolyear_id' => $otherSchoolyear->id]);
+
+        expect(Import116::query()->where('student_code', 'UNIQUE-001')->count())->toBe(2);
     });
 
     test('factory creates records with mother contact info', function () {

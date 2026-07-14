@@ -8,6 +8,8 @@ use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingEntryArea;
+use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use App\Services\TeachingCourseWorkEntrySyncService;
@@ -270,6 +272,80 @@ describe('store', function () {
             'groups' => [],
         ])->assertStatus(422)->assertJsonValidationErrors(['type']);
     });
+
+    test('limits random group size to the number of active course students', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $courseStudents = User::factory()->count(3)->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+
+        $courseStudents->each(fn (User $student) => $this->course->teachingCourseStudents()->create([
+            'user_id' => $student->id,
+        ]));
+
+        $this->postJson('/api/admin/teaching/course_works', [
+            'teaching_course_id' => $this->course->id,
+            'type' => 'MA',
+            'is_group_work' => true,
+            'is_random_groups' => true,
+            'group_size' => 4,
+            'groups' => [],
+        ])->assertUnprocessable()->assertJsonValidationErrors('group_size');
+
+        $this->postJson('/api/admin/teaching/course_works', [
+            'teaching_course_id' => $this->course->id,
+            'type' => 'MA',
+            'is_group_work' => true,
+            'is_random_groups' => true,
+            'group_size' => 3,
+            'groups' => [],
+        ])->assertCreated()->assertJsonPath('data.group_size', 3);
+    });
+
+    test('uses grading entries from the area assigned to courses from 2026/27 onward', function (string $schoolyearLabel) {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->schoolyear->update(['name' => $schoolyearLabel, 'concerns' => $schoolyearLabel]);
+
+        $entryArea = TeachingEntryArea::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'name' => 'Digitale Grundbildung',
+        ]);
+        TeachingEntryDefinition::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_entry_area_id' => $entryArea->id,
+            'short_name' => 'A',
+            'name' => 'Auftrag',
+            'category' => 'Benotung',
+        ]);
+        TeachingEntryDefinition::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_entry_area_id' => $entryArea->id,
+            'short_name' => 'E',
+            'name' => 'Ermahnung',
+            'category' => 'Verhalten',
+        ]);
+        $this->course->update(['teaching_entry_area_id' => $entryArea->id]);
+
+        $this->postJson('/api/admin/teaching/course_works', [
+            'teaching_course_id' => $this->course->id,
+            'type' => 'A',
+            'groups' => [],
+        ])->assertCreated()->assertJsonPath('data.type', 'A');
+
+        $this->postJson('/api/admin/teaching/course_works', [
+            'teaching_course_id' => $this->course->id,
+            'type' => 'E',
+            'groups' => [],
+        ])->assertUnprocessable()->assertJsonValidationErrors('type');
+    })->with(['2026/27', '2027/28']);
 
     test('returns 403 when trying to store on course of other school', function () {
         $this->actingAs($this->admin, 'sanctum');

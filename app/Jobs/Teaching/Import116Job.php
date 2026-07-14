@@ -24,6 +24,15 @@ class Import116Job implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    public int $timeout = 600;
+
+    public bool $failOnTimeout = true;
+
+    /** @var array<string, bool> */
+    private array $availableTables = [];
+
+    private const PLACEHOLDER_PASSWORD_ROUNDS = 4;
+
     public function __construct(public $user, public string $path, public ?int $schoolyearId = null, public ?string $originalFilename = null)
     {
         // placeholder for future payload
@@ -42,7 +51,7 @@ class Import116Job implements ShouldQueue
                 404,
                 $this->user->id,
                 'Import 116 fehlgeschlagen: Datei nicht gefunden.',
-                ['path' => $this->path]
+                ['path' => $this->path, 'run_id' => $run?->id]
             ));
 
             return;
@@ -58,7 +67,7 @@ class Import116Job implements ShouldQueue
                 422,
                 $this->user->id,
                 'Import 116 fehlgeschlagen: Spaltenüberschriften nicht erkannt.',
-                []
+                ['run_id' => $run?->id]
             ));
 
             return;
@@ -68,56 +77,11 @@ class Import116Job implements ShouldQueue
         try {
             DB::transaction(function () use ($reader, $headerMapping, $schoolId, $schoolyearId, $run, &$report) {
                 $now = now();
-                $seenCodes = [];
                 $baselineSnapshots = $this->loadSnapshotsByStudentCode($schoolId, $schoolyearId);
+                $aggregatedRows = $this->aggregateStudentRows($reader->getRows(), $headerMapping, $schoolId, $schoolyearId, $now);
+                $seenCodes = array_keys($aggregatedRows['students']);
 
-                $reader->getRows()->each(function (array $row) use ($headerMapping, $schoolId, $schoolyearId, $now, &$seenCodes) {
-                    $mapped = [];
-                    foreach ($headerMapping as $originalHeader => $field) {
-                        $mapped[$field] = isset($row[$originalHeader]) ? $this->normalizeCell($row[$originalHeader]) : null;
-                    }
-
-                    $studentCode = $mapped['student_code'] ?? null;
-                    if (! $studentCode) {
-                        return;
-                    }
-
-                    $seenCodes[] = $studentCode;
-
-                    $data = [
-                        'school_id' => $schoolId,
-                        'schoolyear_id' => $schoolyearId,
-                        'class' => $mapped['class'] ?? '',
-                        'school_level' => $mapped['school_level'] ?? null,
-                        'attendance_year' => $mapped['attendance_year'] ?? null,
-                        'religion' => $mapped['religion'] ?? null,
-                        'student_code' => $studentCode,
-                        'last_name' => $mapped['last_name'] ?? '',
-                        'first_name' => $mapped['first_name'] ?? '',
-                        'sex' => $mapped['sex'] ?? null,
-                        'birth_date' => $this->parseDate($mapped['birth_date'] ?? null),
-                        'import_date' => $now,
-                        'exists_date' => $now,
-                        'import_user_id' => $this->user->id,
-                    ];
-
-                    $addressType = $this->normalizeAddressType($mapped['address_type'] ?? null);
-                    if ($this->isStudentAddressType($addressType)) {
-                        $this->setIfPresent($data, 'email', $mapped['email'] ?? null);
-                        $this->setIfPresent($data, 'phone_1', $mapped['phone_1'] ?? null);
-                        $this->setIfPresent($data, 'phone_2', $mapped['phone_2'] ?? null);
-                    } elseif (str_starts_with($addressType, 'vater')) {
-                        $this->setIfPresent($data, 'father_name', $mapped['address_name'] ?? null);
-                        $this->setIfPresent($data, 'father_email', $mapped['email'] ?? null);
-                        $this->setIfPresent($data, 'father_phone_1', $mapped['phone_1'] ?? null);
-                        $this->setIfPresent($data, 'father_phone_2', $mapped['phone_2'] ?? null);
-                    } elseif (str_starts_with($addressType, 'mutter')) {
-                        $this->setIfPresent($data, 'mother_name', $mapped['address_name'] ?? null);
-                        $this->setIfPresent($data, 'mother_email', $mapped['email'] ?? null);
-                        $this->setIfPresent($data, 'mother_phone_1', $mapped['phone_1'] ?? null);
-                        $this->setIfPresent($data, 'mother_phone_2', $mapped['phone_2'] ?? null);
-                    }
-
+                foreach ($aggregatedRows['students'] as $studentCode => $data) {
                     $record = Import116::updateOrCreate(
                         [
                             'school_id' => $schoolId,
@@ -168,7 +132,7 @@ class Import116Job implements ShouldQueue
                             ->first();
 
                         if (! $placeholderUser) {
-                            $placeholderUser = User::create([
+                            $placeholderUser = new User([
                                 'school_id' => $schoolId,
                                 'schoolyear_id' => $schoolyearId,
                                 'email' => $placeholderEmail,
@@ -176,11 +140,11 @@ class Import116Job implements ShouldQueue
                                 'last_name' => $data['last_name'] ?? '',
                                 'schoolclass' => $data['class'] ?? null,
                                 'sex' => $data['sex'] ?? null,
-                                'password' => Hash::make(str()->random(32)),
-                                'email_verified_at' => now(),
-                                'is_active' => 0,
+                                'password' => Hash::make(str()->random(64), ['rounds' => self::PLACEHOLDER_PASSWORD_ROUNDS]),
                                 'import116_id' => $record->id,
                             ]);
+                            $placeholderUser->is_active = false;
+                            $placeholderUser->save();
                         }
 
                         $record->user_id = $placeholderUser->id;
@@ -196,19 +160,17 @@ class Import116Job implements ShouldQueue
                     $this->syncLinkedUsersToCurrentRecord($schoolId, $record);
 
                     $this->syncTeachingCourseStudentsToCurrentRecord($record);
-                });
+                }
 
                 $this->deleteMissingImport116Rows($schoolId, $schoolyearId, $seenCodes);
-
-                $uniqueSeenCodes = array_values(array_unique($seenCodes));
 
                 $finalSnapshots = $this->loadSnapshotsByStudentCode(
                     $schoolId,
                     $schoolyearId,
-                    array_values(array_unique(array_merge(array_keys($baselineSnapshots), $uniqueSeenCodes)))
+                    array_values(array_unique(array_merge(array_keys($baselineSnapshots), $seenCodes)))
                 );
 
-                $report = $this->buildRunReport($baselineSnapshots, $finalSnapshots, count($seenCodes), count($uniqueSeenCodes));
+                $report = $this->buildRunReport($baselineSnapshots, $finalSnapshots, $aggregatedRows['processed_rows'], count($seenCodes));
                 $this->storeRunReport($run, $report, $schoolId, $schoolyearId);
 
                 $schoolTool = SchoolTool::firstOrCreate(['school_id' => $schoolId]);
@@ -222,7 +184,7 @@ class Import116Job implements ShouldQueue
                 500,
                 $this->user->id,
                 'Import 116 fehlgeschlagen.',
-                ['error' => $e->getMessage()]
+                ['error' => $e->getMessage(), 'run_id' => $run?->id]
             ));
 
             throw $e;
@@ -240,6 +202,68 @@ class Import116Job implements ShouldQueue
                 'counts' => $report['counts'] ?? [],
             ]
         ));
+    }
+
+    /**
+     * @param  iterable<int, array<string, mixed>>  $rows
+     * @param  array<string, string>  $headerMapping
+     * @return array{students: array<string, array<string, mixed>>, processed_rows: int}
+     */
+    private function aggregateStudentRows(iterable $rows, array $headerMapping, int $schoolId, ?int $schoolyearId, Carbon $now): array
+    {
+        $students = [];
+        $processedRows = 0;
+
+        foreach ($rows as $row) {
+            $mapped = [];
+            foreach ($headerMapping as $originalHeader => $field) {
+                $mapped[$field] = isset($row[$originalHeader]) ? $this->normalizeCell($row[$originalHeader]) : null;
+            }
+
+            $studentCode = $mapped['student_code'] ?? null;
+            if (! $studentCode) {
+                continue;
+            }
+
+            $processedRows++;
+            $data = [
+                'school_id' => $schoolId,
+                'schoolyear_id' => $schoolyearId,
+                'class' => $mapped['class'] ?? '',
+                'school_level' => $mapped['school_level'] ?? null,
+                'attendance_year' => $mapped['attendance_year'] ?? null,
+                'religion' => $mapped['religion'] ?? null,
+                'student_code' => $studentCode,
+                'last_name' => $mapped['last_name'] ?? '',
+                'first_name' => $mapped['first_name'] ?? '',
+                'sex' => $mapped['sex'] ?? null,
+                'birth_date' => $this->parseDate($mapped['birth_date'] ?? null),
+                'import_date' => $now,
+                'exists_date' => $now,
+                'import_user_id' => $this->user->id,
+            ];
+
+            $addressType = $this->normalizeAddressType($mapped['address_type'] ?? null);
+            if ($this->isStudentAddressType($addressType)) {
+                $this->setIfPresent($data, 'email', $mapped['email'] ?? null);
+                $this->setIfPresent($data, 'phone_1', $mapped['phone_1'] ?? null);
+                $this->setIfPresent($data, 'phone_2', $mapped['phone_2'] ?? null);
+            } elseif (str_starts_with($addressType, 'vater')) {
+                $this->setIfPresent($data, 'father_name', $mapped['address_name'] ?? null);
+                $this->setIfPresent($data, 'father_email', $mapped['email'] ?? null);
+                $this->setIfPresent($data, 'father_phone_1', $mapped['phone_1'] ?? null);
+                $this->setIfPresent($data, 'father_phone_2', $mapped['phone_2'] ?? null);
+            } elseif (str_starts_with($addressType, 'mutter')) {
+                $this->setIfPresent($data, 'mother_name', $mapped['address_name'] ?? null);
+                $this->setIfPresent($data, 'mother_email', $mapped['email'] ?? null);
+                $this->setIfPresent($data, 'mother_phone_1', $mapped['phone_1'] ?? null);
+                $this->setIfPresent($data, 'mother_phone_2', $mapped['phone_2'] ?? null);
+            }
+
+            $students[$studentCode] = array_replace($students[$studentCode] ?? [], $data);
+        }
+
+        return ['students' => $students, 'processed_rows' => $processedRows];
     }
 
     private function createRun(int $schoolId, ?int $schoolyearId): ?Import116Run
@@ -328,10 +352,19 @@ class Import116Job implements ShouldQueue
 
     private function isRunTrackingAvailable(): bool
     {
+        return $this->tableExists('import116_runs') && $this->tableExists('import116_run_changes');
+    }
+
+    private function tableExists(string $table): bool
+    {
+        if (array_key_exists($table, $this->availableTables)) {
+            return $this->availableTables[$table];
+        }
+
         try {
-            return Schema::hasTable('import116_runs') && Schema::hasTable('import116_run_changes');
+            return $this->availableTables[$table] = Schema::hasTable($table);
         } catch (\Throwable $e) {
-            return false;
+            return $this->availableTables[$table] = false;
         }
     }
 
@@ -381,7 +414,7 @@ class Import116Job implements ShouldQueue
             return;
         }
 
-        if (Schema::hasTable('users')) {
+        if ($this->tableExists('users')) {
             User::query()->whereIn('import116_id', $ids)->update(['import116_id' => null]);
         }
 
@@ -408,14 +441,14 @@ class Import116Job implements ShouldQueue
             return;
         }
 
-        if (Schema::hasTable('users')) {
+        if ($this->tableExists('users')) {
             User::query()
                 ->where('school_id', $schoolId)
                 ->whereIn('import116_id', $staleImportIds->all())
                 ->update(['import116_id' => (int) $record->id]);
         }
 
-        if (! Schema::hasTable('user_group_members')) {
+        if (! $this->tableExists('user_group_members')) {
             return;
         }
 
@@ -453,7 +486,7 @@ class Import116Job implements ShouldQueue
 
     private function syncLinkedUsersToCurrentRecord(int $schoolId, Import116 $record): void
     {
-        if (! Schema::hasTable('users')) {
+        if (! $this->tableExists('users')) {
             return;
         }
 
@@ -480,7 +513,7 @@ class Import116Job implements ShouldQueue
 
     private function syncTeachingCourseStudentsToCurrentRecord(Import116 $record): void
     {
-        if (! $record->user_id || ! Schema::hasTable('teaching_course_students')) {
+        if (! $record->user_id || ! $this->tableExists('teaching_course_students')) {
             return;
         }
 

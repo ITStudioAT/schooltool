@@ -41,6 +41,9 @@ class TeachingCourseController extends Controller
             'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour,teaching_student_grade_columns_by_schoolyear',
             'teachingCurriculum:id,school_id,schoolyear_id,user_id,title,description,semester_count',
             'teachingEntryArea:id,name',
+            'teachingEntryArea.entryDefinitions' => fn ($query) => $query
+                ->orderBy('category')
+                ->orderBy('short_name'),
             'teachingCourseDates' => fn ($q) => $q->orderBy('date')->orderByRaw('JSON_EXTRACT(hours, "$[0]")'),
             'teachingCourseDates.materials.attachments',
             'teachingCourseStudents',

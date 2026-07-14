@@ -10,6 +10,7 @@
  * - School and schoolyear isolation
  */
 
+use App\Http\Controllers\Admin\Teaching\Import116Controller;
 use App\Models\Import116;
 use App\Models\Import116Run;
 use App\Models\Import116RunChange;
@@ -520,6 +521,23 @@ describe('classes list', function () {
 // ============================================================================
 
 describe('import run history integration', function () {
+    test('serialized runs expose their owner for status polling', function () {
+        $run = Import116Run::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'status' => 'running',
+            'started_at' => now(),
+        ]);
+        $controller = app(Import116Controller::class);
+        $serializeRun = new ReflectionMethod($controller, 'serializeRun');
+        $serializeRun->setAccessible(true);
+
+        $payload = $serializeRun->invoke($controller, $run);
+
+        expect($payload['user_id'])->toBe($this->admin->id);
+    });
+
     test('lists created runs and returns grouped run details for a selected run', function () {
         $this->actingAs($this->admin, 'sanctum');
 

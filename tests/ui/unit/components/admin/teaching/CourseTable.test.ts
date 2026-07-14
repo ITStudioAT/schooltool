@@ -147,6 +147,26 @@ describe('CourseTable', () => {
         expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-18' })).toEqual([])
     })
 
+    it('labels work assigned to all groups as group work', () => {
+        const methods = (CourseTable as any).methods
+        const ctx: Record<string, any> = {}
+        Object.assign(ctx, methods)
+
+        const assignment = methods.groupWorkAssignmentForDate.call(ctx, {
+            id: 3,
+            type: 'TW',
+            title: 'Schreibübungen',
+            is_group_work: true,
+            date_for_all_groups: '2026-05-16',
+            groups: [
+                { date: '2026-05-16', student_ids: [1, 2] },
+                { date: '2026-05-16', student_ids: [3, 4] },
+            ],
+        }, '2026-05-16')
+
+        expect(assignment.label).toBe('TW: Schreibübungen (Gruppenarbeit)')
+    })
+
     it('opens the persistent work dialog for the selected date', () => {
         const methods = (CourseTable as any).methods
         const courseDate = { id: 7, date: '2026-05-16' }
@@ -156,12 +176,187 @@ describe('CourseTable', () => {
                 open: false,
             },
             cancelDateWorkForm: vi.fn(),
+            courseWorksForDate: vi.fn().mockReturnValue([{ id: 12 }]),
+            startCreatingDateWork: vi.fn(),
         }
 
         methods.openWorkDialog.call(ctx, courseDate)
 
         expect(ctx.cancelDateWorkForm).toHaveBeenCalledTimes(1)
         expect(ctx.workDialog).toEqual({ courseDate, open: true })
+        expect(ctx.startCreatingDateWork).not.toHaveBeenCalled()
+    })
+
+    it('opens an empty date directly in the new-work form', () => {
+        const methods = (CourseTable as any).methods
+        const courseDate = { id: 7, date: '2026-05-16' }
+        const ctx = {
+            workDialog: {
+                courseDate: null,
+                open: false,
+            },
+            cancelDateWorkForm: vi.fn(),
+            courseWorksForDate: vi.fn().mockReturnValue([]),
+            startCreatingDateWork: vi.fn(),
+        }
+
+        methods.openWorkDialog.call(ctx, courseDate)
+
+        expect(ctx.workDialog).toEqual({ courseDate, open: true })
+        expect(ctx.startCreatingDateWork).toHaveBeenCalledTimes(1)
+    })
+
+    it('changes the work date from the dialog header', () => {
+        const methods = (CourseTable as any).methods
+        const matchingCourseDate = { id: 8, date: '2026-05-23' }
+        const ctx: Record<string, any> = {
+            sortedCourseDates: [
+                { id: 7, date: '2026-05-16' },
+                matchingCourseDate,
+            ],
+            workDialog: {
+                courseDate: { id: 7, date: '2026-05-16' },
+                open: true,
+            },
+            workDialogDateEditing: true,
+            workDialogForm: {
+                date_for_all_groups: '2026-05-16',
+                groups: [
+                    { date: '2026-05-16', student_ids: [1, 2] },
+                    { date: '2026-05-17', student_ids: [3, 4] },
+                ],
+            },
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+        }
+
+        methods.applyWorkDialogDate.call(ctx, new Date(2026, 4, 23))
+
+        expect(ctx.workDialogForm.date_for_all_groups).toBe('2026-05-23')
+        expect(ctx.workDialogForm.groups.map((group: { date: string }) => group.date)).toEqual([
+            '2026-05-23',
+            '2026-05-23',
+        ])
+        expect(ctx.workDialog.courseDate).toBe(matchingCourseDate)
+        expect(ctx.workDialogDateEditing).toBe(false)
+    })
+
+    it('opens date editing when the editable date chip is activated', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            workDialogDateEditing: false,
+            workDialogFormOpen: true,
+            workSaving: false,
+        }
+
+        methods.beginWorkDialogDateEditing.call(ctx)
+
+        expect(ctx.workDialogDateEditing).toBe(true)
+    })
+
+    it('edits only the selected work-group date', () => {
+        const methods = (CourseTable as any).methods
+        const ctx: Record<string, any> = {
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+            workDialogGroupDateEditingIndex: null,
+            workDialogGroups: [
+                { date: '2026-05-16', student_ids: [1, 2] },
+                { date: '2026-05-17', student_ids: [3, 4] },
+            ],
+            workSaving: false,
+        }
+
+        methods.beginWorkDialogGroupDateEditing.call(ctx, 1)
+        expect(ctx.workDialogGroupDateEditingIndex).toBe(1)
+
+        methods.applyWorkDialogGroupDate.call(ctx, 1, new Date(2026, 4, 23))
+        expect(ctx.workDialogGroups.map((group: { date: string }) => group.date)).toEqual([
+            '2026-05-16',
+            '2026-05-23',
+        ])
+        expect(ctx.workDialogGroupDateEditingIndex).toBeNull()
+    })
+
+    it('identifies course dates for highlighting in the work date picker', () => {
+        const methods = (CourseTable as any).methods
+        const workDialogCourseDateKeys = (CourseTable as any).computed.workDialogCourseDateKeys
+
+        expect(workDialogCourseDateKeys.call({
+            sortedCourseDates: [
+                { date: '2026-05-16' },
+                { date: '2026-05-23T00:00:00.000000Z' },
+                { date: null },
+            ],
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+        })).toEqual(['2026-05-16', '2026-05-23'])
+    })
+
+    it('uses grading entries from the area assigned to the course as work types', () => {
+        const availableWorkTypes = (CourseTable as any).computed.availableWorkTypes
+        const items = availableWorkTypes.call({
+            selected_course: {
+                teaching_entry_area: {
+                    id: 15,
+                    entry_definitions: [
+                        { short_name: 'A', name: 'Auftrag', category: 'Benotung' },
+                        { short_name: 'P', name: 'Prüfung', category: 'Benotung' },
+                        { short_name: 'E', name: 'Ermahnung', category: 'Verhalten' },
+                    ],
+                },
+            },
+            selectedTeachingSchema: {
+                works: [{ short_name: 'SA', name: 'Schularbeit' }],
+            },
+            uses_entry_areas_for_grading_schema: true,
+        })
+
+        expect(items).toEqual([
+            { title: 'A - Auftrag', value: 'A' },
+            { title: 'P - Prüfung', value: 'P' },
+        ])
+    })
+
+    it('keeps legacy schema work types before school year 2026/27', () => {
+        const availableWorkTypes = (CourseTable as any).computed.availableWorkTypes
+        const items = availableWorkTypes.call({
+            selected_course: {
+                teaching_entry_area: {
+                    id: 15,
+                    entry_definitions: [{ short_name: 'A', name: 'Auftrag', category: 'Benotung' }],
+                },
+            },
+            selectedTeachingSchema: {
+                works: [{ short_name: 'SA', name: 'Schularbeit' }],
+            },
+            uses_entry_areas_for_grading_schema: false,
+        })
+
+        expect(items).toEqual([{ title: 'SA - Schularbeit', value: 'SA' }])
+    })
+
+    it('offers the configured grades for the selected work type', () => {
+        const availableWorkGradeItems = (CourseTable as any).computed.availableWorkGradeItems
+        const items = availableWorkGradeItems.call({
+            selected_course: {},
+            selectedTeachingSchema: {
+                works: [{
+                    short_name: 'SA',
+                    grades: [
+                        { grade: '1', name: 'Sehr gut' },
+                        { grade: '2', name: 'Gut' },
+                    ],
+                }],
+            },
+            uses_entry_areas_for_grading_schema: false,
+            workDialogForm: { type: 'SA' },
+        })
+
+        expect(items).toEqual([
+            { title: '1 (Sehr gut)', value: '1' },
+            { title: '2 (Gut)', value: '2' },
+        ])
     })
 
     it('creates a work for the date selected in the dialog', async () => {
@@ -256,6 +451,614 @@ describe('CourseTable', () => {
         }))
     })
 
+    it('persists changing a group work to an individual work', async () => {
+        const methods = (CourseTable as any).methods
+        const update = vi.fn().mockResolvedValue({ data: { id: 12 } })
+        const groups = [{ date: '2026-05-16', student_ids: [1, 2], grade: '2' }]
+        const ctx = {
+            canSaveDateWork: true,
+            courseWorkStore: { update },
+            loadCourseWorks: vi.fn().mockResolvedValue(true),
+            cancelDateWorkForm: vi.fn(),
+            selected_course: { id: 20 },
+            workDialog: { courseDate: { date: '2026-05-16' }, open: true },
+            workDialogForm: {
+                date_for_all_groups: '2026-05-16',
+                description: 'Überarbeitet',
+                groups,
+                group_size: 2,
+                id: 12,
+                is_group_work: false,
+                is_random_groups: false,
+                status: [],
+                teaching_course_id: 20,
+                title: 'Projekt',
+                type: 'GA',
+            },
+            workSaving: false,
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+        }
+
+        await methods.saveDateWork.call(ctx)
+
+        expect(update).toHaveBeenCalledWith(expect.objectContaining({
+            groups,
+            id: 12,
+            is_group_work: false,
+        }))
+    })
+
+    it('stages a new type until the type edit is confirmed', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            workDialogForm: { id: 12, type: 'A' },
+            workDialogTypeDraft: 'A',
+            workDialogTypeEditing: true,
+            canConfirmDateWorkType: true,
+        }
+
+        methods.selectDateWorkType.call(ctx, 'P')
+
+        expect(ctx.workDialogForm.type).toBe('A')
+        expect(ctx.workDialogTypeDraft).toBe('P')
+        expect(ctx.workDialogTypeEditing).toBe(true)
+
+        methods.confirmDateWorkTypeEditing.call(ctx)
+
+        expect(ctx.workDialogForm.type).toBe('P')
+        expect(ctx.workDialogTypeDraft).toBe('')
+        expect(ctx.workDialogTypeEditing).toBe(false)
+    })
+
+    it('discards the staged type when type editing is cancelled', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            workDialogForm: { id: 12, type: 'A' },
+            workDialogTypeDraft: 'P',
+            workDialogTypeEditing: true,
+        }
+
+        methods.cancelDateWorkTypeEditing.call(ctx)
+
+        expect(ctx.workDialogForm.type).toBe('A')
+        expect(ctx.workDialogTypeDraft).toBe('')
+        expect(ctx.workDialogTypeEditing).toBe(false)
+    })
+
+    it('stages an Arbeitsform change until editing is confirmed', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            canConfirmDateWorkMode: true,
+            workDialogForm: { is_group_work: false },
+            workDialogModeDraft: false,
+            workDialogModeEditing: false,
+        }
+
+        methods.beginDateWorkModeEditing.call(ctx)
+        ctx.workDialogModeDraft = true
+
+        expect(ctx.workDialogForm.is_group_work).toBe(false)
+        expect(ctx.workDialogModeEditing).toBe(true)
+
+        methods.confirmDateWorkModeEditing.call(ctx)
+
+        expect(ctx.workDialogForm.is_group_work).toBe(true)
+        expect(ctx.workDialogModeDraft).toBe(false)
+        expect(ctx.workDialogModeEditing).toBe(false)
+    })
+
+    it('discards the staged Arbeitsform when editing is cancelled', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            workDialogForm: { is_group_work: false },
+            workDialogModeDraft: true,
+            workDialogModeEditing: true,
+        }
+
+        methods.cancelDateWorkModeEditing.call(ctx)
+
+        expect(ctx.workDialogForm.is_group_work).toBe(false)
+        expect(ctx.workDialogModeDraft).toBe(false)
+        expect(ctx.workDialogModeEditing).toBe(false)
+    })
+
+    it('resolves group member names from registered and imported student ids', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            sortedSelectedStudents: [
+                { id: 2098, user_id: 1488, first_name: 'Anna', last_name: 'Muster' },
+                { id: 2099, user_id: 1489, first_name: 'Ben', last_name: 'Beispiel' },
+            ],
+            registeredStudentUserId: methods.registeredStudentUserId,
+            studentName: methods.studentName,
+            workGroupStudentName: methods.workGroupStudentName,
+        }
+
+        expect(methods.workGroupStudentNames.call(ctx, { student_ids: [1488, 2099, 9999] })).toEqual([
+            'Muster, Anna',
+            'Beispiel, Ben',
+            'Schüler:in #9999',
+        ])
+    })
+
+    it('recognizes empty per-student bookkeeping records as generated individual-work groups', () => {
+        const methods = (CourseTable as any).methods
+        const groups = [1488, 1489, 1490].map((studentId) => ({
+            student_ids: [studentId],
+            date: '2026-09-14',
+            name: null,
+            comment: null,
+            grade: null,
+            grades: [{ student_id: studentId, grade: '' }],
+            comments: [{ student_id: studentId, comment: '' }],
+            points: [],
+        }))
+
+        expect(methods.isGeneratedEmptyIndividualWorkGroups.call({}, groups)).toBe(true)
+    })
+
+    it('preserves genuine groups and individual-work records containing assessment data', () => {
+        const methods = (CourseTable as any).methods
+
+        expect(methods.isGeneratedEmptyIndividualWorkGroups.call({}, [
+            { student_ids: [1488, 1489], name: 'Recherche' },
+            { student_ids: [1490, 1491], name: 'Präsentation' },
+        ])).toBe(false)
+        expect(methods.isGeneratedEmptyIndividualWorkGroups.call({}, [
+            {
+                student_ids: [1488],
+                grades: [{ student_id: 1488, grade: '2' }],
+                comments: [{ student_id: 1488, comment: '' }],
+                points: [],
+            },
+            {
+                student_ids: [1489],
+                grades: [{ student_id: 1489, grade: '' }],
+                comments: [{ student_id: 1489, comment: '' }],
+                points: [],
+            },
+        ])).toBe(false)
+    })
+
+    it('removes generated individual-work groups when an affected group work is opened', () => {
+        const methods = (CourseTable as any).methods
+        const generatedGroups = [1488, 1489].map((studentId) => ({
+            student_ids: [studentId],
+            grades: [{ student_id: studentId, grade: '' }],
+            comments: [{ student_id: studentId, comment: '' }],
+            points: [],
+        }))
+        const ctx: Record<string, any> = {
+            dateKey: methods.dateKey,
+            cloneDateWorkGroups: methods.cloneDateWorkGroups,
+            emptyDateWorkForm: vi.fn().mockReturnValue({ groups: [] }),
+            isGeneratedEmptyIndividualWorkGroups: methods.isGeneratedEmptyIndividualWorkGroups,
+            normalizeDateKey: methods.normalizeDateKey,
+            workDialogForm: {},
+            workDialogFormOpen: false,
+            workDialogTab: 'groups',
+            workDialogTypeDraft: 'P',
+            workDialogTypeEditing: true,
+        }
+
+        methods.startEditingDateWork.call(ctx, {
+            id: 56,
+            date_for_all_groups: '2026-09-14',
+            groups: generatedGroups,
+            is_group_work: true,
+            status: [],
+            title: 'Erstellen einer Idee',
+            type: 'A',
+        })
+
+        expect(ctx.workDialogForm.groups).toEqual([])
+        expect(ctx.workDialogFormOpen).toBe(true)
+    })
+
+    it('discards group membership changes when work editing is cancelled', () => {
+        const methods = (CourseTable as any).methods
+        const work = {
+            id: 56,
+            date_for_all_groups: '2026-09-14',
+            groups: [
+                {
+                    student_ids: [1488],
+                    grades: [{ student_id: 1488, grade: '2' }],
+                    comments: [],
+                    points: [],
+                },
+                {
+                    student_ids: [1489],
+                    grades: [{ student_id: 1489, grade: '1' }],
+                    comments: [],
+                    points: [],
+                },
+            ],
+            is_group_work: true,
+            status: [],
+            title: 'Projekt',
+            type: 'A',
+        }
+        const ctx: Record<string, any> = {
+            cloneDateWorkGroups: methods.cloneDateWorkGroups,
+            closeRandomGroupsDialog: vi.fn(),
+            dateKey: methods.dateKey,
+            emptyDateWorkForm: vi.fn().mockReturnValue({ groups: [] }),
+            isGeneratedEmptyIndividualWorkGroups: vi.fn().mockReturnValue(false),
+            normalizeDateKey: methods.normalizeDateKey,
+            workDialogForm: {},
+            workDialogFormOpen: false,
+            workDialogGroupDetails: { groupIndex: null, open: false },
+            workDialogTab: 'work',
+            workDialogTypeDraft: '',
+            workDialogTypeEditing: false,
+        }
+
+        methods.startEditingDateWork.call(ctx, work)
+        ctx.workDialogGroups = ctx.workDialogForm.groups
+        methods.moveWorkGroupStudentToGroup.call(ctx, 0, 1, 1488)
+        methods.cancelDateWorkForm.call(ctx)
+
+        expect(work.groups).toEqual([
+            {
+                student_ids: [1488],
+                grades: [{ student_id: 1488, grade: '2' }],
+                comments: [],
+                points: [],
+            },
+            {
+                student_ids: [1489],
+                grades: [{ student_id: 1489, grade: '1' }],
+                comments: [],
+                points: [],
+            },
+        ])
+        expect(ctx.workDialogForm.groups).toEqual([])
+    })
+
+    it('removes generated individual-work groups when switching to group work', () => {
+        const watcher = (CourseTable as any).watch['workDialogForm.is_group_work']
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            isGeneratedEmptyIndividualWorkGroups: vi.fn().mockReturnValue(true),
+            workDialogForm: { groups: [{ student_ids: [1488] }, { student_ids: [1489] }] },
+            workDialogTab: 'work',
+        }
+
+        watcher.call(ctx, true, false)
+
+        expect(ctx.isGeneratedEmptyIndividualWorkGroups).toHaveBeenCalledTimes(1)
+        expect(ctx.workDialogForm.groups).toEqual([])
+        expect(methods.isGeneratedEmptyIndividualWorkGroups).toBeTypeOf('function')
+    })
+
+    it('opens the random-group size dialog with the saved size or a default of two', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            maxRandomGroupSize: 29,
+            randomGroupsDialog: { groupSize: 2, open: false },
+            workDialogForm: { group_size: 4 },
+        }
+
+        methods.openRandomGroupsDialog.call(ctx)
+
+        expect(ctx.randomGroupsDialog).toEqual({ groupSize: 4, open: true })
+
+        ctx.workDialogForm.group_size = null
+        methods.openRandomGroupsDialog.call(ctx)
+
+        expect(ctx.randomGroupsDialog).toEqual({ groupSize: 2, open: true })
+    })
+
+    it('stores a valid random-group size and generates the groups', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            canConfirmRandomGroupSize: true,
+            closeRandomGroupsDialog: vi.fn(),
+            generateRandomWorkDialogGroups: vi.fn(),
+            randomGroupsDialog: { groupSize: 3, open: true },
+            workDialogForm: {
+                group_size: null,
+                groups: [],
+                is_random_groups: false,
+            },
+        }
+
+        methods.confirmRandomGroupSize.call(ctx)
+
+        expect(ctx.workDialogForm).toEqual({
+            group_size: 3,
+            groups: [],
+            is_random_groups: true,
+        })
+        expect(ctx.generateRandomWorkDialogGroups).toHaveBeenCalledWith(3)
+        expect(ctx.closeRandomGroupsDialog).toHaveBeenCalledTimes(1)
+    })
+
+    it('creates editable random groups containing every active course student exactly once', () => {
+        const methods = (CourseTable as any).methods
+        const random = vi.spyOn(Math, 'random').mockReturnValue(0)
+        const ctx = {
+            randomGroupSizes: methods.randomGroupSizes,
+            registeredStudentUserId: methods.registeredStudentUserId,
+            sortedSelectedStudents: [
+                { id: 101, user_id: 1 },
+                { id: 102, user_id: 2 },
+                { id: 103, user_id: 3 },
+                { id: 104, user_id: 4 },
+                { id: 105, user_id: 5 },
+            ],
+            workDialogForm: {
+                date_for_all_groups: '2026-09-14',
+                groups: [{ student_ids: [999] }],
+            },
+        }
+
+        try {
+            methods.generateRandomWorkDialogGroups.call(ctx, 2)
+        } finally {
+            random.mockRestore()
+        }
+
+        expect(ctx.workDialogForm.groups.map((group: Record<string, any>) => group.student_ids.length)).toEqual([3, 2])
+        expect(ctx.workDialogForm.groups.flatMap((group: Record<string, any>) => group.student_ids).sort()).toEqual([1, 2, 3, 4, 5])
+        expect(ctx.workDialogForm.groups).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                _is_new: true,
+                date: '2026-09-14',
+            }),
+        ]))
+    })
+
+    it('accepts only whole random-group sizes up to the active course roster size', () => {
+        const canConfirmRandomGroupSize = (CourseTable as any).computed.canConfirmRandomGroupSize
+
+        expect(canConfirmRandomGroupSize.call({ maxRandomGroupSize: 29, randomGroupsDialog: { groupSize: 2 } })).toBe(true)
+        expect(canConfirmRandomGroupSize.call({ maxRandomGroupSize: 29, randomGroupsDialog: { groupSize: 29 } })).toBe(true)
+        expect(canConfirmRandomGroupSize.call({ maxRandomGroupSize: 29, randomGroupsDialog: { groupSize: 1 } })).toBe(false)
+        expect(canConfirmRandomGroupSize.call({ maxRandomGroupSize: 29, randomGroupsDialog: { groupSize: 2.5 } })).toBe(false)
+        expect(canConfirmRandomGroupSize.call({ maxRandomGroupSize: 29, randomGroupsDialog: { groupSize: 30 } })).toBe(false)
+    })
+
+    it('previews the generated group sizes for the active course roster', () => {
+        const computed = (CourseTable as any).computed
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            canConfirmRandomGroupSize: true,
+            maxRandomGroupSize: 29,
+            randomGroupSizes: methods.randomGroupSizes,
+            randomGroupsDialog: { groupSize: 5 },
+        }
+
+        expect(methods.randomGroupSizes.call({}, 29, 5)).toEqual([5, 5, 5, 5, 5, 4])
+        expect(computed.randomGroupSizePreview.call(ctx)).toBe('5 | 5 | 5 | 5 | 5 | 4')
+    })
+
+    it('previews the same no-singleton remainder rule used for random generation', () => {
+        const methods = (CourseTable as any).methods
+
+        expect(methods.randomGroupSizes.call({}, 11, 5)).toEqual([6, 5])
+    })
+
+    it('shows the saved random-group configuration only while editing a configured work', () => {
+        const hasSavedRandomGroupConfiguration = (CourseTable as any).computed.hasSavedRandomGroupConfiguration
+
+        expect(hasSavedRandomGroupConfiguration.call({
+            workDialogForm: { id: 56, group_size: 5, is_random_groups: true },
+        })).toBe(true)
+        expect(hasSavedRandomGroupConfiguration.call({
+            workDialogForm: { id: null, group_size: 5, is_random_groups: true },
+        })).toBe(false)
+        expect(hasSavedRandomGroupConfiguration.call({
+            workDialogForm: { id: 56, group_size: 5, is_random_groups: false },
+        })).toBe(false)
+    })
+
+    it('detects whether course students remain unassigned to a work group', () => {
+        const unassignedWorkGroupStudents = (CourseTable as any).computed.unassignedWorkGroupStudents
+        const hasUnassignedWorkGroupStudents = (CourseTable as any).computed.hasUnassignedWorkGroupStudents
+        const registeredStudentUserId = (CourseTable as any).methods.registeredStudentUserId
+        const studentName = (CourseTable as any).methods.studentName
+        const sortedSelectedStudents = [
+            { id: 2098, user_id: 1488, first_name: 'Anna', last_name: 'Muster' },
+            { id: 2099, user_id: 1489, first_name: 'Ben', last_name: 'Beispiel' },
+        ]
+
+        const unassignedStudents = unassignedWorkGroupStudents.call({
+            registeredStudentUserId,
+            sortedSelectedStudents,
+            studentName,
+            workDialogGroups: [{ student_ids: [1488] }],
+        })
+
+        expect(unassignedStudents).toEqual([{ title: 'Beispiel, Ben', value: 1489 }])
+        expect(hasUnassignedWorkGroupStudents.call({ unassignedWorkGroupStudents: unassignedStudents })).toBe(true)
+        expect(hasUnassignedWorkGroupStudents.call({
+            unassignedWorkGroupStudents: [],
+        })).toBe(false)
+    })
+
+    it('adds an empty group using the work date', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            workDialogForm: {
+                date_for_all_groups: '2026-05-16',
+                groups: [],
+            },
+        }
+
+        methods.addWorkDialogGroup.call(ctx)
+
+        expect(ctx.workDialogForm.groups).toEqual([{
+            _is_new: true,
+            student_ids: [],
+            date: '2026-05-16',
+            comment: '',
+            grade: '',
+            grades: {},
+            comments: {},
+            points: {},
+            use_individual_grades: false,
+        }])
+    })
+
+    it('offers only students not assigned to another group', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            workDialogGroups: [
+                { student_ids: [1488] },
+                { _is_new: true, student_ids: [1489] },
+            ],
+            sortedSelectedStudents: [
+                { id: 2098, user_id: 1488, first_name: 'Anna', last_name: 'Muster' },
+                { id: 2099, user_id: 1489, first_name: 'Ben', last_name: 'Beispiel' },
+                { id: 2100, user_id: 1490, first_name: 'Clara', last_name: 'Demo' },
+            ],
+            registeredStudentUserId: methods.registeredStudentUserId,
+            studentName: methods.studentName,
+        }
+
+        expect(methods.workGroupStudentItems.call(ctx, 1)).toEqual([
+            { title: 'Beispiel, Ben', value: 1489 },
+            { title: 'Demo, Clara', value: 1490 },
+        ])
+    })
+
+    it('formats the current member count for each work group', () => {
+        const workGroupMemberCountTitle = (CourseTable as any).methods.workGroupMemberCountTitle
+
+        expect(workGroupMemberCountTitle.call({}, { student_ids: [1488] })).toBe('1 Mitglied')
+        expect(workGroupMemberCountTitle.call({}, { student_ids: [1488, 1489, 1490] })).toBe('3 Mitglieder')
+        expect(workGroupMemberCountTitle.call({}, {})).toBe('0 Mitglieder')
+    })
+
+    it('opens and closes the selected work group details', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            workDialogGroups: [{ student_ids: [1488] }],
+            workDialogGroupDetails: { groupIndex: null, open: false },
+            workSaving: false,
+        }
+
+        methods.openWorkDialogGroupDetails.call(ctx, 0)
+        expect(ctx.workDialogGroupDetails).toEqual({ groupIndex: 0, open: true })
+
+        methods.closeWorkDialogGroupDetails.call(ctx)
+        expect(ctx.workDialogGroupDetails).toEqual({ groupIndex: null, open: false })
+    })
+
+    it('shows every group student with their grade and switches safely to individual grading', () => {
+        const methods = (CourseTable as any).methods
+        const group = {
+            student_ids: [1488, 1489],
+            grade: '2',
+            grades: [],
+            use_individual_grades: false,
+        }
+        const ctx = {
+            registeredStudentUserId: methods.registeredStudentUserId,
+            sortedSelectedStudents: [
+                { id: 2098, user_id: 1488, first_name: 'Anna', last_name: 'Muster' },
+                { id: 2099, user_id: 1489, first_name: 'Ben', last_name: 'Beispiel' },
+            ],
+            studentName: methods.studentName,
+            workDialogGroups: [group],
+            workGroupStudentGrade: methods.workGroupStudentGrade,
+            workGroupStudentName: methods.workGroupStudentName,
+        }
+
+        expect(methods.workGroupGradeRows.call(ctx, group)).toEqual([
+            { grade: '2', studentId: 1488, studentName: 'Muster, Anna' },
+            { grade: '2', studentId: 1489, studentName: 'Beispiel, Ben' },
+        ])
+
+        methods.setWorkGroupStudentGrade.call(ctx, 0, 1489, '1')
+
+        expect(group).toMatchObject({
+            grade: '',
+            grades: [
+                { student_id: 1488, grade: '2' },
+                { student_id: 1489, grade: '1' },
+            ],
+            use_individual_grades: true,
+        })
+    })
+
+    it('moves a student and individual values between work groups', () => {
+        const moveWorkGroupStudentToGroup = (CourseTable as any).methods.moveWorkGroupStudentToGroup
+        const workDialogGroups = [
+            {
+                student_ids: [1488, 1489],
+                grades: [{ student_id: 1488, grade: '2' }, { student_id: 1489, grade: '1' }],
+                comments: [{ student_id: 1488, comment: 'Gut' }],
+                points: [{ student_id: 1488, points: 18 }],
+            },
+            {
+                student_ids: [1490],
+                grades: [{ student_id: 1490, grade: '3' }],
+                comments: [],
+                points: [],
+            },
+        ]
+
+        expect(moveWorkGroupStudentToGroup.call({ workDialogGroups }, 0, 1, 1488)).toBe(true)
+        expect(workDialogGroups[0]).toMatchObject({
+            student_ids: [1489],
+            grades: [{ student_id: 1489, grade: '1' }],
+            comments: [],
+            points: [],
+        })
+        expect(workDialogGroups[1]).toMatchObject({
+            student_ids: [1490, 1488],
+            grades: [{ student_id: 1490, grade: '3' }, { student_id: 1488, grade: '2' }],
+            comments: [{ student_id: 1488, comment: 'Gut' }],
+            points: [{ student_id: 1488, points: 18 }],
+        })
+    })
+
+    it('assigns an unassigned student to a work group', () => {
+        const assignUnassignedWorkGroupStudent = (CourseTable as any).methods.assignUnassignedWorkGroupStudent
+        const workDialogGroups = [{ student_ids: [1488] }]
+
+        expect(assignUnassignedWorkGroupStudent.call({
+            unassignedWorkGroupStudents: [{ title: 'Beispiel, Ben', value: 1489 }],
+            workDialogGroups,
+        }, 0, 1489)).toBe(true)
+        expect(workDialogGroups[0].student_ids).toEqual([1488, 1489])
+    })
+
+    it('removes a student and their individual values from a work group', () => {
+        const removeWorkGroupStudent = (CourseTable as any).methods.removeWorkGroupStudent
+        const workDialogGroups = [{
+            student_ids: [1488, 1489],
+            grades: [{ student_id: 1488, grade: '2' }, { student_id: 1489, grade: '1' }],
+            comments: [{ student_id: 1488, comment: 'Gut' }],
+            points: [{ student_id: 1488, points: 18 }],
+        }]
+
+        expect(removeWorkGroupStudent.call({ workDialogGroups, workSaving: false }, 0, 1488)).toBe(true)
+        expect(workDialogGroups[0]).toMatchObject({
+            student_ids: [1489],
+            grades: [{ student_id: 1489, grade: '1' }],
+            comments: [],
+            points: [],
+        })
+    })
+
+    it('prevents saving while a new group has no students', () => {
+        const canSaveDateWork = (CourseTable as any).computed.canSaveDateWork
+
+        expect(canSaveDateWork.call({
+            availableWorkTypes: [{ value: 'A' }],
+            workDialogForm: { is_group_work: true, type: 'A' },
+            workDialogGroups: [{ _is_new: true, student_ids: [] }],
+            workDialogModeEditing: false,
+            workDialogTypeEditing: false,
+            workSaving: false,
+        })).toBe(false)
+    })
+
     it('removes a work from the date dialog after confirmation', async () => {
         const methods = (CourseTable as any).methods
         const destroy = vi.fn().mockResolvedValue(true)
@@ -280,26 +1083,17 @@ describe('CourseTable', () => {
         expect(ctx.workDeleting).toBe(false)
     })
 
-    it('only enables attendance markers for non-free dates that are not in the future', () => {
+    it('enables attendance markers for non-free dates including future dates', () => {
         const methods = (CourseTable as any).methods
-        vi.useFakeTimers()
-        vi.setSystemTime(new Date(2026, 2, 10))
-
-        try {
-            const ctx = {
-                isFreeCourseDate: methods.isFreeCourseDate,
-                normalizeDateKey: methods.normalizeDateKey,
-                dateKey: methods.dateKey,
-            }
-
-            expect(methods.isAttendanceToggleable.call(ctx, { id: 1, date: '2026-03-10', status: [] })).toBe(true)
-            expect(methods.isAttendanceToggleable.call(ctx, { id: 2, date: '2026-03-09', status: [] })).toBe(true)
-            expect(methods.isAttendanceToggleable.call(ctx, { id: 3, date: '2026-03-11', status: [] })).toBe(false)
-            expect(methods.isAttendanceToggleable.call(ctx, { id: 4, date: '2026-03-10', status: ['free'] })).toBe(false)
-            expect(methods.isAttendanceToggleable.call(ctx, { id: 5, date: '2026-03-10', status: ['entfaellt'] })).toBe(false)
-        } finally {
-            vi.useRealTimers()
+        const ctx = {
+            isFreeCourseDate: methods.isFreeCourseDate,
         }
+
+        expect(methods.isAttendanceToggleable.call(ctx, { id: 1, date: '2026-03-10', status: [] })).toBe(true)
+        expect(methods.isAttendanceToggleable.call(ctx, { id: 2, date: '2026-03-09', status: [] })).toBe(true)
+        expect(methods.isAttendanceToggleable.call(ctx, { id: 3, date: '2026-03-11', status: [] })).toBe(true)
+        expect(methods.isAttendanceToggleable.call(ctx, { id: 4, date: '2026-03-10', status: ['free'] })).toBe(false)
+        expect(methods.isAttendanceToggleable.call(ctx, { id: 5, date: '2026-03-10', status: ['entfaellt'] })).toBe(false)
     })
 
     it('switches between attendance and entries and stores the view in the URL', () => {
@@ -860,7 +1654,7 @@ describe('CourseTable', () => {
             id: 7,
             date: '2026-03-09',
             status: [],
-            attendance: { 10: false },
+            attendance: { 2098: false },
         })
         const ctx: Record<string, unknown> = {
             courseDateStore: { updateStatus },
@@ -882,13 +1676,13 @@ describe('CourseTable', () => {
             applyUpdatedCourseDate: methods.applyUpdatedCourseDate,
         }
 
-        await methods.toggleStudentAttendance.call(ctx, { id: 10 }, { id: 7, date: '2026-03-09', status: [], attendance: {} })
+        await methods.toggleStudentAttendance.call(ctx, { id: 2098 }, { id: 7, date: '2026-03-09', status: [], attendance: {} })
 
         expect(updateStatus).toHaveBeenCalledWith(7, {
-            attendance: { 10: false },
+            toggle_student_id: 2098,
             attendance_checked: false,
         })
-        expect((ctx.selected_course as any).course_dates[0].attendance).toEqual({ 10: false })
+        expect((ctx.selected_course as any).course_dates[0].attendance).toEqual({ 2098: false })
         expect(ctx.savingAttendanceCells).toEqual({})
     })
 
@@ -947,7 +1741,107 @@ describe('CourseTable', () => {
         expect(source).toContain('data-testid="course-table-date-create-work"')
         expect(source).toContain('course-table-date-edit-work-${assignment.id}')
         expect(source).toContain('course-table-date-delete-work-${assignment.id}')
+        expect(source).toContain('class="course-table-date-work-item cursor-pointer"')
+        expect(source).toContain('@click="startEditingDateWork(assignment.work)"')
+        expect(source).toContain('@keydown.enter.self.prevent="startEditingDateWork(assignment.work)"')
+        expect(source).toContain('@keydown.space.self.prevent="startEditingDateWork(assignment.work)"')
+        expect(source).toContain('@click.stop="openDeleteWorkDialog(assignment.work)"')
         expect(source).toContain('<v-dialog v-model="deleteWorkDialog.open" persistent max-width="460">')
+        expect(source).toContain('<section v-if="!workDialogFormOpen">')
+        expect(source).toContain('<v-card-actions v-if="!workDialogFormOpen">')
+        expect(source).toContain('v-model="workDialogTab"')
+        expect(source).toContain(':disabled="workDialogTypeEditing || workDialogModeEditing"')
+        expect(source).toContain('<v-tab value="work">Arbeit</v-tab>')
+        expect(source).toContain('<v-tab v-if="workDialogForm.is_group_work" value="groups">Gruppen</v-tab>')
+        expect(source).toContain('<v-window v-model="workDialogTab">')
+        expect(source).toContain('<v-window-item value="work">')
+        expect(source).toContain('<v-window-item v-if="workDialogForm.is_group_work" value="groups">')
+        expect(source).toContain('v-for="(group, groupIndex) in workDialogGroups"')
+        expect(source).toContain('v-for="student in unassignedWorkGroupStudents"')
+        expect(source).toContain('>Nicht zugeordnet</strong>')
+        expect(source).toContain('@dragstart="startUnassignedWorkGroupStudentDrag($event, student.value)"')
+        expect(source.indexOf('>Nicht zugeordnet</strong>')).toBeLessThan(source.indexOf('v-for="(group, groupIndex) in workDialogGroups"'))
+        expect(source).toContain('{{ workGroupMemberCountTitle(group) }}')
+        expect(source).toContain('workDialogGroupDateEditingIndex === groupIndex')
+        expect(source).toContain('@click.stop="beginWorkDialogGroupDateEditing(groupIndex)"')
+        expect(source).toContain('@update:model-value="applyWorkDialogGroupDate(groupIndex, $event)"')
+        expect(source).toContain('label="Gruppendatum"')
+        expect(source).toContain('v-for="(studentNameValue, studentIndex) in workGroupStudentNames(group)"')
+        expect(source).toContain('class="pa-3 course-table-work-group-card cursor-pointer"')
+        expect(source).toContain('@click="openWorkDialogGroupDetails(groupIndex)"')
+        expect(source).toContain("'course-table-work-group-card--drop-target':")
+        expect(source).toContain('@drop.prevent="dropWorkGroupStudent(groupIndex)"')
+        expect(source).toContain('class="course-table-work-group-student-chip"')
+        expect(source).toContain('@dragstart="startWorkGroupStudentDrag($event, groupIndex, group.student_ids[studentIndex])"')
+        expect(source).toContain('@dragstart.stop="startWorkGroupStudentDrag($event, groupIndex, internalItem.value)"')
+        expect(source).toContain('@click:close="removeWorkGroupStudent(groupIndex, group.student_ids[studentIndex])"')
+        expect(source).toContain('@click:close="removeWorkGroupStudent(groupIndex, internalItem.value)"')
+        expect(source).toContain('@click="addWorkDialogGroup"')
+        expect(source).toContain('v-model="group.student_ids"')
+        expect(source).toContain(':items="workGroupStudentItems(groupIndex)"')
+        expect(source).toContain('@click.stop="removeWorkDialogGroup(groupIndex)"')
+        expect(source).toContain('<v-dialog v-model="workDialogGroupDetails.open" persistent max-width="720">')
+        expect(source).toContain('v-model="workDialogGroupDetailsGroup.comment"')
+        expect(source).toContain('label="Beschreibung"')
+        expect(source).toContain('v-for="row in workGroupGradeRows(workDialogGroupDetailsGroup)"')
+        expect(source).toContain('setWorkGroupStudentGrade(workDialogGroupDetails.groupIndex, row.studentId, $event)')
+        expect(source).toContain('data-testid="course-table-date-random-groups"')
+        expect(source).not.toContain('data-testid="course-table-date-edit-random-groups"')
+        expect(source).toContain('prepend-icon="mdi-shuffle-variant"')
+        expect(source).toContain('v-if="hasSavedRandomGroupConfiguration"')
+        expect(source).toContain('{{ workDialogForm.group_size }} Mitglieder pro Gruppe')
+        expect(source).not.toContain('title="Zufällige Gruppen bearbeiten"')
+        expect(source).toContain('@click="openRandomGroupsDialog"')
+        expect(source).toContain('v-if="hasUnassignedWorkGroupStudents"')
+        expect(source).toContain('>Alles Ok</span>')
+        expect(source).toContain('v-model="randomGroupsDialog.open"')
+        expect(source).toContain('v-model.number="randomGroupsDialog.groupSize"')
+        expect(source).toContain('label="Mitglieder pro Gruppe"')
+        expect(source).toContain(':max="maxRandomGroupSize"')
+        expect(source).toContain('höchstens ${maxRandomGroupSize} Mitglieder')
+        expect(source).toContain('Gruppengrößen:')
+        expect(source).toContain('{{ randomGroupSizePreview }}')
+        expect(source).toContain('this.generateRandomWorkDialogGroups(groupSize)')
+        expect(source).toContain('Erstellen')
+        expect(source).toContain('Zufällige Gruppen')
+        expect(source).toContain('Neue Gruppe')
+        expect(source).toContain('Für diese Gruppenarbeit sind noch keine Gruppen definiert.')
+        expect(source).not.toContain("{{ workDialogForm.id ? 'Arbeit bearbeiten' : 'Neue Arbeit erstellen' }}")
+        expect(source).toContain('v-if="workDialogForm.id && !workDialogTypeEditing"')
+        expect(source).toContain('data-testid="course-table-date-edit-work-type"')
+        expect(source).toMatch(/<v-chip\s+data-testid="course-table-date-edit-work-type"/)
+        expect(source).not.toMatch(/<v-btn\s+data-testid="course-table-date-edit-work-type"/)
+        expect(source).toContain('{{ selectedDateWorkTypeTitle }}')
+        expect(source).toContain('@click="beginDateWorkTypeEditing"')
+        expect(source).toContain('@click="selectDateWorkType(item.value)"')
+        expect(source).toContain('@click="cancelDateWorkTypeEditing">Abbrechen</v-btn>')
+        expect(source).toContain('@click="confirmDateWorkTypeEditing">OK</v-btn>')
+        expect(source).toContain(':disabled="workSaving || workDialogTypeEditing || workDialogModeEditing"')
+        expect(source).toContain('data-testid="course-table-date-edit-work-mode"')
+        expect(source).toMatch(/<v-chip\s+data-testid="course-table-date-edit-work-mode"/)
+        expect(source).not.toMatch(/<v-btn\s+data-testid="course-table-date-edit-work-mode"/)
+        expect(source).toContain('class="course-table-work-meta-row mb-3"')
+        expect(source).toContain('workDialogTypeEditing || workDialogModeEditing')
+        expect(source).toContain('data-testid="course-table-date-create-work-mode"')
+        expect(source).toContain('v-model="workDialogForm.is_group_work"')
+        expect(source).toContain('<div v-else-if="!workDialogModeEditing"')
+        expect(source).toContain('<div v-if="!workDialogTypeEditing">')
+        expect(source).toContain('{{ selectedDateWorkModeTitle }}')
+        expect(source).toContain('@click="beginDateWorkModeEditing"')
+        expect(source).toContain('v-model="workDialogModeDraft"')
+        expect(source).toContain('@click="cancelDateWorkModeEditing">Abbrechen</v-btn>')
+        expect(source).toContain('@click="confirmDateWorkModeEditing">OK</v-btn>')
+        expect(source).toContain('<v-btn :value="false">Einzelarbeit</v-btn>')
+        expect(source).toContain('<v-btn :value="true">Gruppenarbeit</v-btn>')
+        expect(source).not.toContain('Gruppen und gruppenspezifische Termine bleiben unverändert.')
+        expect(source).toContain('data-testid="course-table-date-edit-work-date"')
+        expect(source).toContain('@click="beginWorkDialogDateEditing"')
+        expect(source).toContain('@keydown.enter.prevent="beginWorkDialogDateEditing"')
+        expect(source).not.toContain('title="Datum ändern"')
+        expect(source).toContain('data-testid="course-table-date-work-date-input"')
+        expect(source).toContain('@update:model-value="applyWorkDialogDate"')
+        expect(source).toContain('<template #day="{ item, props }">')
+        expect(source).toContain("workDialogCourseDateKeys.includes(item.isoDate) ? 'primary' : props.color")
         expect(source).toContain('@click="saveDateWork"')
         expect(source).toContain('@click="confirmDeleteDateWork"')
         expect(source.indexOf('class="course-table-title-row"')).toBeLessThan(source.indexOf('class="course-table-work-row"'))
