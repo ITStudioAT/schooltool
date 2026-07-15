@@ -4,6 +4,20 @@ import { describe, expect, it, vi } from 'vitest'
 import Overview from '@/pages/admin/teaching/overview/Overview.vue'
 
 describe('Teaching overview controls', () => {
+    it('lazy loads inactive panels and mounts the course editor only when opened', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/Overview.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain("const CourseTable = defineAsyncComponent(() => import('./components/CourseTable.vue'))")
+        expect(source).toContain("const CourseWorks = defineAsyncComponent(() => import('./components/CourseWorks.vue'))")
+        expect(source).toContain('v-if="action === \'teaching_course_new_or_edit\'" class="d-none"')
+        expect(source).not.toContain("import CourseWorks from './components/CourseWorks.vue'")
+        expect(source).not.toContain('style="display:none"')
+    })
+
     it('refreshes courses and school hours together', async () => {
         let resolveCourses: () => void = () => {}
         const coursePromise = new Promise<void>((resolve) => {

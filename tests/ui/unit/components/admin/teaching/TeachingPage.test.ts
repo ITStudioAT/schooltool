@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Teaching from '@/pages/admin/teaching/Teaching.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolStore } from '@/stores/admin/SchoolStore'
-import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 
@@ -12,10 +11,6 @@ vi.mock('@/stores/admin/AdminStore', () => ({
 
 vi.mock('@/stores/admin/SchoolStore', () => ({
     useSchoolStore: vi.fn(),
-}))
-
-vi.mock('@/stores/admin/teaching/TeachingStore', () => ({
-    useTeachingStore: vi.fn(),
 }))
 
 vi.mock('@/stores/admin/teaching/CourseStore', () => ({
@@ -30,12 +25,11 @@ describe('Teaching page navigation', () => {
     beforeEach(() => {
         vi.mocked(useAdminStore).mockReset()
         vi.mocked(useSchoolStore).mockReset()
-        vi.mocked(useTeachingStore).mockReset()
         vi.mocked(useCourseStore).mockReset()
         vi.mocked(useSchoolHourStore).mockReset()
     })
 
-    it('loads teaching settings on beforeMount when missing', async () => {
+    it('loads only courses and school hours on beforeMount', async () => {
         const adminStoreMock = { config: {} }
         const schoolStoreMock = {
             loadHopperAccounts: vi.fn().mockResolvedValue([]),
@@ -48,16 +42,11 @@ describe('Teaching page navigation', () => {
             school_hours: [],
             index: vi.fn().mockResolvedValue(true),
         }
-        const teachingStoreMock = {
-            settings: null,
-            loadSettings: vi.fn().mockResolvedValue(true),
-        }
 
         vi.mocked(useAdminStore).mockReturnValue(adminStoreMock as never)
         vi.mocked(useSchoolStore).mockReturnValue(schoolStoreMock as never)
         vi.mocked(useCourseStore).mockReturnValue(courseStoreMock as never)
         vi.mocked(useSchoolHourStore).mockReturnValue(schoolHourStoreMock as never)
-        vi.mocked(useTeachingStore).mockReturnValue(teachingStoreMock as never)
 
         const ctx: Record<string, unknown> = {
             ensureCourseStore: (Teaching as any).methods.ensureCourseStore,
@@ -66,54 +55,47 @@ describe('Teaching page navigation', () => {
 
         expect(ctx.adminStore).toBe(adminStoreMock)
         expect(ctx.schoolStore).toBe(schoolStoreMock)
-        expect(schoolStoreMock.loadHopperAccounts).toHaveBeenCalledTimes(1)
-        expect(teachingStoreMock.loadSettings).toHaveBeenCalledTimes(1)
+        expect(schoolStoreMock.loadHopperAccounts).not.toHaveBeenCalled()
         expect(courseStoreMock.index).toHaveBeenCalledTimes(1)
         expect(schoolHourStoreMock.index).toHaveBeenCalledTimes(1)
     })
 
     it('loads independent teaching page data concurrently', async () => {
-        let resolveHopperAccounts: () => void = () => {}
-        const hopperAccountsPromise = new Promise<void>((resolve) => {
-            resolveHopperAccounts = resolve
+        let resolveCourses: () => void = () => {}
+        const coursesPromise = new Promise<void>((resolve) => {
+            resolveCourses = resolve
         })
         const schoolStoreMock = {
-            loadHopperAccounts: vi.fn().mockReturnValue(hopperAccountsPromise),
+            loadHopperAccounts: vi.fn(),
         }
         const courseStoreMock = {
             courses: [],
-            index: vi.fn().mockResolvedValue(true),
+            index: vi.fn().mockReturnValue(coursesPromise),
         }
         const schoolHourStoreMock = {
             school_hours: [],
             index: vi.fn().mockResolvedValue(true),
-        }
-        const teachingStoreMock = {
-            settings: null,
-            loadSettings: vi.fn().mockResolvedValue(true),
         }
 
         vi.mocked(useAdminStore).mockReturnValue({ config: {} } as never)
         vi.mocked(useSchoolStore).mockReturnValue(schoolStoreMock as never)
         vi.mocked(useCourseStore).mockReturnValue(courseStoreMock as never)
         vi.mocked(useSchoolHourStore).mockReturnValue(schoolHourStoreMock as never)
-        vi.mocked(useTeachingStore).mockReturnValue(teachingStoreMock as never)
 
         const ctx: Record<string, unknown> = {
             ensureCourseStore: (Teaching as any).methods.ensureCourseStore,
         }
         const beforeMountPromise = (Teaching as any).beforeMount.call(ctx)
 
-        expect(schoolStoreMock.loadHopperAccounts).toHaveBeenCalledTimes(1)
-        expect(teachingStoreMock.loadSettings).toHaveBeenCalledTimes(1)
+        expect(schoolStoreMock.loadHopperAccounts).not.toHaveBeenCalled()
         expect(courseStoreMock.index).toHaveBeenCalledTimes(1)
         expect(schoolHourStoreMock.index).toHaveBeenCalledTimes(1)
 
-        resolveHopperAccounts()
+        resolveCourses()
         await beforeMountPromise
     })
 
-    it('skips loading teaching settings on beforeMount when already present', async () => {
+    it('skips loading courses and school hours when already present', async () => {
         const adminStoreMock = { config: {} }
         const schoolStoreMock = {
             loadHopperAccounts: vi.fn().mockResolvedValue([]),
@@ -126,16 +108,11 @@ describe('Teaching page navigation', () => {
             school_hours: [{ id: 3 }],
             index: vi.fn(),
         }
-        const teachingStoreMock = {
-            settings: { teaching_schemas: [{ id: 'existing' }] },
-            loadSettings: vi.fn(),
-        }
 
         vi.mocked(useAdminStore).mockReturnValue(adminStoreMock as never)
         vi.mocked(useSchoolStore).mockReturnValue(schoolStoreMock as never)
         vi.mocked(useCourseStore).mockReturnValue(courseStoreMock as never)
         vi.mocked(useSchoolHourStore).mockReturnValue(schoolHourStoreMock as never)
-        vi.mocked(useTeachingStore).mockReturnValue(teachingStoreMock as never)
 
         const ctx: Record<string, unknown> = {
             ensureCourseStore: (Teaching as any).methods.ensureCourseStore,
@@ -144,8 +121,7 @@ describe('Teaching page navigation', () => {
 
         expect(ctx.adminStore).toBe(adminStoreMock)
         expect(ctx.schoolStore).toBe(schoolStoreMock)
-        expect(schoolStoreMock.loadHopperAccounts).toHaveBeenCalledTimes(1)
-        expect(teachingStoreMock.loadSettings).not.toHaveBeenCalled()
+        expect(schoolStoreMock.loadHopperAccounts).not.toHaveBeenCalled()
         expect(courseStoreMock.index).not.toHaveBeenCalled()
         expect(schoolHourStoreMock.index).not.toHaveBeenCalled()
     })

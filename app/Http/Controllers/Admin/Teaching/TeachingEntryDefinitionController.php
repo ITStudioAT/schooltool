@@ -90,7 +90,7 @@ class TeachingEntryDefinitionController extends Controller
         $fixedProperties = $hasProperties && $propertiesMode === 'fixed'
             ? collect($validated['fixed_properties'] ?? [])
                 ->map(fn (string $property): string => trim($property))
-                ->filter()
+                ->filter(fn (string $property): bool => $property !== '')
                 ->unique()
                 ->values()
                 ->all()

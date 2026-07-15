@@ -2,9 +2,12 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseWork;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -36,6 +39,12 @@ beforeEach(function () {
     );
     $this->school->licences()->attach($teachingLicence->id, [
         'valid_until' => now()->addYear()->toDateString(),
+    ]);
+
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'teaching_visible_admin' => true,
+        'teaching_visible_user' => true,
     ]);
 
     $this->admin = User::factory()->create([
@@ -195,6 +204,44 @@ describe('authorization and index', function () {
             ->and($response->json('data.0.effective_grade'))->toBe('2')
             ->and($response->json('data.1.id'))->toBe($older->id)
             ->and($response->json('data.1.effective_grade'))->toBe('3');
+    });
+
+    test('can include all data required by the entries table in one response', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $studentEntry = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'type' => 'MA',
+            'grade' => '2',
+            'date' => '2026-03-01',
+            'source' => 'manual',
+        ]);
+        $behaviourEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'type' => 'OK',
+            'kind' => 'behaviour',
+            'date' => '2026-03-02',
+        ]);
+        $courseWork = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'type' => 'SA',
+            'title' => 'Testarbeit',
+            'is_group_work' => false,
+            'date_for_all_groups' => '2026-03-03',
+            'groups' => [],
+            'status' => [],
+        ]);
+
+        $response = $this->getJson(
+            '/api/admin/teaching/course_student_entries?course_id='.$this->course->id.'&include_table_data=1'
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.id', $studentEntry->id)
+            ->assertJsonPath('behaviour_entries.0.id', $behaviourEntry->id)
+            ->assertJsonPath('course_works.0.id', $courseWork->id);
     });
 
     test('filters by user_id and enforces school isolation', function () {

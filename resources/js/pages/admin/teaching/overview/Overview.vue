@@ -307,32 +307,33 @@
         </v-row>
     </v-col>
 
-    <!-- MyCourses nur für den Neu/Bearbeiten-Dialog -->
-    <div style="display:none">
+    <div v-if="action === 'teaching_course_new_or_edit'" class="d-none">
         <MyCourses />
     </div>
 
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
-import MyCourses from './components/MyCourses.vue'
-import CourseStudents from './components/CourseStudents.vue'
-import CourseStudent from './components/CourseStudent.vue'
-import CourseInfos from './components/CourseInfos.vue'
-import CourseDates from './components/CourseDates.vue'
-import CourseTable from './components/CourseTable.vue'
-import CourseWorks from './components/CourseWorks.vue'
-import CoursePrint from './components/CoursePrint.vue'
-import MyTimetable from './components/MyTimetable.vue'
-import AttendanceMatrix from '../more/components/AttendanceMatrix.vue'
-import PerformancesDummy from '../more/components/PerformancesDummy.vue'
-import PerformancesPlusDummy from '../more/components/PerformancesPlusDummy.vue'
+
+const MyCourses = defineAsyncComponent(() => import('./components/MyCourses.vue'))
+const CourseStudents = defineAsyncComponent(() => import('./components/CourseStudents.vue'))
+const CourseStudent = defineAsyncComponent(() => import('./components/CourseStudent.vue'))
+const CourseInfos = defineAsyncComponent(() => import('./components/CourseInfos.vue'))
+const CourseDates = defineAsyncComponent(() => import('./components/CourseDates.vue'))
+const CourseTable = defineAsyncComponent(() => import('./components/CourseTable.vue'))
+const CourseWorks = defineAsyncComponent(() => import('./components/CourseWorks.vue'))
+const CoursePrint = defineAsyncComponent(() => import('./components/CoursePrint.vue'))
+const MyTimetable = defineAsyncComponent(() => import('./components/MyTimetable.vue'))
+const AttendanceMatrix = defineAsyncComponent(() => import('../more/components/AttendanceMatrix.vue'))
+const PerformancesDummy = defineAsyncComponent(() => import('../more/components/PerformancesDummy.vue'))
+const PerformancesPlusDummy = defineAsyncComponent(() => import('../more/components/PerformancesPlusDummy.vue'))
 
 export default {
     components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseTable, CourseWorks, CoursePrint, MyTimetable, AttendanceMatrix, PerformancesDummy, PerformancesPlusDummy },

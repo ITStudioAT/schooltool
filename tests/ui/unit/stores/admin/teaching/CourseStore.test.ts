@@ -64,6 +64,36 @@ describe('Admin Teaching CourseStore', () => {
         expect(store.selected_course?.students_info).toEqual([{ id: 10, first_name: 'Anna' }])
     })
 
+    it('normalizes student collections for courses loaded before URL selection', async () => {
+        axiosMock.get.mockResolvedValue({
+            data: {
+                data: [
+                    {
+                        id: 16,
+                        title: 'DGB1',
+                        students: [
+                            { id: 10, first_name: 'Anna' },
+                            { id: 11, first_name: 'Paul' },
+                        ],
+                        students_deleted: [{ id: 12, first_name: 'Mara' }],
+                    },
+                ],
+                classes: ['3B'],
+            },
+        })
+
+        const store = useCourseStore()
+
+        await expect(store.index()).resolves.toBe(true)
+        expect(store.courses[0].students).toEqual([10, 11])
+        expect(store.courses[0].students_info).toEqual([
+            { id: 10, first_name: 'Anna' },
+            { id: 11, first_name: 'Paul' },
+        ])
+        expect(store.courses[0].students_deleted).toEqual([12])
+        expect(store.courses[0].students_deleted_info).toEqual([{ id: 12, first_name: 'Mara' }])
+    })
+
     it('stores the authenticated users entry areas from the course index response', async () => {
         axiosMock.get.mockResolvedValue({
             data: {
@@ -153,7 +183,14 @@ describe('Admin Teaching CourseStore', () => {
 
         await expect(firstRequest).resolves.toBe(true)
         await expect(secondRequest).resolves.toBe(true)
-        expect(store.courses).toEqual([{ id: 9, title: 'Physik', students: [], students_deleted: [] }])
+        expect(store.courses).toEqual([{
+            id: 9,
+            title: 'Physik',
+            students: [],
+            students_deleted: [],
+            students_deleted_info: [],
+            students_info: [],
+        }])
         expect(store.classes).toEqual(['2A'])
         expect(store.courses_request_promise).toBeNull()
     })

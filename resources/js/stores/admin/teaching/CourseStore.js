@@ -94,7 +94,8 @@ export const useCourseStore = defineStore('AdminCourseStore', {
                 try {
                     const selectedId = this.selected_course?.id
                     const response = await axios.get(`/api/admin/teaching/courses`, {})
-                    this.courses = response.data.data
+                    this.courses = Array.isArray(response.data.data) ? response.data.data : []
+                    this.courses.forEach((course) => this.ensureCourseStudentCollections(course))
                     this.classes = response.data.classes
                     this.entry_areas = response.data.entry_areas || []
                     this.uses_entry_areas_for_grading_schema = Boolean(response.data.uses_entry_areas_for_grading_schema)

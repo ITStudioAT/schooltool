@@ -109,6 +109,24 @@ test('store creates and normalizes a definition', function () {
         ->assertJsonPath('data.teaching_entry_area_id', $this->area->id);
 });
 
+test('store and update preserve zero as a fixed property', function () {
+    $response = $this->actingAs($this->teacher, 'sanctum')->postJson(
+        '/api/admin/teaching/entry_definitions',
+        validEntryPayload($this->area, ['fixed_properties' => ['0', ' 1 ']])
+    );
+
+    $response->assertCreated()
+        ->assertJsonPath('data.fixed_properties', ['0', '1']);
+
+    $entryId = $response->json('data.id');
+
+    $this->putJson(
+        "/api/admin/teaching/entry_definitions/{$entryId}",
+        validEntryPayload($this->area, ['fixed_properties' => ['0', ' 2 ']])
+    )->assertOk()
+        ->assertJsonPath('data.fixed_properties', ['0', '2']);
+});
+
 test('store persists scoped notification recipients for behaviour entries and removes properties', function () {
     $response = $this->actingAs($this->teacher, 'sanctum')->postJson(
         '/api/admin/teaching/entry_definitions',

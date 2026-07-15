@@ -49,7 +49,9 @@
                         <thead>
                             <tr class="course-table-title-row">
                                 <th class="course-table-student-col">
-                                    <div class="course-table-header-label">Schüler:in</div>
+                                    <div class="course-table-header-label">
+                                        {{ sortedSelectedStudents.length }} Schüler:innen
+                                    </div>
                                 </th>
                                 <th
                                     v-for="courseDate in sortedCourseDates"
@@ -107,7 +109,7 @@
                                     }"
                                     role="button"
                                     tabindex="0"
-                                    :title="`${compactCourseDateTitle(courseDate)}: Arbeiten öffnen`"
+                                    :aria-label="`${compactCourseDateTitle(courseDate)}: Arbeiten öffnen`"
                                     @click="openWorkDialog(courseDate)"
                                     @keydown.enter.prevent="openWorkDialog(courseDate)"
                                     @keydown.space.prevent="openWorkDialog(courseDate)">
@@ -128,12 +130,52 @@
                                             <div class="course-table-work-summary-meta">
                                                 <v-icon size="13">mdi-clipboard-text</v-icon>
                                                 <span>{{ work.work.type || 'Arbeit' }}</span>
+                                                <span
+                                                    class="course-table-work-summary-count"
+                                                    :aria-label="`${work.affectedStudentCount} betroffene Schüler:innen`">
+                                                    <v-icon size="12">mdi-account-multiple</v-icon>
+                                                    {{ work.affectedStudentCount }}
+                                                </span>
                                             </div>
                                             <strong class="course-table-work-summary-title">
                                                 {{ work.work.title || work.label }}
                                             </strong>
                                         </div>
                                     </div>
+                                    <v-tooltip
+                                        activator="parent"
+                                        content-class="course-table-work-tooltip"
+                                        location="top"
+                                        :max-width="420"
+                                        :open-delay="250">
+                                        <div class="font-weight-bold mb-2">
+                                            {{ compactCourseDateTitle(courseDate) }}
+                                        </div>
+                                        <div
+                                            v-for="assignment in courseWorksForDate(courseDate)"
+                                            :key="`tooltip-${assignment.key}`"
+                                            class="course-table-work-tooltip-item">
+                                            <div class="d-flex align-center flex-wrap ga-2">
+                                                <v-chip
+                                                    class="course-table-work-tooltip-type"
+                                                    size="x-small"
+                                                    color="grey-lighten-2"
+                                                    variant="outlined">
+                                                    {{ assignment.work.type || 'Arbeit' }}
+                                                </v-chip>
+                                                <strong>{{ assignment.work.title || 'Ohne Titel' }}</strong>
+                                                <v-chip size="x-small" color="secondary" variant="outlined">
+                                                    {{ assignment.scope }}
+                                                </v-chip>
+                                            </div>
+                                            <div v-if="assignment.work.description" class="mt-1 text-body-2">
+                                                {{ assignment.work.description }}
+                                            </div>
+                                        </div>
+                                        <div v-if="!courseWorksForDate(courseDate).length" class="text-body-2">
+                                            Keine Arbeit eingetragen. Klicken, um eine Arbeit anzulegen.
+                                        </div>
+                                    </v-tooltip>
                                 </td>
                             </tr>
                             <tr
@@ -162,6 +204,41 @@
                                             {{ studentClassValue(student) }}
                                         </span>
                                     </div>
+                                    <div
+                                        v-if="studentComment(student)"
+                                        class="course-table-student-comment"
+                                        :title="studentComment(student)">
+                                        <v-icon aria-hidden="true" size="12">mdi-comment-text-outline</v-icon>
+                                        <span class="course-table-student-comment-text">
+                                            {{ studentComment(student) }}
+                                        </span>
+                                    </div>
+                                    <v-tooltip
+                                        activator="parent"
+                                        content-class="course-table-student-tooltip"
+                                        location="right"
+                                        :max-width="420"
+                                        :open-delay="250">
+                                        <div class="course-table-student-tooltip-name">
+                                            {{ studentName(student) }}
+                                        </div>
+                                        <div
+                                            v-for="detail in studentTooltipDetails(student)"
+                                            :key="detail.label"
+                                            class="course-table-student-tooltip-detail">
+                                            <span>{{ detail.label }}</span>
+                                            <strong>{{ detail.value }}</strong>
+                                        </div>
+                                        <div v-if="studentComment(student)" class="course-table-student-tooltip-comment">
+                                            <span>Kommentar</span>
+                                            <div>{{ studentComment(student) }}</div>
+                                        </div>
+                                        <div
+                                            v-if="!studentTooltipDetails(student).length && !studentComment(student)"
+                                            class="text-body-2">
+                                            Keine weiteren Angaben.
+                                        </div>
+                                    </v-tooltip>
                                 </th>
                                 <template
                                     v-for="courseDate in sortedCourseDates"
@@ -203,16 +280,31 @@
                                                     v-if="compactPerformanceEntriesForCell(student, courseDate).length"
                                                     class="course-table-entry-cell-badge-row"
                                                     data-testid="course-table-entry-cell-performance-row">
-                                                    <v-chip
+                                                    <div
                                                         v-for="entry in compactPerformanceEntriesForCell(student, courseDate)"
                                                         :key="entry.uid"
-                                                        class="course-table-entry-cell-badge"
-                                                        size="x-small"
-                                                        :color="cellEntryColor(entry)"
-                                                        variant="tonal"
-                                                        :title="entry.description || cellEntryTypeLabel(entry)">
-                                                        {{ compactCellEntryLabel(entry) }}
-                                                    </v-chip>
+                                                        class="course-table-entry-cell-performance">
+                                                        <v-chip
+                                                            class="course-table-entry-cell-badge"
+                                                            size="x-small"
+                                                            :color="cellEntryColor(entry)"
+                                                            variant="tonal"
+                                                            :title="entry.description || cellEntryTypeLabel(entry)">
+                                                            {{ compactCellEntryType(entry) }}:&nbsp;
+                                                            <span
+                                                                :class="{
+                                                                    'course-table-entry-cell-grade--missing': !compactCellEntryGrade(entry),
+                                                                }">
+                                                                {{ compactCellEntryGrade(entry) || 'NA' }}
+                                                            </span>
+                                                        </v-chip>
+                                                        <div
+                                                            v-if="entry.description"
+                                                            class="course-table-entry-cell-comment"
+                                                            :title="entry.description">
+                                                            {{ entry.description }}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                             <v-btn
@@ -227,6 +319,37 @@
                                                 variant="tonal"
                                                 @click.stop="toggleStudentAttendance(student, courseDate)" />
                                         </div>
+                                        <v-tooltip
+                                            v-if="tableView === 'entries' && entriesForCell(student, courseDate).length"
+                                            activator="parent"
+                                            content-class="course-table-entry-tooltip"
+                                            location="top"
+                                            :max-width="440"
+                                            :open-delay="250">
+                                            <div class="course-table-entry-tooltip-header">
+                                                <strong>{{ studentName(student) }}</strong>
+                                                <span>{{ compactCourseDateTitle(courseDate) }}</span>
+                                            </div>
+                                            <div
+                                                v-for="detail in cellEntryHoverItems(student, courseDate)"
+                                                :key="detail.uid"
+                                                class="course-table-entry-tooltip-item">
+                                                <div class="course-table-entry-tooltip-meta">
+                                                    <span>{{ detail.kind }}</span>
+                                                    <strong>{{ detail.type }}</strong>
+                                                    <span v-if="detail.grade">Note: {{ detail.grade }}</span>
+                                                </div>
+                                                <div v-if="detail.title" class="course-table-entry-tooltip-title">
+                                                    {{ detail.title }}
+                                                </div>
+                                                <div v-if="detail.description" class="course-table-entry-tooltip-text">
+                                                    <span>Aufgabe:</span> {{ detail.description }}
+                                                </div>
+                                                <div v-if="detail.comment" class="course-table-entry-tooltip-text">
+                                                    <span>Kommentar:</span> {{ detail.comment }}
+                                                </div>
+                                            </div>
+                                        </v-tooltip>
                                     </td>
                                     <td
                                         v-else-if="studentIndex === 0"
@@ -314,8 +437,10 @@
                                             {{ assignment.work.type || 'Arbeit' }}
                                         </v-chip>
                                         <strong class="text-body-2">{{ assignment.work.title || assignment.label }}</strong>
+                                        <v-chip size="x-small" color="secondary" variant="outlined">
+                                            {{ assignment.scope }}
+                                        </v-chip>
                                     </div>
-                                    <div class="text-caption text-medium-emphasis mt-1">{{ assignment.label }}</div>
                                     <div v-if="assignment.work.description" class="text-caption mt-1">
                                         {{ assignment.work.description }}
                                     </div>
@@ -359,10 +484,11 @@
                                 class="mb-3"
                                 :disabled="workDialogTypeEditing || workDialogModeEditing">
                                 <v-tab value="work">Arbeit</v-tab>
+                                <v-tab v-if="!workDialogForm.is_group_work" value="students">Schüler:innen</v-tab>
                                 <v-tab v-if="workDialogForm.is_group_work" value="groups">Gruppen</v-tab>
                             </v-tabs>
-                            <v-window v-model="workDialogTab">
-                                <v-window-item value="work">
+                            <div class="course-table-work-tab-panels">
+                                <div v-show="workDialogTab === 'work'">
                                     <div
                                         class="course-table-work-meta-row mb-3"
                                         :class="{
@@ -455,8 +581,75 @@
                                         rows="3"
                                         maxlength="1024"
                                         :disabled="workSaving" />
-                                </v-window-item>
-                                <v-window-item v-if="workDialogForm.is_group_work" value="groups">
+                                </div>
+                                <div
+                                    v-if="!workDialogForm.is_group_work"
+                                    data-testid="course-table-work-students-panel"
+                                    v-show="workDialogTab === 'students'">
+                                    <div
+                                        v-if="individualWorkGradeRows.length"
+                                        class="d-flex flex-column ga-2">
+                                        <v-card
+                                            v-for="row in individualWorkGradeRows"
+                                            :key="`individual-work-grade-${row.studentId}`"
+                                            class="pa-2"
+                                            variant="outlined">
+                                            <div class="course-table-work-group-grade-grid">
+                                                <div class="text-body-2 font-weight-medium">{{ row.studentName }}</div>
+                                                <v-text-field
+                                                    :model-value="row.comment"
+                                                    density="compact"
+                                                    hide-details
+                                                    label="Kommentar"
+                                                    :maxlength="1024"
+                                                    variant="outlined"
+                                                    :disabled="workSaving"
+                                                    @update:model-value="setIndividualWorkStudentComment(row.studentId, $event)" />
+                                                <div
+                                                    v-if="availableWorkGradeInputMode === 'fixed'"
+                                                    class="course-table-work-grade-choice-field">
+                                                    <div class="text-caption text-medium-emphasis mb-1">Note</div>
+                                                    <div class="d-flex flex-wrap ga-1">
+                                                        <v-chip
+                                                            v-for="item in availableWorkGradeItems"
+                                                            :key="`individual-work-grade-${row.studentId}-${item.value}`"
+                                                            size="small"
+                                                            :title="item.title"
+                                                            :variant="row.grade === item.value ? 'flat' : 'tonal'"
+                                                            :color="row.grade === item.value ? 'success' : 'default'"
+                                                            :disabled="workSaving"
+                                                            @click="setIndividualWorkStudentGrade(
+                                                                row.studentId,
+                                                                toggledCourseWorkGrade(row.grade, item.value),
+                                                            )">
+                                                            {{ item.value }}
+                                                        </v-chip>
+                                                    </div>
+                                                </div>
+                                                <v-text-field
+                                                    v-else-if="availableWorkGradeInputMode === 'free'"
+                                                    :model-value="row.grade"
+                                                    density="compact"
+                                                    hide-details
+                                                    label="Note"
+                                                    :maxlength="50"
+                                                    variant="outlined"
+                                                    :disabled="workSaving"
+                                                    @update:model-value="setIndividualWorkStudentGrade(row.studentId, $event)" />
+                                                <div v-else class="text-caption text-medium-emphasis">
+                                                    Keine Bewertung vorgesehen.
+                                                </div>
+                                            </div>
+                                        </v-card>
+                                    </div>
+                                    <v-alert v-else type="info" variant="tonal" density="compact">
+                                        Für diesen Kurs sind keine Schüler:innen vorhanden.
+                                    </v-alert>
+                                </div>
+                                <div
+                                    v-if="workDialogForm.is_group_work"
+                                    data-testid="course-table-work-groups-panel"
+                                    v-show="workDialogTab === 'groups'">
                                     <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-3">
                                         <div
                                             v-if="hasSavedRandomGroupConfiguration"
@@ -516,6 +709,7 @@
                                         <v-card
                                             v-for="(group, groupIndex) in workDialogGroups"
                                             :key="`work-dialog-group-${groupIndex}`"
+                                            :data-testid="`course-table-work-group-card-${groupIndex}`"
                                             variant="outlined"
                                             class="pa-3 course-table-work-group-card cursor-pointer"
                                             :class="{
@@ -539,6 +733,7 @@
                                                 <v-date-input
                                                     v-if="workDialogGroupDateEditingIndex === groupIndex"
                                                     v-model="group.date"
+                                                    v-model:menu="workDialogGroupDateMenuOpen"
                                                     class="course-table-work-group-date-input"
                                                     :data-testid="`course-table-date-work-group-date-input-${groupIndex}`"
                                                     density="compact"
@@ -547,6 +742,7 @@
                                                     variant="outlined"
                                                     :disabled="workSaving"
                                                     @click.stop
+                                                    @update:menu="handleWorkDialogGroupDateMenu"
                                                     @update:model-value="applyWorkDialogGroupDate(groupIndex, $event)">
                                                     <template #day="{ item, props }">
                                                         <v-btn
@@ -561,6 +757,7 @@
                                                     v-else
                                                     :data-testid="`course-table-date-edit-work-group-date-${groupIndex}`"
                                                     color="primary"
+                                                    prepend-icon="mdi-calendar-edit"
                                                     size="x-small"
                                                     variant="tonal"
                                                     :class="{ 'cursor-pointer': !workSaving }"
@@ -635,8 +832,8 @@
                                     <v-alert v-else type="info" variant="tonal" density="compact">
                                         Für diese Gruppenarbeit sind noch keine Gruppen definiert.
                                     </v-alert>
-                                </v-window-item>
-                            </v-window>
+                                </div>
+                            </div>
                             <div class="d-flex justify-end ga-2 mt-4">
                                 <v-btn
                                     variant="text"
@@ -697,19 +894,39 @@
                                 variant="outlined">
                                 <div class="course-table-work-group-grade-grid">
                                     <div class="text-body-2 font-weight-medium">{{ row.studentName }}</div>
-                                    <v-select
-                                        v-if="availableWorkGradeItems.length"
-                                        :model-value="row.grade"
-                                        :items="availableWorkGradeItems"
-                                        clearable
+                                    <v-text-field
+                                        :model-value="row.comment"
                                         density="compact"
                                         hide-details
-                                        label="Note"
+                                        label="Kommentar"
+                                        :maxlength="1024"
                                         variant="outlined"
                                         :disabled="workSaving"
-                                        @update:model-value="setWorkGroupStudentGrade(workDialogGroupDetails.groupIndex, row.studentId, $event)" />
+                                        @update:model-value="setWorkGroupStudentComment(workDialogGroupDetails.groupIndex, row.studentId, $event)" />
+                                    <div
+                                        v-if="availableWorkGradeInputMode === 'fixed'"
+                                        class="course-table-work-grade-choice-field">
+                                        <div class="text-caption text-medium-emphasis mb-1">Note</div>
+                                        <div class="d-flex flex-wrap ga-1">
+                                            <v-chip
+                                                v-for="item in availableWorkGradeItems"
+                                                :key="`group-work-grade-${workDialogGroupDetails.groupIndex}-${row.studentId}-${item.value}`"
+                                                size="small"
+                                                :title="item.title"
+                                                :variant="row.grade === item.value ? 'flat' : 'tonal'"
+                                                :color="row.grade === item.value ? 'success' : 'default'"
+                                                :disabled="workSaving"
+                                                @click="setWorkGroupStudentGrade(
+                                                    workDialogGroupDetails.groupIndex,
+                                                    row.studentId,
+                                                    toggledCourseWorkGrade(row.grade, item.value),
+                                                )">
+                                                {{ item.value }}
+                                            </v-chip>
+                                        </div>
+                                    </div>
                                     <v-text-field
-                                        v-else
+                                        v-else-if="availableWorkGradeInputMode === 'free'"
                                         :model-value="row.grade"
                                         density="compact"
                                         hide-details
@@ -718,6 +935,9 @@
                                         variant="outlined"
                                         :disabled="workSaving"
                                         @update:model-value="setWorkGroupStudentGrade(workDialogGroupDetails.groupIndex, row.studentId, $event)" />
+                                    <div v-else class="text-caption text-medium-emphasis">
+                                        Keine Bewertung vorgesehen.
+                                    </div>
                                 </div>
                             </v-card>
                         </div>
@@ -818,7 +1038,7 @@
             </v-card>
         </v-dialog>
 
-        <v-dialog v-model="entryDialog.open" persistent max-width="680">
+        <v-dialog v-model="entryDialog.open" persistent max-width="860">
             <v-card>
                 <v-card-title class="text-subtitle-1 font-weight-bold d-flex align-center ga-2">
                     <v-icon size="20">mdi-format-list-bulleted</v-icon>
@@ -838,8 +1058,18 @@
                             <div
                                 v-for="entry in cellEntries"
                                 :key="entry.uid"
-                                class="course-table-cell-entry">
-                                <div class="d-flex align-center flex-wrap ga-2">
+                                class="course-table-cell-entry course-table-cell-entry--selectable"
+                                :class="{
+                                    'course-table-cell-entry--selected': selectedCellEntryUid === entry.uid,
+                                }">
+                                <div
+                                    class="course-table-cell-entry-summary d-flex align-center flex-wrap ga-2"
+                                    :data-testid="`course-table-cell-entry-card-${entry.uid}`"
+                                    role="button"
+                                    tabindex="0"
+                                    @click="toggleCellEntry(entry)"
+                                    @keydown.enter.self.prevent="toggleCellEntry(entry)"
+                                    @keydown.space.self.prevent="toggleCellEntry(entry)">
                                     <v-chip size="x-small" :color="cellEntryColor(entry)" variant="tonal">
                                         {{ cellEntryKindLabel(entry) }}
                                     </v-chip>
@@ -855,28 +1085,211 @@
                                         Aus Arbeit
                                     </v-chip>
                                     <v-spacer />
-                                    <div v-if="canModifyCellEntry(entry)" class="d-flex ga-1">
-                                        <v-btn
-                                            :data-testid="`course-table-cell-edit-entry-${entry.uid}`"
+                                    <v-icon size="18">
+                                        {{ isCellEntryExpanded(entry) ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
+                                    </v-icon>
+                                </div>
+                                <div
+                                    v-if="cellEntryListComment(entry)"
+                                    class="course-table-cell-entry-list-comment d-flex align-start ga-1 mt-2 text-caption text-medium-emphasis">
+                                    <v-icon icon="mdi-comment-text-outline" size="14" class="mt-1" />
+                                    <span>{{ cellEntryListComment(entry) }}</span>
+                                </div>
+                                <div
+                                    v-if="isCellEntryExpanded(entry) && entry.source === 'course_work' && courseWorkForCellEntry(entry)"
+                                    class="course-table-cell-work-entry mt-3"
+                                    :data-testid="`course-table-cell-work-entry-${entry.uid}`">
+                                    <div class="course-table-cell-work-info-grid">
+                                        <div>
+                                            <div class="text-caption text-medium-emphasis">Titel</div>
+                                            <div class="text-body-2 font-weight-bold">
+                                                {{ courseWorkForCellEntry(entry).title || 'Ohne Titel' }}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div class="text-caption text-medium-emphasis">Datum</div>
+                                            <div class="text-body-2">{{ courseWorkEntryDateTitle(entry) }}</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-caption text-medium-emphasis">Modus</div>
+                                            <div class="text-body-2">{{ courseWorkEntryModeTitle(entry) }}</div>
+                                        </div>
+                                        <div v-if="courseWorkForCellEntry(entry).is_group_work">
+                                            <div class="text-caption text-medium-emphasis">Zuordnung</div>
+                                            <div class="text-body-2">{{ courseWorkEntryAssignmentTitle(entry) }}</div>
+                                            <div
+                                                v-if="courseWorkEntryOtherGroupMembers(entry).length"
+                                                class="mt-2">
+                                                <div class="text-caption text-medium-emphasis">Weitere Gruppenmitglieder</div>
+                                                <div class="d-flex flex-wrap ga-1 mt-1">
+                                                    <v-tooltip
+                                                        v-for="member in courseWorkEntryOtherGroupMembers(entry)"
+                                                        :key="member.id"
+                                                        content-class="course-table-group-member-tooltip"
+                                                        location="top"
+                                                        :max-width="360"
+                                                        :open-delay="200">
+                                                        <template #activator="{ props }">
+                                                            <v-chip
+                                                                v-bind="props"
+                                                                class="course-table-group-member-chip"
+                                                                size="x-small"
+                                                                variant="tonal">
+                                                                {{ member.name }}
+                                                            </v-chip>
+                                                        </template>
+                                                        <div class="course-table-group-member-tooltip-name">
+                                                            {{ member.name }}
+                                                        </div>
+                                                        <div class="course-table-group-member-tooltip-grade">
+                                                            <span>Note</span>
+                                                            <strong>{{ member.grade || 'Keine Note' }}</strong>
+                                                        </div>
+                                                        <div class="course-table-group-member-tooltip-comment">
+                                                            <span>Kommentar</span>
+                                                            <div>{{ member.comment || 'Kein Kommentar' }}</div>
+                                                        </div>
+                                                    </v-tooltip>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div v-if="courseWorkForCellEntry(entry).description" class="mt-3">
+                                        <div class="text-caption text-medium-emphasis">Beschreibung der Arbeit</div>
+                                        <div class="text-body-2 course-table-cell-work-description">
+                                            {{ courseWorkForCellEntry(entry).description }}
+                                        </div>
+                                    </div>
+                                    <v-divider class="my-3" />
+                                    <div class="text-subtitle-2 font-weight-bold mb-2">Bewertung für diese:n Schüler:in</div>
+                                    <div class="course-table-cell-work-entry-fields">
+                                        <v-textarea
+                                            :model-value="courseWorkEntryDraft(entry).comment"
+                                            auto-grow
+                                            :data-testid="`course-table-cell-work-comment-${entry.uid}`"
                                             density="compact"
-                                            icon="mdi-pencil"
-                                            size="x-small"
-                                            title="Eintrag bearbeiten"
-                                            variant="text"
-                                            @click="startEditingCellEntry(entry)" />
+                                            hide-details
+                                            label="Kommentar"
+                                            :maxlength="1024"
+                                            max-rows="4"
+                                            rows="2"
+                                            variant="outlined"
+                                            :disabled="Boolean(courseWorkEntrySavingUid)"
+                                            @update:model-value="updateCourseWorkEntryDraft(entry, 'comment', $event)" />
+                                        <div
+                                            v-if="courseWorkEntryGradeInputMode(entry) === 'fixed'"
+                                            :data-testid="`course-table-cell-work-grade-${entry.uid}`"
+                                            class="course-table-work-grade-choice-field">
+                                            <div class="text-caption text-medium-emphasis mb-1">Note</div>
+                                            <div class="d-flex flex-wrap ga-1">
+                                                <v-chip
+                                                    v-for="item in courseWorkEntryGradeItems(entry)"
+                                                    :key="`cell-work-grade-${entry.uid}-${item.value}`"
+                                                    size="small"
+                                                    :title="item.title"
+                                                    :variant="courseWorkEntryDraft(entry).grade === item.value ? 'flat' : 'tonal'"
+                                                    :color="courseWorkEntryDraft(entry).grade === item.value ? 'success' : 'default'"
+                                                    :disabled="Boolean(courseWorkEntrySavingUid)"
+                                                    @click="updateCourseWorkEntryDraft(
+                                                        entry,
+                                                        'grade',
+                                                        toggledCourseWorkGrade(courseWorkEntryDraft(entry).grade, item.value),
+                                                    )">
+                                                    {{ item.value }}
+                                                </v-chip>
+                                            </div>
+                                        </div>
+                                        <v-text-field
+                                            v-else-if="courseWorkEntryGradeInputMode(entry) === 'free'"
+                                            :model-value="courseWorkEntryDraft(entry).grade"
+                                            clearable
+                                            :data-testid="`course-table-cell-work-grade-${entry.uid}`"
+                                            density="compact"
+                                            hide-details
+                                            label="Note"
+                                            :maxlength="50"
+                                            variant="outlined"
+                                            :disabled="Boolean(courseWorkEntrySavingUid)"
+                                            @update:model-value="updateCourseWorkEntryDraft(entry, 'grade', $event)" />
+                                        <div v-else class="text-caption text-medium-emphasis align-self-center">
+                                            Für diesen Eintragstyp ist keine Bewertung vorgesehen.
+                                        </div>
+                                    </div>
+                                    <div class="d-flex justify-end mt-3">
+                                        <v-btn
+                                            color="success"
+                                            :data-testid="`course-table-cell-work-save-${entry.uid}`"
+                                            prepend-icon="mdi-content-save"
+                                            variant="flat"
+                                            :loading="courseWorkEntrySavingUid === entry.uid"
+                                            :disabled="Boolean(courseWorkEntrySavingUid) || !courseWorkEntryHasChanges(entry)"
+                                            @click="saveCourseWorkCellEntry(entry)">
+                                            Bewertung speichern
+                                        </v-btn>
+                                    </div>
+                                </div>
+                                <div
+                                    v-if="entryFormOpen && entryForm.uid === entry.uid"
+                                    class="course-table-cell-entry-form mt-3"
+                                    :data-testid="`course-table-cell-entry-edit-form-${entry.uid}`">
+                                    <div class="text-subtitle-2 font-weight-bold mb-3">Eintrag bearbeiten</div>
+                                    <div class="text-caption text-medium-emphasis mb-1">Typ</div>
+                                    <div class="d-flex flex-wrap ga-1 mb-3">
+                                        <v-btn
+                                            v-for="item in availableEntryTypes"
+                                            :key="item.value"
+                                            size="small"
+                                            :variant="entryForm.type === item.value ? 'flat' : 'tonal'"
+                                            :color="entryForm.type === item.value ? 'primary' : 'default'"
+                                            @click="selectCellEntryType(item.value)">
+                                            {{ item.title }}
+                                        </v-btn>
+                                    </div>
+
+                                    <template v-if="entryForm.kind === 'assessment'">
+                                        <div class="text-caption text-medium-emphasis mb-1">Note</div>
+                                        <div v-if="availableEntryGrades.length" class="d-flex flex-wrap ga-1 mb-3">
+                                            <v-btn
+                                                v-for="item in availableEntryGrades"
+                                                :key="item.value"
+                                                size="small"
+                                                :variant="entryForm.grade === item.value ? 'flat' : 'tonal'"
+                                                :color="entryForm.grade === item.value ? 'success' : 'default'"
+                                                @click="entryForm.grade = entryForm.grade === item.value ? '' : item.value">
+                                                {{ item.title }}
+                                            </v-btn>
+                                        </div>
+                                        <div v-else class="text-caption text-medium-emphasis mb-3">Bitte zuerst einen Typ wählen.</div>
+                                    </template>
+
+                                    <v-textarea
+                                        v-model="entryForm.description"
+                                        label="Beschreibung"
+                                        rows="2"
+                                        :counter="1024"
+                                        :maxlength="1024" />
+
+                                    <div class="d-flex align-center ga-2">
                                         <v-btn
                                             :data-testid="`course-table-cell-delete-entry-${entry.uid}`"
                                             color="error"
-                                            density="compact"
-                                            icon="mdi-delete"
-                                            size="x-small"
-                                            title="Eintrag löschen"
+                                            prepend-icon="mdi-delete"
                                             variant="text"
-                                            @click="openDeleteEntryDialog(entry)" />
+                                            :disabled="entrySaving"
+                                            @click="openDeleteEntryDialog(entry)">
+                                            Löschen
+                                        </v-btn>
+                                        <v-spacer />
+                                        <v-btn variant="text" :disabled="entrySaving" @click="cancelNewCellEntry">Abbrechen</v-btn>
+                                        <v-btn
+                                            color="success"
+                                            variant="flat"
+                                            :loading="entrySaving"
+                                            :disabled="!canSaveCellEntry"
+                                            @click="saveCellEntry">
+                                            Speichern
+                                        </v-btn>
                                     </div>
-                                </div>
-                                <div v-if="entry.description" class="text-caption text-medium-emphasis mt-1">
-                                    {{ entry.description }}
                                 </div>
                             </div>
                         </div>
@@ -885,9 +1298,9 @@
                         </v-alert>
                     </section>
 
-                    <v-divider />
+                    <v-divider v-if="!entryForm.id" />
 
-                    <section>
+                    <section v-if="!entryForm.id">
                         <div class="text-caption font-weight-bold text-medium-emphasis mb-2">Mögliche Aktionen</div>
                         <v-btn
                             v-if="!entryFormOpen"
@@ -909,7 +1322,7 @@
 
                         <div v-if="entryFormOpen" class="course-table-cell-entry-form" data-testid="course-table-cell-entry-form">
                             <div class="text-subtitle-2 font-weight-bold mb-3">
-                                {{ entryForm.id ? 'Eintrag bearbeiten' : 'Neuen Eintrag anlegen' }}
+                                Neuen Eintrag anlegen
                             </div>
                             <div class="text-caption text-medium-emphasis mb-1">Typ</div>
                             <div class="d-flex flex-wrap ga-1 mb-3">
@@ -963,7 +1376,13 @@
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
-                    <v-btn variant="flat" color="primary" :disabled="entrySaving" @click="closeEntryDialog">Schließen</v-btn>
+                    <v-btn
+                        variant="flat"
+                        color="primary"
+                        :disabled="entrySaving || Boolean(courseWorkEntrySavingUid)"
+                        @click="closeEntryDialog">
+                        Schließen
+                    </v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -1012,7 +1431,12 @@ export default {
             behaviourEntryStore: null,
             courseDateStore: null,
             courseEntriesRequestPromise: null,
+            courseTableDataCourseId: null,
+            courseTableDataRequestCourseId: null,
+            courseTableDataRequestPromise: null,
             courseWorkStore: null,
+            courseWorkEntryDrafts: {},
+            courseWorkEntrySavingUid: null,
             courseWorksRequestPromise: null,
             deleteEntryDialog: {
                 entry: null,
@@ -1041,6 +1465,7 @@ export default {
             entryDeleting: false,
             entrySaving: false,
             entryStore: null,
+            selectedCellEntryUid: null,
             randomGroupsDialog: {
                 groupSize: 2,
                 open: false,
@@ -1072,6 +1497,7 @@ export default {
                 open: false,
             },
             workDialogGroupDateEditingIndex: null,
+            workDialogGroupDateMenuOpen: false,
             workDialogModeDraft: false,
             workDialogModeEditing: false,
             workDialogStudentDrag: {
@@ -1096,9 +1522,10 @@ export default {
         this.courseDateStore = useCourseDateStore()
         this.restoreTableView(this.$route?.query?.view)
         if (this.tableView === 'entries') {
-            await this.loadCourseEntries()
+            await this.loadCourseTableData()
+        } else {
+            await this.loadCourseWorks()
         }
-        await this.loadCourseWorks()
         this.scrollToInitialCourseDate()
     },
 
@@ -1106,7 +1533,7 @@ export default {
         async '$route.query.view'(view) {
             this.restoreTableView(view)
             if (this.tableView === 'entries') {
-                await this.loadCourseEntries()
+                await this.loadCourseTableData()
             }
         },
         courseDateScrollSignature() {
@@ -1114,9 +1541,8 @@ export default {
         },
         selected_course(course) {
             if (course?.id && this.tableView === 'entries') {
-                this.loadCourseEntries(course.id)
-            }
-            if (course?.id) {
+                this.loadCourseTableData(course.id)
+            } else if (course?.id) {
                 this.loadCourseWorks(course.id)
             }
         },
@@ -1129,7 +1555,10 @@ export default {
                 this.workDialogForm.groups = []
             }
 
-            if (!isGroupWork) {
+            if (
+                (isGroupWork && this.workDialogTab === 'students')
+                || (!isGroupWork && this.workDialogTab === 'groups')
+            ) {
                 this.workDialogTab = 'work'
             }
         },
@@ -1194,28 +1623,12 @@ export default {
                     }))
             }
 
-            const works = Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
-
-            return works
-                .filter((work) => work?.short_name)
-                .map((work) => ({
-                    title: work.name ? `${work.short_name} - ${work.name}` : work.short_name,
-                    value: work.short_name,
-                }))
+            return this.availableWorkTypes
         },
         availableEntryGrades() {
             if (this.entryForm.kind !== 'assessment') return []
 
-            const works = Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
-            const work = works.find((item) => item?.short_name === this.entryForm.type)
-            const grades = Array.isArray(work?.grades) ? work.grades : []
-
-            return grades
-                .filter((grade) => grade?.grade)
-                .map((grade) => ({
-                    title: grade.name ? `${grade.grade} (${grade.name})` : grade.grade,
-                    value: grade.grade,
-                }))
+            return this.courseWorkGradeConfigurationForType(this.entryForm.type).items
         },
         availableWorkTypes() {
             const assignedEntryArea = this.selected_course?.teaching_entry_area || null
@@ -1234,28 +1647,34 @@ export default {
                 }))
         },
         availableWorkGradeItems() {
-            const assignedEntryArea = this.selected_course?.teaching_entry_area || null
-            const entryDefinitions = Array.isArray(assignedEntryArea?.entry_definitions)
-                ? assignedEntryArea.entry_definitions.filter((entry) => entry?.category === 'Benotung')
-                : []
-            const works = this.uses_entry_areas_for_grading_schema && assignedEntryArea?.id
-                ? entryDefinitions
-                : Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
-            const selectedWork = works.find((work) => work?.short_name === this.workDialogForm.type)
-            const grades = Array.isArray(selectedWork?.grades) ? selectedWork.grades : []
-
-            return grades
-                .filter((grade) => grade?.grade)
-                .map((grade) => ({
-                    title: grade.name ? `${grade.grade} (${grade.name})` : grade.grade,
-                    value: grade.grade,
-                }))
+            return this.courseWorkGradeConfigurationForType(this.workDialogForm.type).items
+        },
+        availableWorkGradeInputMode() {
+            return this.courseWorkGradeConfigurationForType(this.workDialogForm.type).mode
         },
         dateWorkAssignments() {
             return this.courseWorksForDate(this.workDialog.courseDate)
         },
         workDialogGroups() {
             return Array.isArray(this.workDialogForm.groups) ? this.workDialogForm.groups : []
+        },
+        individualWorkGradeRows() {
+            return this.sortedSelectedStudents.flatMap((student) => {
+                const studentId = this.registeredStudentUserId(student) || student?.id
+                if (!studentId) return []
+
+                const group = this.workDialogGroups.find((workGroup) => (
+                    Array.isArray(workGroup?.student_ids)
+                    && workGroup.student_ids.some((groupStudentId) => String(groupStudentId) === String(studentId))
+                ))
+
+                return [{
+                    comment: group ? this.workGroupStudentComment(group, studentId) : '',
+                    grade: group ? this.workGroupStudentGrade(group, studentId) : '',
+                    studentId,
+                    studentName: this.studentName(student),
+                }]
+            })
         },
         workDialogGroupDetailsGroup() {
             const groupIndex = this.workDialogGroupDetails.groupIndex
@@ -1427,7 +1846,7 @@ export default {
             this.tableView = nextView
 
             if (nextView === 'entries') {
-                this.loadCourseEntries()
+                this.loadCourseTableData()
             }
 
             if (!this.$route || !this.$router) return
@@ -1444,16 +1863,20 @@ export default {
             if (this.tableView !== 'entries') return
 
             this.cancelNewCellEntry()
+            this.selectedCellEntryUid = null
             this.entryDialog = {
                 courseDate,
                 open: true,
                 student,
             }
+            this.resetCourseWorkEntryDrafts()
         },
         closeEntryDialog() {
-            if (this.entrySaving) return
+            if (this.entrySaving || this.courseWorkEntrySavingUid) return
 
             this.cancelNewCellEntry()
+            this.courseWorkEntryDrafts = {}
+            this.selectedCellEntryUid = null
             this.entryDialog = {
                 courseDate: null,
                 open: false,
@@ -1476,6 +1899,42 @@ export default {
                 this.courseEntriesRequestPromise = null
             }
         },
+        async loadCourseTableData(courseId = this.selected_course?.id, forceReload = false) {
+            if (!courseId || !this.entryStore?.indexTableData || !this.behaviourEntryStore || !this.courseWorkStore) return
+            if (!forceReload && String(this.courseTableDataCourseId || '') === String(courseId)) return true
+            if (
+                this.courseTableDataRequestPromise
+                && String(this.courseTableDataRequestCourseId || '') === String(courseId)
+            ) {
+                if (!forceReload) return this.courseTableDataRequestPromise
+
+                await this.courseTableDataRequestPromise
+                if (String(this.selected_course?.id || '') !== String(courseId)) return false
+            }
+
+            const requestPromise = this.entryStore.indexTableData(courseId)
+            this.courseTableDataRequestCourseId = courseId
+            this.courseTableDataRequestPromise = requestPromise
+
+            try {
+                const response = await requestPromise
+                if (!response || String(this.selected_course?.id || '') !== String(courseId)) return false
+
+                this.entryStore.courseEntries = Array.isArray(response.data) ? response.data : []
+                this.behaviourEntryStore.courseEntries = Array.isArray(response.behaviour_entries)
+                    ? response.behaviour_entries
+                    : []
+                this.courseWorkStore.courseWorks = Array.isArray(response.course_works) ? response.course_works : []
+                this.courseTableDataCourseId = courseId
+
+                return true
+            } finally {
+                if (this.courseTableDataRequestPromise === requestPromise) {
+                    this.courseTableDataRequestCourseId = null
+                    this.courseTableDataRequestPromise = null
+                }
+            }
+        },
         async loadCourseWorks(courseId = this.selected_course?.id) {
             if (!courseId || !this.courseWorkStore?.index) return
             if (this.courseWorksRequestPromise) return this.courseWorksRequestPromise
@@ -1488,6 +1947,28 @@ export default {
             } finally {
                 this.courseWorksRequestPromise = null
             }
+        },
+        applySavedCourseWork(response) {
+            const savedWork = response?.data
+            if (!savedWork?.id) return false
+
+            const courseWorks = Array.isArray(this.courseWorks) ? [...this.courseWorks] : []
+            const savedWorkIndex = courseWorks.findIndex((work) => String(work?.id) === String(savedWork.id))
+            if (savedWorkIndex >= 0) {
+                courseWorks.splice(savedWorkIndex, 1, savedWork)
+            } else {
+                courseWorks.push(savedWork)
+            }
+
+            this.courseWorks = courseWorks.sort((first, second) => {
+                const dateComparison = String(second?.date_for_all_groups || '')
+                    .localeCompare(String(first?.date_for_all_groups || ''))
+                if (dateComparison !== 0) return dateComparison
+
+                return Number(second?.id || 0) - Number(first?.id || 0)
+            })
+
+            return true
         },
         courseWorksForDate(courseDate) {
             const date = this.normalizeDateKey(courseDate?.date)
@@ -1504,19 +1985,30 @@ export default {
                 return this.groupWorkAssignmentForDate(work, date)
             }
 
-            const groupDates = (Array.isArray(work.groups) ? work.groups : [])
+            const groups = Array.isArray(work.groups) ? work.groups : []
+            const fallbackDate = this.normalizeDateKey(work.date_for_all_groups)
+            const matchingGroups = groups.filter((group) => (
+                (this.normalizeDateKey(group?.date) || fallbackDate) === date
+            ))
+            const groupDates = groups
                 .map((group) => this.normalizeDateKey(group?.date))
                 .filter(Boolean)
 
-            if (this.normalizeDateKey(work.date_for_all_groups) !== date && !groupDates.includes(date)) {
+            if (fallbackDate !== date && !groupDates.includes(date)) {
                 return null
             }
 
-            return this.courseWorkAssignmentPayload(work, 'Einzelarbeit')
+            return this.courseWorkAssignmentPayload(
+                work,
+                'Einzelarbeit',
+                false,
+                this.courseWorkAffectedStudentCount(matchingGroups, groups.length === 0)
+            )
         },
         groupWorkAssignmentForDate(work, date) {
             const groups = Array.isArray(work.groups) ? work.groups : []
             const matchingGroupIndexes = []
+            const matchingGroups = []
             const fallbackDate = this.normalizeDateKey(work.date_for_all_groups)
             const hasExplicitGroupDates = groups.some((group) => this.normalizeDateKey(group?.date))
 
@@ -1524,6 +2016,7 @@ export default {
                 const groupDate = this.normalizeDateKey(group?.date) || fallbackDate
                 if (groupDate === date) {
                     matchingGroupIndexes.push(index + 1)
+                    matchingGroups.push(group)
                 }
             })
 
@@ -1536,19 +2029,38 @@ export default {
                 ? `Gr. ${matchingGroupIndexes.join(', ')}`
                 : 'Gruppenarbeit'
 
-            return this.courseWorkAssignmentPayload(work, suffix, true)
+            return this.courseWorkAssignmentPayload(
+                work,
+                suffix,
+                true,
+                this.courseWorkAffectedStudentCount(matchingGroups)
+            )
         },
-        courseWorkAssignmentPayload(work, suffix, isGroupWork = false) {
+        courseWorkAffectedStudentCount(groups, fallbackToCourse = false) {
+            const assignedStudentIds = new Set(
+                (Array.isArray(groups) ? groups : []).flatMap((group) => (
+                    Array.isArray(group?.student_ids)
+                        ? group.student_ids.filter(Boolean).map((studentId) => String(studentId))
+                        : []
+                ))
+            )
+            if (assignedStudentIds.size || !fallbackToCourse) return assignedStudentIds.size
+
+            return Array.isArray(this.sortedSelectedStudents) ? this.sortedSelectedStudents.length : 0
+        },
+        courseWorkAssignmentPayload(work, suffix, isGroupWork = false, affectedStudentCount = 0) {
             const type = String(work.type || 'Arbeit').trim()
             const title = String(work.title || '').trim()
             const baseLabel = title ? `${type}: ${title}` : type
             const label = suffix ? `${baseLabel} (${suffix})` : baseLabel
 
             return {
+                affectedStudentCount,
                 id: work.id,
                 isGroupWork,
                 key: `${work.id}-${suffix || 'work'}`,
                 label,
+                scope: suffix || (isGroupWork ? 'Gruppenarbeit' : 'Einzelarbeit'),
                 title: label,
                 work,
             }
@@ -1719,6 +2231,13 @@ export default {
             if (this.workSaving || !this.workDialogGroups[groupIndex]) return
 
             this.workDialogGroupDateEditingIndex = groupIndex
+            this.workDialogGroupDateMenuOpen = true
+        },
+        handleWorkDialogGroupDateMenu(isOpen) {
+            this.workDialogGroupDateMenuOpen = isOpen
+            if (!isOpen) {
+                this.workDialogGroupDateEditingIndex = null
+            }
         },
         applyWorkDialogGroupDate(groupIndex, value) {
             const date = this.normalizeDateKey(value)
@@ -1726,6 +2245,7 @@ export default {
             if (!date || !group) return
 
             group.date = date
+            this.workDialogGroupDateMenuOpen = false
             this.workDialogGroupDateEditingIndex = null
         },
         openRandomGroupsDialog() {
@@ -1809,6 +2329,7 @@ export default {
                 open: false,
             }
             this.workDialogGroupDateEditingIndex = null
+            this.workDialogGroupDateMenuOpen = false
             this.workDialogModeDraft = false
             this.workDialogModeEditing = false
             this.workDialogTab = 'work'
@@ -1821,12 +2342,14 @@ export default {
 
             this.workSaving = true
             try {
+                const gradeInputMode = this.courseWorkGradeInputModeForType(this.workDialogForm.type)
                 const payload = {
                     ...this.workDialogForm,
                     date_for_all_groups: this.normalizeDateKey(this.workDialogForm.date_for_all_groups)
                         || this.normalizeDateKey(this.workDialog.courseDate?.date)
                         || null,
                     description: String(this.workDialogForm.description || '').trim() || null,
+                    groups: this.courseWorkGroupsForGradeInputMode(this.workDialogForm.groups, gradeInputMode),
                     teaching_course_id: this.selected_course?.id || this.workDialogForm.teaching_course_id,
                     title: String(this.workDialogForm.title || '').trim() || null,
                     type: this.workDialogForm.type || null,
@@ -1837,7 +2360,8 @@ export default {
 
                 if (!response) return
 
-                await this.loadCourseWorks()
+                this.applySavedCourseWork(response)
+                await this.loadCourseTableData(this.selected_course?.id, true)
                 this.cancelDateWorkForm()
             } finally {
                 this.workSaving = false
@@ -1956,14 +2480,63 @@ export default {
 
             return String(individualGrade?.grade ?? group?.grade ?? '')
         },
+        workGroupStudentComment(group, studentId) {
+            const comments = Array.isArray(group?.comments)
+                ? group.comments
+                : group?.comments && typeof group.comments === 'object'
+                    ? Object.entries(group.comments).map(([savedStudentId, savedComment]) => ({
+                        student_id: savedStudentId,
+                        comment: savedComment && typeof savedComment === 'object' ? savedComment.comment : savedComment,
+                    }))
+                    : []
+            const individualComment = comments.find(
+                (comment) => String(comment?.student_id) === String(studentId)
+            )
+
+            return String(individualComment?.comment ?? '')
+        },
         workGroupGradeRows(group) {
             const studentIds = Array.isArray(group?.student_ids) ? group.student_ids : []
 
             return studentIds.map((studentId) => ({
+                comment: this.workGroupStudentComment(group, studentId),
                 grade: this.workGroupStudentGrade(group, studentId),
                 studentId,
                 studentName: this.workGroupStudentName(studentId),
             }))
+        },
+        ensureIndividualWorkStudentGroup(studentId) {
+            if (!Array.isArray(this.workDialogForm.groups)) {
+                this.workDialogForm.groups = []
+            }
+
+            const existingGroupIndex = this.workDialogForm.groups.findIndex((group) => (
+                Array.isArray(group?.student_ids)
+                && group.student_ids.some((groupStudentId) => String(groupStudentId) === String(studentId))
+            ))
+            if (existingGroupIndex >= 0) return existingGroupIndex
+
+            this.workDialogForm.groups.push({
+                student_ids: [studentId],
+                date: this.workDialogForm.date_for_all_groups || '',
+                comment: null,
+                grade: null,
+                grades: [{ student_id: studentId, grade: '' }],
+                comments: [{ student_id: studentId, comment: '' }],
+                points: [],
+            })
+
+            return this.workDialogForm.groups.length - 1
+        },
+        setIndividualWorkStudentGrade(studentId, value) {
+            const groupIndex = this.ensureIndividualWorkStudentGroup(studentId)
+
+            this.setWorkGroupStudentGrade(groupIndex, studentId, value)
+        },
+        setIndividualWorkStudentComment(studentId, value) {
+            const groupIndex = this.ensureIndividualWorkStudentGroup(studentId)
+
+            this.setWorkGroupStudentComment(groupIndex, studentId, value)
         },
         setWorkGroupStudentGrade(groupIndex, studentId, value) {
             const group = this.workDialogGroups[groupIndex]
@@ -1981,6 +2554,30 @@ export default {
             studentGrade.grade = String(value ?? '')
             group.grade = ''
             group.grades = grades
+            group.use_individual_grades = true
+        },
+        setWorkGroupStudentComment(groupIndex, studentId, value) {
+            const group = this.workDialogGroups[groupIndex]
+            if (!group) return
+
+            const studentIds = Array.isArray(group.student_ids) ? group.student_ids : []
+            const comments = studentIds.map((groupStudentId) => ({
+                student_id: groupStudentId,
+                comment: this.workGroupStudentComment(group, groupStudentId),
+            }))
+            const studentComment = comments.find(
+                (comment) => String(comment.student_id) === String(studentId)
+            )
+            if (!studentComment) return
+
+            studentComment.comment = String(value ?? '')
+            const grades = studentIds.map((groupStudentId) => ({
+                student_id: groupStudentId,
+                grade: this.workGroupStudentGrade(group, groupStudentId),
+            }))
+            group.grade = ''
+            group.grades = grades
+            group.comments = comments
             group.use_individual_grades = true
         },
         openWorkDialogGroupDetails(groupIndex) {
@@ -2250,13 +2847,40 @@ export default {
             return this.entriesForCell(student, courseDate)
                 .filter((entry) => entry.kind === 'assessment')
         },
+        cellEntryHoverItems(student, courseDate) {
+            const studentId = this.registeredStudentUserId(student)
+
+            return this.entriesForCell(student, courseDate).map((entry) => {
+                const work = entry?.source === 'course_work' ? this.courseWorkForCellEntry(entry) : null
+                const comment = work
+                    ? this.courseWorkStudentComment(entry, studentId)
+                    : String(entry?.description || '').trim()
+                const workDescription = String(work?.description || '').trim()
+
+                return {
+                    comment,
+                    description: workDescription && workDescription !== comment ? workDescription : '',
+                    grade: work
+                        ? this.courseWorkStudentGrade(entry, studentId)
+                        : String(entry?.effective_grade || entry?.grade || '').trim(),
+                    kind: this.cellEntryKindLabel(entry),
+                    title: String(work?.title || '').trim(),
+                    type: this.cellEntryTypeLabel(entry),
+                    uid: entry.uid,
+                }
+            })
+        },
         compactPerformanceEntriesForCell(student, courseDate) {
             const entriesByType = new Map()
+            const studentId = this.registeredStudentUserId(student)
 
             this.performanceEntriesForCell(student, courseDate).forEach((entry) => {
                 const type = String(entry?.type || '').trim()
                 const typeKey = type ? type.toLocaleLowerCase('de-AT') : entry.uid
                 const grade = String(entry?.effective_grade || entry?.grade || '').trim()
+                const comment = entry?.source === 'course_work'
+                    ? this.courseWorkStudentComment(entry, studentId)
+                    : String(entry?.description || '').trim()
 
                 if (!entriesByType.has(typeKey)) {
                     entriesByType.set(typeKey, {
@@ -2267,17 +2891,22 @@ export default {
                             grade: '',
                             uid: `assessment-group-${typeKey}`,
                         },
+                        comments: [],
                         grades: [],
                     })
                 }
 
+                if (comment && !entriesByType.get(typeKey).comments.includes(comment)) {
+                    entriesByType.get(typeKey).comments.push(comment)
+                }
                 if (grade) {
                     entriesByType.get(typeKey).grades.push(grade)
                 }
             })
 
-            return [...entriesByType.values()].map(({ entry, grades }) => ({
+            return [...entriesByType.values()].map(({ entry, comments, grades }) => ({
                 ...entry,
+                description: comments.join(' · '),
                 effective_grade: this.sortedCompactEntryGrades(grades).join(', '),
             }))
         },
@@ -2331,17 +2960,294 @@ export default {
 
             return definition?.name ? `${type} - ${definition.name}` : type
         },
+        cellEntryListComment(entry) {
+            if (entry?.source === 'course_work') {
+                return String(this.courseWorkEntryStudentComment(entry) || '').trim()
+            }
+
+            return String(entry?.description || '').trim()
+        },
         compactCellEntryLabel(entry) {
             const type = String(entry?.type || '').trim() || 'Eintrag'
             if (entry?.kind !== 'assessment') return type
 
             const grade = String(entry?.effective_grade || entry?.grade || '').trim()
 
-            return grade ? `${type}: ${grade}` : type
+            return `${type}: ${grade || 'NA'}`
+        },
+        compactCellEntryType(entry) {
+            return String(entry?.type || '').trim() || 'Eintrag'
+        },
+        compactCellEntryGrade(entry) {
+            return String(entry?.effective_grade || entry?.grade || '').trim()
+        },
+        courseWorkForCellEntry(entry) {
+            const workId = entry?.teaching_course_work_id
+            if (!workId) return null
+
+            return (this.courseWorks || []).find((work) => String(work?.id) === String(workId)) || null
+        },
+        courseWorkGroupIndexForStudent(work, studentId = this.registeredEntryStudentId) {
+            if (!work || !studentId) return -1
+
+            return (Array.isArray(work.groups) ? work.groups : []).findIndex((group) => (
+                Array.isArray(group?.student_ids)
+                && group.student_ids.some((groupStudentId) => String(groupStudentId) === String(studentId))
+            ))
+        },
+        courseWorkGroupForCellEntry(entry, studentId = this.registeredEntryStudentId) {
+            const work = this.courseWorkForCellEntry(entry)
+            const groupIndex = this.courseWorkGroupIndexForStudent(work, studentId)
+
+            return groupIndex >= 0 ? work.groups[groupIndex] : null
+        },
+        courseWorkEntryDateTitle(entry) {
+            const work = this.courseWorkForCellEntry(entry)
+            const group = this.courseWorkGroupForCellEntry(entry)
+            const date = group?.date || work?.date_for_all_groups
+
+            return date ? this.compactCourseDateTitle({ date }) : 'Ohne Datum'
+        },
+        courseWorkEntryModeTitle(entry) {
+            const work = this.courseWorkForCellEntry(entry)
+            if (!work) return 'Unbekannt'
+
+            return work.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit'
+        },
+        courseWorkEntryAssignmentTitle(entry) {
+            const work = this.courseWorkForCellEntry(entry)
+            if (!work?.is_group_work) return ''
+
+            const groupIndex = this.courseWorkGroupIndexForStudent(work)
+            const group = groupIndex >= 0 ? work.groups[groupIndex] : null
+            if (!group) return 'Keine Gruppe gefunden'
+
+            const memberCount = Array.isArray(group.student_ids) ? group.student_ids.length : 0
+            const groupName = String(group.name || '').trim() || `Gruppe ${groupIndex + 1}`
+
+            return `${groupName} · ${memberCount} ${memberCount === 1 ? 'Mitglied' : 'Mitglieder'}`
+        },
+        courseWorkEntryOtherGroupMembers(entry) {
+            const work = this.courseWorkForCellEntry(entry)
+            if (!work?.is_group_work) return []
+
+            const group = this.courseWorkGroupForCellEntry(entry)
+            const currentStudentId = String(this.registeredEntryStudentId || '')
+            const studentIds = Array.isArray(group?.student_ids) ? group.student_ids : []
+
+            return studentIds
+                .filter((studentId) => String(studentId) !== currentStudentId)
+                .map((studentId) => ({
+                    comment: this.courseWorkStudentComment(entry, studentId),
+                    grade: this.courseWorkStudentGrade(entry, studentId),
+                    id: String(studentId),
+                    name: this.workGroupStudentName(studentId),
+                }))
+        },
+        courseWorkEntryGradeItems(entry) {
+            const work = this.courseWorkForCellEntry(entry)
+
+            return this.courseWorkGradeConfigurationForType(work?.type).items
+        },
+        courseWorkEntryGradeInputMode(entry) {
+            const work = this.courseWorkForCellEntry(entry)
+
+            return this.courseWorkGradeInputModeForType(work?.type)
+        },
+        courseWorkGradeInputModeForType(type) {
+            return this.courseWorkGradeConfigurationForType(type).mode
+        },
+        courseWorkGradeConfigurationForType(type) {
+            const assignedEntryArea = this.selected_course?.teaching_entry_area || null
+            const entryDefinitions = Array.isArray(assignedEntryArea?.entry_definitions)
+                ? assignedEntryArea.entry_definitions.filter((definition) => definition?.category === 'Benotung')
+                : []
+            const usesEntryDefinitions = Boolean(this.uses_entry_areas_for_grading_schema && assignedEntryArea?.id)
+            const workDefinitions = usesEntryDefinitions
+                ? entryDefinitions
+                : Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
+            const workDefinition = workDefinitions.find((definition) => definition?.short_name === type)
+
+            if (usesEntryDefinitions) {
+                if (!workDefinition?.has_properties) {
+                    return { items: [], mode: 'none' }
+                }
+
+                if (workDefinition.properties_mode !== 'fixed') {
+                    return { items: [], mode: 'free' }
+                }
+
+                const items = (Array.isArray(workDefinition.fixed_properties) ? workDefinition.fixed_properties : [])
+                    .map((property) => String(property || '').trim())
+                    .filter(Boolean)
+                    .map((property) => ({
+                        title: property,
+                        value: property,
+                    }))
+
+                return { items, mode: 'fixed' }
+            }
+
+            const grades = Array.isArray(workDefinition?.grades) ? workDefinition.grades : []
+            const items = grades
+                .filter((grade) => grade?.grade)
+                .map((grade) => ({
+                    title: grade.name ? `${grade.grade} (${grade.name})` : grade.grade,
+                    value: grade.grade,
+                }))
+
+            return {
+                items,
+                mode: items.length ? 'fixed' : 'free',
+            }
+        },
+        courseWorkGroupsForGradeInputMode(groups, gradeInputMode) {
+            const workGroups = Array.isArray(groups) ? groups : []
+            if (gradeInputMode !== 'none') return workGroups
+
+            return workGroups.map((group) => ({
+                ...group,
+                grade: null,
+                grades: [],
+            }))
+        },
+        toggledCourseWorkGrade(currentGrade, selectedGrade) {
+            const selectedValue = String(selectedGrade ?? '')
+
+            return String(currentGrade ?? '') === selectedValue ? '' : selectedValue
+        },
+        courseWorkEntryStudentComment(entry) {
+            return this.courseWorkStudentComment(entry, this.registeredEntryStudentId)
+        },
+        courseWorkStudentComment(entry, studentId) {
+            const group = this.courseWorkGroupForCellEntry(entry, studentId)
+            if (!group) return ''
+
+            return this.workGroupStudentComment(group, studentId)
+                || String(group.comment || '')
+        },
+        courseWorkEntryStudentGrade(entry) {
+            return this.courseWorkStudentGrade(entry, this.registeredEntryStudentId)
+        },
+        courseWorkStudentGrade(entry, studentId) {
+            const group = this.courseWorkGroupForCellEntry(entry, studentId)
+
+            return group ? this.workGroupStudentGrade(group, studentId) : ''
+        },
+        resetCourseWorkEntryDrafts() {
+            this.courseWorkEntryDrafts = this.cellEntries
+                .filter((entry) => entry.source === 'course_work' && this.courseWorkForCellEntry(entry))
+                .reduce((drafts, entry) => {
+                    const comment = this.courseWorkEntryStudentComment(entry)
+                    const grade = this.courseWorkEntryStudentGrade(entry)
+
+                    drafts[entry.uid] = {
+                        comment,
+                        grade,
+                        originalComment: comment,
+                        originalGrade: grade,
+                    }
+
+                    return drafts
+                }, {})
+        },
+        courseWorkEntryDraft(entry) {
+            return this.courseWorkEntryDrafts[entry?.uid] || {
+                comment: '',
+                grade: '',
+                originalComment: '',
+                originalGrade: '',
+            }
+        },
+        updateCourseWorkEntryDraft(entry, field, value) {
+            if (!['comment', 'grade'].includes(field) || !entry?.uid) return
+
+            const currentDraft = this.courseWorkEntryDraft(entry)
+            this.courseWorkEntryDrafts = {
+                ...this.courseWorkEntryDrafts,
+                [entry.uid]: {
+                    ...currentDraft,
+                    [field]: String(value ?? ''),
+                },
+            }
+        },
+        courseWorkEntryHasChanges(entry) {
+            const draft = this.courseWorkEntryDraft(entry)
+
+            return draft.comment !== draft.originalComment || draft.grade !== draft.originalGrade
+        },
+        courseWorkWithStudentEvaluation(work, studentId, draft) {
+            if (!work?.id || !studentId) return null
+
+            const updatedWork = {
+                ...work,
+                groups: this.cloneDateWorkGroups(work?.groups),
+            }
+            let groupIndex = this.courseWorkGroupIndexForStudent(updatedWork, studentId)
+            if (groupIndex < 0 && !updatedWork.is_group_work) {
+                updatedWork.groups.push({
+                    student_ids: [studentId],
+                    date: updatedWork.date_for_all_groups || '',
+                    comment: null,
+                    grade: null,
+                    grades: [],
+                    comments: [],
+                    points: [],
+                })
+                groupIndex = updatedWork.groups.length - 1
+            }
+            if (groupIndex < 0) return null
+
+            const group = updatedWork.groups[groupIndex]
+            const studentIds = Array.isArray(group.student_ids) ? group.student_ids : []
+            const grades = studentIds.map((groupStudentId) => ({
+                student_id: groupStudentId,
+                grade: String(groupStudentId) === String(studentId)
+                    ? String(draft.grade || '')
+                    : this.workGroupStudentGrade(group, groupStudentId),
+            }))
+            const comments = studentIds.map((groupStudentId) => ({
+                student_id: groupStudentId,
+                comment: String(groupStudentId) === String(studentId)
+                    ? String(draft.comment || '')
+                    : this.workGroupStudentComment(group, groupStudentId) || String(group.comment || ''),
+            }))
+
+            group.grade = null
+            group.grades = grades
+            group.comments = comments
+            group.use_individual_grades = true
+
+            return updatedWork
+        },
+        async saveCourseWorkCellEntry(entry) {
+            if (!entry?.uid || this.courseWorkEntrySavingUid) return
+
+            const work = this.courseWorkForCellEntry(entry)
+            const draft = this.courseWorkEntryDraft(entry)
+            const gradeInputMode = this.courseWorkEntryGradeInputMode(entry)
+            const updatedWork = this.courseWorkWithStudentEvaluation(work, this.registeredEntryStudentId, {
+                ...draft,
+                grade: gradeInputMode === 'none' ? '' : draft.grade,
+            })
+            if (!updatedWork) return
+
+            this.courseWorkEntrySavingUid = entry.uid
+            try {
+                const response = await this.courseWorkStore.update(updatedWork)
+                if (!response) return
+
+                this.applySavedCourseWork(response)
+                await this.loadCourseTableData(this.selected_course?.id, true)
+                this.resetCourseWorkEntryDrafts()
+            } finally {
+                this.courseWorkEntrySavingUid = null
+            }
         },
         startNewCellEntry() {
             if (!this.canCreateCellEntry) return
 
+            this.selectedCellEntryUid = null
             this.entryForm = {
                 description: '',
                 doneDate: null,
@@ -2357,6 +3263,7 @@ export default {
         startEditingCellEntry(entry) {
             if (!this.canModifyCellEntry(entry)) return
 
+            this.selectedCellEntryUid = entry.uid
             this.entryForm = {
                 description: String(entry.description || ''),
                 doneDate: entry.done_date || null,
@@ -2384,6 +3291,34 @@ export default {
         },
         canModifyCellEntry(entry) {
             return Boolean(entry?.id && entry?.source !== 'course_work')
+        },
+        isCellEntryExpanded(entry) {
+            return this.selectedCellEntryUid === entry?.uid
+        },
+        selectCellEntry(entry) {
+            if (!entry?.uid) return
+
+            this.cancelNewCellEntry()
+            this.selectedCellEntryUid = entry.uid
+
+            if (this.canModifyCellEntry(entry)) {
+                this.startEditingCellEntry(entry)
+            }
+        },
+        toggleCellEntry(entry) {
+            if (!entry?.uid) return
+
+            if (this.selectedCellEntryUid === entry.uid) {
+                if (this.entryForm.uid === entry.uid) {
+                    this.cancelNewCellEntry()
+                }
+
+                this.selectedCellEntryUid = null
+
+                return
+            }
+
+            this.selectCellEntry(entry)
         },
         selectCellEntryType(type) {
             this.entryForm.type = this.entryForm.type === type ? '' : type
@@ -2461,6 +3396,9 @@ export default {
                 const store = entry.kind === 'assessment' ? this.entryStore : this.behaviourEntryStore
                 const deleted = await store.destroy(entry.id)
                 if (deleted) {
+                    if (this.selectedCellEntryUid === entry.uid) {
+                        this.selectedCellEntryUid = null
+                    }
                     if (this.entryForm.uid === entry.uid) {
                         this.cancelNewCellEntry()
                     }
@@ -2725,6 +3663,39 @@ export default {
         studentClassValue(student) {
             return (student?.schoolclass || student?.class || '').toString()
         },
+        studentComment(student) {
+            const comment = String(student?.comment || '').trim()
+            if (!comment) return ''
+
+            const spacedComment = comment
+                .replace(/<br\s*\/?>/gi, ' ')
+                .replace(/<\/(?:p|div|li|h[1-6])>/gi, ' ')
+            if (typeof DOMParser !== 'undefined') {
+                const document = new DOMParser().parseFromString(spacedComment, 'text/html')
+
+                return (document.body?.textContent || '').replace(/\s+/g, ' ').trim()
+            }
+
+            return spacedComment.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+        },
+        studentTooltipDetails(student) {
+            const details = [
+                ['Klasse', this.studentClassValue(student)],
+                ['Geschlecht', this.studentSexTitle(student)],
+                ['E-Mail', student?.email_is_placeholder ? '' : String(student?.email || '').trim()],
+                ['Telefon', String(student?.phone || '').trim()],
+                ['1. Semester', String(student?.sem_1_grade || '').trim()],
+                ['2. Semester', String(student?.sem_2_grade || '').trim()],
+                ['Jahresnote', String(student?.sem_grade || '').trim()],
+                ['Verhalten 1. Semester', String(student?.behaviour_1_grade || '').trim()],
+                ['Verhalten 2. Semester', String(student?.behaviour_2_grade || '').trim()],
+                ['Verhalten gesamt', String(student?.behaviour_grade || '').trim()],
+            ]
+
+            return details
+                .filter(([, value]) => value)
+                .map(([label, value]) => ({ label, value }))
+        },
         normalizedStudentSex(student) {
             return String(student?.sex || '').trim().toLowerCase()
         },
@@ -2977,6 +3948,58 @@ export default {
     box-shadow: inset 0 0 0 3px #1d4ed8;
 }
 
+:deep(.course-table-work-tooltip) {
+    line-height: 1.35;
+    padding: 12px 14px;
+}
+
+:deep(.course-table-work-tooltip-item) {
+    padding: 4px 0;
+}
+
+:deep(.course-table-work-tooltip-item + .course-table-work-tooltip-item) {
+    border-top: 1px solid rgba(255, 255, 255, 0.24);
+    margin-top: 6px;
+    padding-top: 10px;
+}
+
+.course-table-group-member-chip {
+    cursor: help;
+}
+
+:deep(.course-table-group-member-tooltip) {
+    line-height: 1.35;
+    padding: 12px 14px;
+}
+
+.course-table-group-member-tooltip-name {
+    font-size: 0.9rem;
+    font-weight: 800;
+    margin-bottom: 8px;
+}
+
+.course-table-group-member-tooltip-grade {
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+}
+
+.course-table-group-member-tooltip-grade > span,
+.course-table-group-member-tooltip-comment > span {
+    color: #d1d5db;
+}
+
+.course-table-group-member-tooltip-comment {
+    border-top: 1px solid rgba(255, 255, 255, 0.24);
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+.course-table-group-member-tooltip-comment > div {
+    margin-top: 3px;
+    white-space: pre-wrap;
+}
+
 .course-table-work-list {
     align-items: center;
     display: flex;
@@ -3026,6 +4049,13 @@ export default {
     line-height: 1;
     margin-bottom: 4px;
     text-transform: uppercase;
+}
+
+.course-table-work-summary-count {
+    align-items: center;
+    display: inline-flex;
+    gap: 2px;
+    margin-left: auto;
 }
 
 .course-table-work-summary-title {
@@ -3110,7 +4140,7 @@ export default {
     align-items: center;
     display: grid;
     gap: 12px;
-    grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 2fr) minmax(100px, 130px);
 }
 
 @media (max-width: 600px) {
@@ -3178,6 +4208,60 @@ export default {
 .course-table-student-class {
     color: #334155;
     font-weight: 650;
+}
+
+.course-table-student-comment {
+    align-items: flex-start;
+    color: #64748b;
+    display: flex;
+    font-size: 0.7rem;
+    font-weight: 450;
+    gap: 4px;
+    line-height: 1.2;
+    margin-top: 5px;
+    min-width: 0;
+}
+
+.course-table-student-comment-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+:deep(.course-table-student-tooltip) {
+    line-height: 1.35;
+    padding: 12px 14px;
+}
+
+.course-table-student-tooltip-name {
+    font-size: 0.95rem;
+    font-weight: 800;
+    margin-bottom: 8px;
+}
+
+.course-table-student-tooltip-detail {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(110px, auto) minmax(0, 1fr);
+    padding: 2px 0;
+}
+
+.course-table-student-tooltip-detail > span,
+.course-table-student-tooltip-comment > span {
+    color: #d1d5db;
+}
+
+.course-table-student-tooltip-comment {
+    border-top: 1px solid rgba(255, 255, 255, 0.24);
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+.course-table-student-tooltip-comment > div {
+    margin-top: 3px;
+    white-space: normal;
 }
 
 .course-table-entry-cell {
@@ -3248,6 +4332,85 @@ export default {
     max-width: 82px;
 }
 
+.course-table-entry-cell-grade--missing {
+    color: rgb(var(--v-theme-error));
+    font-weight: 400;
+}
+
+.course-table-entry-cell-performance {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-width: 92px;
+}
+
+.course-table-entry-cell-comment {
+    color: #475569;
+    display: -webkit-box;
+    font-size: 0.66rem;
+    font-weight: 500;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-height: 1.15;
+    max-width: 92px;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    text-align: center;
+}
+
+:deep(.course-table-entry-tooltip) {
+    line-height: 1.35;
+    padding: 12px 14px;
+}
+
+.course-table-entry-tooltip-header {
+    align-items: center;
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.course-table-entry-tooltip-header > span,
+.course-table-entry-tooltip-meta > span:first-child,
+.course-table-entry-tooltip-text > span {
+    color: #d1d5db;
+}
+
+.course-table-entry-tooltip-item {
+    padding: 5px 0;
+}
+
+.course-table-entry-tooltip-item + .course-table-entry-tooltip-item {
+    border-top: 1px solid rgba(255, 255, 255, 0.24);
+    margin-top: 6px;
+    padding-top: 10px;
+}
+
+.course-table-entry-tooltip-meta {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.course-table-entry-tooltip-meta > span:last-child {
+    border: 1px solid rgba(255, 255, 255, 0.48);
+    border-radius: 999px;
+    padding: 1px 7px;
+}
+
+.course-table-entry-tooltip-title {
+    font-weight: 700;
+    margin-top: 4px;
+}
+
+.course-table-entry-tooltip-text {
+    margin-top: 4px;
+    white-space: pre-wrap;
+}
+
 .course-table-cell-entry-list {
     display: flex;
     flex-direction: column;
@@ -3259,6 +4422,59 @@ export default {
     border: 1px solid rgba(148, 163, 184, 0.28);
     border-radius: 8px;
     padding: 10px 12px;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.course-table-cell-entry--selectable .course-table-cell-entry-summary {
+    cursor: pointer;
+}
+
+.course-table-cell-entry--selectable:hover,
+.course-table-cell-entry--selected {
+    border-color: rgba(var(--v-theme-primary), 0.55);
+    box-shadow: 0 3px 12px rgba(var(--v-theme-primary), 0.1);
+}
+
+.course-table-cell-entry-summary:focus-visible {
+    border-radius: 6px;
+    outline: 2px solid rgb(var(--v-theme-primary));
+    outline-offset: 3px;
+}
+
+.course-table-cell-entry-list-comment {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.course-table-cell-work-entry {
+    background: #ffffff;
+    border: 1px solid rgba(var(--v-theme-primary), 0.2);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.course-table-cell-work-info-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.course-table-cell-work-description {
+    white-space: pre-wrap;
+}
+
+.course-table-cell-work-entry-fields {
+    align-items: start;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 200px);
+}
+
+@media (max-width: 600px) {
+    .course-table-cell-work-info-grid,
+    .course-table-cell-work-entry-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 .course-table-cell-entry-form {

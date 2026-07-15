@@ -144,7 +144,6 @@ import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolStore } from '@/stores/admin/SchoolStore'
-import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
@@ -168,13 +167,8 @@ export default {
         this.schoolStore = useSchoolStore()
         this.courseStore = this.ensureCourseStore()
         this.schoolHourStore = useSchoolHourStore()
-        const teachingStore = useTeachingStore()
 
-        const requests = [this.schoolStore.loadHopperAccounts()]
-
-        if (!teachingStore.settings) {
-            requests.push(teachingStore.loadSettings())
-        }
+        const requests = []
         if (!this.courseStore.courses.length) {
             requests.push(this.courseStore.index())
         }

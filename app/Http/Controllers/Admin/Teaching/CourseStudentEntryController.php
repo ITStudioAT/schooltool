@@ -4,16 +4,19 @@ namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\TeachingCourseStudentEntryService;
+use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class CourseStudentEntryController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, TeachingCourseWorkEntrySyncService $entrySyncService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -22,6 +25,7 @@ class CourseStudentEntryController extends Controller
         $validated = $request->validate([
             'course_id' => 'required|integer|exists:teaching_courses,id',
             'user_id' => 'nullable|integer|exists:users,id',
+            'include_table_data' => 'nullable|boolean',
         ]);
 
         $course = TeachingCourse::findOrFail($validated['course_id']);
@@ -47,7 +51,24 @@ class CourseStudentEntryController extends Controller
             $this->attachEffectiveGrade($entry, $defaultsByType);
         });
 
-        return response()->json(['data' => $entries]);
+        $response = ['data' => $entries];
+        if (! ($validated['include_table_data'] ?? false)) {
+            return response()->json($response);
+        }
+
+        $response['behaviour_entries'] = TeachingCourseBehaviourEntry::query()
+            ->where('teaching_course_id', $course->id)
+            ->orderBy('date', 'desc')
+            ->orderBy('id', 'desc')
+            ->get();
+        $response['course_works'] = $course->teachingCourseWorks()
+            ->with('teachingCourseWorkGroupStudents')
+            ->orderBy('date_for_all_groups', 'desc')
+            ->get()
+            ->map(fn (TeachingCourseWork $work): array => $entrySyncService->serializeWork($work))
+            ->values();
+
+        return response()->json($response);
     }
 
     public function store(Request $request, TeachingCourseStudentEntryService $entryService)

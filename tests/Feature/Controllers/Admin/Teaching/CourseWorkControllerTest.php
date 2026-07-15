@@ -457,6 +457,59 @@ describe('show update destroy', function () {
         ]);
     });
 
+    test('update persists an individual students grade and comment', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->course->teachingCourseStudents()->create(['user_id' => $this->student->id]);
+
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'type' => 'MA',
+            'title' => 'Individual work',
+            'is_group_work' => false,
+            'date_for_all_groups' => '2026-09-21',
+            'groups' => [],
+        ]);
+
+        $this->putJson('/api/admin/teaching/course_works/'.$work->id, [
+            'type' => 'MA',
+            'title' => 'Individual work',
+            'is_group_work' => false,
+            'date_for_all_groups' => '2026-09-21',
+            'groups' => [[
+                'student_ids' => [$this->student->id],
+                'date' => '2026-09-21',
+                'comment' => null,
+                'grade' => null,
+                'grades' => [[
+                    'student_id' => $this->student->id,
+                    'grade' => '1',
+                ]],
+                'comments' => [[
+                    'student_id' => $this->student->id,
+                    'comment' => 'Sehr sauber gearbeitet',
+                ]],
+                'points' => [],
+            ]],
+        ])->assertOk()
+            ->assertJsonPath('data.groups.0.student_ids.0', $this->student->id)
+            ->assertJsonPath('data.groups.0.grades.0.grade', '1')
+            ->assertJsonPath('data.groups.0.comments.0.comment', 'Sehr sauber gearbeitet');
+
+        $this->assertDatabaseHas('teaching_course_work_group_students', [
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $this->student->id,
+            'student_grade' => '1',
+            'student_comment' => 'Sehr sauber gearbeitet',
+        ]);
+        $this->assertDatabaseHas('teaching_course_student_entries', [
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $this->student->id,
+            'grade' => '1',
+            'description' => 'Sehr sauber gearbeitet',
+            'source' => 'course_work',
+        ]);
+    });
+
     test('destroy deletes work and derived entries', function () {
         $this->actingAs($this->admin, 'sanctum');
 

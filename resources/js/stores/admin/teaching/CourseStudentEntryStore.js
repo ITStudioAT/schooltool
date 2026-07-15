@@ -138,6 +138,30 @@ export const useCourseStudentEntryStore = defineStore('AdminCourseStudentEntrySt
             }
         },
 
+        async indexTableData(courseId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.get('/api/admin/teaching/course_student_entries', {
+                    params: { course_id: courseId, include_table_data: 1 },
+                })
+
+                return response.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         clear() {
             this.entries = []
         },

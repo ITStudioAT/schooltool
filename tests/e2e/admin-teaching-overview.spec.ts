@@ -103,3 +103,54 @@ test('admin teaching page supports overview navigation without js runtime errors
 
     expect(runtimeErrors, runtimeErrors.join('\n')).toEqual([])
 })
+
+test('shows generated random group cards without clipping them', async ({ page }) => {
+    await loginAsAdmin(page)
+
+    await page.goto('/admin/teaching')
+    await hideObstructiveUi(page)
+
+    const firstCourseChip = page.locator('.v-chip-group .v-chip').first()
+    await expect(firstCourseChip).toBeVisible()
+    await waitForNoBlockingOverlay(page)
+    await firstCourseChip.click()
+
+    await expect(page.getByTestId('teaching-overview-panel-table')).toBeVisible()
+    await page.getByTestId('teaching-overview-panel-table').click()
+    await expect(page.getByTestId('course-table')).toBeVisible()
+
+    await page.getByRole('tab', { name: 'Einträge' }).click()
+    const availableWorkCell = page.locator('.course-table-work-cell:not(.course-table-work-cell--free)')
+    await expect(availableWorkCell).toHaveCount(1)
+    await availableWorkCell.click()
+
+    await page.getByTestId('course-table-date-create-work').click()
+    await page.getByRole('button', { name: 'TW - Testarbeit', exact: true }).click()
+    await page.getByTestId('course-table-date-create-work-mode')
+        .getByRole('button', { name: 'Gruppenarbeit', exact: true })
+        .click()
+    await page.getByRole('tab', { name: 'Gruppen', exact: true }).click()
+    await page.getByTestId('course-table-date-random-groups').click()
+    await page.getByRole('button', { name: 'Erstellen', exact: true }).click()
+
+    const groupsPanel = page.getByTestId('course-table-work-groups-panel')
+    const groupCard = page.getByTestId('course-table-work-group-card-0')
+    await expect(groupsPanel).toBeVisible()
+    await expect(groupCard).toBeVisible()
+    await expect(groupCard).toContainText('Gruppe 1')
+    await expect(groupCard).toContainText('2 Mitglieder')
+    await expect(groupCard).toContainText('Student')
+    await expect(groupCard).toContainText('Peer')
+
+    const isGroupCardPainted = await groupCard.evaluate((card) => {
+        const cardRectangle = card.getBoundingClientRect()
+        const paintedElement = document.elementFromPoint(
+            cardRectangle.left + Math.min(12, cardRectangle.width / 2),
+            cardRectangle.top + Math.min(12, cardRectangle.height / 2),
+        )
+
+        return paintedElement === card || card.contains(paintedElement)
+    })
+
+    expect(isGroupCardPainted).toBe(true)
+})

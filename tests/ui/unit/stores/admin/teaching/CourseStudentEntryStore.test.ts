@@ -67,4 +67,23 @@ describe('CourseStudentEntryStore', () => {
         expect(store.entries).toEqual([{ id: 1 }])
         expect(store.courseEntries).toEqual([{ id: 3 }])
     })
+
+    it('loads all entries table data in one request', async () => {
+        const tableData = {
+            data: [{ id: 1, type: 'MA' }],
+            behaviour_entries: [{ id: 2, type: 'OK' }],
+            course_works: [{ id: 3, type: 'SA' }],
+        }
+        axiosMock.get.mockResolvedValue({ data: tableData })
+
+        const store = useCourseStudentEntryStore()
+        const result = await store.indexTableData(16)
+
+        expect(result).toEqual(tableData)
+        expect(axiosMock.get).toHaveBeenCalledWith(
+            '/api/admin/teaching/course_student_entries',
+            { params: { course_id: 16, include_table_data: 1 } },
+        )
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
 })
