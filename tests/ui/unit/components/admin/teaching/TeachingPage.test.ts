@@ -377,15 +377,17 @@ describe('Teaching page navigation', () => {
         expect(source).toContain("const DataBackup = defineAsyncComponent(() => import('./backup/DataBackup.vue'))")
     })
 
-    it('renders hopper schools inside the teaching header', async () => {
+    it('uses the reusable compact header without hopper schools or an overview card', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/Teaching.vue', 'utf8')
         )
 
-        expect(source).toContain('<template #chips>')
-        expect(source).toContain('Hopper-Schulen')
-        expect(source).toContain('v-for="account in hopper_accounts"')
-        expect(source).toContain('@click="switchTeachingHopperAccount(account)"')
+        expect(source).toContain('<AdminCompactSectionHero')
+        expect(source).toContain(':status-items="headerStatusItems"')
+        expect(source).toContain(':progress-label="schoolyearProgressLabel"')
+        expect(source).not.toContain('<AdminSectionHero')
+        expect(source).not.toContain('Hopper-Schulen')
+        expect(source).not.toContain('<template #chips>')
     })
 
     it('switches to a teaching hopper account and redirects to teaching', async () => {

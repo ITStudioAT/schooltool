@@ -1,35 +1,16 @@
 <template>
     <v-container fluid class="teaching-page ma-0 w-100 pa-2">
-        <AdminSectionHero
+        <AdminCompactSectionHero
             class="mb-3"
             eyebrow="Unterricht"
             title="Lehrbereich und Kurssteuerung"
-            :active-section="activeSection"
             :chips="headerChips"
+            :status-items="headerStatusItems"
+            :progress="schoolyearStats?.progress"
+            :progress-label="schoolyearProgressLabel"
             :show-current-user-chip="true"
-            :focus-label="nowLabel"
             secondary-color="#1d4ed8"
-            right-orb-color="#a5b4fc">
-            <template #chips>
-                <div v-if="hopper_accounts.length > 0" class="teaching-hero-hopper">
-                    <span class="teaching-hero-hopper__label">Hopper-Schulen</span>
-                    <v-btn
-                        v-for="account in hopper_accounts"
-                        :key="`teaching-hopper-account-${account.id}`"
-                        size="small"
-                        rounded="xl"
-                        variant="tonal"
-                        color="white"
-                        prepend-icon="mdi-account-switch-outline"
-                        class="teaching-hero-hopper__button"
-                        :disabled="isNavigationLocked || hopper_switching_id === Number(account.id)"
-                        :loading="hopper_switching_id === Number(account.id)"
-                        @click="switchTeachingHopperAccount(account)">
-                        {{ hopperAccountLabel(account) }}
-                    </v-btn>
-                </div>
-            </template>
-        </AdminSectionHero>
+            right-orb-color="#a5b4fc" />
 
         <v-sheet v-if="!selected_course" rounded="xl" class="teaching-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
             <div class="teaching-nav__buttons">
@@ -168,7 +149,7 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { parseLocalDate } from '@/helpers/date'
-import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
+import AdminCompactSectionHero from '@/pages/admin/components/AdminCompactSectionHero.vue'
 
 const Overview = defineAsyncComponent(() => import('./overview/Overview.vue'))
 const Settings = defineAsyncComponent(() => import('./settings/Settings.vue'))
@@ -180,7 +161,7 @@ const TestEnvironment = defineAsyncComponent(() => import('./testEnvironment/Tes
 const Curricula = defineAsyncComponent(() => import('./curricula/Curricula.vue'))
 
 export default {
-    components: { AdminSectionHero, Overview, Settings, Admin, Search, Schoolyear, DataBackup, TestEnvironment, Curricula },
+    components: { AdminCompactSectionHero, Overview, Settings, Admin, Search, Schoolyear, DataBackup, TestEnvironment, Curricula },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -388,11 +369,17 @@ export default {
                 chips.push({ key: 'courses', text: `${this.myCourses.length} Kurse`, icon: 'mdi-book-open-variant' })
                 chips.push({ key: 'students', text: `${this.myStudentCount} Schüler:innen`, icon: 'mdi-account-group' })
             }
-            if (this.schoolyearStats) {
-                chips.push({ key: 'sy-elapsed', text: `${this.schoolyearStats.elapsed} Tage vergangen`, icon: 'mdi-calendar-check-outline' })
-                chips.push({ key: 'sy-remaining', text: `${this.schoolyearStats.remaining} Tage verbleibend`, icon: 'mdi-calendar-end' })
-            }
             return chips
+        },
+        headerStatusItems() {
+            return [
+                { key: 'current-date-time', text: this.nowLabel, icon: 'mdi-clock-outline' },
+            ]
+        },
+        schoolyearProgressLabel() {
+            return this.schoolyearStats !== null
+                ? `Schuljahr: ${this.schoolyearStats.progress}% abgeschlossen`
+                : 'Schuljahrfortschritt nicht verfügbar'
         },
         activeSection() {
             const progressNote = this.schoolyearStats !== null
@@ -736,33 +723,6 @@ export default {
     display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.teaching-hero-hopper {
-    display: flex;
-    flex-basis: 100%;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    margin-top: 2px;
-}
-
-.teaching-hero-hopper__label {
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    opacity: 0.82;
-}
-
-.teaching-hero-hopper__button {
-    height: 28px !important;
-    text-transform: none;
-    letter-spacing: 0;
-    font-weight: 700;
-    border: 1px solid rgba(255, 255, 255, 0.28) !important;
-    background: rgba(255, 255, 255, 0.16) !important;
-    color: #ffffff !important;
 }
 
 .teaching-nav__buttons {

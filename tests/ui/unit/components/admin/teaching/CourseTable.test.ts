@@ -1739,7 +1739,7 @@ describe('CourseTable', () => {
         expect(source).toContain('@keydown.enter.prevent="openWorkDialog(courseDate)"')
         expect(source).toContain('<v-dialog v-model="workDialog.open" persistent max-width="720">')
         expect(source).toContain('data-testid="course-table-date-create-work"')
-        expect(source).toContain('course-table-date-edit-work-${assignment.id}')
+        expect(source).not.toContain('course-table-date-edit-work-${assignment.id}')
         expect(source).toContain('course-table-date-delete-work-${assignment.id}')
         expect(source).toContain('class="course-table-date-work-item cursor-pointer"')
         expect(source).toContain('@click="startEditingDateWork(assignment.work)"')
@@ -1937,6 +1937,16 @@ describe('CourseTable', () => {
         expect(source).not.toContain('width: 230px;')
         expect(source).not.toContain('width: 190px;')
         expect(source).not.toContain('course-table-section-title')
+    })
+
+    it('opens work editing through the work card without a separate pencil action', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseTable.vue', 'utf8')
+        )
+
+        expect(source).toContain('@click="startEditingDateWork(assignment.work)"')
+        expect(source).not.toContain('course-table-date-edit-work-${assignment.id}')
+        expect(source).toContain('course-table-date-delete-work-${assignment.id}')
     })
 
     it('counts one fixed student column plus one column per course date', () => {

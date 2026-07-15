@@ -322,14 +322,6 @@
                                 </div>
                                 <div class="d-flex ga-1">
                                     <v-btn
-                                        :data-testid="`course-table-date-edit-work-${assignment.id}`"
-                                        density="compact"
-                                        icon="mdi-pencil"
-                                        size="x-small"
-                                        title="Arbeit bearbeiten"
-                                        variant="text"
-                                        @click.stop="startEditingDateWork(assignment.work)" />
-                                    <v-btn
                                         :data-testid="`course-table-date-delete-work-${assignment.id}`"
                                         color="error"
                                         density="compact"
