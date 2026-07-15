@@ -482,13 +482,16 @@ export default {
             if (!token) return
             this.newCourse()
         },
-        async 'courseStore.pending_edit_course_id'(id) {
-            if (!id) return
-            const course = this.courses.find((c) => c.id === id) || null
-            this.courseStore.pending_edit_course_id = null
-            if (course) {
-                await this.editCourse(course)
-            }
+        'courseStore.pending_edit_course_id': {
+            immediate: true,
+            async handler(id) {
+                if (!id) return
+                const course = this.courses.find((c) => c.id === id) || null
+                this.courseStore.pending_edit_course_id = null
+                if (course) {
+                    await this.editCourse(course)
+                }
+            },
         },
         'data.classes': {
             handler(newClasses) {

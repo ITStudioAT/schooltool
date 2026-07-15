@@ -12,6 +12,8 @@ class TeachingEntryDefinition extends Model
     /** @use HasFactory<TeachingEntryDefinitionFactory> */
     use HasFactory;
 
+    public const TableMarkingColors = ['blue', 'green', 'orange', 'purple', 'red'];
+
     protected $fillable = [
         'school_id',
         'schoolyear_id',
@@ -25,12 +27,15 @@ class TeachingEntryDefinition extends Model
         'fixed_properties',
         'has_notifications',
         'notification_recipients',
+        'has_table_marking',
+        'table_marking_color',
     ];
 
     protected $attributes = [
         'has_properties' => false,
         'properties_mode' => 'free',
         'has_notifications' => false,
+        'has_table_marking' => false,
     ];
 
     protected $casts = [
@@ -38,6 +43,7 @@ class TeachingEntryDefinition extends Model
         'fixed_properties' => 'array',
         'has_notifications' => 'boolean',
         'notification_recipients' => 'array',
+        'has_table_marking' => 'boolean',
     ];
 
     public function school(): BelongsTo

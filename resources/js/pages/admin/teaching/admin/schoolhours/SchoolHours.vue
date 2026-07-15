@@ -137,8 +137,30 @@
                     </div>
                 </v-list-item>
 
-                <v-list-item v-if="!school_hours?.length">
-                    <v-list-item-title class="text-caption text-medium-emphasis text-start">Keine Schulstunden erfasst.</v-list-item-title>
+                <v-list-item v-if="!school_hours_loaded" class="px-0">
+                    <div class="w-100 py-3">
+                        <v-progress-linear indeterminate color="primary" rounded />
+                        <div class="text-caption text-medium-emphasis mt-2">Schulstunden werden geladen.</div>
+                    </div>
+                </v-list-item>
+
+                <v-list-item v-else-if="!school_hours?.length" class="px-0">
+                    <v-alert type="warning" variant="tonal" rounded="lg" class="w-100">
+                        <div class="font-weight-bold">Keine Schulstunden erfasst.</div>
+                        <div class="text-body-2 mt-1">
+                            {{ previousYearImportDescription }}
+                        </div>
+                        <v-btn
+                            class="mt-3"
+                            color="primary"
+                            variant="flat"
+                            prepend-icon="mdi-calendar-import"
+                            :loading="school_hours_save_action === 'import'"
+                            :disabled="!previous_year_import || isSavingSchoolHours"
+                            @click="importPreviousYearSchoolHours">
+                            Aus dem Vorjahr übernehmen
+                        </v-btn>
+                    </v-alert>
                 </v-list-item>
             </v-list>
 
@@ -174,7 +196,7 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.schoolHourStore = useSchoolHourStore()
-        await this.schoolHourStore.index()
+        await this.loadSchoolHoursIfNeeded()
     },
 
     data() {
@@ -197,7 +219,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
-        ...mapWritableState(useSchoolHourStore, ['school_hours']),
+        ...mapWritableState(useSchoolHourStore, ['school_hours', 'school_hours_loaded', 'previous_year_import']),
         isSavingSchoolHours() {
             return this.school_hours_save_action !== null
         },
@@ -207,9 +229,26 @@ export default {
         isCreateFormValid() {
             return this.create_entries.every((entry) => this.isCreateEntryValid(entry))
         },
+        previousYearImportDescription() {
+            if (!this.previous_year_import) {
+                return 'Im vorherigen Schuljahr wurden keine Schulstunden gefunden.'
+            }
+
+            const count = Number(this.previous_year_import.count || 0)
+            const schoolyear = this.previous_year_import.schoolyear?.label || 'dem vorherigen Schuljahr'
+
+            return `${count} ${count === 1 ? 'Schulstunde' : 'Schulstunden'} aus ${schoolyear} können übernommen werden.`
+        },
     },
 
     methods: {
+        async loadSchoolHoursIfNeeded() {
+            if (this.school_hours_loaded) {
+                return true
+            }
+
+            return this.schoolHourStore.index()
+        },
         async runSchoolHourMutation(action, callback) {
             if (this.school_hours_save_action) {
                 return false
@@ -309,6 +348,21 @@ export default {
                 }
 
                 await this.schoolHourStore.index()
+                this.show_create_form = false
+                this.resetCreateForm()
+            })
+        },
+        async importPreviousYearSchoolHours() {
+            if (!this.previous_year_import) {
+                return
+            }
+
+            await this.runSchoolHourMutation('import', async () => {
+                const imported = await this.schoolHourStore.importPreviousYear()
+                if (!imported) {
+                    return
+                }
+
                 this.show_create_form = false
                 this.resetCreateForm()
             })

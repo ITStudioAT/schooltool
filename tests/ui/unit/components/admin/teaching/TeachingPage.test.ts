@@ -174,8 +174,109 @@ describe('Teaching page navigation', () => {
 
         expect(chips).toEqual([
             { key: 'school', text: 'Christian-Doppler-Gymnasium Salzburg', icon: 'mdi-domain' },
-            { key: 'schoolyear', text: '2025/26', icon: 'mdi-calendar-month-outline' },
         ])
+    })
+
+    it('builds the teaching header title with the active schoolyear', () => {
+        const schoolyearContext = {
+            config: {
+                selected_schoolyear: {
+                    name: 'Schuljahr 2026/27',
+                    from: '2026-09-14',
+                    until: '2027-07-09',
+                },
+            },
+        }
+        const selectedSchoolyearShortLabel = (Teaching as any).computed.selectedSchoolyearShortLabel.call(schoolyearContext)
+        const titleContext = { selectedSchoolyearShortLabel }
+
+        expect(selectedSchoolyearShortLabel).toBe('26/27')
+        expect((Teaching as any).computed.teachingHeaderTitle.call(titleContext)).toBe('Lehrerbereich 26/27')
+    })
+
+    it('uses the plain teaching header title without a selected schoolyear', () => {
+        const selectedSchoolyearShortLabel = (Teaching as any).computed.selectedSchoolyearShortLabel.call({ config: {} })
+        const titleContext = { selectedSchoolyearShortLabel }
+
+        expect(selectedSchoolyearShortLabel).toBe('')
+        expect((Teaching as any).computed.teachingHeaderTitle.call(titleContext)).toBe('Lehrerbereich')
+    })
+
+    it('positions the semester marker within the active schoolyear', () => {
+        const context = {
+            config: {
+                selected_schoolyear: {
+                    from: '2026-09-01',
+                    until: '2027-07-01',
+                    sem_2_start: '2027-02-01',
+                },
+            },
+        }
+
+        const progress = (Teaching as any).computed.schoolyearSemesterStartProgress.call(context)
+
+        expect(progress).toBeCloseTo(50.5, 2)
+    })
+
+    it('hides the semester marker when its date is missing or outside the schoolyear', () => {
+        const missingDateContext = {
+            config: {
+                selected_schoolyear: {
+                    from: '2026-09-01',
+                    until: '2027-07-01',
+                },
+            },
+        }
+        const outsideSchoolyearContext = {
+            config: {
+                selected_schoolyear: {
+                    from: '2026-09-01',
+                    until: '2027-07-01',
+                    sem_2_start: '2027-08-01',
+                },
+            },
+        }
+
+        expect((Teaching as any).computed.schoolyearSemesterStartProgress.call(missingDateContext)).toBeNull()
+        expect((Teaching as any).computed.schoolyearSemesterStartProgress.call(outsideSchoolyearContext)).toBeNull()
+    })
+
+    it('shows progress for the current first semester', () => {
+        const context = {
+            config: {
+                selected_schoolyear: {
+                    from: '2026-09-01',
+                    until: '2027-07-01',
+                    sem_2_start: '2027-02-01',
+                },
+            },
+            nowTs: new Date(2026, 10, 15).getTime(),
+        }
+
+        const currentSemesterStats = (Teaching as any).computed.currentSemesterStats.call(context)
+        const label = (Teaching as any).computed.currentSemesterProgressLabel.call({ currentSemesterStats })
+
+        expect(currentSemesterStats).toEqual({ semester: 1, progress: 50 })
+        expect(label).toBe('1. Semester: 50% abgeschlossen')
+    })
+
+    it('shows progress for the current second semester', () => {
+        const context = {
+            config: {
+                selected_schoolyear: {
+                    from: '2026-09-01',
+                    until: '2027-07-01',
+                    sem_2_start: '2027-02-01',
+                },
+            },
+            nowTs: new Date(2027, 2, 15).getTime(),
+        }
+
+        const currentSemesterStats = (Teaching as any).computed.currentSemesterStats.call(context)
+        const label = (Teaching as any).computed.currentSemesterProgressLabel.call({ currentSemesterStats })
+
+        expect(currentSemesterStats).toEqual({ semester: 2, progress: 28 })
+        expect(label).toBe('2. Semester: 28% abgeschlossen')
     })
 
     it('opens settings through handleNavigation', () => {
@@ -430,7 +531,23 @@ describe('Teaching page navigation', () => {
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/teaching', query: { course: '9' } })
     })
 
-    it('keeps the print overview panel as the rightmost item', async () => {
+    it('mounts the course editor when editing the selected course', () => {
+        const navigateTo = vi.fn()
+        const ctx = {
+            selected_course: { id: 16, title: '2B - DGB' },
+            pending_edit_course_id: null,
+            action: '',
+            navigateTo,
+        }
+
+        ;(Teaching as any).methods.handleEditCourse.call(ctx)
+
+        expect(navigateTo).toHaveBeenCalledWith('overview')
+        expect(ctx.pending_edit_course_id).toBe(16)
+        expect(ctx.action).toBe('teaching_course_new_or_edit')
+    })
+
+    it('keeps Termine directly after Tabelle and print last in the overview panel menu', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/overview/Overview.vue', 'utf8')
         )
@@ -444,11 +561,11 @@ describe('Teaching page navigation', () => {
         expect(source).toContain("panels.push({ id: 'attendance', label: 'Anwesenheit', icon: 'mdi-table' })")
         expect(source).toContain("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })")
         expect(source).toContain("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })")
-        expect(source.indexOf("panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })"))
+        expect(source.indexOf("panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })"))
         expect(source.indexOf("panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })"))
-            .toBeLessThan(source.indexOf("panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })"))
-        expect(source.indexOf("panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })"))
+            .toBeLessThan(source.indexOf("panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })"))
+        expect(source.indexOf("panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })"))
         expect(source.indexOf("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })"))
@@ -459,7 +576,7 @@ describe('Teaching page navigation', () => {
         expect(source.indexOf("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })"))
         expect(source).toContain("<CoursePrint />")
-        expect(source).toContain("const validPanels = ['students', 'dates', 'table', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']")
+        expect(source).toContain("const validPanels = ['table', 'students', 'dates', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']")
         expect(source).toContain('v-if="selected_course && secondaryOverviewPanelSelection && action != \'teaching_course_new_or_edit\'"')
         expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'table\'" class="mt-n6"')
         expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'curriculum\'" class="mt-n6"')

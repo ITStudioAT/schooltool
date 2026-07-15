@@ -43,6 +43,9 @@ describe('SchoolHourStore', () => {
         axiosMock.get.mockResolvedValue({
             data: {
                 data: [{ id: 1, hour: 1, from: '08:00', until: '08:50' }],
+                meta: {
+                    previous_year_import: null,
+                },
             },
         })
 
@@ -51,7 +54,30 @@ describe('SchoolHourStore', () => {
 
         expect(result).toBe(true)
         expect(store.school_hours).toEqual([{ id: 1, hour: 1, from: '08:00', until: '08:50' }])
+        expect(store.school_hours_loaded).toBe(true)
+        expect(store.previous_year_import).toBeNull()
         expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('loads the previous year import offer for an empty list', async () => {
+        const previousYearImport = {
+            count: 8,
+            schoolyear: { id: 4, label: '2025/26' },
+        }
+        axiosMock.get.mockResolvedValue({
+            data: {
+                data: [],
+                meta: {
+                    previous_year_import: previousYearImport,
+                },
+            },
+        })
+
+        const store = useSchoolHourStore()
+        await store.index()
+
+        expect(store.school_hours_loaded).toBe(true)
+        expect(store.previous_year_import).toEqual(previousYearImport)
     })
 
     it('reuses the same in-flight school hour request for concurrent callers', async () => {
@@ -104,6 +130,41 @@ describe('SchoolHourStore', () => {
             { id: 3, hour: 3, from: '09:50', until: '10:40' },
         ])
         expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/teaching/school_hours', payload)
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('imports the previous year and replaces the current list', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                imported: 2,
+                data: [
+                    { id: 5, hour: 1, from: '08:00', until: '08:50' },
+                    { id: 6, hour: 2, from: '08:55', until: '09:45' },
+                ],
+            },
+        })
+
+        const store = useSchoolHourStore()
+        store.previous_year_import = {
+            count: 2,
+            schoolyear: { id: 4, label: '2025/26' },
+        }
+
+        const result = await store.importPreviousYear()
+
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/teaching/school-hour-imports')
+        expect(result).toEqual([
+            { id: 5, hour: 1, from: '08:00', until: '08:50' },
+            { id: 6, hour: 2, from: '08:55', until: '09:45' },
+        ])
+        expect(store.school_hours).toEqual(result)
+        expect(store.previous_year_import).toBeNull()
+        expect(store.school_hours_loaded).toBe(true)
+        expect(notifyMock).toHaveBeenCalledWith({
+            message: '2 Schulstunden wurden aus dem Vorjahr übernommen.',
+            type: 'success',
+            timeout: 2600,
+        })
         expect(adminStoreMock.is_loading).toBe(0)
     })
 

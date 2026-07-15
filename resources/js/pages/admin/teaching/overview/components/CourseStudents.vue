@@ -88,9 +88,18 @@
                                         </div>
                                     </div>
                                     <v-spacer />
-                                    <div class="d-flex flex-column ga-1 align-end">
-                                        <div class="text-caption text-medium-emphasis">Note</div>
-                                        <div class="d-flex flex-wrap ga-1 justify-end">
+                                    <div
+                                        v-if="bulk_entry_form.type && bulkGradeInputMode !== 'none'"
+                                        class="d-flex flex-column ga-1 align-end">
+                                        <div class="text-caption text-medium-emphasis">{{ bulkGradeLabel }}</div>
+                                        <v-text-field
+                                            v-if="bulkGradeInputMode === 'free'"
+                                            v-model="bulk_entry_form.grade"
+                                            density="compact"
+                                            hide-details
+                                            label="Wert"
+                                            maxlength="255" />
+                                        <div v-else class="d-flex flex-wrap ga-1 justify-end">
                                             <v-chip
                                                 size="small"
                                                 :variant="bulk_entry_form.grade ? 'outlined' : 'flat'"
@@ -172,6 +181,13 @@
                                             <span class="student-name-text">
                                                 {{ student.last_name }}, {{ student.first_name }}
                                             </span>
+                                            <v-icon
+                                                v-if="studentSexIcon(student)"
+                                                size="15"
+                                                :color="studentSexColor(student)"
+                                                :title="studentSexTitle(student)">
+                                                {{ studentSexIcon(student) }}
+                                            </v-icon>
                                             <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2" class="student-stars-chip">
                                                 <v-icon start size="14">mdi-star</v-icon>
                                                 {{ (student.stars || []).length }}
@@ -187,6 +203,10 @@
                                                 @click.stop="copyEmail(student)">
                                                 {{ copiedEmailId === student.id ? 'mdi-check' : 'mdi-content-copy' }}
                                             </v-icon>
+                                        </div>
+                                        <div v-if="studentBirthDetails(student)" class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
+                                            <v-icon size="13">mdi-cake-variant-outline</v-icon>
+                                            {{ studentBirthDetails(student) }}
                                         </div>
                                         <div v-if="studentLastLoginText(student)" class="student-meta-line text-caption text-medium-emphasis">
                                             {{ studentLastLoginText(student) }}
@@ -347,7 +367,7 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
-        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_students']),
+        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_students', 'uses_entry_areas_for_grading_schema']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         ...mapWritableState(useTeachingStore, ['settings']),
@@ -385,13 +405,22 @@ export default {
             return Number(grading.semester_count) || 1
         },
         teachingWorks() {
-            return this.selectedCourseSchema?.works || []
+            const assignedEntryArea = this.selected_course?.teaching_entry_area || null
+            if (this.uses_entry_areas_for_grading_schema && assignedEntryArea?.id) {
+                return (Array.isArray(assignedEntryArea.entry_definitions) ? assignedEntryArea.entry_definitions : [])
+                    .filter((definition) => definition?.category === 'Benotung' && definition?.short_name)
+            }
+
+            return Array.isArray(this.selectedCourseSchema?.works) ? this.selectedCourseSchema.works : []
         },
         workTypeItems() {
             return this.teachingWorks.map((work) => ({
-                title: `${work.short_name} - ${work.name}`,
+                title: work.name ? `${work.short_name} - ${work.name}` : work.short_name,
                 value: work.short_name,
             }))
+        },
+        usesNewBulkEntryDefinitions() {
+            return Boolean(this.uses_entry_areas_for_grading_schema && this.selected_course?.teaching_entry_area?.id)
         },
         selectedBulkTypeName() {
             const selected = this.bulk_entry_form.type
@@ -403,11 +432,33 @@ export default {
             const selectedType = this.bulk_entry_form.type
             if (!selectedType) return []
             const work = this.teachingWorks.find((w) => w.short_name === selectedType)
+
+            if (this.usesNewBulkEntryDefinitions) {
+                if (!work?.has_properties || work.properties_mode !== 'fixed') return []
+
+                return (Array.isArray(work.fixed_properties) ? work.fixed_properties : [])
+                    .map((property) => String(property || '').trim())
+                    .filter(Boolean)
+                    .map((property) => ({ title: property, value: property }))
+            }
+
             const grades = work?.grades || []
             return grades.map((grade) => ({
                 title: grade.name ? `${grade.grade} (${grade.name})` : grade.grade,
                 value: grade.grade,
             }))
+        },
+        bulkGradeInputMode() {
+            if (!this.bulk_entry_form.type) return 'none'
+            if (!this.usesNewBulkEntryDefinitions) return 'fixed'
+
+            const definition = this.teachingWorks.find((work) => work.short_name === this.bulk_entry_form.type)
+            if (!definition?.has_properties) return 'none'
+
+            return definition.properties_mode === 'fixed' ? 'fixed' : 'free'
+        },
+        bulkGradeLabel() {
+            return this.usesNewBulkEntryDefinitions ? 'Eigenschaft' : 'Note'
         },
         studentItems() {
             const list = this.selected_course?.students_info || []
@@ -427,7 +478,7 @@ export default {
             const type = (this.bulk_entry_form.type || '').toString().trim()
             const grade = (this.bulk_entry_form.grade || '').toString().trim()
             const desc = (this.bulk_entry_form.description || '').toString().trim()
-            if (type && !grade) return false
+            if (type && this.bulkGradeInputMode !== 'none' && !grade) return false
             return !!(type || desc)
         },
         filteredImport116Students() {
@@ -919,6 +970,44 @@ export default {
             return typeof student?.login_at === 'string' && student.login_at.trim() !== ''
                 ? student.login_at.trim()
                 : ''
+        },
+        studentBirthDetails(student) {
+            const birthDate = this.formatDate(student?.birth_date)
+            if (!birthDate) return ''
+
+            const hasAge = student?.age !== null && student?.age !== undefined && student?.age !== ''
+            const age = hasAge ? Number(student.age) : null
+
+            return Number.isFinite(age) && age >= 0
+                ? `${birthDate} · ${age} Jahre`
+                : birthDate
+        },
+        normalizedStudentSex(student) {
+            return String(student?.sex || '').trim().toLowerCase()
+        },
+        studentSexIcon(student) {
+            const sex = this.normalizedStudentSex(student)
+            if (sex === 'm') return 'mdi-gender-male'
+            if (sex === 'w' || sex === 'f') return 'mdi-gender-female'
+            if (sex === 'd') return 'mdi-gender-non-binary'
+
+            return ''
+        },
+        studentSexColor(student) {
+            const sex = this.normalizedStudentSex(student)
+            if (sex === 'm') return 'blue'
+            if (sex === 'w' || sex === 'f') return 'pink'
+            if (sex === 'd') return 'amber-darken-2'
+
+            return undefined
+        },
+        studentSexTitle(student) {
+            const sex = this.normalizedStudentSex(student)
+            if (sex === 'm') return 'männlich'
+            if (sex === 'w' || sex === 'f') return 'weiblich'
+            if (sex === 'd') return 'divers'
+
+            return ''
         },
         getWeekday(date) {
             if (!date) return ''

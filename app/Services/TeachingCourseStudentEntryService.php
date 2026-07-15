@@ -20,7 +20,6 @@ class TeachingCourseStudentEntryService
 
             if ($entryArea) {
                 return $entryArea->entryDefinitions()
-                    ->where('category', 'Benotung')
                     ->orderBy('short_name')
                     ->pluck('short_name')
                     ->filter()

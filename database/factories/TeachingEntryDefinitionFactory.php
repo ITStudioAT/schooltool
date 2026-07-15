@@ -51,6 +51,8 @@ class TeachingEntryDefinitionFactory extends Factory
             'fixed_properties' => [],
             'has_notifications' => false,
             'notification_recipients' => [],
+            'has_table_marking' => false,
+            'table_marking_color' => null,
         ];
     }
 }

@@ -12,7 +12,8 @@
                     class="teaching-admin-toolbar-btn"
                     :value="panel.id"
                     :prepend-icon="panel.icon">
-                    {{ panel.label }}
+                    <span>{{ panel.label }}</span>
+                    <span v-if="panel.needsAttention" class="teaching-admin-panel-warning" aria-label="Keine Schulstunden vorhanden">!</span>
                 </v-btn>
             </v-btn-toggle>
         </section>
@@ -37,6 +38,7 @@
 <script>
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import Import116 from './import116/Import116.vue'
 import Holidays from './holidays/Holidays.vue'
 import SchoolHours from './schoolhours/SchoolHours.vue'
@@ -44,14 +46,21 @@ import SchoolHours from './schoolhours/SchoolHours.vue'
 export default {
     components: { Import116, Holidays, SchoolHours },
 
+    async beforeMount() {
+        this.schoolHourStore = useSchoolHourStore()
+        await this.schoolHourStore.index()
+    },
+
     data() {
         return {
             active_panel: 'import',
+            schoolHourStore: null,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
+        ...mapWritableState(useSchoolHourStore, ['school_hours', 'school_hours_loaded']),
         canManageSchoolHolidays() {
             const roles = this.config?.roles || []
             return roles.includes('admin') || roles.includes('super_admin') || roles.includes('teaching_admin')
@@ -60,9 +69,17 @@ export default {
             const panels = [{ id: 'import', label: 'Import 116', icon: 'mdi-import' }]
             if (this.canManageSchoolHolidays) {
                 panels.push({ id: 'holidays', label: 'Ferien', icon: 'mdi-beach' })
-                panels.push({ id: 'school_hours', label: 'Schulstunden', icon: 'mdi-clock-time-four-outline' })
+                panels.push({
+                    id: 'school_hours',
+                    label: 'Schulstunden',
+                    icon: 'mdi-clock-time-four-outline',
+                    needsAttention: this.hasMissingSchoolHoursWarning,
+                })
             }
             return panels
+        },
+        hasMissingSchoolHoursWarning() {
+            return this.school_hours_loaded && (!Array.isArray(this.school_hours) || this.school_hours.length === 0)
         },
         panelSelection: {
             get() {
@@ -141,6 +158,20 @@ export default {
     letter-spacing: 0;
     font-weight: 650;
     height: 40px !important;
+}
+
+.teaching-admin-panel-warning {
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    margin-left: 6px;
+    border-radius: 50%;
+    background: rgb(var(--v-theme-error));
+    color: rgb(var(--v-theme-on-error));
+    font-size: 0.78rem;
+    font-weight: 850;
+    line-height: 1;
 }
 
 .teaching-admin-content-shell {

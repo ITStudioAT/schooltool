@@ -58,7 +58,10 @@
                                     :key="`date-head-${courseDate.id || courseDate.date}`"
                                     :data-course-date-key="courseDateScrollKey(courseDate)"
                                     class="course-table-date-col"
-                                    :class="{ 'course-table-date-col--free': isFreeCourseDate(courseDate) }">
+                                    :class="[
+                                        { 'course-table-date-col--free': isFreeCourseDate(courseDate) },
+                                        courseDateColumnMarkingClass(courseDate),
+                                    ]">
                                     <div class="course-table-date-header">
                                         <div class="course-table-date-weekday">{{ courseDateWeekday(courseDate) }}</div>
                                         <div class="course-table-date-title">{{ courseDateDateLabel(courseDate) }}</div>
@@ -103,10 +106,13 @@
                                     v-for="courseDate in sortedCourseDates"
                                     :key="`date-work-${courseDate.id || courseDate.date}`"
                                     class="course-table-work-cell"
-                                    :class="{
-                                        'course-table-work-cell--free': isFreeCourseDate(courseDate),
-                                        'course-table-work-cell--selected': isWorkDialogCellSelected(courseDate),
-                                    }"
+                                    :class="[
+                                        {
+                                            'course-table-work-cell--free': isFreeCourseDate(courseDate),
+                                            'course-table-work-cell--selected': isWorkDialogCellSelected(courseDate),
+                                        },
+                                        courseDateColumnMarkingClass(courseDate),
+                                    ]"
                                     role="button"
                                     tabindex="0"
                                     :aria-label="`${compactCourseDateTitle(courseDate)}: Arbeiten öffnen`"
@@ -137,9 +143,9 @@
                                                     {{ work.affectedStudentCount }}
                                                 </span>
                                             </div>
-                                            <strong class="course-table-work-summary-title">
+                                            <span class="course-table-work-summary-title">
                                                 {{ work.work.title || work.label }}
-                                            </strong>
+                                            </span>
                                         </div>
                                     </div>
                                     <v-tooltip
@@ -174,6 +180,57 @@
                                         </div>
                                         <div v-if="!courseWorksForDate(courseDate).length" class="text-body-2">
                                             Keine Arbeit eingetragen. Klicken, um eine Arbeit anzulegen.
+                                        </div>
+                                    </v-tooltip>
+                                </td>
+                            </tr>
+                            <tr v-if="tableView === 'entries'" class="course-table-content-row">
+                                <th scope="row" class="course-table-content-label">
+                                    <div class="course-table-content-label-content">
+                                        <v-icon color="primary" size="18">mdi-text-box-outline</v-icon>
+                                        <span>Stoff</span>
+                                    </div>
+                                </th>
+                                <td
+                                    v-for="courseDate in sortedCourseDates"
+                                    :key="`date-content-${courseDate.id || courseDate.date}`"
+                                    class="course-table-content-cell"
+                                    :class="[
+                                        {
+                                            'course-table-content-cell--free': isFreeCourseDate(courseDate),
+                                            'course-table-content-cell--selected': isContentDialogCellSelected(courseDate),
+                                        },
+                                        courseDateColumnMarkingClass(courseDate),
+                                    ]"
+                                    role="button"
+                                    tabindex="0"
+                                    :aria-label="`${compactCourseDateTitle(courseDate)}: Inhalt öffnen`"
+                                    @click="openContentDialog(courseDate)"
+                                    @keydown.enter.prevent="openContentDialog(courseDate)"
+                                    @keydown.space.prevent="openContentDialog(courseDate)">
+                                    <div
+                                        v-if="courseDateContentPreview(courseDate)"
+                                        class="course-table-content-cell-preview">
+                                        {{ courseDateContentPreview(courseDate) }}
+                                    </div>
+                                    <v-icon v-else class="course-table-content-cell-icon" color="primary" size="18">
+                                        mdi-text-box-plus-outline
+                                    </v-icon>
+                                    <v-tooltip
+                                        v-if="courseDateContentPreview(courseDate)"
+                                        activator="parent"
+                                        content-class="course-table-student-tooltip"
+                                        location="right"
+                                        :max-width="420"
+                                        :open-delay="250">
+                                        <div class="course-table-student-tooltip-name">
+                                            {{ compactCourseDateTitle(courseDate) }}
+                                        </div>
+                                        <div class="course-table-student-tooltip-comment">
+                                            <span>Inhalt</span>
+                                            <div
+                                                class="course-table-content-tooltip-html"
+                                                v-html="courseDateFormattedContent(courseDate)" />
                                         </div>
                                     </v-tooltip>
                                 </td>
@@ -246,16 +303,28 @@
                                     <td
                                         v-if="!isFreeCourseDate(courseDate)"
                                         class="course-table-entry-cell"
-                                        :class="{
-                                            'course-table-entry-cell--interactive': tableView === 'entries',
-                                            'course-table-entry-cell--absent': tableView === 'entries' && !isStudentPresentForCourseDate(student, courseDate),
-                                            'course-table-entry-cell--selected': isEntryDialogCellSelected(student, courseDate),
-                                        }"
+                                        :class="[
+                                            {
+                                                'course-table-entry-cell--interactive': tableView === 'entries',
+                                                'course-table-entry-cell--absent': tableView === 'entries' && !isStudentPresentForCourseDate(student, courseDate),
+                                                'course-table-entry-cell--selected': isEntryDialogCellSelected(student, courseDate),
+                                            },
+                                            courseDateColumnMarkingClass(courseDate),
+                                        ]"
                                         :role="tableView === 'entries' ? 'button' : undefined"
                                         :tabindex="tableView === 'entries' ? 0 : undefined"
                                         @click="openEntryDialog(student, courseDate)"
                                         @keydown.enter.prevent="openEntryDialog(student, courseDate)"
                                         @keydown.space.prevent="openEntryDialog(student, courseDate)">
+                                        <v-icon
+                                            v-if="tableView === 'entries' && !isStudentPresentForCourseDate(student, courseDate)"
+                                            class="course-table-entry-cell-absent-marker"
+                                            color="error"
+                                            size="14"
+                                            aria-label="Abwesend"
+                                            title="Abwesend">
+                                            mdi-close
+                                        </v-icon>
                                         <div class="course-table-entry-cell-content">
                                             <div
                                                 v-if="tableView === 'entries' && entriesForCell(student, courseDate).length"
@@ -290,13 +359,14 @@
                                                             :color="cellEntryColor(entry)"
                                                             variant="tonal"
                                                             :title="entry.description || cellEntryTypeLabel(entry)">
-                                                            {{ compactCellEntryType(entry) }}:&nbsp;
-                                                            <span
-                                                                :class="{
-                                                                    'course-table-entry-cell-grade--missing': !compactCellEntryGrade(entry),
-                                                                }">
-                                                                {{ compactCellEntryGrade(entry) || 'NA' }}
-                                                            </span>
+                                                            {{ compactCellEntryType(entry) }}<template v-if="entryTypeHasProperties(entry)">:&nbsp;
+                                                                <span
+                                                                    :class="{
+                                                                        'course-table-entry-cell-grade--missing': !compactCellEntryGrade(entry),
+                                                                    }">
+                                                                    {{ compactCellEntryGrade(entry) || 'NA' }}
+                                                                </span>
+                                                            </template>
                                                         </v-chip>
                                                         <div
                                                             v-if="entry.description"
@@ -370,6 +440,42 @@
                 </div>
             </v-card-text>
         </v-card>
+
+        <v-dialog v-model="contentDialog.open" persistent max-width="720">
+            <v-card data-testid="course-table-content-dialog">
+                <v-card-title class="text-subtitle-1 font-weight-bold d-flex align-center ga-2">
+                    <v-icon size="20">mdi-text-box-outline</v-icon>
+                    Inhalt bearbeiten
+                </v-card-title>
+                <v-divider />
+                <v-card-text class="d-flex flex-column ga-3">
+                    <div class="text-body-2">
+                        <strong>Termin:</strong> {{ compactCourseDateTitle(contentDialog.courseDate) }}
+                    </div>
+                    <ItsRichTextEditor v-model="contentDialog.content" :disabled="contentSaving" />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn
+                        color="warning"
+                        variant="flat"
+                        prepend-icon="mdi-close"
+                        :disabled="contentSaving"
+                        @click="closeContentDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="success"
+                        variant="flat"
+                        prepend-icon="mdi-content-save"
+                        :disabled="contentSaving"
+                        :loading="contentSaving"
+                        @click="saveContentDialog">
+                        Speichern
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <v-dialog v-model="workDialog.open" persistent max-width="720">
             <v-card>
@@ -1075,7 +1181,7 @@
                                     </v-chip>
                                     <strong class="text-body-2">{{ cellEntryTypeLabel(entry) }}</strong>
                                     <v-chip
-                                        v-if="entry.kind === 'assessment'"
+                                        v-if="entryExpectsProperty(entry)"
                                         size="x-small"
                                         color="success"
                                         variant="tonal">
@@ -1215,7 +1321,13 @@
                                             Für diesen Eintragstyp ist keine Bewertung vorgesehen.
                                         </div>
                                     </div>
-                                    <div class="d-flex justify-end mt-3">
+                                    <div class="d-flex justify-end ga-2 mt-3">
+                                        <v-btn
+                                            variant="text"
+                                            :disabled="Boolean(courseWorkEntrySavingUid)"
+                                            @click="toggleCellEntry(entry)">
+                                            Abbrechen
+                                        </v-btn>
                                         <v-btn
                                             color="success"
                                             :data-testid="`course-table-cell-work-save-${entry.uid}`"
@@ -1234,19 +1346,28 @@
                                     :data-testid="`course-table-cell-entry-edit-form-${entry.uid}`">
                                     <div class="text-subtitle-2 font-weight-bold mb-3">Eintrag bearbeiten</div>
                                     <div class="text-caption text-medium-emphasis mb-1">Typ</div>
-                                    <div class="d-flex flex-wrap ga-1 mb-3">
-                                        <v-btn
-                                            v-for="item in availableEntryTypes"
-                                            :key="item.value"
-                                            size="small"
-                                            :variant="entryForm.type === item.value ? 'flat' : 'tonal'"
-                                            :color="entryForm.type === item.value ? 'primary' : 'default'"
-                                            @click="selectCellEntryType(item.value)">
-                                            {{ item.title }}
-                                        </v-btn>
+                                    <div class="course-table-entry-type-rows mb-3">
+                                        <div
+                                            v-for="group in visibleEntryTypeGroups"
+                                            :key="group.category"
+                                            class="course-table-entry-type-row"
+                                            :data-category="group.category">
+                                            <div class="course-table-entry-type-category">{{ group.category }}</div>
+                                            <div class="d-flex flex-wrap ga-1">
+                                                <v-btn
+                                                    v-for="item in group.items"
+                                                    :key="item.value"
+                                                    size="small"
+                                                    :variant="entryForm.type === item.value ? 'flat' : 'tonal'"
+                                                    :color="entryTypeCategoryColor(group.category)"
+                                                    @click="selectCellEntryType(item.value)">
+                                                    {{ item.title }}
+                                                </v-btn>
+                                            </div>
+                                        </div>
                                     </div>
 
-                                    <template v-if="entryForm.kind === 'assessment'">
+                                    <template v-if="selectedEntryTypeCategory === 'Benotung'">
                                         <div class="text-caption text-medium-emphasis mb-1">Note</div>
                                         <div v-if="availableEntryGrades.length" class="d-flex flex-wrap ga-1 mb-3">
                                             <v-btn
@@ -1280,7 +1401,7 @@
                                             Löschen
                                         </v-btn>
                                         <v-spacer />
-                                        <v-btn variant="text" :disabled="entrySaving" @click="cancelNewCellEntry">Abbrechen</v-btn>
+                                        <v-btn variant="text" :disabled="entrySaving" @click="toggleCellEntry(entry)">Abbrechen</v-btn>
                                         <v-btn
                                             color="success"
                                             variant="flat"
@@ -1303,7 +1424,7 @@
                     <section v-if="!entryForm.id">
                         <div class="text-caption font-weight-bold text-medium-emphasis mb-2">Mögliche Aktionen</div>
                         <v-btn
-                            v-if="!entryFormOpen"
+                            v-if="!entryFormOpen && !selectedCellEntryUid"
                             data-testid="course-table-cell-add-entry"
                             color="primary"
                             prepend-icon="mdi-plus"
@@ -1325,19 +1446,28 @@
                                 Neuen Eintrag anlegen
                             </div>
                             <div class="text-caption text-medium-emphasis mb-1">Typ</div>
-                            <div class="d-flex flex-wrap ga-1 mb-3">
-                                <v-btn
-                                    v-for="item in availableEntryTypes"
-                                    :key="item.value"
-                                    size="small"
-                                    :variant="entryForm.type === item.value ? 'flat' : 'tonal'"
-                                    :color="entryForm.type === item.value ? 'primary' : 'default'"
-                                    @click="selectCellEntryType(item.value)">
-                                    {{ item.title }}
-                                </v-btn>
+                            <div class="course-table-entry-type-rows mb-3">
+                                <div
+                                    v-for="group in visibleEntryTypeGroups"
+                                    :key="group.category"
+                                    class="course-table-entry-type-row"
+                                    :data-category="group.category">
+                                    <div class="course-table-entry-type-category">{{ group.category }}</div>
+                                    <div class="d-flex flex-wrap ga-1">
+                                        <v-btn
+                                            v-for="item in group.items"
+                                            :key="item.value"
+                                            size="small"
+                                            :variant="entryForm.type === item.value ? 'flat' : 'tonal'"
+                                            :color="entryTypeCategoryColor(group.category)"
+                                            @click="selectCellEntryType(item.value)">
+                                            {{ item.title }}
+                                        </v-btn>
+                                    </div>
+                                </div>
                             </div>
 
-                            <template v-if="entryForm.kind === 'assessment'">
+                            <template v-if="selectedEntryTypeCategory === 'Benotung'">
                                 <div class="text-caption text-medium-emphasis mb-1">Note</div>
                                 <div v-if="availableEntryGrades.length" class="d-flex flex-wrap ga-1 mb-3">
                                     <v-btn
@@ -1374,7 +1504,7 @@
                         </div>
                     </section>
                 </v-card-text>
-                <v-card-actions>
+                <v-card-actions v-if="!entryFormOpen && !selectedCellEntryUid">
                     <v-spacer />
                     <v-btn
                         variant="flat"
@@ -1412,6 +1542,7 @@
 <script>
 import { mapWritableState } from 'pinia'
 import { parseLocalDate } from '@/helpers/date'
+import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
@@ -1419,7 +1550,19 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 
+const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
+const courseContentAllowedTags = new Set([
+    'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'h1', 'h2', 'h3', 'hr', 'i', 'li', 'ol', 'p', 'pre',
+    's', 'strike', 'strong', 'sub', 'sup', 'u', 'ul',
+])
+const courseContentBlockedTags = new Set([
+    'button', 'embed', 'form', 'iframe', 'input', 'link', 'math', 'meta', 'object', 'script', 'select', 'style',
+    'svg', 'textarea',
+])
+
 export default {
+    components: { ItsRichTextEditor },
+
     data() {
         return {
             bulkAttendanceDialog: {
@@ -1430,6 +1573,7 @@ export default {
             bulkAttendanceSaving: false,
             behaviourEntryStore: null,
             courseDateStore: null,
+            courseStore: null,
             courseEntriesRequestPromise: null,
             courseTableDataCourseId: null,
             courseTableDataRequestCourseId: null,
@@ -1438,6 +1582,12 @@ export default {
             courseWorkEntryDrafts: {},
             courseWorkEntrySavingUid: null,
             courseWorksRequestPromise: null,
+            contentDialog: {
+                content: '',
+                courseDate: null,
+                open: false,
+            },
+            contentSaving: false,
             deleteEntryDialog: {
                 entry: null,
                 open: false,
@@ -1514,6 +1664,7 @@ export default {
 
     beforeMount() {
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
+        this.courseStore = useCourseStore()
         this.entryStore = useCourseStudentEntryStore()
         this.courseWorkStore = useCourseWorkStore()
     },
@@ -1610,23 +1761,65 @@ export default {
             return this.selected_course?.teacher_teaching_schema || null
         },
         availableEntryTypes() {
+            return this.availableEntryTypeGroups.flatMap((group) => group.items)
+        },
+        availableEntryTypeGroups() {
             if (this.entryForm.kind !== 'assessment') {
                 const definitions = this.entryForm.kind === 'notification'
                     ? this.selected_course?.teacher_teaching_notifications
                     : this.selected_course?.teacher_teaching_behaviour
-
-                return (Array.isArray(definitions) ? definitions : [])
+                const category = this.entryForm.kind === 'notification' ? 'Verständigung' : 'Verhalten'
+                const items = (Array.isArray(definitions) ? definitions : [])
                     .filter((definition) => definition?.short_name)
                     .map((definition) => ({
                         title: definition.name ? `${definition.short_name} - ${definition.name}` : definition.short_name,
                         value: definition.short_name,
                     }))
+
+                return items.length ? [{ category, items }] : []
             }
 
-            return this.availableWorkTypes
+            const assignedEntryArea = this.selected_course?.teaching_entry_area || null
+            if (!this.uses_entry_areas_for_grading_schema || !assignedEntryArea?.id) {
+                return this.availableWorkTypes.length
+                    ? [{ category: 'Benotung', items: this.availableWorkTypes }]
+                    : []
+            }
+
+            const definitions = Array.isArray(assignedEntryArea.entry_definitions)
+                ? assignedEntryArea.entry_definitions
+                : []
+
+            return ['Benotung', 'Verhalten', 'Weitere']
+                .map((category) => ({
+                    category,
+                    items: definitions
+                        .filter((definition) => definition?.category === category && definition?.short_name)
+                        .map((definition) => ({
+                            title: definition.name
+                                ? `${definition.short_name} - ${definition.name}`
+                                : definition.short_name,
+                            value: definition.short_name,
+                        })),
+                }))
+                .filter((group) => group.items.length)
+        },
+        selectedEntryTypeCategory() {
+            const selectedGroup = this.availableEntryTypeGroups
+                .find((group) => group.items.some((item) => item.value === this.entryForm.type))
+
+            return selectedGroup?.category || null
+        },
+        visibleEntryTypeGroups() {
+            if (!this.entryForm.type || !this.selectedEntryTypeCategory) {
+                return this.availableEntryTypeGroups
+            }
+
+            return this.availableEntryTypeGroups
+                .filter((group) => group.category === this.selectedEntryTypeCategory)
         },
         availableEntryGrades() {
-            if (this.entryForm.kind !== 'assessment') return []
+            if (this.selectedEntryTypeCategory !== 'Benotung') return []
 
             return this.courseWorkGradeConfigurationForType(this.entryForm.type).items
         },
@@ -2064,6 +2257,136 @@ export default {
                 title: label,
                 work,
             }
+        },
+        courseDateColumnMarkingColor(courseDate) {
+            if (this.tableView !== 'entries' || !this.uses_entry_areas_for_grading_schema) return null
+
+            const entryDefinitions = this.selected_course?.teaching_entry_area?.entry_definitions
+            if (!Array.isArray(entryDefinitions)) return null
+
+            const markedDefinitionsByType = new Map(
+                entryDefinitions
+                    .filter((definition) => (
+                        definition?.category === 'Benotung'
+                        && definition.has_table_marking
+                        && tableMarkingColors.has(definition.table_marking_color)
+                    ))
+                    .map((definition) => [String(definition.short_name || ''), definition.table_marking_color])
+            )
+
+            const markedAssignment = this.courseWorksForDate(courseDate)
+                .find((assignment) => markedDefinitionsByType.has(String(assignment?.work?.type || '')))
+
+            return markedAssignment
+                ? markedDefinitionsByType.get(String(markedAssignment.work.type))
+                : null
+        },
+        courseDateColumnMarkingClass(courseDate) {
+            const color = this.courseDateColumnMarkingColor(courseDate)
+
+            return color ? `course-table-column--marked-${color}` : null
+        },
+        courseDateContentPreview(courseDate) {
+            const content = String(courseDate?.content || '').trim()
+            if (!content) return ''
+
+            const contentWithSpacing = content
+                .replace(/<br\s*\/?>/gi, ' ')
+                .replace(/<\/(?:div|h[1-6]|li|p)>/gi, ' ')
+
+            if (typeof DOMParser === 'undefined') {
+                return contentWithSpacing
+                    .replace(/<[^>]*>/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+            }
+
+            const document = new DOMParser().parseFromString(contentWithSpacing, 'text/html')
+
+            return String(document.body.textContent || '')
+                .replace(/\s+/g, ' ')
+                .trim()
+        },
+        courseDateFormattedContent(courseDate) {
+            const content = String(courseDate?.content || '').trim()
+            if (!content) return ''
+
+            if (typeof DOMParser === 'undefined') {
+                const characterEntities = {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#039;',
+                }
+
+                return content.replace(/[&<>"']/g, (character) => characterEntities[character])
+            }
+
+            const document = new DOMParser().parseFromString(content, 'text/html')
+            const elements = Array.from(document.body.querySelectorAll('*'))
+
+            elements.forEach((element) => {
+                const tagName = element.tagName.toLowerCase()
+
+                if (courseContentBlockedTags.has(tagName)) {
+                    element.remove()
+                    return
+                }
+
+                if (!courseContentAllowedTags.has(tagName)) {
+                    element.replaceWith(...element.childNodes)
+                    return
+                }
+
+                Array.from(element.attributes).forEach((attribute) => element.removeAttribute(attribute.name))
+            })
+
+            return document.body.innerHTML
+        },
+        openContentDialog(courseDate) {
+            this.contentDialog = {
+                content: courseDate?.content || '',
+                courseDate,
+                open: true,
+            }
+        },
+        closeContentDialog() {
+            if (this.contentSaving) return
+
+            this.contentDialog = {
+                content: '',
+                courseDate: null,
+                open: false,
+            }
+        },
+        async saveContentDialog() {
+            const courseDate = this.contentDialog.courseDate
+            if (this.contentSaving || !courseDate?.id || !this.courseDateStore || !this.courseStore) return
+
+            this.contentSaving = true
+            let wasSaved = false
+
+            try {
+                const response = await this.courseDateStore.update({
+                    id: courseDate.id,
+                    date: courseDate.date,
+                    content: this.contentDialog.content ?? '',
+                })
+                if (!response) return
+
+                wasSaved = true
+                await this.courseStore.index()
+            } finally {
+                this.contentSaving = false
+            }
+
+            if (wasSaved) this.closeContentDialog()
+        },
+        isContentDialogCellSelected(courseDate) {
+            if (!this.contentDialog.open) return false
+
+            return this.courseDateScrollKey(this.contentDialog.courseDate) === this.courseDateScrollKey(courseDate)
         },
         openWorkDialog(courseDate) {
             const shouldStartCreating = this.courseWorksForDate(courseDate).length === 0
@@ -2841,11 +3164,11 @@ export default {
         },
         supplementaryEntriesForCell(student, courseDate) {
             return this.entriesForCell(student, courseDate)
-                .filter((entry) => entry.kind !== 'assessment')
+                .filter((entry) => entry.kind !== 'assessment' || this.entryDefinitionCategory(entry) !== 'Benotung')
         },
         performanceEntriesForCell(student, courseDate) {
             return this.entriesForCell(student, courseDate)
-                .filter((entry) => entry.kind === 'assessment')
+                .filter((entry) => entry.kind === 'assessment' && this.entryDefinitionCategory(entry) === 'Benotung')
         },
         cellEntryHoverItems(student, courseDate) {
             const studentId = this.registeredStudentUserId(student)
@@ -2932,22 +3255,49 @@ export default {
             })
         },
         cellEntryKindLabel(entry) {
-            if (entry?.kind === 'assessment') return 'Bewertung'
+            if (entry?.kind === 'assessment') {
+                const category = this.entryDefinitionCategory?.(entry) || 'Benotung'
+
+                return category === 'Benotung' ? 'Bewertung' : category
+            }
             if (entry?.kind === 'notification') return 'Verständigung'
 
             return 'Verhalten'
         },
         cellEntryColor(entry) {
-            if (entry?.kind === 'assessment') return 'primary'
+            if (entry?.kind === 'assessment') {
+                const category = this.entryDefinitionCategory?.(entry) || 'Benotung'
+                if (category === 'Verhalten') return 'warning'
+                if (category === 'Weitere') return 'info'
+
+                return null
+            }
             if (entry?.kind === 'notification') return 'secondary'
 
             return 'warning'
+        },
+        entryDefinitionCategory(entry) {
+            if (entry?.kind !== 'assessment') return null
+
+            const definitions = this.selected_course?.teaching_entry_area?.entry_definitions
+            if (!this.uses_entry_areas_for_grading_schema || !Array.isArray(definitions)) return 'Benotung'
+
+            const definition = definitions.find((item) => item?.short_name === entry?.type)
+
+            return definition?.category || 'Benotung'
         },
         cellEntryTypeLabel(entry) {
             const type = String(entry?.type || '').trim()
             if (!type) return 'Eintrag'
 
             if (entry?.kind === 'assessment') {
+                const entryDefinitions = this.selected_course?.teaching_entry_area?.entry_definitions
+                const entryDefinition = (Array.isArray(entryDefinitions) ? entryDefinitions : [])
+                    .find((item) => item?.short_name === type)
+                if (entryDefinition) {
+                    return entryDefinition.name ? `${type} - ${entryDefinition.name}` : type
+                }
+
                 const works = Array.isArray(this.selectedTeachingSchema?.works) ? this.selectedTeachingSchema.works : []
                 const work = works.find((item) => item?.short_name === type)
                 return work?.name ? `${type} - ${work.name}` : type
@@ -2970,10 +3320,32 @@ export default {
         compactCellEntryLabel(entry) {
             const type = String(entry?.type || '').trim() || 'Eintrag'
             if (entry?.kind !== 'assessment') return type
+            if (this.entryTypeHasProperties && !this.entryTypeHasProperties(entry)) return type
 
             const grade = String(entry?.effective_grade || entry?.grade || '').trim()
 
             return `${type}: ${grade || 'NA'}`
+        },
+        entryTypeHasProperties(entry) {
+            if (entry?.kind !== 'assessment') return false
+
+            const assignedEntryArea = this.selected_course?.teaching_entry_area || null
+            const definitions = assignedEntryArea?.entry_definitions
+            const usesEntryDefinitions = Boolean(
+                this.uses_entry_areas_for_grading_schema
+                && assignedEntryArea?.id
+                && Array.isArray(definitions)
+            )
+            if (!usesEntryDefinitions) return true
+
+            const definition = definitions.find((item) => item?.short_name === entry?.type)
+
+            return definition ? Boolean(definition.has_properties) : true
+        },
+        entryExpectsProperty(entry) {
+            return entry?.kind === 'assessment'
+                && this.entryDefinitionCategory(entry) === 'Benotung'
+                && this.entryTypeHasProperties(entry)
         },
         compactCellEntryType(entry) {
             return String(entry?.type || '').trim() || 'Eintrag'
@@ -3240,6 +3612,7 @@ export default {
                 this.applySavedCourseWork(response)
                 await this.loadCourseTableData(this.selected_course?.id, true)
                 this.resetCourseWorkEntryDrafts()
+                this.selectedCellEntryUid = null
             } finally {
                 this.courseWorkEntrySavingUid = null
             }
@@ -3324,6 +3697,14 @@ export default {
             this.entryForm.type = this.entryForm.type === type ? '' : type
             this.entryForm.grade = ''
         },
+        entryTypeCategoryColor(category) {
+            return {
+                Benotung: 'primary',
+                Verhalten: 'warning',
+                Weitere: 'secondary',
+                Verständigung: 'info',
+            }[category] || 'default'
+        },
         async saveCellEntry() {
             if (!this.canSaveCellEntry) return
 
@@ -3338,7 +3719,7 @@ export default {
                         teaching_course_id: this.selected_course.id,
                         user_id: this.registeredEntryStudentId,
                         type: this.entryForm.type,
-                        grade: this.entryForm.grade || null,
+                        grade: this.selectedEntryTypeCategory === 'Benotung' ? this.entryForm.grade || null : null,
                         date,
                         description,
                     })
@@ -3346,7 +3727,7 @@ export default {
                     response = await this.entryStore.update({
                         id: this.entryForm.id,
                         type: this.entryForm.type,
-                        grade: this.entryForm.grade || null,
+                        grade: this.selectedEntryTypeCategory === 'Benotung' ? this.entryForm.grade || null : null,
                         date,
                         description,
                     })
@@ -3366,6 +3747,7 @@ export default {
 
                 if (response) {
                     this.cancelNewCellEntry()
+                    this.selectedCellEntryUid = null
                 }
             } finally {
                 this.entrySaving = false
@@ -3948,6 +4330,149 @@ export default {
     box-shadow: inset 0 0 0 3px #1d4ed8;
 }
 
+.course-table-content-label,
+.course-table-content-cell {
+    background: #f8fafc;
+    height: 44px;
+}
+
+.course-table-content-label {
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 850;
+    left: 0;
+    position: sticky;
+    z-index: 2;
+}
+
+.course-table-content-label-content {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+}
+
+.course-table-content-cell {
+    cursor: pointer;
+    outline: none;
+    text-align: center;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.course-table-content-cell:hover,
+.course-table-content-cell:focus-visible {
+    background: #e0e7ff;
+    box-shadow: inset 0 0 0 2px #6366f1;
+}
+
+.course-table-content-cell--free {
+    background: #ecfdf3;
+}
+
+.course-table-content-cell--selected {
+    background: #c7d2fe;
+    box-shadow: inset 0 0 0 3px #4f46e5;
+}
+
+.course-table-content-cell-icon {
+    opacity: 0.55;
+    transition: opacity 0.15s ease, scale 0.15s ease;
+}
+
+.course-table-content-cell-preview {
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    display: -webkit-box;
+    font-size: 0.68rem;
+    line-height: 13px;
+    max-height: 39px;
+    overflow: hidden;
+    padding: 0 5px;
+    text-align: left;
+    word-break: break-word;
+}
+
+.course-table-content-cell:hover .course-table-content-cell-icon,
+.course-table-content-cell:focus-visible .course-table-content-cell-icon {
+    opacity: 1;
+    scale: 1.12;
+}
+
+:deep(.course-table-content-tooltip-html) {
+    white-space: normal;
+}
+
+:deep(.course-table-content-tooltip-html p) {
+    margin: 0.25rem 0;
+}
+
+:deep(.course-table-content-tooltip-html h1),
+:deep(.course-table-content-tooltip-html h2),
+:deep(.course-table-content-tooltip-html h3) {
+    font-weight: 800;
+    line-height: 1.2;
+    margin: 0.45rem 0 0.25rem;
+}
+
+:deep(.course-table-content-tooltip-html h1) {
+    font-size: 1.25rem;
+}
+
+:deep(.course-table-content-tooltip-html h2) {
+    font-size: 1.1rem;
+}
+
+:deep(.course-table-content-tooltip-html h3) {
+    font-size: 1rem;
+}
+
+:deep(.course-table-content-tooltip-html ul),
+:deep(.course-table-content-tooltip-html ol) {
+    margin: 0.45rem 0;
+    padding-left: 1.25rem;
+}
+
+:deep(.course-table-content-tooltip-html ul) {
+    list-style-type: disc;
+}
+
+:deep(.course-table-content-tooltip-html ol) {
+    list-style-type: decimal;
+}
+
+:deep(.course-table-content-tooltip-html blockquote) {
+    background: rgba(255, 255, 255, 0.1);
+    border-left: 3px solid rgba(255, 255, 255, 0.7);
+    margin: 0.5rem 0;
+    padding: 0.35rem 0.6rem;
+}
+
+:deep(.course-table-content-tooltip-html pre),
+:deep(.course-table-content-tooltip-html code) {
+    background: rgba(0, 0, 0, 0.24);
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+:deep(.course-table-content-tooltip-html pre) {
+    overflow-x: auto;
+    padding: 0.5rem;
+    white-space: pre-wrap;
+}
+
+:deep(.course-table-content-tooltip-html code) {
+    padding: 0.08rem 0.2rem;
+}
+
+:deep(.course-table-content-tooltip-html pre code) {
+    background: transparent;
+    padding: 0;
+}
+
+:deep(.course-table-content-tooltip-html hr) {
+    border-color: rgba(255, 255, 255, 0.35);
+    margin: 0.55rem 0;
+}
+
 :deep(.course-table-work-tooltip) {
     line-height: 1.35;
     padding: 12px 14px;
@@ -4061,7 +4586,7 @@ export default {
 .course-table-work-summary-title {
     display: -webkit-box;
     font-size: 0.7rem;
-    font-weight: 800;
+    font-weight: 400;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 4;
     line-height: 1.25;
@@ -4286,7 +4811,15 @@ export default {
 }
 
 .course-table-entry-cell--absent {
-    background: rgba(var(--v-theme-error), 0.14) !important;
+    position: relative;
+}
+
+.course-table-entry-cell-absent-marker {
+    pointer-events: none;
+    position: absolute;
+    right: 3px;
+    top: 3px;
+    z-index: 1;
 }
 
 .course-table-entry-cell--interactive:hover,
@@ -4298,6 +4831,92 @@ export default {
 .course-table-entry-cell--selected {
     background: #bfdbfe !important;
     box-shadow: inset 0 0 0 3px #1d4ed8;
+}
+
+.course-table-entry-type-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.course-table-entry-type-row {
+    align-items: start;
+    background: rgba(var(--v-theme-surface-variant), 0.22);
+    border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+    border-left-width: 4px;
+    border-radius: 10px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 94px minmax(0, 1fr);
+    padding: 10px 12px;
+}
+
+.course-table-entry-type-category {
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 800;
+    padding: 5px 8px;
+    text-align: center;
+}
+
+.course-table-entry-type-row[data-category='Benotung'] {
+    background: rgba(var(--v-theme-primary), 0.055);
+    border-color: rgba(var(--v-theme-primary), 0.28);
+}
+
+.course-table-entry-type-row[data-category='Benotung'] .course-table-entry-type-category {
+    background: rgba(var(--v-theme-primary), 0.14);
+    color: rgb(var(--v-theme-primary));
+}
+
+.course-table-entry-type-row[data-category='Verhalten'] {
+    background: rgba(var(--v-theme-warning), 0.07);
+    border-color: rgba(var(--v-theme-warning), 0.35);
+}
+
+.course-table-entry-type-row[data-category='Verhalten'] .course-table-entry-type-category {
+    background: rgba(var(--v-theme-warning), 0.18);
+    color: rgb(var(--v-theme-warning));
+}
+
+.course-table-entry-type-row[data-category='Weitere'] {
+    background: rgba(var(--v-theme-secondary), 0.065);
+    border-color: rgba(var(--v-theme-secondary), 0.3);
+}
+
+.course-table-entry-type-row[data-category='Weitere'] .course-table-entry-type-category {
+    background: rgba(var(--v-theme-secondary), 0.16);
+    color: rgb(var(--v-theme-secondary));
+}
+
+@media (max-width: 600px) {
+    .course-table-entry-type-row {
+        grid-template-columns: 1fr;
+    }
+
+    .course-table-entry-type-category {
+        justify-self: start;
+    }
+}
+
+.course-table-column--marked-blue {
+    background: #dbeafe !important;
+}
+
+.course-table-column--marked-green {
+    background: #dcfce7 !important;
+}
+
+.course-table-column--marked-orange {
+    background: #ffedd5 !important;
+}
+
+.course-table-column--marked-purple {
+    background: #ede9fe !important;
+}
+
+.course-table-column--marked-red {
+    background: #fee2e2 !important;
 }
 
 .course-table-entry-cell-content {

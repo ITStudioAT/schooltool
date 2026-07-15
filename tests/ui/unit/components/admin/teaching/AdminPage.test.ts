@@ -57,4 +57,35 @@ describe('Teaching admin page', () => {
         ;(Admin as any).methods.activatePanel.call(ctx, 'missing')
         expect(ctx.active_panel).toBe('school_hours')
     })
+
+    it('marks the school hours panel when the loaded list is empty', () => {
+        const computed = (Admin as any).computed
+
+        expect(computed.hasMissingSchoolHoursWarning.call({
+            school_hours_loaded: false,
+            school_hours: [],
+        })).toBe(false)
+
+        expect(computed.hasMissingSchoolHoursWarning.call({
+            school_hours_loaded: true,
+            school_hours: [],
+        })).toBe(true)
+
+        const panels = computed.availablePanels.call({
+            canManageSchoolHolidays: true,
+            hasMissingSchoolHoursWarning: true,
+        })
+
+        expect(panels.find((panel: { id: string }) => panel.id === 'school_hours')).toMatchObject({
+            label: 'Schulstunden',
+            needsAttention: true,
+        })
+    })
+
+    it('does not mark the school hours panel when entries exist', () => {
+        expect((Admin as any).computed.hasMissingSchoolHoursWarning.call({
+            school_hours_loaded: true,
+            school_hours: [{ id: 1 }],
+        })).toBe(false)
+    })
 })

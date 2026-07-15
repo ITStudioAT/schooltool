@@ -33,6 +33,43 @@ describe('Teaching school hours page', () => {
         expect(computed.isCreateFormValid.call(validCtx)).toBe(true)
     })
 
+    it('describes the available previous year import', () => {
+        const description = (SchoolHours as any).computed.previousYearImportDescription.call({
+            previous_year_import: {
+                count: 8,
+                schoolyear: { id: 4, label: '2025/26' },
+            },
+        })
+
+        expect(description).toBe('8 Schulstunden aus 2025/26 können übernommen werden.')
+    })
+
+    it('reuses school hours already loaded by the parent panel', async () => {
+        const index = vi.fn().mockResolvedValue(true)
+        const ctx = {
+            school_hours_loaded: true,
+            schoolHourStore: { index },
+        }
+
+        const result = await (SchoolHours as any).methods.loadSchoolHoursIfNeeded.call(ctx)
+
+        expect(result).toBe(true)
+        expect(index).not.toHaveBeenCalled()
+    })
+
+    it('loads school hours when the parent request has not finished', async () => {
+        const index = vi.fn().mockResolvedValue(true)
+        const ctx = {
+            school_hours_loaded: false,
+            schoolHourStore: { index },
+        }
+
+        const result = await (SchoolHours as any).methods.loadSchoolHoursIfNeeded.call(ctx)
+
+        expect(result).toBe(true)
+        expect(index).toHaveBeenCalledTimes(1)
+    })
+
     it('resets create form to exactly one entry with next suggested hour', () => {
         const methods = (SchoolHours as any).methods
         const ctx: Record<string, unknown> = {
@@ -104,6 +141,33 @@ describe('Teaching school hours page', () => {
         expect(index).toHaveBeenCalledTimes(1)
         expect(ctx.show_create_form).toBe(false)
         expect(resetCreateForm).toHaveBeenCalledTimes(1)
+    })
+
+    it('imports school hours from the previous year and closes the create form', async () => {
+        const methods = (SchoolHours as any).methods
+        const importPreviousYear = vi.fn().mockResolvedValue([{ id: 1, hour: 1 }])
+        const resetCreateForm = vi.fn()
+        const ctx: Record<string, unknown> = {
+            previous_year_import: {
+                count: 1,
+                schoolyear: { id: 4, label: '2025/26' },
+            },
+            school_hours_save_action: null,
+            $nextTick: async () => {},
+            schoolHourStore: { importPreviousYear },
+            show_create_form: true,
+            resetCreateForm,
+            runSchoolHourMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runSchoolHourMutation.call(this, action, callback)
+            },
+        }
+
+        await methods.importPreviousYearSchoolHours.call(ctx)
+
+        expect(importPreviousYear).toHaveBeenCalledTimes(1)
+        expect(ctx.show_create_form).toBe(false)
+        expect(resetCreateForm).toHaveBeenCalledTimes(1)
+        expect(ctx.school_hours_save_action).toBeNull()
     })
 
     it('confirms deletion in a persistent dialog before removing a school hour', async () => {

@@ -85,6 +85,31 @@ describe('CourseStudents sorting', () => {
         expect(methods.studentLastLoginText.call({}, { login_at: null })).toBe('')
     })
 
+    it('formats birth details and uses the table gender symbols beside the name', () => {
+        const methods = (CourseStudents as any).methods
+        const context = {
+            formatDate: methods.formatDate,
+            normalizedStudentSex: methods.normalizedStudentSex,
+        }
+
+        expect(methods.studentBirthDetails.call(context, { birth_date: '2011-05-20', age: 15 }))
+            .toBe('20.05.2011 · 15 Jahre')
+        expect(methods.studentSexIcon.call(context, { sex: 'm' })).toBe('mdi-gender-male')
+        expect(methods.studentSexColor.call(context, { sex: 'm' })).toBe('blue')
+        expect(methods.studentSexIcon.call(context, { sex: 'w' })).toBe('mdi-gender-female')
+        expect(methods.studentSexColor.call(context, { sex: 'w' })).toBe('pink')
+    })
+
+    it('renders birth details before the existing last-login row', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
+        )
+
+        expect(source.indexOf('studentBirthDetails(student)')).toBeGreaterThan(source.indexOf('studentEmailText(student)'))
+        expect(source.indexOf('studentBirthDetails(student)')).toBeLessThan(source.indexOf('studentLastLoginText(student)'))
+        expect(source).toContain('v-if="studentSexIcon(student)"')
+    })
+
     it('does not render the old per-student pdf button anymore', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
@@ -268,5 +293,65 @@ describe('CourseStudents course-specific schema', () => {
         expect((ctx.selectedCourseSchema as any).id).toBe('schema-teacher')
         expect(computed.teachingWorks.call(ctx)).toEqual([{ short_name: 'MA', name: 'Mitarbeit' }])
         expect(computed.semesterCount.call(ctx)).toBe(2)
+    })
+
+    it('uses the assigned entry-area definitions for the new bulk action options', () => {
+        const computed = (CourseStudents as any).computed
+        const context: Record<string, any> = {
+            uses_entry_areas_for_grading_schema: true,
+            selected_course: {
+                teaching_entry_area: {
+                    id: 4,
+                    entry_definitions: [
+                        {
+                            category: 'Benotung',
+                            short_name: 'MÜ',
+                            name: 'Mündliche Übung',
+                            has_properties: true,
+                            properties_mode: 'fixed',
+                            fixed_properties: ['Sehr gut', 'Gut'],
+                        },
+                        { category: 'Verhalten', short_name: 'ZV', name: 'Zuverlässigkeit' },
+                    ],
+                },
+                teacher_teaching_schema: {
+                    works: [{ short_name: 'ALT', name: 'Alte Option', grades: [{ grade: '1' }] }],
+                },
+            },
+            bulk_entry_form: { type: 'MÜ', grade: '' },
+        }
+
+        context.selectedCourseSchema = computed.selectedCourseSchema.call(context)
+        context.teachingWorks = computed.teachingWorks.call(context)
+        context.usesNewBulkEntryDefinitions = computed.usesNewBulkEntryDefinitions.call(context)
+
+        expect(context.teachingWorks.map((definition: { short_name: string }) => definition.short_name)).toEqual(['MÜ'])
+        expect(computed.workTypeItems.call(context)).toEqual([{ title: 'MÜ - Mündliche Übung', value: 'MÜ' }])
+        expect(computed.gradeItemsForType.call(context)).toEqual([
+            { title: 'Sehr gut', value: 'Sehr gut' },
+            { title: 'Gut', value: 'Gut' },
+        ])
+        expect(computed.bulkGradeInputMode.call(context)).toBe('fixed')
+        expect(computed.bulkGradeLabel.call(context)).toBe('Eigenschaft')
+    })
+
+    it('allows a new bulk entry without a property when its definition has none', () => {
+        const computed = (CourseStudents as any).computed
+        const context: Record<string, any> = {
+            hasStudents: true,
+            usesNewBulkEntryDefinitions: true,
+            teachingWorks: [{ short_name: 'OK', has_properties: false }],
+            bulk_entry_form: {
+                student_ids: [11],
+                type: 'OK',
+                grade: '',
+                description: '',
+            },
+        }
+
+        context.bulkGradeInputMode = computed.bulkGradeInputMode.call(context)
+
+        expect(context.bulkGradeInputMode).toBe('none')
+        expect(computed.bulkEntryEnabled.call(context)).toBe(true)
     })
 })

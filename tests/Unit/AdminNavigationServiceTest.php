@@ -513,7 +513,7 @@ describe('dashboardMenu', function () {
         expect($teachingItem)
             ->not->toBeNull()
             ->and($teachingItem['is_active'])->toBeTrue()
-            ->and($teachingItem['to'])->toBe('/admin/teaching')
+            ->and($teachingItem['to'])->toBe('/admin/teaching?panel=table')
             ->and($teachingItem['active_paths'])->toBe(['/admin/teaching']);
     });
 

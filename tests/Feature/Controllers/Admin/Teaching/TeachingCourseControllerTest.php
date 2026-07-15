@@ -311,6 +311,53 @@ describe('index', function () {
             ->assertJsonPath('data.0.students.0.sem_1_grade', 'NB');
     });
 
+    test('uses an explicitly linked user when import and user emails differ', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $import = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import_user_id' => $this->teacher->id,
+            'first_name' => 'Paul',
+            'last_name' => 'Ahlgrimm',
+            'class' => '3A',
+            'email' => 'paul.ahlgrimm@example.test',
+        ]);
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import116_id' => $import->id,
+            'first_name' => 'Paul',
+            'last_name' => 'Ahlgrimm',
+            'schoolclass' => '3A',
+            'email' => 'teaching-test-paul@schooltool.invalid',
+            'is_active' => false,
+        ]);
+        $import->update(['user_id' => $student->id]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Deutsch - 3A',
+            'classes' => ['3A'],
+        ]);
+
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'import116_id' => $import->id,
+        ]);
+
+        $this->getJson('/api/admin/teaching/courses')
+            ->assertOk()
+            ->assertJsonPath('data.0.students.0.id', $student->id)
+            ->assertJsonPath('data.0.students.0.user_id', $student->id)
+            ->assertJsonPath('data.0.students.0.import116_id', $import->id)
+            ->assertJsonPath('data.0.students.0.first_name', 'Paul')
+            ->assertJsonPath('data.0.students.0.last_name', 'Ahlgrimm');
+    });
+
     test('does not return course students linked to an import from another schoolyear', function () {
         $this->actingAs($this->admin, 'sanctum');
 
@@ -560,6 +607,53 @@ describe('index', function () {
         expect($studentPayload)->not->toBeNull()
             ->and($studentPayload['email'])->toBe('student.contact@course.test')
             ->and($studentPayload['login_at'])->toBe('24.03.2026  08:15');
+    });
+
+    test('includes birth date and age from the linked import record for course students', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $birthDate = now()->subYears(14)->subDay()->toDateString();
+        $import = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import_user_id' => $this->teacher->id,
+            'first_name' => 'Paul',
+            'last_name' => 'Ahlgrimm',
+            'email' => 'paul.ahlgrimm@cdgym.at',
+            'sex' => 'm',
+            'birth_date' => $birthDate,
+        ]);
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import116_id' => $import->id,
+            'first_name' => 'Paul',
+            'last_name' => 'Ahlgrimm',
+            'email' => 'paul.ahlgrimm@cdgym.at',
+            'sex' => 'm',
+        ]);
+        $import->update(['user_id' => $student->id]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Deutsch',
+            'classes' => ['3B'],
+        ]);
+        $course->teachingCourseStudents()->create([
+            'user_id' => $student->id,
+            'import116_id' => $import->id,
+        ]);
+
+        $response = $this->getJson('/api/admin/teaching/courses')->assertSuccessful();
+        $courseData = collect($response->json('data'))->firstWhere('id', $course->id);
+        $studentPayload = collect($courseData['students'] ?? [])->firstWhere('id', $student->id);
+
+        expect($studentPayload)->not->toBeNull()
+            ->and($studentPayload['sex'])->toBe('m')
+            ->and($studentPayload['birth_date'])->toBe($birthDate)
+            ->and($studentPayload['age'])->toBe(14);
     });
 
     test('courses index batches curriculum assignment dependency checks', function () {
@@ -1153,6 +1247,8 @@ test('course index returns the assigned entry area and owner-scoped options', fu
         'short_name' => 'MA',
         'name' => 'Mitarbeit',
         'category' => 'Benotung',
+        'has_table_marking' => true,
+        'table_marking_color' => 'green',
     ]);
     $behaviourEntry = TeachingEntryDefinition::factory()->create([
         'school_id' => $this->school->id,
@@ -1178,6 +1274,8 @@ test('course index returns the assigned entry area and owner-scoped options', fu
         ->assertJsonPath('data.0.teaching_entry_area.id', $teacherEntryArea->id)
         ->assertJsonPath('data.0.teaching_entry_area.name', 'DGB')
         ->assertJsonPath('data.0.teaching_entry_area.entry_definitions.0.id', $gradingEntry->id)
+        ->assertJsonPath('data.0.teaching_entry_area.entry_definitions.0.has_table_marking', true)
+        ->assertJsonPath('data.0.teaching_entry_area.entry_definitions.0.table_marking_color', 'green')
         ->assertJsonPath('data.0.teaching_entry_area.entry_definitions.1.id', $behaviourEntry->id)
         ->assertJsonPath('data.0.teacher_teaching_entry_areas', [[
             'id' => $teacherEntryArea->id,
@@ -2122,6 +2220,56 @@ describe('destroy', function () {
         $response = $this->deleteJson("/api/admin/teaching/courses/{$course->id}");
 
         $response->assertStatus(204);
+    });
+
+    test('teacher can delete course after removing all students', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['1A'],
+        ]);
+        $courseStudent = $course->teachingCourseStudents()->create([
+            'user_id' => $student->id,
+        ]);
+        $courseStudent->delete();
+
+        $this->deleteJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertNoContent();
+
+        $this->assertModelMissing($course);
+        $this->assertDatabaseMissing('teaching_course_students', ['id' => $courseStudent->id]);
+    });
+
+    test('returns 409 when course still has an active student', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['1A'],
+        ]);
+        $courseStudent = $course->teachingCourseStudents()->create([
+            'user_id' => $student->id,
+        ]);
+
+        $this->deleteJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertStatus(409)
+            ->assertJsonPath('message', 'Der Kurs hat noch Abhängigkeiten und kann nicht gelöscht werden');
+
+        $this->assertModelExists($course);
+        $this->assertModelExists($courseStudent);
     });
 
     test('returns 403 when deleting course from different school', function () {

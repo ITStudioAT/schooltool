@@ -48,17 +48,32 @@
                 <div v-if="normalizedProgress !== null" class="admin-compact-section-hero__progress">
                     <div class="admin-compact-section-hero__progress-heading">
                         <v-icon :icon="progressIcon" size="19" />
-                        <span class="admin-compact-section-hero__progress-label">{{ progressLabel }}</span>
+                        <div class="admin-compact-section-hero__progress-labels">
+                            <span class="admin-compact-section-hero__progress-label">{{ progressLabel }}</span>
+                            <span
+                                v-if="progressSecondaryLabel"
+                                class="admin-compact-section-hero__progress-secondary-label">
+                                {{ progressSecondaryLabel }}
+                            </span>
+                        </div>
                     </div>
-                    <v-progress-linear
-                        :model-value="normalizedProgress"
-                        :aria-label="progressLabel"
-                        color="#86efac"
-                        bg-color="#ef4444"
-                        :bg-opacity="0.62"
-                        height="9"
-                        rounded
-                        rounded-bar />
+                    <div class="admin-compact-section-hero__progress-track">
+                        <v-progress-linear
+                            :model-value="normalizedProgress"
+                            :aria-label="progressLabel"
+                            color="#86efac"
+                            bg-color="#ef4444"
+                            :bg-opacity="0.62"
+                            height="9"
+                            rounded
+                            rounded-bar />
+                        <span
+                            v-if="normalizedProgressMarker !== null"
+                            class="admin-compact-section-hero__progress-marker"
+                            :style="{ left: `${normalizedProgressMarker}%` }"
+                            :aria-label="progressMarkerLabel"
+                            :title="progressMarkerLabel"></span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -94,6 +109,18 @@ export default {
         progressLabel: {
             type: String,
             default: 'Fortschritt',
+        },
+        progressSecondaryLabel: {
+            type: String,
+            default: '',
+        },
+        progressMarker: {
+            type: Number,
+            default: null,
+        },
+        progressMarkerLabel: {
+            type: String,
+            default: 'Markierung',
         },
         progressIcon: {
             type: String,
@@ -176,6 +203,11 @@ export default {
         normalizedProgress() {
             return typeof this.progress === 'number' && Number.isFinite(this.progress)
                 ? Math.max(0, Math.min(100, Math.round(this.progress)))
+                : null
+        },
+        normalizedProgressMarker() {
+            return typeof this.progressMarker === 'number' && Number.isFinite(this.progressMarker)
+                ? Math.max(0, Math.min(100, this.progressMarker))
                 : null
         },
         currentUserChipText() {
@@ -316,10 +348,40 @@ export default {
     gap: 7px;
 }
 
+.admin-compact-section-hero__progress-labels {
+    display: grid;
+    gap: 1px;
+}
+
 .admin-compact-section-hero__progress-label {
     font-size: 0.88rem;
-    font-weight: 750;
+    font-weight: 400;
     white-space: nowrap;
+}
+
+.admin-compact-section-hero__progress-secondary-label {
+    font-size: 0.76rem;
+    font-weight: 400;
+    line-height: 1.15;
+    opacity: 0.86;
+    white-space: nowrap;
+}
+
+.admin-compact-section-hero__progress-track {
+    position: relative;
+}
+
+.admin-compact-section-hero__progress-marker {
+    position: absolute;
+    top: 50%;
+    z-index: 1;
+    width: 2px;
+    height: 17px;
+    border-radius: 999px;
+    background: #ffffff;
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.48), 0 1px 4px rgba(15, 23, 42, 0.5);
+    pointer-events: none;
+    transform: translate(-50%, -50%);
 }
 
 @media (max-width: 960px) {

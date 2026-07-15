@@ -82,6 +82,45 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             }
         },
 
+        syncEntryDefinition(entryDefinition) {
+            if (!entryDefinition?.id || !entryDefinition?.teaching_entry_area_id) return
+
+            const targetAreaId = String(entryDefinition.teaching_entry_area_id)
+            const synchronizedAreas = new Set()
+            const loadedAreas = [
+                ...(Array.isArray(this.entry_areas) ? this.entry_areas : []),
+                ...(Array.isArray(this.courses)
+                    ? this.courses.map((course) => course?.teaching_entry_area)
+                    : []),
+                this.selected_course?.teaching_entry_area,
+            ]
+
+            loadedAreas.forEach((area) => {
+                if (!area || synchronizedAreas.has(area)) return
+
+                synchronizedAreas.add(area)
+                const definitions = Array.isArray(area.entry_definitions) ? area.entry_definitions : []
+                const existingIndex = definitions.findIndex((definition) => (
+                    String(definition?.id || '') === String(entryDefinition.id)
+                ))
+
+                if (String(area.id || '') !== targetAreaId) {
+                    if (existingIndex >= 0) definitions.splice(existingIndex, 1)
+                    return
+                }
+
+                if (!Array.isArray(area.entry_definitions)) {
+                    area.entry_definitions = definitions
+                }
+
+                if (existingIndex >= 0) {
+                    definitions.splice(existingIndex, 1, entryDefinition)
+                } else {
+                    definitions.push(entryDefinition)
+                }
+            })
+        },
+
         async index() {
             if (this.courses_request_promise) {
                 return this.courses_request_promise

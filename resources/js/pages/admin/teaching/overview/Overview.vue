@@ -15,6 +15,10 @@
                         :disabled="isControlLocked"
                         :prepend-icon="panel.icon">
                         {{ panel.label }}
+                        <span
+                            v-if="['dates', 'table'].includes(panel.id) && selectedCourseHasNoDates"
+                            class="ml-1 text-error font-weight-black"
+                            aria-label="Keine Termine vorhanden">!</span>
                     </v-btn>
                 </v-btn-toggle>
             </section>
@@ -571,9 +575,9 @@ export default {
         functionalPanels() {
             const panels = []
             if (this.selected_course) {
-                panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
-                panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
                 panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })
+                panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
+                panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
                 panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })
@@ -583,6 +587,9 @@ export default {
                 panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
             }
             return panels
+        },
+        selectedCourseHasNoDates() {
+            return Array.isArray(this.selected_course?.course_dates) && this.selected_course.course_dates.length === 0
         },
         functionalPanelSelection: {
             get() {
@@ -636,7 +643,7 @@ export default {
             if (!this._urlPanelRestored) {
                 const urlPanel = this.$route?.query?.panel
                 const urlGrades = this.$route?.query?.grades
-                const validPanels = ['students', 'dates', 'table', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']
+                const validPanels = ['table', 'students', 'dates', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']
                 this._urlPanelRestored = true
                 this._lastCourseId = newCourse.id
                 if (urlPanel && validPanels.includes(urlPanel)) {

@@ -23,6 +23,12 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
                 ->all();
         }
 
+        $tableMarkingColor = $this->input('table_marking_color');
+
+        if (is_string($tableMarkingColor)) {
+            $tableMarkingColor = Str::of($tableMarkingColor)->trim()->lower()->toString() ?: null;
+        }
+
         $this->merge([
             'teaching_entry_area_id' => (int) $this->input('teaching_entry_area_id'),
             'short_name' => Str::of((string) $this->input('short_name'))->trim()->upper()->toString(),
@@ -30,6 +36,8 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
             'fixed_properties' => $fixedProperties,
             'has_notifications' => $this->input('has_notifications', false),
             'notification_recipients' => $notificationRecipients,
+            'has_table_marking' => $this->input('has_table_marking', false),
+            'table_marking_color' => $tableMarkingColor,
         ]);
     }
 
@@ -89,6 +97,13 @@ class UpdateTeachingEntryDefinitionRequest extends FormRequest
                 'string',
                 Rule::in(['class_teacher', 'parents', 'student']),
                 'distinct:strict',
+            ],
+            'has_table_marking' => ['required', 'boolean'],
+            'table_marking_color' => [
+                Rule::requiredIf(fn () => $this->input('category') === 'Benotung' && $this->boolean('has_table_marking')),
+                'nullable',
+                'string',
+                Rule::in(TeachingEntryDefinition::TableMarkingColors),
             ],
         ];
     }

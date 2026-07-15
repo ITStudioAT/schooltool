@@ -113,38 +113,42 @@ class TeachingTestEnvironmentService
 
             $now = now();
             $password = Hash::make(Str::random(64));
+            $reusableUserIds = $this->reusableUserIdsBySourceImport($sourceRows, $schoolId);
             $testUserEmails = [];
 
-            $sourceRows->chunk(250)->each(function (Collection $chunk) use (
-                $schoolId,
-                $targetSchoolyearId,
-                $now,
-                $password,
-                &$testUserEmails,
-            ): void {
-                $rows = $chunk->map(function (object $sourceRow) use ($schoolId, $targetSchoolyearId, $now, $password, &$testUserEmails): array {
-                    $email = $this->testUserEmail($schoolId, (int) $sourceRow->id);
-                    $testUserEmails[(int) $sourceRow->id] = $email;
+            $sourceRows
+                ->reject(fn (object $sourceRow): bool => $reusableUserIds->has((int) $sourceRow->id))
+                ->chunk(250)
+                ->each(function (Collection $chunk) use (
+                    $schoolId,
+                    $targetSchoolyearId,
+                    $now,
+                    $password,
+                    &$testUserEmails,
+                ): void {
+                    $rows = $chunk->map(function (object $sourceRow) use ($schoolId, $targetSchoolyearId, $now, $password, &$testUserEmails): array {
+                        $email = $this->testUserEmail($schoolId, (int) $sourceRow->id);
+                        $testUserEmails[(int) $sourceRow->id] = $email;
 
-                    return [
-                        'school_id' => $schoolId,
-                        'schoolyear_id' => $targetSchoolyearId,
-                        'email' => $email,
-                        'password' => $password,
-                        'first_name' => $sourceRow->first_name,
-                        'last_name' => $sourceRow->last_name,
-                        'phone' => $sourceRow->phone_1,
-                        'sex' => $sourceRow->sex,
-                        'schoolclass' => $sourceRow->class,
-                        'uuid' => (string) Str::uuid(),
-                        'is_active' => 0,
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ];
-                })->all();
+                        return [
+                            'school_id' => $schoolId,
+                            'schoolyear_id' => $targetSchoolyearId,
+                            'email' => $email,
+                            'password' => $password,
+                            'first_name' => $sourceRow->first_name,
+                            'last_name' => $sourceRow->last_name,
+                            'phone' => $sourceRow->phone_1,
+                            'sex' => $sourceRow->sex,
+                            'schoolclass' => $sourceRow->class,
+                            'uuid' => (string) Str::uuid(),
+                            'is_active' => 0,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ];
+                    })->all();
 
-                DB::table('users')->insert($rows);
-            });
+                    DB::table('users')->insert($rows);
+                });
 
             $testUserIds = DB::table('users')
                 ->where('school_id', $schoolId)
@@ -158,6 +162,7 @@ class TeachingTestEnvironmentService
                 $now,
                 $testUserEmails,
                 $testUserIds,
+                $reusableUserIds,
             ): void {
                 DB::table('import116')->insert($chunk->map(function (object $sourceRow) use (
                     $user,
@@ -166,7 +171,10 @@ class TeachingTestEnvironmentService
                     $now,
                     $testUserEmails,
                     $testUserIds,
+                    $reusableUserIds,
                 ): array {
+                    $reusableUserId = $reusableUserIds->get((int) $sourceRow->id);
+
                     return [
                         'school_id' => $schoolId,
                         'schoolyear_id' => $targetSchoolyearId,
@@ -193,7 +201,9 @@ class TeachingTestEnvironmentService
                         'import_date' => $now,
                         'exists_date' => $now,
                         'import_user_id' => (int) $user->id,
-                        'user_id' => (int) $testUserIds->get($testUserEmails[(int) $sourceRow->id]),
+                        'user_id' => $reusableUserId
+                            ? (int) $reusableUserId
+                            : (int) $testUserIds->get($testUserEmails[(int) $sourceRow->id]),
                         'created_at' => $now,
                         'updated_at' => $now,
                     ];
@@ -201,8 +211,8 @@ class TeachingTestEnvironmentService
             });
 
             DB::update(
-                'UPDATE users INNER JOIN import116 ON import116.user_id = users.id SET users.import116_id = import116.id, users.updated_at = ? WHERE users.school_id = ? AND users.schoolyear_id = ? AND users.email LIKE ?',
-                [$now, $schoolId, $targetSchoolyearId, $this->testUserEmailLikePattern($schoolId)]
+                'UPDATE users INNER JOIN import116 ON import116.user_id = users.id SET users.import116_id = import116.id, users.schoolyear_id = ?, users.updated_at = ? WHERE users.school_id = ? AND import116.school_id = ? AND import116.schoolyear_id = ?',
+                [$targetSchoolyearId, $now, $schoolId, $schoolId, $targetSchoolyearId]
             );
 
             Import116Run::query()->create([
@@ -233,6 +243,7 @@ class TeachingTestEnvironmentService
             return [
                 'copied_import116_records' => $sourceRows->count(),
                 'created_test_users' => count($testUserEmails),
+                'reused_user_accounts' => $reusableUserIds->count(),
                 'removed_target_records' => (int) $purgeResult['deleted_records'],
                 'selected_schoolyear_id' => $targetSchoolyearId,
             ];
@@ -320,6 +331,53 @@ class TeachingTestEnvironmentService
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
             ->count();
+    }
+
+    /**
+     * @return Collection<int, int>
+     */
+    private function reusableUserIdsBySourceImport(Collection $sourceRows, int $schoolId): Collection
+    {
+        $sourceUserIds = $sourceRows
+            ->pluck('user_id')
+            ->filter(fn (mixed $userId): bool => (int) $userId > 0)
+            ->map(fn (mixed $userId): int => (int) $userId)
+            ->values();
+        $sourceEmails = $sourceRows
+            ->pluck('email')
+            ->map(fn (mixed $email): string => mb_strtolower(trim((string) $email)))
+            ->filter()
+            ->values();
+
+        $candidates = User::query()
+            ->where('school_id', $schoolId)
+            ->where(function ($query) use ($sourceUserIds, $sourceEmails): void {
+                if ($sourceUserIds->isNotEmpty()) {
+                    $query->whereIn('id', $sourceUserIds->all());
+                }
+
+                if ($sourceEmails->isNotEmpty()) {
+                    $method = $sourceUserIds->isNotEmpty() ? 'orWhereIn' : 'whereIn';
+                    $query->{$method}(DB::raw('LOWER(email)'), $sourceEmails->all());
+                }
+            })
+            ->get();
+
+        $candidatesById = $candidates->keyBy(fn (User $candidate): int => (int) $candidate->id);
+        $candidatesByEmail = $candidates
+            ->reject(fn (User $candidate): bool => str_starts_with((string) $candidate->email, 'teaching-test-2627-'))
+            ->keyBy(fn (User $candidate): string => mb_strtolower(trim((string) $candidate->email)));
+
+        return $sourceRows->mapWithKeys(function (object $sourceRow) use ($candidatesById, $candidatesByEmail): array {
+            $candidate = $candidatesById->get((int) ($sourceRow->user_id ?? 0))
+                ?? $candidatesByEmail->get(mb_strtolower(trim((string) ($sourceRow->email ?? ''))));
+
+            if (! $candidate || str_starts_with((string) $candidate->email, 'teaching-test-2627-')) {
+                return [];
+            }
+
+            return [(int) $sourceRow->id => (int) $candidate->id];
+        });
     }
 
     private function targetResettableTeachingRecordCount(int $schoolId, int $schoolyearId): int

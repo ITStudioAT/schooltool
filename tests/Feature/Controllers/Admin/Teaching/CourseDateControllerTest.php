@@ -347,6 +347,67 @@ it('update and destroy course date', function () {
     $this->assertDatabaseMissing('teaching_course_dates', ['id' => $courseDate->id]);
 });
 
+it('deletes all dates for one authorized course with their adopted materials', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $firstDate = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-04-11',
+        'hours' => [2],
+        'status' => [],
+    ]);
+    $secondDate = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-04-18',
+        'hours' => [2],
+        'status' => [],
+    ]);
+    $foreignDate = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->otherCourse->id,
+        'date' => '2026-04-18',
+        'hours' => [2],
+        'status' => [],
+    ]);
+    $material = $firstDate->materials()->create([
+        'title' => 'Quellenarbeit',
+    ]);
+    Storage::disk('local')->put('teaching/course_date_materials/test.pdf', 'content');
+    $attachment = $material->attachments()->create([
+        'name' => 'Test.pdf',
+        'file_path' => 'teaching/course_date_materials/test.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 7,
+    ]);
+
+    $this->deleteJson('/api/admin/teaching/course_dates?course_id='.$this->course->id)
+        ->assertOk()
+        ->assertJsonPath('deleted_count', 2);
+
+    $this->assertModelMissing($firstDate);
+    $this->assertModelMissing($secondDate);
+    $this->assertModelExists($foreignDate);
+    $this->assertModelMissing($material);
+    $this->assertModelMissing($attachment);
+    Storage::disk('local')->assertMissing('teaching/course_date_materials/test.pdf');
+});
+
+it('validates and authorizes deleting all course dates', function () {
+    $this->deleteJson('/api/admin/teaching/course_dates?course_id='.$this->course->id)
+        ->assertUnauthorized();
+
+    $this->actingAs($this->admin, 'sanctum');
+    $this->deleteJson('/api/admin/teaching/course_dates')
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['course_id']);
+    $this->deleteJson('/api/admin/teaching/course_dates?course_id='.$this->otherCourse->id)
+        ->assertForbidden();
+
+    $this->actingAs($this->regularUser, 'sanctum');
+    $this->deleteJson('/api/admin/teaching/course_dates?course_id='.$this->course->id)
+        ->assertForbidden();
+});
+
 it('adopts only selected curriculum material attachments', function () {
     Storage::fake('local');
     $this->actingAs($this->admin, 'sanctum');

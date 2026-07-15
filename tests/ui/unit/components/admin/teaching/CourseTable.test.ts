@@ -215,6 +215,45 @@ describe('CourseTable', () => {
         expect(assignment.affectedStudentCount).toBe(4)
     })
 
+    it('marks a complete date column with the configured work type color', () => {
+        const methods = (CourseTable as any).methods
+        const context = {
+            tableView: 'entries',
+            uses_entry_areas_for_grading_schema: true,
+            selected_course: {
+                teaching_entry_area: {
+                    entry_definitions: [
+                        {
+                            short_name: 'PÜ',
+                            category: 'Benotung',
+                            has_table_marking: true,
+                            table_marking_color: 'red',
+                        },
+                        {
+                            short_name: 'TW',
+                            category: 'Benotung',
+                            has_table_marking: false,
+                            table_marking_color: null,
+                        },
+                    ],
+                },
+            },
+            courseWorksForDate: vi.fn().mockReturnValue([{ work: { type: 'PÜ' } }]),
+            courseDateColumnMarkingColor: methods.courseDateColumnMarkingColor,
+        }
+
+        expect(methods.courseDateColumnMarkingColor.call(context, { date: '2026-10-12' })).toBe('red')
+        expect(methods.courseDateColumnMarkingClass.call(context, { date: '2026-10-12' }))
+            .toBe('course-table-column--marked-red')
+
+        context.courseWorksForDate.mockReturnValue([{ work: { type: 'TW' } }])
+        expect(methods.courseDateColumnMarkingColor.call(context, { date: '2026-09-21' })).toBeNull()
+
+        context.tableView = 'attendance'
+        context.courseWorksForDate.mockReturnValue([{ work: { type: 'PÜ' } }])
+        expect(methods.courseDateColumnMarkingColor.call(context, { date: '2026-10-12' })).toBeNull()
+    })
+
     it('opens the persistent work dialog for the selected date', () => {
         const methods = (CourseTable as any).methods
         const courseDate = { id: 7, date: '2026-05-16' }
@@ -252,6 +291,78 @@ describe('CourseTable', () => {
 
         expect(ctx.workDialog).toEqual({ courseDate, open: true })
         expect(ctx.startCreatingDateWork).toHaveBeenCalledTimes(1)
+    })
+
+    it('opens the content editor with the selected course date content and cancels it', () => {
+        const methods = (CourseTable as any).methods
+        const courseDate = { id: 7, date: '2026-05-16', content: '<p>Bruchrechnen</p>' }
+        const ctx = {
+            contentDialog: {
+                content: '',
+                courseDate: null,
+                open: false,
+            },
+            contentSaving: false,
+            courseDateScrollKey: methods.courseDateScrollKey,
+        }
+
+        methods.openContentDialog.call(ctx, courseDate)
+
+        expect(ctx.contentDialog).toEqual({ content: '<p>Bruchrechnen</p>', courseDate, open: true })
+        expect(methods.isContentDialogCellSelected.call(ctx, courseDate)).toBe(true)
+
+        methods.closeContentDialog.call(ctx)
+
+        expect(ctx.contentDialog).toEqual({ content: '', courseDate: null, open: false })
+    })
+
+    it('creates a safe plain-text preview from rich Termin content', () => {
+        const courseDateContentPreview = (CourseTable as any).methods.courseDateContentPreview
+
+        expect(courseDateContentPreview({
+            content: '<p>Erste Zeile &amp; Text</p><p>Zweite <strong>Zeile</strong></p>',
+        })).toBe('Erste Zeile & Text Zweite Zeile')
+        expect(courseDateContentPreview({ content: null })).toBe('')
+    })
+
+    it('preserves supported rich-text formatting and removes unsafe tooltip markup', () => {
+        const courseDateFormattedContent = (CourseTable as any).methods.courseDateFormattedContent
+
+        expect(courseDateFormattedContent({
+            content: '<h2>Übersicht</h2><p><strong>Fett</strong> und <u>unterstrichen</u></p>'
+                + '<script>alert(1)</script><span onclick="alert(2)"><em>Kursiv</em></span>',
+        })).toBe('<h2>Übersicht</h2><p><strong>Fett</strong> und <u>unterstrichen</u></p><em>Kursiv</em>')
+    })
+
+    it('saves edited course date content and refreshes the selected course', async () => {
+        const methods = (CourseTable as any).methods
+        const courseDate = { id: 7, date: '2026-05-16', content: null }
+        const ctx = {
+            contentDialog: {
+                content: '<p>Bruchrechnen</p>',
+                courseDate,
+                open: true,
+            },
+            contentSaving: false,
+            courseDateStore: {
+                update: vi.fn().mockResolvedValue({ data: { ...courseDate, content: '<p>Bruchrechnen</p>' } }),
+            },
+            courseStore: {
+                index: vi.fn().mockResolvedValue(true),
+            },
+            closeContentDialog: vi.fn(),
+        }
+
+        await methods.saveContentDialog.call(ctx)
+
+        expect(ctx.courseDateStore.update).toHaveBeenCalledWith({
+            id: 7,
+            date: '2026-05-16',
+            content: '<p>Bruchrechnen</p>',
+        })
+        expect(ctx.courseStore.index).toHaveBeenCalledTimes(1)
+        expect(ctx.closeContentDialog).toHaveBeenCalledTimes(1)
+        expect(ctx.contentSaving).toBe(false)
     })
 
     it('changes the work date from the dialog header', () => {
@@ -382,6 +493,15 @@ describe('CourseTable', () => {
         ])
     })
 
+    it('keeps assessment badge text neutral when the work type marks the column background', () => {
+        const cellEntryColor = (CourseTable as any).methods.cellEntryColor
+
+        expect(cellEntryColor.call({}, { kind: 'assessment', type: 'MA' })).toBeNull()
+        expect(cellEntryColor.call({}, { kind: 'assessment', type: 'A' })).toBeNull()
+        expect(cellEntryColor.call({}, { kind: 'assessment', type: 'X' })).toBeNull()
+        expect(cellEntryColor.call({}, { kind: 'notification', type: 'MA' })).toBe('secondary')
+    })
+
     it('keeps legacy schema work types before school year 2026/27', () => {
         const availableWorkTypes = (CourseTable as any).computed.availableWorkTypes
         const items = availableWorkTypes.call({
@@ -403,21 +523,28 @@ describe('CourseTable', () => {
     it('uses the assigned entry area for manual assessment types and grades', () => {
         const methods = (CourseTable as any).methods
         const availableEntryTypes = (CourseTable as any).computed.availableEntryTypes
+        const availableEntryTypeGroups = (CourseTable as any).computed.availableEntryTypeGroups
         const availableEntryGrades = (CourseTable as any).computed.availableEntryGrades
-        const context = {
+        const context: any = {
             availableWorkTypes: [{ title: 'TW - Tageswiederholung', value: 'TW' }],
             courseWorkGradeConfigurationForType: methods.courseWorkGradeConfigurationForType,
             entryForm: { kind: 'assessment', type: 'TW' },
+            selectedEntryTypeCategory: 'Benotung',
             selected_course: {
                 teaching_entry_area: {
                     id: 15,
-                    entry_definitions: [{
-                        short_name: 'TW',
-                        category: 'Benotung',
-                        has_properties: true,
-                        properties_mode: 'fixed',
-                        fixed_properties: ['+', '0', 'F'],
-                    }],
+                    entry_definitions: [
+                        {
+                            short_name: 'TW',
+                            name: 'Tageswiederholung',
+                            category: 'Benotung',
+                            has_properties: true,
+                            properties_mode: 'fixed',
+                            fixed_properties: ['+', '0', 'F'],
+                        },
+                        { short_name: 'V', name: 'Verwarnung', category: 'Verhalten' },
+                        { short_name: 'M', name: 'Mitteilung', category: 'Weitere' },
+                    ],
                 },
             },
             selectedTeachingSchema: {
@@ -429,14 +556,72 @@ describe('CourseTable', () => {
             uses_entry_areas_for_grading_schema: true,
         }
 
+        context.availableEntryTypeGroups = availableEntryTypeGroups.call(context)
+
+        expect(context.availableEntryTypeGroups).toEqual([
+            {
+                category: 'Benotung',
+                items: [{ title: 'TW - Tageswiederholung', value: 'TW' }],
+            },
+            {
+                category: 'Verhalten',
+                items: [{ title: 'V - Verwarnung', value: 'V' }],
+            },
+            {
+                category: 'Weitere',
+                items: [{ title: 'M - Mitteilung', value: 'M' }],
+            },
+        ])
         expect(availableEntryTypes.call(context)).toEqual([
             { title: 'TW - Tageswiederholung', value: 'TW' },
+            { title: 'V - Verwarnung', value: 'V' },
+            { title: 'M - Mitteilung', value: 'M' },
         ])
         expect(availableEntryGrades.call(context)).toEqual([
             { title: '+', value: '+' },
             { title: '0', value: '0' },
             { title: 'F', value: 'F' },
         ])
+    })
+
+    it('styles entry type categories as separate color-coded cards', () => {
+        const methods = (CourseTable as any).methods
+        const source = readFileSync(
+            resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/CourseTable.vue'),
+            'utf8',
+        )
+
+        expect(methods.entryTypeCategoryColor('Benotung')).toBe('primary')
+        expect(methods.entryTypeCategoryColor('Verhalten')).toBe('warning')
+        expect(methods.entryTypeCategoryColor('Weitere')).toBe('secondary')
+        expect(source).toContain(':data-category="group.category"')
+        expect(source).toContain(':color="entryTypeCategoryColor(group.category)"')
+        expect(source).toContain(".course-table-entry-type-row[data-category='Benotung']")
+        expect(source).toContain(".course-table-entry-type-row[data-category='Verhalten']")
+        expect(source).toContain(".course-table-entry-type-row[data-category='Weitere']")
+        expect(source).toContain('border-left-width: 4px;')
+        expect(source).toContain('border-radius: 10px;')
+    })
+
+    it('shows only the selected entry type category until the type is deselected', () => {
+        const visibleEntryTypeGroups = (CourseTable as any).computed.visibleEntryTypeGroups
+        const groups = [
+            { category: 'Benotung', items: [{ title: 'MA', value: 'MA' }] },
+            { category: 'Verhalten', items: [{ title: 'V', value: 'V' }] },
+            { category: 'Weitere', items: [{ title: 'M', value: 'M' }] },
+        ]
+        const context: any = {
+            availableEntryTypeGroups: groups,
+            entryForm: { type: 'MA' },
+            selectedEntryTypeCategory: 'Benotung',
+        }
+
+        expect(visibleEntryTypeGroups.call(context)).toEqual([groups[0]])
+
+        context.entryForm.type = ''
+        context.selectedEntryTypeCategory = null
+
+        expect(visibleEntryTypeGroups.call(context)).toEqual(groups)
     })
 
     it('offers the configured grades for the selected work type', () => {
@@ -1628,19 +1813,23 @@ describe('CourseTable', () => {
     it('separates behaviour and other entries from performance entries in table cells', () => {
         const methods = (CourseTable as any).methods
         const entries = [
-            { uid: 'assessment-1', kind: 'assessment' },
+            { uid: 'assessment-1', kind: 'assessment', type: 'A' },
             { uid: 'behaviour-2', kind: 'behaviour' },
             { uid: 'behaviour-3', kind: 'notification' },
-            { uid: 'assessment-4', kind: 'assessment' },
+            { uid: 'assessment-4', kind: 'assessment', type: 'V' },
+            { uid: 'assessment-5', kind: 'assessment', type: 'W' },
         ]
         const ctx = {
+            entryDefinitionCategory: vi.fn((entry: { type: 'A' | 'V' | 'W' }) => (
+                { A: 'Benotung', V: 'Verhalten', W: 'Weitere' }
+            )[entry.type]),
             entriesForCell: vi.fn().mockReturnValue(entries),
         }
 
         expect(methods.supplementaryEntriesForCell.call(ctx, { id: 10 }, { id: 7 }))
-            .toEqual([entries[1], entries[2]])
+            .toEqual([entries[1], entries[2], entries[3], entries[4]])
         expect(methods.performanceEntriesForCell.call(ctx, { id: 10 }, { id: 7 }))
-            .toEqual([entries[0], entries[3]])
+            .toEqual([entries[0]])
     })
 
     it('builds complete hover information for entries in a student date cell', () => {
@@ -1750,6 +1939,49 @@ describe('CourseTable', () => {
         })).toBe('I')
     })
 
+    it('omits NA for entry types without properties', () => {
+        const methods = (CourseTable as any).methods
+        const context = {
+            entryTypeHasProperties: methods.entryTypeHasProperties,
+            selected_course: {
+                teaching_entry_area: {
+                    id: 15,
+                    entry_definitions: [
+                        { short_name: 'E', has_properties: false },
+                        { short_name: 'MA', has_properties: true },
+                    ],
+                },
+            },
+            uses_entry_areas_for_grading_schema: true,
+        }
+
+        expect(methods.compactCellEntryLabel.call(context, {
+            kind: 'assessment',
+            type: 'E',
+        })).toBe('E')
+        expect(methods.compactCellEntryLabel.call(context, {
+            kind: 'assessment',
+            type: 'MA',
+        })).toBe('MA: NA')
+    })
+
+    it('shows an open property chip only for grading entries that expect a property', () => {
+        const methods = (CourseTable as any).methods
+        const context = {
+            entryDefinitionCategory: vi.fn((entry: { type: string }) => ({
+                E: 'Verhalten',
+                MA: 'Benotung',
+                X: 'Benotung',
+            })[entry.type]),
+            entryTypeHasProperties: vi.fn((entry: { type: string }) => entry.type !== 'X'),
+        }
+
+        expect(methods.entryExpectsProperty.call(context, { kind: 'assessment', type: 'MA' })).toBe(true)
+        expect(methods.entryExpectsProperty.call(context, { kind: 'assessment', type: 'E' })).toBe(false)
+        expect(methods.entryExpectsProperty.call(context, { kind: 'assessment', type: 'X' })).toBe(false)
+        expect(methods.entryExpectsProperty.call(context, { kind: 'behaviour', type: 'MA' })).toBe(false)
+    })
+
     it('shows available comments in the entry card list', () => {
         const methods = (CourseTable as any).methods
         const context = {
@@ -1774,6 +2006,7 @@ describe('CourseTable', () => {
             entrySaving: false,
             entryStore: { store },
             selected_course: { id: 20 },
+            selectedEntryTypeCategory: 'Benotung',
             registeredEntryStudentId: 10,
             entryDialog: { courseDate: { date: '2026-03-09' } },
             entryForm: {
@@ -2027,6 +2260,7 @@ describe('CourseTable', () => {
             registeredEntryStudentId: 10,
             resetCourseWorkEntryDrafts,
             selected_course: { id: 16 },
+            selectedCellEntryUid: entry.uid,
         }
 
         await methods.saveCourseWorkCellEntry.call(ctx, entry)
@@ -2040,6 +2274,7 @@ describe('CourseTable', () => {
         expect(loadCourseTableData).toHaveBeenCalledWith(16, true)
         expect(resetCourseWorkEntryDrafts).toHaveBeenCalledTimes(1)
         expect(ctx.courseWorkEntrySavingUid).toBeNull()
+        expect(ctx.selectedCellEntryUid).toBeNull()
     })
 
     it('updates an assessment entry in the selected cell', async () => {
@@ -2049,6 +2284,7 @@ describe('CourseTable', () => {
             canSaveCellEntry: true,
             entrySaving: false,
             entryStore: { update },
+            selectedEntryTypeCategory: 'Benotung',
             entryDialog: { courseDate: { date: '2026-03-09' } },
             entryForm: {
                 description: 'Verbessert',
@@ -2063,6 +2299,7 @@ describe('CourseTable', () => {
             normalizeDateKey: methods.normalizeDateKey,
             dateKey: methods.dateKey,
             cancelNewCellEntry: vi.fn(),
+            selectedCellEntryUid: 'assessment-12',
         }
 
         await methods.saveCellEntry.call(ctx)
@@ -2075,6 +2312,7 @@ describe('CourseTable', () => {
             description: 'Verbessert',
         })
         expect(ctx.cancelNewCellEntry).toHaveBeenCalledTimes(1)
+        expect(ctx.selectedCellEntryUid).toBeNull()
         expect(ctx.entrySaving).toBe(false)
     })
 
@@ -2366,11 +2604,37 @@ describe('CourseTable', () => {
         expect(source).toContain('class="course-table-work-row"')
         expect(source).toContain('class="course-table-work-label-content"')
         expect(source).toContain('<span>Arbeiten</span>')
+        expect(source).toContain('class="course-table-content-row"')
+        expect(source).toContain('class="course-table-content-label-content"')
+        expect(source).toContain('<span>Stoff</span>')
+        expect(source.indexOf('class="course-table-work-row"')).toBeLessThan(source.indexOf('class="course-table-content-row"'))
+        expect(source.indexOf('class="course-table-content-row"')).toBeLessThan(source.indexOf('class="course-table-row"'))
+        expect(source).toContain('@click="openContentDialog(courseDate)"')
+        expect(source).toContain('@keydown.enter.prevent="openContentDialog(courseDate)"')
+        expect(source).toContain('@keydown.space.prevent="openContentDialog(courseDate)"')
+        expect(source).toContain('class="course-table-content-cell-preview"')
+        expect(source).toContain('{{ courseDateContentPreview(courseDate) }}')
+        expect(source).toContain('v-if="courseDateContentPreview(courseDate)"')
+        expect(source).toContain('content-class="course-table-student-tooltip"')
+        expect(source).toContain('{{ compactCourseDateTitle(courseDate) }}')
+        expect(source).toContain('<span>Inhalt</span>')
+        expect(source).toContain('class="course-table-content-tooltip-html"')
+        expect(source).toContain('v-html="courseDateFormattedContent(courseDate)"')
+        expect(source).toContain('-webkit-line-clamp: 3;')
+        expect(source).toContain('line-height: 13px;')
+        expect(source).toContain('max-height: 39px;')
+        expect(source).toContain('padding: 0 5px;')
+        expect(source).toContain('<v-dialog v-model="contentDialog.open" persistent max-width="720">')
+        expect(source).toContain('data-testid="course-table-content-dialog"')
+        expect(source).toContain('<ItsRichTextEditor v-model="contentDialog.content" :disabled="contentSaving" />')
+        expect(source).toContain('@click="saveContentDialog"')
+        expect(source).not.toContain('Die Inhaltsverwaltung wird hier später ergänzt.')
         expect(source).toContain('mdi-plus-circle-outline')
         expect(source).toContain('v-for="work in courseWorksForDate(courseDate)"')
         expect(source).toContain('class="course-table-work-summary"')
-        expect(source).toContain('class="course-table-work-summary-title"')
+        expect(source).toContain('<span class="course-table-work-summary-title">')
         expect(source).toContain('{{ work.work.title || work.label }}')
+        expect(source).toMatch(/\.course-table-work-summary-title \{[\s\S]*font-weight: 400;/u)
         expect(source).toContain('<v-icon size="13">mdi-clipboard-text</v-icon>')
         expect(source).toContain('@click="openWorkDialog(courseDate)"')
         expect(source).toContain('@keydown.enter.prevent="openWorkDialog(courseDate)"')
@@ -2539,14 +2803,21 @@ describe('CourseTable', () => {
         expect(source).toContain("'course-table-entry-cell--interactive': tableView === 'entries'")
         expect(source).toContain("'course-table-entry-cell--absent': tableView === 'entries' && !isStudentPresentForCourseDate(student, courseDate)")
         expect(source).toContain('.course-table-entry-cell--absent {')
-        expect(source).toContain('background: rgba(var(--v-theme-error), 0.14) !important;')
+        expect(source).toContain("v-if=\"tableView === 'entries' && !isStudentPresentForCourseDate(student, courseDate)\"")
+        expect(source).toContain('class="course-table-entry-cell-absent-marker"')
+        expect(source).toContain('aria-label="Abwesend"')
+        expect(source).toContain('.course-table-entry-cell-absent-marker {')
+        expect(source).toContain('right: 3px;')
+        expect(source).toContain('top: 3px;')
+        expect(source).not.toContain('background: rgba(var(--v-theme-error), 0.14) !important;')
         expect(source).toContain('data-testid="course-table-entry-cell-badges"')
         expect(source).toContain("v-if=\"tableView === 'entries' && entriesForCell(student, courseDate).length\"")
         expect(source).toContain('data-testid="course-table-entry-cell-supplementary-row"')
         expect(source).toContain('v-for="entry in supplementaryEntriesForCell(student, courseDate)"')
         expect(source).toContain('data-testid="course-table-entry-cell-performance-row"')
         expect(source).toContain('v-for="entry in compactPerformanceEntriesForCell(student, courseDate)"')
-        expect(source).toContain('{{ compactCellEntryType(entry) }}:&nbsp;')
+        expect(source).toContain('{{ compactCellEntryType(entry) }}<template v-if="entryTypeHasProperties(entry)">:&nbsp;')
+        expect(source).toContain('v-if="entryExpectsProperty(entry)"')
         expect(source).toContain("'course-table-entry-cell-grade--missing': !compactCellEntryGrade(entry)")
         expect(source).toContain("{{ compactCellEntryGrade(entry) || 'NA' }}")
         expect(source).toContain('color: rgb(var(--v-theme-error));')
@@ -2594,6 +2865,7 @@ describe('CourseTable', () => {
         expect(source).toContain('v-for="item in courseWorkEntryGradeItems(entry)"')
         expect(source).toContain('toggledCourseWorkGrade(courseWorkEntryDraft(entry).grade, item.value)')
         expect(source).toContain('@click="saveCourseWorkCellEntry(entry)"')
+        expect(source).toContain('@click="toggleCellEntry(entry)">')
         expect(source).not.toContain('course-table-cell-edit-entry-${entry.uid}')
         expect(source).not.toContain('icon="mdi-pencil"')
         expect(source).toContain('course-table-cell-delete-entry-${entry.uid}')
@@ -2614,8 +2886,10 @@ describe('CourseTable', () => {
         expect(source).toContain('<section v-if="!entryForm.id">')
         expect(source).toContain('In dieser Zelle sind noch keine Einträge vorhanden.')
         expect(source).toContain('data-testid="course-table-cell-add-entry"')
+        expect(source).toContain('v-if="!entryFormOpen && !selectedCellEntryUid"')
         expect(source).toContain('Neuen Eintrag hinzufügen')
         expect(source).toContain('data-testid="course-table-cell-entry-form"')
+        expect(source).toContain('<v-card-actions v-if="!entryFormOpen && !selectedCellEntryUid">')
         expect(source).toContain('<v-dialog v-model="deleteEntryDialog.open" persistent max-width="460">')
         expect(source).toContain('@click="confirmDeleteCellEntry"')
         expect(source).toContain('.course-table-entry-cell--interactive:hover,')

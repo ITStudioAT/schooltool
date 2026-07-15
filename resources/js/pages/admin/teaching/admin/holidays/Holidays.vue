@@ -33,35 +33,46 @@
             <div class="free-days-overview">
                 <div class="text-subtitle-2 mb-2 text-start">Erfasste freie Tage</div>
                 <div class="d-flex align-center justify-start ga-2 mb-2">
-                <v-checkbox
-                    v-model="allSelected"
-                    hide-details
-                    density="compact"
-                    color="primary"
-                    label="Alle auswählen" />
-                <v-btn
-                    color="error"
-                    variant="flat"
-                    size="small"
-                    prepend-icon="mdi-delete"
-                    :loading="holidays_save_action === 'delete-selected'"
-                    :disabled="!selected_holiday_ids.length || isSavingHolidays"
-                    @click="deleteSelectedHolidays">
-                    Löschen ({{ selected_holiday_ids.length }})
-                </v-btn>
+                    <v-checkbox
+                        v-model="allSelected"
+                        hide-details
+                        density="compact"
+                        color="primary"
+                        label="Alle auswählen" />
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        size="small"
+                        prepend-icon="mdi-delete"
+                        :loading="holidays_save_action === 'delete-selected'"
+                        :disabled="!selected_holiday_ids.length || isSavingHolidays"
+                        @click="deleteSelectedHolidays">
+                        Löschen ({{ selected_holiday_ids.length }})
+                    </v-btn>
                 </div>
-                <v-list density="compact" class="holidays-list">
-                    <v-list-item v-for="holiday in holidays" :key="holiday.id" class="px-0 holidays-list-item">
-                        <div class="d-flex align-center justify-start ga-2 w-100 holiday-row">
+                <v-list class="holidays-list pa-0">
+                    <v-list-item
+                        v-for="holiday in holidays"
+                        :key="holiday.id"
+                        class="holidays-list-item"
+                        :class="{ 'holidays-list-item--selected': selected_holiday_ids.includes(holiday.id) }">
+                        <div class="holiday-row">
                             <v-checkbox-btn
                                 v-model="selected_holiday_ids"
                                 :value="holiday.id"
                                 color="primary"
                                 density="compact"
                                 class="holiday-checkbox" />
-                            <v-chip size="x-small" color="primary" variant="tonal">{{ getWeekday(holiday.date) }}</v-chip>
-                            <v-chip size="x-small" color="primary" variant="outlined">{{ formatDate(holiday.date) }}</v-chip>
-                            <div class="text-caption flex-grow-1 text-start">
+                            <div class="holiday-date-block">
+                                <v-avatar color="primary" variant="tonal" size="30" class="holiday-date-icon">
+                                    <v-icon icon="mdi-calendar-blank-outline" size="16" />
+                                </v-avatar>
+                                <div class="holiday-date-text">
+                                    <div class="holiday-weekday">{{ getWeekday(holiday.date) }}</div>
+                                    <div class="holiday-date">{{ formatDate(holiday.date) }}</div>
+                                </div>
+                            </div>
+                            <div class="holiday-reason">
                                 {{ holiday.reason || 'Kein Grund angegeben' }}
                             </div>
                         </div>
@@ -259,29 +270,103 @@ export default {
 }
 
 .holidays-list-item {
+    min-height: 48px;
+    border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
     border-radius: 10px;
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    background: rgba(255, 255, 255, 0.78);
-    margin-bottom: 6px;
+    background: rgba(var(--v-theme-surface), 0.92);
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+    margin-bottom: 4px;
     padding: 0 6px;
+    transition:
+        border-color 160ms ease,
+        box-shadow 160ms ease,
+        background-color 160ms ease;
+}
+
+.holidays-list-item:hover {
+    border-color: rgba(var(--v-theme-primary), 0.28);
+    box-shadow: 0 3px 9px rgba(15, 23, 42, 0.07);
+}
+
+.holidays-list-item--selected {
+    border-color: rgba(var(--v-theme-primary), 0.42);
+    background: rgba(var(--v-theme-primary), 0.06);
 }
 
 .holiday-row {
-    justify-content: flex-start;
+    display: flex;
     align-items: center;
-    flex-wrap: nowrap;
+    gap: 10px;
+    width: 100%;
 }
 
 .holidays-list :deep(.v-list-item__content) {
     text-align: left;
+    overflow: visible;
 }
 
 .holiday-checkbox {
     flex: 0 0 auto !important;
+    align-self: center;
     margin: 0 !important;
 }
 
 .holiday-checkbox :deep(.v-selection-control) {
     flex: 0 0 auto !important;
+    min-height: 30px;
+}
+
+.holiday-date-block {
+    display: flex;
+    flex: 0 0 180px;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.holiday-date-icon {
+    flex: 0 0 auto;
+}
+
+.holiday-date-text {
+    min-width: 0;
+    line-height: 1.15;
+}
+
+.holiday-weekday {
+    color: rgb(var(--v-theme-primary));
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.holiday-date {
+    color: rgba(var(--v-theme-on-surface), 0.68);
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-top: 1px;
+}
+
+.holiday-reason {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: rgb(var(--v-theme-on-surface));
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+    .holidays-list-item {
+        padding: 0 6px;
+    }
+
+    .holiday-row {
+        gap: 6px;
+    }
+
+    .holiday-date-block {
+        flex-basis: 150px;
+    }
 }
 </style>

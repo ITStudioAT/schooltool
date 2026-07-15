@@ -181,6 +181,40 @@ test('setup replaces target data with isolated copies of the source import', fun
         ->and($this->admin->fresh()->teaching_show_behaviour)->toBeFalse();
 });
 
+test('setup reuses an existing student account for the copied school year', function () {
+    $student = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->sourceSchoolyear->id,
+        'email' => 'paul.ahlgrimm@cdgym.at',
+    ]);
+    $sourceImport = Import116::factory()->forSchool($this->school)->importedBy($this->admin)->create([
+        'schoolyear_id' => $this->sourceSchoolyear->id,
+        'student_code' => '50110620240089',
+        'email' => 'paul.ahlgrimm@cdgym.at',
+        'user_id' => $student->id,
+    ]);
+    $student->update(['import116_id' => $sourceImport->id]);
+
+    $response = $this->actingAs($this->admin, 'sanctum')
+        ->postJson('/api/admin/teaching/test-environment', ['confirmation' => '2026/27'])
+        ->assertOk();
+
+    $targetImport = Import116::query()
+        ->where('schoolyear_id', $this->targetSchoolyear->id)
+        ->where('student_code', '50110620240089')
+        ->sole();
+
+    $response
+        ->assertJsonPath('data.created_test_users', 0)
+        ->assertJsonPath('data.reused_user_accounts', 1);
+
+    expect($targetImport->user_id)->toBe($student->id)
+        ->and($student->fresh()->email)->toBe('paul.ahlgrimm@cdgym.at')
+        ->and($student->fresh()->schoolyear_id)->toBe($this->targetSchoolyear->id)
+        ->and($student->fresh()->import116_id)->toBe($targetImport->id)
+        ->and(User::query()->where('email', 'like', 'teaching-test-2627-%')->exists())->toBeFalse();
+});
+
 test('cleanup completely empties the target teaching environment and keeps global accounts', function () {
     Storage::fake('local');
 

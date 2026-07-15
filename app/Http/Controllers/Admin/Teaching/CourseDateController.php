@@ -113,7 +113,7 @@ class CourseDateController extends Controller
         return response()->json(new CourseDateResource($course_date));
     }
 
-    public function destroy(TeachingCourseDate $course_date)
+    public function destroy(TeachingCourseDate $course_date, TeachingCourseDateService $service)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -126,9 +126,27 @@ class CourseDateController extends Controller
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
-        $course_date->delete();
+        $service->deleteCourseDate($course_date);
 
         return response()->json(null, 204);
+    }
+
+    public function destroyAll(Request $request, TeachingCourseDateService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'course_id' => 'required|integer|exists:teaching_courses,id',
+        ]);
+
+        $course = TeachingCourse::query()->findOrFail($validated['course_id']);
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        $deletedCount = $service->deleteCourseDates($course);
+
+        return response()->json(['deleted_count' => $deletedCount]);
     }
 
     public function adoptCurriculumContent(Request $request, TeachingCourseDate $course_date, TeachingCourseDateService $service)

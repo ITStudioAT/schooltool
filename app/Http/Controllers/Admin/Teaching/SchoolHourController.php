@@ -21,6 +21,9 @@ class SchoolHourController extends Controller
 
         return response()->json([
             'data' => SchoolHourResource::collection($schoolHours),
+            'meta' => [
+                'previous_year_import' => $service->previousYearImportOfferForUser($auth_user),
+            ],
         ]);
     }
 

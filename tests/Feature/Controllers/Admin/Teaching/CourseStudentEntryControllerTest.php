@@ -8,6 +8,8 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingEntryArea;
+use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -354,6 +356,62 @@ describe('store update destroy', function () {
             'type' => 'TE',
             'grade' => '1',
         ])->assertCreated()->assertJsonPath('data.type', 'TE');
+    });
+
+    test('store accepts behaviour and other definitions from the assigned entry area', function () {
+        $schoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+            'name' => '2026/27',
+        ]);
+        $entryArea = TeachingEntryArea::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'user_id' => $this->admin->id,
+            'name' => 'Alle Einträge',
+        ]);
+        TeachingEntryDefinition::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_entry_area_id' => $entryArea->id,
+            'short_name' => 'V',
+            'name' => 'Verwarnung',
+            'category' => 'Verhalten',
+        ]);
+        TeachingEntryDefinition::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_entry_area_id' => $entryArea->id,
+            'short_name' => 'W',
+            'name' => 'Weitere Beobachtung',
+            'category' => 'Weitere',
+        ]);
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_entry_area_id' => $entryArea->id,
+            'teaching_schema_id' => $this->schemaId,
+            'classes' => ['2B'],
+        ]);
+        $this->admin->update(['schoolyear_id' => $schoolyear->id]);
+        $this->actingAs($this->admin->refresh(), 'sanctum');
+
+        foreach (['V', 'W'] as $type) {
+            $this->postJson('/api/admin/teaching/course_student_entries', [
+                'teaching_course_id' => $course->id,
+                'user_id' => $this->student->id,
+                'type' => $type,
+                'date' => '2026-10-20',
+            ])->assertCreated()->assertJsonPath('data.type', $type);
+        }
+
+        $this->postJson('/api/admin/teaching/course_student_entries', [
+            'teaching_course_id' => $course->id,
+            'user_id' => $this->student->id,
+            'type' => 'MA',
+        ])->assertUnprocessable()->assertJsonValidationErrors(['type']);
     });
 
     test('update modifies manual entry', function () {

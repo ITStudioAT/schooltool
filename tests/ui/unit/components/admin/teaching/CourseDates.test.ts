@@ -109,6 +109,33 @@ describe('CourseDates course-specific schema', () => {
         expect(source).toContain('width: 100%;')
     })
 
+    it('confirms and deletes all dates for the selected course', async () => {
+        const methods = (CourseDates as any).methods
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const destroyAll = vi.fn().mockResolvedValue(true)
+        const index = vi.fn().mockResolvedValue(true)
+        const ctx: Record<string, any> = {
+            selected_course: { id: 16, course_dates: [{ id: 1 }, { id: 2 }] },
+            selected_courseDate: { id: 2 },
+            delete_date_id: 2,
+            deleteAllDatesDialogOpen: true,
+            courseDateStore: { destroyAll },
+            courseStore: { index },
+            runDateMutation: vi.fn(async (_action, callback) => callback()),
+        }
+
+        await methods.confirmDeleteAllDates.call(ctx)
+
+        expect(source).toContain('title="Alle Termine löschen"')
+        expect(source).toContain('Sollen wirklich alle {{ totalCourseDatesCount }} Termine des Kurses gelöscht werden?')
+        expect(ctx.runDateMutation).toHaveBeenCalledWith('delete-all-dates', expect.any(Function))
+        expect(destroyAll).toHaveBeenCalledWith(16)
+        expect(index).toHaveBeenCalledTimes(1)
+        expect(ctx.selected_courseDate).toBeNull()
+        expect(ctx.delete_date_id).toBeNull()
+        expect(ctx.deleteAllDatesDialogOpen).toBe(false)
+    })
+
     it('does not show the obsolete attendance checked state for dates', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
 
@@ -159,6 +186,44 @@ describe('CourseDates course-specific schema', () => {
         expect(hourChipPosition).toBeLessThan(workChipPosition)
         expect(workChipPosition).toBeLessThan(inlineContentPosition)
         expect(source).not.toContain('class="course-date-works')
+    })
+
+    it('removes the per-date students button', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+
+        expect(source).not.toContain('title="Schülerliste anzeigen"')
+        expect(source).not.toContain('@click="switchToStudents(courseDate)"')
+        expect(source).not.toContain('switchToStudents(courseDate) {')
+    })
+
+    it('uses a configured grading work color for the complete date row', () => {
+        const methods = (CourseDates as any).methods
+        const courseDate = { id: 7, date: '2026-09-21', status: [] }
+        const context = {
+            selected_course: {
+                teaching_entry_area: {
+                    entry_definitions: [
+                        {
+                            short_name: 'PÜ',
+                            category: 'Benotung',
+                            has_table_marking: true,
+                            table_marking_color: 'purple',
+                        },
+                    ],
+                },
+            },
+            highlightedDateId: null,
+            courseWorksForDate: vi.fn().mockReturnValue([{ type: 'PÜ' }]),
+            hasStatus: methods.hasStatus,
+            isDateToday: methods.isDateToday,
+            courseDateRowMarkingColor: methods.courseDateRowMarkingColor,
+        }
+
+        expect(methods.courseDateRowMarkingColor.call(context, courseDate)).toBe('purple')
+        expect(methods.courseDateRowClass.call(context, courseDate)).toContain('course-date-row--marked-purple')
+
+        context.courseWorksForDate.mockReturnValue([{ type: 'A' }])
+        expect(methods.courseDateRowMarkingColor.call(context, courseDate)).toBeNull()
     })
 
     it('renders the free-day reason chip in the date row', () => {

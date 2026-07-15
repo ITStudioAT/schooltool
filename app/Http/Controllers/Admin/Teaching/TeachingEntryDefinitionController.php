@@ -79,7 +79,9 @@ class TeachingEntryDefinitionController extends Controller
      *     properties_mode: string,
      *     fixed_properties: array<int, string>,
      *     has_notifications: bool,
-     *     notification_recipients: array<int, string>
+     *     notification_recipients: array<int, string>,
+     *     has_table_marking: bool,
+     *     table_marking_color: ?string
      * }
      */
     private function entryPayload(array $validated): array
@@ -102,6 +104,8 @@ class TeachingEntryDefinitionController extends Controller
                 ->values()
                 ->all()
             : [];
+        $hasTableMarking = $isGradingEntry && (bool) $validated['has_table_marking'];
+        $tableMarkingColor = $hasTableMarking ? $validated['table_marking_color'] : null;
 
         return [
             'teaching_entry_area_id' => (int) $validated['teaching_entry_area_id'],
@@ -113,6 +117,8 @@ class TeachingEntryDefinitionController extends Controller
             'fixed_properties' => $fixedProperties,
             'has_notifications' => $hasNotifications,
             'notification_recipients' => $notificationRecipients,
+            'has_table_marking' => $hasTableMarking,
+            'table_marking_color' => $tableMarkingColor,
         ];
     }
 

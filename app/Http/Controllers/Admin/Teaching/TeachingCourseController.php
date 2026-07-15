@@ -22,6 +22,7 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Exists;
@@ -443,11 +444,18 @@ class TeachingCourseController extends Controller
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
-        if ($course->hasDependencies()) {
-            abort(409, 'Der Kurs hat noch Abhängigkeiten und kann nicht gelöscht werden');
-        }
+        DB::transaction(function () use ($course): void {
+            $lockedCourse = TeachingCourse::query()
+                ->lockForUpdate()
+                ->findOrFail($course->getKey());
 
-        $course->delete();
+            if ($lockedCourse->hasDependencies()) {
+                abort(409, 'Der Kurs hat noch Abhängigkeiten und kann nicht gelöscht werden');
+            }
+
+            $lockedCourse->teachingCourseStudents()->onlyTrashed()->forceDelete();
+            $lockedCourse->delete();
+        });
 
         return response()->json(null, 204);
     }
@@ -648,6 +656,9 @@ class TeachingCourseController extends Controller
         }
 
         $source = $this->courseStudentPayloadSource($courseStudent, $studentsById, $importsById);
+        $import = $courseStudent->import116_id
+            ? $importsById->get((int) $courseStudent->import116_id)
+            : null;
 
         if ($source === 'user') {
             $student = $studentsById->get((int) $courseStudent->user_id);
@@ -657,7 +668,6 @@ class TeachingCourseController extends Controller
 
             $payload = (new StudentResource($student))->toArray($request);
         } else {
-            $import = $courseStudent->import116_id ? $importsById->get((int) $courseStudent->import116_id) : null;
             if (! $import) {
                 return null;
             }
@@ -672,6 +682,10 @@ class TeachingCourseController extends Controller
                 'class' => $import->class,
             ];
         }
+
+        $payload['sex'] = $payload['sex'] ?? $import?->sex;
+        $payload['birth_date'] = $import?->birth_date?->format('Y-m-d');
+        $payload['age'] = $import?->birth_date?->age;
 
         $resolvedId = $source === 'user'
             ? (int) $courseStudent->user_id
@@ -730,6 +744,10 @@ class TeachingCourseController extends Controller
 
     private function studentReferencesMatch(User $student, Import116 $import): bool
     {
+        if ((int) ($import->user_id ?? 0) === (int) $student->id) {
+            return true;
+        }
+
         $studentEmail = $this->normalizedStudentReferenceValue($student->email ?? null);
         $importEmail = $this->normalizedStudentReferenceValue($import->email ?? null);
 

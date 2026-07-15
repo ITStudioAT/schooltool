@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import MyCourses from '@/pages/admin/teaching/overview/components/MyCourses.vue'
@@ -102,6 +102,23 @@ describe('MyCourses counts', () => {
         ;(MyCourses as any).watch['courseStore.pending_new_course_token'].call(ctx, 4)
 
         expect(ctx.newCourseCalled).toBe(1)
+    })
+
+    it('consumes a pending course edit when the editor component mounts', async () => {
+        const course = { id: 16, title: '2B - DGB' }
+        const editCourse = vi.fn().mockResolvedValue(undefined)
+        const pendingEditWatcher = (MyCourses as any).watch['courseStore.pending_edit_course_id']
+        const ctx = {
+            courses: [course],
+            courseStore: { pending_edit_course_id: 16 },
+            editCourse,
+        }
+
+        await pendingEditWatcher.handler.call(ctx, 16)
+
+        expect(pendingEditWatcher.immediate).toBe(true)
+        expect(ctx.courseStore.pending_edit_course_id).toBeNull()
+        expect(editCourse).toHaveBeenCalledWith(course)
     })
 
     it('requires the schoolyear-specific grading schema selection', () => {

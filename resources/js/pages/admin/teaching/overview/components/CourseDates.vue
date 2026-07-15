@@ -19,6 +19,15 @@
             </div>
         </template>
         <template #header-actions>
+            <v-btn
+                v-if="totalCourseDatesCount"
+                icon="mdi-calendar-remove"
+                size="small"
+                color="error"
+                variant="tonal"
+                title="Alle Termine löschen"
+                :disabled="isBusyDateUi || action !== ''"
+                @click="deleteAllDatesDialogOpen = true" />
             <v-btn icon="mdi-plus" size="small" variant="tonal" @click="newDates" :disabled="isEditingContent || isSavingContent || action === 'new_course_dates'" />
         </template>
         <v-card v-if="compactStudentView" tile flat color="transparent" class="w-100" :disabled="action != '' || isSavingContent">
@@ -123,13 +132,6 @@
                                     </div>
                                 </div>
                                 <div class="course-date-actions d-flex align-center ga-1 ml-auto flex-shrink-0" @click.stop>
-                                    <v-btn
-                                        icon="mdi-account-group"
-                                        size="x-small"
-                                        color="indigo"
-                                        variant="tonal"
-                                        title="Schülerliste anzeigen"
-                                        @click="switchToStudents(courseDate)" />
                                     <v-chip
                                         v-if="hasStatus(courseDate, 'free')"
                                         size="x-small"
@@ -339,6 +341,39 @@
                 </v-list>
             </v-card-text>
         </v-card>
+
+        <v-dialog v-model="deleteAllDatesDialogOpen" persistent max-width="480">
+            <v-card>
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                    <v-icon size="20" color="error">mdi-alert</v-icon>
+                    Alle Termine löschen
+                </v-card-title>
+                <v-divider />
+                <v-card-text>
+                    Sollen wirklich alle {{ totalCourseDatesCount }} Termine des Kurses gelöscht werden?
+                    Inhalte, Anwesenheiten und übernommene Materialien gehen dabei verloren.
+                </v-card-text>
+                <v-divider />
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn
+                        color="warning"
+                        variant="flat"
+                        :disabled="isBusyDateUi"
+                        @click="deleteAllDatesDialogOpen = false">
+                        Abbruch
+                    </v-btn>
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        :disabled="isBusyDateUi"
+                        :loading="isDateMutationPending('delete-all-dates')"
+                        @click="confirmDeleteAllDates">
+                        Alle löschen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <!-- NEUE TERMINE ANLEGEN -->
         <v-card tile flat color="transparent" class="w-100" v-if="action == 'new_course_dates'">
@@ -611,6 +646,8 @@ import axios from 'axios'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 
+const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
+
 export default {
     setup() {
         return useValidationRulesSetup()
@@ -661,6 +698,7 @@ export default {
             activeSemester: null,
             is_valid: false,
             delete_date_id: null,
+            deleteAllDatesDialogOpen: false,
             show_contents: true,
             collapsed_content_ids: [],
             expanded_content_ids: [],
@@ -776,6 +814,9 @@ export default {
         },
         displayedCourseDatesCount() {
             return this.displayedCourseDates.length
+        },
+        totalCourseDatesCount() {
+            return this.selected_course?.course_dates?.length || 0
         },
         generatedDates() {
             if (!this.data.from) return []
@@ -1265,6 +1306,7 @@ export default {
                 label,
                 title: label,
                 isGroupWork,
+                type,
             }
         },
         openCourseWork(workAssignment) {
@@ -1326,6 +1368,25 @@ export default {
                 this.delete_date_id = null
             }, courseDate.id)
         },
+        async confirmDeleteAllDates() {
+            const courseId = this.selected_course?.id
+            if (!courseId) return
+
+            const deleted = await this.runDateMutation('delete-all-dates', async () => {
+                const success = await this.courseDateStore.destroyAll(courseId)
+                if (!success) return false
+
+                this.selected_courseDate = null
+                this.delete_date_id = null
+                await this.courseStore.index()
+
+                return true
+            })
+
+            if (deleted) {
+                this.deleteAllDatesDialogOpen = false
+            }
+        },
         hasStatus(courseDate, status) {
             return Array.isArray(courseDate.status) && courseDate.status.includes(status)
         },
@@ -1335,6 +1396,25 @@ export default {
             today.setHours(0, 0, 0, 0)
             return courseDate.date === this.toDateString(today)
         },
+        courseDateRowMarkingColor(courseDate) {
+            const entryDefinitions = this.selected_course?.teaching_entry_area?.entry_definitions
+            if (!Array.isArray(entryDefinitions)) return null
+
+            const markedDefinitionsByType = new Map(
+                entryDefinitions
+                    .filter((definition) => (
+                        definition?.category === 'Benotung'
+                        && definition.has_table_marking
+                        && tableMarkingColors.has(definition.table_marking_color)
+                    ))
+                    .map((definition) => [String(definition.short_name || ''), definition.table_marking_color])
+            )
+
+            const markedWork = this.courseWorksForDate(courseDate)
+                .find((work) => markedDefinitionsByType.has(String(work?.type || '')))
+
+            return markedWork ? markedDefinitionsByType.get(String(markedWork.type)) : null
+        },
         courseDateRowClass(courseDate) {
             const classes = []
             if (this.hasStatus(courseDate, 'pruefung')) classes.push('course-date-row--exam')
@@ -1343,6 +1423,8 @@ export default {
             if (this.highlightedDateId === courseDate.id) {
                 classes.push(this.isDateToday(courseDate) ? 'course-date-row--today' : 'course-date-row--next')
             }
+            const markingColor = this.courseDateRowMarkingColor(courseDate)
+            if (markingColor) classes.push(`course-date-row--marked-${markingColor}`)
             return classes
         },
         courseDateHighlightStyle(courseDate, index) {
@@ -1359,13 +1441,6 @@ export default {
                 return { backgroundColor: '#f5f5f5' }
             }
             return {}
-        },
-        switchToStudents(courseDate) {
-            this.selected_courseDate = courseDate
-            this.show_students = true
-            this.show_dates = false
-            const query = { ...this.$route.query, date: String(courseDate.id), panel: 'students' }
-            this.$router.replace({ query }).catch(() => {})
         },
         selectCourseDate(courseDate) {
             if (this.isBusyDateUi) return
@@ -2151,6 +2226,26 @@ export default {
     background: linear-gradient(180deg, #c5cae9 0%, #9fa8da 100%) !important;
     border: 2px solid #3f51b5 !important;
     box-shadow: 0 0 12px rgba(63, 81, 181, 0.35);
+}
+
+.course-date-row--marked-blue {
+    background: #dbeafe !important;
+}
+
+.course-date-row--marked-green {
+    background: #dcfce7 !important;
+}
+
+.course-date-row--marked-orange {
+    background: #ffedd5 !important;
+}
+
+.course-date-row--marked-purple {
+    background: #ede9fe !important;
+}
+
+.course-date-row--marked-red {
+    background: #fee2e2 !important;
 }
 
 .course-date-material-icon {

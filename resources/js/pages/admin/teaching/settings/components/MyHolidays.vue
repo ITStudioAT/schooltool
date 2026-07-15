@@ -15,26 +15,43 @@
         <v-divider class="my-4" />
 
         <div class="text-subtitle-2 mb-2">Freie Tage (allgemein + eigene)</div>
-        <v-list density="compact" class="holidays-list">
-            <v-list-item v-for="holiday in my_holidays" :key="holiday.id">
-                <div class="d-flex align-center ga-2 w-100">
-                    <v-chip size="x-small" color="primary" variant="tonal">{{ getWeekday(holiday.date) }}</v-chip>
-                    <v-chip size="x-small" color="primary" variant="outlined">{{ formatDate(holiday.date) }}</v-chip>
-                    <v-chip
-                        size="x-small"
-                        :color="holiday.scope === 'school' ? 'info' : 'secondary'"
-                        variant="flat">
-                        {{ holiday.scope === 'school' ? 'Allgemein' : 'Eigener Tag' }}
-                    </v-chip>
-                    <div class="text-caption flex-grow-1">
-                        {{ holiday.reason || 'Kein Grund angegeben' }}
+        <v-list class="holidays-list pa-0">
+            <v-list-item v-for="holiday in my_holidays" :key="holiday.id" class="holiday-list-item rounded-lg mb-2">
+                <div class="holiday-row">
+                    <div class="holiday-date-block">
+                        <v-icon icon="mdi-calendar-blank-outline" color="primary" size="24" class="holiday-date-icon" />
+                        <div>
+                            <div class="text-subtitle-1 font-weight-bold text-primary">
+                                {{ getWeekday(holiday.date) }}
+                            </div>
+                            <div class="text-body-2 font-weight-medium text-medium-emphasis">
+                                {{ formatDate(holiday.date) }}
+                            </div>
+                        </div>
                     </div>
+
+                    <div class="holiday-details">
+                        <v-chip
+                            size="small"
+                            :prepend-icon="holiday.scope === 'school' ? 'mdi-school-outline' : 'mdi-account-outline'"
+                            :color="holiday.scope === 'school' ? 'info' : 'secondary'"
+                            variant="tonal">
+                            {{ holiday.scope === 'school' ? 'Allgemein' : 'Eigener Tag' }}
+                        </v-chip>
+                        <div class="holiday-reason text-body-2 font-weight-medium">
+                            {{ holiday.reason || 'Kein Grund angegeben' }}
+                        </div>
+                    </div>
+
                     <v-btn
                         v-if="holiday.scope !== 'school'"
-                        icon="mdi-delete"
-                        size="x-small"
+                        class="holiday-delete"
+                        icon="mdi-delete-outline"
+                        size="small"
                         color="error"
-                        variant="flat"
+                        variant="tonal"
+                        aria-label="Eigenen freien Tag löschen"
+                        title="Eigenen freien Tag löschen"
                         :loading="my_holidays_save_action === `delete:${holiday.id}`"
                         :disabled="isSavingMyHolidays"
                         @click="deleteHoliday(holiday)" />
@@ -176,5 +193,70 @@ export default {
 <style scoped>
 .holidays-list {
     background: transparent;
+}
+
+.holiday-list-item {
+    min-height: 76px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.12);
+    background: rgba(var(--v-theme-primary), 0.035);
+}
+
+.holiday-list-item :deep(.v-list-item__content) {
+    overflow: visible;
+}
+
+.holiday-row {
+    display: grid;
+    grid-template-columns: minmax(170px, 0.8fr) minmax(0, 1.5fr) auto;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    padding: 8px 4px;
+}
+
+.holiday-date-block,
+.holiday-details {
+    display: flex;
+    align-items: center;
+}
+
+.holiday-date-block {
+    gap: 12px;
+}
+
+.holiday-date-icon {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    border-radius: 12px;
+    background: rgba(var(--v-theme-primary), 0.1);
+}
+
+.holiday-details {
+    min-width: 0;
+    gap: 12px;
+}
+
+.holiday-reason {
+    min-width: 0;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+    .holiday-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+    }
+
+    .holiday-details {
+        grid-column: 1 / -1;
+        flex-wrap: wrap;
+    }
+
+    .holiday-delete {
+        grid-column: 2;
+        grid-row: 1;
+    }
 }
 </style>

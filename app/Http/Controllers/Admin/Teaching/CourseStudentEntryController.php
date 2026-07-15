@@ -80,10 +80,9 @@ class CourseStudentEntryController extends Controller
         $course = TeachingCourse::findOrFail($request->input('teaching_course_id'));
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
-        $allowedTypes = $entryService->allowedTypesForSchema(
+        $allowedTypes = $entryService->allowedTypesForCourse(
             $this->teachingCourseActor($auth_user, $course),
-            $course->teaching_schema_id,
-            $course->schoolyear_id
+            $course
         );
 
         $validated = $request->validate([
@@ -128,10 +127,9 @@ class CourseStudentEntryController extends Controller
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
-        $allowedTypes = $entryService->allowedTypesForSchema(
+        $allowedTypes = $entryService->allowedTypesForCourse(
             $this->teachingCourseActor($auth_user, $course),
-            $course->teaching_schema_id,
-            $course->schoolyear_id
+            $course
         );
 
         $validated = $request->validate([

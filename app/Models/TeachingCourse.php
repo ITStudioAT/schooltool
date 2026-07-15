@@ -67,7 +67,7 @@ class TeachingCourse extends Model
 
     public function hasDependencies(): bool
     {
-        return $this->teachingCourseStudents()->withTrashed()->exists();
+        return $this->teachingCourseStudents()->exists();
     }
 
     public function setStudentsAttribute(mixed $value): void

@@ -91,11 +91,11 @@ class Import116Job implements ShouldQueue
                         $data
                     );
 
-                    // Link Import116 record with existing User by email, school_id and schoolyear_id
-                    if ($record->email && $schoolyearId) {
+                    // A user account persists across school years. Match the school-scoped email
+                    // even when the account still has the previously selected school year.
+                    if ($record->email) {
                         $matchingUser = User::where('email', $record->email)
                             ->where('school_id', $schoolId)
-                            ->where('schoolyear_id', $schoolyearId)
                             ->first();
 
                         if ($matchingUser) {
@@ -103,6 +103,7 @@ class Import116Job implements ShouldQueue
                             $record->save();
 
                             $matchingUser->import116_id = $record->id;
+                            $matchingUser->schoolyear_id = $schoolyearId;
                             $matchingUser->save();
                         }
                     }

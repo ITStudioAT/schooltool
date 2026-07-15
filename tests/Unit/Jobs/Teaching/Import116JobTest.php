@@ -314,6 +314,52 @@ describe('import record handling', function () {
         ]);
     });
 
+    test('reuses a student account from the previous school year', function () {
+        $previousSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $previousSchoolyear->id,
+            'email' => 'paul.ahlgrimm@cdgym.at',
+        ]);
+        $previousImport = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $previousSchoolyear->id,
+            'student_code' => '50110620240089',
+            'email' => 'paul.ahlgrimm@cdgym.at',
+            'user_id' => $student->id,
+            'import_user_id' => $this->admin->id,
+        ]);
+        $student->update(['import116_id' => $previousImport->id]);
+
+        $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        $writer->addRow([
+            'Klasse' => '3B',
+            'Schülerkennzahl' => '50110620240089',
+            'Familienname' => 'Ahlgrimm-Sieß',
+            'Vorname' => 'Paul',
+            'Adressart' => 'Eigen',
+            'Mailadresse' => 'paul.ahlgrimm@cdgym.at',
+        ]);
+        $writer->close();
+
+        (new Import116Job($this->admin, $relativePath, $this->schoolyear->id, '116.xlsx'))->handle();
+
+        $currentImport = Import116::query()
+            ->where('school_id', $this->school->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->where('student_code', '50110620240089')
+            ->sole();
+
+        expect($currentImport->user_id)->toBe($student->id)
+            ->and($student->fresh()->email)->toBe('paul.ahlgrimm@cdgym.at')
+            ->and($student->fresh()->schoolyear_id)->toBe($this->schoolyear->id)
+            ->and($student->fresh()->import116_id)->toBe($currentImport->id)
+            ->and(User::query()->where('school_id', $this->school->id)->count())->toBe(2);
+    });
+
     test('aggregates repeated address rows before persisting a student', function () {
         $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
         $writer = SimpleExcelWriter::create(storage_path($relativePath));
@@ -1102,55 +1148,38 @@ describe('reference synchronization', function () {
 });
 
 // ============================================================================
-// User Linking with Schoolyear Tests
+// User Linking Across Schoolyears Tests
 // ============================================================================
 
-describe('user linking with schoolyear', function () {
-    test('user matching requires same schoolyear_id', function () {
+describe('user linking across schoolyears', function () {
+    test('user matching reuses the school account from another schoolyear', function () {
         $otherSchoolyear = Schoolyear::factory()->create([
             'school_id' => $this->school->id,
         ]);
 
-        // User in this schoolyear
-        $studentThisYear = User::factory()->create([
+        $student = User::factory()->create([
             'school_id' => $this->school->id,
-            'schoolyear_id' => $this->schoolyear->id,
+            'schoolyear_id' => $otherSchoolyear->id,
             'email' => 'student@school.test',
         ]);
 
-        // User in other schoolyear with same email
-        $studentOtherYear = User::factory()->create([
-            'school_id' => $this->school->id,
-            'schoolyear_id' => $otherSchoolyear->id,
-            'email' => 'student2@school.test',
-        ]);
-
-        // Query like the job does
         $matchingUser = User::where('email', 'student@school.test')
             ->where('school_id', $this->school->id)
-            ->where('schoolyear_id', $this->schoolyear->id)
             ->first();
 
         expect($matchingUser)->not->toBeNull()
-            ->and($matchingUser->id)->toBe($studentThisYear->id);
+            ->and($matchingUser->id)->toBe($student->id);
     });
 
-    test('user not found when schoolyear_id does not match', function () {
-        $otherSchoolyear = Schoolyear::factory()->create([
-            'school_id' => $this->school->id,
-        ]);
-
-        // User only exists in other schoolyear
+    test('user matching remains scoped to the school', function () {
+        $otherSchool = School::factory()->create();
         User::factory()->create([
-            'school_id' => $this->school->id,
-            'schoolyear_id' => $otherSchoolyear->id,
+            'school_id' => $otherSchool->id,
             'email' => 'student@school.test',
         ]);
 
-        // Try to find user in this schoolyear
         $matchingUser = User::where('email', 'student@school.test')
             ->where('school_id', $this->school->id)
-            ->where('schoolyear_id', $this->schoolyear->id)
             ->first();
 
         expect($matchingUser)->toBeNull();

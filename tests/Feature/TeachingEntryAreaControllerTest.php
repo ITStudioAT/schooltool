@@ -124,6 +124,8 @@ test('imports owned areas and entries from the previous schoolyear', function ()
         'short_name' => 'M',
         'name' => 'Mitarbeit',
         'fixed_properties' => ['+', '-'],
+        'has_table_marking' => true,
+        'table_marking_color' => 'purple',
     ]);
     TeachingEntryDefinition::factory()->create([
         'school_id' => $this->school->id,
@@ -162,6 +164,8 @@ test('imports owned areas and entries from the previous schoolyear', function ()
     expect($underSchoolArea->entryDefinitions()->count())->toBe(1)
         ->and($upperSchoolArea->entryDefinitions()->count())->toBe(1)
         ->and($copiedUnderSchoolArea->entryDefinitions()->firstOrFail()->fixed_properties)->toBe(['+', '-'])
+        ->and($copiedUnderSchoolArea->entryDefinitions()->firstOrFail()->has_table_marking)->toBeTrue()
+        ->and($copiedUnderSchoolArea->entryDefinitions()->firstOrFail()->table_marking_color)->toBe('purple')
         ->and(TeachingEntryArea::query()
             ->where('user_id', $this->teacher->id)
             ->where('schoolyear_id', $this->schoolyear->id)
@@ -268,6 +272,8 @@ test('copies all entries from one owned area to another', function () {
         'short_name' => 'M',
         'name' => 'Mitarbeit',
         'fixed_properties' => ['+', '-'],
+        'has_table_marking' => true,
+        'table_marking_color' => 'purple',
     ]);
     TeachingEntryDefinition::factory()->create([
         'school_id' => $this->school->id,
@@ -294,6 +300,10 @@ test('copies all entries from one owned area to another', function () {
         ->and($targetArea->entryDefinitions()->count())->toBe(2)
         ->and($targetArea->entryDefinitions()->where('short_name', 'M')->firstOrFail()->fixed_properties)
         ->toBe(['+', '-'])
+        ->and($targetArea->entryDefinitions()->where('short_name', 'M')->firstOrFail()->has_table_marking)
+        ->toBeTrue()
+        ->and($targetArea->entryDefinitions()->where('short_name', 'M')->firstOrFail()->table_marking_color)
+        ->toBe('purple')
         ->and($targetArea->entryDefinitions()->where('short_name', 'A')->firstOrFail()->has_notifications)
         ->toBeTrue()
         ->and($targetArea->entryDefinitions()->where('short_name', 'A')->firstOrFail()->notification_recipients)

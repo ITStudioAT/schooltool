@@ -38,6 +38,7 @@ beforeEach(function () {
     SchoolTool::factory()->create([
         'school_id' => $this->school->id,
         'active_schoolyear_id' => $this->schoolyear->id,
+        'teaching_visible_admin' => true,
     ]);
     SchoolTool::factory()->create([
         'school_id' => $otherSchool->id,
@@ -87,6 +88,10 @@ describe('authorization', function () {
         $this->getJson('/api/admin/teaching/school_hours')->assertStatus(401);
     });
 
+    test('returns 401 when previous year import is unauthenticated', function () {
+        $this->postJson('/api/admin/teaching/school-hour-imports')->assertUnauthorized();
+    });
+
     test('allows teacher on school hour index', function () {
         $this->actingAs($this->teacher, 'sanctum');
 
@@ -101,6 +106,13 @@ describe('authorization', function () {
             'from' => '08:55',
             'until' => '09:45',
         ])->assertForbidden();
+    });
+
+    test('returns 403 for teacher on previous year import', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $this->postJson('/api/admin/teaching/school-hour-imports')
+            ->assertForbidden();
     });
 
     test('returns 403 for teacher on school hour update', function () {
@@ -167,7 +179,118 @@ test('index returns only school hours of current schoolyear sorted by hour', fun
     $response->assertOk();
     expect($response->json('data'))->toHaveCount(2)
         ->and($response->json('data.0.hour'))->toBe(1)
-        ->and($response->json('data.1.hour'))->toBe(3);
+        ->and($response->json('data.1.hour'))->toBe(3)
+        ->and($response->json('meta.previous_year_import'))->toBeNull();
+});
+
+test('index offers previous year import when current schoolyear has no school hours', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->schoolyear->update([
+        'name' => '2026/27',
+        'concerns' => '2026/27',
+    ]);
+    $this->otherSchoolyear->update([
+        'name' => '2025/26',
+        'concerns' => '2025/26',
+    ]);
+    TeachingSchoolHour::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->otherSchoolyear->id,
+        'hour' => 1,
+        'from' => '08:00:00',
+        'until' => '08:50:00',
+    ]);
+
+    $this->getJson('/api/admin/teaching/school_hours')
+        ->assertOk()
+        ->assertJsonCount(0, 'data')
+        ->assertJsonPath('meta.previous_year_import.schoolyear.id', $this->otherSchoolyear->id)
+        ->assertJsonPath('meta.previous_year_import.schoolyear.label', '2025/26')
+        ->assertJsonPath('meta.previous_year_import.count', 1);
+});
+
+test('teaching admin imports school hours from previous schoolyear', function () {
+    $this->actingAs($this->teachingAdmin, 'sanctum');
+
+    $this->schoolyear->update([
+        'name' => '2026/27',
+        'concerns' => '2026/27',
+    ]);
+    $this->otherSchoolyear->update([
+        'name' => '2025/26',
+        'concerns' => '2025/26',
+    ]);
+    TeachingSchoolHour::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->otherSchoolyear->id,
+        'hour' => 2,
+        'from' => '08:55:00',
+        'until' => '09:45:00',
+    ]);
+    TeachingSchoolHour::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->otherSchoolyear->id,
+        'hour' => 1,
+        'from' => '08:00:00',
+        'until' => '08:50:00',
+    ]);
+
+    $this->postJson('/api/admin/teaching/school-hour-imports')
+        ->assertCreated()
+        ->assertJsonPath('imported', 2)
+        ->assertJsonPath('data.0.hour', 1)
+        ->assertJsonPath('data.0.from', '08:00')
+        ->assertJsonPath('data.0.until', '08:50')
+        ->assertJsonPath('data.1.hour', 2);
+
+    $this->assertDatabaseHas('teaching_school_hours', [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'hour' => 1,
+        'from' => '08:00:00',
+        'until' => '08:50:00',
+    ]);
+    $this->assertDatabaseHas('teaching_school_hours', [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->otherSchoolyear->id,
+        'hour' => 1,
+        'from' => '08:00:00',
+        'until' => '08:50:00',
+    ]);
+});
+
+test('previous year import rejects a current schoolyear that already has school hours', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    TeachingSchoolHour::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'hour' => 1,
+        'from' => '08:00:00',
+        'until' => '08:50:00',
+    ]);
+
+    $this->postJson('/api/admin/teaching/school-hour-imports')
+        ->assertStatus(409)
+        ->assertJsonPath('message', 'Für das aktuelle Schuljahr sind bereits Schulstunden vorhanden.');
+});
+
+test('previous year import rejects when the previous schoolyear has no school hours', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->schoolyear->update([
+        'name' => '2026/27',
+        'concerns' => '2026/27',
+    ]);
+    $this->otherSchoolyear->update([
+        'name' => '2025/26',
+        'concerns' => '2025/26',
+    ]);
+
+    $this->postJson('/api/admin/teaching/school-hour-imports')
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'Im vorherigen Schuljahr wurden keine Schulstunden gefunden.');
 });
 
 test('store creates school hour for current school', function () {

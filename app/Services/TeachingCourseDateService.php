@@ -641,6 +641,34 @@ class TeachingCourseDateService
         });
     }
 
+    public function deleteCourseDate(TeachingCourseDate $courseDate): void
+    {
+        DB::transaction(function () use ($courseDate): void {
+            $courseDate->loadMissing('materials.attachments');
+
+            foreach ($courseDate->materials as $material) {
+                $this->deleteAdoptedMaterial($material);
+            }
+
+            $courseDate->delete();
+        });
+    }
+
+    public function deleteCourseDates(TeachingCourse $course): int
+    {
+        return DB::transaction(function () use ($course): int {
+            $courseDates = $course->teachingCourseDates()
+                ->with('materials.attachments')
+                ->get();
+
+            foreach ($courseDates as $courseDate) {
+                $this->deleteCourseDate($courseDate);
+            }
+
+            return $courseDates->count();
+        });
+    }
+
     private function copyAttachmentToCourseDateMaterial(TeachingCourseDateMaterial $material, MaterialCardAttachment $source): bool
     {
         if ($source->attachment_type !== MaterialCardAttachment::TYPE_FILE) {

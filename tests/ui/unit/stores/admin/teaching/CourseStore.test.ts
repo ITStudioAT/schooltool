@@ -117,6 +117,39 @@ describe('Admin Teaching CourseStore', () => {
         expect(store.uses_entry_areas_for_grading_schema).toBe(true)
     })
 
+    it('synchronizes a saved entry definition into loaded courses immediately', () => {
+        const store = useCourseStore()
+        const entryArea = {
+            id: 15,
+            name: 'DGB',
+            entry_definitions: [{
+                id: 7,
+                teaching_entry_area_id: 15,
+                short_name: 'PÜ',
+                has_table_marking: true,
+                table_marking_color: 'red',
+            }],
+        }
+        store.entry_areas = [entryArea]
+        store.courses = [{ id: 18, teaching_entry_area: entryArea }]
+        store.selected_course = store.courses[0]
+
+        const savedEntryDefinition = {
+            id: 7,
+            teaching_entry_area_id: 15,
+            short_name: 'PÜ',
+            has_table_marking: true,
+            table_marking_color: 'green',
+        }
+
+        store.syncEntryDefinition(savedEntryDefinition)
+
+        expect(store.selected_course.teaching_entry_area.entry_definitions).toEqual([savedEntryDefinition])
+        expect(store.courses[0].teaching_entry_area.entry_definitions[0].table_marking_color).toBe('green')
+        expect(store.entry_areas[0].entry_definitions[0].table_marking_color).toBe('green')
+        expect(axiosMock.get).not.toHaveBeenCalled()
+    })
+
     it('stores a course with a Bereich and without a legacy schema in new schoolyears', async () => {
         axiosMock.post.mockResolvedValue({ data: { id: 5 } })
         const store = useCourseStore()

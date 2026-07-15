@@ -69,6 +69,7 @@ use App\Http\Controllers\Admin\Teaching\Import116Controller;
 use App\Http\Controllers\Admin\Teaching\ImportedCurriculumController;
 use App\Http\Controllers\Admin\Teaching\MyHolidayController;
 use App\Http\Controllers\Admin\Teaching\SchoolHourController;
+use App\Http\Controllers\Admin\Teaching\SchoolHourImportsController;
 use App\Http\Controllers\Admin\Teaching\TeachingBackupController;
 use App\Http\Controllers\Admin\Teaching\TeachingController;
 use App\Http\Controllers\Admin\Teaching\TeachingCourseController;
@@ -529,6 +530,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/curricula/{curriculum}/export/json', [CurriculumExportController::class, 'json']);
         Route::get('/admin/teaching/curricula/{curriculum}/export/word', [CurriculumExportController::class, 'word']);
         Route::get('/admin/teaching/curricula/{curriculum}/export/pdf', [CurriculumExportController::class, 'pdf']);
+        Route::delete('/admin/teaching/course_dates', [CourseDateController::class, 'destroyAll']);
         Route::apiResource('/admin/teaching/course_dates', CourseDateController::class);
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [CourseDateController::class, 'updateStatus']);
         Route::post('/admin/teaching/course_dates/{course_date}/adopt-curriculum-content', [CourseDateController::class, 'adoptCurriculumContent']);
@@ -538,6 +540,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/course_date_materials/attachments/{attachment}/download', [CourseDateController::class, 'downloadAdoptedAttachment']);
         Route::apiResource('/admin/teaching/holidays', HolidayController::class)->only(['index', 'store', 'destroy']);
         Route::apiResource('/admin/teaching/school_hours', SchoolHourController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::post('/admin/teaching/school-hour-imports', [SchoolHourImportsController::class, 'store']);
         Route::apiResource('/admin/teaching/entry_definitions', TeachingEntryDefinitionController::class)
             ->only(['index', 'store', 'update', 'destroy'])
             ->parameters(['entry_definitions' => 'entryDefinition']);

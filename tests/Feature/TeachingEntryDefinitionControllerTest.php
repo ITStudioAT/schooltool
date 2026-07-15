@@ -58,6 +58,8 @@ function teachingEntryFor(User $user, Schoolyear $year, TeachingEntryArea $area,
         'fixed_properties' => ['+', '-'],
         'has_notifications' => false,
         'notification_recipients' => [],
+        'has_table_marking' => false,
+        'table_marking_color' => null,
         ...$attributes,
     ]);
 }
@@ -74,6 +76,8 @@ function validEntryPayload(TeachingEntryArea $area, array $attributes = []): arr
         'fixed_properties' => ['+', '-'],
         'has_notifications' => false,
         'notification_recipients' => [],
+        'has_table_marking' => false,
+        'table_marking_color' => null,
         ...$attributes,
     ];
 }
@@ -94,7 +98,9 @@ test('index returns only owned definitions', function () {
         ->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.id', $entry->id)
-        ->assertJsonPath('data.0.teaching_entry_area_id', $this->area->id);
+        ->assertJsonPath('data.0.teaching_entry_area_id', $this->area->id)
+        ->assertJsonPath('data.0.has_table_marking', false)
+        ->assertJsonPath('data.0.table_marking_color', null);
 });
 
 test('store creates and normalizes a definition', function () {
@@ -125,6 +131,70 @@ test('store and update preserve zero as a fixed property', function () {
         validEntryPayload($this->area, ['fixed_properties' => ['0', ' 2 ']])
     )->assertOk()
         ->assertJsonPath('data.fixed_properties', ['0', '2']);
+});
+
+test('grading entries persist an allowed table marking color', function (string $color) {
+    $response = $this->actingAs($this->teacher, 'sanctum')->postJson(
+        '/api/admin/teaching/entry_definitions',
+        validEntryPayload($this->area, [
+            'has_table_marking' => true,
+            'table_marking_color' => $color,
+        ])
+    );
+
+    $response->assertCreated()
+        ->assertJsonPath('data.has_table_marking', true)
+        ->assertJsonPath('data.table_marking_color', $color);
+
+    $entry = TeachingEntryDefinition::query()->findOrFail($response->json('data.id'));
+
+    expect($entry->has_table_marking)->toBeTrue()
+        ->and($entry->table_marking_color)->toBe($color);
+})->with(TeachingEntryDefinition::TableMarkingColors);
+
+test('table marking requires one of the five configured colors', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/teaching/entry_definitions', validEntryPayload($this->area, [
+        'has_table_marking' => true,
+        'table_marking_color' => null,
+    ]))->assertUnprocessable()->assertJsonValidationErrors('table_marking_color');
+
+    $this->postJson('/api/admin/teaching/entry_definitions', validEntryPayload($this->area, [
+        'has_table_marking' => true,
+        'table_marking_color' => 'teal',
+    ]))->assertUnprocessable()->assertJsonValidationErrors('table_marking_color');
+});
+
+test('disabled and non grading entries clear table marking', function () {
+    $entry = teachingEntryFor($this->teacher, $this->schoolyear, $this->area, [
+        'has_table_marking' => true,
+        'table_marking_color' => 'purple',
+    ]);
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->putJson(
+        "/api/admin/teaching/entry_definitions/{$entry->id}",
+        validEntryPayload($this->area, [
+            'short_name' => 'M',
+            'has_table_marking' => false,
+            'table_marking_color' => 'red',
+        ])
+    )->assertOk()
+        ->assertJsonPath('data.has_table_marking', false)
+        ->assertJsonPath('data.table_marking_color', null);
+
+    $this->putJson(
+        "/api/admin/teaching/entry_definitions/{$entry->id}",
+        validEntryPayload($this->area, [
+            'short_name' => 'M',
+            'category' => 'Verhalten',
+            'has_table_marking' => true,
+            'table_marking_color' => 'green',
+        ])
+    )->assertOk()
+        ->assertJsonPath('data.has_table_marking', false)
+        ->assertJsonPath('data.table_marking_color', null);
 });
 
 test('store persists scoped notification recipients for behaviour entries and removes properties', function () {

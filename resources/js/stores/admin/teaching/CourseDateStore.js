@@ -107,6 +107,30 @@ export const useCourseDateStore = defineStore('AdminCourseDateStore', {
             }
         },
 
+        async destroyAll(courseId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                await axios.delete('/api/admin/teaching/course_dates', {
+                    params: { course_id: courseId },
+                })
+                this.courseDates = []
+                this.selected_courseDate = null
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async updateStatus(dateId, statusOrPayload) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

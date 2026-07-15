@@ -3,11 +3,14 @@
         <AdminCompactSectionHero
             class="mb-3"
             eyebrow="Unterricht"
-            title="Lehrbereich und Kurssteuerung"
+            :title="teachingHeaderTitle"
             :chips="headerChips"
             :status-items="headerStatusItems"
             :progress="schoolyearStats?.progress"
             :progress-label="schoolyearProgressLabel"
+            :progress-secondary-label="currentSemesterProgressLabel"
+            :progress-marker="schoolyearSemesterStartProgress"
+            progress-marker-label="Beginn des 2. Semesters"
             :show-current-user-chip="true"
             secondary-color="#1d4ed8"
             right-orb-color="#a5b4fc" />
@@ -150,6 +153,10 @@ import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { parseLocalDate } from '@/helpers/date'
 import AdminCompactSectionHero from '@/pages/admin/components/AdminCompactSectionHero.vue'
 
+function calendarDateValue(date) {
+    return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
 const Overview = defineAsyncComponent(() => import('./overview/Overview.vue'))
 const Settings = defineAsyncComponent(() => import('./settings/Settings.vue'))
 const Admin = defineAsyncComponent(() => import('./admin/Admin.vue'))
@@ -223,6 +230,29 @@ export default {
         },
         selectedSchoolyearLabel() {
             return this.config?.selected_schoolyear?.name || 'Kein Schuljahr gewählt'
+        },
+        selectedSchoolyearShortLabel() {
+            const schoolyear = this.config?.selected_schoolyear
+            const startYear = String(schoolyear?.from || '').match(/^\d{4}/)?.[0]
+            const endYear = String(schoolyear?.until || '').match(/^\d{4}/)?.[0]
+
+            if (startYear && endYear) {
+                return `${startYear.slice(-2)}/${endYear.slice(-2)}`
+            }
+
+            const label = schoolyear?.name || schoolyear?.concerns || ''
+            const yearMatch = String(label).match(/(\d{2}|\d{4})\s*\/\s*(\d{2}|\d{4})/)
+
+            if (!yearMatch) {
+                return ''
+            }
+
+            return `${yearMatch[1].slice(-2)}/${yearMatch[2].slice(-2)}`
+        },
+        teachingHeaderTitle() {
+            return this.selectedSchoolyearShortLabel
+                ? `Lehrerbereich ${this.selectedSchoolyearShortLabel}`
+                : 'Lehrerbereich'
         },
         selectedRoleLabel() {
             const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
@@ -354,10 +384,73 @@ export default {
             const progress = Math.round((elapsed / total) * 100)
             return { elapsed, remaining, progress }
         },
+        schoolyearSemesterStartProgress() {
+            const schoolyear = this.config?.selected_schoolyear
+            if (!schoolyear?.from || !schoolyear?.until || !schoolyear?.sem_2_start) {
+                return null
+            }
+
+            const start = parseLocalDate(schoolyear.from)
+            const end = parseLocalDate(schoolyear.until)
+            const semesterStart = parseLocalDate(schoolyear.sem_2_start)
+            const startDateValue = calendarDateValue(start)
+            const endDateValue = calendarDateValue(end)
+            const semesterStartDateValue = calendarDateValue(semesterStart)
+            const totalMilliseconds = endDateValue - startDateValue
+            const semesterStartMilliseconds = semesterStartDateValue - startDateValue
+
+            if (
+                !Number.isFinite(totalMilliseconds)
+                || !Number.isFinite(semesterStartMilliseconds)
+                || totalMilliseconds <= 0
+                || semesterStartMilliseconds < 0
+                || semesterStartMilliseconds > totalMilliseconds
+            ) {
+                return null
+            }
+
+            return (semesterStartMilliseconds / totalMilliseconds) * 100
+        },
+        currentSemesterStats() {
+            const schoolyear = this.config?.selected_schoolyear
+            if (!schoolyear?.from || !schoolyear?.until || !schoolyear?.sem_2_start) {
+                return null
+            }
+
+            const schoolyearStartValue = calendarDateValue(parseLocalDate(schoolyear.from))
+            const schoolyearEndValue = calendarDateValue(parseLocalDate(schoolyear.until))
+            const semesterTwoStartValue = calendarDateValue(parseLocalDate(schoolyear.sem_2_start))
+
+            if (
+                !Number.isFinite(schoolyearStartValue)
+                || !Number.isFinite(schoolyearEndValue)
+                || !Number.isFinite(semesterTwoStartValue)
+                || semesterTwoStartValue <= schoolyearStartValue
+                || semesterTwoStartValue > schoolyearEndValue
+            ) {
+                return null
+            }
+
+            const currentDate = Number.isFinite(this.nowTs) ? new Date(this.nowTs) : new Date()
+            const currentDateValue = calendarDateValue(currentDate)
+            const millisecondsPerDay = 86400000
+            const semester = currentDateValue < semesterTwoStartValue ? 1 : 2
+            const semesterStartValue = semester === 1 ? schoolyearStartValue : semesterTwoStartValue
+            const semesterEndValue = semester === 1 ? semesterTwoStartValue - millisecondsPerDay : schoolyearEndValue
+            const totalDays = Math.floor((semesterEndValue - semesterStartValue) / millisecondsPerDay) + 1
+            const elapsedDays = Math.min(
+                totalDays,
+                Math.max(0, Math.floor((currentDateValue - semesterStartValue) / millisecondsPerDay) + 1)
+            )
+
+            return {
+                semester,
+                progress: Math.round((elapsedDays / totalDays) * 100),
+            }
+        },
         headerChips() {
             const chips = [
                 { key: 'school', text: this.selectedSchoolLabel, icon: 'mdi-domain' },
-                { key: 'schoolyear', text: this.selectedSchoolyearLabel, icon: 'mdi-calendar-month-outline' },
             ]
             if (this.courses.length) {
                 chips.push({ key: 'courses', text: `${this.myCourses.length} Kurse`, icon: 'mdi-book-open-variant' })
@@ -374,6 +467,11 @@ export default {
             return this.schoolyearStats !== null
                 ? `Schuljahr: ${this.schoolyearStats.progress}% abgeschlossen`
                 : 'Schuljahrfortschritt nicht verfügbar'
+        },
+        currentSemesterProgressLabel() {
+            return this.currentSemesterStats !== null
+                ? `${this.currentSemesterStats.semester}. Semester: ${this.currentSemesterStats.progress}% abgeschlossen`
+                : ''
         },
         activeSection() {
             const progressNote = this.schoolyearStats !== null
@@ -664,6 +762,7 @@ export default {
             }
             this.navigateTo('overview')
             this.pending_edit_course_id = this.selected_course.id
+            this.action = 'teaching_course_new_or_edit'
         },
         handleNewCourse() {
             this.selected_course = null

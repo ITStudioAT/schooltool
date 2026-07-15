@@ -15,6 +15,8 @@ function entryFixture(overrides = {}) {
         fixed_properties: ['+', '-'],
         has_notifications: false,
         notification_recipients: [],
+        has_table_marking: false,
+        table_marking_color: null,
         ...overrides,
     }
 }
@@ -47,6 +49,8 @@ describe('Teaching entries settings', () => {
 
         expect(ctx.entryForm.teaching_entry_area_id).toBe(10)
         expect(ctx.entryForm.category).toBe('Weitere')
+        expect(ctx.entryForm.has_table_marking).toBe(false)
+        expect(ctx.entryForm.table_marking_color).toBeNull()
         expect(ctx.editDialogOpen).toBe(true)
     })
 
@@ -63,6 +67,8 @@ describe('Teaching entries settings', () => {
                     category,
                     has_notifications: true,
                     notification_recipients: ['class_teacher', 'parents'],
+                    has_table_marking: false,
+                    table_marking_color: null,
                 }),
                 selectedEntryId: null,
                 activeAreaId: 10,
@@ -91,14 +97,20 @@ describe('Teaching entries settings', () => {
         }
     })
 
-    it('clears stale notification recipients for grading entries', async () => {
+    it('saves table marking and clears stale notification recipients for grading entries', async () => {
         const methods = (Entries as any).methods
         const post = vi.fn().mockImplementation((_url, payload) => Promise.resolve({ data: { data: { id: 2, ...payload } } }))
+        const syncEntryDefinition = vi.fn()
         ;(globalThis as any).axios = { post }
         const ctx: any = {
             areas: [{ id: 10, name: 'Unterstufe' }],
             entries: [],
-            entryForm: entryFixture({ has_notifications: true, notification_recipients: ['student'] }),
+            entryForm: entryFixture({
+                has_notifications: true,
+                notification_recipients: ['student'],
+                has_table_marking: true,
+                table_marking_color: 'purple',
+            }),
             selectedEntryId: null,
             activeAreaId: 10,
             activeCategory: 'Benotung',
@@ -108,14 +120,46 @@ describe('Teaching entries settings', () => {
             normalizeShortName: methods.normalizeShortName,
             closeEditDialog: methods.closeEditDialog,
             notifyError: vi.fn(),
+            courseStore: { syncEntryDefinition },
         }
 
         await methods.saveEntry.call(ctx)
 
         expect(post).toHaveBeenCalledWith(
             '/api/admin/teaching/entry_definitions',
-            expect.objectContaining({ has_notifications: false, notification_recipients: [] }),
+            expect.objectContaining({
+                has_notifications: false,
+                notification_recipients: [],
+                has_table_marking: true,
+                table_marking_color: 'purple',
+            }),
         )
+        expect(syncEntryDefinition).toHaveBeenCalledWith(expect.objectContaining({
+            table_marking_color: 'purple',
+        }))
+    })
+
+    it('requires a configured color when table marking is enabled', () => {
+        const canSaveEntry = (Entries as any).computed.canSaveEntry
+        const ctx: any = {
+            areas: [{ id: 10, name: 'Unterstufe' }],
+            entryForm: entryFixture({ teaching_entry_area_id: 10, has_table_marking: true, table_marking_color: null }),
+        }
+
+        expect(canSaveEntry.call(ctx)).toBe(false)
+
+        ctx.entryForm.table_marking_color = 'green'
+        expect(canSaveEntry.call(ctx)).toBe(true)
+    })
+
+    it('offers exactly five table marking colors', () => {
+        expect((Entries as any).data().tableMarkingColors).toEqual([
+            expect.objectContaining({ value: 'blue', label: 'Blau' }),
+            expect.objectContaining({ value: 'green', label: 'Grün' }),
+            expect.objectContaining({ value: 'orange', label: 'Orange' }),
+            expect.objectContaining({ value: 'purple', label: 'Violett' }),
+            expect.objectContaining({ value: 'red', label: 'Rot' }),
+        ])
     })
 
     it('creates and renames areas through their API', async () => {
@@ -268,9 +312,14 @@ describe('Teaching entries settings', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
         const areasTitleIndex = source.indexOf('title="Bereiche"')
         const entriesTitleIndex = source.indexOf('<div class="text-h6 font-weight-bold">Einträge</div>')
+        const designationCardIndex = source.indexOf('<strong>Bezeichnung</strong>')
+        const tableMarkingCardIndex = source.indexOf('<strong>Markierung in Tabelle</strong>')
+        const propertiesCardIndex = source.indexOf('<strong>Eigenschaften</strong>')
 
         expect(areasTitleIndex).toBeGreaterThanOrEqual(0)
         expect(entriesTitleIndex).toBeGreaterThan(areasTitleIndex)
+        expect(tableMarkingCardIndex).toBeGreaterThan(designationCardIndex)
+        expect(propertiesCardIndex).toBeGreaterThan(tableMarkingCardIndex)
         expect(source).toContain('Aktiver Bereich: {{ activeAreaName }}')
         expect(source).toContain('@click="openEntryCopyDialog"')
         expect(source).toContain('v-model="entryCopyDialogOpen"')
@@ -300,6 +349,10 @@ describe('Teaching entries settings', () => {
         expect(source).not.toContain('<strong>Bereich / Oberbegriff</strong>')
         expect(source).not.toContain('<strong>Kategorie</strong>')
         expect(source).toContain('<section v-if="entryForm.category === \'Benotung\'" class="form-section">\n                        <div class="properties-heading">')
+        expect(source).toContain('v-model="entryForm.has_table_marking"')
+        expect(source).toContain('v-model="entryForm.table_marking_color"')
+        expect(source).toContain('<span>Nein</span>')
+        expect(source).toContain('<span>Ja</span>')
         expect(source).toContain('<section v-else class="form-section">')
         expect(source).toContain('<strong>Verständigungen</strong>')
         expect(source).toContain('v-model="entryForm.has_notifications"')

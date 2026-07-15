@@ -286,6 +286,47 @@
                     </section>
 
                     <section v-if="entryForm.category === 'Benotung'" class="form-section">
+                        <div class="form-heading">
+                            <v-icon icon="mdi-format-color-fill" color="primary" />
+                            <strong>Markierung in Tabelle</strong>
+                        </div>
+                        <v-btn-toggle v-model="entryForm.has_table_marking" mandatory selected-class="choice-selected" class="choice-grid">
+                            <v-btn :value="false" class="choice-card" variant="text">
+                                <v-icon icon="mdi-close-circle-outline" />
+                                <span>Nein</span>
+                            </v-btn>
+                            <v-btn :value="true" class="choice-card" variant="text">
+                                <v-icon icon="mdi-check-circle-outline" />
+                                <span>Ja</span>
+                            </v-btn>
+                        </v-btn-toggle>
+                        <v-expand-transition>
+                            <div v-if="entryForm.has_table_marking" class="mt-4">
+                                <div class="text-caption text-medium-emphasis mb-2">Farbe auswählen</div>
+                                <v-btn-toggle
+                                    v-model="entryForm.table_marking_color"
+                                    mandatory
+                                    selected-class="table-marking-color-selected"
+                                    class="table-marking-colors"
+                                    aria-label="Farbe für die Tabellenmarkierung auswählen">
+                                    <v-btn
+                                        v-for="colorOption in tableMarkingColors"
+                                        :key="colorOption.value"
+                                        :value="colorOption.value"
+                                        :aria-label="colorOption.label"
+                                        :title="colorOption.label"
+                                        class="table-marking-color"
+                                        variant="text">
+                                        <span class="table-marking-swatch" :style="{ backgroundColor: colorOption.swatch }" />
+                                        <span>{{ colorOption.label }}</span>
+                                    </v-btn>
+                                </v-btn-toggle>
+                                <div v-if="formErrors.table_marking_color" class="form-error mt-2">{{ formErrors.table_marking_color[0] }}</div>
+                            </div>
+                        </v-expand-transition>
+                    </section>
+
+                    <section v-if="entryForm.category === 'Benotung'" class="form-section">
                         <div class="properties-heading">
                             <div class="form-heading mb-0">
                                 <v-icon icon="mdi-tune-variant" color="primary" />
@@ -385,7 +426,16 @@
 
 <script>
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
+import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+
+const tableMarkingColors = [
+    { value: 'blue', label: 'Blau', swatch: '#3b82f6' },
+    { value: 'green', label: 'Grün', swatch: '#22c55e' },
+    { value: 'orange', label: 'Orange', swatch: '#f97316' },
+    { value: 'purple', label: 'Violett', swatch: '#8b5cf6' },
+    { value: 'red', label: 'Rot', swatch: '#ef4444' },
+]
 
 export default {
     components: { ItsGridBox },
@@ -394,9 +444,11 @@ export default {
         return {
             areas: [],
             entries: [],
+            courseStore: null,
             activeAreaId: null,
             activeCategory: 'Benotung',
             categoryOptions: ['Benotung', 'Verhalten', 'Weitere'],
+            tableMarkingColors,
             editDialogOpen: false,
             deleteDialogOpen: false,
             areaDialogOpen: false,
@@ -430,6 +482,8 @@ export default {
                 fixed_properties: [],
                 has_notifications: false,
                 notification_recipients: [],
+                has_table_marking: false,
+                table_marking_color: null,
             },
         }
     },
@@ -458,7 +512,10 @@ export default {
                 (this.entryForm.category !== 'Benotung' ||
                     !this.entryForm.has_properties ||
                     this.entryForm.properties_mode !== 'fixed' ||
-                    this.entryForm.fixed_properties.length)
+                    this.entryForm.fixed_properties.length) &&
+                (this.entryForm.category !== 'Benotung' ||
+                    !this.entryForm.has_table_marking ||
+                    tableMarkingColors.some((colorOption) => colorOption.value === this.entryForm.table_marking_color))
             )
         },
         entryPendingDeletion() {
@@ -470,6 +527,7 @@ export default {
     },
 
     beforeMount() {
+        this.courseStore = useCourseStore()
         this.loadData()
     },
 
@@ -508,6 +566,8 @@ export default {
                 fixed_properties: [],
                 has_notifications: false,
                 notification_recipients: [],
+                has_table_marking: false,
+                table_marking_color: null,
             }
         },
         openCreateDialog() {
@@ -522,6 +582,8 @@ export default {
                 ...entry,
                 fixed_properties: [...entry.fixed_properties],
                 notification_recipients: [...(entry.notification_recipients || [])],
+                has_table_marking: Boolean(entry.has_table_marking),
+                table_marking_color: entry.table_marking_color || null,
             }
             this.formErrors = {}
             this.editDialogOpen = true
@@ -536,6 +598,8 @@ export default {
             this.normalizeShortName(this.entryForm)
             const hasProperties = this.entryForm.category === 'Benotung' && this.entryForm.has_properties
             const hasNotifications = this.entryForm.category !== 'Benotung' && this.entryForm.has_notifications
+            const hasTableMarking = this.entryForm.category === 'Benotung' && this.entryForm.has_table_marking
+            const allowedTableMarkingColors = tableMarkingColors.map((colorOption) => colorOption.value)
             const allowedNotificationRecipients = ['class_teacher', 'parents', 'student']
             const payload = {
                 ...this.entryForm,
@@ -550,6 +614,11 @@ export default {
                 notification_recipients: hasNotifications
                     ? [...new Set(this.entryForm.notification_recipients.filter((recipient) => allowedNotificationRecipients.includes(recipient)))]
                     : [],
+                has_table_marking: hasTableMarking,
+                table_marking_color:
+                    hasTableMarking && allowedTableMarkingColors.includes(this.entryForm.table_marking_color)
+                        ? this.entryForm.table_marking_color
+                        : null,
             }
             this.isSaving = true
             this.formErrors = {}
@@ -561,6 +630,7 @@ export default {
                 const index = this.entries.findIndex((entry) => entry.id === saved.id)
                 if (index === -1) this.entries.push(saved)
                 else this.entries.splice(index, 1, saved)
+                this.courseStore?.syncEntryDefinition(saved)
                 this.activeAreaId = saved.teaching_entry_area_id
                 this.activeCategory = saved.category
                 this.closeEditDialog()
@@ -1018,6 +1088,34 @@ export default {
     border-color: rgb(var(--v-theme-primary)) !important;
     color: rgb(var(--v-theme-primary));
     background: rgba(var(--v-theme-primary), 0.1) !important;
+}
+.table-marking-colors {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+    width: 100%;
+    height: auto !important;
+    gap: 8px;
+}
+.table-marking-color {
+    display: flex !important;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0 !important;
+    min-height: 62px;
+    border: 2px solid transparent !important;
+    border-radius: 12px !important;
+    text-transform: none !important;
+}
+.table-marking-color-selected {
+    border-color: rgb(var(--v-theme-primary)) !important;
+    background: rgba(var(--v-theme-primary), 0.08) !important;
+}
+.table-marking-swatch {
+    width: 28px;
+    height: 28px;
+    border: 2px solid rgba(var(--v-theme-on-surface), 0.14);
+    border-radius: 50%;
+    box-shadow: 0 2px 7px rgba(20, 32, 60, 0.18);
 }
 .form-error {
     margin-top: 8px;

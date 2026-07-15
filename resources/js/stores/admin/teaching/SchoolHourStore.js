@@ -6,7 +6,9 @@ export const useSchoolHourStore = defineStore('AdminSchoolHourStore', {
     state: () => {
         return {
             school_hours: [],
+            school_hours_loaded: false,
             school_hours_request_promise: null,
+            previous_year_import: null,
         }
     },
 
@@ -18,11 +20,15 @@ export const useSchoolHourStore = defineStore('AdminSchoolHourStore', {
 
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
+            this.school_hours_loaded = false
+            this.previous_year_import = null
             const requestPromise = (async () => {
                 adminStore.is_loading++
                 try {
                     const response = await axios.get('/api/admin/teaching/school_hours')
                     this.school_hours = response.data?.data || []
+                    this.previous_year_import = response.data?.meta?.previous_year_import || null
+                    this.school_hours_loaded = true
                     return true
                 } catch (error) {
                     notification.notify({
@@ -59,6 +65,35 @@ export const useSchoolHourStore = defineStore('AdminSchoolHourStore', {
                     timeout: 2200,
                 })
                 return response.data?.data || []
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async importPreviousYear() {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.post('/api/admin/teaching/school-hour-imports')
+                const importedCount = Number(response.data?.imported || 0)
+                this.school_hours = response.data?.data || []
+                this.previous_year_import = null
+                this.school_hours_loaded = true
+                notification.notify({
+                    message: `${importedCount} ${importedCount === 1 ? 'Schulstunde wurde' : 'Schulstunden wurden'} aus dem Vorjahr übernommen.`,
+                    type: 'success',
+                    timeout: 2600,
+                })
+                return this.school_hours
             } catch (error) {
                 notification.notify({
                     status: error.response?.status,

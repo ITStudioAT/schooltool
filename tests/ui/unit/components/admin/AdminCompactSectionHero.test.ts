@@ -29,6 +29,9 @@ describe('AdminCompactSectionHero', () => {
                 ],
                 progress: 64,
                 progressLabel: 'Schuljahr: 64% abgeschlossen',
+                progressSecondaryLabel: '2. Semester: 29% abgeschlossen',
+                progressMarker: 52.5,
+                progressMarkerLabel: 'Beginn des 2. Semesters',
                 showCurrentUserChip: true,
             },
             global: {
@@ -58,11 +61,27 @@ describe('AdminCompactSectionHero', () => {
         expect(screen.queryByText('Nicht sichtbar')).not.toBeInTheDocument()
         expect(screen.getByText('Mittwoch, 15.07.2026, 09:30:00')).toBeInTheDocument()
         expect(screen.getByText('Schuljahr: 64% abgeschlossen')).toBeInTheDocument()
+        expect(screen.getByText('2. Semester: 29% abgeschlossen')).toBeInTheDocument()
+        expect(screen.getByLabelText('Beginn des 2. Semesters')).toHaveStyle({ left: '52.5%' })
     })
 
     it('clamps the progress value to the supported range', () => {
         expect((AdminCompactSectionHero as any).computed.normalizedProgress.call({ progress: 140 })).toBe(100)
         expect((AdminCompactSectionHero as any).computed.normalizedProgress.call({ progress: -10 })).toBe(0)
         expect((AdminCompactSectionHero as any).computed.normalizedProgress.call({ progress: null })).toBeNull()
+    })
+
+    it('clamps the optional progress marker to the supported range', () => {
+        expect((AdminCompactSectionHero as any).computed.normalizedProgressMarker.call({ progressMarker: 140 })).toBe(100)
+        expect((AdminCompactSectionHero as any).computed.normalizedProgressMarker.call({ progressMarker: -10 })).toBe(0)
+        expect((AdminCompactSectionHero as any).computed.normalizedProgressMarker.call({ progressMarker: null })).toBeNull()
+    })
+
+    it('uses normal font weight for the progress label', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/components/AdminCompactSectionHero.vue', 'utf8')
+        )
+
+        expect(source).toMatch(/\.admin-compact-section-hero__progress-label\s*\{[^}]*font-weight:\s*400;/s)
     })
 })

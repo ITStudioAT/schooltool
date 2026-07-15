@@ -17,6 +17,7 @@ describe('CourseDateStore', () => {
     const notifyMock = vi.fn()
     const notificationStoreMock = { notify: notifyMock }
     const axiosMock = {
+        delete: vi.fn(),
         get: vi.fn(),
         put: vi.fn(),
     }
@@ -26,6 +27,7 @@ describe('CourseDateStore', () => {
 
         adminStoreMock.is_loading = 0
         notifyMock.mockReset()
+        axiosMock.delete.mockReset()
         axiosMock.get.mockReset()
         axiosMock.put.mockReset()
 
@@ -64,5 +66,22 @@ describe('CourseDateStore', () => {
                 status: 422,
             }),
         )
+    })
+
+    it('deletes all dates for one course and clears the selected date', async () => {
+        axiosMock.delete.mockResolvedValue({ data: { deleted_count: 3 } })
+
+        const store = useCourseDateStore()
+        store.courseDates = [{ id: 1 }, { id: 2 }, { id: 3 }] as never
+        store.selected_courseDate = { id: 2 } as never
+
+        const result = await store.destroyAll(16)
+
+        expect(result).toBe(true)
+        expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/teaching/course_dates', {
+            params: { course_id: 16 },
+        })
+        expect(store.courseDates).toEqual([])
+        expect(store.selected_courseDate).toBeNull()
     })
 })

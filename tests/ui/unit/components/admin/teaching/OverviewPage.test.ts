@@ -83,6 +83,23 @@ describe('Teaching overview controls', () => {
         expect(active).toBe('infos')
     })
 
+    it('marks the dates and table menu items when the selected course has no dates', () => {
+        const computed = (Overview as any).computed
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/Overview.vue'), 'utf8')
+
+        expect(computed.selectedCourseHasNoDates.call({
+            selected_course: { course_dates: [] },
+        })).toBe(true)
+        expect(computed.selectedCourseHasNoDates.call({
+            selected_course: { course_dates: [{ id: 1 }] },
+        })).toBe(false)
+        expect(computed.selectedCourseHasNoDates.call({
+            selected_course: {},
+        })).toBe(false)
+        expect(source).toContain("['dates', 'table'].includes(panel.id) && selectedCourseHasNoDates")
+        expect(source).toContain('aria-label="Keine Termine vorhanden">!</span>')
+    })
+
     it('toggles mirrored panel flags through functionalPanelSelection setter', () => {
         const ctx = {
             show_students: true,

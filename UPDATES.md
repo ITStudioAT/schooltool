@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.42.3
+## 3.43.0
 
 ### Unterrichtstool
 
@@ -14,6 +14,10 @@
 - Testumgebung 2026/27 erzeugen
 - Schüler:innen-Anwesenheiten auch im Vorhinein erfassbar
 - Auswahl neuer Arbeiten ab 2026/27
+- Tabelle: Einträge: Mehrere Einträge in Zellen eintragen
+- Tabelle: Einträge: Ganze Spalte farblich markieren z. B. w/Prüfung
+- Tabelle: Einträge: Stoff kann eingetragen werden
+- Menüpunkt Termine: An die anderen Änderungen angepasst
 
 ## 3.42.2
 

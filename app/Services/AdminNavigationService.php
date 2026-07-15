@@ -115,7 +115,7 @@ class AdminNavigationService
                 $menu[] = [
                     'title' => 'Unterricht',
                     'icon' => 'mdi-school',
-                    'to' => '/admin/teaching',
+                    'to' => '/admin/teaching?panel=table',
                     'active_paths' => ['/admin/teaching'],
                     'is_active' => ($teachingLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($teachingLicenceStatus, $teachingModuleStatus, 'Unterricht');
