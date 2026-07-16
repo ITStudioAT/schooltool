@@ -6,13 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Teaching\UserResource;
 use App\Models\SchoolTool;
-use Illuminate\Support\Facades\Cache;
 use App\Services\LicenceService;
 use App\Services\StudentService;
 use App\Services\UserService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 
 class StudentController extends Controller
@@ -128,7 +128,7 @@ class StudentController extends Controller
             abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
         }
 
-        if (! $service->isTokenValid($user, $validated['login_code'])) {
+        if (! $user->consumeToken2Fa($validated['login_code'])) {
             // Code ist ungültig
             $data['status'] = 'code_not_valid';
         } else {

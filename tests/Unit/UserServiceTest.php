@@ -634,7 +634,9 @@ describe('checkEmailVerification', function () {
 
         $result = $this->service->checkEmailVerification($user, '123456');
 
-        expect($result)->toBeTrue();
+        expect($result)->toBeTrue()
+            ->and($user->fresh()->token_2fa)->toBeNull()
+            ->and($user->fresh()->token_2fa_expires_at)->toBeNull();
     });
 
     it('returns false when token does not match', function () {

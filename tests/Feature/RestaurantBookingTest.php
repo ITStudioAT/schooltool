@@ -27,7 +27,7 @@ class RestaurantBookingTest extends TestCase
         // Create test data
         $school = School::factory()->create();
         $user = User::factory()->create(['school_id' => $school->id]);
-        $menuPlanEntry = RestaurantMenuPlanEntry::factory()->create();
+        $menuPlanEntry = RestaurantMenuPlanEntry::factory()->create(['price' => 7.25]);
         $eatingTime = RestaurantEatingTime::factory()->create(['school_id' => $school->id]);
 
         // Authenticate user
@@ -38,7 +38,7 @@ class RestaurantBookingTest extends TestCase
             'restaurant_menu_plan_entry_id' => $menuPlanEntry->id,
             'restaurant_eating_time_id' => $eatingTime->id,
             'quantity' => 2,
-            'price' => 5.50,
+            'price' => 1.00,
             'child_name' => 'Test Child',
             'child_type' => 'child',
             'notes' => 'Test notes',
@@ -53,8 +53,8 @@ class RestaurantBookingTest extends TestCase
             'user_id' => $user->id,
             'restaurant_menu_plan_entry_id' => $menuPlanEntry->id,
             'quantity' => 2,
-            'price' => 5.50,
-            'total_price' => 11.00,
+            'price' => 7.25,
+            'total_price' => 14.50,
             'child_name' => 'Test Child',
             'child_type' => 'child',
         ]);
@@ -64,8 +64,8 @@ class RestaurantBookingTest extends TestCase
         $this->assertEquals($user->id, $booking->user_id);
         $this->assertEquals($menuPlanEntry->id, $booking->restaurant_menu_plan_entry_id);
         $this->assertEquals(2, $booking->quantity);
-        $this->assertEquals(5.50, $booking->price);
-        $this->assertEquals(11.00, $booking->total_price);
+        $this->assertEquals(7.25, $booking->price);
+        $this->assertEquals(14.50, $booking->total_price);
         $this->assertEquals('Test Child', $booking->child_name);
         $this->assertEquals('child', $booking->child_type);
     }

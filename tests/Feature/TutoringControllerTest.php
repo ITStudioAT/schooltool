@@ -24,6 +24,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\URL;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -305,43 +306,54 @@ describe('confirmEmail', function () {
 
         $response->assertStatus(200)
             ->assertJson(['status' => 'EMAIL_VERIFIED']);
+
+        expect($user->fresh()->token_2fa)->toBeNull()
+            ->and($user->fresh()->token_2fa_expires_at)->toBeNull();
     });
 });
 
 describe('confirmUser', function () {
-    test('confirm user with valid UUID returns success message', function () {
+    test('a signed confirmation requires an explicit post before changing the user', function () {
         $validUuid = '550e8400-e29b-41d4-a716-446655440000';
 
         $user = User::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
             'token_2fa_2' => $validUuid,
+            'token_2fa_2_expires_at' => now()->addMinutes(30),
             'confirmed_at' => null,
         ]);
 
-        $response = $this->get('/homepage/tutoring/confirm-user?user_id='.$user->id.'&token='.$validUuid);
+        $promptUrl = URL::temporarySignedRoute('homepage.tutoring.confirm-user', now()->addMinutes(15), [
+            'user_id' => $user->id,
+            'token' => $validUuid,
+        ]);
 
-        $response->assertStatus(302)
+        $this->get($promptUrl)
+            ->assertOk()
+            ->assertSee('Bestätigen');
+
+        expect($user->fresh()->confirmed_at)->toBeNull();
+
+        $actionUrl = URL::temporarySignedRoute('homepage.tutoring.confirm-user.store', now()->addMinutes(15), [
+            'user_id' => $user->id,
+            'token' => $validUuid,
+        ]);
+
+        $this->post($actionUrl)
+            ->assertStatus(302)
             ->assertRedirect()
             ->assertRedirectContains('erfolgreich bestätigt');
+
+        expect($user->fresh()->confirmed_at)->not->toBeNull()
+            ->and($user->fresh()->token_2fa_2)->toBeNull();
     });
 
-    test('confirm user with invalid UUID returns failure message', function () {
-        $correctUuid = '550e8400-e29b-41d4-a716-446655440000';
-        $wrongUuid = '123e4567-e89b-12d3-a456-426614174000';
+    test('an unsigned confirmation link is rejected', function () {
+        $user = User::factory()->create();
 
-        $user = User::factory()->create([
-            'school_id' => $this->school->id,
-            'schoolyear_id' => $this->schoolyear->id,
-            'token_2fa_2' => $correctUuid,
-            'confirmed_at' => null,
-        ]);
-
-        $response = $this->get('/homepage/tutoring/confirm-user?user_id='.$user->id.'&token='.$wrongUuid);
-
-        $response->assertStatus(302)
-            ->assertRedirect()
-            ->assertRedirectContains('nicht best');
+        $this->get('/homepage/tutoring/confirm-user?user_id='.$user->id.'&token=550e8400-e29b-41d4-a716-446655440000')
+            ->assertForbidden();
     });
 
     test('confirm user is blocked when tutoring school licence is expired and required', function () {
@@ -362,12 +374,16 @@ describe('confirmUser', function () {
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
             'token_2fa_2' => $validUuid,
+            'token_2fa_2_expires_at' => now()->addMinutes(30),
             'confirmed_at' => null,
         ]);
 
-        $response = $this->get('/homepage/tutoring/confirm-user?user_id='.$user->id.'&token='.$validUuid);
+        $actionUrl = URL::temporarySignedRoute('homepage.tutoring.confirm-user.store', now()->addMinutes(15), [
+            'user_id' => $user->id,
+            'token' => $validUuid,
+        ]);
 
-        $response->assertStatus(403);
+        $this->post($actionUrl)->assertStatus(403);
     });
 
     test('confirm user remains allowed when tutoring school licence is expired but not required', function () {
@@ -388,12 +404,17 @@ describe('confirmUser', function () {
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
             'token_2fa_2' => $validUuid,
+            'token_2fa_2_expires_at' => now()->addMinutes(30),
             'confirmed_at' => null,
         ]);
 
-        $response = $this->get('/homepage/tutoring/confirm-user?user_id='.$user->id.'&token='.$validUuid);
+        $actionUrl = URL::temporarySignedRoute('homepage.tutoring.confirm-user.store', now()->addMinutes(15), [
+            'user_id' => $user->id,
+            'token' => $validUuid,
+        ]);
 
-        $response->assertStatus(302)
+        $this->post($actionUrl)
+            ->assertStatus(302)
             ->assertRedirect()
             ->assertRedirectContains('erfolgreich bestätigt');
     });

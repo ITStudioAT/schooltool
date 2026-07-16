@@ -30,7 +30,7 @@ class RestaurantBookingService
             'user_id' => $user->id,
             'restaurant_menu_plan_entry_id' => $entry->id,
             'restaurant_eating_time_id' => $data['restaurant_eating_time_id'] ?? null,
-            'price' => $data['price'] ?? $entry->price,
+            'price' => $entry->price,
             'quantity' => $data['quantity'] ?? 1,
             'child_name' => $primaryRecipient['name'] ?? null,
             'child_type' => $primaryRecipient['type'] ?? null,
@@ -243,6 +243,10 @@ class RestaurantBookingService
         $errors = [];
         $menuPlan = $entry->menuPlan;
 
+        if ((int) $menuPlan->school_id !== (int) $user->school_id) {
+            $errors[] = 'Dieses Menü gehört nicht zu Ihrer Schule.';
+        }
+
         if (! $this->restaurantService->isMenuPlanOrderable($menuPlan)) {
             if ($this->restaurantService->hasMenuPlanOrderEnded($menuPlan)) {
                 $errors[] = 'Die Bestellfrist für diesen Menüplan ist abgelaufen.';
@@ -267,6 +271,14 @@ class RestaurantBookingService
 
         if ($entry->eatingTimes->isNotEmpty() && empty($data['restaurant_eating_time_id'])) {
             $errors[] = 'Bitte wählen Sie eine Speisezeit aus.';
+        }
+
+        $eatingTimeId = isset($data['restaurant_eating_time_id'])
+            ? (int) $data['restaurant_eating_time_id']
+            : null;
+
+        if ($eatingTimeId !== null && ! $entry->eatingTimes->contains('id', $eatingTimeId)) {
+            $errors[] = 'Die ausgewählte Speisezeit gehört nicht zu diesem Menü.';
         }
 
         $validImportIds = collect($this->getChildOptionsForUser($user))

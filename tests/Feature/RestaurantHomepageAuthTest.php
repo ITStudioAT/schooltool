@@ -12,6 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
@@ -1082,10 +1083,27 @@ it('confirms a pending restaurant user through the email link', function () {
         'confirmed_at' => null,
         'restaurant_confirmed_at' => null,
         'token_2fa_2' => $token,
+        'token_2fa_2_expires_at' => now()->addMinutes(30),
     ]);
     $user->assignRole('lunch_candidate');
 
-    $this->get('/homepage/restaurant/confirm-user?user_id='.$user->id.'&token='.$token)
+    $promptUrl = URL::temporarySignedRoute('homepage.restaurant.confirm-user', now()->addMinutes(15), [
+        'user_id' => $user->id,
+        'token' => $token,
+    ]);
+
+    $this->get($promptUrl)
+        ->assertOk()
+        ->assertSee('Bestätigen');
+
+    expect($user->fresh()->confirmed_at)->toBeNull();
+
+    $actionUrl = URL::temporarySignedRoute('homepage.restaurant.confirm-user.store', now()->addMinutes(15), [
+        'user_id' => $user->id,
+        'token' => $token,
+    ]);
+
+    $this->post($actionUrl)
         ->assertOk()
         ->assertSee('Benutzer wurde erfolgreich bestätigt.');
 
@@ -1117,14 +1135,41 @@ it('rejects a pending restaurant user through the email link', function () {
         'confirmed_at' => null,
         'restaurant_confirmed_at' => null,
         'token_2fa_2' => $token,
+        'token_2fa_2_expires_at' => now()->addMinutes(30),
     ]);
     $user->assignRole('lunch_candidate');
 
-    $this->get('/homepage/restaurant/reject-user?user_id='.$user->id.'&token='.$token)
+    $promptUrl = URL::temporarySignedRoute('homepage.restaurant.reject-user', now()->addMinutes(15), [
+        'user_id' => $user->id,
+        'token' => $token,
+    ]);
+
+    $this->get($promptUrl)
+        ->assertOk()
+        ->assertSee('Ablehnen');
+
+    expect(User::query()->whereKey($user->id)->exists())->toBeTrue();
+
+    $actionUrl = URL::temporarySignedRoute('homepage.restaurant.reject-user.store', now()->addMinutes(15), [
+        'user_id' => $user->id,
+        'token' => $token,
+    ]);
+
+    $this->post($actionUrl)
         ->assertOk()
         ->assertSee('Benutzer wurde abgelehnt.');
 
     expect(User::query()->whereKey($user->id)->doesntExist())->toBeTrue();
+});
+
+it('rejects unsigned restaurant approval links', function () {
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    $this->get('/homepage/restaurant/confirm-user?user_id='.$user->id.'&token='.Str::uuid())
+        ->assertForbidden();
 });
 
 it('creates and logs in a lunch user for an unknown email after email confirmation and name entry when restaurant confirmation is disabled', function () {

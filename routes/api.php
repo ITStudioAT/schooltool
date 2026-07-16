@@ -108,20 +108,20 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /***** HOMEPAGE ROUTES *****/
     Route::get('/homepage/login_schools', [HomepageController::class, 'loginSchools']);
-    Route::post('/homepage/login_step_email', [HomepageController::class, 'homepageLoginStepEmail']);
-    Route::post('/homepage/login_step_password', [HomepageController::class, 'homepageLoginStepPassword']);
-    Route::post('/homepage/login_step_2fa', [HomepageController::class, 'homepageLoginStep2fa']);
+    Route::post('/homepage/login_step_email', [HomepageController::class, 'homepageLoginStepEmail'])->middleware('throttle:authentication');
+    Route::post('/homepage/login_step_password', [HomepageController::class, 'homepageLoginStepPassword'])->middleware('throttle:authentication');
+    Route::post('/homepage/login_step_2fa', [HomepageController::class, 'homepageLoginStep2fa'])->middleware('throttle:authentication');
     Route::get('/homepage/config', [HomepageController::class, 'config']);
     Route::get('/homepage/load_schools_for_tool', [HomepageController::class, 'loadSchoolsForTool']);
     Route::get('/homepage/restaurant/menu-plans', [HomepageController::class, 'restaurantMenuPlans']);
     Route::get('/homepage/restaurant/menu-plans/{id}/print', [HomepageController::class, 'restaurantMenuPlanPrint']);
-    Route::post('/homepage/restaurant/check_email', [HomepageController::class, 'restaurantCheckEmail'])->middleware('tool-licensed:Restaurant');
-    Route::post('/homepage/restaurant/send_login_code', [HomepageController::class, 'restaurantSendLoginCode'])->middleware('tool-licensed:Restaurant');
-    Route::post('/homepage/restaurant/login_with_code', [HomepageController::class, 'restaurantLoginWithCode'])->middleware('tool-licensed:Restaurant');
-    Route::post('/homepage/restaurant/login_with_password', [HomepageController::class, 'restaurantLoginWithPassword'])->middleware('tool-licensed:Restaurant');
-    Route::post('/homepage/restaurant/change_password', [HomepageController::class, 'restaurantChangePassword'])->middleware('tool-licensed:Restaurant');
-    Route::post('/homepage/restaurant/register', [HomepageController::class, 'restaurantRegisterUser'])->middleware('tool-licensed:Restaurant');
-    Route::post('/homepage/restaurant/confirm_email', [HomepageController::class, 'restaurantConfirmEmail'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/check_email', [HomepageController::class, 'restaurantCheckEmail'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
+    Route::post('/homepage/restaurant/send_login_code', [HomepageController::class, 'restaurantSendLoginCode'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
+    Route::post('/homepage/restaurant/login_with_code', [HomepageController::class, 'restaurantLoginWithCode'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
+    Route::post('/homepage/restaurant/login_with_password', [HomepageController::class, 'restaurantLoginWithPassword'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
+    Route::post('/homepage/restaurant/change_password', [HomepageController::class, 'restaurantChangePassword'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
+    Route::post('/homepage/restaurant/register', [HomepageController::class, 'restaurantRegisterUser'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
+    Route::post('/homepage/restaurant/confirm_email', [HomepageController::class, 'restaurantConfirmEmail'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
     Route::post('/homepage/restaurant/sepa/store', [HomepageController::class, 'restaurantStoreSepaMandate'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/sepa/confirm_code', [HomepageController::class, 'restaurantConfirmSepaMandateCode'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/sepa/resend_code', [HomepageController::class, 'restaurantResendSepaMandateCode'])->middleware('tool-licensed:Restaurant');
@@ -138,9 +138,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /***** STUDENT ROUTES *****/
     Route::get('/homepage/student/config', [StudentController::class, 'config']);
-    Route::post('/homepage/student/login_step_email', [StudentController::class, 'loginStepEmail'])->middleware('tool-licensed:Lehrertool');
-    Route::post('/homepage/student/login_step_code', [StudentController::class, 'loginStepCode'])->middleware('tool-licensed:Lehrertool');
-    Route::post('/homepage/student/login_step_password', [StudentController::class, 'loginStepPassword'])->middleware('tool-licensed:Lehrertool');
+    Route::post('/homepage/student/login_step_email', [StudentController::class, 'loginStepEmail'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
+    Route::post('/homepage/student/login_step_code', [StudentController::class, 'loginStepCode'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
+    Route::post('/homepage/student/login_step_password', [StudentController::class, 'loginStepPassword'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
     Route::get('/homepage/student/user', [StudentController::class, 'user'])->middleware('tool-licensed:Lehrertool');
     Route::post('/homepage/student/change_password', [StudentController::class, 'changePassword'])->middleware('tool-licensed:Lehrertool');
     Route::get('/homepage/student/courses', [CourseController::class, 'index'])->middleware('tool-licensed:Lehrertool');
@@ -151,9 +151,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /***** STUDENTS TIMETABLES STUDENT ROUTES *****/
     Route::get('/homepage/students-timetables/config', [StudentsTimetablesStudentController::class, 'config']);
-    Route::post('/homepage/students-timetables/login_step_email', [StudentsTimetablesStudentController::class, 'loginStepEmail'])->middleware('tool-licensed:StudentsTimetables');
-    Route::post('/homepage/students-timetables/login_step_code', [StudentsTimetablesStudentController::class, 'loginStepCode'])->middleware('tool-licensed:StudentsTimetables');
-    Route::post('/homepage/students-timetables/login_step_password', [StudentsTimetablesStudentController::class, 'loginStepPassword'])->middleware('tool-licensed:StudentsTimetables');
+    Route::post('/homepage/students-timetables/login_step_email', [StudentsTimetablesStudentController::class, 'loginStepEmail'])->middleware(['tool-licensed:StudentsTimetables', 'throttle:authentication']);
+    Route::post('/homepage/students-timetables/login_step_code', [StudentsTimetablesStudentController::class, 'loginStepCode'])->middleware(['tool-licensed:StudentsTimetables', 'throttle:authentication']);
+    Route::post('/homepage/students-timetables/login_step_password', [StudentsTimetablesStudentController::class, 'loginStepPassword'])->middleware(['tool-licensed:StudentsTimetables', 'throttle:authentication']);
     Route::get('/homepage/students-timetables/user', [StudentsTimetablesStudentController::class, 'user'])->middleware('tool-licensed:StudentsTimetables');
     Route::get('/homepage/students-timetables/overview', [StudentsTimetablesStudentController::class, 'overview'])->middleware('tool-licensed:StudentsTimetables');
     Route::put('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'updateProfileSelection'])->middleware('tool-licensed:StudentsTimetables');
@@ -235,23 +235,23 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/students-timetables/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);
     });
 
-    Route::post('/admin/login_step_email', [AdminController::class, 'loginStepEmail']);
-    Route::post('/admin/login_step_2', [AdminController::class, 'loginStep2']);
-    Route::post('/admin/login_step_3', [AdminController::class, 'loginStep3']);
+    Route::post('/admin/login_step_email', [AdminController::class, 'loginStepEmail'])->middleware('throttle:authentication');
+    Route::post('/admin/login_step_2', [AdminController::class, 'loginStep2'])->middleware('throttle:authentication');
+    Route::post('/admin/login_step_3', [AdminController::class, 'loginStep3'])->middleware('throttle:authentication');
 
-    Route::post('/admin/new_teacher_step_email', [AdminController::class, 'newTeacherStepEmail']);
-    Route::post('/admin/new_teacher_step_school', [AdminController::class, 'newTeacherStepSchool']);
-    Route::post('/admin/new_teacher_step_code', [AdminController::class, 'newTeacherStepCode']);
+    Route::post('/admin/new_teacher_step_email', [AdminController::class, 'newTeacherStepEmail'])->middleware('throttle:authentication');
+    Route::post('/admin/new_teacher_step_school', [AdminController::class, 'newTeacherStepSchool'])->middleware('throttle:authentication');
+    Route::post('/admin/new_teacher_step_code', [AdminController::class, 'newTeacherStepCode'])->middleware('throttle:authentication');
 
-    Route::post('/admin/password_unknown_step_email', [AdminController::class, 'passwordUnknownStepEmail']);
-    Route::post('/admin/password_unknown_step_school', [AdminController::class, 'passwordUnknownStepSchool']);
-    Route::post('/admin/password_unknown_step_token', [AdminController::class, 'passwordUnknownStepToken']);
-    Route::post('/admin/password_unknown_step_token_2', [AdminController::class, 'passwordUnknownStepToken2']);
-    Route::post('/admin/password_unknown_step_password', [AdminController::class, 'passwordUnknownStepPassword']);
+    Route::post('/admin/password_unknown_step_email', [AdminController::class, 'passwordUnknownStepEmail'])->middleware('throttle:authentication');
+    Route::post('/admin/password_unknown_step_school', [AdminController::class, 'passwordUnknownStepSchool'])->middleware('throttle:authentication');
+    Route::post('/admin/password_unknown_step_token', [AdminController::class, 'passwordUnknownStepToken'])->middleware('throttle:authentication');
+    Route::post('/admin/password_unknown_step_token_2', [AdminController::class, 'passwordUnknownStepToken2'])->middleware('throttle:authentication');
+    Route::post('/admin/password_unknown_step_password', [AdminController::class, 'passwordUnknownStepPassword'])->middleware('throttle:authentication');
 
-    Route::post('/admin/register_step_1', [AdminController::class, 'registerStep1']);
-    Route::post('/admin/register_step_2', [AdminController::class, 'registerStep2']);
-    Route::post('/admin/register_step_3', [AdminController::class, 'registerStep3']);
+    Route::post('/admin/register_step_1', [AdminController::class, 'registerStep1'])->middleware('throttle:authentication');
+    Route::post('/admin/register_step_2', [AdminController::class, 'registerStep2'])->middleware('throttle:authentication');
+    Route::post('/admin/register_step_3', [AdminController::class, 'registerStep3'])->middleware('throttle:authentication');
 
     /* vom User ausgelöste APis zur E-Mail-Verifikation */
     Route::post('/admin/users/send_verification_email_initialized_from_user', [UserController::class, 'sendVerificationEmailInitializedFromUser']);
@@ -259,22 +259,22 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* homepage/register */
     Route::get('/homepage/register/config', [RegisterController::class, 'config'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/check_email', [RegisterController::class, 'checkEmail'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/confirm_email', [RegisterController::class, 'confirmEmail'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/save_user_data', [RegisterController::class, 'saveUserData'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/login_token', [RegisterController::class, 'loginToken'])->middleware('tool-licensed:Anmeldetool');
+    Route::post('/homepage/register/check_email', [RegisterController::class, 'checkEmail'])->middleware(['tool-licensed:Anmeldetool', 'throttle:authentication']);
+    Route::post('/homepage/register/confirm_email', [RegisterController::class, 'confirmEmail'])->middleware(['tool-licensed:Anmeldetool', 'throttle:authentication']);
+    Route::post('/homepage/register/save_user_data', [RegisterController::class, 'saveUserData'])->middleware(['tool-licensed:Anmeldetool', 'throttle:authentication']);
+    Route::post('/homepage/register/login_token', [RegisterController::class, 'loginToken'])->middleware(['tool-licensed:Anmeldetool', 'throttle:authentication']);
     Route::get('/homepage/register/load_register_and_user', [RegisterController::class, 'loadRegisterAndUser'])->middleware('tool-licensed:Anmeldetool');
     Route::post('/homepage/register/book', [RegisterController::class, 'book'])->middleware('tool-licensed:Anmeldetool');
     Route::post('/homepage/register/delete_booking', [RegisterController::class, 'deleteBooking'])->middleware('tool-licensed:Anmeldetool');
 
     /* homepage/tutoring */
     Route::get('/homepage/tutoring/config', [TutoringController::class, 'config']);
-    Route::post('/homepage/tutoring/check_email', [TutoringController::class, 'checkEMail'])->middleware('tool-licensed:Nachhilfetool');
-    Route::post('/homepage/tutoring/confirm_email', [TutoringController::class, 'confirmEMail'])->middleware('tool-licensed:Nachhilfetool');
-    Route::post('/homepage/tutoring/create_user', [TutoringController::class, 'createUser'])->middleware('tool-licensed:Nachhilfetool');
-    Route::post('/homepage/tutoring/unknown_password', [TutoringController::class, 'unknownPassword'])->middleware('tool-licensed:Nachhilfetool');
-    Route::post('/homepage/tutoring/login_with_token', [TutoringController::class, 'loginWithToken'])->middleware('tool-licensed:Nachhilfetool');
-    Route::post('/homepage/tutoring/login_with_password', [TutoringController::class, 'loginWithPassword'])->middleware('tool-licensed:Nachhilfetool');
+    Route::post('/homepage/tutoring/check_email', [TutoringController::class, 'checkEMail'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
+    Route::post('/homepage/tutoring/confirm_email', [TutoringController::class, 'confirmEMail'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
+    Route::post('/homepage/tutoring/create_user', [TutoringController::class, 'createUser'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
+    Route::post('/homepage/tutoring/unknown_password', [TutoringController::class, 'unknownPassword'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
+    Route::post('/homepage/tutoring/login_with_token', [TutoringController::class, 'loginWithToken'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
+    Route::post('/homepage/tutoring/login_with_password', [TutoringController::class, 'loginWithPassword'])->middleware(['tool-licensed:Nachhilfetool', 'throttle:authentication']);
     Route::get('/homepage/tutoring/load_offer_config', [OfferController::class, 'loadOfferConfig']);
     Route::get('/homepage/tutoring/load_offers', [OfferController::class, 'loadOffers']);
     Route::post('/homepage/tutoring/click_count', [OfferController::class, 'clickCount']);
@@ -800,7 +800,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         // users_with_roles
         Route::get('/admin/users_with_roles/roles', [UserWithRoleController::class, 'roles']);
         Route::post('/admin/users_with_roles/roles', [UserWithRoleController::class, 'saveUserRoles']);
-        Route::apiResource('/admin/users_with_roles', UserWithRoleController::class);
+        Route::apiResource('/admin/users_with_roles', UserWithRoleController::class)
+            ->parameters(['users_with_roles' => 'user']);
     });
 
     /* SANCTUM - super_admin */

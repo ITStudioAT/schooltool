@@ -11,6 +11,7 @@ use App\Models\RestaurantMenuPlanBooking;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\User;
+use App\Support\SafeHtml;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
@@ -54,6 +55,8 @@ class RestaurantService
         'order_end_time' => '17:00',
         'visibility_end_mode' => 'plan_end',
     ];
+
+    public function __construct(private readonly SafeHtml $safeHtml) {}
 
     public function settingsForUser(User $authUser): array
     {
@@ -920,7 +923,9 @@ class RestaurantService
 
         $normalized = preg_replace('/<a[^>]*href=["\']mailto:[^"\']*["\'][^>]*>(.*?)<\/a>/i', '$1', $normalized);
 
-        return $normalized;
+        $sanitized = $this->safeHtml->sanitize($normalized);
+
+        return $sanitized === '' ? null : $sanitized;
     }
 
     private function normalizePrice(mixed $value): ?string
@@ -979,7 +984,9 @@ class RestaurantService
             'service_email' => trim((string) ($schoolTool->restaurant_service_email ?? self::DEFAULT_GENERAL_SETTINGS['service_email'])),
             'new_users_must_confirm_email' => (bool) ($schoolTool->restaurant_new_users_must_confirm_email ?? self::DEFAULT_GENERAL_SETTINGS['new_users_must_confirm_email']),
             'new_users_confirmer_email' => trim((string) ($schoolTool->restaurant_new_users_confirmer_email ?? self::DEFAULT_GENERAL_SETTINGS['new_users_confirmer_email'])),
-            'user_information_intro_html' => trim((string) ($schoolTool->restaurant_user_information_intro_html ?? self::DEFAULT_GENERAL_SETTINGS['user_information_intro_html'])),
+            'user_information_intro_html' => $this->normalizeNullableHtml(
+                $schoolTool->restaurant_user_information_intro_html ?? self::DEFAULT_GENERAL_SETTINGS['user_information_intro_html'],
+            ) ?? '',
         ];
     }
 
@@ -991,8 +998,12 @@ class RestaurantService
 
         return [
             'sepa_online_enabled' => (bool) ($schoolTool->restaurant_sepa_online_enabled ?? self::DEFAULT_SEPA_SETTINGS['sepa_online_enabled']),
-            'sepa_payee' => trim((string) ($schoolTool->restaurant_sepa_payee ?? self::DEFAULT_SEPA_SETTINGS['sepa_payee'])),
-            'sepa_mandate_text' => trim((string) ($schoolTool->restaurant_sepa_mandate_text ?? self::DEFAULT_SEPA_SETTINGS['sepa_mandate_text'])),
+            'sepa_payee' => $this->normalizeNullableHtml(
+                $schoolTool->restaurant_sepa_payee ?? self::DEFAULT_SEPA_SETTINGS['sepa_payee'],
+            ) ?? '',
+            'sepa_mandate_text' => $this->normalizeNullableHtml(
+                $schoolTool->restaurant_sepa_mandate_text ?? self::DEFAULT_SEPA_SETTINGS['sepa_mandate_text'],
+            ) ?? '',
         ];
     }
 

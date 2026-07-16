@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -55,7 +56,24 @@ class AppServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('global', function (Request $request) {
-            return Limit::perMinute(config('spa.global_throttle', 1000));
+            return Limit::perMinute(config('spa.global_throttle', 1000))->by($request->ip());
+        });
+
+        RateLimiter::for('authentication', function (Request $request) {
+            $identity = data_get($request->all(), 'data.email')
+                ?? $request->input('email')
+                ?? data_get($request->all(), 'data.user_id')
+                ?? $request->input('user_id')
+                ?? 'unknown';
+            $identity = is_scalar($identity) ? $identity : 'invalid';
+            $identity = Str::lower(trim((string) $identity));
+            $ip = (string) $request->ip();
+            $endpoint = $request->path();
+
+            return [
+                Limit::perMinute(10)->by("authentication:{$endpoint}|{$identity}|{$ip}"),
+                Limit::perMinute(60)->by("authentication-ip:{$ip}"),
+            ];
         });
 
         Event::listen(MessageSending::class, function (MessageSending $event): void {

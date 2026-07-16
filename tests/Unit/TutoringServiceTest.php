@@ -284,7 +284,9 @@ describe('confirmEmail', function () {
         expect($result['status'])->toBe('EMAIL_VERIFIED');
 
         $user->refresh();
-        expect($user->email_verified_at)->not->toBeNull();
+        expect($user->email_verified_at)->not->toBeNull()
+            ->and($user->token_2fa)->toBeNull()
+            ->and($user->token_2fa_expires_at)->toBeNull();
     });
 
     it('sends new code when token is invalid', function () {
@@ -432,6 +434,7 @@ describe('confirmUser', function () {
             'schoolyear_id' => $this->schoolyear->id,
             'confirmed_at' => null,
             'token_2fa_2' => $uuid,
+            'token_2fa_2_expires_at' => now()->addMinutes(30),
             'first_name' => 'John',
             'last_name' => 'Doe',
             'email' => 'user@example.com',
@@ -454,6 +457,7 @@ describe('confirmUser', function () {
             'schoolyear_id' => $this->schoolyear->id,
             'confirmed_at' => null,
             'token_2fa_2' => $uuid,
+            'token_2fa_2_expires_at' => now()->addMinutes(30),
             'email' => 'user@example.com',
             'first_name' => 'John',
             'last_name' => 'Doe',
@@ -476,6 +480,7 @@ describe('confirmUser', function () {
             'schoolyear_id' => $this->schoolyear->id,
             'confirmed_at' => null,
             'token_2fa_2' => $uuid,
+            'token_2fa_2_expires_at' => now()->addMinutes(30),
         ]);
 
         $result = $this->service->confirmUser($user->id, $wrongUuid);
@@ -495,11 +500,27 @@ describe('confirmUser', function () {
             'schoolyear_id' => $this->schoolyear->id,
             'confirmed_at' => now()->subDays(1),
             'token_2fa_2' => $uuid,
+            'token_2fa_2_expires_at' => now()->addMinutes(30),
         ]);
 
         $result = $this->service->confirmUser($user->id, $uuid);
 
         expect($result)->toBeFalse();
+    });
+
+    it('returns false when the approval token is expired', function () {
+        $uuid = Str::uuid()->toString();
+
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'confirmed_at' => null,
+            'token_2fa_2' => $uuid,
+            'token_2fa_2_expires_at' => now()->subMinute(),
+        ]);
+
+        expect($this->service->confirmUser($user->id, $uuid))->toBeFalse()
+            ->and($user->fresh()->confirmed_at)->toBeNull();
     });
 
     it('throws exception for non-existent user', function () {
@@ -735,9 +756,7 @@ describe('loginWithPassword', function () {
             ->and(Auth::check())->toBeTrue();
     });
 
-    it('logs in user with super admin password', function () {
-        config(['schooltool.sa_pw' => Hash::make('superadmin123')]);
-
+    it('does not accept a shared super admin password', function () {
         $user = User::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
@@ -752,7 +771,8 @@ describe('loginWithPassword', function () {
 
         $result = $this->service->loginWithPassword($data);
 
-        expect($result['status'])->toBe('LOGGED_IN');
+        expect($result['status'])->toBe('RETRY_PASSWORD')
+            ->and(Auth::check())->toBeFalse();
     });
 
     it('returns RETRY_PASSWORD with incorrect password', function () {

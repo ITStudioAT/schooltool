@@ -125,7 +125,7 @@ class UserController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
-        if (! $user->checkToken2Fa($validated['token_2fa'])) {
+        if (! $user->consumeToken2Fa($validated['token_2fa'])) {
             abort(401, 'Der Code ist falsch oder abgelaufen');
         }
         $validated['email_verified_at'] = now();
@@ -157,7 +157,7 @@ class UserController extends Controller
         }
         $validated = $request->validated();
 
-        if (! $user->checkToken2Fa($validated['token_2fa'])) {
+        if (! $user->consumeToken2Fa($validated['token_2fa'])) {
             abort(401, 'Kennwort speichern funktioniert nicht. Code falsch oder Zeit abgelaufen.');
         }
 
@@ -223,7 +223,7 @@ class UserController extends Controller
             abort(422, 'Fehler bei der 2-Faktoren-Authentifizierung');
         }
 
-        if (! $user->checkToken2Fa($validated['token_2fa'])) {
+        if (! $user->consumeToken2Fa($validated['token_2fa'])) {
             abort(401, 'Der Code ist falsch oder abgelaufen');
         }
 

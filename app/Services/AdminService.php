@@ -130,13 +130,10 @@ class AdminService
             ->where('school_id', $data['school']['id'])
             ->first();
 
-        $tokenInvalid = $user->token_2fa !== $data['token_2fa'] || $user->token_2fa_expires_at < now();
-        if ($tokenInvalid) {
+        if (! $user->consumeToken2Fa($data['token_2fa'])) {
             abort(423, 'Der Token ist ungültig oder abgelaufen.');
         }
 
-        $user->token_2fa = null;
-        $user->token_2fa_expires_at = null;
         $this->syncTeacherSchoolyearFromSchoolTool($user);
         $user->save();
 
@@ -214,6 +211,15 @@ class AdminService
     public function passwordUnkownSetPassword(array $data): array
     {
         $user = $this->findUserByEmailAndSchool($data['email'], $data['school_id']);
+
+        if (! $user->consumeToken2Fa($data['token_2fa'])) {
+            abort(401, 'Token falsch oder abgelaufen');
+        }
+
+        if ($user->is_2fa && ! $user->consumeToken2Fa2($data['token_2fa_2'] ?? null)) {
+            abort(401, 'Token falsch oder abgelaufen');
+        }
+
         $user->password = Hash::make($data['password']);
         $user->save();
 
@@ -226,10 +232,7 @@ class AdminService
             ->where('school_id', $data['school']['id'])
             ->first();
 
-        // Prüfen, ob Login mit Super_admin_kennwort durchgeführt wurde
-        $passwordSuperAdmin = Hash::check($data['password'], config('schooltool.sa_pw'));
-
-        if ($user->is_2fa && ! $passwordSuperAdmin) {
+        if ($user->is_2fa) {
             $this->setToken2FaSendingTo2FaEmail($user, $data, 'Code für Login');
             $data['step'] = 'LOGIN_ENTER_TOKEN';
         } else {
@@ -241,7 +244,7 @@ class AdminService
 
     public function setToken2FaSendingTo2FaEmail($user, array $data, string $subject): void
     {
-        $token = rand(100000, 999999);
+        $token = random_int(100000, 999999);
         $user->token_2fa = $token;
         $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
@@ -251,7 +254,7 @@ class AdminService
 
     public function setToken2Fa($user, array $data, string $subject): void
     {
-        $token = rand(100000, 999999);
+        $token = random_int(100000, 999999);
         $user->token_2fa = $token;
         $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
@@ -261,7 +264,7 @@ class AdminService
 
     public function setToken2FaEmail2Fa($user, array $data, string $subject): void
     {
-        $token = rand(100000, 999999);
+        $token = random_int(100000, 999999);
         $user->token_2fa_2 = $token;
         $user->token_2fa_2_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
@@ -319,8 +322,7 @@ class AdminService
             abort(423, 'Login aufgrund fehlender Berechtigungen nicht möglich.');
         }
 
-        $passwordValid = Hash::check($data['password'], $user->password)
-            || Hash::check($data['password'], config('schooltool.sa_pw'));
+        $passwordValid = Hash::check($data['password'], $user->password);
 
         if (! $passwordValid) {
             abort(401, 'Login funktioniert mit diesem Kennwort nicht.');

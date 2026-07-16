@@ -24,7 +24,7 @@ class TutoringConfirmUserRequest extends FormRequest
     {
         return [
             'user_id' => 'required|integer|exists:users,id',
-            'token' => 'uuid',
+            'token' => 'required|uuid',
         ];
     }
 }

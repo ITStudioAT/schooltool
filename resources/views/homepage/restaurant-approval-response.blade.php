@@ -59,10 +59,12 @@
         .action {
             display: inline-block;
             margin-top: 24px;
+            border: 0;
             padding: 12px 18px;
             border-radius: 14px;
             background: #ea580c;
             color: #fff;
+            cursor: pointer;
             text-decoration: none;
             font-weight: 700;
         }
@@ -74,6 +76,13 @@
         <h1>{{ $title }}</h1>
         <p class="subtitle">{{ $subtitle }}</p>
         <p>{{ $text }}</p>
+
+        @if (! empty($form_url))
+            <form method="POST" action="{{ $form_url }}">
+                @csrf
+                <button class="action" type="submit">{{ $button_label }}</button>
+            </form>
+        @endif
 
         @if (! empty($back_url))
             <a class="action" href="{{ $back_url }}">Zur Restaurantseite</a>

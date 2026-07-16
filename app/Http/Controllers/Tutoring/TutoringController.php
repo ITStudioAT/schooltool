@@ -13,16 +13,26 @@ use App\Http\Requests\Tutoring\LoginWithPasswordRequest;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Homepage\UserResource;
 use App\Http\Resources\Tutoring\SchoolToolResource;
-use App\Models\SchoolTool;
-use Illuminate\Support\Facades\Cache;
 use App\Models\User;
 use App\Services\Import116Service;
 use App\Services\LicenceService;
 use App\Services\TutoringService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\URL;
 
 class TutoringController extends Controller
 {
+    public function confirmUserPrompt(TutoringConfirmUserRequest $request)
+    {
+        return $this->approvalPrompt($request, 'Benutzer bestätigen', 'Bestätigen', 'homepage.tutoring.confirm-user.store');
+    }
+
+    public function refuseUserPrompt(TutoringConfirmUserRequest $request)
+    {
+        return $this->approvalPrompt($request, 'Benutzer ablehnen', 'Ablehnen', 'homepage.tutoring.refuse-user.store');
+    }
+
     public function config(LicenceService $licenceService)
     {
         $schools = $licenceService->selectableSchoolsForTool('Nachhilfetool')['schools'];
@@ -154,6 +164,22 @@ class TutoringController extends Controller
         } else {
             return redirect('/homepage/tutoring_response?title=Benutzer wurde nicht abgelehnt!&subtitle='.$user->last_name.' '.$user->first_name.' ('.$user->schoolclass.')&text=Eventuell erfolgte schon früher die Ablehnung!&status=ZURÜCKGEWIESEN');
         }
+    }
+
+    private function approvalPrompt(TutoringConfirmUserRequest $request, string $title, string $buttonLabel, string $routeName)
+    {
+        $validated = $request->validated();
+        $user = User::query()->findOrFail((int) $validated['user_id']);
+
+        return response()->view('homepage.restaurant-approval-response', [
+            'title' => $title,
+            'subtitle' => trim("{$user->last_name} {$user->first_name} ({$user->schoolclass})"),
+            'text' => 'Bitte bestätigen Sie diese Aktion ausdrücklich.',
+            'status' => 'BESTÄTIGUNG ERFORDERLICH',
+            'form_url' => URL::temporarySignedRoute($routeName, now()->addMinutes(15), $validated),
+            'button_label' => $buttonLabel,
+            'back_url' => null,
+        ]);
     }
 
     public function unknownPassword(TutoringUnknownPasswordRequest $request, TutoringService $service)

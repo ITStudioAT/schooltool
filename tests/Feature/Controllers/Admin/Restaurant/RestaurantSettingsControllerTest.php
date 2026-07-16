@@ -248,6 +248,31 @@ test('restaurant admin can update school wide general settings', function () {
     ]);
 });
 
+test('restaurant rich text settings remove executable html', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $response = $this->putJson('/api/admin/restaurant/general-settings', [
+        'data' => [
+            'restaurant_service_email' => 'restaurant@example.test',
+            'restaurant_new_users_must_confirm_email' => false,
+            'restaurant_new_users_confirmer_email' => null,
+            'restaurant_user_information_intro_html' => '<p onclick="alert(1)">Hallo<script>alert(1)</script><a href="javascript:alert(1)">Link</a></p>',
+        ],
+    ])->assertOk();
+
+    $storedHtml = (string) SchoolTool::query()
+        ->where('school_id', $this->school->id)
+        ->value('restaurant_user_information_intro_html');
+
+    expect($response->json('data.user_information_intro_html'))
+        ->toBe($storedHtml)
+        ->and($storedHtml)
+        ->toContain('<p>Hallo<a>Link</a></p>')
+        ->not->toContain('script')
+        ->not->toContain('onclick')
+        ->not->toContain('javascript:');
+});
+
 test('restaurant general settings validate the service email address', function () {
     $this->actingAs($this->admin, 'sanctum');
 

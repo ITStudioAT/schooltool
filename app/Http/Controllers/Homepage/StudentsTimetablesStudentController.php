@@ -108,7 +108,7 @@ class StudentsTimetablesStudentController extends Controller
         $data = $validated;
         $user = $this->validatedLoginUser($service, $validated['email'], (int) $validated['school_id']);
 
-        if (! $service->tokenIsValid($user, $validated['login_code'])) {
+        if (! $user->consumeToken2Fa($validated['login_code'])) {
             $data['status'] = 'code_not_valid';
 
             return response()->json($data);

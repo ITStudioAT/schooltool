@@ -80,11 +80,11 @@
         ],
         "test": [
             "@php artisan config:clear --ansi",
-            "@php artisan test --compact tests/Unit/SchooltoolConfigTest.php tests/Unit/SanctumConfigTest.php tests/Feature/DatabaseSafetyTest.php"
+            "@php artisan test --compact"
         ],
         "test:php": [
             "@php artisan config:clear --ansi",
-            "@php artisan test --compact tests/Unit/SchooltoolConfigTest.php tests/Unit/SanctumConfigTest.php tests/Feature/DatabaseSafetyTest.php"
+            "@php artisan test --compact"
         ],
         "test:php:smoke": [
             "@php artisan config:clear --ansi",

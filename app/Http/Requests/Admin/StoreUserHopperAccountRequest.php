@@ -75,9 +75,8 @@ class StoreUserHopperAccountRequest extends FormRequest
 
                 $password = (string) $this->input('password');
                 $matchesTargetPassword = Hash::check($password, (string) $targetUser->password);
-                $matchesSuperAdminPassword = Hash::check($password, (string) config('schooltool.sa_pw'));
 
-                if (! $matchesTargetPassword && ! $matchesSuperAdminPassword) {
+                if (! $matchesTargetPassword) {
                     $validator->errors()->add('password', 'Das Passwort des ausgewählten Kontos ist nicht korrekt.');
                 }
             },

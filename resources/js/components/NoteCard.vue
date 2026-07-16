@@ -13,7 +13,7 @@
         </v-card-title>
 
         <v-card-text class="py-2">
-            <div class="note-content text-body-1" v-html="formattedContent"></div>
+            <div class="note-content text-body-1">{{ note.content }}</div>
             
             <div class="text-caption text-medium-emphasis mt-3">
                 <v-icon size="small" class="mr-1">mdi-calendar</v-icon>
@@ -68,11 +68,6 @@ const props = defineProps({
 
 defineEmits(['edit', 'delete', 'toggle-pin'])
 
-const formattedContent = computed(() => {
-    // Simple formatting - replace newlines with <br> tags
-    return props.note.content.replace(/\n/g, '<br>')
-})
-
 const formattedDate = computed(() => {
     const date = new Date(props.note.created_at)
     return date.toLocaleDateString('de-DE', {
@@ -105,6 +100,7 @@ const formattedDate = computed(() => {
 .note-content {
     max-height: 150px;
     overflow: hidden;
+    white-space: pre-wrap;
     text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 4;

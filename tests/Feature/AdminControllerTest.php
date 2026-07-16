@@ -790,7 +790,9 @@ test('register step 3 updates user with valid data', function () {
 
     $registerUser->refresh();
     expect($registerUser->last_name)->toBe('Smith')
-        ->and($registerUser->first_name)->toBe('Jane');
+        ->and($registerUser->first_name)->toBe('Jane')
+        ->and($registerUser->token_2fa)->toBeNull()
+        ->and($registerUser->token_2fa_expires_at)->toBeNull();
 });
 
 // Authentication State Tests

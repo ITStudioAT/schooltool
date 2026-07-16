@@ -7,7 +7,7 @@
         "dev": "vite",
         "ide-helper": "php artisan ide-helper:generate && php artisan ide-helper:meta",
         "preview": "vite preview",
-        "test:php": "php -d memory_limit=1024M artisan test --compact tests/Unit/SchooltoolConfigTest.php tests/Unit/SanctumConfigTest.php tests/Feature/DatabaseSafetyTest.php",
+        "test:php": "php -d memory_limit=1024M artisan test --compact",
         "test:php:smoke": "php -d memory_limit=1024M artisan test --compact tests/Unit/SchooltoolConfigTest.php tests/Unit/SanctumConfigTest.php tests/Feature/DatabaseSafetyTest.php",
         "test:php:config": "php -d memory_limit=1024M artisan test --compact tests/Unit/SchooltoolConfigTest.php tests/Unit/SanctumConfigTest.php",
         "test:php:safety": "php -d memory_limit=1024M artisan test --compact tests/Feature/DatabaseSafetyTest.php",
@@ -31,7 +31,7 @@
         "test:ui:watch": "node --disable-warning=ExperimentalWarning --import ./tests/ui/vitest.preload.mjs ./node_modules/vitest/vitest.mjs --configLoader native",
         "pretest:e2e": "npm run build && php -r \"if (!file_exists('.env.e2e')) { fwrite(STDERR, '.env.e2e is missing. Copy .env.e2e.example to .env.e2e first.' . PHP_EOL); exit(1); } if (!file_exists('database/e2e.sqlite')) { touch('database/e2e.sqlite'); }\" && php artisan migrate:fresh --env=e2e --seed --seeder=E2eSeeder --force",
         "test:e2e": "playwright test --reporter=line",
-        "test:all": "npm run test:php:smoke && npm run test:ui:smoke",
+        "test:all": "npm run test:php && npm run test:ui",
         "mcp": "ruler apply",
         "mcp:revert": "ruler revert"
     },

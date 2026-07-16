@@ -103,7 +103,7 @@ class UserController extends Controller
         }
 
         $validated = $request->validated();
-        $service->delete($auth_user->id, $validated['data']);
+        $service->delete($auth_user->id, $validated['data'], (int) $auth_user->school_id);
 
         return response()->noContent();
     }
@@ -154,7 +154,11 @@ class UserController extends Controller
         }
         $validated = $request->validated();
         $search_model = $validated['search_model'] ?? [];
-        $query = User::orderBy('last_name')->orderBy('first_name');
+        $query = User::query()
+            ->with('roles')
+            ->where('school_id', $auth_user->school_id)
+            ->orderBy('last_name')
+            ->orderBy('first_name');
 
         // is_active
         if (isset($search_model['is_active'])) {
@@ -216,6 +220,7 @@ class UserController extends Controller
         $validated = $request->validated();
 
         $validated = $this->convertConfirmedVerified($validated);
+        $validated['school_id'] = $auth_user->school_id;
         $validated['password'] = Hash::make(now());
 
         $user = User::create($validated);
@@ -233,7 +238,9 @@ class UserController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        return response()->json(new UserResource($user), 200);
+        $this->ensureUserBelongsToSchool($auth_user, $user);
+
+        return response()->json(new UserResource($user->load('roles')), 200);
     }
 
     public function update(UpdateUserRequest $request, User $user)
@@ -241,6 +248,7 @@ class UserController extends Controller
         if (! $auth_user = $this->userHasRole(['admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+        $this->ensureUserBelongsToSchool($auth_user, $user);
         $validated = $request->validated();
 
         $validated = $this->convertConfirmedVerified($validated, $user);
@@ -256,6 +264,8 @@ class UserController extends Controller
         if (! $auth_user = $this->userHasRole(['admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $this->ensureUserBelongsToSchool($auth_user, $user);
 
         if ($user->id == $auth_user->id) {
             abort(403, 'Man kann sich selbst nicht löschen');
@@ -273,7 +283,16 @@ class UserController extends Controller
         }
         $ids = $request->all();
 
-        User::whereIn('id', $ids)->each(function ($user) use ($auth_user) {
+        $users = User::query()
+            ->where('school_id', $auth_user->school_id)
+            ->whereIn('id', $ids)
+            ->get();
+
+        if ($users->count() !== collect($ids)->unique()->count()) {
+            abort(403, 'Mindestens ein Benutzer gehört nicht zu Ihrer Schule.');
+        }
+
+        $users->each(function ($user) use ($auth_user) {
             if ($user->id == $auth_user->id) {
                 abort(403, 'Man kann sich selbst nicht löschen');
             }
@@ -322,7 +341,17 @@ class UserController extends Controller
         if (! $auth_user = $this->authorizedProfileUser()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        if ((int) $auth_user->id !== (int) $user->id) {
+            abort(403, 'Sie können nur Ihr eigenes Profil bearbeiten.');
+        }
+
         $validated = $request->validated();
+
+        if ((int) $validated['id'] !== (int) $auth_user->id) {
+            abort(403, 'Sie können nur Ihr eigenes Profil bearbeiten.');
+        }
+
         unset($validated['id']);
 
         // Keine E-Mail-Änderung => Update durchführen und zwar für alle User in allen Schulen
@@ -356,7 +385,7 @@ class UserController extends Controller
         }
         $validated = $request->validated();
 
-        if (! $user->checkToken2Fa($validated['token_2fa'])) {
+        if (! $user->consumeToken2Fa($validated['token_2fa'])) {
             abort(401, 'Der Code ist falsch oder abgelaufen');
         }
 
@@ -392,7 +421,7 @@ class UserController extends Controller
         }
         $validated = $request->validated();
 
-        if (! $user->checkToken2Fa($validated['token_2fa'])) {
+        if (! $user->consumeToken2Fa($validated['token_2fa'])) {
             abort(401, 'Kennwort speichern funktioniert nicht. Code falsch oder Zeit abgelaufen.');
         }
 
@@ -464,7 +493,7 @@ class UserController extends Controller
             abort(422, 'Fehler bei der 2-Faktoren-Authentifizierung');
         }
 
-        if (! $user->checkToken2Fa($validated['token_2fa'])) {
+        if (! $user->consumeToken2Fa($validated['token_2fa'])) {
             abort(401, 'Der Code ist falsch oder abgelaufen');
         }
 
@@ -637,5 +666,12 @@ class UserController extends Controller
         }
 
         return (int) $authUser->id === (int) $user->id;
+    }
+
+    private function ensureUserBelongsToSchool(User $authUser, User $user): void
+    {
+        if ((int) $authUser->school_id !== (int) $user->school_id) {
+            abort(404);
+        }
     }
 }

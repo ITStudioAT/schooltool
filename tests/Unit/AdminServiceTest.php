@@ -696,6 +696,8 @@ describe('passwordUnkownSetPassword', function () {
         $user->refresh();
 
         expect(Hash::check('NewPassword123!', $user->password))->toBeTrue()
+            ->and($user->token_2fa)->toBeNull()
+            ->and($user->token_2fa_expires_at)->toBeNull()
             ->and($result)->toBeArray();
     });
 
@@ -899,8 +901,6 @@ describe('checkLogin', function () {
             'is_active' => 1,
         ]);
         $user->assignRole($role);
-
-        config(['schooltool.sa_pw' => Hash::make('differentsapassword')]);
 
         $data = [
             'email' => 'test@example.com',

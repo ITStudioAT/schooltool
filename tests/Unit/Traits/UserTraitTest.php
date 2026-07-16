@@ -51,6 +51,18 @@ test('checkToken2Fa returns false for expired token', function () {
     expect($user->checkToken2Fa('123456'))->toBeFalsy();
 });
 
+test('consumeToken2Fa accepts a valid token only once', function () {
+    $user = User::factory()->create([
+        'token_2fa' => '123456',
+        'token_2fa_expires_at' => now()->addMinutes(5),
+    ]);
+
+    expect($user->consumeToken2Fa('123456'))->toBeTrue()
+        ->and($user->consumeToken2Fa('123456'))->toBeFalse()
+        ->and($user->fresh()->token_2fa)->toBeNull()
+        ->and($user->fresh()->token_2fa_expires_at)->toBeNull();
+});
+
 test('checkToken2Fa_2 returns true for valid secondary token', function () {
     $user = User::factory()->create([
         'token_2fa_2' => '654321',
@@ -67,6 +79,18 @@ test('checkToken2Fa_2 returns false for expired secondary token', function () {
     ]);
 
     expect($user->checkToken2Fa_2('654321'))->toBeFalsy();
+});
+
+test('consumeToken2Fa2 accepts a valid secondary token only once', function () {
+    $user = User::factory()->create([
+        'token_2fa_2' => '654321',
+        'token_2fa_2_expires_at' => now()->addMinutes(5),
+    ]);
+
+    expect($user->consumeToken2Fa2('654321'))->toBeTrue()
+        ->and($user->consumeToken2Fa2('654321'))->toBeFalse()
+        ->and($user->fresh()->token_2fa_2)->toBeNull()
+        ->and($user->fresh()->token_2fa_2_expires_at)->toBeNull();
 });
 
 test('rememberLogin stores timestamp and ip address', function () {

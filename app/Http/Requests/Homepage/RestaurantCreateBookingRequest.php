@@ -27,7 +27,6 @@ class RestaurantCreateBookingRequest extends FormRequest
             'data.restaurant_menu_plan_entry_id' => 'required|integer|exists:restaurant_menu_plan_entries,id',
             'data.restaurant_eating_time_id' => 'nullable|integer|exists:restaurant_eating_times,id',
             'data.quantity' => 'nullable|integer|min:1|max:100',
-            'data.price' => 'nullable|numeric|min:0|max:1000',
             'data.child_name' => 'nullable|string|max:255',
             'data.child_type' => 'nullable|string|in:child,other_person',
             'data.import116_id' => 'nullable|integer|exists:import116,id',
@@ -51,8 +50,6 @@ class RestaurantCreateBookingRequest extends FormRequest
             'data.restaurant_eating_time_id.exists' => 'Die ausgewählte Speisezeit existiert nicht.',
             'data.quantity.min' => 'Die Menge muss mindestens 1 betragen.',
             'data.quantity.max' => 'Die Menge darf maximal 100 betragen.',
-            'data.price.min' => 'Der Preis darf nicht negativ sein.',
-            'data.price.max' => 'Der Preis ist zu hoch.',
             'data.child_type.in' => 'Ungültiger Typ für Kind/Person.',
             'data.import116_id.exists' => 'Der ausgewählte Import116-Eintrag existiert nicht.',
         ];

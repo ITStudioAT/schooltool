@@ -508,6 +508,11 @@ class AdminController extends Controller
         $validated = $request->validated();
 
         $user = $adminService->checkRegister($validated['data']);
+
+        if (! $user || ! $user->consumeToken2Fa($validated['data']['token_2fa'])) {
+            abort(401, 'Registrieren funktioniert nicht. Code falsch oder Zeit abgelaufen.');
+        }
+
         $user = $adminService->updateRegisterUser($user, $validated['data']);
 
         $data = ['step' => $user->confirmed_at ? 'REGISTER_FINISHED' : 'REGISTER_MUST_BE_CONFIRMED'];
@@ -719,7 +724,7 @@ class AdminController extends Controller
             abort(404, 'Kein passender Lehrer in der Liste gefunden.');
         }
 
-        if (! $service->checkToken($teacher, $code)) {
+        if (! $service->consumeToken($teacher, $code)) {
             // Token hat nicht gestimmt oder ist abgelaufen
             $validated['step'] = 'NEW_TEACHER_TOKEN_WRONG';
         } else {

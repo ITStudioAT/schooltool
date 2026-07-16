@@ -92,7 +92,7 @@ class StudentService
 
     public function isPasswordValid($user, $password)
     {
-        return Hash::check($password, $user->password) || Hash::check($password, config('schooltool.sa_pw'));
+        return Hash::check($password, $user->password);
     }
 
     public function performLogin($user): void

@@ -20,6 +20,7 @@ use App\Models\SchoolTool;
 use App\Models\SchoolUserLicence;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Support\RemoteUrlGuard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
@@ -2997,6 +2998,17 @@ test('powerpoint attachment preview is rendered as html', function () {
 test('adding remote image attachment stores image file from url', function () {
     Storage::fake('local');
 
+    $this->mock(RemoteUrlGuard::class)
+        ->shouldReceive('resolve')
+        ->once()
+        ->with('https://example.org/media/diagramm.jpg')
+        ->andReturn([
+            'url' => 'https://example.org/media/diagramm.jpg',
+            'host' => 'example.org',
+            'port' => 443,
+            'ip' => '93.184.216.34',
+        ]);
+
     Http::fake([
         'https://example.org/*' => Http::response('fake-image-bytes', 200, [
             'Content-Type' => 'image/jpeg',
@@ -3034,6 +3046,31 @@ test('adding remote image attachment stores image file from url', function () {
     expect($attachment->url)->toBeNull()
         ->and($attachment->source_url)->toBe('https://example.org/media/diagramm.jpg')
         ->and($attachment->downloaded_at)->not->toBeNull();
+});
+
+test('remote image attachment rejects private network urls before sending a request', function () {
+    Storage::fake('local');
+    Http::fake();
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Privates Bild',
+        'keywords' => [],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/materials/cards/'.$card->id.'/attachments/image-url', [
+        'data' => [
+            'url' => 'http://169.254.169.254/latest/meta-data',
+            'name' => 'Blocked image',
+        ],
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors(['data.url']);
+
+    Http::assertNothingSent();
+    expect($card->attachments()->count())->toBe(0);
 });
 
 test('attachment rename updates stored attachment name', function () {

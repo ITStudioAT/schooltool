@@ -9,6 +9,7 @@ use App\Notifications\StandardEmail;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 class TutoringService
@@ -83,9 +84,7 @@ class TutoringService
     {
         $user = User::findOrFail($data['user_id']);
 
-        $tokenValid = $user->token_2fa == $data['token_2fa']
-            && $user->token_2fa_expires_at
-            && $user->token_2fa_expires_at->isFuture();
+        $tokenValid = $user->consumeToken2Fa($data['token_2fa']);
 
         if ($tokenValid) {
             $user->email_verified_at = now();
@@ -126,7 +125,7 @@ class TutoringService
     {
         $token = Str::uuid()->toString();
         $user->token_2fa_2 = $token;
-        $user->token_2fa_2_expires_at = null;
+        $user->token_2fa_2_expires_at = now()->addMinutes(30);
         $user->save();
 
         $school = School::findOrFail($user->school_id);
@@ -139,14 +138,14 @@ class TutoringService
             'markdown' => 'mails.admin.confirmTutoringUser',
             'full_name' => "{$user->last_name} {$user->first_name}",
             'email' => $user->email,
-            'confirmation_url' => url('/homepage/tutoring/confirm-user?'.http_build_query([
+            'confirmation_url' => URL::temporarySignedRoute('homepage.tutoring.confirm-user', now()->addMinutes(30), [
                 'user_id' => $user->id,
                 'token' => $token,
-            ])),
-            'refuse_url' => url('/homepage/tutoring/refuse-user?'.http_build_query([
+            ]),
+            'refuse_url' => URL::temporarySignedRoute('homepage.tutoring.refuse-user', now()->addMinutes(30), [
                 'user_id' => $user->id,
                 'token' => $token,
-            ])),
+            ]),
         ];
 
         Notification::route('mail', EmailAliasResolver::resolveConfigured($confirmerEmail))->notify(new StandardEmail($mail));
@@ -156,12 +155,12 @@ class TutoringService
     {
         $user = User::findOrFail($userId);
 
-        if ($user->confirmed_at || $user->token_2fa_2 !== $uuid) {
+        if ($user->confirmed_at
+            || ! $user->consumeToken2Fa2($uuid)) {
             return false;
         }
 
         $user->confirmed_at = now();
-        $user->token_2fa_2 = null;
         $user->save();
 
         $this->sendConfirmationEmail($user);
@@ -173,7 +172,7 @@ class TutoringService
     {
         $user = User::findOrFail($userId);
 
-        if ($user->token_2fa_2 !== $uuid) {
+        if ($user->hasDependencies() || ! $user->consumeToken2Fa2($uuid)) {
             return false;
         }
 
@@ -252,9 +251,7 @@ class TutoringService
     {
         $user = User::findOrFail($data['user_id']);
 
-        $tokenValid = $user->token_2fa == $data['token_2fa']
-            && $user->token_2fa_expires_at
-            && $user->token_2fa_expires_at->isFuture();
+        $tokenValid = $user->consumeToken2Fa($data['token_2fa']);
 
         if ($tokenValid) {
             $this->performLogin($user);
@@ -271,8 +268,7 @@ class TutoringService
     {
         $user = User::findOrFail($data['user_id']);
 
-        $passwordValid = Hash::check($data['password'], $user->password)
-            || Hash::check($data['password'], config('schooltool.sa_pw'));
+        $passwordValid = Hash::check($data['password'], $user->password);
 
         if ($passwordValid) {
             $this->performLogin($user);

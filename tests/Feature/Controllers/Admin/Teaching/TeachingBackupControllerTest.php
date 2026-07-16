@@ -535,14 +535,7 @@ test('preview compares backup content with current teaching data without restori
         ],
     ]];
     $tables['teaching_courses'] = [
-        [
-            'id' => $existingCourse->id,
-            'school_id' => $this->school->id,
-            'schoolyear_id' => $this->schoolyear->id,
-            'user_id' => $this->teacher->id,
-            'title' => 'Vorhandener Kurs',
-            'classes' => json_encode(['5A'], JSON_THROW_ON_ERROR),
-        ],
+        $existingCourse->fresh()->getAttributes(),
         [
             'id' => $missingCourseId,
             'school_id' => $this->school->id,
@@ -566,14 +559,7 @@ test('preview compares backup content with current teaching data without restori
         ['id' => 2, 'teaching_course_id' => $missingCourseId, 'kind' => 'notification', 'type' => 'E'],
     ];
     $tables['teaching_curricula'] = [
-        [
-            'id' => $existingCurriculum->id,
-            'school_id' => $this->school->id,
-            'schoolyear_id' => $this->schoolyear->id,
-            'title' => 'Vorhandenes Curriculum',
-            'semester_count' => 2,
-            'topics' => json_encode([['title' => 'Thema']], JSON_THROW_ON_ERROR),
-        ],
+        $existingCurriculum->fresh()->getAttributes(),
         [
             'id' => $missingCurriculumId,
             'school_id' => $this->school->id,

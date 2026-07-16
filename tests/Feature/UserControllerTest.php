@@ -152,7 +152,7 @@ test('super admin can delete users through service', function () {
     $this->mock(UserService::class, function ($mock) use ($target) {
         $mock->shouldReceive('delete')
             ->once()
-            ->with($this->superAdmin->id, [$target->id]);
+            ->with($this->superAdmin->id, [$target->id], $this->superAdmin->school_id);
     });
 
     $this->actingAs($this->superAdmin, 'sanctum');
@@ -185,6 +185,18 @@ test('register admin can show a user', function () {
     $this->getJson('/api/admin/users/'.$this->standardUser->id)
         ->assertStatus(200)
         ->assertJsonFragment(['email' => $this->standardUser->email]);
+});
+
+test('admin cannot read a user from another school', function () {
+    $otherSchoolUser = User::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'email' => 'other-school@test.com',
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->getJson('/api/admin/users/'.$otherSchoolUser->id)
+        ->assertNotFound();
 });
 
 // ============================================================================
@@ -224,6 +236,35 @@ test('admin can destroy multiple users and not self', function () {
         ->assertStatus(204);
 
     expect(User::whereIn('id', $targets)->count())->toBe(0);
+});
+
+test('admin cannot destroy users from another school', function () {
+    $otherSchoolUser = User::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'email' => 'other-delete@test.com',
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->deleteJson('/api/admin/users/'.$otherSchoolUser->id)
+        ->assertNotFound();
+
+    expect($otherSchoolUser->fresh())->not->toBeNull();
+});
+
+test('profile update cannot target a different route user', function () {
+    $this->actingAs($this->lunchAdmin, 'sanctum');
+
+    $this->putJson('/api/admin/users/update_profile/'.$this->standardUser->id, [
+        'id' => $this->lunchAdmin->id,
+        'last_name' => 'Changed',
+        'first_name' => 'Lunch',
+        'email' => $this->lunchAdmin->email,
+        'is_2fa' => false,
+    ])->assertForbidden();
+
+    expect($this->standardUser->fresh()->last_name)->toBe('Standard')
+        ->and($this->lunchAdmin->fresh()->last_name)->toBe('Lunch');
 });
 
 // ============================================================================

@@ -23,24 +23,62 @@ trait UserTrait
         }
     }
 
-    public function checkToken2Fa($token_2fa): string
+    public function checkToken2Fa($token_2fa): bool
     {
-        // Check if the token matches and is still valid
-        if ($this->token_2fa == $token_2fa && now()->isBefore($this->token_2fa_expires_at)) {
-            return true; // Token is valid and not expired
-        }
-
-        return false; // Token is invalid or expired
+        return $this->token_2fa !== null
+            && $this->token_2fa_expires_at !== null
+            && hash_equals((string) $this->token_2fa, (string) $token_2fa)
+            && $this->token_2fa_expires_at->isFuture();
     }
 
-    public function checkToken2Fa_2($token_2fa_2): string
+    public function checkToken2Fa_2($token_2fa_2): bool
     {
-        // Check if the token matches and is still valid
-        if ($this->token_2fa_2 == $token_2fa_2 && now()->isBefore($this->token_2fa_2_expires_at)) {
-            return true; // Token is valid and not expired
+        return $this->token_2fa_2 !== null
+            && $this->token_2fa_2_expires_at !== null
+            && hash_equals((string) $this->token_2fa_2, (string) $token_2fa_2)
+            && $this->token_2fa_2_expires_at->isFuture();
+    }
+
+    public function consumeToken2Fa($token): bool
+    {
+        $consumed = static::query()
+            ->whereKey($this->getKey())
+            ->where('token_2fa', (string) $token)
+            ->where('token_2fa_expires_at', '>', now())
+            ->update([
+                'token_2fa' => null,
+                'token_2fa_expires_at' => null,
+            ]);
+
+        if ($consumed === 1) {
+            $this->forceFill([
+                'token_2fa' => null,
+                'token_2fa_expires_at' => null,
+            ]);
         }
 
-        return false; // Token is invalid or expired
+        return $consumed === 1;
+    }
+
+    public function consumeToken2Fa2($token): bool
+    {
+        $consumed = static::query()
+            ->whereKey($this->getKey())
+            ->where('token_2fa_2', (string) $token)
+            ->where('token_2fa_2_expires_at', '>', now())
+            ->update([
+                'token_2fa_2' => null,
+                'token_2fa_2_expires_at' => null,
+            ]);
+
+        if ($consumed === 1) {
+            $this->forceFill([
+                'token_2fa_2' => null,
+                'token_2fa_2_expires_at' => null,
+            ]);
+        }
+
+        return $consumed === 1;
     }
 
     public function rememberLogin()

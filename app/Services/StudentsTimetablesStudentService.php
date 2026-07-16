@@ -98,7 +98,7 @@ class StudentsTimetablesStudentService
 
     public function passwordIsValid(User $user, string $password): bool
     {
-        return Hash::check($password, $user->password) || Hash::check($password, config('schooltool.sa_pw'));
+        return Hash::check($password, $user->password);
     }
 
     public function performLogin(User $user): void

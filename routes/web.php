@@ -4,8 +4,6 @@ use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\Tutoring\OfferController;
 use App\Http\Controllers\Tutoring\OfferRequestController;
 use App\Http\Controllers\Tutoring\TutoringController;
-use Google\Cloud\DocumentAI\V1\Client\DocumentProcessorServiceClient;
-use Google\Cloud\DocumentAI\V1\GetProcessorRequest;
 use Illuminate\Support\Facades\Route;
 
 // Broadcasting wird vom BroadcastServiceProvider gehandhabt
@@ -113,15 +111,35 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     });
 
     Route::prefix('homepage/tutoring')->group(function () {
-        Route::get('confirm-user', [TutoringController::class, 'confirmUser']);
-        Route::get('refuse-user', [TutoringController::class, 'refuseUser']);
+        Route::get('confirm-user', [TutoringController::class, 'confirmUserPrompt'])
+            ->middleware('signed')
+            ->name('homepage.tutoring.confirm-user');
+        Route::post('confirm-user', [TutoringController::class, 'confirmUser'])
+            ->middleware('signed')
+            ->name('homepage.tutoring.confirm-user.store');
+        Route::get('refuse-user', [TutoringController::class, 'refuseUserPrompt'])
+            ->middleware('signed')
+            ->name('homepage.tutoring.refuse-user');
+        Route::post('refuse-user', [TutoringController::class, 'refuseUser'])
+            ->middleware('signed')
+            ->name('homepage.tutoring.refuse-user.store');
         Route::get('offer', [OfferController::class, 'offerConfirmRefuse']);
         Route::get('offer_request', [OfferRequestController::class, 'offerRequest']);
     });
 
     Route::prefix('homepage/restaurant')->group(function () {
-        Route::get('confirm-user', [HomepageController::class, 'restaurantConfirmUser']);
-        Route::get('reject-user', [HomepageController::class, 'restaurantRejectUser']);
+        Route::get('confirm-user', [HomepageController::class, 'restaurantConfirmUserPrompt'])
+            ->middleware('signed')
+            ->name('homepage.restaurant.confirm-user');
+        Route::post('confirm-user', [HomepageController::class, 'restaurantConfirmUser'])
+            ->middleware('signed')
+            ->name('homepage.restaurant.confirm-user.store');
+        Route::get('reject-user', [HomepageController::class, 'restaurantRejectUserPrompt'])
+            ->middleware('signed')
+            ->name('homepage.restaurant.reject-user');
+        Route::post('reject-user', [HomepageController::class, 'restaurantRejectUser'])
+            ->middleware('signed')
+            ->name('homepage.restaurant.reject-user.store');
     });
 
     Route::get('/homepage/cashier/', function () {
@@ -146,75 +164,4 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
     Route::get('/homepage/{any?}', [HomepageController::class, 'routing']);
 
-    /*
-    |--------------------------------------------------------------------------
-    | GOOGLE DOCUMENT AI TEST ROUTE
-    |--------------------------------------------------------------------------
-    */
-    Route::get('/test-google-document-ai', function () {
-        try {
-            $projectId = env('GOOGLE_CLOUD_PROJECT_ID');
-            $location = env('GOOGLE_DOCUMENT_AI_LOCATION', 'eu');
-            $processorId = env('GOOGLE_DOCUMENT_AI_PROCESSOR_ID');
-            $credentialsRelativePath = env('GOOGLE_DOCUMENT_AI_CREDENTIALS');
-
-            if (! $projectId || ! $location || ! $processorId || ! $credentialsRelativePath) {
-                return response()->json([
-                    'ok' => false,
-                    'error' => 'Missing required env values.',
-                    'env' => [
-                        'GOOGLE_CLOUD_PROJECT_ID' => $projectId,
-                        'GOOGLE_DOCUMENT_AI_LOCATION' => $location,
-                        'GOOGLE_DOCUMENT_AI_PROCESSOR_ID' => $processorId,
-                        'GOOGLE_DOCUMENT_AI_CREDENTIALS' => $credentialsRelativePath,
-                    ],
-                ], 500);
-            }
-
-            $credentialsPath = base_path($credentialsRelativePath);
-
-            if (! file_exists($credentialsPath)) {
-                return response()->json([
-                    'ok' => false,
-                    'error' => 'Credentials file not found.',
-                    'credentials_path' => $credentialsPath,
-                ], 500);
-            }
-
-            putenv('GOOGLE_APPLICATION_CREDENTIALS='.$credentialsPath);
-
-            $client = new DocumentProcessorServiceClient([
-                'apiEndpoint' => $location.'-documentai.googleapis.com',
-            ]);
-
-            $processorName = $client->processorName(
-                $projectId,
-                $location,
-                $processorId
-            );
-
-            $request = (new GetProcessorRequest)
-                ->setName($processorName);
-
-            $processor = $client->getProcessor($request);
-
-            return response()->json([
-                'ok' => true,
-                'project_id' => $projectId,
-                'location' => $location,
-                'processor_id' => $processorId,
-                'api_endpoint' => $location.'-documentai.googleapis.com',
-                'processor_name' => $processor->getName(),
-                'processor_type' => $processor->getType(),
-                'display_name' => $processor->getDisplayName(),
-                'state' => $processor->getState(),
-            ]);
-        } catch (Throwable $e) {
-            return response()->json([
-                'ok' => false,
-                'error_class' => get_class($e),
-                'error_message' => $e->getMessage(),
-            ], 500);
-        }
-    });
 });

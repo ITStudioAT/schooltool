@@ -30,6 +30,7 @@ class RestaurantBookingController extends Controller
         // Get the menu plan entry
         $entry = RestaurantMenuPlanEntry::with(['menuPlan.school.schoolTool', 'eatingTimes'])
             ->where('id', $validated['restaurant_menu_plan_entry_id'])
+            ->whereHas('menuPlan', fn ($query) => $query->where('school_id', $user->school_id))
             ->firstOrFail();
 
         // Validate business rules

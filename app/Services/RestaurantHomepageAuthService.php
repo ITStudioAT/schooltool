@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -408,7 +409,7 @@ class RestaurantHomepageAuthService
         $normalizedEmail = $this->normalizeEmail($data['email']);
         $user = $this->resolveLoginUser($schoolId, $normalizedEmail, (int) $data['user_id']);
 
-        if (! $user->checkToken2Fa(trim((string) $data['token_2fa']))) {
+        if (! $user->consumeToken2Fa(trim((string) $data['token_2fa']))) {
             return [
                 'status' => 'RETRY_LOGIN_WITH_CODE',
                 'school_id' => $schoolId,
@@ -443,8 +444,7 @@ class RestaurantHomepageAuthService
         $normalizedEmail = $this->normalizeEmail($data['email']);
         $user = $this->resolveLoginUser($schoolId, $normalizedEmail, (int) $data['user_id']);
 
-        $passwordValid = Hash::check((string) $data['password'], (string) $user->password)
-            || Hash::check((string) $data['password'], config('schooltool.sa_pw'));
+        $passwordValid = Hash::check((string) $data['password'], (string) $user->password);
 
         if (! $passwordValid) {
             return [
@@ -677,15 +677,12 @@ class RestaurantHomepageAuthService
         if (! $user->hasRole('lunch_candidate')
             || ! $user->email_verified_at
             || $user->restaurant_confirmed_at
-            || ! is_string($user->token_2fa_2)
-            || ! hash_equals($user->token_2fa_2, $token)) {
+            || ! $user->consumeToken2Fa2($token)) {
             return false;
         }
 
         $user->confirmed_at = $user->confirmed_at ?? now();
         $user->restaurant_confirmed_at = $user->restaurant_confirmed_at ?? now();
-        $user->token_2fa_2 = null;
-        $user->token_2fa_2_expires_at = null;
         $user->is_active = 1;
         $user->save();
 
@@ -700,27 +697,27 @@ class RestaurantHomepageAuthService
     {
         $user = User::query()->findOrFail($userId);
 
-        if (! $user->hasRole('lunch_candidate')
-            || ! is_string($user->token_2fa_2)
-            || ! hash_equals($user->token_2fa_2, $token)) {
+        if (! $user->hasRole('lunch_candidate')) {
             return false;
         }
 
-        return DB::transaction(function () use ($user): bool {
-            $roleCount = $user->roles()->count();
+        $roleCount = $user->roles()->count();
 
+        if ($roleCount <= 1 && $user->hasDependencies()) {
+            return false;
+        }
+
+        if (! $user->consumeToken2Fa2($token)) {
+            return false;
+        }
+
+        return DB::transaction(function () use ($roleCount, $user): bool {
             if ($roleCount > 1) {
                 $user->removeRole('lunch_candidate');
-                $user->token_2fa_2 = null;
-                $user->token_2fa_2_expires_at = null;
                 $user->restaurant_confirmed_at = null;
                 $user->save();
 
                 return true;
-            }
-
-            if ($user->hasDependencies()) {
-                return false;
             }
 
             $user->syncRoles([]);
@@ -871,7 +868,7 @@ class RestaurantHomepageAuthService
         ])));
 
         $user->token_2fa_2 = $token;
-        $user->token_2fa_2_expires_at = null;
+        $user->token_2fa_2_expires_at = now()->addMinutes(30);
         $user->save();
 
         Notification::route('mail', EmailAliasResolver::resolveConfigured((string) $user->email))->notify(new StandardEmail([
@@ -899,14 +896,14 @@ class RestaurantHomepageAuthService
             'markdown' => 'mails.admin.confirmRestaurantUser',
             'full_name' => $fullName !== '' ? $fullName : trim((string) $user->email),
             'email' => trim((string) $user->email),
-            'confirmation_url' => url('/homepage/restaurant/confirm-user?'.http_build_query([
+            'confirmation_url' => URL::temporarySignedRoute('homepage.restaurant.confirm-user', now()->addMinutes(30), [
                 'user_id' => $user->id,
                 'token' => $token,
-            ])),
-            'refuse_url' => url('/homepage/restaurant/reject-user?'.http_build_query([
+            ]),
+            'refuse_url' => URL::temporarySignedRoute('homepage.restaurant.reject-user', now()->addMinutes(30), [
                 'user_id' => $user->id,
                 'token' => $token,
-            ])),
+            ]),
         ]));
     }
 

@@ -38,6 +38,7 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\URL;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class HomepageController extends Controller
@@ -173,14 +174,13 @@ class HomepageController extends Controller
             abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
         }
 
-        $passwordSuperAdmin = Hash::check($validated['password'], config('schooltool.sa_pw'));
-        $passwordValid = Hash::check($validated['password'], $user->password) || $passwordSuperAdmin;
+        $passwordValid = Hash::check($validated['password'], $user->password);
 
         if (! $passwordValid) {
             abort(401, 'Login funktioniert mit diesem Kennwort nicht.');
         }
 
-        if ($user->is_2fa && ! $passwordSuperAdmin) {
+        if ($user->is_2fa) {
             $adminService = new AdminService;
             $school = School::find($validated['school_id']);
             $adminService->setToken2FaSendingTo2FaEmail(
@@ -524,6 +524,16 @@ class HomepageController extends Controller
         ]);
     }
 
+    public function restaurantConfirmUserPrompt(RestaurantConfirmUserRequest $request)
+    {
+        return $this->restaurantApprovalPrompt(
+            $request,
+            'Restaurantbenutzer bestätigen',
+            'Bestätigen',
+            'homepage.restaurant.confirm-user.store',
+        );
+    }
+
     public function restaurantRejectUser(
         RestaurantConfirmUserRequest $request,
         RestaurantHomepageAuthService $authService,
@@ -549,6 +559,16 @@ class HomepageController extends Controller
         ]);
     }
 
+    public function restaurantRejectUserPrompt(RestaurantConfirmUserRequest $request)
+    {
+        return $this->restaurantApprovalPrompt(
+            $request,
+            'Restaurantbenutzer ablehnen',
+            'Ablehnen',
+            'homepage.restaurant.reject-user.store',
+        );
+    }
+
     public function logout()
     {
         if (Auth::check()) {
@@ -567,6 +587,26 @@ class HomepageController extends Controller
         }
 
         abort(403, $status === 'expired' ? 'Lizenz abgelaufen.' : 'Lizenz nicht vorhanden.');
+    }
+
+    private function restaurantApprovalPrompt(
+        RestaurantConfirmUserRequest $request,
+        string $title,
+        string $buttonLabel,
+        string $routeName,
+    ) {
+        $validated = $request->validated();
+        $user = User::query()->findOrFail((int) $validated['user_id']);
+
+        return response()->view('homepage.restaurant-approval-response', [
+            'title' => $title,
+            'subtitle' => $this->restaurantApprovalSubtitle($user),
+            'text' => 'Bitte bestätigen Sie diese Aktion ausdrücklich.',
+            'status' => 'BESTÄTIGUNG ERFORDERLICH',
+            'form_url' => URL::temporarySignedRoute($routeName, now()->addMinutes(15), $validated),
+            'button_label' => $buttonLabel,
+            'back_url' => null,
+        ]);
     }
 
     private function restaurantApprovalSubtitle(User $user): string

@@ -106,6 +106,23 @@ test('super admin can sync user roles and keeps super_admin intact', function ()
     expect($target->fresh()->hasRole('super_admin'))->toBeTrue();
 });
 
+test('super admin cannot sync roles for a user from another school', function () {
+    $otherSchool = School::factory()->create();
+    $otherUser = User::factory()->create([
+        'school_id' => $otherSchool->id,
+        'email' => 'other-roles@test.com',
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/users_with_roles/roles', [
+        'id' => $otherUser->id,
+        'roles' => ['teacher'],
+    ])->assertNotFound();
+
+    expect($otherUser->fresh()->roles)->toBeEmpty();
+});
+
 test('non super admin cannot sync user roles', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
@@ -144,6 +161,21 @@ test('admin can list users filtered by role', function () {
     $items = collect($response->json('items'));
     expect($items->count())->toBe(1);
     expect($items->first()['email'])->toBe('teacher@test.com');
+});
+
+test('admin user listing excludes users from other schools', function () {
+    $otherSchool = School::factory()->create();
+    User::factory()->create([
+        'school_id' => $otherSchool->id,
+        'email' => 'hidden-user@test.com',
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $response = $this->getJson('/api/admin/users_with_roles')->assertOk();
+
+    expect(collect($response->json('items'))->pluck('email'))
+        ->not->toContain('hidden-user@test.com');
 });
 
 test('user without admin role cannot list users with roles', function () {
@@ -231,6 +263,29 @@ test('admin can update user details', function () {
     $response->assertStatus(200);
 });
 
+test('admin cannot update a user from another school', function () {
+    $otherSchool = School::factory()->create();
+    $otherUser = User::factory()->create([
+        'school_id' => $otherSchool->id,
+        'email' => 'other-update@test.com',
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->putJson("/api/admin/users_with_roles/{$otherUser->id}", [
+        'id' => $otherUser->id,
+        'last_name' => 'Blocked',
+        'first_name' => 'Person',
+        'email' => 'blocked-update@test.com',
+        'is_active' => true,
+        'is_confirmed' => true,
+        'is_verified' => true,
+        'is_2fa' => false,
+    ])->assertForbidden();
+
+    expect($otherUser->fresh()->email)->toBe('other-update@test.com');
+});
+
 // ============================================================================
 // show
 // ============================================================================
@@ -247,6 +302,7 @@ test('super admin can show user; admin cannot', function () {
         ->assertStatus(403);
 
     $this->actingAs($this->superAdmin, 'sanctum');
-    $this->getJson("/api/admin/users_with_roles/{$user->id}")
+    $response = $this->getJson("/api/admin/users_with_roles/{$user->id}");
+    $response
         ->assertStatus(200);
 });

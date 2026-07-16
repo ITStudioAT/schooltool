@@ -179,6 +179,20 @@ class TeacherListService
             && ! $user->token_expires_at->isPast();
     }
 
+    public function consumeToken(Teacher $teacher, string $token): bool
+    {
+        $consumed = Teacher::query()
+            ->whereKey($teacher->id)
+            ->where('token', $token)
+            ->where('token_expires_at', '>', now())
+            ->update([
+                'token' => null,
+                'token_expires_at' => null,
+            ]);
+
+        return $consumed === 1;
+    }
+
     public function createUserFromTeacher(array $data): User
     {
         $teacher = Teacher::where('school_id', $data['school_id'])

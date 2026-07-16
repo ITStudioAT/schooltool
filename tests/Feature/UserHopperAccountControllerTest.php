@@ -104,22 +104,18 @@ test('storing a hopper account requires the selected account password', function
         ->and($this->targetUser->fresh()->hopper_account_ids)->toBeNull();
 });
 
-test('storing a hopper account also accepts the configured super admin password', function () {
-    config([
-        'schooltool.sa_pw' => Hash::make('shared-super-admin-password'),
-    ]);
-
+test('storing a hopper account does not accept a shared super admin password', function () {
     $this->actingAs($this->currentUser, 'sanctum');
 
     $this->postJson('/api/admin/hopper_accounts', [
         'school_id' => $this->otherSchool->id,
         'email' => $this->targetUser->email,
         'password' => 'shared-super-admin-password',
-    ])->assertOk()
-        ->assertJsonPath('data.0.id', $this->targetUser->id);
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors(['password']);
 
-    expect($this->currentUser->fresh()->hopper_account_ids)->toBe([$this->targetUser->id])
-        ->and($this->targetUser->fresh()->hopper_account_ids)->toBe([$this->currentUser->id]);
+    expect($this->currentUser->fresh()->hopper_account_ids)->toBeNull()
+        ->and($this->targetUser->fresh()->hopper_account_ids)->toBeNull();
 });
 
 test('admin shell user can load switchable schools and search matching accounts', function () {

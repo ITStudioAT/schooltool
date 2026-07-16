@@ -25,10 +25,12 @@ use App\Models\UserGroup;
 use App\Services\LicenceService;
 use App\Services\SchoolUserLicenceAssignmentService;
 use App\Services\UserHopperService;
+use App\Support\RemoteUrlGuard;
 use Carbon\Carbon;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -106,6 +108,7 @@ class MaterialService
         private readonly MaterialWorkspaceService $workspaceService,
         private readonly LicenceService $licenceService,
         private readonly UserHopperService $hopperService,
+        private readonly RemoteUrlGuard $remoteUrlGuard,
     ) {}
 
     public function config(User $user): array
@@ -1474,10 +1477,19 @@ class MaterialService
 
     public function addImageAttachmentFromUrl(MaterialCard $card, string $url, ?string $name = null): MaterialCardAttachment
     {
-        $normalizedUrl = $this->normalizeRemoteImageUrl($url);
-        if ($normalizedUrl === '') {
+        try {
+            $remoteUrl = $this->remoteUrlGuard->resolve($url);
+        } catch (\InvalidArgumentException) {
             throw ValidationException::withMessages([
-                'data.url' => 'Ungültige Bild-URL.',
+                'data.url' => 'Die Bild-URL verweist nicht auf einen erlaubten öffentlichen Server.',
+            ]);
+        }
+
+        $normalizedUrl = $remoteUrl['url'];
+
+        if (! defined('CURLOPT_RESOLVE')) {
+            throw ValidationException::withMessages([
+                'data.url' => 'Sicherer Bildimport ist auf diesem Server nicht verfügbar.',
             ]);
         }
 
@@ -1490,16 +1502,31 @@ class MaterialService
 
         try {
             try {
+                $requestOptions = [
+                    'allow_redirects' => false,
+                    'stream' => true,
+                ];
+
+                $resolvedIp = str_contains($remoteUrl['ip'], ':')
+                    ? "[{$remoteUrl['ip']}]"
+                    : $remoteUrl['ip'];
+                $requestOptions['curl'] = [
+                    constant('CURLOPT_RESOLVE') => ["{$remoteUrl['host']}:{$remoteUrl['port']}:{$resolvedIp}"],
+                ];
+
                 $response = Http::connectTimeout(10)
                     ->timeout(30)
-                    ->withOptions([
-                        'allow_redirects' => true,
-                        'sink' => $tempFilePath,
-                    ])
+                    ->withOptions($requestOptions)
                     ->get($normalizedUrl);
             } catch (\Throwable) {
                 throw ValidationException::withMessages([
                     'data.url' => 'Bild konnte nicht geladen werden.',
+                ]);
+            }
+
+            if ($response->redirect()) {
+                throw ValidationException::withMessages([
+                    'data.url' => 'Weiterleitungen sind für Bild-URLs nicht erlaubt.',
                 ]);
             }
 
@@ -1509,17 +1536,20 @@ class MaterialService
                 ]);
             }
 
-            $sizeBytes = (int) (filesize($tempFilePath) ?: 0);
-            if ($sizeBytes <= 0) {
+            $maxBytes = $this->maxUploadSizeForSchool((int) $card->school_id) * 1024;
+            $contentLength = (int) $response->header('Content-Length');
+
+            if ($maxBytes > 0 && $contentLength > $maxBytes) {
                 throw ValidationException::withMessages([
-                    'data.url' => 'Bild konnte nicht verarbeitet werden.',
+                    'data.url' => 'Bild überschreitet die maximal erlaubte Uploadgröße.',
                 ]);
             }
 
-            $maxBytes = $this->maxUploadSizeForSchool((int) $card->school_id) * 1024;
-            if ($maxBytes > 0 && $sizeBytes > $maxBytes) {
+            $sizeBytes = $this->streamResponseToPath($response, $tempFilePath, $maxBytes);
+
+            if ($sizeBytes <= 0) {
                 throw ValidationException::withMessages([
-                    'data.url' => 'Bild überschreitet die maximal erlaubte Uploadgröße.',
+                    'data.url' => 'Bild konnte nicht verarbeitet werden.',
                 ]);
             }
 
@@ -6199,24 +6229,46 @@ class MaterialService
         return mb_substr($clean, 0, 255);
     }
 
-    private function normalizeRemoteImageUrl(string $url): string
+    private function streamResponseToPath(Response $response, string $path, int $maxBytes): int
     {
-        $value = trim($url);
-        if ($value === '') {
-            return '';
+        $source = $response->toPsrResponse()->getBody();
+        $target = fopen($path, 'wb');
+
+        if ($target === false) {
+            throw ValidationException::withMessages([
+                'data.url' => 'Temporäre Datei konnte nicht erstellt werden.',
+            ]);
         }
 
-        $validated = filter_var($value, FILTER_VALIDATE_URL);
-        if (! is_string($validated) || $validated === '') {
-            return '';
+        $downloadedBytes = 0;
+
+        try {
+            while (! $source->eof()) {
+                $chunk = $source->read(8192);
+
+                if ($chunk === '') {
+                    break;
+                }
+
+                $downloadedBytes += strlen($chunk);
+
+                if ($maxBytes > 0 && $downloadedBytes > $maxBytes) {
+                    throw ValidationException::withMessages([
+                        'data.url' => 'Bild überschreitet die maximal erlaubte Uploadgröße.',
+                    ]);
+                }
+
+                if (fwrite($target, $chunk) === false) {
+                    throw ValidationException::withMessages([
+                        'data.url' => 'Bild konnte nicht gespeichert werden.',
+                    ]);
+                }
+            }
+        } finally {
+            fclose($target);
         }
 
-        $scheme = strtolower((string) parse_url($validated, PHP_URL_SCHEME));
-        if (! in_array($scheme, ['http', 'https'], true)) {
-            return '';
-        }
-
-        return mb_substr($validated, 0, 2048);
+        return $downloadedBytes;
     }
 
     private function normalizeMimeType(?string $mimeType): ?string

@@ -51,7 +51,9 @@ class UserWithRoleController extends Controller
 
         $validated = $request->validated();
 
-        $user = User::findOrFail($validated['id']);
+        $user = User::query()
+            ->where('school_id', $auth_user->school_id)
+            ->findOrFail($validated['id']);
         if ($user->hasRole('super_admin')) {
             $validated['roles'][] = 'super_admin';
         }
@@ -66,7 +68,10 @@ class UserWithRoleController extends Controller
         }
         $validated = $request->validated();
         $search_model = $validated['search_model'] ?? [];
-        $query = User::with('roles')->orderBy('last_name')->orderBy('first_name');
+        $query = User::with('roles')
+            ->where('school_id', $auth_user->school_id)
+            ->orderBy('last_name')
+            ->orderBy('first_name');
 
         // search_string (optional)
         if (! empty($search_model['search_string'])) {
@@ -97,6 +102,7 @@ class UserWithRoleController extends Controller
         $validated = $request->validated();
 
         $validated = $this->convertConfirmedVerified($validated);
+        $validated['school_id'] = $auth_user->school_id;
         $validated['password'] = Hash::make(now());
 
         // Extract protected fields before create since they're not fillable
@@ -127,12 +133,18 @@ class UserWithRoleController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        $this->ensureUserBelongsToSchool($auth_user, $user);
+
         return response()->json(new UserWithRoleResource($user->load('roles')), 200);
     }
 
     public function update(UpdateUserRequest $request, User $user)
     {
-        $auth_user = $this->userHasRole(['admin']);
+        if (! $auth_user = $this->userHasRole(['admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $this->ensureUserBelongsToSchool($auth_user, $user);
         $validated = $request->validated();
 
         $validated = $this->convertConfirmedVerified($validated, $user);
@@ -210,6 +222,8 @@ class UserWithRoleController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        $this->ensureUserBelongsToSchool($auth_user, $user);
+
         if ($user->id == $auth_user->id) {
             abort(403, 'Man kann sich selbst nicht löschen');
         }
@@ -227,7 +241,16 @@ class UserWithRoleController extends Controller
         }
         $ids = $request->all();
 
-        User::whereIn('id', $ids)->each(function ($user) use ($auth_user) {
+        $users = User::query()
+            ->where('school_id', $auth_user->school_id)
+            ->whereIn('id', $ids)
+            ->get();
+
+        if ($users->count() !== collect($ids)->unique()->count()) {
+            abort(403, 'Mindestens ein Benutzer gehört nicht zu Ihrer Schule.');
+        }
+
+        $users->each(function ($user) use ($auth_user) {
             if ($user->id == $auth_user->id) {
                 abort(403, 'Man kann sich selbst nicht löschen');
             }
@@ -244,6 +267,8 @@ class UserWithRoleController extends Controller
         if (! $auth_user = $this->userHasRole(['admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $this->ensureUserBelongsToSchool($auth_user, $user);
         $validated = $request->validated();
 
         if ($user->email != $validated['email']) {
@@ -265,7 +290,7 @@ class UserWithRoleController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
-        if (! $user->checkToken2Fa($validated['token_2fa'])) {
+        if (! $user->consumeToken2Fa($validated['token_2fa'])) {
             abort(401, 'Der Code ist falsch oder abgelaufen');
         }
         $validated['email_verified_at'] = now();
@@ -297,7 +322,7 @@ class UserWithRoleController extends Controller
         }
         $validated = $request->validated();
 
-        if (! $user->checkToken2Fa($validated['token_2fa'])) {
+        if (! $user->consumeToken2Fa($validated['token_2fa'])) {
             abort(401, 'Kennwort speichern funktioniert nicht. Code falsch oder Zeit abgelaufen.');
         }
 
@@ -306,5 +331,12 @@ class UserWithRoleController extends Controller
                 'password' => Hash::make($validated['password']),
             ]
         );
+    }
+
+    private function ensureUserBelongsToSchool(User $authUser, User $user): void
+    {
+        if ((int) $authUser->school_id !== (int) $user->school_id) {
+            abort(403, 'Der Benutzer gehört nicht zu Ihrer Schule.');
+        }
     }
 }

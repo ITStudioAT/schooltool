@@ -14,7 +14,6 @@ use App\Http\Resources\Homepage\RegisterResource;
 use App\Http\Resources\Homepage\SchoolResource;
 use App\Models\Register;
 use App\Models\School;
-use Illuminate\Support\Facades\Cache;
 use App\Models\User;
 use App\Services\AdminService;
 use App\Services\RegisterDateBookingService;
@@ -22,6 +21,7 @@ use App\Services\RegisterService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 class RegisterController extends Controller
 {
@@ -130,6 +130,10 @@ class RegisterController extends Controller
             abort(401, 'Das Token ist falsch oder abgelaufen');
         }
 
+        if (! $user->consumeToken2Fa($data['token_2fa'])) {
+            abort(401, 'Das Token ist falsch oder abgelaufen');
+        }
+
         // User-Daten aktualisieren
         $user->update([
             'last_name' => $data['last_name'] ?? null,
@@ -161,6 +165,10 @@ class RegisterController extends Controller
         $user->save();
 
         if (! $registerService->checkToken($user, $data)) {
+            abort(401, 'Das Token ist falsch oder abgelaufen');
+        }
+
+        if (! $user->consumeToken2Fa($data['token_2fa'])) {
             abort(401, 'Das Token ist falsch oder abgelaufen');
         }
 

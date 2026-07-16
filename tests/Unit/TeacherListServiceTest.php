@@ -585,6 +585,27 @@ describe('checkToken', function () {
     });
 });
 
+describe('consumeToken', function () {
+    it('consumes a valid token only once', function () {
+        $teacher = Teacher::create([
+            'school_id' => $this->school->id,
+            'short' => 'T1',
+            'last_name' => 'Teacher',
+            'email' => 'teacher@example.com',
+            'token' => '123456',
+            'token_expires_at' => now()->addMinutes(10),
+        ]);
+
+        expect($this->service->consumeToken($teacher, '123456'))->toBeTrue()
+            ->and($this->service->consumeToken($teacher, '123456'))->toBeFalse();
+
+        $teacher->refresh();
+
+        expect($teacher->token)->toBeNull()
+            ->and($teacher->token_expires_at)->toBeNull();
+    });
+});
+
 describe('createUserFromTeacher', function () {
     it('creates user from teacher data', function () {
         $teacher = Teacher::create([

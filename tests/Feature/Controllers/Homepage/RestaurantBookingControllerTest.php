@@ -412,6 +412,115 @@ it('stores booking recipients in metadata and remembers them as defaults for the
         ->and($user->fresh()->restaurant_booking_defaults['recipients'][1]['name'] ?? null)->toBe('Paul Beispiel');
 });
 
+it('does not allow users to book a menu entry from another school', function () {
+    Carbon::setTestNow('2026-04-03 12:00:00');
+
+    $userSchool = School::factory()->create();
+    $otherSchool = School::factory()->create();
+    $user = User::factory()->create(['school_id' => $userSchool->id]);
+    $otherMenu = RestaurantMenu::factory()->forSchool($otherSchool)->create();
+    $otherPlan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $otherSchool->id,
+        'is_available' => true,
+        'use_individual_schedule_values' => true,
+        'order_start_at' => now()->subHour(),
+        'order_end_at' => now()->addHour(),
+    ]);
+    $otherEntry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $otherPlan->id,
+        'restaurant_menu_id' => $otherMenu->id,
+    ]);
+
+    $this->withoutMiddleware(ToolLicensed::class);
+
+    $this->actingAs($user, 'sanctum')
+        ->postJson('/api/homepage/restaurant/bookings', [
+            'data' => [
+                'restaurant_menu_plan_entry_id' => $otherEntry->id,
+                'quantity' => 1,
+            ],
+        ])
+        ->assertNotFound();
+
+    expect(RestaurantMenuPlanBooking::query()->count())->toBe(0);
+});
+
+it('uses the server-side menu price instead of a client supplied price', function () {
+    Carbon::setTestNow('2026-04-03 12:00:00');
+
+    $school = School::factory()->create();
+    $user = User::factory()->create(['school_id' => $school->id]);
+    $menu = RestaurantMenu::factory()->forSchool($school)->create();
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $school->id,
+        'is_available' => true,
+        'use_individual_schedule_values' => true,
+        'order_start_at' => now()->subHour(),
+        'order_end_at' => now()->addHour(),
+    ]);
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'restaurant_menu_id' => $menu->id,
+        'price' => 8.75,
+    ]);
+
+    $this->withoutMiddleware(ToolLicensed::class);
+
+    $this->actingAs($user, 'sanctum')
+        ->postJson('/api/homepage/restaurant/bookings', [
+            'data' => [
+                'restaurant_menu_plan_entry_id' => $entry->id,
+                'quantity' => 1,
+                'price' => 0.01,
+            ],
+        ])
+        ->assertCreated()
+        ->assertJsonPath('booking.price', '8.75');
+
+    $this->assertDatabaseHas('restaurant_menu_plan_bookings', [
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'price' => 8.75,
+        'total_price' => 8.75,
+    ]);
+});
+
+it('rejects an eating time that is not attached to the selected menu entry', function () {
+    Carbon::setTestNow('2026-04-03 12:00:00');
+
+    $school = School::factory()->create();
+    $user = User::factory()->create(['school_id' => $school->id]);
+    $menu = RestaurantMenu::factory()->forSchool($school)->create();
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $school->id,
+        'is_available' => true,
+        'use_individual_schedule_values' => true,
+        'order_start_at' => now()->subHour(),
+        'order_end_at' => now()->addHour(),
+    ]);
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'restaurant_menu_id' => $menu->id,
+    ]);
+    $allowedEatingTime = RestaurantEatingTime::factory()->create(['school_id' => $school->id]);
+    $otherEatingTime = RestaurantEatingTime::factory()->create(['school_id' => $school->id]);
+    $entry->eatingTimes()->attach($allowedEatingTime->id);
+
+    $this->withoutMiddleware(ToolLicensed::class);
+
+    $this->actingAs($user, 'sanctum')
+        ->postJson('/api/homepage/restaurant/bookings', [
+            'data' => [
+                'restaurant_menu_plan_entry_id' => $entry->id,
+                'restaurant_eating_time_id' => $otherEatingTime->id,
+                'quantity' => 1,
+            ],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonFragment(['Die ausgewählte Speisezeit gehört nicht zu diesem Menü.']);
+
+    expect(RestaurantMenuPlanBooking::query()->count())->toBe(0);
+});
+
 it('returns child options and remembered booking defaults for import116 parents', function () {
     $school = School::factory()->create();
     $user = User::factory()->create([

@@ -873,7 +873,9 @@ describe('checkEmailVerification', function () {
 
         $result = $this->service->checkEmailVerification($user, '123456');
 
-        expect($result)->toBeTrue();
+        expect($result)->toBeTrue()
+            ->and($user->fresh()->token_2fa)->toBeNull()
+            ->and($user->fresh()->token_2fa_expires_at)->toBeNull();
     });
 
     it('returns false when token is invalid', function () {
@@ -964,7 +966,9 @@ describe('setPasswordOrSendCode', function () {
 
         $user->refresh();
         expect(Hash::check('newpassword123', $user->password))->toBeTrue()
-            ->and(Auth::check())->toBeTrue();
+            ->and(Auth::check())->toBeTrue()
+            ->and($user->token_2fa)->toBeNull()
+            ->and($user->token_2fa_expires_at)->toBeNull();
     });
 
     it('sets password when token is valid and status is RE_CONFIRM_PASSWORD', function () {

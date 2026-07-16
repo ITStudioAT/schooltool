@@ -49,6 +49,7 @@ test('app service provider registers rate limiters', function () {
     $apiLimiter = RateLimiter::limiter('api');
     $webLimiter = RateLimiter::limiter('web');
     $globalLimiter = RateLimiter::limiter('global');
+    $authenticationLimiter = RateLimiter::limiter('authentication');
 
     $user = User::factory()->create();
     $requestWithUser = Request::create('/api/test');
@@ -69,6 +70,17 @@ test('app service provider registers rate limiters', function () {
     $apiIpLimit = $apiLimiter($requestWithIp);
     $globalLimit = $globalLimiter($requestWithIp);
 
+    $authenticationRequest = Request::create('/api/admin/login_step_email', 'POST', [
+        'data' => ['email' => 'User@Example.Test'],
+    ]);
+    $authenticationRequest->server->set('REMOTE_ADDR', '127.0.0.1');
+    $authenticationLimits = $authenticationLimiter($authenticationRequest);
+
     expect($apiIpLimit->key)->toBe('127.0.0.1')
-        ->and($globalLimit->maxAttempts)->toBe(1000);
+        ->and($globalLimit->maxAttempts)->toBe(1000)
+        ->and($globalLimit->key)->toBe('127.0.0.1')
+        ->and($authenticationLimits)->toHaveCount(2)
+        ->and($authenticationLimits[0]->maxAttempts)->toBe(10)
+        ->and($authenticationLimits[0]->key)->toContain('user@example.test')
+        ->and($authenticationLimits[1]->maxAttempts)->toBe(60);
 });

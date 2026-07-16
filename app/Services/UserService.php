@@ -19,10 +19,12 @@ class UserService
 {
     private const PROTECTED_SUPER_ADMIN_EMAIL = 'kron@naturwelt.at';
 
-    public function delete(int $meId, array $data): void
+    public function delete(int $meId, array $data, ?int $schoolId = null): void
     {
         foreach ($data as $id) {
-            $user = User::findOrFail($id);
+            $user = User::query()
+                ->when($schoolId !== null, fn ($query) => $query->where('school_id', $schoolId))
+                ->findOrFail($id);
             if (! $user->hasDependencies() && $user->id !== $meId) {
                 $user->syncRoles([]);
                 $user->delete();
@@ -66,7 +68,9 @@ class UserService
 
     public function update(array $data, ?User $actingUser = null): User
     {
-        $user = User::findOrFail($data['id']);
+        $user = User::query()
+            ->when($actingUser !== null, fn ($query) => $query->where('school_id', $actingUser->school_id))
+            ->findOrFail($data['id']);
         $isProtectedSuperAdminUser = $this->isProtectedSuperAdminUser($user, $data);
         $canManageSuperAdminRole = $this->canManageSuperAdminRole($actingUser);
 
@@ -199,7 +203,9 @@ class UserService
         unset($roleId);
 
         foreach ($userIds as $id) {
-            $user = User::findOrFail($id);
+            $user = User::query()
+                ->when($actingUser !== null, fn ($query) => $query->where('school_id', $actingUser->school_id))
+                ->findOrFail($id);
             $isProtectedSuperAdminUser = $this->isProtectedSuperAdminUser($user);
 
             foreach ($roleIds as $roleId) {
@@ -326,9 +332,7 @@ class UserService
 
     public function checkEmailVerification($user, string $token): bool
     {
-        return $user->token_2fa === $token
-            && $user->token_2fa_expires_at
-            && $user->token_2fa_expires_at->isFuture();
+        return $user->consumeToken2Fa($token);
     }
 
     public function setPasswordOrSendCode($user, array $data): array
@@ -337,9 +341,7 @@ class UserService
         $isConfirmingPassword = in_array($status, ['CONFIRM_PASSWORD', 'RE_CONFIRM_PASSWORD'], true);
 
         if ($isConfirmingPassword) {
-            $tokenValid = $user->token_2fa === $data['token_2fa']
-                && $user->token_2fa_expires_at
-                && $user->token_2fa_expires_at->isFuture();
+            $tokenValid = $user->consumeToken2Fa($data['token_2fa']);
 
             if ($tokenValid) {
                 $user->password = Hash::make($data['password']);
