@@ -6,22 +6,17 @@ export const useCurriculumStore = defineStore('AdminCurriculumStore', {
     state: () => ({
         curricula: [],
         imported_curricula: [],
-        free_weeks_template: {
-            week_keys: [],
-            named_ranges: [],
-        },
         meta: {
             current_page: 1,
             last_page: 1,
             per_page: 10,
             total: 0,
         },
-        search: '',
         is_loading: false,
     }),
 
     actions: {
-        async index({ page = 1, perPage = null, search = null } = {}) {
+        async index({ page = 1, perPage = null } = {}) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
@@ -30,7 +25,6 @@ export const useCurriculumStore = defineStore('AdminCurriculumStore', {
                 const params = {
                     page,
                     per_page: perPage ?? this.meta.per_page,
-                    search: search ?? this.search,
                 }
                 const response = await axios.get('/api/admin/teaching/curricula', { params })
                 this.curricula = response.data?.data || []
@@ -198,70 +192,6 @@ export const useCurriculumStore = defineStore('AdminCurriculumStore', {
                     timeout: 3000,
                 })
                 return false
-            } finally {
-                adminStore.is_loading--
-            }
-        },
-
-        async loadFreeWeeksTemplate() {
-            const notification = useNotificationStore()
-            const adminStore = useAdminStore()
-            adminStore.is_loading++
-            try {
-                const response = await axios.get('/api/admin/teaching/curricula/free-weeks-template')
-                this.free_weeks_template = {
-                    week_keys: response.data?.data?.week_keys || [],
-                    named_ranges: response.data?.data?.named_ranges || [],
-                }
-                return this.free_weeks_template
-            } catch (error) {
-                notification.notify({
-                    status: error.response?.status,
-                    message: error.response?.data?.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: 3000,
-                })
-                return null
-            } finally {
-                adminStore.is_loading--
-            }
-        },
-
-        async saveFreeWeeksTemplate(template) {
-            const notification = useNotificationStore()
-            const adminStore = useAdminStore()
-            adminStore.is_loading++
-            try {
-                const response = await axios.put('/api/admin/teaching/curricula/free-weeks-template', {
-                    free_weeks_template: {
-                        week_keys: Array.isArray(template?.week_keys) ? template.week_keys : [],
-                        named_ranges: Array.isArray(template?.named_ranges) ? template.named_ranges : [],
-                    },
-                })
-                this.free_weeks_template = {
-                    week_keys: response.data?.data?.week_keys || [],
-                    named_ranges: response.data?.data?.named_ranges || [],
-                }
-                if (adminStore.config?.user) {
-                    adminStore.config.user.teaching_curriculum_free_weeks_template = {
-                        week_keys: [...this.free_weeks_template.week_keys],
-                        named_ranges: [...this.free_weeks_template.named_ranges],
-                    }
-                }
-                notification.notify({
-                    message: 'Vorlage gespeichert.',
-                    type: 'success',
-                    timeout: 2200,
-                })
-                return this.free_weeks_template
-            } catch (error) {
-                notification.notify({
-                    status: error.response?.status,
-                    message: error.response?.data?.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: 3000,
-                })
-                return null
             } finally {
                 adminStore.is_loading--
             }

@@ -70,7 +70,6 @@ test('teacher can download curriculum json export with a stable curriculum key a
         'title' => 'Deutsch 5A',
         'description' => 'Jahresplanung',
         'semester_count' => 2,
-        'free_weeks' => ['2026-09-15'],
         'topics' => [
             [
                 'id' => 'topic-lesen',
@@ -119,12 +118,12 @@ test('teacher can download curriculum json export with a stable curriculum key a
         ->and($payload['curriculum_key'])->toBe($exportKey)
         ->and($payload['curriculum']['title'])->toBe('Deutsch 5A')
         ->and($payload['curriculum']['description'])->toBe('Jahresplanung')
-        ->and($payload['curriculum']['free_weeks'])->toBe(['2026-09-15'])
+        ->and($payload['curriculum'])->not->toHaveKeys(['semester_count', 'free_weeks'])
         ->and($payload['curriculum']['topics'][0]['id'])->toBe('topic-lesen')
-        ->and($payload['curriculum']['topics'][0]['assignment_type'])->toBe('month')
+        ->and($payload['curriculum']['topics'][0])->not->toHaveKeys(['assignment_type', 'month_key', 'month_keys', 'week_keys'])
         ->and($payload['curriculum']['topics'][0])->not->toHaveKey('materials')
         ->and($payload['curriculum']['topics'][0]['units'][0]['id'])->toBe('unit-text')
-        ->and($payload['curriculum']['topics'][0]['units'][0]['checked_week_keys'])->toBe(['2026-09-15'])
+        ->and($payload['curriculum']['topics'][0]['units'][0])->not->toHaveKeys(['assignment_type', 'month_key', 'month_keys', 'week_keys', 'checked_week_keys'])
         ->and($payload['curriculum']['topics'][0]['units'][0])->not->toHaveKey('materials');
 
     $secondResponse = $this->actingAs($this->teacher, 'sanctum')
@@ -143,7 +142,6 @@ test('teacher cannot download another teachers curriculum json export', function
         'title' => 'Deutsch 5A',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 

@@ -20,6 +20,31 @@ describe('CourseTable', () => {
         expect(rows.map((row: { id: number }) => row.id)).toEqual([1, 2, 3])
     })
 
+    it('filters course dates by the selected semester', () => {
+        const computed = (CourseTable as any).computed
+        const courseDates = [
+            { id: 1, date: '2026-01-08' },
+            { id: 2, date: '2026-02-09' },
+            { id: 3, date: '2026-06-12' },
+        ]
+        const context = {
+            selected_course: { course_dates: courseDates },
+            activeSemester: 1,
+            semesterTwoStartDate: '2026-02-09',
+        }
+
+        expect(computed.sortedCourseDates.call(context).map((courseDate: { id: number }) => courseDate.id))
+            .toEqual([1])
+
+        context.activeSemester = 2
+        expect(computed.sortedCourseDates.call(context).map((courseDate: { id: number }) => courseDate.id))
+            .toEqual([2, 3])
+
+        context.activeSemester = 3
+        expect(computed.sortedCourseDates.call(context).map((courseDate: { id: number }) => courseDate.id))
+            .toEqual([1, 2, 3])
+    })
+
     it('keeps the course-date scroll signature stable when attendance changes', () => {
         const computed = (CourseTable as any).computed
         const methods = (CourseTable as any).methods
@@ -193,6 +218,22 @@ describe('CourseTable', () => {
         expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-18' })).toEqual([])
     })
 
+    it('keeps the add-work icon before existing works', () => {
+        const source = readFileSync(
+            resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/CourseTable.vue'),
+            'utf8',
+        )
+        const workListStart = source.indexOf('<div class="course-table-work-list">')
+        const addIconPosition = source.indexOf('class="course-table-work-empty-icon"', workListStart)
+        const existingWorksPosition = source.indexOf('v-for="work in courseWorksForDate(courseDate)"', workListStart)
+
+        expect(workListStart).toBeGreaterThan(-1)
+        expect(addIconPosition).toBeGreaterThan(workListStart)
+        expect(existingWorksPosition).toBeGreaterThan(addIconPosition)
+        expect(source.slice(workListStart, addIconPosition)).not.toContain('v-if="!courseWorksForDate(courseDate).length"')
+        expect(source).toContain('@click.stop="openNewWorkDialog(courseDate)"')
+    })
+
     it('labels work assigned to all groups as group work', () => {
         const methods = (CourseTable as any).methods
         const ctx: Record<string, any> = {}
@@ -289,6 +330,25 @@ describe('CourseTable', () => {
 
         methods.openWorkDialog.call(ctx, courseDate)
 
+        expect(ctx.workDialog).toEqual({ courseDate, open: true })
+        expect(ctx.startCreatingDateWork).toHaveBeenCalledTimes(1)
+    })
+
+    it('opens the new-work form directly when the add icon is used', () => {
+        const methods = (CourseTable as any).methods
+        const courseDate = { id: 7, date: '2026-05-16' }
+        const ctx = {
+            workDialog: {
+                courseDate: null,
+                open: false,
+            },
+            cancelDateWorkForm: vi.fn(),
+            startCreatingDateWork: vi.fn(),
+        }
+
+        methods.openNewWorkDialog.call(ctx, courseDate)
+
+        expect(ctx.cancelDateWorkForm).toHaveBeenCalledTimes(1)
         expect(ctx.workDialog).toEqual({ courseDate, open: true })
         expect(ctx.startCreatingDateWork).toHaveBeenCalledTimes(1)
     })
@@ -593,12 +653,15 @@ describe('CourseTable', () => {
 
         expect(methods.entryTypeCategoryColor('Benotung')).toBe('primary')
         expect(methods.entryTypeCategoryColor('Verhalten')).toBe('warning')
-        expect(methods.entryTypeCategoryColor('Weitere')).toBe('secondary')
+        expect(methods.entryTypeCategoryColor('Weitere')).toBe('error')
         expect(source).toContain(':data-category="group.category"')
         expect(source).toContain(':color="entryTypeCategoryColor(group.category)"')
         expect(source).toContain(".course-table-entry-type-row[data-category='Benotung']")
         expect(source).toContain(".course-table-entry-type-row[data-category='Verhalten']")
         expect(source).toContain(".course-table-entry-type-row[data-category='Weitere']")
+        expect(source).toContain('background: rgba(var(--v-theme-error), 0.065);')
+        expect(source).toContain('border-color: rgba(var(--v-theme-error), 0.3);\n    color: rgb(var(--v-theme-error));')
+        expect(source).toContain('color: rgb(var(--v-theme-error));')
         expect(source).toContain('border-left-width: 4px;')
         expect(source).toContain('border-radius: 10px;')
     })
@@ -1593,50 +1656,18 @@ describe('CourseTable', () => {
         expect(methods.isAttendanceToggleable.call(ctx, { id: 5, date: '2026-03-10', status: ['entfaellt'] })).toBe(false)
     })
 
-    it('switches between attendance and entries and stores the view in the URL', () => {
-        const methods = (CourseTable as any).methods
-        const initialData = (CourseTable as any).data()
-        const replace = vi.fn().mockResolvedValue(undefined)
-        const loadCourseTableData = vi.fn().mockResolvedValue(undefined)
-        const ctx = {
-            tableView: initialData.tableView,
-            loadCourseTableData,
-            $route: {
-                path: '/admin/teaching',
-                query: {
-                    course: '5',
-                    panel: 'table',
-                },
-            },
-            $router: { replace },
-        }
+    it('accepts a fixed table view from the parent panel', () => {
+        const viewProp = (CourseTable as any).props.view
+        const activeSemesterProp = (CourseTable as any).props.activeSemester
 
-        expect(ctx.tableView).toBe('attendance')
-
-        methods.changeTableView.call(ctx, 'entries')
-
-        expect(ctx.tableView).toBe('entries')
-        expect(loadCourseTableData).toHaveBeenCalledTimes(1)
-        expect(replace).toHaveBeenLastCalledWith({
-            path: '/admin/teaching',
-            query: {
-                course: '5',
-                panel: 'table',
-                view: 'entries',
-            },
-        })
-
-        methods.changeTableView.call(ctx, 'attendance')
-
-        expect(ctx.tableView).toBe('attendance')
-        expect(replace).toHaveBeenLastCalledWith({
-            path: '/admin/teaching',
-            query: {
-                course: '5',
-                panel: 'table',
-                view: 'attendance',
-            },
-        })
+        expect(viewProp.default).toBe('entries')
+        expect(viewProp.validator('entries')).toBe(true)
+        expect(viewProp.validator('attendance')).toBe(true)
+        expect(viewProp.validator('plain')).toBe(false)
+        expect(activeSemesterProp.default).toBe(3)
+        expect(activeSemesterProp.validator(1)).toBe(true)
+        expect(activeSemesterProp.validator(3)).toBe(true)
+        expect(activeSemesterProp.validator(4)).toBe(false)
     })
 
     it('loads, caches, and force-refreshes all entries table data for the selected course', async () => {
@@ -1677,7 +1708,7 @@ describe('CourseTable', () => {
         expect(ctx.courseWorkStore.courseWorks).toEqual([{ id: 6 }])
     })
 
-    it('restores the table view from the URL', () => {
+    it('restores the table view from the parent panel', () => {
         const methods = (CourseTable as any).methods
         const ctx = {
             tableView: 'attendance',
@@ -1686,14 +1717,11 @@ describe('CourseTable', () => {
         methods.restoreTableView.call(ctx, 'entries')
         expect(ctx.tableView).toBe('entries')
 
-        methods.restoreTableView.call(ctx, 'plain')
-        expect(ctx.tableView).toBe('entries')
-
         methods.restoreTableView.call(ctx, 'attendance')
         expect(ctx.tableView).toBe('attendance')
 
         methods.restoreTableView.call(ctx, undefined)
-        expect(ctx.tableView).toBe('attendance')
+        expect(ctx.tableView).toBe('entries')
     })
 
     it('opens a persistent bulk attendance dialog from an eligible date header', () => {
@@ -2109,7 +2137,27 @@ describe('CourseTable', () => {
         expect(methods.isCellEntryExpanded.call(context, workEntry)).toBe(true)
     })
 
-    it('keeps entries collapsed until their title row is selected', () => {
+    it('shows only the selected entry while it is open', () => {
+        const computed = (CourseTable as any).computed
+        const firstEntry = { uid: 'assessment-12' }
+        const secondEntry = { uid: 'behaviour-13' }
+        const context = {
+            cellEntries: [firstEntry, secondEntry],
+            selectedCellEntryUid: null,
+        }
+
+        expect(computed.visibleCellEntries.call(context)).toEqual([firstEntry, secondEntry])
+
+        context.selectedCellEntryUid = secondEntry.uid
+
+        expect(computed.visibleCellEntries.call(context)).toEqual([secondEntry])
+
+        context.selectedCellEntryUid = 'missing-entry'
+
+        expect(computed.visibleCellEntries.call(context)).toEqual([firstEntry, secondEntry])
+    })
+
+    it('keeps entries collapsed until their card is selected', () => {
         const methods = (CourseTable as any).methods
         const entry = { uid: 'assessment-12' }
 
@@ -2119,7 +2167,7 @@ describe('CourseTable', () => {
         }, entry)).toBe(false)
     })
 
-    it('opens and closes an entry from its title row', () => {
+    it('opens and closes an entry from its card', () => {
         const methods = (CourseTable as any).methods
         const entry = { uid: 'assessment-12' }
         const context = {
@@ -2137,6 +2185,23 @@ describe('CourseTable', () => {
         methods.toggleCellEntry.call(context, entry)
 
         expect(context.selectCellEntry).toHaveBeenCalledWith(entry)
+    })
+
+    it('makes the complete entry card interactive without propagating editor clicks', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseTable.vue', 'utf8')
+        )
+
+        expect(source).toContain(':data-testid="`course-table-cell-entry-card-${entry.uid}`"\n                                :aria-expanded="isCellEntryExpanded(entry)"')
+        expect(source).toContain('v-for="entry in visibleCellEntries"')
+        expect(source).toContain(':role="isCellEntryExpanded(entry) ? undefined : \'button\'"')
+        expect(source).toContain(':tabindex="isCellEntryExpanded(entry) ? undefined : 0"\n                                @click="toggleCellEntry(entry)"')
+        expect(source).toContain('class="course-table-cell-entry-summary d-flex align-center flex-wrap ga-2">')
+        expect(source).not.toContain("isCellEntryExpanded(entry) ? 'mdi-chevron-up' : 'mdi-chevron-down'")
+        expect(source).toContain(':data-testid="`course-table-cell-work-entry-${entry.uid}`"\n                                    @click.stop>')
+        expect(source).toContain(':data-testid="`course-table-cell-entry-edit-form-${entry.uid}`"\n                                    @click.stop>')
+        expect(source).toContain('.course-table-cell-entry--selectable,\n.course-table-cell-entry--selected .course-table-cell-entry-summary {')
+        expect(source).toContain('.course-table-cell-entry:focus-visible {')
     })
 
     it('shows complete work details for a work-derived cell entry', () => {
@@ -2586,19 +2651,15 @@ describe('CourseTable', () => {
 
         expect(source).toContain('data-testid="course-table"')
         expect(source).toContain('ref="courseTableScroll"')
-        expect(source).toContain('data-testid="course-table-view-card"')
-        expect(source.indexOf('data-testid="course-table-view-card"')).toBeLessThan(source.indexOf('class="course-table-card"'))
-        expect(source).not.toContain('course-table-view-card__label')
-        expect(source).not.toContain('Zwischen Anwesenheit und Einträgen wechseln.')
-        expect(source).toContain('v-model="tableView"')
-        expect(source).toContain('<v-tabs')
-        expect(source).toContain('class="course-table-view-tabs"')
-        expect(source).toContain('<v-tab value="attendance" prepend-icon="mdi-account-check">')
-        expect(source).toContain('<v-tab value="entries" prepend-icon="mdi-format-list-bulleted">')
-        expect(source).toContain('</v-tabs>')
-        expect(source).toContain('@update:model-value="changeTableView"')
-        expect(source).toContain('Anwesenheit')
-        expect(source).toContain('Einträge')
+        expect(source).not.toContain('data-testid="course-table-view-card"')
+        expect(source).not.toContain('class="course-table-view-tabs"')
+        expect(source).not.toContain('@update:model-value="changeTableView"')
+        expect(source).toContain("tableView === 'attendance' ? 'Anwesenheiten' : 'Tabelle'")
+        expect(source).toContain('data-testid="course-table-semester-selection"')
+        expect(source).toContain('<v-btn-toggle v-model="selectedSemester" mandatory')
+        expect(source).toContain('<v-btn :value="1" size="small">1. Sem</v-btn>')
+        expect(source).toContain('<v-btn :value="2" size="small">2. Sem</v-btn>')
+        expect(source).toContain('<v-btn :value="3" size="small">Sem 1+2</v-btn>')
         expect(source).toContain('position: sticky;')
         expect(source).toContain('class="course-table-title-row"')
         expect(source).toContain('class="course-table-work-row"')

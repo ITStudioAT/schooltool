@@ -39,6 +39,10 @@
                                 :disabled="isStudentDetailActive"
                                 class="my-courses-v1-chip">
                                 {{ course.title }} ({{ courseClassesText(course) }})
+                                <span
+                                    v-if="courseStore?.courseHasProblems(course)"
+                                    class="ml-1 text-error font-weight-black"
+                                    aria-label="Probleme im Fach">!</span>
                             </v-chip>
                         </v-chip-group>
                         <div class="my-courses-v1-mobile-grid">
@@ -52,6 +56,10 @@
                                 :disabled="isStudentDetailActive"
                                 @click="selectCourse(course)">
                                 {{ course.title }} ({{ courseClassesText(course) }})
+                                <span
+                                    v-if="courseStore?.courseHasProblems(course)"
+                                    class="ml-1 text-error font-weight-black"
+                                    aria-label="Probleme im Fach">!</span>
                             </v-btn>
                         </div>
                     </div>
@@ -69,7 +77,13 @@
                                 <span class="my-courses-v2-card__primary-class">{{ primaryCourseClass(course) }}</span>
                                 <span class="my-courses-v2-card__class-count">{{ courseClassesCountLabel(course) }}</span>
                             </div>
-                            <div class="my-courses-v2-card__title">{{ course.title }}</div>
+                            <div class="my-courses-v2-card__title">
+                                {{ course.title }}
+                                <span
+                                    v-if="courseStore?.courseHasProblems(course)"
+                                    class="ml-1 text-error font-weight-black"
+                                    aria-label="Probleme im Fach">!</span>
+                            </div>
                             <div class="my-courses-v2-card__classes" v-if="secondaryCourseClasses(course).length">
                                 <span v-for="classItem in secondaryCourseClasses(course)" :key="`course-${course.id}-class-${classItem}`" class="my-courses-v2-card__class-chip">
                                     {{ classItem }}
@@ -177,6 +191,37 @@
                         </v-chip>
                     </v-chip-group>
                     <div class="text-caption text-medium-emphasis mt-1" v-if="data?.classes?.length">Ausgewählt: {{ data.classes.join(', ') }}</div>
+
+                    <v-card v-if="data?.class_head_emails?.length" variant="outlined" class="mt-4">
+                        <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
+                            <v-icon size="18">mdi-account-tie</v-icon>
+                            Klassenvorstand
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text>
+                            <v-row v-for="classHeadEmail in data.class_head_emails" :key="classHeadEmail.class_name" align="center">
+                                <v-col cols="12" sm="2">
+                                    <v-chip color="primary" variant="tonal">{{ classHeadEmail.class_name }}</v-chip>
+                                </v-col>
+                                <v-col cols="12" sm="5">
+                                    <v-text-field
+                                        v-model="classHeadEmail.email_1"
+                                        type="email"
+                                        label="E-Mail 1"
+                                        autocomplete="email"
+                                        :rules="[mailOrNull(), maxLength(255)]" />
+                                </v-col>
+                                <v-col cols="12" sm="5">
+                                    <v-text-field
+                                        v-model="classHeadEmail.email_2"
+                                        type="email"
+                                        label="E-Mail 2"
+                                        autocomplete="email"
+                                        :rules="[mailOrNull(), maxLength(255)]" />
+                                </v-col>
+                            </v-row>
+                        </v-card-text>
+                    </v-card>
                 </v-form>
 
                 <!-- Schülerinnen -->
@@ -383,6 +428,7 @@ export default {
             data: {
                 selected_classes: [],
             },
+            class_head_email_drafts: {},
 
             delete_level: 0,
             courses_view_variant: 'v1',
@@ -400,6 +446,7 @@ export default {
         ...mapWritableState(useCourseStore, [
             'courses',
             'classes',
+            'class_head_emails',
             'entry_areas',
             'uses_entry_areas_for_grading_schema',
             'selected_course',
@@ -497,6 +544,7 @@ export default {
             handler(newClasses) {
                 if (this.action !== 'teaching_course_new_or_edit') return
                 if (!Array.isArray(newClasses)) return
+                this.syncClassHeadEmailRows(newClasses)
                 this.selectStudents(newClasses)
             },
             deep: true,
@@ -504,6 +552,44 @@ export default {
     },
 
     methods: {
+        syncClassHeadEmailRows(selectedClasses) {
+            const currentRows = Array.isArray(this.data?.class_head_emails) ? this.data.class_head_emails : []
+
+            currentRows.forEach((classHeadEmail) => {
+                if (!classHeadEmail?.class_name) return
+                this.class_head_email_drafts[classHeadEmail.class_name] = { ...classHeadEmail }
+            })
+
+            this.data.class_head_emails = selectedClasses.map((className) => {
+                const draft = this.class_head_email_drafts[className]
+                const remembered = (this.class_head_emails || []).find((classHeadEmail) => classHeadEmail.class_name === className)
+                const source = draft || remembered || {}
+                const classHeadEmail = {
+                    class_name: className,
+                    email_1: source.email_1 || '',
+                    email_2: source.email_2 || '',
+                }
+
+                this.class_head_email_drafts[className] = { ...classHeadEmail }
+
+                return classHeadEmail
+            })
+        },
+        resetClassHeadEmailDrafts(existingRows = []) {
+            this.class_head_email_drafts = {}
+            const rememberedRows = [...(this.class_head_emails || []), ...existingRows]
+
+            rememberedRows.forEach((classHeadEmail) => {
+                if (!classHeadEmail?.class_name) return
+                this.class_head_email_drafts[classHeadEmail.class_name] = {
+                    class_name: classHeadEmail.class_name,
+                    email_1: classHeadEmail.email_1 || '',
+                    email_2: classHeadEmail.email_2 || '',
+                }
+            })
+
+            this.syncClassHeadEmailRows(this.data?.classes || [])
+        },
         async runCourseMutation(action, callback) {
             if (this.isSavingCourse) {
                 return false
@@ -942,11 +1028,13 @@ export default {
                 students_info: [],
                 students_deleted: [],
                 students_deleted_info: [],
+                class_head_emails: [],
                 teaching_schema_id: null,
                 teaching_entry_area_id: null,
             }
             this.selected_course = null
             this.selected_course_id = null
+            this.resetClassHeadEmailDrafts()
             this.action = 'teaching_course_new_or_edit'
         },
         async editCourse(course) {
@@ -967,6 +1055,7 @@ export default {
             this.courseStore.ensureCourseStudentCollections(this.selected_course)
             this.data = JSON.parse(JSON.stringify(this.selected_course))
             this.courseStore.ensureCourseStudentCollections(this.data)
+            this.resetClassHeadEmailDrafts(this.data.class_head_emails || [])
             this.action = 'teaching_course_new_or_edit'
             this.selectStudents(this.data.classes || [])
         },

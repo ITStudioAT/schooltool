@@ -135,7 +135,6 @@ test('store creates a backup for the active school and schoolyear only', functio
         'title' => 'Aktives Curriculum',
         'description' => 'Plan',
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
     $course = TeachingCourse::factory()->create([
@@ -482,7 +481,6 @@ test('preview compares backup content with current teaching data without restori
         'user_id' => $this->admin->id,
         'title' => 'Vorhandenes Curriculum',
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [['title' => 'Thema']],
     ]);
 
@@ -574,7 +572,6 @@ test('preview compares backup content with current teaching data without restori
             'schoolyear_id' => $this->schoolyear->id,
             'title' => 'Vorhandenes Curriculum',
             'semester_count' => 2,
-            'free_weeks' => json_encode([], JSON_THROW_ON_ERROR),
             'topics' => json_encode([['title' => 'Thema']], JSON_THROW_ON_ERROR),
         ],
         [
@@ -583,7 +580,6 @@ test('preview compares backup content with current teaching data without restori
             'schoolyear_id' => $this->schoolyear->id,
             'title' => 'Gelöschtes Curriculum',
             'semester_count' => 2,
-            'free_weeks' => json_encode([], JSON_THROW_ON_ERROR),
             'topics' => json_encode([], JSON_THROW_ON_ERROR),
         ],
     ];
@@ -698,7 +694,6 @@ test('restore recreates selected missing courses and curricula as new records', 
         'title' => 'Gelöschtes Curriculum',
         'description' => 'Plan',
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [['title' => 'Grundlagen']],
         'created_at' => now()->toDateTimeString(),
         'updated_at' => now()->toDateTimeString(),
@@ -1797,7 +1792,6 @@ test('full restore replaces active teaching data and restores imported records w
         'description' => 'Plan',
         'export_key' => (string) Str::uuid(),
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [['title' => 'Thema']],
         'created_at' => $now,
         'updated_at' => $now,

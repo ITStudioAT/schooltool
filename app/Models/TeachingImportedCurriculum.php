@@ -21,18 +21,19 @@ class TeachingImportedCurriculum extends Model
         'curriculum_key',
         'title',
         'description',
-        'semester_count',
-        'free_weeks',
         'topics',
         'source_schema_version',
         'source_exported_at',
         'imported_at',
     ];
 
+    protected $hidden = [
+        'semester_count',
+    ];
+
     protected function casts(): array
     {
         return [
-            'free_weeks' => 'array',
             'topics' => 'array',
             'source_exported_at' => 'datetime',
             'imported_at' => 'datetime',

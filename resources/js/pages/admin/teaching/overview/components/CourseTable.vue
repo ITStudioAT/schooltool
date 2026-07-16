@@ -3,11 +3,11 @@
         v-if="selected_course"
         variant="overview"
         color="primary"
-        icon="mdi-table-large"
+        :icon="tableView === 'attendance' ? 'mdi-account-check' : 'mdi-table-large'"
         class="w-100"
         :disabled="action != ''">
         <template #title>
-            <div>Tabelle - {{ selected_course.title }}</div>
+            <div>{{ tableView === 'attendance' ? 'Anwesenheiten' : 'Tabelle' }} - {{ selected_course.title }}</div>
         </template>
         <template #header-actions>
             <div class="d-flex align-center ga-1 flex-wrap justify-end">
@@ -21,24 +21,17 @@
         </template>
 
         <v-card
-            class="course-table-view-card mb-3"
+            class="mt-3 mb-3"
             color="primary"
-            data-testid="course-table-view-card"
+            data-testid="course-table-semester-selection"
             variant="tonal">
-            <v-card-text class="d-flex align-center flex-wrap ga-3">
-                <v-tabs
-                    v-model="tableView"
-                    class="course-table-view-tabs"
-                    color="primary"
-                    density="compact"
-                    @update:model-value="changeTableView">
-                    <v-tab value="attendance" prepend-icon="mdi-account-check">
-                        Anwesenheit
-                    </v-tab>
-                    <v-tab value="entries" prepend-icon="mdi-format-list-bulleted">
-                        Einträge
-                    </v-tab>
-                </v-tabs>
+            <v-card-text class="d-flex align-center flex-wrap ga-3 px-3 py-2">
+                <span class="text-caption text-medium-emphasis font-weight-medium">Zeitraum:</span>
+                <v-btn-toggle v-model="selectedSemester" mandatory density="compact" color="primary" variant="tonal">
+                    <v-btn :value="1" size="small">1. Sem</v-btn>
+                    <v-btn :value="2" size="small">2. Sem</v-btn>
+                    <v-btn :value="3" size="small">Sem 1+2</v-btn>
+                </v-btn-toggle>
             </v-card-text>
         </v-card>
 
@@ -121,10 +114,15 @@
                                     @keydown.space.prevent="openWorkDialog(courseDate)">
                                     <div class="course-table-work-list">
                                         <v-icon
-                                            v-if="!courseWorksForDate(courseDate).length"
                                             class="course-table-work-empty-icon"
                                             color="primary"
-                                            size="18">
+                                            role="button"
+                                            size="18"
+                                            tabindex="0"
+                                            :aria-label="`${compactCourseDateTitle(courseDate)}: neue Arbeit anlegen`"
+                                            @click.stop="openNewWorkDialog(courseDate)"
+                                            @keydown.enter.stop.prevent="openNewWorkDialog(courseDate)"
+                                            @keydown.space.stop.prevent="openNewWorkDialog(courseDate)">
                                             mdi-plus-circle-outline
                                         </v-icon>
                                         <div
@@ -1162,20 +1160,21 @@
                         <div class="text-caption font-weight-bold text-medium-emphasis mb-2">Vorhandene Einträge</div>
                         <div v-if="cellEntries.length" class="course-table-cell-entry-list" data-testid="course-table-cell-entry-list">
                             <div
-                                v-for="entry in cellEntries"
+                                v-for="entry in visibleCellEntries"
                                 :key="entry.uid"
                                 class="course-table-cell-entry course-table-cell-entry--selectable"
                                 :class="{
                                     'course-table-cell-entry--selected': selectedCellEntryUid === entry.uid,
-                                }">
+                                }"
+                                :data-testid="`course-table-cell-entry-card-${entry.uid}`"
+                                :aria-expanded="isCellEntryExpanded(entry)"
+                                :role="isCellEntryExpanded(entry) ? undefined : 'button'"
+                                :tabindex="isCellEntryExpanded(entry) ? undefined : 0"
+                                @click="toggleCellEntry(entry)"
+                                @keydown.enter.self.prevent="toggleCellEntry(entry)"
+                                @keydown.space.self.prevent="toggleCellEntry(entry)">
                                 <div
-                                    class="course-table-cell-entry-summary d-flex align-center flex-wrap ga-2"
-                                    :data-testid="`course-table-cell-entry-card-${entry.uid}`"
-                                    role="button"
-                                    tabindex="0"
-                                    @click="toggleCellEntry(entry)"
-                                    @keydown.enter.self.prevent="toggleCellEntry(entry)"
-                                    @keydown.space.self.prevent="toggleCellEntry(entry)">
+                                    class="course-table-cell-entry-summary d-flex align-center flex-wrap ga-2">
                                     <v-chip size="x-small" :color="cellEntryColor(entry)" variant="tonal">
                                         {{ cellEntryKindLabel(entry) }}
                                     </v-chip>
@@ -1190,10 +1189,6 @@
                                     <v-chip v-if="entry.source === 'course_work'" size="x-small" color="info" variant="outlined">
                                         Aus Arbeit
                                     </v-chip>
-                                    <v-spacer />
-                                    <v-icon size="18">
-                                        {{ isCellEntryExpanded(entry) ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
-                                    </v-icon>
                                 </div>
                                 <div
                                     v-if="cellEntryListComment(entry)"
@@ -1204,7 +1199,8 @@
                                 <div
                                     v-if="isCellEntryExpanded(entry) && entry.source === 'course_work' && courseWorkForCellEntry(entry)"
                                     class="course-table-cell-work-entry mt-3"
-                                    :data-testid="`course-table-cell-work-entry-${entry.uid}`">
+                                    :data-testid="`course-table-cell-work-entry-${entry.uid}`"
+                                    @click.stop>
                                     <div class="course-table-cell-work-info-grid">
                                         <div>
                                             <div class="text-caption text-medium-emphasis">Titel</div>
@@ -1343,7 +1339,8 @@
                                 <div
                                     v-if="entryFormOpen && entryForm.uid === entry.uid"
                                     class="course-table-cell-entry-form mt-3"
-                                    :data-testid="`course-table-cell-entry-edit-form-${entry.uid}`">
+                                    :data-testid="`course-table-cell-entry-edit-form-${entry.uid}`"
+                                    @click.stop>
                                     <div class="text-subtitle-2 font-weight-bold mb-3">Eintrag bearbeiten</div>
                                     <div class="text-caption text-medium-emphasis mb-1">Typ</div>
                                     <div class="course-table-entry-type-rows mb-3">
@@ -1563,6 +1560,25 @@ const courseContentBlockedTags = new Set([
 export default {
     components: { ItsRichTextEditor },
 
+    emits: ['update:activeSemester'],
+
+    props: {
+        activeSemester: {
+            type: Number,
+            default: 3,
+            validator: (value) => [1, 2, 3].includes(value),
+        },
+        semesterTwoStartDate: {
+            type: String,
+            default: null,
+        },
+        view: {
+            type: String,
+            default: 'entries',
+            validator: (value) => ['attendance', 'entries'].includes(value),
+        },
+    },
+
     data() {
         return {
             bulkAttendanceDialog: {
@@ -1621,7 +1637,7 @@ export default {
                 open: false,
             },
             savingAttendanceCells: {},
-            tableView: 'attendance',
+            tableView: 'entries',
             workDeleting: false,
             workDialog: {
                 courseDate: null,
@@ -1663,6 +1679,7 @@ export default {
     },
 
     beforeMount() {
+        this.restoreTableView(this.view)
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
         this.courseStore = useCourseStore()
         this.entryStore = useCourseStudentEntryStore()
@@ -1671,7 +1688,6 @@ export default {
 
     async mounted() {
         this.courseDateStore = useCourseDateStore()
-        this.restoreTableView(this.$route?.query?.view)
         if (this.tableView === 'entries') {
             await this.loadCourseTableData()
         } else {
@@ -1681,10 +1697,12 @@ export default {
     },
 
     watch: {
-        async '$route.query.view'(view) {
+        async view(view) {
             this.restoreTableView(view)
             if (this.tableView === 'entries') {
                 await this.loadCourseTableData()
+            } else {
+                await this.loadCourseWorks()
             }
         },
         courseDateScrollSignature() {
@@ -1720,6 +1738,14 @@ export default {
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useCourseStore, ['selected_course', 'students_sort_mode', 'uses_entry_areas_for_grading_schema']),
         ...mapWritableState(useCourseWorkStore, ['courseWorks']),
+        selectedSemester: {
+            get() {
+                return this.activeSemester
+            },
+            set(value) {
+                this.$emit('update:activeSemester', Number(value))
+            },
+        },
         courseDateScrollSignature() {
             const courseId = this.selected_course?.id || ''
             const courseDates = this.sortedCourseDates
@@ -1729,14 +1755,28 @@ export default {
         },
         sortedCourseDates() {
             const dates = Array.isArray(this.selected_course?.course_dates) ? [...this.selected_course.course_dates] : []
-
-            return dates.sort((first, second) => {
+            const sortedDates = dates.sort((first, second) => {
                 const firstDate = String(first?.date || '')
                 const secondDate = String(second?.date || '')
                 const dateComparison = firstDate.localeCompare(secondDate)
                 if (dateComparison !== 0) return dateComparison
 
                 return Number(first?.id || 0) - Number(second?.id || 0)
+            })
+            const selectedSemester = Number(this.activeSemester)
+            const semesterTwoStartDate = String(this.semesterTwoStartDate || '').slice(0, 10)
+
+            if (![1, 2].includes(selectedSemester) || !/^\d{4}-\d{2}-\d{2}$/.test(semesterTwoStartDate)) {
+                return sortedDates
+            }
+
+            return sortedDates.filter((courseDate) => {
+                const date = String(courseDate?.date || '').slice(0, 10)
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return true
+
+                return selectedSemester === 1
+                    ? date < semesterTwoStartDate
+                    : date >= semesterTwoStartDate
             })
         },
         sortedSelectedStudents() {
@@ -1756,6 +1796,13 @@ export default {
         },
         cellEntries() {
             return this.entriesForCell(this.entryDialog.student, this.entryDialog.courseDate)
+        },
+        visibleCellEntries() {
+            if (!this.selectedCellEntryUid) return this.cellEntries
+
+            const selectedEntry = this.cellEntries.find((entry) => entry.uid === this.selectedCellEntryUid)
+
+            return selectedEntry ? [selectedEntry] : this.cellEntries
         },
         selectedTeachingSchema() {
             return this.selected_course?.teacher_teaching_schema || null
@@ -2032,25 +2079,7 @@ export default {
             return courseDate?.status?.includes('entfaellt') ? 'Entfällt' : 'Frei'
         },
         restoreTableView(view) {
-            this.tableView = ['entries', 'plain'].includes(view) ? 'entries' : 'attendance'
-        },
-        changeTableView(view) {
-            const nextView = view === 'entries' ? 'entries' : 'attendance'
-            this.tableView = nextView
-
-            if (nextView === 'entries') {
-                this.loadCourseTableData()
-            }
-
-            if (!this.$route || !this.$router) return
-
-            this.$router.replace({
-                path: this.$route.path,
-                query: {
-                    ...this.$route.query,
-                    view: nextView,
-                },
-            }).catch(() => {})
+            this.tableView = view === 'attendance' ? 'attendance' : 'entries'
         },
         openEntryDialog(student, courseDate) {
             if (this.tableView !== 'entries') return
@@ -2399,6 +2428,14 @@ export default {
             if (shouldStartCreating) {
                 this.startCreatingDateWork()
             }
+        },
+        openNewWorkDialog(courseDate) {
+            this.cancelDateWorkForm()
+            this.workDialog = {
+                courseDate,
+                open: true,
+            }
+            this.startCreatingDateWork()
         },
         closeWorkDialog() {
             if (this.workSaving || this.workDeleting) return
@@ -3701,7 +3738,7 @@ export default {
             return {
                 Benotung: 'primary',
                 Verhalten: 'warning',
-                Weitere: 'secondary',
+                Weitere: 'error',
                 Verständigung: 'info',
             }[category] || 'default'
         },
@@ -4169,14 +4206,6 @@ export default {
 </script>
 
 <style scoped>
-.course-table-view-card {
-    border: 1px solid rgba(37, 99, 235, 0.22);
-}
-
-.course-table-view-tabs {
-    flex-shrink: 0;
-}
-
 .course-table-card {
     border: 1px solid rgba(37, 99, 235, 0.16);
     overflow: hidden;
@@ -4794,16 +4823,6 @@ export default {
     text-align: center;
 }
 
-@media (max-width: 600px) {
-    .course-table-view-tabs {
-        width: 100%;
-    }
-
-    .course-table-view-tabs :deep(.v-tab) {
-        flex: 1;
-    }
-}
-
 .course-table-entry-cell--interactive {
     cursor: pointer;
     outline: none;
@@ -4880,13 +4899,14 @@ export default {
 }
 
 .course-table-entry-type-row[data-category='Weitere'] {
-    background: rgba(var(--v-theme-secondary), 0.065);
-    border-color: rgba(var(--v-theme-secondary), 0.3);
+    background: rgba(var(--v-theme-error), 0.065);
+    border-color: rgba(var(--v-theme-error), 0.3);
+    color: rgb(var(--v-theme-error));
 }
 
 .course-table-entry-type-row[data-category='Weitere'] .course-table-entry-type-category {
-    background: rgba(var(--v-theme-secondary), 0.16);
-    color: rgb(var(--v-theme-secondary));
+    background: rgba(var(--v-theme-error), 0.16);
+    color: rgb(var(--v-theme-error));
 }
 
 @media (max-width: 600px) {
@@ -5044,7 +5064,8 @@ export default {
     transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.course-table-cell-entry--selectable .course-table-cell-entry-summary {
+.course-table-cell-entry--selectable,
+.course-table-cell-entry--selected .course-table-cell-entry-summary {
     cursor: pointer;
 }
 
@@ -5054,7 +5075,7 @@ export default {
     box-shadow: 0 3px 12px rgba(var(--v-theme-primary), 0.1);
 }
 
-.course-table-cell-entry-summary:focus-visible {
+.course-table-cell-entry:focus-visible {
     border-radius: 6px;
     outline: 2px solid rgb(var(--v-theme-primary));
     outline-offset: 3px;

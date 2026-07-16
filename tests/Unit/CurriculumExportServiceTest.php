@@ -44,7 +44,6 @@ beforeEach(function () {
         'title' => 'Deutsch 5A',
         'description' => 'Jahresplanung',
         'semester_count' => 2,
-        'free_weeks' => ['2026-02-16'],
         'topics' => [
             [
                 'id' => 'topic-1',
@@ -98,7 +97,7 @@ it('uses the curriculum owner name and school when saving the pdf export', funct
             && str_contains($pdf->html, "@font-face {\n    font-family: 'CurriculumPdfArial';")
             && str_contains($pdf->html, base64_encode('fake-arial-regular'))
             && str_contains($pdf->html, base64_encode('fake-arial-bold'))
-            && str_contains($pdf->html, '.topic-assignment {')
+            && ! str_contains($pdf->html, '.topic-assignment {')
             && str_contains($pdf->html, "font-family: 'CurriculumPdfArial', Arial, Helvetica, sans-serif !important;")
             && str_contains($pdf->html, 'font-weight: 400;')
             && ! str_contains($pdf->html, ".topic-assignment {\n            font-family: 'CurriculumPdfArial', Arial, Helvetica, sans-serif !important;\n            color: #6366f1;\n            font-size: 10pt;\n            font-weight: 600;")
@@ -129,5 +128,6 @@ it('uses the curriculum owner name and school in the word export', function () {
     expect($documentXml)->toBeString()
         ->and($documentXml)->toContain('Lehrperson: '.$this->curriculumOwner->full_name)
         ->and($documentXml)->toContain('Schule: Curriculum Test School')
+        ->and($documentXml)->not->toContain('2026-02-16')
         ->and($documentXml)->not->toContain('Lehrperson: '.$this->loggedInUser->full_name);
 });

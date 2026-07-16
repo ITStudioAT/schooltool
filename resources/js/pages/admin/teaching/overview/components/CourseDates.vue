@@ -1,35 +1,20 @@
 <template>
-    <ItsGridBox
-        variant="overview"
-        color="primary"
-        icon="mdi-calendar"
-        class="w-100"
-        v-if="selected_course"
-        :disabled="isGridDisabled">
-        <template #title>
-            <div class="course-dates-title-row d-flex align-center flex-wrap ga-3">
-                <div>Termine – {{ selected_course.title }} ({{ selectedCourseClasses }})</div>
-                <div v-if="semesterCount === 2" class="course-date-semester-selection d-flex justify-start">
-                    <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
-                        <v-btn :value="1" size="small">1. Sem</v-btn>
-                        <v-btn :value="2" size="small">2. Sem</v-btn>
-                        <v-btn :value="3" size="small">Sem 1+2</v-btn>
-                    </v-btn-toggle>
-                </div>
-            </div>
-        </template>
-        <template #header-actions>
-            <v-btn
-                v-if="totalCourseDatesCount"
-                icon="mdi-calendar-remove"
-                size="small"
-                color="error"
-                variant="tonal"
-                title="Alle Termine löschen"
-                :disabled="isBusyDateUi || action !== ''"
-                @click="deleteAllDatesDialogOpen = true" />
-            <v-btn icon="mdi-plus" size="small" variant="tonal" @click="newDates" :disabled="isEditingContent || isSavingContent || action === 'new_course_dates'" />
-        </template>
+    <v-card v-if="selected_course" class="w-100" color="transparent" flat rounded="0" :disabled="isGridDisabled">
+        <v-card
+            v-if="semesterCount === 2"
+            class="mt-3 mb-3"
+            color="primary"
+            data-testid="course-dates-semester-selection"
+            variant="tonal">
+            <v-card-text class="d-flex align-center flex-wrap ga-3 px-3 py-2">
+                <span class="text-caption text-medium-emphasis font-weight-medium">Zeitraum:</span>
+                <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary" variant="tonal">
+                    <v-btn :value="1" size="small">1. Sem</v-btn>
+                    <v-btn :value="2" size="small">2. Sem</v-btn>
+                    <v-btn :value="3" size="small">Sem 1+2</v-btn>
+                </v-btn-toggle>
+            </v-card-text>
+        </v-card>
         <v-card v-if="compactStudentView" tile flat color="transparent" class="w-100" :disabled="action != '' || isSavingContent">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <div class="d-flex flex-wrap align-center ga-2 mt-2 w-100">
@@ -50,23 +35,15 @@
         </v-card>
 
         <!-- Termine (Anzeige) -->
-        <v-card variant="outlined" class="mt-4" v-if="selected_course && action != 'new_course_dates'">
+        <v-card
+            variant="outlined"
+            :class="semesterCount === 2 ? 'mt-0' : 'mt-4'"
+            v-if="selected_course && action != 'new_course_dates'">
             <v-card-title class="text-subtitle-1 d-flex align-center ga-2 flex-wrap">
                 <v-icon size="18">mdi-calendar-check</v-icon>
                 Termine
                 <v-chip v-if="displayedCourseDates?.length" size="x-small" color="primary" variant="tonal">
                     {{ displayedCourseDatesCount }}
-                </v-chip>
-                <v-spacer />
-                <v-chip
-                    v-if="selectedCourseEntryAreaName"
-                    size="small"
-                    color="secondary"
-                    variant="tonal"
-                    class="course-date-entry-area-chip"
-                    prepend-icon="mdi-layers-triple-outline"
-                    title="Zugewiesener Eintragsbereich">
-                    {{ selectedCourseEntryAreaName }}
                 </v-chip>
                 <v-chip
                     v-if="selectedCourseCurriculumTitle"
@@ -78,6 +55,23 @@
                     title="Zugewiesenes Curriculum">
                     {{ selectedCourseCurriculumTitle }}
                 </v-chip>
+                <v-spacer />
+                <v-btn
+                    v-if="totalCourseDatesCount"
+                    icon="mdi-calendar-remove"
+                    size="small"
+                    color="error"
+                    variant="tonal"
+                    title="Alle Termine löschen"
+                    :disabled="isBusyDateUi || action !== ''"
+                    @click="deleteAllDatesDialogOpen = true" />
+                <v-btn
+                    icon="mdi-plus"
+                    size="small"
+                    variant="tonal"
+                    title="Termin hinzufügen"
+                    :disabled="isEditingContent || isSavingContent || action === 'new_course_dates'"
+                    @click="newDates" />
             </v-card-title>
             <v-divider />
             <v-card-text class="pa-0">
@@ -273,43 +267,6 @@
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div
-                                v-if="curriculumEntriesForCourseDate(courseDate).length"
-                                class="course-date-curriculum-bottom pl-1 pr-2 mt-auto"
-                                @click.stop>
-                                <div class="course-date-curriculum-divider">
-                                    <span class="course-date-curriculum-divider__label">CURRICULUM</span>
-                                </div>
-                                <div class="course-date-curriculum-stack">
-                                    <div
-                                        v-for="(entry, entryIndex) in curriculumEntriesForCourseDate(courseDate)"
-                                        :key="`${courseDate.id}-inline-${entryIndex}`"
-                                        class="course-date-curriculum-stack__entry d-flex align-center">
-                                        <v-icon v-if="entry.hasMaterials" size="14" class="mr-1 cursor-pointer course-date-material-icon" @click.stop="openMaterialOverview(entry)" title="Materialien anzeigen">mdi-paperclip</v-icon>
-                                        <span class="flex-grow-1" :class="{ 'text-medium-emphasis': isCurriculumEntryFullyAdopted(courseDate, entry) }">{{ entry.label }}</span>
-                                        <v-btn
-                                            v-if="isCurriculumEntryFullyAdopted(courseDate, entry)"
-                                            icon="mdi-check-circle"
-                                            size="x-small"
-                                            variant="text"
-                                            color="success"
-                                            class="course-date-adopt-btn ml-1"
-                                            style="opacity: 1;"
-                                            title="Bereits übernommen"
-                                            disabled />
-                                        <v-btn
-                                            v-else
-                                            icon="mdi-arrow-down-bold-circle-outline"
-                                            size="x-small"
-                                            variant="text"
-                                            color="primary"
-                                            class="course-date-adopt-btn ml-1"
-                                            title="In Termin-Inhalt übernehmen"
-                                            :disabled="isEditingContent || isSavingContent || adoptSaving"
-                                            @click.stop="openAdoptDialog(courseDate, entry)" />
                                     </div>
                                 </div>
                             </div>
@@ -548,88 +505,7 @@
             </v-card>
         </v-dialog>
 
-        <!-- Adopt Curriculum Content Dialog -->
-        <v-dialog v-model="adoptDialogOpen" max-width="600" persistent>
-            <v-card rounded="xl">
-                <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
-                    <v-icon color="primary" size="22">mdi-arrow-down-bold-circle-outline</v-icon>
-                    Inhalt übernehmen
-                </v-card-title>
-                <v-card-text class="px-4 pb-2">
-                    <div class="text-caption text-medium-emphasis mb-3">
-                        Text bearbeiten und in den Termin-Inhalt übernehmen.
-                    </div>
-                    <v-textarea
-                        v-model="adoptDialogText"
-                        label="Inhalt"
-                        variant="outlined"
-                        rows="3"
-                        auto-grow
-                        :disabled="adoptSaving" />
-                    <div v-if="adoptDialogEntry?.hasMaterials && adoptDialogEntry?.materials?.length" class="mt-2">
-                        <div class="text-caption text-medium-emphasis mb-1">
-                            <v-icon size="14" class="mr-1">mdi-paperclip</v-icon>
-                            Materialien als unabhängige Kopie übernehmen:
-                        </div>
-                        <div
-                            v-for="mat in adoptDialogEntry.materials"
-                            :key="`adopt-mat-${mat.id}`"
-                            class="ml-1">
-                            <v-checkbox
-                                v-model="adoptDialogSelectedMaterialIds"
-                                :value="mat.id"
-                                :disabled="adoptSaving || isAdoptDialogMaterialFullyAdopted(mat)"
-                                density="compact"
-                                hide-details>
-                                <template #label>
-                                    <div class="d-flex align-center ga-2">
-                                        <v-icon size="16" :color="isAdoptDialogMaterialFullyAdopted(mat) ? 'success' : 'primary'">
-                                            {{ isAdoptDialogMaterialFullyAdopted(mat) ? 'mdi-check-circle' : 'mdi-package-variant-closed' }}
-                                        </v-icon>
-                                        <span class="text-body-2" :class="{ 'text-medium-emphasis': isAdoptDialogMaterialFullyAdopted(mat) }">{{ mat.title }}</span>
-                                        <v-chip v-if="mat.type" size="x-small" variant="tonal" color="primary">{{ mat.type }}</v-chip>
-                                        <v-chip v-if="isAdoptDialogMaterialFullyAdopted(mat)" size="x-small" variant="tonal" color="success">vollständig übernommen</v-chip>
-                                    </div>
-                                </template>
-                            </v-checkbox>
-                            <div
-                                v-if="isAdoptDialogMaterialSelected(mat.id) && adoptDialogMaterialAttachments(mat).length"
-                                class="adopt-material-attachments ml-7 mt-n1 mb-2">
-                                <v-checkbox
-                                    v-for="attachment in adoptDialogMaterialAttachments(mat)"
-                                    :key="`adopt-mat-${mat.id}-att-${attachment.id}`"
-                                    v-model="adoptDialogSelectedAttachmentIdsByMaterial[mat.id]"
-                                    :value="attachment.id"
-                                    :disabled="adoptSaving"
-                                    density="compact"
-                                    hide-details>
-                                    <template #label>
-                                        <div class="d-flex align-center ga-2">
-                                            <v-icon size="14">{{ attachmentIcon(attachment) }}</v-icon>
-                                            <span class="text-caption">{{ attachment.name }}</span>
-                                            <span class="text-caption text-medium-emphasis">
-                                                {{ attachment.mime_type || 'Datei' }}<span v-if="attachment.size_bytes"> · {{ formatFileSize(attachment.size_bytes) }}</span>
-                                            </span>
-                                        </div>
-                                    </template>
-                                </v-checkbox>
-                            </div>
-                            <div
-                                v-else-if="isAdoptDialogMaterialSelected(mat.id) && adoptDialogMaterialLoading"
-                                class="ml-7 mt-n1 mb-2 text-caption text-medium-emphasis">
-                                Anhänge werden geladen...
-                            </div>
-                        </div>
-                    </div>
-                </v-card-text>
-                <v-card-actions class="px-4 pb-4">
-                    <v-btn variant="tonal" :disabled="adoptSaving" @click="closeAdoptDialog">Abbrechen</v-btn>
-                    <v-spacer />
-                    <v-btn color="primary" variant="flat" :loading="adoptSaving" :disabled="!adoptDialogText.trim()" @click="confirmAdopt">Übernehmen</v-btn>
-                </v-card-actions>
-            </v-card>
-        </v-dialog>
-    </ItsGridBox>
+    </v-card>
 </template>
 
 <script>
@@ -641,9 +517,7 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
-import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import axios from 'axios'
-import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
@@ -660,7 +534,7 @@ export default {
         },
     },
 
-    components: { ItsGridBox, ItsRichTextEditor },
+    components: { ItsRichTextEditor },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -668,13 +542,11 @@ export default {
         this.courseDateStore = useCourseDateStore()
         this.courseWorkStore = useCourseWorkStore()
         this.teachingStore = useTeachingStore()
-        this.curriculumStore = useCurriculumStore()
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
         }
-        await this.loadSelectedCourseCurriculumDetail()
         await this.loadCourseWorks()
-        this.activeSemester = this.config?.user?.teaching_active_semester || 1
+        this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
     },
 
     mounted() {
@@ -692,9 +564,6 @@ export default {
             courseDateStore: null,
             courseWorkStore: null,
             teachingStore: null,
-            curriculumStore: null,
-            selectedCourseCurriculumDetail: null,
-            selectedCourseCurriculumDetailLoadingId: null,
             activeSemester: null,
             is_valid: false,
             delete_date_id: null,
@@ -738,11 +607,6 @@ export default {
         ...mapWritableState(useCourseStore, ['selected_course', 'show_dates', 'show_students', 'show_works']),
         ...mapWritableState(useCourseDateStore, ['courseDates', 'selected_courseDate']),
         ...mapWritableState(useCourseWorkStore, ['courseWorks', 'selected_courseWork']),
-        selectedCourseClasses() {
-            const classes = this.selected_course?.classes
-            if (!classes?.length) return ''
-            return classes.join(', ')
-        },
         selectedCourseSchema() {
             const courseSchema = this.selected_course?.teacher_teaching_schema
             if (courseSchema?.id) {
@@ -769,14 +633,6 @@ export default {
             return null
         },
         selectedCourseCurriculumForContent() {
-            const selectedCurriculumId = this.selectedCourseCurriculumId
-            if (
-                selectedCurriculumId
-                && Number(this.selectedCourseCurriculumDetail?.id) === Number(selectedCurriculumId)
-            ) {
-                return this.selectedCourseCurriculumDetail
-            }
-
             return this.selected_course?.teaching_curriculum || null
         },
         selectedCourseCurriculumTitle() {
@@ -784,9 +640,6 @@ export default {
             if (!curriculum?.id) return ''
 
             return curriculum.title || `Curriculum #${curriculum.id}`
-        },
-        selectedCourseEntryAreaName() {
-            return String(this.selected_course?.teaching_entry_area?.name || '').trim()
         },
         semesterCount() {
             const grading = this.selectedCourseSchema?.grading || {}
@@ -798,7 +651,7 @@ export default {
         filteredCourseDates() {
             const dates = this.selected_course?.course_dates || []
             if (this.semesterCount === 1) return dates
-            const semester = this.activeSemester
+            const semester = Number(this.activeSemester)
             if (!semester || semester === 3) return dates
             if (!this.sem2StartDate) return dates
             return dates.filter((d) => {
@@ -885,13 +738,8 @@ export default {
         selected_course: {
             immediate: true,
             async handler(course) {
-                if (!course) {
-                    this.selectedCourseCurriculumDetail = null
-                    this.selectedCourseCurriculumDetailLoadingId = null
-                    return
-                }
+                if (!course) return
 
-                await this.loadSelectedCourseCurriculumDetail()
                 await this.loadCourseWorks()
                 this.scrollToHighlightedDate()
                 if (this.selected_courseDate) return
@@ -902,12 +750,6 @@ export default {
                 if (date) this.selectCourseDate(date)
             },
         },
-        selectedCourseCurriculumId: {
-            immediate: true,
-            async handler() {
-                await this.loadSelectedCourseCurriculumDetail()
-            },
-        },
         activeSemester(val) {
             if (val !== this.config?.user?.teaching_active_semester) {
                 this.teachingStore.saveActiveSemester(val)
@@ -915,7 +757,7 @@ export default {
             this.scrollToHighlightedDate()
         },
         'config.user.teaching_active_semester'(val) {
-            if (val) this.activeSemester = val
+            if (val) this.activeSemester = Number(val) || 1
         },
         dateRangeSelection(val) {
             if (Array.isArray(val) && val.length) return
@@ -948,42 +790,6 @@ export default {
             if (!target) return null
 
             return target.$el || target
-        },
-        async loadSelectedCourseCurriculumDetail() {
-            const curriculumId = this.selectedCourseCurriculumId
-            if (!curriculumId || !this.curriculumStore) {
-                this.selectedCourseCurriculumDetail = null
-                this.selectedCourseCurriculumDetailLoadingId = null
-                return
-            }
-
-            if (
-                Number(this.selectedCourseCurriculumDetail?.id) === Number(curriculumId)
-                && Array.isArray(this.selectedCourseCurriculumDetail?.topics)
-            ) {
-                return
-            }
-
-            if (Number(this.selectedCourseCurriculumDetailLoadingId) === Number(curriculumId)) {
-                return
-            }
-
-            const inlineCurriculum = this.selected_course?.teaching_curriculum
-            if (Number(inlineCurriculum?.id) === Number(curriculumId) && Array.isArray(inlineCurriculum?.topics)) {
-                this.selectedCourseCurriculumDetail = inlineCurriculum
-                this.selectedCourseCurriculumDetailLoadingId = null
-                return
-            }
-
-            this.selectedCourseCurriculumDetailLoadingId = curriculumId
-            try {
-                const curriculum = await this.curriculumStore.show(curriculumId)
-                if (Number(this.selectedCourseCurriculumId) === Number(curriculumId)) {
-                    this.selectedCourseCurriculumDetail = curriculum
-                }
-            } finally {
-                this.selectedCourseCurriculumDetailLoadingId = null
-            }
         },
         weekStartKey(date) {
             if (!date) {
@@ -1092,15 +898,6 @@ export default {
             const curriculum = this.selectedCourseCurriculumForContent
             if (!weekKey || !curriculum) {
                 return []
-            }
-
-            const freeWeekKeys = [...new Set(
-                (Array.isArray(curriculum.free_weeks) ? curriculum.free_weeks : [])
-                    .filter(Boolean)
-                    .map((entryWeekKey) => String(entryWeekKey).trim())
-            )]
-            if (freeWeekKeys.includes(weekKey)) {
-                return [{ label: 'Frei', hasMaterials: false }]
             }
 
             const allWeekKeys = this.schoolyearWeekKeys()
@@ -1949,10 +1746,6 @@ export default {
 </script>
 
 <style scoped>
-.course-dates-title-row {
-    min-width: 0;
-}
-
 .course-dates-grid {
     padding: 8px;
     gap: 8px;

@@ -2,16 +2,6 @@
     <div class="curricula-overview">
         <v-sheet rounded="xl" class="curricula-overview__toolbar pa-3 mb-3">
             <div class="curricula-overview__toolbar-inner">
-                <v-text-field
-                    v-model="searchInput"
-                    density="compact"
-                    hide-details
-                    clearable
-                    variant="solo-filled"
-                    placeholder="Curricula suchen..."
-                    prepend-inner-icon="mdi-magnify"
-                    class="curricula-overview__search"
-                    @update:modelValue="onSearchChanged" />
                 <v-btn
                     color="success"
                     variant="flat"
@@ -56,8 +46,7 @@
                             </template>
                             <v-list-item-title class="text-body-2 font-weight-bold">{{ curriculum.title }}</v-list-item-title>
                             <v-list-item-subtitle class="text-caption">
-                                <span v-if="curriculum.description">{{ curriculum.description }} · </span>
-                                <span class="curricula-overview__semester-badge">{{ curriculum.semester_count ?? 2 }} Semester</span>
+                                <span v-if="curriculum.description">{{ curriculum.description }}</span>
                             </v-list-item-subtitle>
                             <template #append>
                                 <div class="curricula-overview__item-actions" @click.stop>
@@ -113,13 +102,13 @@
                         </v-btn>
                     </div>
 
-                    <div v-if="!filteredImportedCurricula.length" class="curricula-overview__empty text-center py-6">
+                    <div v-if="!imported_curricula.length" class="curricula-overview__empty text-center py-6">
                         <v-icon size="40" color="primary" class="mb-2">mdi-tray-arrow-down</v-icon>
                         <div class="text-body-2 font-weight-medium">Noch keine importierten Curricula vorhanden.</div>
                         <div class="text-caption">Importiere ein Curriculum als getrennte Vorlage.</div>
                     </div>
                     <v-list v-else bg-color="transparent" density="compact" class="py-0">
-                        <template v-for="curriculum in filteredImportedCurricula" :key="curriculum.id">
+                        <template v-for="curriculum in imported_curricula" :key="curriculum.id">
                             <v-list-item
                                 class="curricula-overview__item mb-2 px-3"
                                 min-height="52"
@@ -130,8 +119,7 @@
                                 <v-list-item-title class="text-body-2 font-weight-bold">{{ curriculum.title }}</v-list-item-title>
                                 <v-list-item-subtitle class="text-caption">
                                     <span v-if="curriculum.description">{{ curriculum.description }} · </span>
-                                    <span class="curricula-overview__semester-badge">{{ curriculum.semester_count ?? 2 }} Semester</span>
-                                    <span v-if="curriculum.imported_at"> · importiert am {{ formatDateTime(curriculum.imported_at) }}</span>
+                                    <span v-if="curriculum.imported_at">importiert am {{ formatDateTime(curriculum.imported_at) }}</span>
                                 </v-list-item-subtitle>
                                 <template #append>
                                     <div class="curricula-overview__import-actions">
@@ -173,7 +161,7 @@
                                     class="curricula-overview__import-preview-wrap mb-2">
                                     <div class="curricula-overview__import-preview">
                                         <div class="text-caption font-weight-medium mb-2">
-                                            {{ importedTopics(curriculum).length }} Themen · {{ importedUnitCount(curriculum) }} Einheiten · {{ importedFreeWeekCount(curriculum) }} freie Wochen
+                                            {{ importedTopics(curriculum).length }} Themen · {{ importedUnitCount(curriculum) }} Einheiten
                                         </div>
                                         <div v-if="!importedTopics(curriculum).length" class="text-caption">
                                             Keine Themen im importierten Curriculum.
@@ -183,18 +171,11 @@
                                                 v-for="(topic, topicIndex) in importedTopics(curriculum)"
                                                 :key="topic.id || `topic-${curriculum.id}-${topicIndex}`"
                                                 class="curricula-overview__import-preview-topic pa-2 mb-2">
-                                                <div class="d-flex align-center justify-space-between ga-2">
+                                                <div>
                                                 <div class="text-body-2 font-weight-medium">
                                                     {{ topicIndex + 1 }}. {{ topic.title || 'Ohne Titel' }}
                                                 </div>
-                                                <v-chip
-                                                    v-if="shouldShowTopicAssignmentChip(topic)"
-                                                    size="x-small"
-                                                    color="primary"
-                                                    variant="tonal">
-                                                    {{ formatImportAssignment(topic) }}
-                                                </v-chip>
-                                            </div>
+                                                </div>
                                                 <div
                                                     v-if="importedTopicUnits(topic).length"
                                                     class="curricula-overview__import-preview-units mt-2">
@@ -203,7 +184,6 @@
                                                         :key="unit.id || `topic-${topicIndex}-unit-${unitIndex}`"
                                                         class="curricula-overview__import-preview-unit text-caption">
                                                         <span class="font-weight-medium">{{ topicIndex + 1 }}.{{ unitIndex + 1 }} {{ unit.title || 'Ohne Titel' }}</span>
-                                                        <span class="curricula-overview__import-preview-unit-meta">{{ formatImportAssignment(unit) }}</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -241,17 +221,6 @@
                         auto-grow
                         :error-messages="formErrors.description"
                         class="mb-2" />
-                    <div class="text-body-2 font-weight-medium mb-1">Anzahl Semester</div>
-                    <v-btn-toggle
-                        v-model="form.semester_count"
-                        mandatory
-                        color="primary"
-                        density="comfortable"
-                        rounded="lg"
-                        class="mb-1">
-                        <v-btn :value="1" variant="outlined" class="text-none px-6">1 Semester</v-btn>
-                        <v-btn :value="2" variant="outlined" class="text-none px-6">2 Semester</v-btn>
-                    </v-btn-toggle>
                 </v-card-text>
                 <v-card-actions class="px-4 pb-4">
                     <v-btn variant="tonal" :disabled="saving" @click="closeDialog">Abbrechen</v-btn>
@@ -358,14 +327,12 @@ export default {
     data() {
         return {
             curriculumStore: null,
-            searchInput: '',
-            searchTimer: null,
             currentPage: 1,
             dialogOpen: false,
             importDialogOpen: false,
             importLoading: false,
             editing: null,
-            form: { title: '', description: '', semester_count: 2 },
+            form: { title: '', description: '' },
             formErrors: {},
             saving: false,
             deleteDialogOpen: false,
@@ -381,26 +348,10 @@ export default {
 
     computed: {
         ...mapState(useCurriculumStore, ['curricula', 'imported_curricula', 'meta']),
-        filteredImportedCurricula() {
-            const term = this.searchInput.trim().toLowerCase()
-            if (!term) {
-                return this.imported_curricula
-            }
-
-            return this.imported_curricula.filter((curriculum) => {
-                const haystack = [curriculum.title, curriculum.description]
-                    .filter(Boolean)
-                    .join(' ')
-                    .toLowerCase()
-
-                return haystack.includes(term)
-            })
-        },
     },
 
     async beforeMount() {
         this.curriculumStore = useCurriculumStore()
-        this.searchInput = this.curriculumStore.search
         this.currentPage = this.curriculumStore.meta.current_page || 1
         await Promise.all([
             this.curriculumStore.index({ page: this.currentPage }),
@@ -414,17 +365,9 @@ export default {
             this.currentPage = page
             await this.curriculumStore.index({ page })
         },
-        onSearchChanged(value) {
-            this.curriculumStore.search = value || ''
-            if (this.searchTimer) clearTimeout(this.searchTimer)
-            this.searchTimer = setTimeout(async () => {
-                this.currentPage = 1
-                await this.curriculumStore.index({ page: 1, search: this.curriculumStore.search })
-            }, 300)
-        },
         openCreateDialog() {
             this.editing = null
-            this.form = { title: '', description: '', semester_count: 2 }
+            this.form = { title: '', description: '' }
             this.formErrors = {}
             this.dialogOpen = true
         },
@@ -433,7 +376,6 @@ export default {
             this.form = {
                 title: curriculum.title || '',
                 description: curriculum.description || '',
-                semester_count: curriculum.semester_count ?? 2,
             }
             this.formErrors = {}
             this.dialogOpen = true
@@ -517,9 +459,6 @@ export default {
         importedUnitCount(curriculum) {
             return this.importedTopics(curriculum)
                 .reduce((count, topic) => count + this.importedTopicUnits(topic).length, 0)
-        },
-        importedFreeWeekCount(curriculum) {
-            return Array.isArray(curriculum?.free_weeks) ? curriculum.free_weeks.length : 0
         },
         compactImportKeys(values, maxVisible = 3) {
             const normalized = values
@@ -674,7 +613,7 @@ export default {
                 const result = await this.curriculumStore.adoptImportedCurriculum(curriculum.id)
                 if (result) {
                     this.currentPage = 1
-                    await this.curriculumStore.index({ page: 1, search: this.curriculumStore.search })
+                    await this.curriculumStore.index({ page: 1 })
                     this.$emit('select', result)
                 }
             } finally {
@@ -713,8 +652,6 @@ export default {
                 const payload = {
                     title: this.form.title.trim(),
                     description: this.form.description?.trim() || null,
-                    semester_count: this.form.semester_count ?? 2,
-                    free_weeks: this.editing?.free_weeks ?? [],
                     topics: this.editing?.topics ?? [],
                 }
                 const result = this.editing
@@ -788,13 +725,9 @@ export default {
 .curricula-overview__toolbar-inner {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 12px;
     flex-wrap: wrap;
-}
-
-.curricula-overview__search {
-    flex: 1 1 260px;
-    min-width: 220px;
 }
 
 .curricula-overview__list {

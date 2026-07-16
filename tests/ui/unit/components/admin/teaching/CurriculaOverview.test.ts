@@ -20,6 +20,7 @@ function buildStore() {
                 topics: [],
             },
         ],
+        imported_curricula: [],
         meta: {
             current_page: 1,
             last_page: 1,
@@ -29,6 +30,7 @@ function buildStore() {
         search: '',
         is_loading: false,
         index: vi.fn().mockResolvedValue(true),
+        loadImportedCurricula: vi.fn().mockResolvedValue(true),
         store: vi.fn(),
         update: vi.fn(),
         destroy: vi.fn(),
@@ -44,6 +46,7 @@ function mountCurriculaOverview(store = buildStore()) {
             global: {
                 plugins: [createPinia()],
                 stubs: {
+                    FilePond: { template: '<div />' },
                     'v-btn': { template: '<button @click="$emit(\'click\', $event)"><slot /></button>' },
                     'v-card': { template: '<div><slot /></div>' },
                     'v-card-actions': { template: '<div><slot /></div>' },

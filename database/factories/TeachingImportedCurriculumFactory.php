@@ -28,7 +28,6 @@ class TeachingImportedCurriculumFactory extends Factory
             'title' => $this->faker->words(3, true),
             'description' => $this->faker->sentence(),
             'semester_count' => 2,
-            'free_weeks' => ['2025-10-06'],
             'topics' => [],
             'source_schema_version' => 1,
             'source_exported_at' => Carbon::parse('2026-04-21 10:00:00'),

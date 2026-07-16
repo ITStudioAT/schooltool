@@ -39,6 +39,14 @@ describe('Admin Teaching CourseStore', () => {
         globalThis.axios = axiosMock as never
     })
 
+    it('marks courses without dates as problematic', () => {
+        const store = useCourseStore()
+
+        expect(store.courseHasProblems({ course_dates: [] })).toBe(true)
+        expect(store.courseHasProblems({ course_dates: [{ id: 1 }] })).toBe(false)
+        expect(store.courseHasProblems({})).toBe(false)
+    })
+
     it('refreshCourseById reloads courses and updates selected course with normalized student collections', async () => {
         axiosMock.get.mockResolvedValue({
             data: {
@@ -99,6 +107,9 @@ describe('Admin Teaching CourseStore', () => {
             data: {
                 data: [],
                 classes: ['1A'],
+                class_head_emails: [
+                    { class_name: '1A', email_1: 'first@example.test', email_2: 'second@example.test' },
+                ],
                 entry_areas: [
                     { id: 11, name: 'DGB' },
                     { id: 4, name: 'INF' },
@@ -113,6 +124,9 @@ describe('Admin Teaching CourseStore', () => {
         expect(store.entry_areas).toEqual([
             { id: 11, name: 'DGB' },
             { id: 4, name: 'INF' },
+        ])
+        expect(store.class_head_emails).toEqual([
+            { class_name: '1A', email_1: 'first@example.test', email_2: 'second@example.test' },
         ])
         expect(store.uses_entry_areas_for_grading_schema).toBe(true)
     })

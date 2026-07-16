@@ -80,7 +80,6 @@
                     <h3 class="curricula-print__overview-title mb-1">{{ curriculum.title }}</h3>
                     <p class="curricula-print__overview-meta mb-4">
                         {{ curriculumTopics.length }} Themen
-                        &middot; {{ curriculum.semester_count ?? 2 }} Semester
                     </p>
 
                     <div
@@ -91,12 +90,6 @@
                             <span class="curricula-print__topic-number">{{ topicIndex + 1 }}.</span>
                             <div class="curricula-print__topic-header-content">
                                 <span class="curricula-print__topic-title">{{ topic.title }}</span>
-                                <span v-if="topic.units && topic.units.length && topicDateRange(topic)" class="curricula-print__topic-assignment">
-                                    {{ topicDateRange(topic) }}
-                                </span>
-                                <span v-else-if="assignmentLabel(topic)" class="curricula-print__topic-assignment">
-                                    {{ assignmentLabel(topic) }}
-                                </span>
                             </div>
                         </div>
 
@@ -110,9 +103,6 @@
                                     <v-icon v-if="unit.is_exam" size="14" color="error" class="mr-1">mdi-clipboard-check-outline</v-icon>
                                     {{ unit.title }}
                                     <v-chip v-if="unit.is_exam" size="x-small" color="error" variant="tonal" class="ml-2">Prüfung</v-chip>
-                                </div>
-                                <div v-if="assignmentLabel(unit)" class="curricula-print__unit-assignment">
-                                    {{ assignmentLabel(unit) }}
                                 </div>
                             </div>
                         </div>
@@ -151,9 +141,9 @@ export default {
             printOptions: [
                 {
                     key: 'overview',
-                    label: 'Jahresübersicht',
-                    description: 'Kompakte Übersicht aller Wochen und Themen des gesamten Schuljahres.',
-                    icon: 'mdi-calendar-text-outline',
+                    label: 'Themenübersicht',
+                    description: 'Kompakte Übersicht aller Themen und Einheiten.',
+                    icon: 'mdi-format-list-bulleted',
                 },
             ],
         }
@@ -164,34 +154,6 @@ export default {
         },
     },
     methods: {
-        assignmentLabel(item) {
-            const type = item.assignment_type || 'none'
-            if (type === 'none') return null
-            if (type === 'all_weeks') return 'Ganzes Jahr'
-
-            if (type === 'month') {
-                const monthKeys = Array.isArray(item.month_keys) ? item.month_keys : []
-                if (!monthKeys.length) return null
-                return monthKeys.map((key) => this.monthKeyToFullLabel(key)).join(', ')
-            }
-
-            if (type === 'weeks') {
-                const weekKeys = Array.isArray(item.week_keys) ? item.week_keys : []
-                if (!weekKeys.length) return null
-                return this.weekKeysToLabel(weekKeys)
-            }
-
-            return null
-        },
-        monthKeyToFullLabel(key) {
-            const monthNames = {
-                '01': 'Jänner', '02': 'Februar', '03': 'März', '04': 'April',
-                '05': 'Mai', '06': 'Juni', '07': 'Juli', '08': 'August',
-                '09': 'September', '10': 'Oktober', '11': 'November', '12': 'Dezember',
-            }
-            const parts = key.split('-')
-            return monthNames[parts[1]] || key
-        },
         topicDateRange(topic) {
             const allWeekKeys = []
             const allMonthKeys = []

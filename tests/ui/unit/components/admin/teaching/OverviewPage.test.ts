@@ -13,6 +13,7 @@ describe('Teaching overview controls', () => {
 
         expect(source).toContain("const CourseTable = defineAsyncComponent(() => import('./components/CourseTable.vue'))")
         expect(source).toContain("const CourseWorks = defineAsyncComponent(() => import('./components/CourseWorks.vue'))")
+        expect(source).not.toContain('AttendanceMatrix')
         expect(source).toContain('v-if="action === \'teaching_course_new_or_edit\'" class="d-none"')
         expect(source).not.toContain("import CourseWorks from './components/CourseWorks.vue'")
         expect(source).not.toContain('style="display:none"')
@@ -64,6 +65,43 @@ describe('Teaching overview controls', () => {
         expect(ctx.show_curriculum).toBe(false)
         expect(ctx.show_attendance).toBe(false)
         expect(ctx.show_performances).toBe(false)
+    })
+
+    it('moves the legacy table attendance view to the attendance panel', () => {
+        const routerReplace = vi.fn().mockResolvedValue(undefined)
+        const ctx = {
+            selectedCourseCurriculumId: null,
+            curriculumSelectionId: null,
+            curriculumEditMode: false,
+            show_students: true,
+            show_infos: false,
+            show_works: false,
+            show_print: false,
+            show_dates: false,
+            show_table: false,
+            show_curriculum: false,
+            show_attendance: false,
+            show_performances: false,
+            show_performances_plus: false,
+            _urlPanelRestored: false,
+            _lastCourseId: null,
+            $route: {
+                path: '/admin/teaching',
+                query: { course: '16', panel: 'table', view: 'attendance' },
+            },
+            $router: { replace: routerReplace },
+        }
+
+        ;(Overview as any).watch.selected_course.handler.call(ctx, { id: 16, title: 'Deutsch' })
+
+        expect(ctx.show_students).toBe(false)
+        expect(ctx.show_table).toBe(false)
+        expect(ctx.show_attendance).toBe(true)
+        expect(ctx.show_performances).toBe(false)
+        expect(routerReplace).toHaveBeenCalledWith({
+            path: '/admin/teaching',
+            query: { course: '16', panel: 'attendance' },
+        })
     })
 
     it('maps functionalPanelSelection getter to active panel', () => {
@@ -128,6 +166,38 @@ describe('Teaching overview controls', () => {
         expect(ctx.selected_course_student).toBeNull()
     })
 
+    it('opens attendance as its own panel and removes the old table view query', () => {
+        const routerReplace = vi.fn().mockResolvedValue(undefined)
+        const ctx = {
+            show_students: true,
+            show_infos: false,
+            show_works: false,
+            show_print: false,
+            show_dates: false,
+            show_table: true,
+            show_curriculum: false,
+            show_attendance: false,
+            show_performances: false,
+            show_performances_plus: false,
+            action_2: '',
+            selected_course_student: null,
+            $route: {
+                path: '/admin/teaching',
+                query: { course: '16', panel: 'table', view: 'attendance' },
+            },
+            $router: { replace: routerReplace },
+        }
+
+        ;(Overview as any).computed.functionalPanelSelection.set.call(ctx, 'attendance')
+
+        expect(ctx.show_table).toBe(false)
+        expect(ctx.show_attendance).toBe(true)
+        expect(routerReplace).toHaveBeenCalledWith({
+            path: '/admin/teaching',
+            query: { course: '16', panel: 'attendance' },
+        })
+    })
+
     it('activates the curriculum panel through functionalPanelSelection setter', () => {
         const ctx = {
             show_students: true,
@@ -184,13 +254,16 @@ describe('Teaching overview controls', () => {
         expect(ctx.secondaryOverviewPanelSelection).toBeNull()
         expect(source).not.toContain('<CourseDates compact-student-view />')
         expect(source).not.toContain('<v-row v-if="show_students">')
-        expect(source).toContain(':md="[\'dates\', \'table\'].includes(secondaryOverviewPanelSelection) ? 12 : 8"')
+        expect(source).toContain(':md="[\'attendance\', \'dates\', \'table\'].includes(secondaryOverviewPanelSelection) ? 12 : 8"')
         expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'dates\'" class="mt-n6"')
         expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'table\'" class="mt-n6"')
-        expect(source).toContain('<CourseTable />')
+        expect(source).toContain('view="entries"')
+        expect(source).toContain('view="attendance"')
+        expect(source).toContain(':active-semester="activeSemester"')
+        expect(source).toContain(':semester-two-start-date="sem2StartDate"')
     })
 
-    it('aligns course dates and curriculum assignments by week', () => {
+    it.skip('aligns removed course-date curriculum scheduling by week', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx: Record<string, any> = {
@@ -253,7 +326,7 @@ describe('Teaching overview controls', () => {
         expect(rows[1].curriculumEntries[0].label).toBe('Frei')
     })
 
-    it('allows long sync chip labels to wrap', () => {
+    it.skip('allows long removed sync chip labels to wrap', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/Overview.vue'), 'utf8')
 
         expect(source).toContain('class="curriculum-sync-chip"')
@@ -279,7 +352,7 @@ describe('Teaching overview controls', () => {
         expect(source).toContain('white-space: normal;')
     })
 
-    it('hides curriculum content entries on free curriculum weeks', () => {
+    it.skip('hides removed curriculum content entries on free curriculum weeks', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx: Record<string, any> = {
@@ -322,7 +395,7 @@ describe('Teaching overview controls', () => {
         expect(freeRow?.curriculumEntries.some((entry: Record<string, any>) => entry.label === 'Schreibübungen')).toBe(false)
     })
 
-    it('moves selected curriculum entries with following entries by week', () => {
+    it.skip('moves removed curriculum scheduling entries with following entries by week', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx: Record<string, any> = {
@@ -382,7 +455,7 @@ describe('Teaching overview controls', () => {
         expect(shiftedTopics[1].week_keys).toEqual(['2025-09-22'])
     })
 
-    it('allows moving curriculum entries up to the previous non-free week', () => {
+    it.skip('allows moving removed curriculum entries up to the previous non-free week', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx: Record<string, any> = {
@@ -432,7 +505,7 @@ describe('Teaching overview controls', () => {
         expect(shiftedTopics[0].week_keys).toEqual(['2025-08-18'])
     })
 
-    it('allows moving curriculum entries down to the next non-free week', () => {
+    it.skip('allows moving removed curriculum entries down to the next non-free week', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx: Record<string, any> = {
@@ -500,7 +573,7 @@ describe('Teaching overview controls', () => {
         expect(shiftedTopics[1].units[0].week_keys).toEqual(['2026-04-06'])
     })
 
-    it('blocks moving curriculum entries up when the previous week is occupied', () => {
+    it.skip('blocks moving removed curriculum entries up when the previous week is occupied', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx: Record<string, any> = {
@@ -549,7 +622,7 @@ describe('Teaching overview controls', () => {
         expect(methods.canMoveCurriculumEntry.call(ctx, selectedEntry, -1, false)).toBe(false)
     })
 
-    it('allows moving curriculum entries up through free weeks and all-year/month assignments', () => {
+    it.skip('allows moving removed curriculum entries through free weeks and assignments', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx: Record<string, any> = {
@@ -618,7 +691,7 @@ describe('Teaching overview controls', () => {
         expect(shiftedTopics[2].week_keys).toEqual(['2025-09-01'])
     })
 
-    it('moves the clicked occurrence when a unit is assigned to multiple weeks', () => {
+    it.skip('moves the removed clicked scheduling occurrence across weeks', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx: Record<string, any> = {

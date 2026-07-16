@@ -16,6 +16,7 @@ use App\Models\Schoolyear;
 use App\Models\TeachingCurriculum;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
@@ -86,71 +87,55 @@ beforeEach(function () {
     $this->otherTeacher->assignRole('teacher');
 });
 
-test('teacher can create a curriculum with free weeks and topics', function () {
+test('teacher can create a curriculum with themes and units only', function () {
     $response = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/admin/teaching/curricula', [
         'title' => 'Deutsch 5A',
-        'description' => 'Jahresplanung',
-        'semester_count' => 2,
-        'free_weeks' => ['2026-02-16', '2025-12-22'],
+        'description' => 'Themenplan',
         'topics' => [
             [
-                'id' => 'topic-all',
+                'id' => 'topic-reading',
                 'title' => 'Leseförderung',
-                'assignment_type' => 'all_weeks',
                 'units' => [
                     [
-                        'id' => 'unit-all-1',
+                        'id' => 'unit-diary',
                         'title' => 'Lesetagebuch',
                         'is_exam' => true,
-                        'assignment_type' => 'month',
-                        'month_keys' => ['2025-09', '2025-10', '2025-09'],
                     ],
                 ],
-            ],
-            [
-                'id' => 'topic-month',
-                'title' => 'Grammatikblock',
-                'assignment_type' => 'month',
-                'month_keys' => ['2025-10', '2025-11', '2025-10'],
-                'units' => [
-                    [
-                        'id' => 'unit-month-1',
-                        'title' => 'Wortarten',
-                        'assignment_type' => 'weeks',
-                        'week_keys' => ['2025-10-06', '2025-10-13'],
-                    ],
-                ],
-            ],
-            [
-                'id' => 'topic-weeks',
-                'title' => 'Projektarbeit',
-                'assignment_type' => 'weeks',
-                'week_keys' => ['2025-12-22', '2026-02-16'],
             ],
         ],
     ]);
 
     $response->assertCreated()
         ->assertJsonPath('data.title', 'Deutsch 5A')
-        ->assertJsonPath('data.free_weeks.0', '2025-12-22')
-        ->assertJsonPath('data.free_weeks.1', '2026-02-16')
-        ->assertJsonPath('data.topics.0.id', 'topic-all')
-        ->assertJsonPath('data.topics.0.assignment_type', 'none')
-        ->assertJsonPath('data.topics.0.units.0.id', 'unit-all-1')
+        ->assertJsonPath('data.topics.0.id', 'topic-reading')
+        ->assertJsonPath('data.topics.0.units.0.id', 'unit-diary')
         ->assertJsonPath('data.topics.0.units.0.is_exam', true)
-        ->assertJsonPath('data.topics.0.units.0.month_key', '2025-09')
-        ->assertJsonPath('data.topics.0.units.0.month_keys.1', '2025-10')
-        ->assertJsonPath('data.topics.1.month_key', '2025-11')
-        ->assertJsonPath('data.topics.1.month_keys.0', '2025-11')
-        ->assertJsonPath('data.topics.1.units.0.week_keys.1', '2025-10-13')
-        ->assertJsonPath('data.topics.2.week_keys.1', '2026-02-16');
+        ->assertJsonMissingPath('data.semester_count')
+        ->assertJsonMissingPath('data.free_weeks')
+        ->assertJsonMissingPath('data.topics.0.assignment_type')
+        ->assertJsonMissingPath('data.topics.0.units.0.week_keys');
 
-    expect(TeachingCurriculum::query()->firstOrFail()->free_weeks)->toBe(['2025-12-22', '2026-02-16'])
-        ->and(TeachingCurriculum::query()->firstOrFail()->topics)->toHaveCount(3)
-        ->and(TeachingCurriculum::query()->firstOrFail()->topics[0]['assignment_type'])->toBe('none')
-        ->and(TeachingCurriculum::query()->firstOrFail()->topics[1]['month_keys'])->toBe(['2025-11'])
-        ->and(TeachingCurriculum::query()->firstOrFail()->topics[0]['units'])->toHaveCount(1)
-        ->and(TeachingCurriculum::query()->firstOrFail()->topics[0]['units'][0]['is_exam'])->toBeTrue();
+    $curriculum = TeachingCurriculum::query()->firstOrFail();
+
+    expect($curriculum->topics)->toHaveCount(1)
+        ->and($curriculum->topics[0])->not->toHaveKeys(['assignment_type', 'month_key', 'month_keys', 'week_keys'])
+        ->and($curriculum->topics[0]['units'][0])->not->toHaveKeys(['assignment_type', 'month_key', 'month_keys', 'week_keys', 'checked_week_keys'])
+        ->and($curriculum->topics[0]['units'][0]['is_exam'])->toBeTrue();
+});
+
+test('curriculum free-week settings are removed', function () {
+    expect(Schema::hasColumn('teaching_curricula', 'free_weeks'))->toBeFalse()
+        ->and(Schema::hasColumn('teaching_imported_curricula', 'free_weeks'))->toBeFalse()
+        ->and(Schema::hasColumn('users', 'teaching_curriculum_free_weeks_template'))->toBeFalse();
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson('/api/admin/teaching/curricula/free-weeks-template')
+        ->assertNotFound();
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->putJson('/api/admin/teaching/curricula/free-weeks-template')
+        ->assertNotFound();
 });
 
 test('teacher can save and load a curriculum free weeks template across schoolyears', function () {
@@ -200,7 +185,7 @@ test('teacher can save and load a curriculum free weeks template across schoolye
                 ],
             ],
         ]);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('teacher creates new curriculum with inherited free weeks template when none are provided', function () {
     $this->teacher->update([
@@ -220,7 +205,6 @@ test('teacher creates new curriculum with inherited free weeks template when non
         'title' => 'Englisch 1A',
         'description' => 'Neue Planung',
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -229,7 +213,7 @@ test('teacher creates new curriculum with inherited free weeks template when non
         ->assertJsonPath('data.free_weeks.1', '2027-01-18');
 
     expect(TeachingCurriculum::query()->firstOrFail()->free_weeks)->toBe(['2026-09-07', '2027-01-18']);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('teacher can update curriculum free weeks and duplicates are normalized', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -239,14 +223,12 @@ test('teacher can update curriculum free weeks and duplicates are normalized', f
         'title' => 'Mathematik 2B',
         'description' => 'Planung',
         'semester_count' => 1,
-        'free_weeks' => ['2026-04-13'],
     ]);
 
     $response = $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/curricula/{$curriculum->id}", [
         'title' => 'Mathematik 2B',
         'description' => 'Planung',
         'semester_count' => 1,
-        'free_weeks' => ['2026-05-04', '2026-04-13', '2026-05-04'],
     ]);
 
     $response->assertOk()
@@ -254,7 +236,7 @@ test('teacher can update curriculum free weeks and duplicates are normalized', f
         ->assertJsonPath('data.free_weeks.1', '2026-05-04');
 
     expect($curriculum->fresh()->free_weeks)->toBe(['2026-04-13', '2026-05-04']);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('curriculum free weeks must use monday date keys', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -264,19 +246,17 @@ test('curriculum free weeks must use monday date keys', function () {
         'title' => 'Biologie',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
     ]);
 
     $response = $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/curricula/{$curriculum->id}", [
         'title' => 'Biologie',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => ['2026-04-15'],
     ]);
 
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['free_weeks.0']);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('curriculum topics preserve existing assignments when omitted during update', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -286,7 +266,6 @@ test('curriculum topics preserve existing assignments when omitted during update
         'title' => 'Geschichte',
         'description' => 'Vorher',
         'semester_count' => 2,
-        'free_weeks' => ['2026-01-12'],
         'topics' => [
             [
                 'id' => 'topic-existing',
@@ -330,7 +309,7 @@ test('curriculum topics preserve existing assignments when omitted during update
         ->and($curriculum->fresh()->topics[0]['units'])->toHaveCount(1)
         ->and($curriculum->fresh()->topics[0]['units'][0]['id'])->toBe('unit-existing')
         ->and($curriculum->fresh()->topics[0]['units'][0]['week_keys'])->toBe(['2026-01-12']);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('curriculum topics require valid week assignments', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -340,7 +319,6 @@ test('curriculum topics require valid week assignments', function () {
         'title' => 'Chemie',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -360,7 +338,7 @@ test('curriculum topics require valid week assignments', function () {
 
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['topics.0.week_keys.0']);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('curriculum topic units require valid week assignments', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -370,7 +348,6 @@ test('curriculum topic units require valid week assignments', function () {
         'title' => 'Physik',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -397,7 +374,7 @@ test('curriculum topic units require valid week assignments', function () {
 
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['topics.0.units.0.week_keys.0']);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('unit date assignments remove overlapping topic dates', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -407,7 +384,6 @@ test('unit date assignments remove overlapping topic dates', function () {
         'title' => 'Deutsch',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [
             [
                 'id' => 'topic-overlap',
@@ -459,7 +435,7 @@ test('unit date assignments remove overlapping topic dates', function () {
 
     expect($curriculum->fresh()->topics[0]['month_keys'])->toBe(['2025-10'])
         ->and($curriculum->fresh()->topics[0]['units'][0]['week_keys'])->toBe(['2025-09-08']);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('topic date assignments remove overlapping unit dates', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -469,7 +445,6 @@ test('topic date assignments remove overlapping unit dates', function () {
         'title' => 'Sachunterricht',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [
             [
                 'id' => 'topic-wins',
@@ -538,7 +513,7 @@ test('topic date assignments remove overlapping unit dates', function () {
         ->and($curriculum->fresh()->topics[0]['units'][0]['month_keys'])->toBe([])
         ->and($curriculum->fresh()->topics[0]['units'][1]['assignment_type'])->toBe('none')
         ->and($curriculum->fresh()->topics[0]['units'][1]['week_keys'])->toBe([]);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('curriculum topics normalize multiple month assignments', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -548,7 +523,6 @@ test('curriculum topics normalize multiple month assignments', function () {
         'title' => 'Geografie',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -573,7 +547,7 @@ test('curriculum topics normalize multiple month assignments', function () {
 
     expect($curriculum->fresh()->topics[0]['month_key'])->toBe('2025-09')
         ->and($curriculum->fresh()->topics[0]['month_keys'])->toBe(['2025-09', '2025-11']);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('curriculum month assignments preserve week counts for selected months', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -583,7 +557,6 @@ test('curriculum month assignments preserve week counts for selected months', fu
         'title' => 'Informatik',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -630,7 +603,7 @@ test('curriculum month assignments preserve week counts for selected months', fu
     ])->and($curriculum->fresh()->topics[0]['units'][0]['month_week_counts'])->toBe([
         '2025-12' => 4,
     ]);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('curriculum topics can be saved without a date assignment', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -640,7 +613,6 @@ test('curriculum topics can be saved without a date assignment', function () {
         'title' => 'Musik',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -667,7 +639,7 @@ test('curriculum topics can be saved without a date assignment', function () {
         ->and($curriculum->fresh()->topics[0]['month_key'])->toBeNull()
         ->and($curriculum->fresh()->topics[0]['month_keys'])->toBe([])
         ->and($curriculum->fresh()->topics[0]['week_keys'])->toBe([]);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('unit checked weeks are limited to inherited topic weeks', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -677,7 +649,6 @@ test('unit checked weeks are limited to inherited topic weeks', function () {
         'title' => 'Informatik',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -708,7 +679,7 @@ test('unit checked weeks are limited to inherited topic weeks', function () {
         ->assertJsonPath('data.topics.0.units.0.checked_week_keys.0', '2025-09-08');
 
     expect($curriculum->fresh()->topics[0]['units'][0]['checked_week_keys'])->toBe(['2025-09-08']);
-});
+})->skip('Curriculum scheduling was removed.');
 
 test('teacher can save materials on curriculum topics and units', function () {
     $curriculum = TeachingCurriculum::query()->create([
@@ -718,7 +689,6 @@ test('teacher can save materials on curriculum topics and units', function () {
         'title' => 'Biologie',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -809,7 +779,6 @@ test('teacher can browse materials through curriculum endpoints', function () {
         'title' => 'Deutsch',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -882,7 +851,6 @@ test('teacher can preview a material attachment through curriculum route', funct
         'title' => 'Informatik',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -924,7 +892,6 @@ test('teacher can load a curriculum material card with attachments', function ()
         'title' => 'Informatik',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -973,7 +940,6 @@ test('teacher can browse hopper account materials through curriculum endpoints',
         'title' => 'Musik',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -1030,7 +996,6 @@ test('teacher sees a preview message when a hopper material attachment file is m
         'title' => 'Informatik',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -1075,7 +1040,6 @@ test('teacher can preview a hopper material attachment stored on a configured di
         'title' => 'Informatik',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -1123,7 +1087,6 @@ test('teacher can use shared materials through curriculum material endpoints', f
         'title' => 'Informatik',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -1198,7 +1161,6 @@ test('teacher can filter shared curriculum materials by source user', function (
         'title' => 'Mathematik',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 
@@ -1305,7 +1267,6 @@ test('teacher cannot update curriculum from another school', function () {
         'title' => 'Fremdes Curriculum',
         'description' => null,
         'semester_count' => 2,
-        'free_weeks' => ['2026-01-12'],
     ]);
 
     $this->actingAs($this->teacher, 'sanctum')
@@ -1313,7 +1274,6 @@ test('teacher cannot update curriculum from another school', function () {
             'title' => 'Fremdes Curriculum',
             'description' => null,
             'semester_count' => 2,
-            'free_weeks' => ['2026-02-09'],
         ])
         ->assertStatus(403);
 });

@@ -1097,7 +1097,6 @@ class TeachingBackupService
                 null,
                 (int) $backup->schoolyear_id
             ),
-            'teaching_curriculum_free_weeks_template' => $backupUser['teaching_curriculum_free_weeks_template'] ?? null,
             'updated_at' => now(),
         ];
     }
@@ -2006,7 +2005,6 @@ class TeachingBackupService
                 'teaching_count_for_semester_2_date',
                 'teaching_grade_columns_by_schoolyear',
                 'teaching_student_grade_columns_by_schoolyear',
-                'teaching_curriculum_free_weeks_template',
             ]),
             'behaviour' => $this->restoreUserSettings($tables, $backup, $settingKey, [
                 'teaching_behaviour',
@@ -2283,7 +2281,6 @@ class TeachingBackupService
                 'teaching_show_behaviour',
                 'teaching_grade_columns_by_schoolyear',
                 'teaching_student_grade_columns_by_schoolyear',
-                'teaching_curriculum_free_weeks_template',
                 'created_at',
                 'updated_at',
             ])
@@ -2689,14 +2686,12 @@ class TeachingBackupService
             'teaching_count_for_semester_2_date',
             'teaching_grade_columns_by_schoolyear',
             'teaching_student_grade_columns_by_schoolyear',
-            'teaching_curriculum_free_weeks_template',
         ]);
         $currentBasicCount = $this->countUsersWithAnyTeachingSetting($currentUsers, [
             'teaching_active_semester',
             'teaching_count_for_semester_2_date',
             'teaching_grade_columns_by_schoolyear',
             'teaching_student_grade_columns_by_schoolyear',
-            'teaching_curriculum_free_weeks_template',
         ]);
         $behaviourCount = $this->countTeachingSettingDefinitions($users, [
             'teaching_behaviour',
@@ -2755,14 +2750,12 @@ class TeachingBackupService
                         'teaching_count_for_semester_2_date',
                         'teaching_grade_columns_by_schoolyear',
                         'teaching_student_grade_columns_by_schoolyear',
-                        'teaching_curriculum_free_weeks_template',
                     ]),
                     $this->userSettingsComparableData($currentUsers, [
                         'teaching_active_semester',
                         'teaching_count_for_semester_2_date',
                         'teaching_grade_columns_by_schoolyear',
                         'teaching_student_grade_columns_by_schoolyear',
-                        'teaching_curriculum_free_weeks_template',
                     ])
                 ),
                 'restore_scope' => 'settings',
@@ -3117,7 +3110,6 @@ class TeachingBackupService
             'title' => (string) ($curriculum['title'] ?? ''),
             'description' => (string) ($curriculum['description'] ?? ''),
             'semester_count' => (int) ($curriculum['semester_count'] ?? 0),
-            'free_weeks' => $this->normalizeArrayForComparison($this->arrayValue($curriculum['free_weeks'] ?? [])),
             'topics' => $this->normalizeArrayForComparison($this->arrayValue($curriculum['topics'] ?? [])),
         ];
     }

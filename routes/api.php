@@ -506,8 +506,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/courses/{course}/grades_pdf', [TeachingCourseController::class, 'courseGradesPdf']);
         Route::get('/admin/teaching/courses/{course}/students/{course_student}/performances_pdf', [TeachingCourseController::class, 'studentPerformancesPdf']);
         Route::apiResource('/admin/teaching/courses', TeachingCourseController::class);
-        Route::get('/admin/teaching/curricula/free-weeks-template', [CurriculumController::class, 'freeWeeksTemplate']);
-        Route::put('/admin/teaching/curricula/free-weeks-template', [CurriculumController::class, 'updateFreeWeeksTemplate']);
         Route::apiResource('/admin/teaching/curricula', CurriculumController::class)->parameters(['curricula' => 'curriculum']);
         Route::get('/admin/teaching/imported-curricula', [ImportedCurriculumController::class, 'index']);
         Route::post('/admin/teaching/imported-curricula/import', [ImportedCurriculumController::class, 'import']);

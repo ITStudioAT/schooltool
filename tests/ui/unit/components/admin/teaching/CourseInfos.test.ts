@@ -223,7 +223,12 @@ describe('CourseInfos course-specific definitions', () => {
         const ctx: Record<string, unknown> = {
             selected_course: {
                 teaching_schema_id: 'schema-teacher',
-                teacher_teaching_schema: { id: 'schema-teacher', name: 'Lehrkraft-Schema' },
+                teacher_teaching_schema: {
+                    id: 'schema-teacher',
+                    name: 'Lehrkraft-Schema',
+                    works: [{ short_name: 'MA' }],
+                    grading: { semester_count: 2 },
+                },
                 teacher_teaching_notifications: [{ short_name: 'INF', name: 'Info Lehrkraft' }],
             },
             teachingStore: {
@@ -233,12 +238,32 @@ describe('CourseInfos course-specific definitions', () => {
         }
 
         ctx.selectedCourseSchema = computed.selectedCourseSchema.call(ctx)
+        ctx.selectedCourseEntryArea = computed.selectedCourseEntryArea.call(ctx)
 
         expect((ctx.selectedCourseSchema as any)).toMatchObject({ id: 'schema-teacher', name: 'Lehrkraft-Schema' })
         expect(computed.schemaName.call(ctx)).toBe('Lehrkraft-Schema')
+        expect(computed.gradingSchema.call(ctx)).toBe(ctx.selectedCourseSchema)
 
         const notificationTypes = computed.notificationTypesByShort.call(ctx)
         expect(notificationTypes.get('INF')).toBe('Info Lehrkraft')
+    })
+
+    it('uses the assigned 2026/27 entry area instead of the legacy Standard schema', () => {
+        const computed = (CourseInfos as any).computed
+        const ctx: Record<string, unknown> = {
+            selected_course: {
+                teaching_schema_id: 'legacy-standard',
+                teacher_teaching_schema: { id: 'legacy-standard', name: 'Standard' },
+                teaching_entry_area: { id: 14, name: 'DGB' },
+            },
+            uses_entry_areas_for_grading_schema: false,
+        }
+
+        ctx.selectedCourseSchema = computed.selectedCourseSchema.call(ctx)
+        ctx.selectedCourseEntryArea = computed.selectedCourseEntryArea.call(ctx)
+
+        expect(computed.schemaName.call(ctx)).toBe('DGB')
+        expect(computed.gradingSchema.call(ctx)).toBeNull()
     })
 
     it('hides empty Fachinfos instead of rendering a placeholder', () => {
@@ -404,5 +429,58 @@ describe('CourseInfos course-specific definitions', () => {
         expect(source).toContain('student_grade_visibility_show_sem2')
         expect(source).toContain('student_grade_visibility_show_year')
         expect(source).toContain('teaching_student_grade_columns')
+    })
+
+    it('renders per-course student display settings', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseInfos.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('Schüler:innen-Anzeige')
+        expect(source).toContain('label="Alter"')
+        expect(source).toContain('label="Last Login"')
+        expect(source).toContain("saveStudentDisplaySetting('teaching_show_student_age', $event)")
+        expect(source).toContain("saveStudentDisplaySetting('teaching_show_student_last_login', $event)")
+    })
+
+    it('persists and refreshes a student display setting', async () => {
+        const methods = (CourseInfos as any).methods
+        const update = vi.fn().mockResolvedValue(true)
+        const refreshedCourse = {
+            id: 6,
+            teaching_show_student_age: true,
+            teaching_show_student_last_login: false,
+        }
+        const refreshCourseById = vi.fn().mockResolvedValue(refreshedCourse)
+        const ctx: Record<string, any> = {
+            selected_course: {
+                id: 6,
+                title: 'Deutsch',
+                classes: ['1A'],
+                teaching_schema_id: 'schema-standard',
+                teaching_show_student_age: false,
+                teaching_show_student_last_login: false,
+            },
+            student_display_show_age: false,
+            student_display_show_last_login: false,
+            isSavingInfo: false,
+            courseStore: { update, refreshCourseById },
+            runInfoMutation(_action: string, callback: () => Promise<boolean>) {
+                return callback()
+            },
+            restoreStudentDisplaySettings: methods.restoreStudentDisplaySettings,
+        }
+
+        await methods.saveStudentDisplaySetting.call(ctx, 'teaching_show_student_age', true)
+
+        expect(update).toHaveBeenCalledWith(expect.objectContaining({
+            id: 6,
+            teaching_show_student_age: true,
+        }))
+        expect(refreshCourseById).toHaveBeenCalledWith(6)
+        expect(ctx.student_display_show_age).toBe(true)
+        expect(ctx.student_display_show_last_login).toBe(false)
     })
 })

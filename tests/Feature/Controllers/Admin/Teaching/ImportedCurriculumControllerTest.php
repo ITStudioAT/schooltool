@@ -88,7 +88,6 @@ test('teacher can import a curriculum json and reimport updates the existing imp
             'title' => 'Deutsch 5A',
             'description' => 'Importierte Vorlage',
             'semester_count' => 2,
-            'free_weeks' => ['2025-09-08'],
             'topics' => [
                 [
                     'id' => 'topic-1',
@@ -119,7 +118,9 @@ test('teacher can import a curriculum json and reimport updates the existing imp
     $response->assertCreated()
         ->assertJsonPath('data.title', 'Deutsch 5A')
         ->assertJsonPath('data.curriculum_key', '11111111-1111-1111-1111-111111111111')
-        ->assertJsonPath('data.topics.0.units.0.checked_week_keys.0', '2025-09-08');
+        ->assertJsonMissingPath('data.free_weeks')
+        ->assertJsonMissingPath('data.topics.0.assignment_type')
+        ->assertJsonMissingPath('data.topics.0.units.0.checked_week_keys');
 
     expect(TeachingImportedCurriculum::query()->count())->toBe(1)
         ->and(TeachingImportedCurriculum::query()->firstOrFail()->title)->toBe('Deutsch 5A');
@@ -143,7 +144,6 @@ test('teacher can adopt an imported curriculum as a personal curriculum', functi
         'title' => 'Französisch 2A',
         'description' => 'Externe Vorlage',
         'semester_count' => 2,
-        'free_weeks' => ['2025-09-08'],
         'topics' => [
             [
                 'id' => 'topic-1',
@@ -173,10 +173,11 @@ test('teacher can adopt an imported curriculum as a personal curriculum', functi
 
     $response->assertCreated()
         ->assertJsonPath('data.title', 'Französisch 2A')
-        ->assertJsonPath('data.free_weeks.0', '2026-09-07')
-        ->assertJsonPath('data.topics.0.month_key', '2026-09')
-        ->assertJsonPath('data.topics.0.units.0.week_keys.0', '2026-09-07')
-        ->assertJsonPath('data.topics.0.units.0.checked_week_keys.0', '2026-09-07');
+        ->assertJsonPath('data.topics.0.title', 'Unité 1')
+        ->assertJsonPath('data.topics.0.units.0.title', 'Bonjour')
+        ->assertJsonMissingPath('data.free_weeks')
+        ->assertJsonMissingPath('data.topics.0.month_key')
+        ->assertJsonMissingPath('data.topics.0.units.0.week_keys');
 
     expect(TeachingCurriculum::query()->count())->toBe(1)
         ->and(TeachingCurriculum::query()->firstOrFail()->user_id)->toBe($this->teacher->id)

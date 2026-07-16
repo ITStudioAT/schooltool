@@ -94,17 +94,21 @@ describe('CourseStudents sorting', () => {
 
         expect(methods.studentBirthDetails.call(context, { birth_date: '2011-05-20', age: 15 }))
             .toBe('20.05.2011 · 15 Jahre')
+        expect(methods.studentBirthDetails.call(context, { birth_date: '2011-05-20', age: null }))
+            .toBe('20.05.2011')
         expect(methods.studentSexIcon.call(context, { sex: 'm' })).toBe('mdi-gender-male')
         expect(methods.studentSexColor.call(context, { sex: 'm' })).toBe('blue')
         expect(methods.studentSexIcon.call(context, { sex: 'w' })).toBe('mdi-gender-female')
         expect(methods.studentSexColor.call(context, { sex: 'w' })).toBe('pink')
     })
 
-    it('renders birth details before the existing last-login row', async () => {
+    it('renders age and last login only when their course settings are enabled', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
         )
 
+        expect(source).toContain('selected_course?.teaching_show_student_age && studentBirthDetails(student)')
+        expect(source).toContain('selected_course?.teaching_show_student_last_login && studentLastLoginText(student)')
         expect(source.indexOf('studentBirthDetails(student)')).toBeGreaterThan(source.indexOf('studentEmailText(student)'))
         expect(source.indexOf('studentBirthDetails(student)')).toBeLessThan(source.indexOf('studentLastLoginText(student)'))
         expect(source).toContain('v-if="studentSexIcon(student)"')

@@ -7,6 +7,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
         return {
             courses: [],
             classes: [],
+            class_head_emails: [],
             entry_areas: [],
             uses_entry_areas_for_grading_schema: false,
             selected_course: null,
@@ -39,6 +40,10 @@ export const useCourseStore = defineStore('AdminCourseStore', {
     },
 
     actions: {
+        courseHasProblems(course) {
+            return Array.isArray(course?.course_dates) && course.course_dates.length === 0
+        },
+
         ensureCourseStudentCollections(course) {
             if (!course) return
             const normalizeIds = (items) =>
@@ -136,6 +141,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
                     this.courses = Array.isArray(response.data.data) ? response.data.data : []
                     this.courses.forEach((course) => this.ensureCourseStudentCollections(course))
                     this.classes = response.data.classes
+                    this.class_head_emails = Array.isArray(response.data.class_head_emails) ? response.data.class_head_emails : []
                     this.entry_areas = response.data.entry_areas || []
                     this.uses_entry_areas_for_grading_schema = Boolean(response.data.uses_entry_areas_for_grading_schema)
                     if (selectedId) {

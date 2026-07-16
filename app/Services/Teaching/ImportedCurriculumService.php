@@ -41,8 +41,6 @@ class ImportedCurriculumService
             [
                 'title' => $payload['curriculum']['title'],
                 'description' => $payload['curriculum']['description'],
-                'semester_count' => $payload['curriculum']['semester_count'],
-                'free_weeks' => $payload['curriculum']['free_weeks'],
                 'topics' => $payload['curriculum']['topics'],
                 'source_schema_version' => $payload['schema_version'],
                 'source_exported_at' => $payload['exported_at'],
@@ -59,23 +57,13 @@ class ImportedCurriculumService
             ]);
         }
 
-        $schoolyear = $user->selectedSchoolyear;
-
         $curriculum = TeachingCurriculum::query()->create([
             'school_id' => $user->school_id,
             'schoolyear_id' => $user->schoolyear_id,
             'user_id' => $user->id,
             'title' => (string) $importedCurriculum->title,
             'description' => $importedCurriculum->description !== null ? (string) $importedCurriculum->description : null,
-            'semester_count' => (int) ($importedCurriculum->semester_count ?? 2),
-            'free_weeks' => $this->mapWeekKeysToSchoolyear(
-                is_array($importedCurriculum->free_weeks) ? $importedCurriculum->free_weeks : [],
-                $schoolyear
-            ),
-            'topics' => $this->mapTopicsToSchoolyear(
-                is_array($importedCurriculum->topics) ? $importedCurriculum->topics : [],
-                $schoolyear
-            ),
+            'topics' => is_array($importedCurriculum->topics) ? $importedCurriculum->topics : [],
         ]);
 
         $importedCurriculum->forceFill([
@@ -108,8 +96,6 @@ class ImportedCurriculumService
      *     curriculum: array{
      *         title: string,
      *         description: ?string,
-     *         semester_count: int,
-     *         free_weeks: array<int, string>,
      *         topics: array<int, array<string, mixed>>
      *     }
      * }
@@ -124,26 +110,15 @@ class ImportedCurriculumService
             'curriculum' => 'required|array',
             'curriculum.title' => 'required|string|max:255',
             'curriculum.description' => 'nullable|string',
-            'curriculum.semester_count' => 'nullable|integer|in:1,2',
-            'curriculum.free_weeks' => 'nullable|array',
-            'curriculum.free_weeks.*' => ['string', 'date_format:Y-m-d', $this->mondayWeekRule()],
             'curriculum.topics' => 'nullable|array',
-            'curriculum.topics.*' => 'array:id,title,assignment_type,month_key,month_keys,units',
+            'curriculum.topics.*' => 'array',
             'curriculum.topics.*.id' => 'nullable|string|max:100',
             'curriculum.topics.*.title' => 'required|string|max:255',
-            'curriculum.topics.*.assignment_type' => 'required|string|in:none,all_weeks,month',
-            'curriculum.topics.*.month_key' => 'nullable|string|regex:/^\d{4}-\d{2}$/',
-            'curriculum.topics.*.month_keys' => 'nullable|array',
-            'curriculum.topics.*.month_keys.*' => 'string|regex:/^\d{4}-\d{2}$/',
             'curriculum.topics.*.units' => 'nullable|array',
-            'curriculum.topics.*.units.*' => 'array:id,title,is_exam,assignment_type,month_key,month_keys',
+            'curriculum.topics.*.units.*' => 'array',
             'curriculum.topics.*.units.*.id' => 'nullable|string|max:100',
             'curriculum.topics.*.units.*.title' => 'required|string|max:255',
             'curriculum.topics.*.units.*.is_exam' => 'sometimes|boolean',
-            'curriculum.topics.*.units.*.assignment_type' => 'required|string|in:none,all_weeks,month',
-            'curriculum.topics.*.units.*.month_key' => 'nullable|string|regex:/^\d{4}-\d{2}$/',
-            'curriculum.topics.*.units.*.month_keys' => 'nullable|array',
-            'curriculum.topics.*.units.*.month_keys.*' => 'string|regex:/^\d{4}-\d{2}$/',
         ]);
 
         return [
@@ -156,11 +131,37 @@ class ImportedCurriculumService
                 'description' => filled($validated['curriculum']['description'] ?? null)
                     ? trim((string) $validated['curriculum']['description'])
                     : null,
-                'semester_count' => (int) ($validated['curriculum']['semester_count'] ?? 2),
-                'free_weeks' => $this->normalizeWeekKeys(is_array($validated['curriculum']['free_weeks'] ?? null) ? $validated['curriculum']['free_weeks'] : []),
-                'topics' => $this->normalizeTopics(is_array($validated['curriculum']['topics'] ?? null) ? $validated['curriculum']['topics'] : []),
+                'topics' => $this->normalizeContentTopics(is_array($validated['curriculum']['topics'] ?? null) ? $validated['curriculum']['topics'] : []),
             ],
         ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $topics
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeContentTopics(array $topics): array
+    {
+        return collect($topics)->values()->map(function (mixed $topic, int $topicIndex): array {
+            $normalizedTopic = is_array($topic) ? $topic : [];
+
+            return [
+                'id' => filled($normalizedTopic['id'] ?? null) ? (string) $normalizedTopic['id'] : "topic-{$topicIndex}",
+                'title' => trim((string) ($normalizedTopic['title'] ?? '')),
+                'units' => collect(is_array($normalizedTopic['units'] ?? null) ? $normalizedTopic['units'] : [])
+                    ->values()
+                    ->map(function (mixed $unit, int $unitIndex) use ($topicIndex): array {
+                        $normalizedUnit = is_array($unit) ? $unit : [];
+
+                        return [
+                            'id' => filled($normalizedUnit['id'] ?? null) ? (string) $normalizedUnit['id'] : "unit-{$topicIndex}-{$unitIndex}",
+                            'title' => trim((string) ($normalizedUnit['title'] ?? '')),
+                            'is_exam' => (bool) ($normalizedUnit['is_exam'] ?? false),
+                        ];
+                    })
+                    ->all(),
+            ];
+        })->all();
     }
 
     private function mondayWeekRule(): \Closure

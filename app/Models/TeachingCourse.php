@@ -13,6 +13,11 @@ class TeachingCourse extends Model
 {
     use HasFactory;
 
+    protected $attributes = [
+        'teaching_show_student_age' => false,
+        'teaching_show_student_last_login' => false,
+    ];
+
     protected mixed $pendingStudentsPayload = null;
 
     protected mixed $pendingStudentsDeletedPayload = null;
@@ -35,12 +40,16 @@ class TeachingCourse extends Model
         'teaching_entry_area_id',
         'teaching_curriculum_id',
         'teaching_student_grade_columns',
+        'teaching_show_student_age',
+        'teaching_show_student_last_login',
     ];
 
     protected $casts = [
         'classes' => 'array',
         'reminder' => 'array',
         'teaching_student_grade_columns' => 'array',
+        'teaching_show_student_age' => 'boolean',
+        'teaching_show_student_last_login' => 'boolean',
     ];
 
     protected static function booted(): void

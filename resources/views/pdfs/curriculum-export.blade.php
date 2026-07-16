@@ -76,14 +76,6 @@
             font-size: 11pt;
         }
 
-        .topic-assignment {
-            font-family: {!! $pdfFontFamily !!} !important;
-            color: #6366f1;
-            font-size: 10pt;
-            font-weight: 400;
-            margin-top: 2px;
-        }
-
         .units {
             padding: 6px 12px 8px 28px;
         }
@@ -101,14 +93,6 @@
         .unit-exam {
             color: #dc2626;
             font-weight: 600;
-        }
-
-        .unit-assignment {
-            font-family: {!! $pdfFontFamily !!} !important;
-            color: #6366f1;
-            font-size: 10pt;
-            font-weight: 400;
-            margin-top: 1px;
         }
 
         .exam-badge {
@@ -130,11 +114,7 @@
             <p class="header-description">{{ $curriculum->description }}</p>
         @endif
         <p class="meta">
-            {{ $curriculum->semester_count ?? 2 }} Semester &middot;
             {{ count($topics) }} Themen
-            @if ($freeWeeks > 0)
-                &middot; {{ $freeWeeks }} freie Wochen
-            @endif
         </p>
         <p class="meta-info">
             @if ($userName)Lehrperson: {{ $userName }}@endif
@@ -147,11 +127,6 @@
         <div class="topic">
             <div class="topic-header">
                 <div class="topic-title">{{ $index + 1 }}. {{ $topic['title'] ?? '' }}</div>
-                @if (!empty($assignmentLabels[$index]['dateRange']))
-                    <div class="topic-assignment">{{ $assignmentLabels[$index]['dateRange'] }}</div>
-                @elseif (!empty($assignmentLabels[$index]['assignment']))
-                    <div class="topic-assignment">{{ $assignmentLabels[$index]['assignment'] }}</div>
-                @endif
             </div>
 
             @if (!empty($topic['units']))
@@ -161,9 +136,6 @@
                             {{ $unit['title'] ?? '' }}
                             @if (!empty($unit['is_exam']))
                                 <span class="exam-badge">Prüfung</span>
-                            @endif
-                            @if (!empty($assignmentLabels[$index]['units'][$unitIndex]))
-                                <div class="unit-assignment">{{ $assignmentLabels[$index]['units'][$unitIndex] }}</div>
                             @endif
                         </div>
                     @endforeach

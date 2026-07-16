@@ -64,7 +64,6 @@ beforeEach(function () {
         'title' => 'Deutsch 2A',
         'description' => 'Lehrplan',
         'semester_count' => 2,
-        'free_weeks' => [],
         'topics' => [],
     ]);
 });

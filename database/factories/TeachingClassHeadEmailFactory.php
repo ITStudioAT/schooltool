@@ -1,0 +1,37 @@
+<?php
+
+namespace Database\Factories;
+
+use App\Models\School;
+use App\Models\Schoolyear;
+use App\Models\TeachingClassHeadEmail;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Factories\Factory;
+
+/**
+ * @extends Factory<TeachingClassHeadEmail>
+ */
+class TeachingClassHeadEmailFactory extends Factory
+{
+    /**
+     * Define the model's default state.
+     *
+     * @return array<string, mixed>
+     */
+    public function definition(): array
+    {
+        return [
+            'school_id' => School::factory(),
+            'schoolyear_id' => fn (array $attributes) => Schoolyear::factory()->create([
+                'school_id' => $attributes['school_id'],
+            ])->id,
+            'user_id' => fn (array $attributes) => User::factory()->create([
+                'school_id' => $attributes['school_id'],
+                'schoolyear_id' => $attributes['schoolyear_id'],
+            ])->id,
+            'class_name' => fake()->randomElement(['1A', '2B', '3C']),
+            'email_1' => fake()->safeEmail(),
+            'email_2' => fake()->optional()->safeEmail(),
+        ];
+    }
+}

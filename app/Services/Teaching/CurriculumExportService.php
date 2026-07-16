@@ -22,7 +22,6 @@ class CurriculumExportService
      *         title: string,
      *         description: ?string,
      *         semester_count: int,
-     *         free_weeks: array<int, string>,
      *         topics: array<int, array{
      *             id: string,
      *             title: string,
@@ -54,11 +53,6 @@ class CurriculumExportService
             'curriculum' => [
                 'title' => (string) $curriculum->title,
                 'description' => $curriculum->description !== null ? (string) $curriculum->description : null,
-                'semester_count' => (int) ($curriculum->semester_count ?? 2),
-                'free_weeks' => array_values(array_filter(
-                    is_array($curriculum->free_weeks) ? $curriculum->free_weeks : [],
-                    fn (mixed $weekKey): bool => is_string($weekKey) && $weekKey !== ''
-                )),
                 'topics' => collect(is_array($curriculum->topics) ? $curriculum->topics : [])
                     ->filter(fn (mixed $topic): bool => is_array($topic))
                     ->map(fn (array $topic): array => $this->transferTopic($topic))
@@ -101,18 +95,8 @@ class CurriculumExportService
         }
 
         $topics = is_array($curriculum->topics) ? $curriculum->topics : [];
-        $semesterCount = $curriculum->semester_count ?? 2;
-        $freeWeeks = is_array($curriculum->free_weeks) ? count($curriculum->free_weeks) : 0;
-
-        $metaParts = [];
-        $metaParts[] = $semesterCount.' Semester';
-        $metaParts[] = count($topics).' Themen';
-        if ($freeWeeks > 0) {
-            $metaParts[] = $freeWeeks.' freie Wochen';
-        }
-
         $section->addText(
-            implode('  ·  ', $metaParts),
+            count($topics).' Themen',
             ['size' => 10, 'color' => '64748B'],
             ['spaceAfter' => 40]
         );
@@ -137,29 +121,16 @@ class CurriculumExportService
 
         foreach ($topics as $index => $topic) {
             $title = ($index + 1).'. '.($topic['title'] ?? '');
-            $assignment = $this->assignmentLabel($topic);
-
             $section->addText(
-                $title.($assignment ? '   '.$assignment : ''),
+                $title,
                 ['bold' => true, 'size' => 14],
                 ['spaceBefore' => 200, 'spaceAfter' => 50]
             );
-
-            $dateRange = $this->topicDateRange($topic);
-            if ($dateRange) {
-                $section->addText(
-                    $dateRange,
-                    ['size' => 10, 'color' => '6366F1'],
-                    ['spaceAfter' => 100, 'indentation' => ['left' => 300]]
-                );
-            }
 
             $units = is_array($topic['units'] ?? null) ? $topic['units'] : [];
             foreach ($units as $unit) {
                 $unitTitle = $unit['title'] ?? '';
                 $isExam = ! empty($unit['is_exam']);
-                $unitAssignment = $this->assignmentLabel($unit);
-
                 $section->addText(
                     $unitTitle.($isExam ? ' (Prüfung)' : ''),
                     [
@@ -169,14 +140,6 @@ class CurriculumExportService
                     ],
                     ['indentation' => ['left' => 400], 'spaceAfter' => 30]
                 );
-
-                if ($unitAssignment) {
-                    $section->addText(
-                        $unitAssignment,
-                        ['size' => 10, 'color' => '6366F1'],
-                        ['indentation' => ['left' => 400], 'spaceAfter' => 50]
-                    );
-                }
             }
         }
 
@@ -191,7 +154,6 @@ class CurriculumExportService
     public function toPdf(TeachingCurriculum $curriculum, $user = null): string
     {
         $topics = is_array($curriculum->topics) ? $curriculum->topics : [];
-        $freeWeeks = is_array($curriculum->free_weeks) ? count($curriculum->free_weeks) : 0;
         $path = storage_path('app/private/curriculum_export_'.$curriculum->id.'.pdf');
         $teacherName = $this->teacherName($curriculum, $user);
         $schoolName = $this->schoolName($curriculum, $user);
@@ -203,8 +165,6 @@ class CurriculumExportService
         Pdf::view('pdfs.curriculum-export', [
             'curriculum' => $curriculum,
             'topics' => $topics,
-            'freeWeeks' => $freeWeeks,
-            'assignmentLabels' => $this->buildAssignmentLabels($topics),
             'userName' => $teacherName,
             'schoolName' => $schoolName,
             'printDate' => now()->format('d.m.Y, H:i'),
@@ -531,10 +491,6 @@ CSS;
         return [
             'id' => (string) ($topic['id'] ?? ''),
             'title' => (string) ($topic['title'] ?? ''),
-            'assignment_type' => (string) ($topic['assignment_type'] ?? 'none'),
-            'month_key' => isset($topic['month_key']) ? (string) $topic['month_key'] : null,
-            'month_keys' => $this->stringList($topic['month_keys'] ?? []),
-            'week_keys' => $this->stringList($topic['week_keys'] ?? []),
             'units' => collect(is_array($topic['units'] ?? null) ? $topic['units'] : [])
                 ->filter(fn (mixed $unit): bool => is_array($unit))
                 ->map(fn (array $unit): array => $this->transferUnit($unit))
@@ -562,11 +518,6 @@ CSS;
             'id' => (string) ($unit['id'] ?? ''),
             'title' => (string) ($unit['title'] ?? ''),
             'is_exam' => (bool) ($unit['is_exam'] ?? false),
-            'assignment_type' => (string) ($unit['assignment_type'] ?? 'none'),
-            'month_key' => isset($unit['month_key']) ? (string) $unit['month_key'] : null,
-            'month_keys' => $this->stringList($unit['month_keys'] ?? []),
-            'week_keys' => $this->stringList($unit['week_keys'] ?? []),
-            'checked_week_keys' => $this->stringList($unit['checked_week_keys'] ?? []),
         ];
     }
 

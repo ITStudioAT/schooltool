@@ -75,6 +75,14 @@ describe('MyCourses counts', () => {
         expect(countLabel).toBe('3 Klassen')
     })
 
+    it('shows a problem marker beside course names when the course has no dates', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/MyCourses.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source.match(/courseStore\?\.courseHasProblems\(course\)/g)).toHaveLength(3)
+        expect(source.match(/aria-label="Probleme im Fach">!<\/span>/g)).toHaveLength(3)
+    })
+
     it('toggles between classic and alternative course view', () => {
         const ctx = {
             courses_view_variant: 'v1',
@@ -142,6 +150,52 @@ describe('MyCourses counts', () => {
                 data: { teaching_schema_id: null, teaching_entry_area_id: 11 },
             })
         ).toBe(true)
+    })
+
+    it('builds one class head row per selected class and restores remembered emails', () => {
+        const syncClassHeadEmailRows = (MyCourses as any).methods.syncClassHeadEmailRows
+        const context = {
+            data: { class_head_emails: [] },
+            class_head_email_drafts: {},
+            class_head_emails: [
+                { class_name: '1A', email_1: 'first@example.test', email_2: 'second@example.test' },
+            ],
+        }
+
+        syncClassHeadEmailRows.call(context, ['1A', '1B'])
+
+        expect(context.data.class_head_emails).toEqual([
+            { class_name: '1A', email_1: 'first@example.test', email_2: 'second@example.test' },
+            { class_name: '1B', email_1: '', email_2: '' },
+        ])
+    })
+
+    it('preserves class head email drafts when a class is removed and reselected', () => {
+        const syncClassHeadEmailRows = (MyCourses as any).methods.syncClassHeadEmailRows
+        const context = {
+            data: {
+                class_head_emails: [{ class_name: '1A', email_1: 'draft@example.test', email_2: '' }],
+            },
+            class_head_email_drafts: {},
+            class_head_emails: [],
+        }
+
+        syncClassHeadEmailRows.call(context, [])
+        syncClassHeadEmailRows.call(context, ['1A'])
+
+        expect(context.data.class_head_emails).toEqual([
+            { class_name: '1A', email_1: 'draft@example.test', email_2: '' },
+        ])
+    })
+
+    it('renders exactly two email inputs for every selected class head row', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/MyCourses.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('v-for="classHeadEmail in data.class_head_emails"')
+        expect(source.match(/v-model="classHeadEmail\.email_[12]"/g)).toHaveLength(2)
+        expect(source).toContain('Klassenvorstand')
+        expect(source).toContain(':rules="[mailOrNull(), maxLength(255)]"')
     })
 
     it('renders legacy schemas through 2025/26 and Bereiche afterward', () => {

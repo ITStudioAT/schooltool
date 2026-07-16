@@ -129,7 +129,6 @@ use Spatie\Permission\Traits\HasRoles;
  * @property array<array-key, mixed>|null $tutoring_filter
  * @property array<array-key, mixed>|null $restaurant_booking_defaults
  * @property array<array-key, int>|null $hopper_account_ids
- * @property array<array-key, string>|null $teaching_curriculum_free_weeks_template
  *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User teachers($school_id = null)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereShort($value)
@@ -179,7 +178,6 @@ class User extends Authenticatable
         'teaching_show_behaviour',
         'teaching_grade_columns_by_schoolyear',
         'teaching_student_grade_columns_by_schoolyear',
-        'teaching_curriculum_free_weeks_template',
         'materials_pagination_number',
         'restaurant_foods_pagination_number',
     ];
@@ -219,7 +217,6 @@ class User extends Authenticatable
             'teaching_show_behaviour' => 'boolean',
             'teaching_grade_columns_by_schoolyear' => 'array',
             'teaching_student_grade_columns_by_schoolyear' => 'array',
-            'teaching_curriculum_free_weeks_template' => 'array',
             'restaurant_booking_defaults' => 'array',
             'hopper_account_ids' => 'array',
         ];

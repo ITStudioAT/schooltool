@@ -1,6 +1,6 @@
 <template>
     <v-col cols="12">
-        <v-sheet rounded="xl" class="curricula-submenu mb-3 pa-2">
+        <v-sheet v-if="visibleSubmenuItems.length" rounded="xl" class="curricula-submenu mb-3 pa-2">
             <div class="curricula-submenu__inner">
                 <v-btn
                     v-for="item in visibleSubmenuItems"
@@ -38,11 +38,6 @@
             :curriculum="selectedCurriculum"
             @back="returnFromPrint" />
 
-        <CurriculaSettings
-            v-else-if="sub_action === 'settings'"
-            :curriculum="selectedCurriculum"
-            @back="returnFromSettings"
-            @updated="updateCurriculum" />
     </v-col>
 </template>
 
@@ -50,12 +45,11 @@
 import CurriculaOverview from './CurriculaOverview.vue'
 import CurriculumDetail from './CurriculumDetail.vue'
 import CurriculaPrint from './CurriculaPrint.vue'
-import CurriculaSettings from './CurriculaSettings.vue'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 
 export default {
     name: 'TeachingCurricula',
-    components: { CurriculaOverview, CurriculumDetail, CurriculaPrint, CurriculaSettings },
+    components: { CurriculaOverview, CurriculumDetail, CurriculaPrint },
     data() {
         return {
             curriculumStore: useCurriculumStore(),
@@ -64,8 +58,6 @@ export default {
             isResolvingCurriculum: false,
             routeSyncToken: 0,
             submenuItems: [
-                { key: 'overview', label: 'Übersicht', icon: 'mdi-view-list-outline' },
-                { key: 'settings', label: 'Einstellungen', icon: 'mdi-cog-outline' },
                 { key: 'print', label: 'Ausdruck', icon: 'mdi-printer-outline', requiresCurriculum: true },
             ],
         }
@@ -99,10 +91,6 @@ export default {
             }
         },
         returnFromPrint() {
-            this.sub_action = 'overview'
-            this.setViewQuery('overview')
-        },
-        returnFromSettings() {
             this.sub_action = 'overview'
             this.setViewQuery('overview')
         },

@@ -27,9 +27,9 @@
 
     <v-col
         cols="12"
-        md="8"
-        lg="7"
-        xl="6"
+        :md="selected_course && show_students ? 12 : 8"
+        :lg="selected_course && show_students ? 12 : 7"
+        :xl="selected_course && show_students ? 12 : 6"
         class="teaching-overview-card-col"
         v-if="show_students || !selected_course">
         <v-row v-if="!selected_course && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
@@ -54,9 +54,9 @@
 
     <v-col
         cols="12"
-        :md="['dates', 'table'].includes(secondaryOverviewPanelSelection) ? 12 : 8"
-        :lg="['dates', 'table'].includes(secondaryOverviewPanelSelection) ? 12 : 7"
-        :xl="['dates', 'table'].includes(secondaryOverviewPanelSelection) ? 12 : 6"
+        :md="['attendance', 'dates', 'table'].includes(secondaryOverviewPanelSelection) ? 12 : 8"
+        :lg="['attendance', 'dates', 'table'].includes(secondaryOverviewPanelSelection) ? 12 : 7"
+        :xl="['attendance', 'dates', 'table'].includes(secondaryOverviewPanelSelection) ? 12 : 6"
         class="teaching-overview-card-col"
         v-if="selected_course && secondaryOverviewPanelSelection && action != 'teaching_course_new_or_edit'"
         :style="contentLockStyle">
@@ -80,7 +80,21 @@
 
         <v-row v-if="secondaryOverviewPanelSelection === 'table'" class="mt-n6">
             <v-col>
-                <CourseTable />
+                <CourseTable
+                    view="entries"
+                    :active-semester="activeSemester"
+                    :semester-two-start-date="sem2StartDate"
+                    @update:active-semester="activeSemester = $event" />
+            </v-col>
+        </v-row>
+
+        <v-row v-if="secondaryOverviewPanelSelection === 'attendance'" class="mt-n6">
+            <v-col>
+                <CourseTable
+                    view="attendance"
+                    :active-semester="activeSemester"
+                    :semester-two-start-date="sem2StartDate"
+                    @update:active-semester="activeSemester = $event" />
             </v-col>
         </v-row>
 
@@ -152,116 +166,6 @@
                             </v-btn>
                         </div>
 
-                        <v-card v-if="selectedCourseCurriculum" variant="tonal" class="curriculum-sync-card">
-                            <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
-                                <v-icon size="18">mdi-calendar-sync</v-icon>
-                                Termine synchronisieren
-                                <v-chip size="x-small" color="primary" variant="flat">
-                                    {{ curriculumSyncRows.length }}
-                                </v-chip>
-                            </v-card-title>
-                            <v-divider />
-                            <v-card-text class="pa-0">
-                                <div class="curriculum-sync-grid curriculum-sync-grid--header">
-                                    <div>Kurstermine</div>
-                                    <div>Curriculum</div>
-                                </div>
-                                <div
-                                    v-for="row in curriculumSyncRows"
-                                    :key="row.weekKey"
-                                    class="curriculum-sync-grid curriculum-sync-row">
-                                    <div class="curriculum-sync-cell">
-                                        <div class="curriculum-sync-week">{{ row.weekLabel }}</div>
-                                        <div v-if="row.courseDates.length" class="d-flex flex-column ga-1">
-                                            <v-chip
-                                                v-for="courseDate in row.courseDates"
-                                                :key="courseDate.id || `${row.weekKey}-${courseDate.date}`"
-                                                size="small"
-                                                :color="courseDateSyncColor(courseDate)"
-                                                class="curriculum-sync-chip"
-                                                :variant="courseDateSyncVariant(courseDate)">
-                                                <span class="curriculum-sync-chip__text">
-                                                    <strong>{{ courseDateLabel(courseDate) }}</strong>
-                                                    <span v-if="isFreeCourseDateForSync(courseDate)" class="curriculum-sync-chip__free-label">
-                                                        · Frei
-                                                    </span>
-                                                    <span v-if="courseDateContentText(courseDate)" class="curriculum-sync-chip__content">
-                                                        {{ courseDateContentText(courseDate) }}
-                                                    </span>
-                                                </span>
-                                            </v-chip>
-                                        </div>
-                                        <div v-else class="text-caption text-medium-emphasis">Kein Kurstermin</div>
-                                    </div>
-                                    <div class="curriculum-sync-cell curriculum-sync-cell--curriculum">
-                                        <div v-if="row.curriculumEntries.length" class="d-flex flex-column ga-1">
-                                            <div
-                                                v-for="entry in row.curriculumEntries"
-                                                :key="entry.key"
-                                                class="curriculum-sync-entry">
-                                                <v-chip
-                                                    size="small"
-                                                    :color="entry.color"
-                                                    class="curriculum-sync-chip"
-                                                    :variant="entry.variant">
-                                                    <template v-if="entry.topicLabel && entry.unitLabel">
-                                                        <span class="curriculum-sync-chip__text">
-                                                            <v-icon
-                                                                v-if="entry.isExam"
-                                                                class="curriculum-sync-chip__exam-icon"
-                                                                size="14"
-                                                                icon="mdi-file-alert-outline" />
-                                                            <strong class="curriculum-sync-chip__topic">{{ entry.topicLabel }}</strong>: {{ entry.unitLabel }}
-                                                        </span>
-                                                    </template>
-                                                    <template v-else>
-                                                        {{ entry.label }}
-                                                    </template>
-                                                </v-chip>
-                                                <div v-if="entry.movable" class="curriculum-sync-entry-actions">
-                                                    <v-btn
-                                                        icon="mdi-arrow-up"
-                                                        size="x-small"
-                                                        variant="text"
-                                                        density="comfortable"
-                                                        title="Allein eine Woche früher"
-                                                        :disabled="curriculumMoveSaving || !canMoveCurriculumEntry(entry, -1, false)"
-                                                        @click.stop="moveCurriculumSyncEntry(entry, -1, false)" />
-                                                    <v-btn
-                                                        icon="mdi-arrow-down"
-                                                        size="x-small"
-                                                        variant="text"
-                                                        density="comfortable"
-                                                        title="Allein eine Woche später"
-                                                        :disabled="curriculumMoveSaving || !canMoveCurriculumEntry(entry, 1, false)"
-                                                        @click.stop="moveCurriculumSyncEntry(entry, 1, false)" />
-                                                    <v-btn
-                                                        icon="mdi-arrow-up-bold-box-outline"
-                                                        size="x-small"
-                                                        variant="text"
-                                                        density="comfortable"
-                                                        title="Mit folgenden eine Woche früher"
-                                                        :disabled="curriculumMoveSaving || !canMoveCurriculumEntry(entry, -1, true)"
-                                                        @click.stop="moveCurriculumSyncEntry(entry, -1, true)" />
-                                                    <v-btn
-                                                        icon="mdi-arrow-down-bold-box-outline"
-                                                        size="x-small"
-                                                        variant="text"
-                                                        density="comfortable"
-                                                        title="Mit folgenden eine Woche später"
-                                                        :disabled="curriculumMoveSaving || !canMoveCurriculumEntry(entry, 1, true)"
-                                                        @click.stop="moveCurriculumSyncEntry(entry, 1, true)" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div v-else class="text-caption text-medium-emphasis">Keine Curriculum-Zuordnung</div>
-                                    </div>
-                                </div>
-                                <div v-if="!curriculumSyncRows.length" class="pa-4 text-caption text-medium-emphasis">
-                                    Keine Termine oder Curriculum-Zuordnungen vorhanden.
-                                </div>
-                            </v-card-text>
-                        </v-card>
                     </v-card-text>
                 </v-card>
             </v-col>
@@ -274,7 +178,7 @@
         </v-row>
     </v-col>
 
-    <v-col cols="12" v-if="selected_course && (show_attendance || show_performances || show_performances_plus) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" v-if="selected_course && (show_performances || show_performances_plus) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <div v-if="semesterCount === 2" class="d-flex align-center ga-2 mb-2">
             <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
                 <v-btn :value="1" size="small">Sem 1</v-btn>
@@ -282,16 +186,7 @@
                 <v-btn :value="3" size="small">Sem 1+2</v-btn>
             </v-btn-toggle>
         </div>
-        <v-row v-if="show_attendance">
-            <v-col>
-                <AttendanceMatrix
-                    :selected-course="selected_course"
-                    :active-semester="activeSemester"
-                    :semester-count="semesterCount"
-                    :sem2-start-date="sem2StartDate" />
-            </v-col>
-        </v-row>
-        <v-row v-if="show_performances" :class="show_attendance ? 'mt-n6' : ''">
+        <v-row v-if="show_performances">
             <v-col>
                 <PerformancesDummy
                     :selected-course="selected_course"
@@ -300,7 +195,7 @@
                     :sem2-start-date="sem2StartDate" />
             </v-col>
         </v-row>
-        <v-row v-if="show_performances_plus" :class="show_attendance ? 'mt-n6' : ''">
+        <v-row v-if="show_performances_plus">
             <v-col>
                 <PerformancesPlusDummy
                     :selected-course="selected_course"
@@ -335,12 +230,23 @@ const CourseTable = defineAsyncComponent(() => import('./components/CourseTable.
 const CourseWorks = defineAsyncComponent(() => import('./components/CourseWorks.vue'))
 const CoursePrint = defineAsyncComponent(() => import('./components/CoursePrint.vue'))
 const MyTimetable = defineAsyncComponent(() => import('./components/MyTimetable.vue'))
-const AttendanceMatrix = defineAsyncComponent(() => import('../more/components/AttendanceMatrix.vue'))
 const PerformancesDummy = defineAsyncComponent(() => import('../more/components/PerformancesDummy.vue'))
 const PerformancesPlusDummy = defineAsyncComponent(() => import('../more/components/PerformancesPlusDummy.vue'))
 
 export default {
-    components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseTable, CourseWorks, CoursePrint, MyTimetable, AttendanceMatrix, PerformancesDummy, PerformancesPlusDummy },
+    components: {
+        MyCourses,
+        CourseStudents,
+        CourseStudent,
+        CourseInfos,
+        CourseDates,
+        CourseTable,
+        CourseWorks,
+        CoursePrint,
+        MyTimetable,
+        PerformancesDummy,
+        PerformancesPlusDummy,
+    },
 
     beforeMount() {
         this.adminStore = useAdminStore()
@@ -401,7 +307,7 @@ export default {
             return this.action_2 === 'course_student_view' || !!this.selected_course_student
         },
         secondaryOverviewPanelSelection() {
-            const secondaryPanels = ['infos', 'dates', 'table', 'works', 'print', 'curriculum']
+            const secondaryPanels = ['infos', 'dates', 'table', 'attendance', 'works', 'print', 'curriculum']
             const selectedPanel = this.functionalPanelSelection
 
             return secondaryPanels.includes(selectedPanel) ? selectedPanel : null
@@ -510,17 +416,6 @@ export default {
             const entries = []
             const allWeekKeys = this.schoolyearWeekKeys()
 
-            ;(Array.isArray(curriculum.free_weeks) ? curriculum.free_weeks : []).forEach((weekKey) => {
-                entries.push({
-                    key: `free-${weekKey}`,
-                    weekKey,
-                    label: 'Frei',
-                    isFree: true,
-                    color: 'success',
-                    variant: 'flat',
-                })
-            })
-
             ;(Array.isArray(curriculum.topics) ? curriculum.topics : []).forEach((topic, topicIndex) => {
                 const topicWeekKeys = this.assignmentWeekKeys(topic, allWeekKeys)
 
@@ -576,12 +471,12 @@ export default {
             const panels = []
             if (this.selected_course) {
                 panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })
+                panels.push({ id: 'attendance', label: 'Anwesenheiten', icon: 'mdi-account-check' })
                 panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
                 panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })
-                panels.push({ id: 'attendance', label: 'Anwesenheit', icon: 'mdi-table' })
                 panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })
                 panels.push({ id: 'performances_plus', label: 'Leistungen Plus', icon: 'mdi-chart-bar' })
                 panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
@@ -600,8 +495,8 @@ export default {
                 if (this.show_print) return 'print'
                 if (this.show_dates) return 'dates'
                 if (this.show_table) return 'table'
-                if (this.show_curriculum) return 'curriculum'
                 if (this.show_attendance) return 'attendance'
+                if (this.show_curriculum) return 'curriculum'
                 if (this.show_performances) return 'performances'
                 if (this.show_performances_plus) return 'performances_plus'
                 return undefined
@@ -613,8 +508,8 @@ export default {
                 this.show_print = value === 'print'
                 this.show_dates = value === 'dates'
                 this.show_table = value === 'table'
-                this.show_curriculum = value === 'curriculum'
                 this.show_attendance = value === 'attendance'
+                this.show_curriculum = value === 'curriculum'
                 this.show_performances = value === 'performances'
                 this.show_performances_plus = value === 'performances_plus'
                 if (!value) {
@@ -622,7 +517,11 @@ export default {
                     this.selected_course_student = null
                 }
                 if (value && this.$route && this.$router) {
-                    this.$router.replace({ path: this.$route.path, query: { ...this.$route.query, panel: value } }).catch(() => {})
+                    const query = { ...this.$route.query, panel: value }
+                    if (['attendance', 'table'].includes(value)) {
+                        delete query.view
+                    }
+                    this.$router.replace({ path: this.$route.path, query }).catch(() => {})
                 }
             },
         },
@@ -641,20 +540,51 @@ export default {
             this.curriculumSelectionId = this.selectedCourseCurriculumId
             this.curriculumEditMode = false
             if (!this._urlPanelRestored) {
-                const urlPanel = this.$route?.query?.panel
+                const requestedPanel = this.$route?.query?.panel
+                const requestedView = this.$route?.query?.view
+                const urlPanel = requestedPanel === 'table' && requestedView === 'attendance'
+                    ? 'attendance'
+                    : requestedPanel
                 const urlGrades = this.$route?.query?.grades
-                const validPanels = ['table', 'students', 'dates', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']
+                const validPanels = [
+                    'table',
+                    'attendance',
+                    'students',
+                    'dates',
+                    'infos',
+                    'works',
+                    'print',
+                    'curriculum',
+                    'performances',
+                    'performances_plus',
+                ]
                 this._urlPanelRestored = true
                 this._lastCourseId = newCourse.id
                 if (urlPanel && validPanels.includes(urlPanel)) {
+                    if (
+                        requestedView !== undefined
+                        && ['attendance', 'table'].includes(urlPanel)
+                        && this.$route
+                        && this.$router
+                    ) {
+                        const query = {
+                            ...this.$route.query,
+                            panel: urlPanel,
+                        }
+                        delete query.view
+                        this.$router.replace({
+                            path: this.$route.path,
+                            query,
+                        }).catch(() => {})
+                    }
                     this.show_students = urlPanel === 'students'
                     this.show_infos = urlPanel === 'infos'
                     this.show_works = urlPanel === 'works'
                     this.show_print = urlPanel === 'print'
                     this.show_dates = urlPanel === 'dates'
                     this.show_table = urlPanel === 'table'
-                    this.show_curriculum = urlPanel === 'curriculum'
                     this.show_attendance = urlPanel === 'attendance'
+                    this.show_curriculum = urlPanel === 'curriculum'
                     this.show_performances = urlPanel === 'performances'
                     this.show_performances_plus = urlPanel === 'performances_plus'
                     return
@@ -666,8 +596,8 @@ export default {
                     this.show_print = false
                     this.show_dates = false
                     this.show_table = false
-                    this.show_curriculum = false
                     this.show_attendance = false
+                    this.show_curriculum = false
                     this.show_performances = false
                     this.show_performances_plus = false
                     return
@@ -685,8 +615,8 @@ export default {
             this.show_print = false
             this.show_dates = false
             this.show_table = false
-            this.show_curriculum = false
             this.show_attendance = false
+            this.show_curriculum = false
             this.show_performances = false
             this.show_performances_plus = false
             },
@@ -860,17 +790,7 @@ export default {
                 return null
             }
 
-            let targetWeekKey = this.shiftedWeekKey(weekKey, direction)
-            while (targetWeekKey && this.isCurriculumWeekFree(targetWeekKey)) {
-                targetWeekKey = this.shiftedWeekKey(targetWeekKey, direction)
-            }
-
-            return targetWeekKey
-        },
-        isCurriculumWeekFree(weekKey) {
-            const curriculum = this.selectedCourseCurriculumForSync
-
-            return (Array.isArray(curriculum?.free_weeks) ? curriculum.free_weeks : []).includes(weekKey)
+            return this.shiftedWeekKey(weekKey, direction)
         },
         canMoveCurriculumEntry(entry, direction, includeFollowing) {
             const entries = this.curriculumEntriesToMove(entry, direction, includeFollowing)
@@ -887,7 +807,7 @@ export default {
                     && !movingEntryKeys.has(occupiedEntry.key)
                 ))
 
-                return Boolean(targetWeekKey) && !this.isCurriculumWeekFree(targetWeekKey) && !isOccupiedByStationaryEntry
+                return Boolean(targetWeekKey) && !isOccupiedByStationaryEntry
             })
         },
         isBlockingCurriculumMoveEntry(entry) {
@@ -975,7 +895,6 @@ export default {
                     title: curriculum.title || '',
                     description: curriculum.description || null,
                     semester_count: curriculum.semester_count ?? 2,
-                    free_weeks: Array.isArray(curriculum.free_weeks) ? curriculum.free_weeks : [],
                     topics,
                 })
 

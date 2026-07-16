@@ -13,6 +13,7 @@ use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCurriculum;
 use App\Models\TeachingEntryArea;
 use App\Models\User;
+use App\Services\TeachingClassHeadEmailService;
 use App\Services\TeachingCourseService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingService;
@@ -32,7 +33,7 @@ class TeachingCourseController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index(Request $request, TeachingCourseService $service)
+    public function index(Request $request, TeachingCourseService $service, TeachingClassHeadEmailService $classHeadEmailService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -113,7 +114,15 @@ class TeachingCourseController extends Controller
 
             $activeStudents = [];
             foreach ($course->teachingCourseStudents as $courseStudent) {
-                $payload = $this->serializeCourseStudent($courseStudent, $studentsById, $importsById, $request, $removalReasons);
+                $payload = $this->serializeCourseStudent(
+                    $courseStudent,
+                    $studentsById,
+                    $importsById,
+                    $request,
+                    $removalReasons,
+                    (bool) $course->teaching_show_student_age,
+                    (bool) $course->teaching_show_student_last_login,
+                );
                 if ($payload) {
                     $activeStudents[] = $payload;
                 }
@@ -125,7 +134,15 @@ class TeachingCourseController extends Controller
                     continue;
                 }
 
-                $payload = $this->serializeCourseStudent($courseStudent, $studentsById, $importsById, $request, $removalReasons);
+                $payload = $this->serializeCourseStudent(
+                    $courseStudent,
+                    $studentsById,
+                    $importsById,
+                    $request,
+                    $removalReasons,
+                    (bool) $course->teaching_show_student_age,
+                    (bool) $course->teaching_show_student_last_login,
+                );
                 if ($payload) {
                     $deletedStudents[] = $payload;
                 }
@@ -150,6 +167,7 @@ class TeachingCourseController extends Controller
         return response()->json([
             'data' => CourseResource::collection($courses),
             'classes' => $classes,
+            'class_head_emails' => $classHeadEmailService->listForUser($auth_user),
             'entry_areas' => $authEntryAreas,
             'uses_entry_areas_for_grading_schema' => $this->usesEntryAreasForSchoolyear($auth_user->schoolyear_id),
         ]);
@@ -246,8 +264,12 @@ class TeachingCourseController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request, TeachingCourseService $service, TeachingCourseWorkEntrySyncService $entrySyncService)
-    {
+    public function store(
+        Request $request,
+        TeachingCourseService $service,
+        TeachingCourseWorkEntrySyncService $entrySyncService,
+        TeachingClassHeadEmailService $classHeadEmailService
+    ) {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -271,11 +293,19 @@ class TeachingCourseController extends Controller
                 ->where('school_id', $auth_user->school_id)
                 ->where('schoolyear_id', $auth_user->schoolyear_id)
                 ->where('user_id', $auth_user->id));
+        $selectedClasses = array_values(array_filter(
+            (array) $request->input('classes', []),
+            fn (mixed $className): bool => is_string($className)
+        ));
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'classes' => 'required|array|min:1',
             'classes.*' => ['required', 'string', Rule::in($classes)],
+            'class_head_emails' => ['sometimes', 'array'],
+            'class_head_emails.*.class_name' => ['required', 'string', 'max:255', 'distinct:strict', Rule::in($selectedClasses)],
+            'class_head_emails.*.email_1' => ['nullable', 'string', 'email:rfc', 'max:255'],
+            'class_head_emails.*.email_2' => ['nullable', 'string', 'email:rfc', 'max:255'],
             'students' => 'nullable|array',
             'students.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $auth_user->school_id, $auth_user->schoolyear_id)],
             'students.*.stars' => 'nullable|array',
@@ -295,6 +325,8 @@ class TeachingCourseController extends Controller
             'teaching_schema_id' => [Rule::excludeIf($usesEntryAreasForGradingSchema), 'required', 'string', 'max:36', Rule::in($schemaIds)],
             'teaching_entry_area_id' => [Rule::excludeIf(! $usesEntryAreasForGradingSchema), 'required', 'integer', $entryAreaRule],
             'teaching_curriculum_id' => ['nullable', 'integer', $curriculumRule],
+            'teaching_show_student_age' => ['sometimes', 'boolean'],
+            'teaching_show_student_last_login' => ['sometimes', 'boolean'],
         ]);
 
         $sortedClasses = $validated['classes'];
@@ -315,19 +347,39 @@ class TeachingCourseController extends Controller
             $studentsDeletedPayload = $validated['students_deleted'] ?? [];
         }
 
-        $course = TeachingCourse::create([
-            'school_id' => $auth_user->school_id,
-            'schoolyear_id' => $auth_user->schoolyear_id,
-            'user_id' => $auth_user->id,
-            'title' => $validated['title'],
-            'classes' => $sortedClasses,
-            'teaching_schema_id' => $validated['teaching_schema_id'] ?? $schemaIds->first(),
-            'teaching_entry_area_id' => $validated['teaching_entry_area_id'] ?? null,
-            'teaching_curriculum_id' => $validated['teaching_curriculum_id'] ?? null,
-        ]);
+        $course = DB::transaction(function () use (
+            $auth_user,
+            $validated,
+            $sortedClasses,
+            $schemaIds,
+            $service,
+            $studentsPayload,
+            $studentsDeletedPayload,
+            $entrySyncService,
+            $classHeadEmailService
+        ): TeachingCourse {
+            $course = TeachingCourse::create([
+                'school_id' => $auth_user->school_id,
+                'schoolyear_id' => $auth_user->schoolyear_id,
+                'user_id' => $auth_user->id,
+                'title' => $validated['title'],
+                'classes' => $sortedClasses,
+                'teaching_schema_id' => $validated['teaching_schema_id'] ?? $schemaIds->first(),
+                'teaching_entry_area_id' => $validated['teaching_entry_area_id'] ?? null,
+                'teaching_curriculum_id' => $validated['teaching_curriculum_id'] ?? null,
+                'teaching_show_student_age' => $validated['teaching_show_student_age'] ?? false,
+                'teaching_show_student_last_login' => $validated['teaching_show_student_last_login'] ?? false,
+            ]);
 
-        $service->syncCourseStudents($course, $studentsPayload, $studentsDeletedPayload);
-        $entrySyncService->syncNonGroupWorksForCourse($course);
+            if (array_key_exists('class_head_emails', $validated)) {
+                $classHeadEmailService->syncForUser($auth_user, $validated['class_head_emails']);
+            }
+
+            $service->syncCourseStudents($course, $studentsPayload, $studentsDeletedPayload);
+            $entrySyncService->syncNonGroupWorksForCourse($course);
+
+            return $course;
+        });
 
         return response()->json(new CourseResource($course), 201);
     }
@@ -343,8 +395,13 @@ class TeachingCourseController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, TeachingCourse $course, TeachingCourseService $service, TeachingCourseWorkEntrySyncService $entrySyncService)
-    {
+    public function update(
+        Request $request,
+        TeachingCourse $course,
+        TeachingCourseService $service,
+        TeachingCourseWorkEntrySyncService $entrySyncService,
+        TeachingClassHeadEmailService $classHeadEmailService
+    ) {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -371,12 +428,20 @@ class TeachingCourseController extends Controller
                 ->where('school_id', $course->school_id)
                 ->where('schoolyear_id', $course->schoolyear_id)
                 ->where('user_id', $courseActor->id));
+        $selectedClasses = array_values(array_filter(
+            (array) $request->input('classes', []),
+            fn (mixed $className): bool => is_string($className)
+        ));
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string|max:4096',
             'classes' => 'required|array|min:1',
             'classes.*' => ['required', 'string', Rule::in($classes)],
+            'class_head_emails' => ['sometimes', 'array'],
+            'class_head_emails.*.class_name' => ['required', 'string', 'max:255', 'distinct:strict', Rule::in($selectedClasses)],
+            'class_head_emails.*.email_1' => ['nullable', 'string', 'email:rfc', 'max:255'],
+            'class_head_emails.*.email_2' => ['nullable', 'string', 'email:rfc', 'max:255'],
             'students' => 'nullable|array',
             'students.*.import116_id' => ['nullable', 'integer', $this->import116RuleForSchoolyear((int) $course->school_id, $course->schoolyear_id)],
             'students.*.stars' => 'nullable|array',
@@ -396,6 +461,8 @@ class TeachingCourseController extends Controller
             'teaching_schema_id' => [Rule::excludeIf($usesEntryAreasForGradingSchema), 'required', 'string', 'max:36', Rule::in($schemaIds)],
             'teaching_entry_area_id' => [Rule::excludeIf(! $usesEntryAreasForGradingSchema), 'required', 'integer', $entryAreaRule],
             'teaching_curriculum_id' => ['nullable', 'integer', $curriculumRule],
+            'teaching_show_student_age' => ['sometimes', 'boolean'],
+            'teaching_show_student_last_login' => ['sometimes', 'boolean'],
         ]);
 
         $sortedClasses = $validated['classes'];
@@ -416,19 +483,38 @@ class TeachingCourseController extends Controller
             $studentsDeletedPayload = $validated['students_deleted'] ?? [];
         }
 
-        $course->update([
-            'title' => $validated['title'],
-            'description' => $validated['description'] ?? null,
-            'classes' => $sortedClasses,
-            'teaching_schema_id' => $validated['teaching_schema_id'] ?? $course->teaching_schema_id ?? $schemaIds->first(),
-            'teaching_entry_area_id' => array_key_exists('teaching_entry_area_id', $validated)
-                ? $validated['teaching_entry_area_id']
-                : $course->teaching_entry_area_id,
-            'teaching_curriculum_id' => $validated['teaching_curriculum_id'] ?? null,
-        ]);
+        DB::transaction(function () use (
+            $course,
+            $validated,
+            $sortedClasses,
+            $schemaIds,
+            $auth_user,
+            $classHeadEmailService,
+            $service,
+            $studentsPayload,
+            $studentsDeletedPayload,
+            $entrySyncService
+        ): void {
+            $course->update([
+                'title' => $validated['title'],
+                'description' => $validated['description'] ?? null,
+                'classes' => $sortedClasses,
+                'teaching_schema_id' => $validated['teaching_schema_id'] ?? $course->teaching_schema_id ?? $schemaIds->first(),
+                'teaching_entry_area_id' => array_key_exists('teaching_entry_area_id', $validated)
+                    ? $validated['teaching_entry_area_id']
+                    : $course->teaching_entry_area_id,
+                'teaching_curriculum_id' => $validated['teaching_curriculum_id'] ?? null,
+                'teaching_show_student_age' => $validated['teaching_show_student_age'] ?? $course->teaching_show_student_age,
+                'teaching_show_student_last_login' => $validated['teaching_show_student_last_login'] ?? $course->teaching_show_student_last_login,
+            ]);
 
-        $service->syncCourseStudents($course, $studentsPayload, $studentsDeletedPayload);
-        $entrySyncService->syncNonGroupWorksForCourse($course);
+            if (array_key_exists('class_head_emails', $validated)) {
+                $classHeadEmailService->syncForUser($auth_user, $validated['class_head_emails']);
+            }
+
+            $service->syncCourseStudents($course, $studentsPayload, $studentsDeletedPayload);
+            $entrySyncService->syncNonGroupWorksForCourse($course);
+        });
 
         return response()->json(new CourseResource($course));
     }
@@ -649,7 +735,9 @@ class TeachingCourseController extends Controller
         Collection $studentsById,
         Collection $importsById,
         Request $request,
-        array $removalReasons = []
+        array $removalReasons = [],
+        bool $showStudentAge = false,
+        bool $showStudentLastLogin = false,
     ): ?array {
         if ($courseStudent->import116_id && ! $importsById->has((int) $courseStudent->import116_id)) {
             return null;
@@ -684,8 +772,15 @@ class TeachingCourseController extends Controller
         }
 
         $payload['sex'] = $payload['sex'] ?? $import?->sex;
-        $payload['birth_date'] = $import?->birth_date?->format('Y-m-d');
-        $payload['age'] = $import?->birth_date?->age;
+
+        if ($showStudentAge) {
+            $payload['birth_date'] = $import?->birth_date?->format('Y-m-d');
+            $payload['age'] = $import?->birth_date?->age;
+        }
+
+        if (! $showStudentLastLogin) {
+            unset($payload['login_at']);
+        }
 
         $resolvedId = $source === 'user'
             ? (int) $courseStudent->user_id

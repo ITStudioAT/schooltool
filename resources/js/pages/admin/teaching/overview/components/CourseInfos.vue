@@ -67,6 +67,30 @@
                     </v-card>
                 </div>
 
+                <v-card variant="outlined" class="mt-3 course-student-display-card">
+                    <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-account-eye-outline</v-icon>
+                        Schüler:innen-Anzeige
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="d-flex flex-wrap ga-3 py-2">
+                        <v-checkbox
+                            :model-value="student_display_show_age"
+                            label="Alter"
+                            density="compact"
+                            hide-details
+                            :disabled="isSavingInfo"
+                            @update:model-value="saveStudentDisplaySetting('teaching_show_student_age', $event)" />
+                        <v-checkbox
+                            :model-value="student_display_show_last_login"
+                            label="Last Login"
+                            density="compact"
+                            hide-details
+                            :disabled="isSavingInfo"
+                            @update:model-value="saveStudentDisplaySetting('teaching_show_student_last_login', $event)" />
+                    </v-card-text>
+                </v-card>
+
                 <v-card variant="outlined" class="mt-3 course-infos-grades-card">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
                         <v-icon size="18">mdi-calculator</v-icon>
@@ -212,6 +236,7 @@ export default {
         if (this.selected_course?.id) {
             await this.behaviourEntryStore.indexByCourse(this.selected_course.id)
         }
+        this.restoreStudentDisplaySettings(this.selected_course)
     },
 
     async mounted() {
@@ -262,12 +287,22 @@ export default {
             student_grade_visibility_show_sem1: false,
             student_grade_visibility_show_sem2: false,
             student_grade_visibility_show_year: false,
+            student_display_show_age: false,
+            student_display_show_last_login: false,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'show_infos', 'infos_show_grade_sem1', 'infos_show_grade_sem2', 'infos_show_grade_year']),
+        ...mapWritableState(useCourseStore, [
+            'courses',
+            'classes',
+            'selected_course',
+            'show_infos',
+            'infos_show_grade_sem1',
+            'infos_show_grade_sem2',
+            'infos_show_grade_year',
+        ]),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         isSavingInfo() {
             return this.saving_info_action !== null
@@ -416,7 +451,16 @@ export default {
             const schemaId = this.selected_course?.teaching_schema_id
             return schemaId ? this.teachingStore?.schemaById(schemaId) : null
         },
+        selectedCourseEntryArea() {
+            const entryArea = this.selected_course?.teaching_entry_area
+
+            return entryArea?.id ? entryArea : null
+        },
         schemaName() {
+            if (this.selectedCourseEntryArea) {
+                return this.selectedCourseEntryArea.name || 'Kein Schema zugewiesen'
+            }
+
             const schema = this.selectedCourseSchema
             return schema ? schema.name : 'Kein Schema zugewiesen'
         },
@@ -461,13 +505,12 @@ export default {
             })
             return map
         },
-        teachingSchemas() {
-            return this.config?.user?.teaching_schemas || this.teachingStore?.settings?.teaching_schemas || []
-        },
         gradingSchema() {
-            const schemaId = this.selected_course?.teaching_schema_id
-            if (!schemaId) return null
-            return this.teachingSchemas.find((s) => String(s.id) === String(schemaId)) || null
+            if (this.selectedCourseEntryArea) {
+                return null
+            }
+
+            return this.selectedCourseSchema
         },
         grading() {
             return this.gradingSchema?.grading || {}
@@ -554,10 +597,12 @@ export default {
                     this.gradesDataLoaded = false
                     this.gradeEntries = []
                     this.restoreStudentGradeColumns(this.defaultGradeColumns())
+                    this.restoreStudentDisplaySettings(null)
                     return
                 }
                 this.courseStore?.ensureCourseStudentCollections?.(course)
                 this.restoreStudentGradeColumns(this.persistedStudentGradeColumns)
+                this.restoreStudentDisplaySettings(course)
                 await this.behaviourEntryStore?.indexByCourse(course.id)
                 if (this.anyGradeColumnVisible) {
                     await this.loadGradeData()
@@ -719,6 +764,42 @@ export default {
                 show_sem2: false,
                 show_year: false,
             }
+        },
+        restoreStudentDisplaySettings(course) {
+            this.student_display_show_age = Boolean(course?.teaching_show_student_age)
+            this.student_display_show_last_login = Boolean(course?.teaching_show_student_last_login)
+        },
+        async saveStudentDisplaySetting(attribute, value) {
+            if (!this.selected_course?.id || this.isSavingInfo) {
+                return false
+            }
+
+            const localAttribute = attribute === 'teaching_show_student_age'
+                ? 'student_display_show_age'
+                : 'student_display_show_last_login'
+            const previousValue = Boolean(this.selected_course?.[attribute])
+            const normalizedValue = Boolean(value)
+
+            this[localAttribute] = normalizedValue
+
+            return this.runInfoMutation('save-student-display', async () => {
+                const saved = await this.courseStore.update({
+                    ...this.selected_course,
+                    [attribute]: normalizedValue,
+                })
+
+                if (!saved) {
+                    this[localAttribute] = previousValue
+                    return false
+                }
+
+                const refreshedCourse = await this.courseStore.refreshCourseById(this.selected_course.id)
+                if (refreshedCourse) {
+                    this.restoreStudentDisplaySettings(refreshedCourse)
+                }
+
+                return true
+            })
         },
         restoreStudentGradeColumns(columns) {
             const normalizedColumns = {

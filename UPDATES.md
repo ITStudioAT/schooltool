@@ -18,6 +18,10 @@
 - Tabelle: Einträge: Ganze Spalte farblich markieren z. B. w/Prüfung
 - Tabelle: Einträge: Stoff kann eingetragen werden
 - Menüpunkt Termine: An die anderen Änderungen angepasst
+- UI-Verbesserungen
+
+### Unterrichtstool/Curricula
+- Auflösung der Datums-/Monatszuordnung
 
 ## 3.42.2
 

@@ -204,12 +204,17 @@
                                                 {{ copiedEmailId === student.id ? 'mdi-check' : 'mdi-content-copy' }}
                                             </v-icon>
                                         </div>
-                                        <div v-if="studentBirthDetails(student)" class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
+                                        <div
+                                            v-if="selected_course?.teaching_show_student_age && studentBirthDetails(student)"
+                                            class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
                                             <v-icon size="13">mdi-cake-variant-outline</v-icon>
                                             {{ studentBirthDetails(student) }}
                                         </div>
-                                        <div v-if="studentLastLoginText(student)" class="student-meta-line text-caption text-medium-emphasis">
-                                            {{ studentLastLoginText(student) }}
+                                        <div
+                                            v-if="selected_course?.teaching_show_student_last_login && studentLastLoginText(student)"
+                                            class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
+                                            <v-icon size="13">mdi-login-variant</v-icon>
+                                            Last Login: {{ studentLastLoginText(student) }}
                                         </div>
                                     </div>
                                     <v-chip v-if="isStudentCanceled(student)" size="x-small" variant="tonal" color="warning">

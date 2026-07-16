@@ -81,6 +81,10 @@
                         :disabled="isNavigationLocked || isStudentDetailActive"
                         @click="handleCourseSelect(course)">
                         {{ course.title }}
+                        <span
+                            v-if="courseStore?.courseHasProblems(course)"
+                            class="ml-1 text-error font-weight-black"
+                            aria-label="Probleme im Fach">!</span>
                     </v-btn>
                 </div>
                 <div class="teaching-subnav__actions ml-auto d-flex ga-2">
@@ -528,13 +532,6 @@ export default {
         visibleNavigationItems() {
             return [
                 {
-                    key: 'overview',
-                    label: 'Übersicht',
-                    meta: 'Tagesansicht',
-                    icon: 'mdi-view-dashboard-outline',
-                    visible: true,
-                },
-                {
                     key: 'search',
                     label: 'Suche',
                     meta: 'Personen & Klassen',
@@ -553,13 +550,6 @@ export default {
                     label: 'Curricula',
                     meta: 'Lehrpläne & Raster',
                     icon: 'mdi-book-education-outline',
-                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
-                },
-                {
-                    key: 'settings',
-                    label: 'Einstellungen',
-                    meta: 'Schema & Regeln',
-                    icon: 'mdi-cog-outline',
                     visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
                 },
                 {

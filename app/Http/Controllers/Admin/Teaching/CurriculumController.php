@@ -8,7 +8,6 @@ use App\Http\Resources\Admin\Materials\MaterialCardResource;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
-use App\Models\Schoolyear;
 use App\Models\TeachingCurriculum;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\Materials\MaterialService;
@@ -62,11 +61,6 @@ class CurriculumController extends Controller
         }
 
         $validated = $this->validatedPayload($request);
-        $freeWeeks = $validated['free_weeks'];
-
-        if ($freeWeeks === []) {
-            $freeWeeks = $this->freeWeeksTemplateWeekKeysForSelectedSchoolyear($auth_user);
-        }
 
         $curriculum = TeachingCurriculum::create([
             'school_id' => $auth_user->school_id,
@@ -74,93 +68,10 @@ class CurriculumController extends Controller
             'user_id' => $auth_user->id,
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
-            'semester_count' => $validated['semester_count'] ?? 2,
-            'free_weeks' => $freeWeeks,
             'topics' => $validated['topics'],
         ]);
 
         return response()->json(['data' => $curriculum], 201);
-    }
-
-    public function freeWeeksTemplate(Request $request)
-    {
-        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
-
-        return response()->json([
-            'data' => $this->freeWeeksTemplatePayloadForSelectedSchoolyear($auth_user),
-        ]);
-    }
-
-    public function updateFreeWeeksTemplate(Request $request)
-    {
-        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
-
-        $validated = $request->validate([
-            'free_weeks_template' => 'nullable|array',
-            'free_weeks_template.week_keys' => 'nullable|array',
-            'free_weeks_template.week_keys.*' => [
-                'string',
-                'date_format:Y-m-d',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    try {
-                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
-                    } catch (\Throwable) {
-                        return;
-                    }
-
-                    if (! $weekStart->isMonday()) {
-                        $fail('Freie Wochen müssen mit einem Montag gespeichert werden.');
-                    }
-                },
-            ],
-            'free_weeks_template.named_ranges' => 'nullable|array',
-            'free_weeks_template.named_ranges.*.title' => 'nullable|string|max:255',
-            'free_weeks_template.named_ranges.*.start_week_key' => [
-                'required_with:free_weeks_template.named_ranges.*.title',
-                'string',
-                'date_format:Y-m-d',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    try {
-                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
-                    } catch (\Throwable) {
-                        return;
-                    }
-
-                    if (! $weekStart->isMonday()) {
-                        $fail('Freie Wochen müssen mit einem Montag gespeichert werden.');
-                    }
-                },
-            ],
-            'free_weeks_template.named_ranges.*.end_week_key' => [
-                'required_with:free_weeks_template.named_ranges.*.title',
-                'string',
-                'date_format:Y-m-d',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    try {
-                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
-                    } catch (\Throwable) {
-                        return;
-                    }
-
-                    if (! $weekStart->isMonday()) {
-                        $fail('Freie Wochen müssen mit einem Montag gespeichert werden.');
-                    }
-                },
-            ],
-        ]);
-
-        $auth_user->teaching_curriculum_free_weeks_template = $this->normalizeFreeWeeksTemplatePayload(
-            is_array($validated['free_weeks_template'] ?? null) ? $validated['free_weeks_template'] : []
-        );
-        $auth_user->save();
-
-        return response()->json([
-            'data' => $this->freeWeeksTemplatePayloadForSelectedSchoolyear($auth_user),
-        ]);
     }
 
     public function show(TeachingCurriculum $curriculum)
@@ -384,7 +295,6 @@ class CurriculumController extends Controller
      *     title: string,
      *     description: ?string,
      *     semester_count: int,
-     *     free_weeks: array<int, string>,
      *     topics: array<int, array{
      *         id: string,
      *         title: string,
@@ -432,35 +342,10 @@ class CurriculumController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'semester_count' => 'nullable|integer|in:1,2',
-            'free_weeks' => 'nullable|array',
-            'free_weeks.*' => [
-                'string',
-                'date_format:Y-m-d',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    try {
-                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
-                    } catch (\Throwable) {
-                        return;
-                    }
-
-                    if (! $weekStart->isMonday()) {
-                        $fail('Freie Wochen müssen mit einem Montag gespeichert werden.');
-                    }
-                },
-            ],
             'topics' => 'nullable|array',
-            'topics.*' => 'array:id,title,assignment_type,month_key,month_keys,month_week_counts,week_keys,materials,units',
+            'topics.*' => 'array',
             'topics.*.id' => 'nullable|string|max:100',
             'topics.*.title' => 'required|string|max:255',
-            'topics.*.assignment_type' => 'required|string|in:none,all_weeks,month,weeks',
-            'topics.*.month_key' => 'nullable|string|regex:/^\d{4}-\d{2}$/',
-            'topics.*.month_keys' => 'nullable|array',
-            'topics.*.month_keys.*' => 'string|regex:/^\d{4}-\d{2}$/',
-            'topics.*.month_week_counts' => 'nullable|array',
-            'topics.*.month_week_counts.*' => 'integer|min:0|max:4',
-            'topics.*.week_keys' => 'nullable|array',
-            'topics.*.week_keys.*' => $this->weekKeyValidationRules(),
             'topics.*.materials' => 'nullable|array',
             'topics.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count,source_school_id,source_school_label,source_user_id,source_user_label,is_hopper_material,is_shared_material,shared_rule_id',
             'topics.*.materials.*.id' => 'required|integer|min:1',
@@ -479,20 +364,10 @@ class CurriculumController extends Controller
             'topics.*.materials.*.is_shared_material' => 'sometimes|boolean',
             'topics.*.materials.*.shared_rule_id' => 'nullable|integer|min:1',
             'topics.*.units' => 'nullable|array',
-            'topics.*.units.*' => 'array:id,title,is_exam,assignment_type,month_key,month_keys,month_week_counts,week_keys,checked_week_keys,materials',
+            'topics.*.units.*' => 'array',
             'topics.*.units.*.id' => 'nullable|string|max:100',
             'topics.*.units.*.title' => 'required|string|max:255',
             'topics.*.units.*.is_exam' => 'sometimes|boolean',
-            'topics.*.units.*.assignment_type' => 'required|string|in:none,all_weeks,month,weeks',
-            'topics.*.units.*.month_key' => 'nullable|string|regex:/^\d{4}-\d{2}$/',
-            'topics.*.units.*.month_keys' => 'nullable|array',
-            'topics.*.units.*.month_keys.*' => 'string|regex:/^\d{4}-\d{2}$/',
-            'topics.*.units.*.month_week_counts' => 'nullable|array',
-            'topics.*.units.*.month_week_counts.*' => 'integer|min:0|max:4',
-            'topics.*.units.*.week_keys' => 'nullable|array',
-            'topics.*.units.*.week_keys.*' => $this->weekKeyValidationRules(),
-            'topics.*.units.*.checked_week_keys' => 'nullable|array',
-            'topics.*.units.*.checked_week_keys.*' => $this->weekKeyValidationRules(),
             'topics.*.units.*.materials' => 'nullable|array',
             'topics.*.units.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count,source_school_id,source_school_label,source_user_id,source_user_label,is_hopper_material,is_shared_material,shared_rule_id',
             'topics.*.units.*.materials.*.id' => 'required|integer|min:1',
@@ -512,15 +387,45 @@ class CurriculumController extends Controller
             'topics.*.units.*.materials.*.shared_rule_id' => 'nullable|integer|min:1',
         ]);
 
-        $validated['semester_count'] = (int) ($validated['semester_count'] ?? 2);
-        $validated['free_weeks'] = $request->has('free_weeks')
-            ? $this->normalizeWeekKeys($validated['free_weeks'] ?? [])
-            : collect($curriculum?->free_weeks ?? [])->values()->all();
         $validated['topics'] = $request->has('topics')
-            ? $this->normalizeTopics($validated['topics'] ?? [], is_array($curriculum?->topics) ? $curriculum->topics : [])
+            ? $this->normalizeCurriculumTopics($validated['topics'] ?? [])
             : collect($curriculum?->topics ?? [])->values()->all();
 
         return $validated;
+    }
+
+    /**
+     * @param  array<int, mixed>  $topics
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeCurriculumTopics(array $topics): array
+    {
+        return collect($topics)->values()->map(function (mixed $topic, int $topicIndex): array {
+            $normalizedTopic = is_array($topic) ? $topic : [];
+
+            return [
+                'id' => filled($normalizedTopic['id'] ?? null)
+                    ? trim((string) $normalizedTopic['id'])
+                    : 'topic-'.Str::lower(Str::random(12)),
+                'title' => trim((string) ($normalizedTopic['title'] ?? '')),
+                'materials' => $this->normalizeMaterials(is_array($normalizedTopic['materials'] ?? null) ? $normalizedTopic['materials'] : []),
+                'units' => collect(is_array($normalizedTopic['units'] ?? null) ? $normalizedTopic['units'] : [])
+                    ->values()
+                    ->map(function (mixed $unit) use ($topicIndex): array {
+                        $normalizedUnit = is_array($unit) ? $unit : [];
+
+                        return [
+                            'id' => filled($normalizedUnit['id'] ?? null)
+                                ? trim((string) $normalizedUnit['id'])
+                                : "unit-{$topicIndex}-".Str::lower(Str::random(12)),
+                            'title' => trim((string) ($normalizedUnit['title'] ?? '')),
+                            'is_exam' => (bool) ($normalizedUnit['is_exam'] ?? false),
+                            'materials' => $this->normalizeMaterials(is_array($normalizedUnit['materials'] ?? null) ? $normalizedUnit['materials'] : []),
+                        ];
+                    })
+                    ->all(),
+            ];
+        })->all();
     }
 
     /**
@@ -1107,257 +1012,5 @@ class CurriculumController extends Controller
     private function monthKeyFromWeekKey(string $weekKey): string
     {
         return CarbonImmutable::createFromFormat('Y-m-d', $weekKey)->format('Y-m');
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function freeWeeksTemplateWeekKeysForSelectedSchoolyear($user): array
-    {
-        return $this->freeWeeksTemplatePayloadForSelectedSchoolyear($user)['week_keys'];
-    }
-
-    /**
-     * @return array{
-     *     week_keys: array<int, string>,
-     *     named_ranges: array<int, array{
-     *         title: string,
-     *         start_week_key: string,
-     *         end_week_key: string
-     *     }>
-     * }
-     */
-    private function freeWeeksTemplatePayloadForSelectedSchoolyear($user): array
-    {
-        $storedTemplate = $this->storedFreeWeeksTemplatePayload($user);
-        $weekKeys = $this->normalizeTemplateWeekKeysForSchoolyear($storedTemplate['week_keys'], $user->selectedSchoolyear);
-        $weekLookup = collect($weekKeys)->flip();
-
-        $namedRanges = $this->normalizeTemplateNamedRangesForSchoolyear(
-            $storedTemplate['named_ranges'],
-            $user->selectedSchoolyear
-        );
-        $namedRanges = collect($namedRanges)
-            ->filter(fn (array $range): bool => $weekLookup->has($range['start_week_key']) && $weekLookup->has($range['end_week_key']))
-            ->values()
-            ->all();
-
-        return [
-            'week_keys' => $weekKeys,
-            'named_ranges' => $namedRanges,
-        ];
-    }
-
-    /**
-     * @return array{
-     *     week_keys: array<int, string>,
-     *     named_ranges: array<int, array{
-     *         title: string,
-     *         start_week_key: string,
-     *         end_week_key: string
-     *     }>
-     * }
-     */
-    private function storedFreeWeeksTemplatePayload($user): array
-    {
-        $rawTemplate = $user->teaching_curriculum_free_weeks_template;
-
-        if (! is_array($rawTemplate)) {
-            return [
-                'week_keys' => [],
-                'named_ranges' => [],
-            ];
-        }
-
-        if (array_is_list($rawTemplate)) {
-            return [
-                'week_keys' => $this->normalizeWeekKeys($rawTemplate),
-                'named_ranges' => [],
-            ];
-        }
-
-        return $this->normalizeFreeWeeksTemplatePayload($rawTemplate);
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     * @return array{
-     *     week_keys: array<int, string>,
-     *     named_ranges: array<int, array{
-     *         title: string,
-     *         start_week_key: string,
-     *         end_week_key: string
-     *     }>
-     * }
-     */
-    private function normalizeFreeWeeksTemplatePayload(array $payload): array
-    {
-        $weekKeys = $this->normalizeWeekKeys(is_array($payload['week_keys'] ?? null) ? $payload['week_keys'] : []);
-        $weekLookup = collect($weekKeys)->flip();
-
-        $namedRanges = collect(is_array($payload['named_ranges'] ?? null) ? $payload['named_ranges'] : [])
-            ->filter(fn (mixed $range): bool => is_array($range))
-            ->map(function (array $range) use ($weekLookup): ?array {
-                $title = trim((string) ($range['title'] ?? ''));
-                $startWeekKey = trim((string) ($range['start_week_key'] ?? ''));
-                $endWeekKey = trim((string) ($range['end_week_key'] ?? ''));
-
-                if ($title === '' || $startWeekKey === '' || $endWeekKey === '') {
-                    return null;
-                }
-
-                if (! $weekLookup->has($startWeekKey) || ! $weekLookup->has($endWeekKey)) {
-                    return null;
-                }
-
-                if ($startWeekKey > $endWeekKey) {
-                    [$startWeekKey, $endWeekKey] = [$endWeekKey, $startWeekKey];
-                }
-
-                return [
-                    'title' => $title,
-                    'start_week_key' => $startWeekKey,
-                    'end_week_key' => $endWeekKey,
-                ];
-            })
-            ->filter()
-            ->unique(fn (array $range): string => "{$range['start_week_key']}:{$range['end_week_key']}")
-            ->sortBy(fn (array $range): string => "{$range['start_week_key']}:{$range['end_week_key']}")
-            ->values()
-            ->all();
-
-        return [
-            'week_keys' => $weekKeys,
-            'named_ranges' => $namedRanges,
-        ];
-    }
-
-    /**
-     * @param  array<int, mixed>  $weekKeys
-     * @return array<int, string>
-     */
-    private function normalizeTemplateWeekKeysForSchoolyear(array $weekKeys, ?Schoolyear $schoolyear): array
-    {
-        $weekMap = $this->schoolyearWeekMap($schoolyear);
-        if ($weekMap === []) {
-            return $this->normalizeWeekKeys($weekKeys);
-        }
-
-        return $this->normalizeWeekKeys(
-            collect($weekKeys)
-                ->map(function (mixed $weekKey) use ($weekMap): string {
-                    $rawWeekKey = (string) $weekKey;
-
-                    try {
-                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', $rawWeekKey)->startOfDay();
-                    } catch (\Throwable) {
-                        return $rawWeekKey;
-                    }
-
-                    return $weekMap[$weekStart->isoWeek()] ?? $rawWeekKey;
-                })
-                ->all()
-        );
-    }
-
-    /**
-     * @param  array<int, array{title:string,start_week_key:string,end_week_key:string}>  $namedRanges
-     * @return array<int, array{title:string,start_week_key:string,end_week_key:string}>
-     */
-    private function normalizeTemplateNamedRangesForSchoolyear(array $namedRanges, ?Schoolyear $schoolyear): array
-    {
-        $weekMap = $this->schoolyearWeekMap($schoolyear);
-        if ($weekMap === []) {
-            return $namedRanges;
-        }
-
-        return collect($namedRanges)
-            ->map(function (array $range) use ($weekMap): array {
-                return [
-                    'title' => $range['title'],
-                    'start_week_key' => $this->mapTemplateWeekKeyToSchoolyear($range['start_week_key'], $weekMap),
-                    'end_week_key' => $this->mapTemplateWeekKeyToSchoolyear($range['end_week_key'], $weekMap),
-                ];
-            })
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function schoolyearWeekMap(?Schoolyear $schoolyear): array
-    {
-        $startYear = $this->schoolyearStartYear($schoolyear);
-        if ($startYear === null) {
-            return [];
-        }
-
-        $weekMap = [];
-        $monthSequence = [
-            ['year' => $startYear, 'month' => 9],
-            ['year' => $startYear, 'month' => 10],
-            ['year' => $startYear, 'month' => 11],
-            ['year' => $startYear, 'month' => 12],
-            ['year' => $startYear + 1, 'month' => 1],
-            ['year' => $startYear + 1, 'month' => 2],
-            ['year' => $startYear + 1, 'month' => 3],
-            ['year' => $startYear + 1, 'month' => 4],
-            ['year' => $startYear + 1, 'month' => 5],
-            ['year' => $startYear + 1, 'month' => 6],
-            ['year' => $startYear + 1, 'month' => 7],
-        ];
-
-        foreach ($monthSequence as $entry) {
-            $firstDayOfMonth = CarbonImmutable::create($entry['year'], $entry['month'], 1, 0, 0, 0)->startOfDay();
-            $weekStart = $firstDayOfMonth->subDays($firstDayOfMonth->dayOfWeekIso - 1);
-
-            while (true) {
-                $weekHasMonthDay = false;
-
-                for ($dayOffset = 0; $dayOffset < 7; $dayOffset++) {
-                    if ($weekStart->addDays($dayOffset)->month === $entry['month']) {
-                        $weekHasMonthDay = true;
-                        break;
-                    }
-                }
-
-                if (! $weekHasMonthDay) {
-                    break;
-                }
-
-                $weekMap[$weekStart->isoWeek()] ??= $weekStart->format('Y-m-d');
-                $weekStart = $weekStart->addWeek();
-            }
-        }
-
-        return $weekMap;
-    }
-
-    /**
-     * @param  array<int, string>  $weekMap
-     */
-    private function mapTemplateWeekKeyToSchoolyear(string $weekKey, array $weekMap): string
-    {
-        try {
-            $weekStart = CarbonImmutable::createFromFormat('Y-m-d', $weekKey)->startOfDay();
-        } catch (\Throwable) {
-            return $weekKey;
-        }
-
-        return $weekMap[$weekStart->isoWeek()] ?? $weekKey;
-    }
-
-    private function schoolyearStartYear(?Schoolyear $schoolyear): ?int
-    {
-        if (! $schoolyear || blank($schoolyear->from)) {
-            return null;
-        }
-
-        try {
-            return CarbonImmutable::parse((string) $schoolyear->from)->year;
-        } catch (\Throwable) {
-            return null;
-        }
     }
 }

@@ -37,6 +37,33 @@ describe('CourseDates course-specific schema', () => {
         expect(computed.semesterCount.call(ctx)).toBe(2)
     })
 
+    it('filters course dates by the selected semester', () => {
+        const computed = (CourseDates as any).computed
+        const context = {
+            selected_course: {
+                course_dates: [
+                    { id: 1, date: '2026-01-12' },
+                    { id: 2, date: '2026-02-09' },
+                    { id: 3, date: '2026-06-15' },
+                ],
+            },
+            semesterCount: 2,
+            activeSemester: 1,
+            sem2StartDate: '2026-02-09',
+        }
+
+        expect(computed.filteredCourseDates.call(context).map((courseDate: { id: number }) => courseDate.id))
+            .toEqual([1])
+
+        context.activeSemester = 2
+        expect(computed.filteredCourseDates.call(context).map((courseDate: { id: number }) => courseDate.id))
+            .toEqual([2, 3])
+
+        context.activeSemester = 3
+        expect(computed.filteredCourseDates.call(context).map((courseDate: { id: number }) => courseDate.id))
+            .toEqual([1, 2, 3])
+    })
+
     it('shows the assigned curriculum in the dates card header', () => {
         const computed = (CourseDates as any).computed
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
@@ -52,51 +79,63 @@ describe('CourseDates course-specific schema', () => {
         expect(computed.selectedCourseCurriculumTitle.call(ctx)).toBe('Deutsch 6')
         expect(source).toContain('v-if="selectedCourseCurriculumTitle"')
         expect(source).toContain('class="course-date-curriculum-chip"')
-        expect(source).toContain('class="course-date-curriculum-inline pl-1 pr-2"')
-        expect(source).toContain('class="course-date-curriculum-stack"')
-        expect(source).toContain('class="course-date-curriculum-stack__content"')
-        expect(source).toContain('class="course-date-curriculum-stack__entry d-flex align-center"')
         expect(source).toContain('courseDateInlineContent(courseDate)')
-        expect(source).toContain(':key="`${courseDate.id}-inline-${entryIndex}`"')
-        expect(source).toContain('await this.loadSelectedCourseCurriculumDetail()')
+        expect(source).not.toContain('loadSelectedCourseCurriculumDetail')
         expect(source).not.toContain('mdi-eye-off-outline')
-        expect(source).not.toContain('show_dates = false')
     })
 
-    it('shows the assigned entry area in the dates card header', () => {
-        const computed = (CourseDates as any).computed
+    it('moves the date actions into the Termine row and removes the entry area chip', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
-        const context = {
-            selected_course: {
-                teaching_entry_area: {
-                    id: 11,
-                    name: 'DGB',
-                },
-            },
-        }
+        const termineRowPosition = source.indexOf('<v-card-title class="text-subtitle-1')
+        const countPosition = source.indexOf('{{ displayedCourseDatesCount }}')
+        const deletePosition = source.indexOf('title="Alle Termine löschen"')
+        const addPosition = source.indexOf('title="Termin hinzufügen"')
 
-        expect(computed.selectedCourseEntryAreaName.call(context)).toBe('DGB')
-        expect(source).toContain('v-if="selectedCourseEntryAreaName"')
-        expect(source).toContain('class="course-date-entry-area-chip"')
-        expect(source).toContain('title="Zugewiesener Eintragsbereich"')
+        expect(termineRowPosition).toBeLessThan(countPosition)
+        expect(countPosition).toBeLessThan(deletePosition)
+        expect(deletePosition).toBeLessThan(addPosition)
+        expect(source).not.toContain('<template #header-actions>')
+        expect(source).not.toContain('selectedCourseEntryAreaName')
+        expect(source).not.toContain('course-date-entry-area-chip')
+        expect(source).not.toContain('title="Zugewiesener Eintragsbereich"')
     })
 
-    it('shows the semester selector in the course title row and keeps the date range selector compact only', () => {
+    it('shows the semester selector in the new Zeitraum card and keeps the date range selector compact only', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
-        const titleRowPosition = source.indexOf('class="course-dates-title-row')
-        const semesterSelectionPosition = source.indexOf('class="course-date-semester-selection')
-        const headerActionsPosition = source.indexOf('<template #header-actions>')
+        const semesterSelectionPosition = source.indexOf('data-testid="course-dates-semester-selection"')
 
-        expect(titleRowPosition).toBeLessThan(semesterSelectionPosition)
-        expect(semesterSelectionPosition).toBeLessThan(headerActionsPosition)
-        expect(source).toContain('class="course-date-semester-selection d-flex justify-start"')
+        expect(semesterSelectionPosition).toBeGreaterThan(-1)
+        expect(source).not.toContain('<ItsGridBox')
+        expect(source).not.toContain('icon="mdi-calendar"')
+        expect(source).not.toContain('<template #title>')
+        expect(source).not.toContain('Termine – {{ selected_course.title }}')
+        expect(source).not.toContain('selectedCourseClasses')
+        expect(source).toContain('class="mt-3 mb-3"')
+        expect(source).toContain('data-testid="course-dates-semester-selection"')
+        expect(source).toContain('variant="tonal"')
+        expect(source).toContain('>Zeitraum:</span>')
+        expect(source).toContain('class="d-flex align-center flex-wrap ga-3 px-3 py-2"')
         expect(source).toContain('<v-btn :value="1" size="small">1. Sem</v-btn>')
         expect(source).toContain('<v-btn :value="2" size="small">2. Sem</v-btn>')
         expect(source).toContain('<v-btn :value="3" size="small">Sem 1+2</v-btn>')
-        expect(source.indexOf('course-date-semester-selection')).toBeLessThan(source.indexOf('dateRangeSelection'))
+        expect(semesterSelectionPosition).toBeLessThan(source.indexOf('dateRangeSelection'))
         expect(source).toContain('<v-card v-if="compactStudentView" tile flat color="transparent"')
         expect(source).toContain('<div v-if="compactStudentView" class="ml-auto d-flex">')
-        expect(source).not.toContain('!compactStudentView && semesterCount === 2')
+        expect(source).not.toContain('class="course-date-semester-selection')
+    })
+
+    it('removes the outer grid row above the Zeitraum selector', () => {
+        const datesSource = readFileSync(
+            resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'),
+            'utf8',
+        )
+
+        expect(datesSource).not.toContain('<ItsGridBox')
+        expect(datesSource).not.toContain('hide-header')
+        expect(datesSource).not.toContain('icon="mdi-calendar"')
+        expect(datesSource).toContain(
+            '<v-card v-if="selected_course" class="w-100" color="transparent" flat rounded="0" :disabled="isGridDisabled">',
+        )
     })
 
     it('renders each date as a full-width row', () => {
@@ -491,7 +530,7 @@ describe('CourseDates course-specific schema', () => {
         expect(computed.displayedCourseDates.call(ctx).map((courseDate: Record<string, unknown>) => courseDate.id)).toEqual([1, 2, 3, 4, 5, 6, 7])
     })
 
-    it('resolves matching curriculum entries for a course date and prioritizes free weeks', () => {
+    it('resolves matching legacy curriculum entries without free-week overrides', () => {
         const methods = (CourseDates as any).methods
         const ctx: Record<string, any> = {
             config: {
@@ -501,7 +540,6 @@ describe('CourseDates course-specific schema', () => {
                 },
             },
             selectedCourseCurriculumForContent: {
-                free_weeks: ['2025-09-15'],
                 topics: [
                     {
                         id: 'topic-all-weeks',
@@ -542,7 +580,10 @@ describe('CourseDates course-specific schema', () => {
             'Monatsprojekt',
             'Suchmaschinen und Internetrecherche - Teil 1: Projekt: Internetrecherche',
         ])
-        expect(methods.curriculumEntriesForCourseDate.call(ctx, { date: '2025-09-15' }).map((entry: Record<string, any>) => entry.label)).toEqual(['Frei'])
+        expect(methods.curriculumEntriesForCourseDate.call(ctx, { date: '2025-09-15' }).map((entry: Record<string, any>) => entry.label)).toEqual([
+            'Schreibuebungen',
+            'Monatsprojekt',
+        ])
     })
 
     it('normalizes course date content to a single inline line', () => {

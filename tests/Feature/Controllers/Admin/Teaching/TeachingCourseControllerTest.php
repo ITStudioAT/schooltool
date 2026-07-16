@@ -16,6 +16,7 @@ use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\TeachingClassHeadEmail;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudent;
@@ -455,6 +456,39 @@ describe('index', function () {
             ->assertJsonCount(5, 'classes');
     });
 
+    test('returns only the logged-in users class head emails for the current schoolyear', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        TeachingClassHeadEmail::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'class_name' => '1A',
+            'email_1' => 'head.one@example.test',
+            'email_2' => 'head.two@example.test',
+        ]);
+        TeachingClassHeadEmail::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'class_name' => '1A',
+        ]);
+        $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+        TeachingClassHeadEmail::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'user_id' => $this->admin->id,
+            'class_name' => '2A',
+        ]);
+
+        $this->getJson('/api/admin/teaching/courses')
+            ->assertOk()
+            ->assertJsonCount(1, 'class_head_emails')
+            ->assertJsonPath('class_head_emails.0.class_name', '1A')
+            ->assertJsonPath('class_head_emails.0.email_1', 'head.one@example.test')
+            ->assertJsonPath('class_head_emails.0.email_2', 'head.two@example.test');
+    });
+
     test('returns courses ordered by title', function () {
         $this->actingAs($this->admin, 'sanctum');
 
@@ -500,7 +534,6 @@ describe('index', function () {
             'title' => 'Deutsch Curriculum',
             'description' => 'Jahresplanung',
             'semester_count' => 2,
-            'free_weeks' => [],
             'topics' => [],
         ]);
 
@@ -582,6 +615,7 @@ describe('index', function () {
             'user_id' => $this->teacher->id,
             'title' => 'Kontakte',
             'classes' => ['1A'],
+            'teaching_show_student_last_login' => true,
         ]);
 
         $student = User::factory()->create([
@@ -609,7 +643,7 @@ describe('index', function () {
             ->and($studentPayload['login_at'])->toBe('24.03.2026  08:15');
     });
 
-    test('includes birth date and age from the linked import record for course students', function () {
+    test('includes birth date and age from the linked import record when enabled for the course', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         $birthDate = now()->subYears(14)->subDay()->toDateString();
@@ -640,6 +674,7 @@ describe('index', function () {
             'user_id' => $this->teacher->id,
             'title' => 'Deutsch',
             'classes' => ['3B'],
+            'teaching_show_student_age' => true,
         ]);
         $course->teachingCourseStudents()->create([
             'user_id' => $student->id,
@@ -654,6 +689,41 @@ describe('index', function () {
             ->and($studentPayload['sex'])->toBe('m')
             ->and($studentPayload['birth_date'])->toBe($birthDate)
             ->and($studentPayload['age'])->toBe(14);
+    });
+
+    test('omits age and last login when student display settings are disabled', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $import = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import_user_id' => $this->teacher->id,
+            'birth_date' => now()->subYears(15)->toDateString(),
+        ]);
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import116_id' => $import->id,
+            'login_at' => '2026-03-24 08:15:00',
+        ]);
+        $import->update(['user_id' => $student->id]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['1A'],
+        ]);
+        $course->teachingCourseStudents()->create([
+            'user_id' => $student->id,
+            'import116_id' => $import->id,
+        ]);
+
+        $response = $this->getJson('/api/admin/teaching/courses')->assertSuccessful();
+        $courseData = collect($response->json('data'))->firstWhere('id', $course->id);
+        $studentPayload = collect($courseData['students'] ?? [])->firstWhere('id', $student->id);
+
+        expect($studentPayload)->not->toHaveKeys(['age', 'birth_date', 'login_at']);
     });
 
     test('courses index batches curriculum assignment dependency checks', function () {
@@ -1330,6 +1400,65 @@ describe('store', function () {
         ]);
     });
 
+    test('stores up to two class head emails for each selected class', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->postJson('/api/admin/teaching/courses', [
+            'title' => 'Mathematik',
+            'classes' => ['1A', '1B'],
+            'teaching_schema_id' => $this->schemaId,
+            'class_head_emails' => [
+                [
+                    'class_name' => '1A',
+                    'email_1' => 'first.1a@example.test',
+                    'email_2' => 'second.1a@example.test',
+                ],
+                [
+                    'class_name' => '1B',
+                    'email_1' => 'first.1b@example.test',
+                    'email_2' => null,
+                ],
+            ],
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('teaching_class_head_emails', [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'class_name' => '1A',
+            'email_1' => 'first.1a@example.test',
+            'email_2' => 'second.1a@example.test',
+        ]);
+        $this->assertDatabaseHas('teaching_class_head_emails', [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'class_name' => '1B',
+            'email_1' => 'first.1b@example.test',
+            'email_2' => null,
+        ]);
+    });
+
+    test('rejects invalid class head emails and rows for unselected classes', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->postJson('/api/admin/teaching/courses', [
+            'title' => 'Mathematik',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+            'class_head_emails' => [
+                ['class_name' => '1A', 'email_1' => 'not-an-email'],
+                ['class_name' => '2A', 'email_1' => 'head@example.test'],
+            ],
+        ])->assertInvalid([
+            'class_head_emails.0.email_1',
+            'class_head_emails.1.class_name',
+        ]);
+
+        expect(TeachingCourse::query()->where('title', 'Mathematik')->exists())->toBeFalse()
+            ->and(TeachingClassHeadEmail::query()->exists())->toBeFalse();
+    });
+
     test('cannot import a student from another schoolyear into a course', function () {
         $this->actingAs($this->admin, 'sanctum');
 
@@ -1620,6 +1749,99 @@ describe('update', function () {
             ->and($course->classes)->toBe(['1A', '1B']);
     });
 
+    test('persists per-course student display settings', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Original Title',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", [
+            'title' => $course->title,
+            'classes' => $course->classes,
+            'teaching_schema_id' => $this->schemaId,
+            'teaching_show_student_age' => true,
+            'teaching_show_student_last_login' => true,
+        ])
+            ->assertSuccessful()
+            ->assertJsonPath('teaching_show_student_age', true)
+            ->assertJsonPath('teaching_show_student_last_login', true);
+
+        $course->refresh();
+
+        expect($course->teaching_show_student_age)->toBeTrue()
+            ->and($course->teaching_show_student_last_login)->toBeTrue();
+    });
+
+    test('updates the logged-in users remembered class head emails without deleting other classes', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Mathematik',
+            'classes' => ['1A', '2A'],
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+        TeachingClassHeadEmail::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'class_name' => '1A',
+            'email_1' => 'old@example.test',
+            'email_2' => 'clear@example.test',
+        ]);
+        TeachingClassHeadEmail::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'class_name' => '2A',
+            'email_1' => 'remember@example.test',
+        ]);
+        TeachingClassHeadEmail::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'class_name' => '1A',
+            'email_1' => 'teacher@example.test',
+        ]);
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", [
+            'title' => $course->title,
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+            'class_head_emails' => [[
+                'class_name' => '1A',
+                'email_1' => 'updated@example.test',
+                'email_2' => null,
+            ]],
+        ])->assertOk();
+
+        $this->assertDatabaseCount('teaching_class_head_emails', 3);
+        $this->assertDatabaseHas('teaching_class_head_emails', [
+            'user_id' => $this->admin->id,
+            'class_name' => '1A',
+            'email_1' => 'updated@example.test',
+            'email_2' => null,
+        ]);
+        $this->assertDatabaseHas('teaching_class_head_emails', [
+            'user_id' => $this->admin->id,
+            'class_name' => '2A',
+            'email_1' => 'remember@example.test',
+        ]);
+        $this->assertDatabaseHas('teaching_class_head_emails', [
+            'user_id' => $this->teacher->id,
+            'class_name' => '1A',
+            'email_1' => 'teacher@example.test',
+        ]);
+    });
+
     test('admin assigns an entry area owned by the course teacher and cannot clear it', function () {
         $this->actingAs($this->admin, 'sanctum');
         $this->schoolyear->update(['name' => '2026/27', 'concerns' => '2026/27']);
@@ -1862,7 +2084,6 @@ describe('update', function () {
             'title' => 'Mathematik Curriculum',
             'description' => 'Planung',
             'semester_count' => 2,
-            'free_weeks' => [],
             'topics' => [],
         ]);
 
@@ -1914,7 +2135,6 @@ describe('update', function () {
             'title' => 'Fremdes Curriculum',
             'description' => null,
             'semester_count' => 2,
-            'free_weeks' => [],
             'topics' => [],
         ]);
 
