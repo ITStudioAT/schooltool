@@ -1400,6 +1400,40 @@ describe('store', function () {
         ]);
     });
 
+    test('can create a course with a curriculum from another schoolyear', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $previousSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+            'name' => '2024/25',
+            'concerns' => '2024/25',
+        ]);
+        $curriculum = TeachingCurriculum::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $previousSchoolyear->id,
+            'user_id' => $this->admin->id,
+            'title' => 'Mathematik Curriculum',
+            'description' => 'Planung aus dem Vorjahr',
+            'semester_count' => 2,
+            'topics' => [],
+        ]);
+
+        $this->postJson('/api/admin/teaching/courses', [
+            'title' => 'Mathematik',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+            'teaching_curriculum_id' => $curriculum->id,
+        ])->assertCreated()
+            ->assertJsonPath('teaching_curriculum_id', $curriculum->id);
+
+        $this->assertDatabaseHas('teaching_courses', [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_curriculum_id' => $curriculum->id,
+        ]);
+    });
+
     test('stores up to two class head emails for each selected class', function () {
         $this->actingAs($this->admin, 'sanctum');
 
@@ -2065,7 +2099,7 @@ describe('update', function () {
         expect($course->classes)->toBe(['1A', '1B', '2A', '3A']);
     });
 
-    test('can assign and remove a curriculum on update', function () {
+    test('can assign and remove a curriculum from another schoolyear on update', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         $course = TeachingCourse::factory()->create([
@@ -2077,9 +2111,14 @@ describe('update', function () {
             'teaching_schema_id' => $this->schemaId,
         ]);
 
+        $previousSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+            'name' => '2024/25',
+            'concerns' => '2024/25',
+        ]);
         $curriculum = TeachingCurriculum::query()->create([
             'school_id' => $this->school->id,
-            'schoolyear_id' => $this->schoolyear->id,
+            'schoolyear_id' => $previousSchoolyear->id,
             'user_id' => $this->teacher->id,
             'title' => 'Mathematik Curriculum',
             'description' => 'Planung',

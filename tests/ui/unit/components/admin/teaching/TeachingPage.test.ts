@@ -140,10 +140,11 @@ describe('Teaching page navigation', () => {
 
         const items = (Teaching as any).computed.visibleNavigationItems.call(ctx)
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['search', 'schoolyear', 'curricula'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'search', 'schoolyear', 'curricula'])
+        expect(items.slice(0, 2).map((item: { label: string }) => item.label)).toEqual(['Unterricht', 'Suche'])
     })
 
-    it('shows admin navigation without the unused overview and settings cards', () => {
+    it('shows the teaching overview in admin navigation without the settings card', () => {
         const ctx = {
             config: {
                 roles: ['teaching_admin'],
@@ -157,7 +158,35 @@ describe('Teaching page navigation', () => {
 
         const items = (Teaching as any).computed.visibleNavigationItems.call(ctx)
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['search', 'schoolyear', 'curricula', 'datensicherung', 'testumgebung'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual([
+            'overview',
+            'search',
+            'schoolyear',
+            'curricula',
+            'datensicherung',
+            'testumgebung',
+        ])
+    })
+
+    it('opens the teaching table URL from the Unterricht navigation item', () => {
+        const routerReplace = vi.fn()
+        const resetTeachingOverviewSelection = vi.fn()
+        const ctx = {
+            isNavigationLocked: false,
+            main_action: 'search',
+            $router: { replace: routerReplace },
+            resetTeachingOverviewSelection,
+            openTeachingTable: (Teaching as any).methods.openTeachingTable,
+        }
+
+        ;(Teaching as any).methods.handleNavigation.call(ctx, 'overview')
+
+        expect(resetTeachingOverviewSelection).toHaveBeenCalledOnce()
+        expect(ctx.main_action).toBe('overview')
+        expect(routerReplace).toHaveBeenCalledWith({
+            path: '/admin/teaching',
+            query: { panel: 'table' },
+        })
     })
 
     it('builds hero chips from selected school context', () => {

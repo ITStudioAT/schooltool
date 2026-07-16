@@ -67,7 +67,7 @@
                             </v-btn>
                         </div>
 
-                        <div class="curriculum-detail__preview mt-4">
+                        <div class="curriculum-detail__preview">
                             <div class="curriculum-detail__preview-summary">
                                 {{ curriculumTopics.length }} Themen · {{ curriculumUnitCount }} Einheiten
                             </div>
@@ -82,16 +82,20 @@
                                     :class="{ 'curriculum-detail__topic-item--selected': isTopicSelected(topic.id) }">
                                     <div
                                         class="curriculum-detail__topic-row"
-                                        role="button"
-                                        tabindex="0"
-                                        :aria-pressed="isTopicSelected(topic.id)"
-                                        @click="toggleSelectedTopic(topic.id)"
-                                        @keydown.enter.prevent="toggleSelectedTopic(topic.id)"
-                                        @keydown.space.prevent="toggleSelectedTopic(topic.id)">
+                                        :class="{ 'curriculum-detail__topic-row--collapsible': topic.units.length }"
+                                        :role="topic.units.length ? 'button' : undefined"
+                                        :tabindex="topic.units.length ? 0 : undefined"
+                                        :aria-expanded="topic.units.length ? !isTopicCollapsed(topic.id) : undefined"
+                                        @click="topic.units.length && toggleTopicCollapse(topic.id)"
+                                        @keydown.enter.prevent="topic.units.length && toggleTopicCollapse(topic.id)"
+                                        @keydown.space.prevent="topic.units.length && toggleTopicCollapse(topic.id)">
                                     <div class="curriculum-detail__topic-main">
                                         <div class="curriculum-detail__topic-title-row">
                                             <div class="curriculum-detail__topic-title">
                                                 {{ topicIndex + 1 }}. {{ topic.title }}
+                                            </div>
+                                            <div class="curriculum-detail__topic-unit-count">
+                                                {{ topic.units.length }} {{ topic.units.length === 1 ? 'Einheit' : 'Einheiten' }}
                                             </div>
                                         </div>
                                         <div v-if="topic.materials.length" class="curriculum-detail__attached-materials">
@@ -147,82 +151,56 @@
                                             :disabled="topicSaving || isPageActionLocked || topicIndex === curriculumTopics.length - 1"
                                             title="Nach unten verschieben"
                                             @click="moveTopic(topic.id, 1)" />
-                                        <v-btn
-                                            icon="mdi-book-plus-outline"
-                                            variant="text"
-                                            color="primary"
-                                            size="x-small"
-                                            :disabled="topicSaving || isPageActionLocked"
-                                            title="Materialien hinzufügen"
-                                            @click="openContentMaterialDialog({
-                                                type: 'topic',
-                                                topicId: topic.id,
-                                            })" />
-                                        <v-btn
-                                            icon="mdi-pencil-outline"
-                                            variant="text"
-                                            color="primary"
-                                            size="x-small"
-                                            :disabled="topicSaving || isPageActionLocked"
-                                            title="Thema bearbeiten"
-                                            @click="openTopicForm(topic)" />
-                                        <v-btn
-                                            icon="mdi-delete-outline"
-                                            variant="text"
-                                            color="error"
-                                            size="x-small"
-                                            :disabled="topicSaving || isPageActionLocked"
-                                            title="Thema löschen"
-                                            @click="promptDeleteTopic(topic)" />
-                                        </div>
-                                        <div v-if="topic.units.length" class="curriculum-detail__topic-collapse-toggle" @click.stop>
-                                            <div
-                                                v-if="isTopicCollapsed(topic.id)"
-                                                class="curriculum-detail__topic-collapsed-count">
-                                                {{ topic.units.length }} Einheiten
-                                            </div>
-                                            <v-btn
-                                                :class="['curriculum-detail__topic-collapse-btn', { 'ml-auto': !isTopicCollapsed(topic.id) }]"
-                                                :icon="isTopicCollapsed(topic.id) ? 'mdi-chevron-down' : 'mdi-chevron-up'"
-                                                variant="flat"
-                                                color="primary"
-                                                size="x-small"
-                                                :aria-expanded="!isTopicCollapsed(topic.id)"
-                                                :title="isTopicCollapsed(topic.id) ? 'Thema aufklappen' : 'Thema einklappen'"
-                                                @click="toggleTopicCollapse(topic.id)" />
+                                        <v-menu location="bottom end">
+                                            <template #activator="{ props: topicMenuActivatorProps }">
+                                                <v-btn
+                                                    v-bind="topicMenuActivatorProps"
+                                                    icon="mdi-dots-vertical"
+                                                    variant="text"
+                                                    color="primary"
+                                                    size="x-small"
+                                                    density="compact"
+                                                    :disabled="topicSaving || isPageActionLocked"
+                                                    title="Themenaktionen"
+                                                    @click.stop />
+                                            </template>
+                                            <v-list
+                                                density="compact"
+                                                min-width="210"
+                                                class="curriculum-detail__topic-action-menu">
+                                                <v-list-item
+                                                    prepend-icon="mdi-book-plus-outline"
+                                                    title="Material hinzufügen"
+                                                    :disabled="topicSaving || isPageActionLocked"
+                                                    @click="openContentMaterialDialog({
+                                                        type: 'topic',
+                                                        topicId: topic.id,
+                                                    })" />
+                                                <v-list-item
+                                                    prepend-icon="mdi-pencil-outline"
+                                                    title="Bearbeiten"
+                                                    :disabled="topicSaving || isPageActionLocked"
+                                                    @click="openTopicForm(topic)" />
+                                                <v-list-item
+                                                    prepend-icon="mdi-plus"
+                                                    title="Einheit hinzufügen"
+                                                    :disabled="topicSaving || isPageActionLocked"
+                                                    @click="openUnitForm(topic.id)" />
+                                                <v-divider />
+                                                <v-list-item
+                                                    prepend-icon="mdi-delete-outline"
+                                                    title="Löschen"
+                                                    base-color="error"
+                                                    :disabled="topicSaving || isPageActionLocked"
+                                                    @click="promptDeleteTopic(topic)" />
+                                            </v-list>
+                                        </v-menu>
                                         </div>
                                     </div>
                                 </div>
 
                                     <div v-if="!isTopicCollapsed(topic.id)" class="curriculum-detail__unit-section">
-                                            <div class="curriculum-detail__unit-toolbar">
-                                                <div class="curriculum-detail__unit-summary">
-                                                    <div class="curriculum-detail__unit-count">{{ topic.units.length }} Einheiten</div>
-                                                    <v-btn
-                                                        variant="text"
-                                                        color="primary"
-                                                        size="x-small"
-                                                        rounded="lg"
-                                                        class="text-none"
-                                                        :disabled="isPageActionLocked || topicSaving || !canDistributeTopicUnits(topic)"
-                                                        @click="distributeTopicUnits(topic)">
-                                                        Verteilen
-                                                    </v-btn>
-                                                </div>
-                                                <v-btn
-                                                    variant="text"
-                                                    color="primary"
-                                                    size="x-small"
-                                                    rounded="lg"
-                                                    prepend-icon="mdi-plus"
-                                                    class="text-none"
-                                                    :disabled="isPageActionLocked"
-                                                    @click="openUnitForm(topic.id)">
-                                                    Einheit
-                                                </v-btn>
-                                            </div>
-
-                                    <div v-if="topic.units.length" class="curriculum-detail__unit-list mt-3">
+                                    <div v-if="topic.units.length" class="curriculum-detail__unit-list">
                                         <div
                                             v-for="(unit, unitIndex) in topic.units"
                                             :key="unit.id"
@@ -234,9 +212,9 @@
                                             role="button"
                                             tabindex="0"
                                             :aria-pressed="isUnitSelected(topic.id, unit.id)"
-                                            @click="toggleSelectedUnit(topic.id, unit.id)"
-                                            @keydown.enter.prevent="toggleSelectedUnit(topic.id, unit.id)"
-                                            @keydown.space.prevent="toggleSelectedUnit(topic.id, unit.id)">
+                                            @click="openSelectedUnitForm(topic.id, unit)"
+                                            @keydown.enter.prevent="openSelectedUnitForm(topic.id, unit)"
+                                            @keydown.space.prevent="openSelectedUnitForm(topic.id, unit)">
                                             <div class="curriculum-detail__topic-row">
                                                 <div class="curriculum-detail__topic-main">
                                                     <div class="curriculum-detail__unit-title-row">
@@ -246,9 +224,10 @@
                                                         <v-chip
                                                             v-if="unit.is_exam"
                                                             size="x-small"
-                                                            color="warning"
+                                                            color="error"
                                                             variant="flat"
-                                                            prepend-icon="mdi-file-alert-outline"
+                                                            tile
+                                                            prepend-icon="mdi-clipboard-text-outline"
                                                             class="curriculum-detail__unit-exam-chip">
                                                             Prüfung
                                                         </v-chip>
@@ -305,34 +284,6 @@
                                                         :disabled="topicSaving || isPageActionLocked || unitIndex === topic.units.length - 1"
                                                         title="Nach unten verschieben"
                                                         @click="moveUnit(topic.id, unit.id, 1)" />
-                                                    <v-btn
-                                                        icon="mdi-book-plus-outline"
-                                                        variant="text"
-                                                        color="primary"
-                                                        size="x-small"
-                                                        :disabled="topicSaving || isPageActionLocked"
-                                                        title="Materialien hinzufügen"
-                                                        @click="openContentMaterialDialog({
-                                                            type: 'unit',
-                                                            topicId: topic.id,
-                                                            unitId: unit.id,
-                                                        })" />
-                                                    <v-btn
-                                                        icon="mdi-pencil-outline"
-                                                        variant="text"
-                                                        color="primary"
-                                                        size="x-small"
-                                                        :disabled="topicSaving || isPageActionLocked"
-                                                        title="Einheit bearbeiten"
-                                                        @click="openUnitForm(topic.id, unit)" />
-                                                    <v-btn
-                                                        icon="mdi-delete-outline"
-                                                        variant="text"
-                                                        color="error"
-                                                        size="x-small"
-                                                        :disabled="topicSaving || isPageActionLocked"
-                                                        title="Einheit löschen"
-                                                        @click="promptDeleteUnit(topic, unit)" />
                                                 </div>
                                             </div>
 
@@ -487,26 +438,54 @@
                             <div v-if="unitFormError" class="curriculum-detail__topic-form-error mb-3">
                                 {{ unitFormError }}
                             </div>
-                            <div class="curriculum-detail__topic-form-actions">
-                                <v-btn
-                                    variant="flat"
-                                    color="primary"
-                                    size="small"
-                                    rounded="lg"
-                                    class="text-none curriculum-detail__topic-save-btn curriculum-detail__editor-dialog-save-btn"
-                                    :loading="topicSaving"
-                                    @click="saveUnit">
-                                    {{ unitForm.id ? 'Einheit speichern' : 'Einheit anlegen' }}
-                                </v-btn>
-                                <v-btn
-                                    variant="text"
-                                    color="secondary"
-                                    size="small"
-                                    class="text-none curriculum-detail__editor-dialog-cancel-btn"
-                                    :disabled="topicSaving"
-                                    @click="cancelUnitForm">
-                                    Abbrechen
-                                </v-btn>
+                            <div class="curriculum-detail__unit-dialog-actions">
+                                <div
+                                    v-if="unitForm.id"
+                                    class="curriculum-detail__unit-dialog-secondary-actions">
+                                    <v-btn
+                                        prepend-icon="mdi-book-plus-outline"
+                                        variant="tonal"
+                                        color="primary"
+                                        size="small"
+                                        rounded="lg"
+                                        class="text-none curriculum-detail__unit-dialog-material-btn"
+                                        :disabled="topicSaving"
+                                        @click="openUnitMaterialDialog">
+                                        Material hinzufügen
+                                    </v-btn>
+                                    <v-btn
+                                        prepend-icon="mdi-delete-outline"
+                                        variant="text"
+                                        color="error"
+                                        size="small"
+                                        rounded="lg"
+                                        class="text-none curriculum-detail__unit-dialog-delete-btn"
+                                        :disabled="topicSaving"
+                                        @click="promptDeleteEditingUnit">
+                                        Einheit löschen
+                                    </v-btn>
+                                </div>
+                                <div class="curriculum-detail__topic-form-actions">
+                                    <v-btn
+                                        variant="flat"
+                                        color="primary"
+                                        size="small"
+                                        rounded="lg"
+                                        class="text-none curriculum-detail__topic-save-btn curriculum-detail__editor-dialog-save-btn"
+                                        :loading="topicSaving"
+                                        @click="saveUnit">
+                                        {{ unitForm.id ? 'Einheit speichern' : 'Einheit anlegen' }}
+                                    </v-btn>
+                                    <v-btn
+                                        variant="text"
+                                        color="secondary"
+                                        size="small"
+                                        class="text-none curriculum-detail__editor-dialog-cancel-btn"
+                                        :disabled="topicSaving"
+                                        @click="cancelUnitForm">
+                                        Abbrechen
+                                    </v-btn>
+                                </div>
                             </div>
                         </div>
                     </v-card-text>
@@ -3272,18 +3251,6 @@ export default {
             this.contentDeleteDialogOpen = true
         },
 
-        promptDeleteUnit(topic, unit) {
-            if (this.isPageActionLocked || this.topicSaving) return
-
-            this.contentToDelete = {
-                type: 'unit',
-                title: unit.title,
-                topicId: topic.id,
-                unitId: unit.id,
-            }
-            this.contentDeleteDialogOpen = true
-        },
-
         closeTopicDeleteDialog() {
             if (this.topicSaving) return
 
@@ -4295,6 +4262,43 @@ export default {
             this.unitFormError = null
             this.showUnitFormForTopicId = topicId
             this.unitForm = this.newUnitForm(topicId, unit)
+        },
+
+        openSelectedUnitForm(topicId, unit) {
+            if (this.topicSaving || this.isPageActionLocked) return
+
+            if (!this.isUnitSelected(topicId, unit.id)) {
+                this.toggleSelectedUnit(topicId, unit.id)
+            }
+
+            this.openUnitForm(topicId, unit)
+        },
+
+        openUnitMaterialDialog() {
+            if (!this.unitForm.topicId || !this.unitForm.id) return
+
+            return this.openContentMaterialDialog({
+                type: 'unit',
+                topicId: this.unitForm.topicId,
+                unitId: this.unitForm.id,
+            })
+        },
+
+        promptDeleteEditingUnit() {
+            if (this.topicSaving || !this.unitForm.topicId || !this.unitForm.id) return
+
+            const topic = this.findTopic(this.unitForm.topicId)
+            const unit = topic?.units.find((topicUnit) => topicUnit.id === this.unitForm.id)
+
+            if (!topic || !unit) return
+
+            this.contentToDelete = {
+                type: 'unit',
+                title: unit.title,
+                topicId: topic.id,
+                unitId: unit.id,
+            }
+            this.contentDeleteDialogOpen = true
         },
 
         cancelUnitForm() {
@@ -5662,7 +5666,9 @@ export default {
 }
 
 .curriculum-detail__side-card--content .curriculum-detail__side-card-header {
+    padding: 10px 14px 8px;
     color: #0f172a;
+    font-size: 1.05rem;
     border-bottom-color: rgba(30, 41, 59, 0.1);
     background: linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(219, 234, 254, 0.36));
 }
@@ -5703,6 +5709,7 @@ export default {
 }
 
 .curriculum-detail__side-card--content .curriculum-detail__side-card-body {
+    padding: 10px 14px;
     color: #1e293b;
 }
 
@@ -5722,19 +5729,20 @@ export default {
 .curriculum-detail__content-hint {
     font-size: 0.8rem;
     color: #475569;
-    line-height: 1.45;
-    margin-top: 4px;
+    line-height: 1.35;
+    margin-top: 2px;
 }
 
 .curriculum-detail__preview {
-    padding: 10px 12px;
+    margin-top: 8px;
+    padding: 7px 8px;
     border: 1px solid rgba(37, 99, 235, 0.22);
     border-radius: 10px;
     background: rgba(219, 234, 254, 0.45);
 }
 
 .curriculum-detail__preview-summary {
-    margin-bottom: 8px;
+    margin-bottom: 5px;
     color: #0f172a;
     font-size: 0.75rem;
     font-weight: 500;
@@ -5743,7 +5751,7 @@ export default {
 .curriculum-detail__content-footer {
     display: flex;
     justify-content: flex-end;
-    margin-top: 16px;
+    margin-top: 8px;
 }
 
 .curriculum-detail__topic-form {
@@ -5755,6 +5763,21 @@ export default {
 }
 
 .curriculum-detail__topic-form-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.curriculum-detail__unit-dialog-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.curriculum-detail__unit-dialog-secondary-actions {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -6135,7 +6158,7 @@ export default {
 .curriculum-detail__topic-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
 }
 
 .curriculum-detail__topic-entry {
@@ -6152,33 +6175,16 @@ export default {
     overflow: hidden;
 }
 
-.curriculum-detail__topic-collapse-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    width: 100%;
-    padding: 4px 12px;
-}
-
-.curriculum-detail__topic-collapse-btn {
-    border: 1px solid rgba(129, 140, 248, 0.38) !important;
-    background: linear-gradient(180deg, rgba(224, 231, 255, 0.98), rgba(199, 210, 254, 0.92)) !important;
-    color: #4338ca !important;
-    box-shadow: 0 8px 18px rgba(99, 102, 241, 0.18);
-}
-
-.curriculum-detail__topic-collapse-btn:hover {
-    background: linear-gradient(180deg, rgba(199, 210, 254, 1), rgba(165, 180, 252, 0.94)) !important;
-    color: #312e81 !important;
-}
-
 .curriculum-detail__topic-item > .curriculum-detail__topic-row {
-    padding: 8px;
-    cursor: pointer;
+    padding: 4px 6px;
+    cursor: default;
     background: transparent;
     border-bottom: 1px solid rgba(15, 23, 42, 0.06);
     transition: background 0.15s, box-shadow 0.15s;
+}
+
+.curriculum-detail__topic-item > .curriculum-detail__topic-row--collapsible {
+    cursor: pointer;
 }
 
 .curriculum-detail__topic-item--selected {
@@ -6197,7 +6203,7 @@ export default {
 }
 
 .curriculum-detail__topic-item > .curriculum-detail__unit-section {
-    padding: 8px;
+    padding: 4px 6px 6px;
     border-top: none;
 }
 
@@ -6227,8 +6233,11 @@ export default {
     line-height: 1.35;
 }
 
-.curriculum-detail__topic-collapsed-count {
-    font-size: 0.9rem;
+.curriculum-detail__topic-unit-count {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(226, 232, 240, 0.82);
+    font-size: 0.72rem;
     font-weight: 700;
     color: #475569;
     white-space: nowrap;
@@ -6312,42 +6321,28 @@ export default {
     align-items: center;
     gap: 2px;
     flex-shrink: 0;
-    padding: 2px;
+    padding: 0;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.7);
 }
 
+.curriculum-detail__topic-actions :deep(.v-btn) {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+}
+
 .curriculum-detail__topic-header-actions {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
     flex-shrink: 0;
 }
 
 .curriculum-detail__unit-section {
     border-top: 0;
     padding-top: 0;
-}
-
-.curriculum-detail__unit-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.curriculum-detail__unit-summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.curriculum-detail__unit-count {
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: #475569;
-    letter-spacing: 0.02em;
 }
 
 .curriculum-detail__unit-form {
@@ -6359,10 +6354,11 @@ export default {
     flex-direction: column;
     gap: 2px;
     margin-left: 0;
+    margin-top: 4px;
 }
 
 .curriculum-detail__unit-item {
-    padding: 2px 0;
+    padding: 0;
     border: 0;
     border-radius: 6px;
     background: transparent;
@@ -6372,7 +6368,7 @@ export default {
 }
 
 .curriculum-detail__unit-item > .curriculum-detail__topic-row {
-    padding: 3px 6px;
+    padding: 2px 4px;
     transition: background 0.15s, box-shadow 0.15s;
     border-radius: 8px;
 }
@@ -6383,15 +6379,33 @@ export default {
 }
 
 .curriculum-detail__unit-item--exam {
-    background: rgba(254, 243, 199, 0.66);
-    box-shadow: inset 3px 0 0 rgba(217, 119, 6, 0.46);
+    background: transparent;
+    box-shadow: none;
+}
+
+.curriculum-detail__unit-item--exam > .curriculum-detail__topic-row {
+    align-items: center;
+    border-radius: 0;
+    background: linear-gradient(90deg, rgba(254, 226, 226, 0.82), rgba(255, 255, 255, 0.42));
+    box-shadow:
+        inset 2px 0 0 rgba(220, 38, 38, 0.72),
+        inset 0 0 0 1px rgba(220, 38, 38, 0.08);
+}
+
+.curriculum-detail__unit-item--exam:hover > .curriculum-detail__topic-row {
+    background: linear-gradient(90deg, rgba(254, 202, 202, 0.68), rgba(255, 255, 255, 0.58));
 }
 
 .curriculum-detail__unit-item--exam.curriculum-detail__unit-item--selected {
-    background: rgba(253, 230, 138, 0.72);
+    background: transparent;
+    box-shadow: none;
+}
+
+.curriculum-detail__unit-item--exam.curriculum-detail__unit-item--selected > .curriculum-detail__topic-row {
+    background: linear-gradient(90deg, rgba(254, 202, 202, 0.62), rgba(219, 234, 254, 0.74));
     box-shadow:
-        inset 3px 0 0 rgba(217, 119, 6, 0.58),
-        0 0 0 1px rgba(217, 119, 6, 0.14);
+        inset 2px 0 0 rgba(220, 38, 38, 0.82),
+        0 0 0 1px rgba(37, 99, 235, 0.16);
 }
 
 .curriculum-detail__unit-title {
@@ -6409,7 +6423,19 @@ export default {
 }
 
 .curriculum-detail__unit-exam-chip {
+    height: 20px;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #dc2626 !important;
+    color: #ffffff !important;
+    font-size: 0.66rem;
     font-weight: 700;
+    letter-spacing: 0.015em;
+    box-shadow: none !important;
+}
+
+.curriculum-detail__unit-exam-chip :deep(.v-icon) {
+    font-size: 13px;
 }
 
 .curriculum-detail__unit-exam-checkbox :deep(.v-selection-control) {

@@ -291,7 +291,6 @@ class TeachingCourseController extends Controller
         $curriculumRule = Rule::exists(TeachingCurriculum::query()->getModel()->getTable(), 'id')
             ->where(fn (Builder $query) => $query
                 ->where('school_id', $auth_user->school_id)
-                ->where('schoolyear_id', $auth_user->schoolyear_id)
                 ->where('user_id', $auth_user->id));
         $selectedClasses = array_values(array_filter(
             (array) $request->input('classes', []),
@@ -426,7 +425,6 @@ class TeachingCourseController extends Controller
         $curriculumRule = Rule::exists(TeachingCurriculum::query()->getModel()->getTable(), 'id')
             ->where(fn (Builder $query) => $query
                 ->where('school_id', $course->school_id)
-                ->where('schoolyear_id', $course->schoolyear_id)
                 ->where('user_id', $courseActor->id));
         $selectedClasses = array_values(array_filter(
             (array) $request->input('classes', []),

@@ -69,9 +69,10 @@ function mountCurriculumDetail(
                 'v-autocomplete': { template: '<div><slot /></div>' },
                 'v-icon': { template: '<i><slot /></i>' },
                 'v-list': { template: '<div><slot /></div>' },
-                'v-list-item': { template: '<div><slot /></div>' },
+                'v-list-item': { props: ['title'], template: '<div>{{ title }}<slot /></div>' },
                 'v-list-item-subtitle': { template: '<div><slot /></div>' },
                 'v-list-item-title': { template: '<div><slot /></div>' },
+                'v-menu': { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
                 'v-progress-circular': { template: '<div />' },
                 'v-sheet': { template: '<div v-bind="$attrs"><slot /></div>' },
                 'v-spacer': { template: '<div />' },
@@ -119,13 +120,173 @@ describe('CurriculumDetail preview layout', () => {
             '1. Grundlagen',
             '2. Textverarbeitung',
         ])
+        expect(wrapper.findAll('.curriculum-detail__topic-title-row').map((titleRow) => (
+            titleRow.find('.curriculum-detail__topic-unit-count').text()
+        ))).toEqual([
+            '2 Einheiten',
+            '1 Einheit',
+        ])
         expect(wrapper.findAll('.curriculum-detail__unit-item')).toHaveLength(3)
         expect(wrapper.findAll('.curriculum-detail__unit-title').map((unit) => unit.text())).toEqual([
             '1.1 Anmelden',
             '1.2 E-Mails',
             '2.1 Zeichenformate',
         ])
+        expect(wrapper.text()).not.toContain('Verteilen')
         expect(wrapper.find('.curriculum-detail__side-card--documents').exists()).toBe(true)
+    })
+
+    it('keeps topic actions compact', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue'), 'utf8')
+
+        expect(source).toContain(`.curriculum-detail__topic-actions :deep(.v-btn) {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;`)
+    })
+
+    it('uses a square red marker for exam units', () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Dateimanagement',
+                    materials: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'PÜ: Dateimanagement',
+                            is_exam: true,
+                            materials: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        const examUnit = wrapper.find('.curriculum-detail__unit-item--exam')
+        const examMarker = examUnit.find('.curriculum-detail__unit-exam-chip')
+
+        expect(examUnit.exists()).toBe(true)
+        expect(examMarker.text()).toBe('Prüfung')
+        expect(examMarker.attributes('variant')).toBe('flat')
+        expect(examMarker.attributes('color')).toBe('error')
+        expect(examMarker.attributes()).toHaveProperty('tile')
+        expect(examMarker.attributes('prepend-icon')).toBe('mdi-clipboard-text-outline')
+
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue'), 'utf8')
+
+        expect(source).toContain(`.curriculum-detail__unit-item--exam > .curriculum-detail__topic-row {
+    align-items: center;`)
+    })
+
+    it('opens and closes a topic by clicking its card header', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 1,
+                    title: 'Grundlagen',
+                    materials: [],
+                    units: [
+                        { id: 11, title: 'Anmelden', materials: [] },
+                    ],
+                },
+            ],
+        })
+        const topicHeader = wrapper.find('.curriculum-detail__topic-item > .curriculum-detail__topic-row')
+
+        expect(topicHeader.attributes('aria-expanded')).toBe('true')
+        expect(wrapper.find('.curriculum-detail__unit-section').exists()).toBe(true)
+
+        await topicHeader.trigger('click')
+
+        expect(topicHeader.attributes('aria-expanded')).toBe('false')
+        expect(wrapper.find('.curriculum-detail__unit-section').exists()).toBe(false)
+
+        await topicHeader.trigger('click')
+
+        expect(topicHeader.attributes('aria-expanded')).toBe('true')
+        expect(wrapper.find('.curriculum-detail__unit-section').exists()).toBe(true)
+        expect(wrapper.find('.curriculum-detail__topic-collapse-toggle').exists()).toBe(false)
+    })
+
+    it('shows content actions in the topic dropdown menu', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 1,
+                    title: 'Grundlagen',
+                    materials: [],
+                    units: [],
+                },
+            ],
+        })
+
+        await wrapper.vm.$nextTick()
+
+        const actionMenu = wrapper.find('.curriculum-detail__topic-action-menu')
+
+        expect(actionMenu.exists()).toBe(true)
+        expect(actionMenu.text()).toContain('Material hinzufügen')
+        expect(actionMenu.text()).toContain('Bearbeiten')
+        expect(actionMenu.text()).toContain('Löschen')
+        expect(actionMenu.text()).toContain('Einheit hinzufügen')
+    })
+
+    it('opens the edit dialog when a unit is clicked', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grundlagen',
+                    materials: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Anmelden',
+                            materials: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await wrapper.find('.curriculum-detail__unit-item').trigger('click')
+
+        expect(wrapper.findAll('.curriculum-detail__unit-item .curriculum-detail__topic-actions button')).toHaveLength(2)
+        expect(wrapper.find('[title="Einheit bearbeiten"]').exists()).toBe(false)
+        expect(wrapper.find('.curriculum-detail__unit-dialog-material-btn').text()).toBe('Material hinzufügen')
+        expect(wrapper.find('.curriculum-detail__unit-dialog-delete-btn').text()).toBe('Einheit löschen')
+        expect((wrapper.vm as any).selectedUnitId).toBe('unit-1')
+        expect((wrapper.vm as any).showUnitForm).toBe(true)
+        expect((wrapper.vm as any).showUnitFormForTopicId).toBe('topic-1')
+        expect((wrapper.vm as any).unitForm).toMatchObject({
+            id: 'unit-1',
+            topicId: 'topic-1',
+            title: 'Anmelden',
+        })
+
+        const openContentMaterialDialog = vi
+            .spyOn(wrapper.vm as any, 'openContentMaterialDialog')
+            .mockResolvedValue(undefined)
+
+        await wrapper.find('.curriculum-detail__unit-dialog-material-btn').trigger('click')
+
+        expect(openContentMaterialDialog).toHaveBeenCalledWith({
+            type: 'unit',
+            topicId: 'topic-1',
+            unitId: 'unit-1',
+        })
+
+        await wrapper.find('.curriculum-detail__unit-dialog-delete-btn').trigger('click')
+
+        expect((wrapper.vm as any).contentDeleteDialogOpen).toBe(true)
+        expect((wrapper.vm as any).contentToDelete).toEqual({
+            type: 'unit',
+            title: 'Anmelden',
+            topicId: 'topic-1',
+            unitId: 'unit-1',
+        })
     })
 })
 
@@ -189,8 +350,7 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable"')
         expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--content"')
         expect(source).toContain('class="curriculum-detail__content-footer"')
-        expect(source).toContain('class="curriculum-detail__unit-summary"')
-        expect(source).toContain('Verteilen')
+        expect(source).not.toContain('>Verteilen')
         expect(source).toContain('.curriculum-detail__calendar-scroll {')
         expect(source).toContain('.curriculum-detail__side-card--scrollable {')
         expect(source).toContain('overflow-y: auto;')
@@ -203,11 +363,10 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(source).toContain('class="curriculum-detail__week-status-icon"')
         expect(source).toContain('mdi-check-circle')
         expect(source).toContain('class="curriculum-detail__topic-entry"')
-        expect(source).toContain('v-if="topic.units.length" class="curriculum-detail__topic-collapse-toggle" @click.stop')
-        expect(source).toContain("'curriculum-detail__topic-collapse-btn', { 'ml-auto': !isTopicCollapsed(topic.id) }")
-        expect(source).toContain('class="curriculum-detail__topic-collapsed-count"')
+        expect(source).toContain(":aria-expanded=\"topic.units.length ? !isTopicCollapsed(topic.id) : undefined\"")
+        expect(source).toContain('@click="topic.units.length && toggleTopicCollapse(topic.id)"')
+        expect(source).not.toContain('class="curriculum-detail__topic-collapse-toggle"')
         expect(source).toContain('v-if="!isTopicCollapsed(topic.id)"')
-        expect(source).toContain('@click="toggleTopicCollapse(topic.id)"')
         expect(source).toContain("'curriculum-detail__month--collapsed': shouldCollapseMonth(month)")
         expect(source).toContain('@click="toggleMonthCollapse(month)"')
         expect(source).toContain('v-if="!shouldCollapseMonth(month)" class="curriculum-detail__weeks"')
@@ -248,17 +407,14 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(source).toContain('border-color: rgba(79, 70, 229, 0.62);')
         expect(source).toContain('background: rgba(79, 70, 229, 0.3);')
         expect(source).toContain('color: #1e1b4b !important;')
-        expect(source).toContain('@click="toggleSelectedUnit(topic.id, unit.id)"')
+        expect(source).toContain('@click="openSelectedUnitForm(topic.id, unit)"')
         expect(source).toContain('class="curriculum-detail__topic-actions" @click.stop')
         expect(source).toContain('.curriculum-detail__topic-entry {')
-        expect(source).toContain('.curriculum-detail__topic-collapse-toggle {')
         expect(source).toContain('justify-content: space-between;')
         expect(source).toContain('align-self: center;')
         expect(source).toContain('flex-shrink: 0;')
         expect(source).toContain('width: 100%;')
-        expect(source).toContain('.curriculum-detail__topic-collapse-btn {')
-        expect(source).toContain('box-shadow: 0 8px 18px rgba(99, 102, 241, 0.18);')
-        expect(source).toContain('.curriculum-detail__topic-collapsed-count {')
+        expect(source).toContain('.curriculum-detail__topic-item > .curriculum-detail__topic-row--collapsible {')
         expect(source).toContain('class="curriculum-detail__topic-assignment-panel"')
         expect(source).toContain('@click.stop>')
         expect(source).toContain(":variant=\"activeTopicAssignmentType === 'weeks' ? 'flat' : 'tonal'\"")
@@ -365,7 +521,7 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(topicItem.classes()).not.toContain('curriculum-detail__topic-item--selected')
     })
 
-    it('collapses a topic from the external toggle without selecting it', async () => {
+    it('collapses a topic from its card header without selecting it', async () => {
         const wrapper = mountCurriculumDetail({
             topics: [
                 {
@@ -389,18 +545,18 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         })
 
         const topicItem = wrapper.find('.curriculum-detail__topic-item')
-        const collapseButton = wrapper.find('.curriculum-detail__topic-collapse-toggle button')
+        const topicHeader = topicItem.find('.curriculum-detail__topic-row')
 
         expect(topicItem.find('.curriculum-detail__unit-section').exists()).toBe(true)
         expect((wrapper.vm as any).isTopicCollapsed('topic-1')).toBe(false)
 
-        await collapseButton.trigger('click')
+        await topicHeader.trigger('click')
 
         expect((wrapper.vm as any).isTopicCollapsed('topic-1')).toBe(true)
         expect((wrapper.vm as any).selectedTopicId).toBeNull()
         expect(topicItem.find('.curriculum-detail__unit-section').exists()).toBe(false)
 
-        await collapseButton.trigger('click')
+        await topicHeader.trigger('click')
 
         expect((wrapper.vm as any).isTopicCollapsed('topic-1')).toBe(false)
         expect(topicItem.find('.curriculum-detail__unit-section').exists()).toBe(true)
@@ -423,7 +579,7 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(wrapper.find('.curriculum-detail__topic-collapse-toggle').exists()).toBe(false)
     })
 
-    it('shows the unit count next to the collapse button when the topic is collapsed', async () => {
+    it('shows the unit count in the topic title row', () => {
         const wrapper = mountCurriculumDetail({
             topics: [
                 {
@@ -454,15 +610,10 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
             ],
         })
 
-        expect(wrapper.find('.curriculum-detail__topic-collapsed-count').exists()).toBe(false)
+        const titleRow = wrapper.find('.curriculum-detail__topic-title-row')
 
-        await wrapper.find('.curriculum-detail__topic-collapse-toggle button').trigger('click')
-
-        const collapseToggle = wrapper.find('.curriculum-detail__topic-collapse-toggle')
-        const collapsedCount = collapseToggle.find('.curriculum-detail__topic-collapsed-count')
-
-        expect(collapsedCount.exists()).toBe(true)
-        expect(collapsedCount.text()).toContain('2 Einheiten')
+        expect(titleRow.find('.curriculum-detail__topic-unit-count').text()).toBe('2 Einheiten')
+        expect(wrapper.find('.curriculum-detail__topic-collapse-toggle .curriculum-detail__topic-unit-count').exists()).toBe(false)
     })
 
     it('renders the topic editor dialog while the Lehrpläne card is visible', async () => {

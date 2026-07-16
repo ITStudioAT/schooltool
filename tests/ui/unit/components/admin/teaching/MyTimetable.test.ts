@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import MyTimetable from '@/pages/admin/teaching/overview/components/MyTimetable.vue'
+
+afterEach(() => {
+    vi.useRealTimers()
+})
 
 describe('MyTimetable time range labels', () => {
     it('builds a time range label from school hour definitions', () => {
@@ -63,6 +67,30 @@ describe('MyTimetable time range labels', () => {
 
         expect(items).toHaveLength(1)
         expect(items[0].timeRangeLabel).toBe('-')
+    })
+
+    it('uses the next week containing a course date for the next-week range', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date(2026, 2, 4, 12))
+
+        const methods = (MyTimetable as any).methods
+        const ctx = {
+            range: 'next_week',
+            offset: 0,
+            timetableItems: [
+                { dateObj: new Date(2026, 2, 5) },
+                { dateObj: new Date(2026, 2, 23) },
+            ],
+            normalizeDay: methods.normalizeDay,
+            startOfWeek: methods.startOfWeek,
+            endOfWeek: methods.endOfWeek,
+            nextCourseWeekStart: methods.nextCourseWeekStart,
+        }
+
+        const [from, until] = methods.currentRangeBounds.call(ctx)
+
+        expect(from).toEqual(new Date(2026, 2, 23))
+        expect(until).toEqual(new Date(2026, 2, 29))
     })
 
     it('renders the time-range chip in timetable rows', () => {

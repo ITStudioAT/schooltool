@@ -532,6 +532,13 @@ export default {
         visibleNavigationItems() {
             return [
                 {
+                    key: 'overview',
+                    label: 'Unterricht',
+                    meta: 'Stundenplan & Kurse',
+                    icon: 'mdi-school-outline',
+                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
+                },
+                {
                     key: 'search',
                     label: 'Suche',
                     meta: 'Personen & Klassen',
@@ -630,11 +637,20 @@ export default {
             if (this.isNavigationLocked) {
                 return
             }
+            if (target === 'overview') {
+                this.openTeachingTable()
+                return
+            }
             if (target === 'settings') {
                 this.openSettings()
                 return
             }
             this.navigateTo(target)
+        },
+        openTeachingTable() {
+            this.resetTeachingOverviewSelection()
+            this.main_action = 'overview'
+            this.$router.replace({ path: '/admin/teaching', query: { panel: 'table' } })
         },
         navigateTo(section) {
             this.main_action = section

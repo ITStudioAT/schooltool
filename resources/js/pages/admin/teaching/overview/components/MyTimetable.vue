@@ -441,8 +441,9 @@ export default {
                 return [this.startOfWeek(referenceDate), this.endOfWeek(referenceDate)]
             }
             if (this.range === RANGE_NEXT_WEEK) {
-                // Base is next week; shift further by offset weeks
-                referenceDate.setDate(today.getDate() + 7 + (this.offset * 7))
+                const nextCourseWeekStart = this.nextCourseWeekStart(today)
+                referenceDate = new Date(nextCourseWeekStart)
+                referenceDate.setDate(nextCourseWeekStart.getDate() + (this.offset * 7))
                 return [this.startOfWeek(referenceDate), this.endOfWeek(referenceDate)]
             }
             if (this.range === RANGE_MONTH) {
@@ -457,6 +458,21 @@ export default {
                 return this.currentSemesterBounds(this.selectedSemesterNumber)
             }
             return [null, null]
+        },
+        nextCourseWeekStart(today) {
+            const currentWeekEnd = this.endOfWeek(today)
+            const nextCourseDate = this.timetableItems
+                .map((item) => item?.dateObj)
+                .find((date) => date instanceof Date && !isNaN(date.getTime()) && date > currentWeekEnd)
+
+            if (nextCourseDate) {
+                return this.startOfWeek(nextCourseDate)
+            }
+
+            const nextCalendarWeek = new Date(today)
+            nextCalendarWeek.setDate(today.getDate() + 7)
+
+            return this.startOfWeek(nextCalendarWeek)
         },
         currentSemesterBounds(semesterNumber) {
             const { schoolFrom, schoolUntil, sem2Start } = this.semesterMeta
