@@ -303,16 +303,6 @@ class CurriculumController extends Controller
      *         month_keys: array<int, string>,
      *         month_week_counts: array<string, int>,
      *         week_keys: array<int, string>,
-     *         materials: array<int, array{
-     *             id: int,
-     *             title: string,
-     *             subject: string,
-     *             topic: string,
-     *             unit: string,
-     *             type: string,
-     *             status: string,
-     *             attachments_count: int
-     *         }>,
      *         units: array<int, array{
      *             id: string,
      *             title: string,
@@ -346,23 +336,7 @@ class CurriculumController extends Controller
             'topics.*' => 'array',
             'topics.*.id' => 'nullable|string|max:100',
             'topics.*.title' => 'required|string|max:255',
-            'topics.*.materials' => 'nullable|array',
-            'topics.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count,source_school_id,source_school_label,source_user_id,source_user_label,is_hopper_material,is_shared_material,shared_rule_id',
-            'topics.*.materials.*.id' => 'required|integer|min:1',
-            'topics.*.materials.*.title' => 'required|string|max:255',
-            'topics.*.materials.*.subject' => 'nullable|string|max:255',
-            'topics.*.materials.*.topic' => 'nullable|string|max:255',
-            'topics.*.materials.*.unit' => 'nullable|string|max:255',
-            'topics.*.materials.*.type' => 'nullable|string|max:255',
-            'topics.*.materials.*.status' => 'nullable|string|max:255',
-            'topics.*.materials.*.attachments_count' => 'nullable|integer|min:0',
-            'topics.*.materials.*.source_school_id' => 'nullable|integer|min:1',
-            'topics.*.materials.*.source_school_label' => 'nullable|string|max:255',
-            'topics.*.materials.*.source_user_id' => 'nullable|integer|min:1',
-            'topics.*.materials.*.source_user_label' => 'nullable|string|max:255',
-            'topics.*.materials.*.is_hopper_material' => 'sometimes|boolean',
-            'topics.*.materials.*.is_shared_material' => 'sometimes|boolean',
-            'topics.*.materials.*.shared_rule_id' => 'nullable|integer|min:1',
+            'topics.*.materials' => 'prohibited',
             'topics.*.units' => 'nullable|array',
             'topics.*.units.*' => 'array',
             'topics.*.units.*.id' => 'nullable|string|max:100',
@@ -408,7 +382,6 @@ class CurriculumController extends Controller
                     ? trim((string) $normalizedTopic['id'])
                     : 'topic-'.Str::lower(Str::random(12)),
                 'title' => trim((string) ($normalizedTopic['title'] ?? '')),
-                'materials' => $this->normalizeMaterials(is_array($normalizedTopic['materials'] ?? null) ? $normalizedTopic['materials'] : []),
                 'units' => collect(is_array($normalizedTopic['units'] ?? null) ? $normalizedTopic['units'] : [])
                     ->values()
                     ->map(function (mixed $unit) use ($topicIndex): array {
@@ -490,16 +463,6 @@ class CurriculumController extends Controller
      *     month_keys: array<int, string>,
      *     week_keys: array<int, string>,
      *     checked_week_keys: array<int, string>,
-     *     materials: array<int, array{
-     *         id: int,
-     *         title: string,
-     *         subject: string,
-     *         topic: string,
-     *         unit: string,
-     *         type: string,
-     *         status: string,
-     *         attachments_count: int
-     *     }>,
      *     units: array<int, array{
      *         id: string,
      *         title: string,
@@ -546,7 +509,6 @@ class CurriculumController extends Controller
 
             return [
                 ...$topicItem,
-                'materials' => $this->normalizeMaterials(is_array($normalizedTopic['materials'] ?? null) ? $normalizedTopic['materials'] : []),
                 'units' => $units,
             ];
         })->all();

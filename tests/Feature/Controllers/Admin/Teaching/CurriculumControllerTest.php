@@ -681,7 +681,7 @@ test('unit checked weeks are limited to inherited topic weeks', function () {
     expect($curriculum->fresh()->topics[0]['units'][0]['checked_week_keys'])->toBe(['2025-09-08']);
 })->skip('Curriculum scheduling was removed.');
 
-test('teacher can save materials on curriculum topics and units', function () {
+test('teacher can save materials on curriculum units', function () {
     $curriculum = TeachingCurriculum::query()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
@@ -701,20 +701,6 @@ test('teacher can save materials on curriculum topics and units', function () {
                 'id' => 'topic-zelle',
                 'title' => 'Zelle',
                 'assignment_type' => 'none',
-                'materials' => [
-                    [
-                        'id' => 101,
-                        'title' => 'Zellaufbau Arbeitsblatt',
-                        'subject' => 'Biologie',
-                        'topic' => 'Zelle',
-                        'unit' => '',
-                        'type' => 'Arbeitsblatt',
-                        'status' => 'done',
-                        'attachments_count' => 2,
-                        'is_shared_material' => true,
-                        'shared_rule_id' => 77,
-                    ],
-                ],
                 'units' => [
                     [
                         'id' => 'unit-mikroskop',
@@ -741,34 +727,58 @@ test('teacher can save materials on curriculum topics and units', function () {
     ]);
 
     $response->assertOk()
-        ->assertJsonPath('data.topics.0.materials.0.id', 101)
-        ->assertJsonPath('data.topics.0.materials.0.title', 'Zellaufbau Arbeitsblatt')
         ->assertJsonPath('data.topics.0.units.0.materials.0.id', 202)
         ->assertJsonPath('data.topics.0.units.0.materials.0.unit', 'Mikroskopieren');
 
-    expect($curriculum->fresh()->topics[0]['materials'][0])->toMatchArray([
-        'id' => 101,
-        'title' => 'Zellaufbau Arbeitsblatt',
-        'subject' => 'Biologie',
-        'topic' => 'Zelle',
-        'unit' => '',
-        'type' => 'Arbeitsblatt',
-        'status' => 'done',
-        'attachments_count' => 2,
-        'is_shared_material' => true,
-        'shared_rule_id' => 77,
-    ])->and($curriculum->fresh()->topics[0]['units'][0]['materials'][0])->toMatchArray([
-        'id' => 202,
-        'title' => 'Mikroskop-Protokoll',
-        'subject' => 'Biologie',
-        'topic' => 'Zelle',
-        'unit' => 'Mikroskopieren',
-        'type' => 'Vorlage',
-        'status' => 'in_progress',
-        'attachments_count' => 1,
-        'is_shared_material' => true,
-        'shared_rule_id' => 78,
+    expect($curriculum->fresh()->topics[0])->not->toHaveKey('materials')
+        ->and($curriculum->fresh()->topics[0]['units'][0]['materials'][0])->toMatchArray([
+            'id' => 202,
+            'title' => 'Mikroskop-Protokoll',
+            'subject' => 'Biologie',
+            'topic' => 'Zelle',
+            'unit' => 'Mikroskopieren',
+            'type' => 'Vorlage',
+            'status' => 'in_progress',
+            'attachments_count' => 1,
+            'is_shared_material' => true,
+            'shared_rule_id' => 78,
+        ]);
+});
+
+test('teacher cannot save materials on curriculum topics', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Biologie',
+        'description' => null,
+        'semester_count' => 2,
+        'topics' => [],
     ]);
+
+    $response = $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/curricula/{$curriculum->id}", [
+        'title' => 'Biologie',
+        'description' => null,
+        'semester_count' => 2,
+        'topics' => [
+            [
+                'id' => 'topic-zelle',
+                'title' => 'Zelle',
+                'materials' => [
+                    [
+                        'id' => 101,
+                        'title' => 'Zellaufbau Arbeitsblatt',
+                    ],
+                ],
+                'units' => [],
+            ],
+        ],
+    ]);
+
+    $response->assertUnprocessable()
+        ->assertJsonValidationErrors('topics.0.materials');
+
+    expect($curriculum->fresh()->topics)->toBe([]);
 });
 
 test('teacher can browse materials through curriculum endpoints', function () {

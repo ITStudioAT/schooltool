@@ -114,7 +114,6 @@ class TeachingCurriculum extends Model
                 return [
                     'id' => filled($topic['id'] ?? null) ? (string) $topic['id'] : "topic-{$topicIndex}",
                     'title' => trim((string) ($topic['title'] ?? '')),
-                    'materials' => array_values(is_array($topic['materials'] ?? null) ? $topic['materials'] : []),
                     'units' => collect(is_array($topic['units'] ?? null) ? $topic['units'] : [])
                         ->filter(fn (mixed $unit): bool => is_array($unit))
                         ->map(fn (array $unit, int $unitIndex): array => [

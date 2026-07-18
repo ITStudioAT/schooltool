@@ -669,6 +669,37 @@ class TeachingCourseDateService
         });
     }
 
+    /**
+     * @return array{removed_date_assignments: int, affected_course_dates: int}
+     */
+    public function removeCurriculumAssignment(TeachingCourse $course): array
+    {
+        return DB::transaction(function () use ($course): array {
+            $courseDates = $course->teachingCourseDates()
+                ->with('materials.attachments')
+                ->get();
+            $affectedCourseDates = $courseDates
+                ->filter(fn (TeachingCourseDate $courseDate): bool => $courseDate->materials->isNotEmpty())
+                ->count();
+            $removedDateAssignments = $courseDates->sum(
+                fn (TeachingCourseDate $courseDate): int => $courseDate->materials->count()
+            );
+
+            foreach ($courseDates as $courseDate) {
+                foreach ($courseDate->materials as $material) {
+                    $this->deleteAdoptedMaterial($material);
+                }
+            }
+
+            $course->update(['teaching_curriculum_id' => null]);
+
+            return [
+                'removed_date_assignments' => $removedDateAssignments,
+                'affected_course_dates' => $affectedCourseDates,
+            ];
+        });
+    }
+
     private function copyAttachmentToCourseDateMaterial(TeachingCourseDateMaterial $material, MaterialCardAttachment $source): bool
     {
         if ($source->attachment_type !== MaterialCardAttachment::TYPE_FILE) {

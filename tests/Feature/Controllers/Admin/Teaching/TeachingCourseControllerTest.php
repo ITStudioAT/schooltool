@@ -19,6 +19,8 @@ use App\Models\Schoolyear;
 use App\Models\TeachingClassHeadEmail;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
+use App\Models\TeachingCourseDateMaterial;
+use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
@@ -31,6 +33,7 @@ use App\Models\User;
 use App\Services\TeachingStudentPerformancePdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\Permission\Models\Role;
 
@@ -2398,6 +2401,84 @@ describe('update', function () {
         $courseStudent->refresh();
         expect($courseStudent->trashed())->toBeFalse()
             ->and($courseStudent->canceled_at)->toBeNull();
+    });
+});
+
+describe('curriculum assignment removal', function () {
+    test('removes the curriculum assignment and adopted curriculum records while preserving course dates', function () {
+        Storage::fake('local');
+        $this->actingAs($this->admin, 'sanctum');
+
+        $curriculum = TeachingCurriculum::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Mathematik Curriculum',
+            'semester_count' => 2,
+            'topics' => [],
+        ]);
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['1A'],
+            'teaching_curriculum_id' => $curriculum->id,
+        ]);
+        $firstDate = TeachingCourseDate::query()->create([
+            'teaching_course_id' => $course->id,
+            'date' => '2026-04-11',
+            'hours' => [2],
+            'status' => [],
+        ]);
+        $secondDate = TeachingCourseDate::query()->create([
+            'teaching_course_id' => $course->id,
+            'date' => '2026-04-18',
+            'hours' => [2],
+            'status' => [],
+        ]);
+        $firstMaterial = TeachingCourseDateMaterial::query()->create([
+            'teaching_course_date_id' => $firstDate->id,
+            'title' => 'Algebra: Gleichungen',
+        ]);
+        $secondMaterial = TeachingCourseDateMaterial::query()->create([
+            'teaching_course_date_id' => $secondDate->id,
+            'title' => 'Geometrie: Flächen',
+        ]);
+        Storage::disk('local')->put('teaching/course_date_materials/test.pdf', 'content');
+        $attachment = TeachingCourseDateMaterialAttachment::query()->create([
+            'teaching_course_date_material_id' => $firstMaterial->id,
+            'name' => 'Test.pdf',
+            'file_path' => 'teaching/course_date_materials/test.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 7,
+        ]);
+
+        $this->deleteJson("/api/admin/teaching/courses/{$course->id}/curriculum")
+            ->assertOk()
+            ->assertJsonPath('removed_date_assignments', 2)
+            ->assertJsonPath('affected_course_dates', 2)
+            ->assertJsonPath('teaching_curriculum_id', null);
+
+        expect($course->fresh()->teaching_curriculum_id)->toBeNull();
+        $this->assertModelExists($firstDate);
+        $this->assertModelExists($secondDate);
+        $this->assertModelMissing($firstMaterial);
+        $this->assertModelMissing($secondMaterial);
+        $this->assertModelMissing($attachment);
+        Storage::disk('local')->assertMissing('teaching/course_date_materials/test.pdf');
+    });
+
+    test('prevents a teacher from removing another teachers curriculum assignment', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'classes' => ['1A'],
+        ]);
+
+        $this->deleteJson("/api/admin/teaching/courses/{$course->id}/curriculum")
+            ->assertForbidden();
     });
 });
 

@@ -8,6 +8,7 @@ vi.mock('axios', () => ({
     default: {
         get: vi.fn(),
         post: vi.fn(),
+        delete: vi.fn(),
     },
 }))
 
@@ -84,12 +85,30 @@ describe('CourseDates course-specific schema', () => {
         expect(curriculumCard).toContain('v-else-if="selectedCourseCurriculumTopics.length"')
         expect(curriculumCard).toContain('in selectedCourseCurriculumTopics')
         expect(curriculumCard).toContain('in topic.units')
+        expect(source).toContain('class="course-date-curriculum-connector"')
+        expect(source).toContain('v-if="selected_courseDate && selectedCurriculumItem"')
+        expect(source).toContain('data-testid="connect-date-curriculum-item"')
+        expect(source).toContain("'mdi-link-variant-off' : 'mdi-link-variant'")
+        expect(source).toContain('@click.stop="toggleSelectedDateAndCurriculumItem"')
+        expect(source).toContain('@click="clearDateAndCurriculumSelection"')
+        expect(source).toContain('.course-date-curriculum-connector {')
+        expect(source).toContain('.course-dates-panels--connector-visible {')
+        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
+        expect(source).toContain('grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr);')
+        expect(source).toContain('position: fixed;')
+        expect(source).toContain('top: 50vh;')
+        expect(source).toContain('transform: translateY(-50%);')
         expect(curriculumCard).toContain('Dieses Curriculum enthält keine Inhalte.')
         expect(source).toContain('<v-dialog v-model="curriculumAssignmentDialogOpen" persistent max-width="520">')
         expect(source).toContain('v-model="curriculumAssignmentSelectionId"')
         expect(source).toContain('label="Curriculum auswählen"')
         expect(source).toContain('@click="cancelCurriculumAssignment"')
         expect(source).toContain('@click="saveCurriculumAssignment"')
+        expect(curriculumCard).toContain('data-testid="remove-course-curriculum"')
+        expect(curriculumCard).toContain('@click="openCurriculumRemovalDialog"')
+        expect(source).toContain('<v-dialog v-model="curriculumRemovalDialogOpen" persistent max-width="560">')
+        expect(source).toContain('v-if="curriculumDateAssignmentCount > 0"')
+        expect(source).toContain('@click="confirmCurriculumRemoval"')
         expect(source).toContain('courseDateInlineContent(courseDate)')
         expect(source).toContain('loadSelectedCourseCurriculumDetail')
         expect(source).not.toContain('mdi-eye-off-outline')
@@ -135,18 +154,126 @@ describe('CourseDates course-specific schema', () => {
         ])
     })
 
+    it('allows selecting units but not topics', () => {
+        const computed = (CourseDates as any).computed
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const context: Record<string, any> = {
+            selectedCourseCurriculumForContent: {
+                topics: [
+                    { id: 'topic-with-units', title: 'Grundlagen', units: [{ id: 'unit-1', title: 'Office 365' }] },
+                    { id: 'topic-without-units', title: 'Projekt', units: [] },
+                ],
+            },
+            selectedCurriculumItemKey: null,
+        }
+
+        const topics = computed.selectedCourseCurriculumTopics.call(context)
+
+        context.selectedCurriculumItemKey = topics[0].selectionKey
+        expect(computed.selectedCurriculumItem.call(context)).toBeNull()
+        context.selectedCurriculumItemKey = topics[0].units[0].selectionKey
+        expect(computed.selectedCurriculumItem.call(context)?.label).toBe('Grundlagen: Office 365')
+        expect(source).not.toContain('@click="selectCurriculumItem(topic.selectionKey)"')
+        expect(source).toContain('@click="selectCurriculumItem(unit.selectionKey)"')
+        expect(source).toContain('course-curriculum-item--topic')
+    })
+
     it('allows only one curriculum item to be selected at a time', () => {
         const methods = (CourseDates as any).methods
         const context: Record<string, string | null> = { selectedCurriculumItemKey: null }
 
-        methods.selectCurriculumItem.call(context, 'topic:topic-1')
-        expect(context.selectedCurriculumItemKey).toBe('topic:topic-1')
-
         methods.selectCurriculumItem.call(context, 'unit:topic-1:unit-1')
         expect(context.selectedCurriculumItemKey).toBe('unit:topic-1:unit-1')
 
-        methods.selectCurriculumItem.call(context, 'unit:topic-1:unit-1')
+        methods.selectCurriculumItem.call(context, 'unit:topic-1:unit-2')
+        expect(context.selectedCurriculumItemKey).toBe('unit:topic-1:unit-2')
+
+        methods.selectCurriculumItem.call(context, 'unit:topic-1:unit-2')
         expect(context.selectedCurriculumItemKey).toBeNull()
+    })
+
+    it('connects the selected date with the selected curriculum unit', async () => {
+        const computed = (CourseDates as any).computed
+        const methods = (CourseDates as any).methods
+        const sharedMaterial = { id: 10, title: 'Grundlagenblatt' }
+        const context: Record<string, any> = {
+            selectedCurriculumItemKey: 'unit:topic-1:unit-1',
+            selectedCourseCurriculumForContent: {
+                topics: [
+                    {
+                        id: 'topic-1',
+                        title: 'Grundlagen',
+                        materials: [sharedMaterial],
+                        units: [
+                            {
+                                id: 'unit-1',
+                                title: 'Office 365',
+                                materials: [sharedMaterial, { id: 11, title: 'Übung' }],
+                            },
+                        ],
+                    },
+                ],
+            },
+            selected_courseDate: { id: 277 },
+            connectingCurriculumItem: false,
+            isSelectedCurriculumItemLinked: false,
+            selectedCurriculumAdoptedMaterials: [],
+            openAdoptDialog: vi.fn().mockResolvedValue(undefined),
+            confirmAdopt: vi.fn().mockResolvedValue(undefined),
+            deleteAdoptedMaterialGroup: vi.fn().mockResolvedValue(undefined),
+            syncSelectedCourseDateFromCourse: vi.fn(),
+        }
+
+        context.selectedCurriculumItem = computed.selectedCurriculumItem.call(context)
+
+        expect(context.selectedCurriculumItem).toEqual({
+            label: 'Grundlagen: Office 365',
+            materials: [sharedMaterial, { id: 11, title: 'Übung' }],
+        })
+
+        context.selectedCurriculumItemKey = 'topic:topic-1'
+        expect(computed.selectedCurriculumItem.call(context)).toBeNull()
+        context.selectedCurriculumItemKey = 'unit:topic-1:unit-1'
+
+        await methods.toggleSelectedDateAndCurriculumItem.call(context)
+
+        expect(context.openAdoptDialog).toHaveBeenCalledWith(context.selected_courseDate, context.selectedCurriculumItem)
+        expect(context.confirmAdopt).toHaveBeenCalledTimes(1)
+        expect(context.deleteAdoptedMaterialGroup).not.toHaveBeenCalled()
+        expect(context.syncSelectedCourseDateFromCourse).toHaveBeenCalledTimes(1)
+        expect(context.connectingCurriculumItem).toBe(false)
+
+        const adoptedMaterials = [{ id: 41, title: 'Grundlagen: Office 365' }]
+        context.isSelectedCurriculumItemLinked = true
+        context.selectedCurriculumAdoptedMaterials = adoptedMaterials
+
+        await methods.toggleSelectedDateAndCurriculumItem.call(context)
+
+        expect(context.deleteAdoptedMaterialGroup).toHaveBeenCalledWith({
+            id: 'curriculum-unit:topic-1:unit-1',
+            items: adoptedMaterials,
+        })
+        expect(context.openAdoptDialog).toHaveBeenCalledTimes(1)
+        expect(context.connectingCurriculumItem).toBe(false)
+    })
+
+    it('clears both selections when clicking outside the connector button', () => {
+        const methods = (CourseDates as any).methods
+        const replace = vi.fn().mockResolvedValue(undefined)
+        const context: Record<string, any> = {
+            selected_courseDate: { id: 277 },
+            selectedCurriculumItemKey: 'unit:topic-1:unit-1',
+            $route: { query: { course: '16', date: '277', panel: 'dates' } },
+            $router: { replace },
+        }
+
+        methods.clearDateAndCurriculumSelection.call(context)
+
+        expect(context.selected_courseDate).toBeNull()
+        expect(context.selectedCurriculumItemKey).toBeNull()
+        expect(replace).toHaveBeenCalledWith({
+            query: { course: '16', panel: 'dates' },
+        })
     })
 
     it('loads the full assigned curriculum before rendering its topics', async () => {
@@ -308,10 +435,22 @@ describe('CourseDates course-specific schema', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
 
         expect(source).toContain("classes.push('course-date-row--selected')")
-        expect(source).toContain('selectedCurriculumItemKey === topic.selectionKey')
         expect(source).toContain('selectedCurriculumItemKey === unit.selectionKey')
+        expect(source).toContain('course-curriculum-item--topic')
         expect(source).toContain('.course-date-row--selected {')
         expect(source).toContain('.course-curriculum-item--selected {')
+    })
+
+    it('uses the requested purple treatment for the curriculum panel and content', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+
+        expect(source).toContain('--course-curriculum-purple: #6F42C1;')
+        expect(source).toContain('background: linear-gradient(180deg, rgba(111, 66, 193, 0.07)')
+        expect(source).toContain('color: var(--course-curriculum-purple);')
+        expect(source).toContain('.course-curriculum-panel .course-curriculum-item {')
+        expect(source).toContain('.course-curriculum-panel .course-curriculum-item--selected {')
+        expect(source).toContain('background: var(--course-curriculum-purple) !important;')
+        expect(source).toContain('box-shadow: 0 7px 20px rgba(111, 66, 193, 0.34);')
     })
 
     it('uses abbreviated German weekday labels', () => {
@@ -648,6 +787,50 @@ describe('CourseDates course-specific schema', () => {
         expect(ctx.curriculumAssignmentDialogOpen).toBe(false)
         expect(ctx.curriculumAssignmentSelectionId).toBeNull()
         expect(ctx.curriculumAssignmentSaving).toBe(false)
+    })
+
+    it('counts affected dates and curriculum assignments for the removal warning', () => {
+        const computed = (CourseDates as any).computed
+        const methods = (CourseDates as any).methods
+        const context: Record<string, any> = {
+            selected_course: {
+                course_dates: [
+                    { id: 1, adopted_materials: [{ id: 11, title: 'Thema: Einheit' }, { id: 12, title: 'Thema: Einheit' }] },
+                    { id: 2, adopted_materials: [] },
+                    { id: 3, adopted_materials: [{ id: 13, title: 'Anderes Thema: Einheit' }] },
+                ],
+            },
+        }
+        context.courseDateAdoptedMaterials = methods.courseDateAdoptedMaterials
+        context.adoptedMaterialDisplayTitle = methods.adoptedMaterialDisplayTitle
+        context.courseDateAdoptedMaterialGroups = methods.courseDateAdoptedMaterialGroups
+
+        expect(computed.curriculumAssignedCourseDateCount.call(context)).toBe(2)
+        expect(computed.curriculumDateAssignmentCount.call(context)).toBe(2)
+    })
+
+    it('removes the course curriculum assignment and refreshes the course', async () => {
+        vi.mocked(axios.delete).mockResolvedValue({ data: { removed_date_assignments: 2 } })
+        const refreshCourseById = vi.fn().mockResolvedValue({ id: 20, teaching_curriculum_id: null })
+        const context: Record<string, any> = {
+            selected_course: { id: 20, teaching_curriculum_id: 14 },
+            courseStore: { refreshCourseById },
+            curriculumRemovalDialogOpen: true,
+            curriculumRemovalSaving: false,
+            selectedCurriculumDetail: { id: 14 },
+            selectedCurriculumDetailLoadingId: 14,
+            selectedCurriculumItemKey: 'unit:1:2',
+        }
+
+        await (CourseDates as any).methods.confirmCurriculumRemoval.call(context)
+
+        expect(axios.delete).toHaveBeenCalledWith('/api/admin/teaching/courses/20/curriculum')
+        expect(refreshCourseById).toHaveBeenCalledWith(20)
+        expect(context.selectedCurriculumDetail).toBeNull()
+        expect(context.selectedCurriculumDetailLoadingId).toBeNull()
+        expect(context.selectedCurriculumItemKey).toBeNull()
+        expect(context.curriculumRemovalDialogOpen).toBe(false)
+        expect(context.curriculumRemovalSaving).toBe(false)
     })
 
     it('keeps all selected dates visible when selecting another date', () => {

@@ -73,6 +73,7 @@ use App\Http\Controllers\Admin\Teaching\SchoolHourImportsController;
 use App\Http\Controllers\Admin\Teaching\TeachingBackupController;
 use App\Http\Controllers\Admin\Teaching\TeachingController;
 use App\Http\Controllers\Admin\Teaching\TeachingCourseController;
+use App\Http\Controllers\Admin\Teaching\TeachingCourseCurriculumController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaEntryCopiesController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaImportsController;
@@ -505,6 +506,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/courses/{course}/performances_pdf', [TeachingCourseController::class, 'coursePerformancesPdf']);
         Route::get('/admin/teaching/courses/{course}/grades_pdf', [TeachingCourseController::class, 'courseGradesPdf']);
         Route::get('/admin/teaching/courses/{course}/students/{course_student}/performances_pdf', [TeachingCourseController::class, 'studentPerformancesPdf']);
+        Route::delete('/admin/teaching/courses/{course}/curriculum', [TeachingCourseCurriculumController::class, 'destroy']);
         Route::apiResource('/admin/teaching/courses', TeachingCourseController::class);
         Route::apiResource('/admin/teaching/curricula', CurriculumController::class)->parameters(['curricula' => 'curriculum']);
         Route::get('/admin/teaching/imported-curricula', [ImportedCurriculumController::class, 'index']);

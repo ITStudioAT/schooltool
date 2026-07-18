@@ -227,7 +227,7 @@ describe('CurriculumDetail preview layout', () => {
         const actionMenu = wrapper.find('.curriculum-detail__topic-action-menu')
 
         expect(actionMenu.exists()).toBe(true)
-        expect(actionMenu.text()).toContain('Material hinzufügen')
+        expect(actionMenu.text()).not.toContain('Material hinzufügen')
         expect(actionMenu.text()).toContain('Bearbeiten')
         expect(actionMenu.text()).toContain('Löschen')
         expect(actionMenu.text()).toContain('Einheit hinzufügen')
@@ -645,7 +645,7 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(wrapper.text()).toContain('Thema speichern')
     })
 
-    it('adds a material to a topic without closing the selector dialog', async () => {
+    it('does not open the material selector for topics', async () => {
         const wrapper = mountCurriculumDetail({
             topics: [
                 {
@@ -659,55 +659,14 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
                 },
             ],
         })
-        const persistCurriculumMock = vi.spyOn(wrapper.vm as any, 'persistCurriculum').mockResolvedValue({
-            id: 15,
+
+        await (wrapper.vm as any).openContentMaterialDialog({
+            type: 'topic',
+            topicId: 'topic-1',
         })
 
-        try {
-            await wrapper.setData({
-                contentMaterialDialogOpen: true,
-                contentMaterialTarget: {
-                    type: 'topic',
-                    topicId: 'topic-1',
-                    unitId: null,
-                },
-            })
-
-            await (wrapper.vm as any).attachContentMaterial({
-                id: 77,
-                title: 'Nebensätze Arbeitsblatt',
-                subject: 'Deutsch',
-                area: 'Grammatik',
-                unit: 'Nebensätze',
-                type: 'Arbeitsblatt',
-                status: 'done',
-                attachments_count: 2,
-            })
-
-            expect(persistCurriculumMock).toHaveBeenCalledTimes(1)
-            expect(persistCurriculumMock).toHaveBeenCalledWith({
-                topics: expect.arrayContaining([
-                    expect.objectContaining({
-                        id: 'topic-1',
-                        materials: [
-                            expect.objectContaining({
-                                id: 77,
-                                title: 'Nebensätze Arbeitsblatt',
-                                subject: 'Deutsch',
-                                topic: 'Grammatik',
-                                unit: 'Nebensätze',
-                            }),
-                        ],
-                    }),
-                ]),
-            }, 'Material konnte nicht hinzugefügt werden.')
-            const persistedMaterial = persistCurriculumMock.mock.calls[0]?.[0]?.topics?.[0]?.materials?.[0]
-            expect(persistedMaterial).not.toHaveProperty('attachments')
-            expect((wrapper.vm as any).contentMaterialDialogOpen).toBe(true)
-            expect((wrapper.vm as any).topicSaving).toBe(false)
-        } finally {
-            persistCurriculumMock.mockRestore()
-        }
+        expect((wrapper.vm as any).contentMaterialDialogOpen).toBe(false)
+        expect((wrapper.vm as any).contentMaterialTarget).toBeNull()
     })
 
     it('loads the workspace tree through curriculum material endpoints', async () => {
@@ -1042,7 +1001,7 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         }
     })
 
-    it('shows attachment access for linked topic materials in the overview', () => {
+    it('does not render legacy topic materials in the overview', () => {
         const wrapper = mountCurriculumDetail({
             topics: [
                 {
@@ -1068,8 +1027,7 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
 
         const materialActions = wrapper.find('.curriculum-detail__attached-material-actions')
 
-        expect(materialActions.exists()).toBe(true)
-        expect(materialActions.text()).toContain('2 Anhänge')
+        expect(materialActions.exists()).toBe(false)
     })
 
     it('loads attachments for a linked material from the curriculum overview', async () => {

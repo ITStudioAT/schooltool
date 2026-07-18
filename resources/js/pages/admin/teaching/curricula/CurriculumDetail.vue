@@ -98,40 +98,6 @@
                                                 {{ topic.units.length }} {{ topic.units.length === 1 ? 'Einheit' : 'Einheiten' }}
                                             </div>
                                         </div>
-                                        <div v-if="topic.materials.length" class="curriculum-detail__attached-materials">
-                                            <div
-                                                v-for="material in topic.materials"
-                                                :key="`topic-${topic.id}-material-${material.id}`"
-                                                class="curriculum-detail__attached-material">
-                                                <div class="curriculum-detail__attached-material-copy">
-                                                    <div class="curriculum-detail__attached-material-title">{{ material.title }}</div>
-                                                    <div class="curriculum-detail__attached-material-subtitle">
-                                                        {{ attachedMaterialSubtitle(material) }}
-                                                    </div>
-                                                </div>
-                                                <div class="curriculum-detail__attached-material-actions">
-                                                    <v-btn
-                                                        v-if="materialFileAttachmentCount(material) > 0"
-                                                        variant="tonal"
-                                                        color="primary"
-                                                        size="x-small"
-                                                        class="text-none curriculum-detail__attached-material-preview-btn"
-                                                        :disabled="topicSaving || isPageActionLocked"
-                                                        @click.stop="openAttachedMaterialDialog(material)">
-                                                        <v-icon size="14" start>mdi-paperclip</v-icon>
-                                                        {{ materialAttachmentCountLabel(material) }}
-                                                    </v-btn>
-                                                    <v-btn
-                                                        icon="mdi-close"
-                                                        variant="text"
-                                                        color="error"
-                                                        size="x-small"
-                                                        :disabled="topicSaving || isPageActionLocked"
-                                                        title="Material entfernen"
-                                                        @click.stop="removeTopicMaterial(topic.id, material.id)" />
-                                                </div>
-                                            </div>
-                                        </div>
                                     </div>
                                     <div class="curriculum-detail__topic-header-actions">
                                         <div class="curriculum-detail__topic-actions" @click.stop>
@@ -168,14 +134,6 @@
                                                 density="compact"
                                                 min-width="210"
                                                 class="curriculum-detail__topic-action-menu">
-                                                <v-list-item
-                                                    prepend-icon="mdi-book-plus-outline"
-                                                    title="Material hinzufügen"
-                                                    :disabled="topicSaving || isPageActionLocked"
-                                                    @click="openContentMaterialDialog({
-                                                        type: 'topic',
-                                                        topicId: topic.id,
-                                                    })" />
                                                 <v-list-item
                                                     prepend-icon="mdi-pencil-outline"
                                                     title="Bearbeiten"
@@ -1624,19 +1582,19 @@ export default {
         },
 
         contentMaterialDialogTarget() {
-            if (!this.contentMaterialTarget?.topicId) {
+            if (
+                this.contentMaterialTarget?.type !== 'unit'
+                || !this.contentMaterialTarget.topicId
+                || !this.contentMaterialTarget.unitId
+            ) {
                 return null
             }
 
-            if (this.contentMaterialTarget.type === 'unit' && this.contentMaterialTarget.unitId) {
-                return this.findUnit(this.contentMaterialTarget.topicId, this.contentMaterialTarget.unitId)
-            }
-
-            return this.findTopic(this.contentMaterialTarget.topicId)
+            return this.findUnit(this.contentMaterialTarget.topicId, this.contentMaterialTarget.unitId)
         },
 
         contentMaterialDialogLabel() {
-            return this.contentMaterialTarget?.type === 'unit' ? 'der Einheit' : 'dem Thema'
+            return 'der Einheit'
         },
 
         contentMaterialDialogTitle() {
@@ -1965,7 +1923,6 @@ export default {
             return {
                 id: normalizedTopic.id || `topic-${index}`,
                 title: typeof normalizedTopic.title === 'string' ? normalizedTopic.title.trim() : '',
-                materials: this.normalizeAttachedMaterials(normalizedTopic.materials),
                 units: (Array.isArray(normalizedTopic.units) ? normalizedTopic.units : [])
                     .map((unit, unitIndex) => this.normalizeUnit(unit, unitIndex)),
             }
@@ -2740,12 +2697,12 @@ export default {
         },
 
         async openContentMaterialDialog(target) {
-            if (this.topicSaving || !target?.topicId) return
+            if (this.topicSaving || target?.type !== 'unit' || !target.topicId || !target.unitId) return
 
             this.contentMaterialTarget = {
-                type: target.type === 'unit' ? 'unit' : 'topic',
+                type: 'unit',
                 topicId: target.topicId,
-                unitId: target.type === 'unit' ? target.unitId : null,
+                unitId: target.unitId,
             }
             this.contentMaterialDialogOpen = true
             this.contentMaterialDialogMode = 'search'
@@ -3038,7 +2995,12 @@ export default {
         },
 
         async attachContentMaterial(material) {
-            if (!this.contentMaterialTarget?.topicId || this.topicSaving) return
+            if (
+                this.contentMaterialTarget?.type !== 'unit'
+                || !this.contentMaterialTarget.topicId
+                || !this.contentMaterialTarget.unitId
+                || this.topicSaving
+            ) return
 
             const normalizedMaterial = this.normalizeAttachedMaterial(material)
             if (!normalizedMaterial.id || normalizedMaterial.title === '') return
@@ -3052,20 +3014,14 @@ export default {
                     return this.buildTopicPayload(topic)
                 }
 
-                if (this.contentMaterialTarget.type === 'unit' && this.contentMaterialTarget.unitId) {
-                    return this.buildTopicPayload(topic, {
-                        units: topic.units.map((unit) => (
-                            unit.id === this.contentMaterialTarget.unitId
-                                ? this.buildUnitPayload(unit, {
-                                    materials: [...unit.materials, normalizedMaterial],
-                                })
-                                : this.buildUnitPayload(unit)
-                        )),
-                    })
-                }
-
                 return this.buildTopicPayload(topic, {
-                    materials: [...topic.materials, normalizedMaterial],
+                    units: topic.units.map((unit) => (
+                        unit.id === this.contentMaterialTarget.unitId
+                            ? this.buildUnitPayload(unit, {
+                                materials: [...unit.materials, normalizedMaterial],
+                            })
+                            : this.buildUnitPayload(unit)
+                    )),
                 })
             })
 
@@ -3075,28 +3031,6 @@ export default {
                 await this.persistCurriculum({
                     topics: nextTopics,
                 }, 'Material konnte nicht hinzugefügt werden.')
-            } finally {
-                this.topicSaving = false
-            }
-        },
-
-        async removeTopicMaterial(topicId, materialId) {
-            if (this.topicSaving || this.isPageActionLocked) return
-
-            const nextTopics = this.curriculumTopics.map((topic) => (
-                topic.id === topicId
-                    ? this.buildTopicPayload(topic, {
-                        materials: topic.materials.filter((material) => material.id !== materialId),
-                    })
-                    : this.buildTopicPayload(topic)
-            ))
-
-            this.topicSaving = true
-
-            try {
-                await this.persistCurriculum({
-                    topics: nextTopics,
-                }, 'Material konnte nicht entfernt werden.')
             } finally {
                 this.topicSaving = false
             }

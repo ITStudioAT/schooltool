@@ -38,7 +38,12 @@
         <div
             v-if="selected_course && action != 'new_course_dates'"
             class="course-dates-panels"
-            :class="semesterCount === 2 ? 'mt-0' : 'mt-4'">
+            :class="[
+                semesterCount === 2 ? 'mt-0' : 'mt-4',
+                {
+                    'course-dates-panels--connector-visible': selected_courseDate && selectedCurriculumItem,
+                },
+            ]">
         <v-card variant="outlined" class="course-dates-panel">
             <v-card-title class="text-subtitle-1 d-flex align-center ga-2 flex-wrap">
                 <v-icon size="18">mdi-calendar-check</v-icon>
@@ -300,6 +305,41 @@
             </v-card-text>
         </v-card>
 
+        <div
+            v-if="selected_courseDate && selectedCurriculumItem"
+            class="course-date-curriculum-connector"
+            :class="{
+                'course-date-curriculum-connector--linked': isSelectedCurriculumItemLinked,
+            }"
+            @click="clearDateAndCurriculumSelection">
+            <div
+                class="course-date-curriculum-connector__core">
+                <v-btn
+                    data-testid="connect-date-curriculum-item"
+                    :icon="isSelectedCurriculumItemLinked ? 'mdi-link-variant-off' : 'mdi-link-variant'"
+                    size="large"
+                    :color="isSelectedCurriculumItemLinked ? 'error' : 'success'"
+                    variant="elevated"
+                    elevation="10"
+                    class="course-date-curriculum-connector__button"
+                    :class="{
+                        'course-date-curriculum-connector__button--linked': isSelectedCurriculumItemLinked,
+                    }"
+                    :title="curriculumLinkActionTitle"
+                    :aria-label="curriculumLinkActionTitle"
+                    :loading="connectingCurriculumItem"
+                    :disabled="isBusyDateUi || connectingCurriculumItem"
+                    @click.stop="toggleSelectedDateAndCurriculumItem" />
+                <span
+                    class="course-date-curriculum-connector__label"
+                    :class="{
+                        'course-date-curriculum-connector__label--linked': isSelectedCurriculumItemLinked,
+                    }">
+                    {{ isSelectedCurriculumItemLinked ? 'Trennen' : 'Verknüpfen' }}
+                </span>
+            </div>
+        </div>
+
         <v-card
             variant="outlined"
             class="course-curriculum-panel"
@@ -307,6 +347,21 @@
             <v-card-title class="text-subtitle-1 d-flex align-center ga-2 flex-wrap">
                 <v-icon size="18">mdi-book-open-variant</v-icon>
                 Curriculum
+                <v-spacer />
+                <v-btn
+                    v-if="selectedCourseCurriculumId"
+                    data-testid="remove-course-curriculum"
+                    prepend-icon="mdi-link-variant-off"
+                    color="error"
+                    variant="tonal"
+                    size="small"
+                    class="text-none"
+                    title="Curriculum-Zuweisung entfernen"
+                    aria-label="Curriculum-Zuweisung entfernen"
+                    :disabled="curriculumRemovalSaving"
+                    @click="openCurriculumRemovalDialog">
+                    Entfernen
+                </v-btn>
             </v-card-title>
             <v-divider />
             <v-card-text
@@ -339,13 +394,7 @@
                         <v-list-item
                             :title="`${topicIndex + 1}. ${topic.title}`"
                             prepend-icon="mdi-bookmark-outline"
-                            class="course-curriculum-item"
-                            :class="{
-                                'course-curriculum-item--selected': selectedCurriculumItemKey === topic.selectionKey,
-                            }"
-                            :aria-pressed="selectedCurriculumItemKey === topic.selectionKey"
-                            link
-                            @click="selectCurriculumItem(topic.selectionKey)" />
+                            class="course-curriculum-item course-curriculum-item--topic" />
                         <v-list-item
                             v-for="(unit, unitIndex) in topic.units"
                             :key="unit.key"
@@ -403,6 +452,48 @@
                         :disabled="!curriculumAssignmentSelectionId || curriculumAssignmentLoading || curriculumAssignmentSaving"
                         @click="saveCurriculumAssignment">
                         Speichern
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="curriculumRemovalDialogOpen" persistent max-width="560">
+            <v-card>
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                    <v-icon size="20" color="error">mdi-alert</v-icon>
+                    Curriculum-Zuweisung entfernen
+                </v-card-title>
+                <v-divider />
+                <v-card-text class="d-flex flex-column ga-4 pt-5">
+                    <div>
+                        Soll das Curriculum <strong>{{ selectedCourseCurriculumTitle }}</strong>
+                        wirklich von diesem Kurs entfernt werden?
+                    </div>
+                    <v-alert
+                        v-if="curriculumDateAssignmentCount > 0"
+                        type="warning"
+                        variant="tonal"
+                        density="compact">
+                        {{ curriculumDateAssignmentCount }} Curriculum-Zuweisung(en) an
+                        {{ curriculumAssignedCourseDateCount }} Termin(en) werden ebenfalls entfernt.
+                    </v-alert>
+                </v-card-text>
+                <v-divider />
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn
+                        variant="text"
+                        :disabled="curriculumRemovalSaving"
+                        @click="cancelCurriculumRemoval">
+                        Abbruch
+                    </v-btn>
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        :loading="curriculumRemovalSaving"
+                        :disabled="curriculumRemovalSaving"
+                        @click="confirmCurriculumRemoval">
+                        Entfernen
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -685,9 +776,12 @@ export default {
             curriculumAssignmentLoading: false,
             curriculumAssignmentSaving: false,
             curriculumAssignmentSelectionId: null,
+            curriculumRemovalDialogOpen: false,
+            curriculumRemovalSaving: false,
             selectedCurriculumDetail: null,
             selectedCurriculumDetailLoadingId: null,
             selectedCurriculumItemKey: null,
+            connectingCurriculumItem: false,
             show_contents: true,
             collapsed_content_ids: [],
             expanded_content_ids: [],
@@ -796,6 +890,63 @@ export default {
                 })
                 .filter((topic) => topic.title || topic.units.length)
         },
+        selectedCurriculumItem() {
+            if (!this.selectedCurriculumItemKey) {
+                return null
+            }
+
+            const topics = Array.isArray(this.selectedCourseCurriculumForContent?.topics)
+                ? this.selectedCourseCurriculumForContent.topics
+                : []
+
+            for (const [topicIndex, topic] of topics.entries()) {
+                const topicTitle = topic?.title ? String(topic.title) : `Thema ${topicIndex + 1}`
+                const topicMaterials = Array.isArray(topic?.materials) ? topic.materials : []
+                const units = Array.isArray(topic?.units) ? topic.units : []
+
+                for (const [unitIndex, unit] of units.entries()) {
+                    const unitSelectionKey = `unit:${topic?.id || topicIndex}:${unit?.id || unitIndex}`
+                    if (this.selectedCurriculumItemKey !== unitSelectionKey) {
+                        continue
+                    }
+
+                    const materials = [
+                        ...topicMaterials,
+                        ...(Array.isArray(unit?.materials) ? unit.materials : []),
+                    ].filter((material, materialIndex, allMaterials) => (
+                        material?.id
+                        && allMaterials.findIndex((candidate) => candidate?.id === material.id) === materialIndex
+                    ))
+
+                    return {
+                        label: `${topicTitle}: ${String(unit?.title || '')}`,
+                        materials,
+                    }
+                }
+            }
+
+            return null
+        },
+        selectedCurriculumAdoptedMaterials() {
+            if (!this.selected_courseDate?.id || !this.selectedCurriculumItem) {
+                return []
+            }
+
+            return this.courseDateAdoptedMaterials(this.selected_courseDate)
+                .filter((adoptedMaterial) => adoptedMaterial?.title === this.selectedCurriculumItem.label)
+        },
+        isSelectedCurriculumItemLinked() {
+            if (!this.selected_courseDate?.id || !this.selectedCurriculumItem) {
+                return false
+            }
+
+            return this.isCurriculumEntryFullyAdopted(this.selected_courseDate, this.selectedCurriculumItem)
+        },
+        curriculumLinkActionTitle() {
+            return this.isSelectedCurriculumItemLinked
+                ? 'Verknüpfung zwischen Termin und Curriculum-Einheit lösen'
+                : 'Ausgewählten Termin und Curriculum-Einheit verknüpfen'
+        },
         curriculumAssignmentOptions() {
             const curricula = Array.isArray(this.curriculumStore?.curricula) ? this.curriculumStore.curricula : []
 
@@ -805,6 +956,23 @@ export default {
                     title: curriculum.title || `Curriculum #${curriculum.id}`,
                     value: Number(curriculum.id),
                 }))
+        },
+        curriculumAssignedCourseDateCount() {
+            const courseDates = Array.isArray(this.selected_course?.course_dates)
+                ? this.selected_course.course_dates
+                : []
+
+            return courseDates.filter((courseDate) => this.courseDateAdoptedMaterials(courseDate).length > 0).length
+        },
+        curriculumDateAssignmentCount() {
+            const courseDates = Array.isArray(this.selected_course?.course_dates)
+                ? this.selected_course.course_dates
+                : []
+
+            return courseDates.reduce(
+                (count, courseDate) => count + this.courseDateAdoptedMaterialGroups(courseDate).length,
+                0,
+            )
         },
         semesterCount() {
             const grading = this.selectedCourseSchema?.grading || {}
@@ -1355,6 +1523,30 @@ export default {
                 this.curriculumAssignmentSaving = false
             }
         },
+        openCurriculumRemovalDialog() {
+            this.curriculumRemovalDialogOpen = true
+        },
+        cancelCurriculumRemoval() {
+            if (this.curriculumRemovalSaving) return
+
+            this.curriculumRemovalDialogOpen = false
+        },
+        async confirmCurriculumRemoval() {
+            const courseId = Number(this.selected_course?.id)
+            if (!Number.isFinite(courseId) || courseId <= 0) return
+
+            this.curriculumRemovalSaving = true
+            try {
+                await axios.delete(`/api/admin/teaching/courses/${courseId}/curriculum`)
+                await this.courseStore.refreshCourseById(courseId)
+                this.selectedCurriculumDetail = null
+                this.selectedCurriculumDetailLoadingId = null
+                this.selectedCurriculumItemKey = null
+                this.curriculumRemovalDialogOpen = false
+            } finally {
+                this.curriculumRemovalSaving = false
+            }
+        },
         setFromDate(dateStr) {
             if (!dateStr) return
             this.data.from = this.toDateString(dateStr)
@@ -1494,6 +1686,51 @@ export default {
             this.selectedCurriculumItemKey = this.selectedCurriculumItemKey === selectionKey
                 ? null
                 : selectionKey
+        },
+        clearDateAndCurriculumSelection() {
+            this.selected_courseDate = null
+            this.selectedCurriculumItemKey = null
+
+            const query = { ...this.$route.query }
+            delete query.date
+            this.$router.replace({ query }).catch(() => {})
+        },
+        async toggleSelectedDateAndCurriculumItem() {
+            if (this.connectingCurriculumItem || !this.selected_courseDate?.id || !this.selectedCurriculumItem) {
+                return
+            }
+
+            this.connectingCurriculumItem = true
+            try {
+                if (this.isSelectedCurriculumItemLinked) {
+                    await this.deleteAdoptedMaterialGroup({
+                        id: `curriculum-${this.selectedCurriculumItemKey}`,
+                        items: this.selectedCurriculumAdoptedMaterials,
+                    })
+                } else {
+                    await this.openAdoptDialog(this.selected_courseDate, this.selectedCurriculumItem)
+                    await this.confirmAdopt()
+                }
+
+                this.syncSelectedCourseDateFromCourse()
+            } finally {
+                this.connectingCurriculumItem = false
+            }
+        },
+        syncSelectedCourseDateFromCourse() {
+            const selectedCourseDateId = Number(this.selected_courseDate?.id)
+            if (!Number.isFinite(selectedCourseDateId)) {
+                return
+            }
+
+            const refreshedCourseDate = (Array.isArray(this.selected_course?.course_dates)
+                ? this.selected_course.course_dates
+                : [])
+                .find((courseDate) => Number(courseDate?.id) === selectedCourseDateId)
+
+            if (refreshedCourseDate) {
+                this.selected_courseDate = refreshedCourseDate
+            }
         },
         async toggleStatus(courseDate, status) {
             const userStatuses = ['pruefung', 'entfaellt']
@@ -1995,14 +2232,120 @@ export default {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.course-dates-panels--connector-visible {
+    gap: 0;
+    grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr);
+}
+
 .course-dates-panel,
 .course-curriculum-panel {
     min-width: 0;
 }
 
+.course-curriculum-panel {
+    --course-curriculum-purple: #6F42C1;
+
+    background: linear-gradient(180deg, rgba(111, 66, 193, 0.07) 0%, rgba(111, 66, 193, 0.025) 100%);
+    border-color: rgba(111, 66, 193, 0.38);
+}
+
+.course-curriculum-panel :deep(.v-card-title) {
+    color: var(--course-curriculum-purple);
+}
+
+.course-curriculum-panel :deep(.v-divider) {
+    border-color: rgba(111, 66, 193, 0.22);
+}
+
+.course-date-curriculum-connector {
+    align-items: center;
+    align-self: stretch;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    position: relative;
+    z-index: 4;
+}
+
+.course-date-curriculum-connector__core {
+    align-items: center;
+    backdrop-filter: blur(8px);
+    background: rgba(var(--v-theme-surface), 0.88);
+    border: 1px solid rgba(var(--v-theme-success), 0.3);
+    border-radius: 999px;
+    box-shadow: 0 12px 36px rgba(15, 23, 42, 0.22);
+    display: flex;
+    padding: 10px;
+    pointer-events: auto;
+    position: fixed;
+    top: 50vh;
+    transform: translateY(-50%);
+    z-index: 1;
+}
+
+.course-date-curriculum-connector--linked .course-date-curriculum-connector__core {
+    border-color: rgba(var(--v-theme-error), 0.3);
+}
+
+.course-date-curriculum-connector__button {
+    border: 4px solid rgb(var(--v-theme-surface));
+    box-shadow: 0 7px 20px rgba(var(--v-theme-success), 0.38) !important;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.course-date-curriculum-connector__button:hover {
+    box-shadow: 0 9px 24px rgba(var(--v-theme-success), 0.5) !important;
+    transform: scale(1.08);
+}
+
+.course-date-curriculum-connector__button--linked {
+    box-shadow: 0 7px 20px rgba(var(--v-theme-error), 0.38) !important;
+}
+
+.course-date-curriculum-connector__button--linked:hover {
+    box-shadow: 0 9px 24px rgba(var(--v-theme-error), 0.5) !important;
+}
+
+.course-date-curriculum-connector__label {
+    background: rgba(var(--v-theme-surface), 0.92);
+    border-radius: 999px;
+    color: rgb(var(--v-theme-success));
+    font-size: 0.62rem;
+    font-weight: 800;
+    left: 50%;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    padding: 4px 7px;
+    position: absolute;
+    text-transform: uppercase;
+    top: calc(100% + 4px);
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+
+.course-date-curriculum-connector__label--linked {
+    color: rgb(var(--v-theme-error));
+}
+
 @media (max-width: 959px) {
     .course-dates-panels {
+        gap: 16px;
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .course-dates-panels--connector-visible {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .course-date-curriculum-connector {
+        min-height: 72px;
+        position: relative;
+    }
+
+    .course-date-curriculum-connector__core {
+        position: relative;
+        top: auto;
+        transform: none;
     }
 }
 
@@ -2279,9 +2622,37 @@ export default {
     cursor: pointer;
 }
 
+.course-curriculum-panel .course-curriculum-item {
+    background: rgba(111, 66, 193, 0.035) !important;
+    border-color: rgba(111, 66, 193, 0.12);
+}
+
+.course-curriculum-panel .course-curriculum-item:hover {
+    background: rgba(111, 66, 193, 0.09) !important;
+    border-color: rgba(111, 66, 193, 0.3);
+    box-shadow: 0 4px 14px rgba(111, 66, 193, 0.12);
+}
+
+.course-curriculum-item--topic {
+    cursor: default;
+}
+
+.course-curriculum-panel .course-curriculum-item--topic {
+    background: rgba(111, 66, 193, 0.075) !important;
+    color: var(--course-curriculum-purple);
+    font-weight: 700;
+}
+
 .course-curriculum-item--selected {
     background: rgba(var(--v-theme-primary), 0.2) !important;
     border-left: 4px solid rgb(var(--v-theme-primary));
+}
+
+.course-curriculum-panel .course-curriculum-item--selected {
+    background: var(--course-curriculum-purple) !important;
+    border-color: var(--course-curriculum-purple);
+    color: #fff;
+    box-shadow: 0 7px 20px rgba(111, 66, 193, 0.34);
 }
 
 .course-date-row--marked-blue {
