@@ -589,6 +589,7 @@
                     :shared-objects-for-me-error="sharedObjectsForMeError"
                     :shared-for-me-expanded="subjectsTreeSharedForMeExpanded"
                     :shared-for-me-archive-expanded="subjectsTreeSharedForMeArchiveExpanded"
+                    :workspace2-expanded="subjectsTreeWorkspace2Expanded"
                     :archiving-shared-rule-id="isArchivingSharedRuleId"
                     :unarchiving-shared-rule-id="isUnarchivingSharedRuleId"
                     :workspace-structure-expanded="subjectsTreeWorkspaceStructureExpanded"
@@ -611,6 +612,7 @@
                     @open-shared-attachments="openSharedMaterialAttachmentsFromTree"
                     @toggle-shared-for-me-expanded="toggleSubjectsTreeSharedForMeExpanded"
                     @toggle-shared-for-me-archive-expanded="toggleSubjectsTreeSharedForMeArchiveExpanded"
+                    @toggle-workspace2-expanded="toggleSubjectsTreeWorkspace2Expanded"
                     @toggle-workspace-structure-expanded="toggleSubjectsTreeWorkspaceStructureExpanded"
                     @toggle-shared-item-expanded="toggleSubjectsTreeSharedItemExpanded"
                     @archive-shared-item="archiveSharedRule"
@@ -1659,6 +1661,7 @@ export default {
             isUnarchivingSharedRuleId: null,
             subjectsTreeSharedForMeExpanded: false,
             subjectsTreeSharedForMeArchiveExpanded: false,
+            subjectsTreeWorkspace2Expanded: false,
             subjectsTreeWorkspaceStructureExpanded: false,
             subjectsTreeWorkspaceSelection: null,
             subjectsTreeExpandedSharedItems: {},
@@ -2578,6 +2581,7 @@ export default {
         currentSubjectsTreeSection() {
             if (this.subjectsTreeSharedForMeArchiveExpanded) return 'archive'
             if (this.subjectsTreeSharedForMeExpanded) return 'shared'
+            if (this.subjectsTreeWorkspace2Expanded) return 'workspace2'
             return 'workspace'
         },
         normalizeSubjectsTreeSection(value) {
@@ -2586,6 +2590,7 @@ export default {
                 .toLowerCase()
             if (normalized === 'shared') return 'shared'
             if (normalized === 'archive') return 'archive'
+            if (normalized === 'workspace2') return 'workspace2'
             return 'workspace'
         },
         readSubjectsTreeSectionFromUrl() {
@@ -2617,6 +2622,7 @@ export default {
             const nextSection = this.normalizeSubjectsTreeSection(section)
             this.subjectsTreeSharedForMeExpanded = nextSection === 'shared'
             this.subjectsTreeSharedForMeArchiveExpanded = nextSection === 'archive'
+            this.subjectsTreeWorkspace2Expanded = nextSection === 'workspace2'
 
             if (syncUrl) {
                 this.syncSubjectsTreeSectionToUrl(nextSection)
@@ -4236,6 +4242,9 @@ export default {
         toggleSubjectsTreeSharedForMeArchiveExpanded() {
             this.applySubjectsTreeSection(this.subjectsTreeSharedForMeArchiveExpanded ? 'workspace' : 'archive')
         },
+        toggleSubjectsTreeWorkspace2Expanded() {
+            this.applySubjectsTreeSection(this.subjectsTreeWorkspace2Expanded ? 'workspace' : 'workspace2')
+        },
         toggleSubjectsTreeWorkspaceStructureExpanded() {
             this.subjectsTreeWorkspaceStructureExpanded = !this.subjectsTreeWorkspaceStructureExpanded
             useAdminStore().is_struktur_modus = this.subjectsTreeWorkspaceStructureExpanded
@@ -4260,6 +4269,7 @@ export default {
             this.subjectsContentsSource = 'workspace'
             this.subjectsTreeSharedForMeExpanded = false
             this.subjectsTreeSharedForMeArchiveExpanded = false
+            this.subjectsTreeWorkspace2Expanded = false
             this.subjectsTreeExpandedSharedItems = {}
             this.reorderSharedObjectsForActiveRule(null)
         },

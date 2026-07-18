@@ -13,6 +13,16 @@
                     </span>
                 </v-btn>
                 <v-btn
+                    value="workspace2"
+                    prepend-icon="mdi-briefcase-outline"
+                    :disabled="actionBusy"
+                    @click="toggleWorkspace2Expanded">
+                    Workspace 2
+                    <span v-if="workspaceMaterialsCount > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--toggle">
+                        {{ workspaceMaterialsCount }}
+                    </span>
+                </v-btn>
+                <v-btn
                     value="shared"
                     prepend-icon="mdi-account-group-outline"
                     :disabled="actionBusy"
@@ -36,10 +46,10 @@
 
         </div>
 
-        <v-card v-if="isWorkspaceSectionActive" variant="flat" rounded="lg" class="overview-unit-card overview-unit-card--workspace mb-4 pa-4 pt-0">
+        <v-card v-if="isWorkspaceSectionActive || isWorkspace2SectionActive" variant="flat" rounded="lg" class="overview-unit-card overview-unit-card--workspace mb-4 pa-4 pt-0">
         <div class="overview-unit-card__header d-flex align-center ga-2">
             <v-icon size="20" icon="mdi-briefcase-outline" color="primary" />
-            <span class="overview-selected-subject__label">Workspace</span>
+            <span class="overview-selected-subject__label">{{ isWorkspace2SectionActive ? 'Workspace 2' : 'Workspace' }}</span>
             <v-btn
                 v-if="enableCreateButtons && hasPersistedNodeId(activeWorkspace?.id) && workspaceNodeHasContents('workspace', activeWorkspace)"
                 size="x-small"
@@ -185,10 +195,13 @@
         </div>
 
         <div class="overview-subjects-tabbar mb-10">
-            <div class="overview-subjects-tablist" role="tablist" aria-label="Themen">
+            <div
+                class="overview-subjects-tablist"
+                :class="{ 'overview-subjects-tablist--vertical': isWorkspace2SectionActive }"
+                role="tablist"
+                aria-label="Themen">
+                <template v-for="topic in selectedSubjectItem.topics" :key="`overview-topics-nav-${topic.id || topic.name}`">
                 <div
-                    v-for="topic in selectedSubjectItem.topics"
-                    :key="`overview-topics-nav-${topic.id || topic.name}`"
                     role="tab"
                     :aria-selected="isWorkspaceTopicExpanded(topic) ? 'true' : 'false'"
                     :class="[
@@ -236,15 +249,15 @@
                                 @click="openWorkspaceRenameDialog('topic', topic)" />
                             <v-list-item
                                 v-if="enableCreateButtons"
-                                prepend-icon="mdi-arrow-left"
+                                :prepend-icon="isWorkspace2SectionActive ? 'mdi-arrow-up' : 'mdi-arrow-left'"
                                 :disabled="actionBusy || selectedTopicIndex <= 0"
-                                title="Nach links"
+                                :title="isWorkspace2SectionActive ? 'Nach oben' : 'Nach links'"
                                 @click="moveWorkspaceNode('topic', topic, 'up')" />
                             <v-list-item
                                 v-if="enableCreateButtons"
-                                prepend-icon="mdi-arrow-right"
+                                :prepend-icon="isWorkspace2SectionActive ? 'mdi-arrow-down' : 'mdi-arrow-right'"
                                 :disabled="actionBusy || selectedTopicIndex >= selectedSubjectItem.topics.length - 1"
-                                title="Nach rechts"
+                                :title="isWorkspace2SectionActive ? 'Nach unten' : 'Nach rechts'"
                                 @click="moveWorkspaceNode('topic', topic, 'down')" />
                             <v-list-item
                                 v-if="enableCreateButtons"
@@ -261,6 +274,113 @@
                         </v-list>
                     </v-menu>
                 </div>
+
+                <div
+                    v-if="isWorkspace2SectionActive && isWorkspaceTopicExpanded(topic)"
+                    class="workspace2-topic-units">
+                    <div class="overview-subjects-tablist overview-subjects-tablist--workspace2-units" role="tablist" aria-label="Bereiche">
+                        <template v-for="unit in topic.units" :key="`overview-workspace2-units-nav-${unit.id || unit.name}`">
+                            <div
+                                role="tab"
+                                :aria-selected="isWorkspaceUnitExpanded(unit) ? 'true' : 'false'"
+                                :class="[
+                                    'overview-subjects-tab',
+                                    'overview-subjects-tab--unit',
+                                    'overview-subjects-tab--hierarchy',
+                                    {
+                                        'overview-subjects-tab--active': isWorkspaceUnitExpanded(unit),
+                                        'overview-subjects-tab--muted': selectedUnitItem && !isWorkspaceUnitExpanded(unit),
+                                    },
+                                ]">
+                                <v-btn
+                                    :value="workspaceUnitKey(unit)"
+                                    size="default"
+                                    :variant="isWorkspaceUnitExpanded(unit) ? 'tonal' : 'outlined'"
+                                    :color="isWorkspaceUnitExpanded(unit) ? 'primary' : undefined"
+                                    :disabled="actionBusy"
+                                    class="overview-subjects-nav-btn overview-subjects-tab-button"
+                                    @click="toggleWorkspaceUnitExpanded(unit)">
+                                    {{ workspaceNodeTitle('unit', unit) }}
+                                </v-btn>
+
+                                <v-menu
+                                    v-if="isWorkspaceUnitExpanded(unit) && hasPersistedNodeId(unit.id) && hasWorkspaceUnitTabActions(unit)"
+                                    location="bottom end">
+                                    <template #activator="{ props: unitMenuActivatorProps }">
+                                        <v-btn
+                                            v-bind="unitMenuActivatorProps"
+                                            size="small"
+                                            variant="tonal"
+                                            color="primary"
+                                            icon="mdi-dots-vertical"
+                                            :title="'Bereich-Aktionen'"
+                                            :disabled="actionBusy"
+                                            class="overview-subjects-tab-menu-btn"
+                                            @click.stop />
+                                    </template>
+
+                                    <v-list density="comfortable" class="overview-subjects-tab-menu">
+                                        <v-list-item v-if="enableCreateButtons" prepend-icon="mdi-pencil" :disabled="actionBusy" title="Bereich bearbeiten" @click="openWorkspaceRenameDialog('unit', unit)" />
+                                        <v-list-item v-if="enableCreateButtons" prepend-icon="mdi-arrow-up" :disabled="actionBusy || selectedUnitIndex <= 0" title="Nach oben" @click="moveWorkspaceNode('unit', unit, 'up')" />
+                                        <v-list-item v-if="enableCreateButtons" prepend-icon="mdi-arrow-down" :disabled="actionBusy || selectedUnitIndex >= topic.units.length - 1" title="Nach unten" @click="moveWorkspaceNode('unit', unit, 'down')" />
+                                        <v-list-item v-if="enableCreateButtons" prepend-icon="mdi-delete-outline" :disabled="actionBusy" title="Bereich löschen" @click="openWorkspaceDeleteDialog('unit', unit)" />
+                                        <v-list-item v-if="!isWorkspaceStructureButtonsVisible()" prepend-icon="mdi-share-variant-outline" :disabled="actionBusy" title="Teilen" @click="handleShareClick({ level: 'unit', id: unit.id, label: workspaceNodeTitle('unit', unit), parentLabel: `${selectedSubjectItem ? workspaceNodeTitle('subject', selectedSubjectItem) : ''} / ${workspaceNodeTitle('topic', topic)}` })" />
+                                    </v-list>
+                                </v-menu>
+                            </div>
+
+                            <div
+                                v-if="isWorkspaceUnitExpanded(unit) && !isWorkspaceStructureButtonsVisible() && (unit.materials.length || canShowUnitMaterialCreateCard)"
+                                class="workspace2-unit-materials">
+                                <div class="overview-materials-cards overview-materials-cards--workspace2 d-flex ga-3">
+                                    <v-card
+                                        v-for="material in unit.materials"
+                                        :key="`overview-workspace2-material-card-unit-${material.id}`"
+                                        class="overview-material-card"
+                                        variant="outlined"
+                                        rounded="lg"
+                                        @click="$emit('open-material', { id: material.id })">
+                                        <v-card-text class="pa-3">
+                                            <div class="d-flex align-center ga-2 mb-2">
+                                                <v-icon size="20" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || 'primary'" />
+                                                <span class="overview-material-card__title">{{ material.title }}</span>
+                                            </div>
+                                            <div v-if="material.description" class="overview-material-card__description text-medium-emphasis mb-1">{{ material.description }}</div>
+                                            <div class="d-flex align-center flex-wrap ga-2">
+                                                <v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">{{ material.typeLabel }}</v-chip>
+                                                <v-chip size="x-small" variant="tonal" :color="statusColorFn(material.status)">{{ statusLabelFn(material.status) }}</v-chip>
+                                                <span v-if="material.attachmentsCount > 0" class="d-flex align-center text-caption text-medium-emphasis">
+                                                    <v-icon size="12" icon="mdi-paperclip" class="mr-1" />{{ material.attachmentsCount }}
+                                                </span>
+                                            </div>
+                                        </v-card-text>
+                                    </v-card>
+                                    <v-card
+                                        v-if="canShowUnitMaterialCreateCard"
+                                        class="overview-material-card overview-material-card--create"
+                                        :class="{ 'overview-material-card--disabled': actionBusy }"
+                                        variant="outlined"
+                                        rounded="lg"
+                                        role="button"
+                                        :tabindex="actionBusy ? -1 : 0"
+                                        :aria-disabled="actionBusy ? 'true' : 'false'"
+                                        aria-label="Neues Material in Bereich anlegen"
+                                        @click="emitWorkspaceUnitMaterialCreate(unit)"
+                                        @keydown.enter.prevent="emitWorkspaceUnitMaterialCreate(unit)"
+                                        @keydown.space.prevent="emitWorkspaceUnitMaterialCreate(unit)">
+                                        <v-card-text class="overview-material-card-create__content">
+                                            <v-icon icon="mdi-plus" size="32" color="primary" />
+                                        </v-card-text>
+                                    </v-card>
+                                </div>
+                            </div>
+                        </template>
+                        <div v-if="enableCreateButtons" role="tab" aria-selected="false" class="overview-subjects-tab overview-subjects-tab--add">
+                            <v-btn size="default" variant="outlined" color="primary" icon="mdi-plus" :title="'Bereich hinzufügen'" :disabled="actionBusy" class="overview-subjects-nav-btn overview-subjects-tab-button overview-subjects-add-tab-button" @click.stop="openWorkspaceCreateUnitDialog(topic)" />
+                        </div>
+                    </div>
+                </div>
+                </template>
                 <div
                     v-if="enableCreateButtons"
                     role="tab"
@@ -309,7 +429,7 @@
             </v-card>
         </div>
 
-        <div v-if="selectedTopicItem" class="overview-subjects-tabbar mb-10">
+        <div v-if="selectedTopicItem && !isWorkspace2SectionActive" class="overview-subjects-tabbar mb-10">
             <div class="overview-subjects-tablist" role="tablist" aria-label="Bereiche">
                 <div
                     v-for="unit in selectedTopicItem.units"
@@ -404,7 +524,7 @@
             </div>
         </div>
 
-        <v-card v-if="selectedUnitItem" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
+        <v-card v-if="selectedUnitItem && !isWorkspace2SectionActive" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
         <div class="overview-unit-card__header overview-unit-card__header--subject overview-unit-card__header--workspace-node d-flex align-center ga-2">
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('unit', selectedUnitItem) }}</span>
         </div>
@@ -454,7 +574,6 @@
         </v-card>
         </v-card>
         </v-card>
-
 
         <div v-if="isSharedSectionActive" class="overview-shared-content">
             <div v-if="sharedObjectsForMeLoading" class="overview-shared-state">
@@ -1103,6 +1222,10 @@ export default {
             type: Boolean,
             default: false,
         },
+        workspace2Expanded: {
+            type: Boolean,
+            default: false,
+        },
         archivingSharedRuleId: {
             type: Number,
             default: null,
@@ -1128,10 +1251,22 @@ export default {
             default: false,
         },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'open-shared-insert-draft', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-for-me-archive-expanded', 'toggle-shared-item-expanded', 'toggle-workspace-structure-expanded', 'archive-shared-item', 'activate-shared-item', 'shared-node-created', 'shared-node-renamed', 'shared-node-deleted', 'shared-node-moved', 'workspace-node-created', 'workspace-node-renamed', 'workspace-node-deleted', 'workspace-node-moved'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'open-shared-insert-draft', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-for-me-archive-expanded', 'toggle-workspace2-expanded', 'toggle-shared-item-expanded', 'toggle-workspace-structure-expanded', 'archive-shared-item', 'activate-shared-item', 'shared-node-created', 'shared-node-renamed', 'shared-node-deleted', 'shared-node-moved', 'workspace-node-created', 'workspace-node-renamed', 'workspace-node-deleted', 'workspace-node-moved'],
     data() {
         return {
             workspaceExpanded: true,
+            workspaceSelectionBySection: {
+                workspace: {
+                    subjectKey: null,
+                    topicKey: null,
+                    unitKey: null,
+                },
+                workspace2: {
+                    subjectKey: null,
+                    topicKey: null,
+                    unitKey: null,
+                },
+            },
             sharedNodeTitleOverrides: {},
             collapsedWorkspaceSubjects: {},
             selectedSubjectKey: null,
@@ -1173,11 +1308,15 @@ export default {
         activeSection() {
             if (this.sharedForMeExpanded) return 'shared'
             if (this.sharedForMeArchiveExpanded) return 'archive'
+            if (this.workspace2Expanded) return 'workspace2'
             if (this.workspaceExpanded) return 'workspace'
             return undefined
         },
         isWorkspaceSectionActive() {
             return this.activeSection === 'workspace'
+        },
+        isWorkspace2SectionActive() {
+            return this.activeSection === 'workspace2'
         },
         isSharedSectionActive() {
             return this.activeSection === 'shared'
@@ -1334,9 +1473,41 @@ export default {
             if (this.actionBusy) return
             if (this.activeSection === 'workspace') return
 
+            this.storeWorkspaceSelection(this.activeSection)
             this.workspaceExpanded = true
+            if (this.workspace2Expanded) this.$emit('toggle-workspace2-expanded')
             if (this.sharedForMeExpanded) this.$emit('toggle-shared-for-me-expanded')
             if (this.sharedForMeArchiveExpanded) this.$emit('toggle-shared-for-me-archive-expanded')
+            this.restoreWorkspaceSelection('workspace')
+        },
+        toggleWorkspace2Expanded() {
+            if (this.actionBusy) return
+            if (this.activeSection === 'workspace2') return
+
+            this.storeWorkspaceSelection(this.activeSection)
+            this.workspaceExpanded = false
+            if (this.sharedForMeExpanded) this.$emit('toggle-shared-for-me-expanded')
+            if (this.sharedForMeArchiveExpanded) this.$emit('toggle-shared-for-me-archive-expanded')
+            this.$emit('toggle-workspace2-expanded')
+            this.restoreWorkspaceSelection('workspace2')
+        },
+        storeWorkspaceSelection(section) {
+            if (section !== 'workspace' && section !== 'workspace2') return
+
+            this.workspaceSelectionBySection = {
+                ...this.workspaceSelectionBySection,
+                [section]: {
+                    subjectKey: this.selectedSubjectKey,
+                    topicKey: this.selectedTopicKey,
+                    unitKey: this.selectedUnitKey,
+                },
+            }
+        },
+        restoreWorkspaceSelection(section) {
+            const selection = this.workspaceSelectionBySection[section] || {}
+            this.selectedSubjectKey = selection.subjectKey || null
+            this.selectedTopicKey = selection.topicKey || null
+            this.selectedUnitKey = selection.unitKey || null
         },
         workspaceSubjectKey(subject) {
             return this.workspaceNodeOverrideKey('subject', subject)
@@ -1481,7 +1652,9 @@ export default {
             if (this.actionBusy) return
             if (this.activeSection === 'shared') return
 
+            this.storeWorkspaceSelection(this.activeSection)
             if (this.workspaceExpanded) this.workspaceExpanded = false
+            if (this.workspace2Expanded) this.$emit('toggle-workspace2-expanded')
             if (this.sharedForMeArchiveExpanded) this.$emit('toggle-shared-for-me-archive-expanded')
             this.$emit('toggle-shared-for-me-expanded')
         },
@@ -1489,7 +1662,9 @@ export default {
             if (this.actionBusy) return
             if (this.activeSection === 'archive') return
 
+            this.storeWorkspaceSelection(this.activeSection)
             if (this.workspaceExpanded) this.workspaceExpanded = false
+            if (this.workspace2Expanded) this.$emit('toggle-workspace2-expanded')
             if (this.sharedForMeExpanded) this.$emit('toggle-shared-for-me-expanded')
             this.$emit('toggle-shared-for-me-archive-expanded')
         },
@@ -3158,6 +3333,51 @@ export default {
     flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
+}
+
+.overview-subjects-tablist--vertical {
+    flex: 0 1 360px;
+    align-items: stretch;
+    flex-direction: column;
+    flex-wrap: nowrap;
+}
+
+.overview-subjects-tablist--vertical > .overview-subjects-tab,
+.overview-subjects-tablist--workspace2-units > .overview-subjects-tab {
+    width: 100%;
+    margin-bottom: 0;
+    border-radius: 8px !important;
+}
+
+.overview-subjects-tablist--vertical .overview-subjects-tab-button,
+.overview-subjects-tablist--workspace2-units .overview-subjects-tab-button {
+    flex: 1 1 auto;
+    justify-content: flex-start;
+    border-radius: 8px !important;
+}
+
+.overview-subjects-tablist--vertical > .overview-subjects-tab--active {
+    border-bottom-color: rgba(var(--v-theme-primary), 0.28) !important;
+}
+
+.workspace2-topic-units,
+.workspace2-unit-materials {
+    width: calc(100% - 24px);
+    margin-left: 24px;
+    padding: 8px 0 8px 14px;
+    border-left: 2px solid rgba(var(--v-theme-primary), 0.24);
+}
+
+.overview-subjects-tablist--workspace2-units,
+.overview-materials-cards--workspace2 {
+    align-items: stretch;
+    flex-direction: column;
+    flex-wrap: nowrap;
+}
+
+.overview-materials-cards--workspace2 > .overview-material-card {
+    width: 100%;
+    flex: 0 0 auto;
 }
 
 .overview-subjects-tab {

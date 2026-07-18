@@ -141,6 +141,7 @@ function renderTree(
             return {
                 sharedForMeExpanded: false,
                 sharedForMeArchiveExpanded: false,
+                workspace2Expanded: false,
                 workspaceStructureExpanded: false,
                 expandedSharedItems: {},
             }
@@ -151,6 +152,9 @@ function renderTree(
             },
             toggleSharedForMeArchiveExpanded() {
                 this.sharedForMeArchiveExpanded = !this.sharedForMeArchiveExpanded
+            },
+            toggleWorkspace2Expanded() {
+                this.workspace2Expanded = !this.workspace2Expanded
             },
             toggleWorkspaceStructureExpanded() {
                 this.workspaceStructureExpanded = !this.workspaceStructureExpanded
@@ -184,12 +188,14 @@ function renderTree(
                 :shared-objects-for-me-error="sharedObjectsForMeError"
                 :shared-for-me-expanded="sharedForMeExpanded"
                 :shared-for-me-archive-expanded="sharedForMeArchiveExpanded"
+                :workspace2-expanded="workspace2Expanded"
                 :workspace-structure-expanded="workspaceStructureExpanded"
                 :expanded-shared-items="expandedSharedItems"
                 :initially-collapse-hierarchy="initiallyCollapseHierarchy"
                 :key="treeKey"
                 @toggle-shared-for-me-expanded="toggleSharedForMeExpanded"
                 @toggle-shared-for-me-archive-expanded="toggleSharedForMeArchiveExpanded"
+                @toggle-workspace2-expanded="toggleWorkspace2Expanded"
                 @toggle-workspace-structure-expanded="toggleWorkspaceStructureExpanded"
                 @toggle-shared-item-expanded="toggleSharedItemExpanded"
                 @archive-shared-item="$emit('archive-shared-item', $event)"
@@ -249,7 +255,7 @@ function renderTree(
 }
 
 async function openWorkspace(): Promise<void> {
-    const workspaceToggle = screen.getByRole('button', { name: /workspace/i })
+    const workspaceToggle = screen.getByRole('button', { name: 'Workspace' })
 
     if (workspaceToggle.getAttribute('aria-expanded') !== 'true') {
         await fireEvent.click(workspaceToggle)
@@ -305,10 +311,134 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.queryByText('Mathematik')).not.toBeInTheDocument()
         expect(screen.getByText('Geteiltes Fach')).toBeInTheDocument()
 
-        await fireEvent.click(screen.getByRole('button', { name: /workspace/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Workspace' }))
 
         expect(screen.getByText('Mathematik')).toBeInTheDocument()
         expect(screen.queryByText('Geteiltes Fach')).not.toBeInTheDocument()
+    })
+
+    it('shows the same data and design in Workspace 2 while keeping the selected path independent', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [
+                    {
+                        id: 91,
+                        title: 'Mathematik Arbeitsblatt',
+                        attachmentsCount: 0,
+                        status: 'inbox',
+                    },
+                ],
+                topics: [],
+            },
+            {
+                id: 2,
+                name: 'Physik',
+                materials: [
+                    {
+                        id: 92,
+                        title: 'Physik Arbeitsblatt',
+                        attachmentsCount: 0,
+                        status: 'inbox',
+                    },
+                ],
+                topics: [],
+            },
+        ])
+
+        expect(screen.getByRole('button', { name: 'Workspace' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Workspace 2' })).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Mathematik' }))
+        expect(screen.getByText('Mathematik Arbeitsblatt')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Workspace 2' }))
+        expect(screen.getByText('Mathematik')).toBeInTheDocument()
+        expect(screen.getByText('Physik')).toBeInTheDocument()
+        expect(screen.queryByText('Mathematik Arbeitsblatt')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Physik' }))
+        expect(screen.getByText('Physik Arbeitsblatt')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Workspace' }))
+        expect(screen.getByText('Mathematik Arbeitsblatt')).toBeInTheDocument()
+        expect(screen.queryByText('Physik Arbeitsblatt')).not.toBeInTheDocument()
+    })
+
+    it('nests Workspace 2 topics units and materials as indented vertical lists', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [
+                            {
+                                id: 111,
+                                name: 'Brüche',
+                                materials: [
+                                    { id: 1111, title: 'Bruchrechnen Arbeitsblatt', attachmentsCount: 0, status: 'inbox' },
+                                    { id: 1112, title: 'Bruchrechnen Lösungen', attachmentsCount: 0, status: 'inbox' },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ])
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Workspace 2' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Mathematik' }))
+
+        const topics = screen.getByRole('tablist', { name: 'Themen' })
+        expect(topics).toHaveClass('overview-subjects-tablist--vertical')
+
+        await fireEvent.click(within(topics).getByRole('button', { name: 'Algebra' }))
+
+        const units = screen.getByRole('tablist', { name: 'Bereiche' })
+        expect(units.parentElement).toHaveClass('workspace2-topic-units')
+        expect(units).toHaveClass('overview-subjects-tablist--workspace2-units')
+
+        await fireEvent.click(within(units).getByRole('button', { name: 'Brüche' }))
+
+        const materials = screen.getByText('Bruchrechnen Arbeitsblatt').closest('.overview-materials-cards')
+        expect(materials?.parentElement).toHaveClass('workspace2-unit-materials')
+        expect(materials).toHaveClass('overview-materials-cards--workspace2')
+        expect(within(materials as HTMLElement).getByText('Bruchrechnen Lösungen')).toBeInTheDocument()
+    })
+
+    it('uses up and down topic actions only in the vertical Workspace 2 layout', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    { id: 11, name: 'Algebra', materials: [], units: [] },
+                    { id: 12, name: 'Geometrie', materials: [], units: [] },
+                ],
+            },
+        ], { enableCreateButtons: true })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Mathematik' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Algebra' }))
+        let topicTab = screen.getByRole('tab', { name: 'Algebra' })
+        expect(within(topicTab).getByTitle('Nach links')).toHaveAttribute('prepend-icon', 'mdi-arrow-left')
+        expect(within(topicTab).getByTitle('Nach rechts')).toHaveAttribute('prepend-icon', 'mdi-arrow-right')
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Workspace 2' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Mathematik' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Algebra' }))
+        topicTab = screen.getByRole('tab', { name: 'Algebra' })
+        expect(within(topicTab).getByTitle('Nach oben')).toHaveAttribute('prepend-icon', 'mdi-arrow-up')
+        expect(within(topicTab).getByTitle('Nach unten')).toHaveAttribute('prepend-icon', 'mdi-arrow-down')
+        expect(within(topicTab).queryByTitle('Nach links')).not.toBeInTheDocument()
+        expect(within(topicTab).queryByTitle('Nach rechts')).not.toBeInTheDocument()
     })
 
     it('collapses and expands a workspace subject', async () => {

@@ -34,11 +34,12 @@
             </v-card-text>
         </v-card>
 
-        <!-- Termine (Anzeige) -->
-        <v-card
-            variant="outlined"
-            :class="semesterCount === 2 ? 'mt-0' : 'mt-4'"
-            v-if="selected_course && action != 'new_course_dates'">
+        <!-- Termine und Curriculum (Anzeige) -->
+        <div
+            v-if="selected_course && action != 'new_course_dates'"
+            class="course-dates-panels"
+            :class="semesterCount === 2 ? 'mt-0' : 'mt-4'">
+        <v-card variant="outlined" class="course-dates-panel">
             <v-card-title class="text-subtitle-1 d-flex align-center ga-2 flex-wrap">
                 <v-icon size="18">mdi-calendar-check</v-icon>
                 Termine
@@ -299,6 +300,114 @@
             </v-card-text>
         </v-card>
 
+        <v-card
+            variant="outlined"
+            class="course-curriculum-panel"
+            data-testid="course-dates-curriculum-card">
+            <v-card-title class="text-subtitle-1 d-flex align-center ga-2 flex-wrap">
+                <v-icon size="18">mdi-book-open-variant</v-icon>
+                Curriculum
+            </v-card-title>
+            <v-divider />
+            <v-card-text
+                v-if="!selectedCourseCurriculumId"
+                class="d-flex flex-column align-center justify-center ga-3 text-center">
+                <div class="text-body-2 text-medium-emphasis">
+                    Diesem Kurs ist kein Curriculum zugewiesen.
+                </div>
+                <v-btn
+                    color="primary"
+                    variant="tonal"
+                    prepend-icon="mdi-plus"
+                    @click="openCurriculumAssignmentDialog">
+                    Curriculum hinzufügen
+                </v-btn>
+            </v-card-text>
+            <v-card-text v-else class="pa-0">
+                <div class="px-4 pt-4 pb-2 text-body-2 font-weight-medium">
+                    {{ selectedCourseCurriculumTitle }}
+                </div>
+                <v-progress-linear
+                    v-if="curriculumContentLoading"
+                    color="primary"
+                    indeterminate />
+                <v-list
+                    v-else-if="selectedCourseCurriculumTopics.length"
+                    class="bg-transparent py-0"
+                    density="compact">
+                    <template v-for="(topic, topicIndex) in selectedCourseCurriculumTopics" :key="topic.key">
+                        <v-list-item
+                            :title="`${topicIndex + 1}. ${topic.title}`"
+                            prepend-icon="mdi-bookmark-outline"
+                            class="course-curriculum-item"
+                            :class="{
+                                'course-curriculum-item--selected': selectedCurriculumItemKey === topic.selectionKey,
+                            }"
+                            :aria-pressed="selectedCurriculumItemKey === topic.selectionKey"
+                            link
+                            @click="selectCurriculumItem(topic.selectionKey)" />
+                        <v-list-item
+                            v-for="(unit, unitIndex) in topic.units"
+                            :key="unit.key"
+                            class="course-curriculum-item pl-10"
+                            :class="{
+                                'course-curriculum-item--selected': selectedCurriculumItemKey === unit.selectionKey,
+                            }"
+                            :title="`${topicIndex + 1}.${unitIndex + 1} ${unit.title}`"
+                            :prepend-icon="unit.isExam ? 'mdi-clipboard-text-outline' : 'mdi-circle-small'"
+                            :aria-pressed="selectedCurriculumItemKey === unit.selectionKey"
+                            link
+                            @click="selectCurriculumItem(unit.selectionKey)" />
+                    </template>
+                </v-list>
+                <div v-else class="px-4 pb-4 text-body-2 text-medium-emphasis">
+                    Dieses Curriculum enthält keine Inhalte.
+                </div>
+            </v-card-text>
+        </v-card>
+        </div>
+
+        <v-dialog v-model="curriculumAssignmentDialogOpen" persistent max-width="520">
+            <v-card>
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                    <v-icon size="20">mdi-book-open-variant</v-icon>
+                    Curriculum hinzufügen
+                </v-card-title>
+                <v-divider />
+                <v-card-text class="pt-5">
+                    <v-select
+                        v-model="curriculumAssignmentSelectionId"
+                        :items="curriculumAssignmentOptions"
+                        :loading="curriculumAssignmentLoading"
+                        :disabled="curriculumAssignmentLoading || curriculumAssignmentSaving"
+                        item-title="title"
+                        item-value="value"
+                        label="Curriculum auswählen"
+                        no-data-text="Keine Curricula verfügbar"
+                        variant="outlined"
+                        hide-details="auto" />
+                </v-card-text>
+                <v-divider />
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn
+                        variant="text"
+                        :disabled="curriculumAssignmentSaving"
+                        @click="cancelCurriculumAssignment">
+                        Abbruch
+                    </v-btn>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        :loading="curriculumAssignmentSaving"
+                        :disabled="!curriculumAssignmentSelectionId || curriculumAssignmentLoading || curriculumAssignmentSaving"
+                        @click="saveCurriculumAssignment">
+                        Speichern
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="deleteAllDatesDialogOpen" persistent max-width="480">
             <v-card>
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
@@ -516,6 +625,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
+import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import axios from 'axios'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
@@ -541,11 +651,13 @@ export default {
         this.courseStore = useCourseStore()
         this.courseDateStore = useCourseDateStore()
         this.courseWorkStore = useCourseWorkStore()
+        this.curriculumStore = useCurriculumStore()
         this.teachingStore = useTeachingStore()
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
         }
         await this.loadCourseWorks()
+        await this.loadSelectedCourseCurriculumDetail()
         this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
     },
 
@@ -563,11 +675,19 @@ export default {
             courseStore: null,
             courseDateStore: null,
             courseWorkStore: null,
+            curriculumStore: null,
             teachingStore: null,
             activeSemester: null,
             is_valid: false,
             delete_date_id: null,
             deleteAllDatesDialogOpen: false,
+            curriculumAssignmentDialogOpen: false,
+            curriculumAssignmentLoading: false,
+            curriculumAssignmentSaving: false,
+            curriculumAssignmentSelectionId: null,
+            selectedCurriculumDetail: null,
+            selectedCurriculumDetailLoadingId: null,
+            selectedCurriculumItemKey: null,
             show_contents: true,
             collapsed_content_ids: [],
             expanded_content_ids: [],
@@ -633,13 +753,58 @@ export default {
             return null
         },
         selectedCourseCurriculumForContent() {
+            if (
+                this.selectedCurriculumDetail
+                && Number(this.selectedCurriculumDetail.id) === Number(this.selectedCourseCurriculumId)
+            ) {
+                return this.selectedCurriculumDetail
+            }
+
             return this.selected_course?.teaching_curriculum || null
+        },
+        curriculumContentLoading() {
+            return Number(this.selectedCurriculumDetailLoadingId) === Number(this.selectedCourseCurriculumId)
         },
         selectedCourseCurriculumTitle() {
             const curriculum = this.selectedCourseCurriculumForContent || this.selected_course?.teaching_curriculum
             if (!curriculum?.id) return ''
 
             return curriculum.title || `Curriculum #${curriculum.id}`
+        },
+        selectedCourseCurriculumTopics() {
+            const topics = Array.isArray(this.selectedCourseCurriculumForContent?.topics)
+                ? this.selectedCourseCurriculumForContent.topics
+                : []
+
+            return topics
+                .map((topic, topicIndex) => {
+                    const units = (Array.isArray(topic?.units) ? topic.units : [])
+                        .filter((unit) => unit?.title)
+                        .map((unit, unitIndex) => ({
+                            key: unit.id || `unit-${topicIndex}-${unitIndex}`,
+                            selectionKey: `unit:${topic?.id || topicIndex}:${unit.id || unitIndex}`,
+                            title: String(unit.title),
+                            isExam: Boolean(unit.is_exam),
+                        }))
+
+                    return {
+                        key: topic?.id || `topic-${topicIndex}`,
+                        selectionKey: `topic:${topic?.id || topicIndex}`,
+                        title: topic?.title ? String(topic.title) : `Thema ${topicIndex + 1}`,
+                        units,
+                    }
+                })
+                .filter((topic) => topic.title || topic.units.length)
+        },
+        curriculumAssignmentOptions() {
+            const curricula = Array.isArray(this.curriculumStore?.curricula) ? this.curriculumStore.curricula : []
+
+            return curricula
+                .filter((curriculum) => curriculum?.id)
+                .map((curriculum) => ({
+                    title: curriculum.title || `Curriculum #${curriculum.id}`,
+                    value: Number(curriculum.id),
+                }))
         },
         semesterCount() {
             const grading = this.selectedCourseSchema?.grading || {}
@@ -748,6 +913,12 @@ export default {
                 if (!highlightedId) return
                 const date = (course.course_dates || []).find((d) => d.id === highlightedId)
                 if (date) this.selectCourseDate(date)
+            },
+        },
+        selectedCourseCurriculumId: {
+            async handler() {
+                this.selectedCurriculumItemKey = null
+                await this.loadSelectedCourseCurriculumDetail()
             },
         },
         activeSemester(val) {
@@ -984,6 +1155,28 @@ export default {
 
             await this.courseWorkStore.index(courseId)
         },
+        async loadSelectedCourseCurriculumDetail() {
+            const curriculumId = this.selectedCourseCurriculumId
+            if (!curriculumId || !this.curriculumStore) {
+                this.selectedCurriculumDetail = null
+                return
+            }
+
+            if (Number(this.selectedCurriculumDetail?.id) === Number(curriculumId)) {
+                return
+            }
+
+            if (Number(this.selectedCurriculumDetailLoadingId) === Number(curriculumId)) {
+                return
+            }
+
+            this.selectedCurriculumDetailLoadingId = curriculumId
+            try {
+                this.selectedCurriculumDetail = await this.curriculumStore.show(curriculumId)
+            } finally {
+                this.selectedCurriculumDetailLoadingId = null
+            }
+        },
         contentHtml(text) {
             if (!text) return ''
             if (text.includes('<p>') || text.includes('<br')) return text
@@ -1122,6 +1315,46 @@ export default {
             }
             this.$router.replace({ query }).catch(() => {})
         },
+        async openCurriculumAssignmentDialog() {
+            this.curriculumAssignmentSelectionId = null
+            this.curriculumAssignmentDialogOpen = true
+            this.curriculumAssignmentLoading = true
+            try {
+                await this.curriculumStore.index({
+                    page: 1,
+                    perPage: 250,
+                })
+            } finally {
+                this.curriculumAssignmentLoading = false
+            }
+        },
+        cancelCurriculumAssignment() {
+            this.curriculumAssignmentDialogOpen = false
+            this.curriculumAssignmentSelectionId = null
+        },
+        async saveCurriculumAssignment() {
+            const curriculumId = Number(this.curriculumAssignmentSelectionId)
+            if (!this.selected_course?.id || !Number.isFinite(curriculumId) || curriculumId <= 0) {
+                return
+            }
+
+            this.curriculumAssignmentSaving = true
+            try {
+                const updatedCourse = await this.courseStore.update({
+                    ...this.selected_course,
+                    teaching_curriculum_id: curriculumId,
+                })
+                if (!updatedCourse) {
+                    return
+                }
+
+                await this.courseStore.refreshCourseById(this.selected_course.id)
+                this.curriculumAssignmentDialogOpen = false
+                this.curriculumAssignmentSelectionId = null
+            } finally {
+                this.curriculumAssignmentSaving = false
+            }
+        },
         setFromDate(dateStr) {
             if (!dateStr) return
             this.data.from = this.toDateString(dateStr)
@@ -1217,8 +1450,9 @@ export default {
             if (this.hasStatus(courseDate, 'pruefung')) classes.push('course-date-row--exam')
             if (this.hasStatus(courseDate, 'free')) classes.push('course-date-row--free')
             if (this.hasStatus(courseDate, 'entfaellt')) classes.push('course-date-row--entfaellt')
-            if (this.highlightedDateId === courseDate.id) {
-                classes.push(this.isDateToday(courseDate) ? 'course-date-row--today' : 'course-date-row--next')
+            if (this.selected_courseDate?.id === courseDate.id) classes.push('course-date-row--selected')
+            if (this.highlightedDateId === courseDate.id && this.isDateToday(courseDate)) {
+                classes.push('course-date-row--today')
             }
             const markingColor = this.courseDateRowMarkingColor(courseDate)
             if (markingColor) classes.push(`course-date-row--marked-${markingColor}`)
@@ -1226,7 +1460,10 @@ export default {
         },
         courseDateHighlightStyle(courseDate, index) {
             if (this.selected_courseDate?.id === courseDate.id) {
-                return { backgroundColor: '#e8eaf6', borderColor: '#3f51b5' }
+                return {}
+            }
+            if (this.highlightedDateId === courseDate.id && !this.isDateToday(courseDate)) {
+                return index % 2 === 1 ? { backgroundColor: '#f5f5f5' } : {}
             }
             if (this.highlightedDateId === courseDate.id) {
                 if (this.isDateToday(courseDate)) {
@@ -1252,6 +1489,11 @@ export default {
             this.selected_courseDate = courseDate
             const query = { ...this.$route.query, date: String(courseDate.id) }
             this.$router.replace({ query }).catch(() => {})
+        },
+        selectCurriculumItem(selectionKey) {
+            this.selectedCurriculumItemKey = this.selectedCurriculumItemKey === selectionKey
+                ? null
+                : selectionKey
         },
         async toggleStatus(courseDate, status) {
             const userStatuses = ['pruefung', 'entfaellt']
@@ -1746,6 +1988,24 @@ export default {
 </script>
 
 <style scoped>
+.course-dates-panels {
+    align-items: start;
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.course-dates-panel,
+.course-curriculum-panel {
+    min-width: 0;
+}
+
+@media (max-width: 959px) {
+    .course-dates-panels {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 .course-dates-grid {
     padding: 8px;
     gap: 8px;
@@ -2015,10 +2275,13 @@ export default {
     box-shadow: 0 0 12px rgba(21, 101, 192, 0.35);
 }
 
-.course-date-row--next {
-    background: linear-gradient(180deg, #c5cae9 0%, #9fa8da 100%) !important;
-    border: 2px solid #3f51b5 !important;
-    box-shadow: 0 0 12px rgba(63, 81, 181, 0.35);
+.course-curriculum-item {
+    cursor: pointer;
+}
+
+.course-curriculum-item--selected {
+    background: rgba(var(--v-theme-primary), 0.2) !important;
+    border-left: 4px solid rgb(var(--v-theme-primary));
 }
 
 .course-date-row--marked-blue {
@@ -2039,6 +2302,12 @@ export default {
 
 .course-date-row--marked-red {
     background: #fee2e2 !important;
+}
+
+.course-date-row--selected {
+    background: rgba(var(--v-theme-primary), 0.2) !important;
+    border: 2px solid rgb(var(--v-theme-primary)) !important;
+    box-shadow: 0 0 10px rgba(var(--v-theme-primary), 0.3);
 }
 
 .course-date-material-icon {

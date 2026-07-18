@@ -64,24 +64,113 @@ describe('CourseDates course-specific schema', () => {
             .toEqual([1, 2, 3])
     })
 
-    it('shows the assigned curriculum in the dates card header', () => {
-        const computed = (CourseDates as any).computed
+    it('shows the Curriculum card beside Termine with assigned and unassigned states', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
-        const ctx: Record<string, unknown> = {
-            selected_course: {
-                teaching_curriculum: {
-                    id: 10,
-                    title: 'Deutsch 6',
-                },
+        const curriculumCardStart = source.indexOf('data-testid="course-dates-curriculum-card"')
+        const curriculumCardEnd = source.indexOf('<v-dialog v-model="deleteAllDatesDialogOpen"')
+        const curriculumCard = source.slice(curriculumCardStart, curriculumCardEnd)
+
+        expect(source).toContain('class="course-dates-panels"')
+        expect(source).toContain('class="course-dates-panel"')
+        expect(source).toContain('data-testid="course-dates-curriculum-card"')
+        expect(source.indexOf('class="course-dates-panel"'))
+            .toBeLessThan(source.indexOf('data-testid="course-dates-curriculum-card"'))
+        expect(curriculumCard).toContain('Curriculum')
+        expect(curriculumCard).toContain('v-if="!selectedCourseCurriculumId"')
+        expect(curriculumCard).toContain('Diesem Kurs ist kein Curriculum zugewiesen.')
+        expect(curriculumCard).toContain('Curriculum hinzufügen')
+        expect(curriculumCard).toContain('@click="openCurriculumAssignmentDialog"')
+        expect(curriculumCard).not.toContain('<v-chip')
+        expect(curriculumCard).toContain('v-else-if="selectedCourseCurriculumTopics.length"')
+        expect(curriculumCard).toContain('in selectedCourseCurriculumTopics')
+        expect(curriculumCard).toContain('in topic.units')
+        expect(curriculumCard).toContain('Dieses Curriculum enthält keine Inhalte.')
+        expect(source).toContain('<v-dialog v-model="curriculumAssignmentDialogOpen" persistent max-width="520">')
+        expect(source).toContain('v-model="curriculumAssignmentSelectionId"')
+        expect(source).toContain('label="Curriculum auswählen"')
+        expect(source).toContain('@click="cancelCurriculumAssignment"')
+        expect(source).toContain('@click="saveCurriculumAssignment"')
+        expect(source).toContain('courseDateInlineContent(courseDate)')
+        expect(source).toContain('loadSelectedCourseCurriculumDetail')
+        expect(source).not.toContain('mdi-eye-off-outline')
+    })
+
+    it('normalizes assigned curriculum topics and units for the Curriculum card', () => {
+        const computed = (CourseDates as any).computed
+        const context = {
+            selectedCourseCurriculumForContent: {
+                topics: [
+                    {
+                        id: 'topic-1',
+                        title: 'Grundlagen',
+                        units: [
+                            { id: 'unit-1', title: 'Office 365', is_exam: false },
+                            { id: 'unit-2', title: 'Prüfung', is_exam: true },
+                        ],
+                    },
+                ],
             },
         }
 
-        expect(computed.selectedCourseCurriculumTitle.call(ctx)).toBe('Deutsch 6')
-        expect(source).toContain('v-if="selectedCourseCurriculumTitle"')
-        expect(source).toContain('class="course-date-curriculum-chip"')
-        expect(source).toContain('courseDateInlineContent(courseDate)')
-        expect(source).not.toContain('loadSelectedCourseCurriculumDetail')
-        expect(source).not.toContain('mdi-eye-off-outline')
+        expect(computed.selectedCourseCurriculumTopics.call(context)).toEqual([
+            {
+                key: 'topic-1',
+                selectionKey: 'topic:topic-1',
+                title: 'Grundlagen',
+                units: [
+                    {
+                        key: 'unit-1',
+                        selectionKey: 'unit:topic-1:unit-1',
+                        title: 'Office 365',
+                        isExam: false,
+                    },
+                    {
+                        key: 'unit-2',
+                        selectionKey: 'unit:topic-1:unit-2',
+                        title: 'Prüfung',
+                        isExam: true,
+                    },
+                ],
+            },
+        ])
+    })
+
+    it('allows only one curriculum item to be selected at a time', () => {
+        const methods = (CourseDates as any).methods
+        const context: Record<string, string | null> = { selectedCurriculumItemKey: null }
+
+        methods.selectCurriculumItem.call(context, 'topic:topic-1')
+        expect(context.selectedCurriculumItemKey).toBe('topic:topic-1')
+
+        methods.selectCurriculumItem.call(context, 'unit:topic-1:unit-1')
+        expect(context.selectedCurriculumItemKey).toBe('unit:topic-1:unit-1')
+
+        methods.selectCurriculumItem.call(context, 'unit:topic-1:unit-1')
+        expect(context.selectedCurriculumItemKey).toBeNull()
+    })
+
+    it('loads the full assigned curriculum before rendering its topics', async () => {
+        const show = vi.fn().mockResolvedValue({
+            id: 3,
+            title: 'DGB 1',
+            topics: [{ id: 'topic-1', title: 'Grundlagen', units: [] }],
+        })
+        const context: Record<string, any> = {
+            selectedCourseCurriculumId: 3,
+            selectedCurriculumDetail: null,
+            selectedCurriculumDetailLoadingId: null,
+            curriculumStore: { show },
+        }
+
+        await (CourseDates as any).methods.loadSelectedCourseCurriculumDetail.call(context)
+
+        expect(show).toHaveBeenCalledWith(3)
+        expect(context.selectedCurriculumDetail).toEqual({
+            id: 3,
+            title: 'DGB 1',
+            topics: [{ id: 'topic-1', title: 'Grundlagen', units: [] }],
+        })
+        expect(context.selectedCurriculumDetailLoadingId).toBeNull()
     })
 
     it('moves the date actions into the Termine row and removes the entry area chip', () => {
@@ -194,6 +283,35 @@ describe('CourseDates course-specific schema', () => {
         expect(dateTitlePosition).toBeLessThan(hourChipPosition)
         expect(hourChipPosition).toBeLessThan(highlightedDatePosition)
         expect(source).not.toContain('class="course-date-hours')
+    })
+
+    it('uses only the chip to identify the next date', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const methods = (CourseDates as any).methods
+        const courseDate = { id: 278 }
+        const context = {
+            highlightedDateId: 278,
+            selected_courseDate: courseDate,
+            hasStatus: vi.fn().mockReturnValue(false),
+            isDateToday: vi.fn().mockReturnValue(false),
+            courseDateRowMarkingColor: vi.fn().mockReturnValue(null),
+        }
+
+        expect(methods.courseDateRowClass.call(context, courseDate)).not.toContain('course-date-row--next')
+        expect(methods.courseDateRowClass.call(context, courseDate)).toContain('course-date-row--selected')
+        expect(methods.courseDateHighlightStyle.call(context, courseDate, 0)).toEqual({})
+        expect(source).toContain("{{ isDateToday(courseDate) ? 'Heute' : 'Nächster' }}")
+        expect(source).not.toContain('.course-date-row--next')
+    })
+
+    it('shows a clear background on the selected date and curriculum item', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+
+        expect(source).toContain("classes.push('course-date-row--selected')")
+        expect(source).toContain('selectedCurriculumItemKey === topic.selectionKey')
+        expect(source).toContain('selectedCurriculumItemKey === unit.selectionKey')
+        expect(source).toContain('.course-date-row--selected {')
+        expect(source).toContain('.course-curriculum-item--selected {')
     })
 
     it('uses abbreviated German weekday labels', () => {
@@ -484,6 +602,52 @@ describe('CourseDates course-specific schema', () => {
         expect(replace).toHaveBeenCalledWith({
             query: { course: '20', grades: 'sem1,sem2,year', panel: 'works', work: '23', return_panel: 'dates' },
         })
+    })
+
+    it('opens the persistent curriculum assignment dialog and loads curricula', async () => {
+        const index = vi.fn().mockResolvedValue(true)
+        const ctx: Record<string, any> = {
+            curriculumStore: { index },
+            curriculumAssignmentDialogOpen: false,
+            curriculumAssignmentLoading: false,
+            curriculumAssignmentSelectionId: 14,
+        }
+
+        await (CourseDates as any).methods.openCurriculumAssignmentDialog.call(ctx)
+
+        expect(ctx.curriculumAssignmentDialogOpen).toBe(true)
+        expect(ctx.curriculumAssignmentLoading).toBe(false)
+        expect(ctx.curriculumAssignmentSelectionId).toBeNull()
+        expect(index).toHaveBeenCalledWith({ page: 1, perPage: 250 })
+    })
+
+    it('assigns the selected curriculum and closes the dialog', async () => {
+        const update = vi.fn().mockResolvedValue({ id: 20, teaching_curriculum_id: 14 })
+        const refreshCourseById = vi.fn().mockResolvedValue({ id: 20, teaching_curriculum_id: 14 })
+        const selectedCourse = {
+            id: 20,
+            title: 'Deutsch',
+            teaching_schema_id: 3,
+            teaching_curriculum_id: null,
+        }
+        const ctx: Record<string, any> = {
+            selected_course: selectedCourse,
+            curriculumAssignmentDialogOpen: true,
+            curriculumAssignmentSaving: false,
+            curriculumAssignmentSelectionId: 14,
+            courseStore: { update, refreshCourseById },
+        }
+
+        await (CourseDates as any).methods.saveCurriculumAssignment.call(ctx)
+
+        expect(update).toHaveBeenCalledWith({
+            ...selectedCourse,
+            teaching_curriculum_id: 14,
+        })
+        expect(refreshCourseById).toHaveBeenCalledWith(20)
+        expect(ctx.curriculumAssignmentDialogOpen).toBe(false)
+        expect(ctx.curriculumAssignmentSelectionId).toBeNull()
+        expect(ctx.curriculumAssignmentSaving).toBe(false)
     })
 
     it('keeps all selected dates visible when selecting another date', () => {

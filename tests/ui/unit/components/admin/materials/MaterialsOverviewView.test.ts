@@ -425,6 +425,18 @@ describe('MaterialsOverviewView', () => {
         })).toBe('archive')
     })
 
+    it('reads Workspace 2 from the url query', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+
+        window.history.pushState({}, '', '/admin/materials?main_action=overview&overview_section=workspace2')
+
+        expect(methods.readSubjectsTreeSectionFromUrl.call({
+            subjectsTreeSectionQueryKey: methods.subjectsTreeSectionQueryKey,
+            normalizeSubjectsTreeSection: methods.normalizeSubjectsTreeSection,
+            $route: null,
+        })).toBe('workspace2')
+    })
+
     it('syncs the workspace tree section into the current url', () => {
         const methods = MaterialsOverviewView?.methods || {}
         const replaceState = vi.spyOn(window.history, 'replaceState')
@@ -446,12 +458,13 @@ describe('MaterialsOverviewView', () => {
         replaceState.mockRestore()
     })
 
-    it('toggles shared and archive tree sections while keeping the url in sync', () => {
+    it('toggles Workspace 2, shared, and archive tree sections while keeping the url in sync', () => {
         const methods = MaterialsOverviewView?.methods || {}
         const syncSubjectsTreeSectionToUrl = vi.fn()
         const vm = {
             subjectsTreeSharedForMeExpanded: false,
             subjectsTreeSharedForMeArchiveExpanded: false,
+            subjectsTreeWorkspace2Expanded: false,
             applySubjectsTreeSection: methods.applySubjectsTreeSection,
             normalizeSubjectsTreeSection: methods.normalizeSubjectsTreeSection,
             syncSubjectsTreeSectionToUrl,
@@ -460,6 +473,7 @@ describe('MaterialsOverviewView', () => {
         methods.toggleSubjectsTreeSharedForMeExpanded.call(vm)
         expect(vm.subjectsTreeSharedForMeExpanded).toBe(true)
         expect(vm.subjectsTreeSharedForMeArchiveExpanded).toBe(false)
+        expect(vm.subjectsTreeWorkspace2Expanded).toBe(false)
         expect(syncSubjectsTreeSectionToUrl).toHaveBeenLastCalledWith('shared')
 
         methods.toggleSubjectsTreeSharedForMeExpanded.call(vm)
@@ -469,7 +483,14 @@ describe('MaterialsOverviewView', () => {
         methods.toggleSubjectsTreeSharedForMeArchiveExpanded.call(vm)
         expect(vm.subjectsTreeSharedForMeExpanded).toBe(false)
         expect(vm.subjectsTreeSharedForMeArchiveExpanded).toBe(true)
+        expect(vm.subjectsTreeWorkspace2Expanded).toBe(false)
         expect(syncSubjectsTreeSectionToUrl).toHaveBeenLastCalledWith('archive')
+
+        methods.toggleSubjectsTreeWorkspace2Expanded.call(vm)
+        expect(vm.subjectsTreeSharedForMeExpanded).toBe(false)
+        expect(vm.subjectsTreeSharedForMeArchiveExpanded).toBe(false)
+        expect(vm.subjectsTreeWorkspace2Expanded).toBe(true)
+        expect(syncSubjectsTreeSectionToUrl).toHaveBeenLastCalledWith('workspace2')
     })
 
     it('openShareDialog opens persistent dummy dialog when share actions are disabled', () => {
