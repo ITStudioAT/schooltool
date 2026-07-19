@@ -43,7 +43,7 @@
                 class="teaching-nav__settings-btn"
                 title="Unterricht-Einstellungen"
                 :disabled="isNavigationLocked"
-                @click="$router.push('/admin/settings?tab=teaching')">
+                @click="openSettings">
                 <v-icon size="20">mdi-cog-outline</v-icon>
             </v-btn>
         </v-sheet>
@@ -125,7 +125,7 @@
                 <v-card-text class="px-4">
                     Soll das Fach <strong>„{{ selected_course?.title }}"</strong> wirklich gelöscht werden? Diese Aktion kann nicht rückgängig gemacht werden.
                 </v-card-text>
-                <v-card-actions class="px-4 pb-4">
+                <v-card-actions class="teaching-dialog-actions px-4 pb-4">
                     <v-btn variant="tonal" @click="show_delete_confirm = false">Abbrechen</v-btn>
                     <v-spacer />
                     <v-btn color="error" variant="flat" :loading="delete_loading" @click="handleDeleteCourse">Löschen</v-btn>
@@ -169,6 +169,11 @@ const Schoolyear = defineAsyncComponent(() => import('./schoolyear/Schoolyear.vu
 const DataBackup = defineAsyncComponent(() => import('./backup/DataBackup.vue'))
 const TestEnvironment = defineAsyncComponent(() => import('./testEnvironment/TestEnvironment.vue'))
 const Curricula = defineAsyncComponent(() => import('./curricula/Curricula.vue'))
+const teachingSections = ['overview', 'settings', 'admin', 'search', 'schoolyear', 'datensicherung', 'testumgebung', 'curricula']
+
+function normalizeTeachingSection(section) {
+    return teachingSections.includes(section) ? section : 'overview'
+}
 
 export default {
     components: { AdminCompactSectionHero, Overview, Settings, Admin, Search, Schoolyear, DataBackup, TestEnvironment, Curricula },
@@ -206,7 +211,7 @@ export default {
             schoolStore: null,
             courseStore: null,
             schoolHourStore: null,
-            main_action: this.$route.params.section || 'overview',
+            main_action: normalizeTeachingSection(this.$route.params.section),
             settings_view_key: 0,
             show_delete_confirm: false,
             delete_loading: false,
@@ -553,6 +558,13 @@ export default {
                     visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
                 },
                 {
+                    key: 'settings',
+                    label: 'Einstellungen',
+                    meta: 'Schemas & Einträge',
+                    icon: 'mdi-cog-outline',
+                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
+                },
+                {
                     key: 'curricula',
                     label: 'Curricula',
                     meta: 'Lehrpläne & Raster',
@@ -578,6 +590,9 @@ export default {
     },
 
     watch: {
+        '$route.params.section'(section) {
+            this.main_action = this.normalizedSection(section)
+        },
         courses: {
             immediate: true,
             handler(courses) {
@@ -622,6 +637,9 @@ export default {
     },
 
     methods: {
+        normalizedSection(section) {
+            return normalizeTeachingSection(section)
+        },
         ensureCourseStore() {
             if (!this.courseStore) {
                 this.courseStore = useCourseStore()
@@ -842,7 +860,8 @@ export default {
 }
 
 .teaching-nav__button {
-    height: 40px !important;
+    min-height: 44px !important;
+    height: auto !important;
     padding: 0 14px;
     text-transform: none;
     letter-spacing: 0;
@@ -988,6 +1007,7 @@ export default {
 
     .teaching-subnav__course-btn {
         justify-content: center;
+        min-height: 44px !important;
         min-width: 0 !important;
         width: 100%;
     }
@@ -1014,6 +1034,70 @@ export default {
     .teaching-subnav__actions {
         justify-content: center;
         margin-left: 0 !important;
+        width: 100%;
+    }
+
+    .teaching-subnav__actions :deep(.v-btn) {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}
+
+@media (max-width: 700px) {
+    .teaching-nav {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .teaching-nav__buttons {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .teaching-nav__button {
+        min-width: 0 !important;
+        width: 100%;
+    }
+
+    .teaching-nav__button :deep(.v-btn__content),
+    .teaching-nav__button-copy {
+        min-width: 0;
+    }
+
+    .teaching-nav__button-title,
+    .teaching-nav__button-meta {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .teaching-nav__settings-btn {
+        align-self: flex-end;
+        min-height: 44px;
+        min-width: 44px;
+    }
+}
+
+@media (max-width: 480px) {
+    .teaching-nav__buttons {
+        grid-template-columns: 1fr;
+    }
+
+    .teaching-dialog-actions {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .teaching-dialog-actions :deep(.v-spacer) {
+        display: none;
+    }
+
+    .teaching-dialog-actions :deep(.v-btn) {
+        margin-inline: 0 !important;
+        min-height: 44px;
         width: 100%;
     }
 }

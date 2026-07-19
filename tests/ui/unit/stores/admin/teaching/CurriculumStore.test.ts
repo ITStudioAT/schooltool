@@ -55,7 +55,7 @@ describe('Admin Teaching CurriculumStore', () => {
                 meta: {
                     current_page: 1,
                     last_page: 1,
-                    per_page: 10,
+                    per_page: 20,
                     total: 0,
                 },
             },
@@ -69,7 +69,7 @@ describe('Admin Teaching CurriculumStore', () => {
         expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/teaching/curricula', {
             params: {
                 page: 1,
-                per_page: 10,
+                per_page: 20,
             },
         })
     })

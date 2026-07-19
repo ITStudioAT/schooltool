@@ -114,11 +114,11 @@
                     </div>
 
                     <div v-else class="d-flex align-center justify-space-between ga-2 w-100 school-hour-row">
-                        <div class="d-flex align-center ga-2">
+                        <div class="school-hour-values d-flex align-center ga-2">
                             <v-chip size="small" color="primary" variant="tonal" class="school-hour-chip">Stunde {{ schoolHour.hour }}</v-chip>
                             <v-chip size="small" color="secondary" variant="outlined" class="school-hour-time-chip">{{ formatTime(schoolHour.from) }} - {{ formatTime(schoolHour.until) }}</v-chip>
                         </div>
-                        <div class="d-flex align-center ga-1">
+                        <div class="school-hour-actions d-flex align-center ga-1">
                             <v-btn
                                 icon="mdi-pencil"
                                 size="x-small"
@@ -173,7 +173,7 @@
                     <v-card-text class="px-4">
                         Soll diese Schulstunde wirklich gelöscht werden?
                     </v-card-text>
-                    <v-card-actions class="px-4 pb-4">
+                    <v-card-actions class="school-hour-dialog-actions px-4 pb-4">
                         <v-btn variant="tonal" :disabled="isSavingSchoolHours" @click="cancelDeleteSchoolHour">Abbrechen</v-btn>
                         <v-spacer />
                         <v-btn color="error" variant="flat" :loading="school_hours_save_action === 'delete'" :disabled="isSavingSchoolHours" @click="confirmDeleteSchoolHour">Löschen</v-btn>
@@ -490,5 +490,43 @@ export default {
 .school-hours-section-title {
     font-size: 1rem;
     font-weight: 650;
+}
+
+@media (max-width: 600px) {
+    .school-hour-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .school-hour-values {
+        flex-wrap: wrap;
+    }
+
+    .school-hour-actions {
+        justify-content: flex-end;
+        width: 100%;
+    }
+
+    .school-hour-actions :deep(.v-btn),
+    .school-hours-form-wrap :deep(.v-btn) {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    .school-hour-dialog-actions {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .school-hour-dialog-actions :deep(.v-spacer) {
+        display: none;
+    }
+
+    .school-hour-dialog-actions :deep(.v-btn) {
+        margin-inline: 0 !important;
+        min-height: 44px;
+        width: 100%;
+    }
 }
 </style>

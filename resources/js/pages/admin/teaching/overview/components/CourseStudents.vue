@@ -1,7 +1,7 @@
 <template>
     <ItsGridBox variant="overview" color="primary" :title="activeStudentsCount + ' Schüler:innen'" icon="mdi-invoice-list" class="w-100" v-if="selected_course" :disabled="action != ''">
         <template #header-actions>
-            <div v-if="selectedCourseDateForCourse" class="d-flex align-center ga-1">
+            <div v-if="selectedCourseDateForCourse" class="students-date-navigation d-flex align-center ga-1">
                 <v-btn icon="mdi-chevron-left" size="x-small" color="primary" variant="tonal" :disabled="!hasPrevCourseDate" @click="selectPrevCourseDate" />
                 <v-chip size="small" color="primary" variant="outlined">{{ selectedCourseDateLabel }}</v-chip>
                 <v-btn icon="mdi-chevron-right" size="x-small" color="primary" variant="tonal" :disabled="!hasNextCourseDate" @click="selectNextCourseDate" />
@@ -124,8 +124,8 @@
                                 <v-date-input v-model="bulk_entry_form.date" label="Datum" />
                                 <v-textarea v-model="bulk_entry_form.description" label="Beschreibung" rows="3" :counter="1024" :maxlength="1024" />
 
-                                <div class="d-flex align-center justify-space-between mt-2">
-                                    <div class="d-flex align-center ga-2">
+                                <div class="bulk-entry-footer d-flex align-center justify-space-between mt-2">
+                                    <div class="bulk-entry-selection-actions d-flex align-center ga-2">
                                         <v-btn size="small" variant="text" @click="selectAllBulkStudents">Alle auswählen</v-btn>
                                         <v-btn size="small" variant="text" @click="clearBulkStudents">Keine auswählen</v-btn>
                                     </div>
@@ -135,6 +135,7 @@
                                         variant="tonal"
                                         :loading="bulk_entry_saving"
                                         :disabled="bulk_entry_saving || !bulkEntryEnabled"
+                                        class="bulk-entry-submit"
                                         type="submit">
                                         {{ bulk_entry_saving ? 'Wird angewendet...' : (bulk_entry_form.student_ids.length ? `Auf ${bulk_entry_form.student_ids.length} Schüler:in(nen) anwenden` : 'Auf ausgewählte Schüler:innen anwenden') }}
                                     </v-btn>
@@ -1638,6 +1639,40 @@ export default {
 }
 
 @media (max-width: 600px) {
+    .students-date-navigation {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .students-date-navigation :deep(.v-btn) {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    .selected-course-date-chip {
+        margin-left: 0;
+        min-width: 0;
+        width: 100%;
+    }
+
+    .bulk-entry-footer {
+        align-items: stretch !important;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .bulk-entry-selection-actions {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .bulk-entry-selection-actions :deep(.v-btn),
+    .bulk-entry-submit {
+        min-height: 44px;
+        width: 100%;
+    }
+
     .students-header-spacer {
         display: none;
     }

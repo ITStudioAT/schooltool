@@ -3,7 +3,7 @@
         <v-card rounded="xl" class="pa-4 pa-md-6" data-testid="teaching-test-environment">
             <div class="d-flex flex-column flex-md-row align-md-center ga-4">
                 <div class="flex-grow-1">
-                    <div class="d-flex align-center ga-2 text-h6 font-weight-bold">
+                    <div class="test-environment-title d-flex align-center ga-2 text-h6 font-weight-bold">
                         <v-icon color="warning" icon="mdi-flask-outline" />
                         Temporäre Test-Umgebung 2026/27
                     </div>
@@ -20,6 +20,7 @@
                     rounded="xl"
                     :prepend-icon="status.is_configured ? 'mdi-delete-sweep-outline' : 'mdi-flask-plus-outline'"
                     :loading="submitting"
+                    class="test-environment-action"
                     data-testid="teaching-test-environment-action"
                     @click="openConfirmation">
                     {{ status.is_configured ? 'Test-Umgebung löschen' : 'Test-Umgebung 26/27 einrichten' }}
@@ -60,7 +61,7 @@
 
         <v-dialog v-model="confirmationOpen" max-width="560" persistent>
             <v-card rounded="xl">
-                <v-card-title class="d-flex align-center ga-2 pt-5 px-5">
+                <v-card-title class="test-environment-dialog-title d-flex align-center ga-2 pt-5 px-5">
                     <v-icon :color="status?.is_configured ? 'error' : 'warning'" icon="mdi-alert-outline" />
                     {{ confirmationTitle }}
                 </v-card-title>
@@ -85,7 +86,7 @@
                         autocomplete="off"
                         data-testid="teaching-test-environment-confirmation" />
                 </v-card-text>
-                <v-card-actions class="px-5 pb-5">
+                <v-card-actions class="test-environment-dialog-actions px-5 pb-5">
                     <v-btn variant="tonal" :disabled="submitting" @click="closeConfirmation">Abbrechen</v-btn>
                     <v-spacer />
                     <v-btn
@@ -195,3 +196,46 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+@media (max-width: 600px) {
+    .test-environment-title,
+    .test-environment-dialog-title {
+        align-items: flex-start !important;
+        white-space: normal;
+    }
+
+    .test-environment-action {
+        min-height: 48px;
+        width: 100%;
+    }
+
+    :deep(.v-chip) {
+        height: auto;
+        max-width: 100%;
+        white-space: normal;
+    }
+
+    :deep(.v-chip__content) {
+        overflow-wrap: anywhere;
+        padding-block: 4px;
+        white-space: normal;
+    }
+
+    .test-environment-dialog-actions {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .test-environment-dialog-actions :deep(.v-spacer) {
+        display: none;
+    }
+
+    .test-environment-dialog-actions :deep(.v-btn) {
+        margin-inline: 0 !important;
+        min-height: 44px;
+        width: 100%;
+    }
+}
+</style>

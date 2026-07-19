@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Teaching from '@/pages/admin/teaching/Teaching.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -140,11 +142,22 @@ describe('Teaching page navigation', () => {
 
         const items = (Teaching as any).computed.visibleNavigationItems.call(ctx)
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'search', 'schoolyear', 'curricula'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual([
+            'overview',
+            'search',
+            'schoolyear',
+            'settings',
+            'curricula',
+        ])
         expect(items.slice(0, 2).map((item: { label: string }) => item.label)).toEqual(['Unterricht', 'Suche'])
+        expect(items.find((item: { key: string }) => item.key === 'settings')).toMatchObject({
+            icon: 'mdi-cog-outline',
+            label: 'Einstellungen',
+            meta: 'Schemas & Einträge',
+        })
     })
 
-    it('shows the teaching overview in admin navigation without the settings card', () => {
+    it('shows the teaching settings in admin navigation', () => {
         const ctx = {
             config: {
                 roles: ['teaching_admin'],
@@ -162,6 +175,7 @@ describe('Teaching page navigation', () => {
             'overview',
             'search',
             'schoolyear',
+            'settings',
             'curricula',
             'datensicherung',
             'testumgebung',
@@ -327,6 +341,17 @@ describe('Teaching page navigation', () => {
         expect(ctx.main_action).toBe('settings')
         expect(ctx.settings_view_key).toBe(1)
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/teaching/settings', query: {} })
+    })
+
+    it('routes the settings shortcut through the teaching settings method', () => {
+        const source = readFileSync(
+            resolve(process.cwd(), 'resources/js/pages/admin/teaching/Teaching.vue'),
+            'utf8',
+        )
+
+        expect(source).toContain('title="Unterricht-Einstellungen"')
+        expect(source).toContain('@click="openSettings"')
+        expect(source).not.toContain("$router.push('/admin/settings?tab=teaching')")
     })
 
     it('does not navigate when controls are locked', () => {
@@ -586,7 +611,7 @@ describe('Teaching page navigation', () => {
         expect(source).toContain("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })")
         expect(source).toContain("panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })")
         expect(source).toContain("panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })")
-        expect(source).toContain("panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })")
+        expect(source).not.toContain("panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })")
         expect(source).toContain("panels.push({ id: 'attendance', label: 'Anwesenheiten', icon: 'mdi-account-check' })")
         expect(source).toContain("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })")
         expect(source).toContain("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })")
@@ -601,8 +626,6 @@ describe('Teaching page navigation', () => {
         expect(source.indexOf("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })"))
         expect(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })"))
-            .toBeLessThan(source.indexOf("panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })"))
-        expect(source.indexOf("panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })"))
         expect(source.indexOf("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })"))
@@ -612,8 +635,8 @@ describe('Teaching page navigation', () => {
         expect(validPanels).toContain("'attendance'")
         expect(source).toContain('v-if="selected_course && secondaryOverviewPanelSelection && action != \'teaching_course_new_or_edit\'"')
         expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'table\'" class="mt-n6"')
-        expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'curriculum\'" class="mt-n6"')
-        expect(source).toContain('data-testid="teaching-curriculum-card"')
+        expect(source).not.toContain('v-if="secondaryOverviewPanelSelection === \'curriculum\'" class="mt-n6"')
+        expect(source).not.toContain('data-testid="teaching-curriculum-card"')
     })
 
     it('keeps the overview panel menu at full width', async () => {

@@ -32,7 +32,8 @@ class CurriculumController extends Controller
         $query = TeachingCurriculum::query()
             ->where('school_id', $auth_user->school_id)
             ->where('user_id', $auth_user->id)
-            ->orderByDesc('updated_at');
+            ->orderBy('title')
+            ->orderBy('id');
 
         if ($search = trim((string) $request->input('search', ''))) {
             $query->where(function ($q) use ($search) {

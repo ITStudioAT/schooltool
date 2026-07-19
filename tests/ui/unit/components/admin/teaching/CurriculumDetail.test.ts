@@ -55,6 +55,10 @@ function mountCurriculumDetail(
         global: {
             plugins: [pinia],
             stubs: {
+                CurriculumPdfPreview: {
+                    props: ['documentId', 'src', 'initialPosition'],
+                    template: '<div class="curriculum-pdf-preview-stub" :data-src="src" />',
+                },
                 FileUpload: { template: '<div class="file-upload-stub" />' },
                 'v-btn': { template: '<button><slot /></button>' },
                 'v-btn-toggle': { template: '<div class="v-btn-toggle"><slot /></div>' },
@@ -83,9 +87,28 @@ function mountCurriculumDetail(
 }
 
 describe('CurriculumDetail preview layout', () => {
+    it('persists the current PDF position before returning to the overview', () => {
+        const methods = (CurriculumDetail as any).methods
+        const calls: Array<string> = []
+        const context = {
+            $emit: (event: string) => calls.push(event),
+            $refs: {
+                curriculumPdfPreview: {
+                    emitCurrentPosition: () => calls.push('position'),
+                },
+            },
+            persistCurriculumDocumentIframePosition: () => calls.push('iframe-position'),
+        }
+
+        methods.leaveCurriculum.call(context)
+
+        expect(calls).toEqual(['iframe-position', 'position', 'back'])
+    })
+
     afterEach(() => {
         loadDocumentsSpy.mockClear()
         openMaterialAttachmentDialogSpy.mockClear()
+        window.localStorage.clear()
     })
 
     it('renders numbered topics and units in the imported-preview structure', async () => {
@@ -136,6 +159,204 @@ describe('CurriculumDetail preview layout', () => {
         expect(wrapper.find('.curriculum-detail__side-card--documents').exists()).toBe(true)
     })
 
+    it('prominently styles the back-to-overview action', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue'), 'utf8')
+
+        expect(source).toContain('class="text-none curriculum-detail__back-btn"')
+        expect(source).toContain('.curriculum-detail__back-btn {\n    min-height: 44px;')
+        expect(source).toContain('.curriculum-detail__back-btn:focus-visible {')
+        expect(source).toContain('.curriculum-detail__header-actions :deep(.v-btn) {')
+    })
+
+    it('adds clear vertical spacing between curriculum themes', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue'), 'utf8')
+
+        expect(source).toContain('.curriculum-detail__topic-list {\n    display: flex;\n    flex-direction: column;\n    gap: 12px;')
+    })
+
+    it('resizes the content and document cards with an accessible splitter', async () => {
+        const wrapper = mountCurriculumDetail()
+        const splitter = wrapper.find('.curriculum-detail__card-splitter')
+
+        expect(splitter.exists()).toBe(true)
+        expect(splitter.attributes('role')).toBe('separator')
+        expect(splitter.attributes('aria-orientation')).toBe('vertical')
+        expect(splitter.attributes('aria-valuenow')).toBe('64')
+        expect(wrapper.find('.curriculum-detail__body').attributes('style')).toContain('grid-template-columns: 64fr 36px 36fr')
+
+        await splitter.trigger('keydown', { key: 'ArrowLeft' })
+
+        expect((wrapper.vm as any).curriculumContentWidthPercent).toBe(62)
+        expect(splitter.attributes('aria-valuenow')).toBe('62')
+
+        await splitter.trigger('keydown', { key: 'ArrowRight' })
+        await splitter.trigger('dblclick')
+
+        expect((wrapper.vm as any).curriculumContentWidthPercent).toBe(64)
+
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue'), 'utf8')
+
+        expect(source).toContain('@pointerdown="startCurriculumCardResize"')
+        expect(source).toContain('touch-action: none;')
+        expect(source).toContain('.curriculum-detail__card-splitter {\n        display: none;')
+        expect(source).toContain('grid-template-columns: 1fr !important;')
+    })
+
+    it('keeps both curriculum cards above their minimum drag width', () => {
+        const methods = (CurriculumDetail as any).methods
+        const resizeBounds = methods.curriculumCardResizeBounds(1200)
+        const context = {
+            $refs: {
+                curriculumBody: {
+                    getBoundingClientRect: () => ({ left: 100, width: 1200 }),
+                },
+            },
+            curriculumCardResizeBounds: methods.curriculumCardResizeBounds,
+            curriculumCardResizePointerId: 7,
+            curriculumContentWidthPercent: 64,
+            isCurriculumCardResizing: true,
+        }
+
+        methods.resizeCurriculumCards.call(context, { clientX: -100, pointerId: 7 })
+        expect(context.curriculumContentWidthPercent).toBe(resizeBounds.minimumPercent)
+
+        methods.resizeCurriculumCards.call(context, { clientX: 2000, pointerId: 7 })
+        expect(context.curriculumContentWidthPercent).toBe(resizeBounds.maximumPercent)
+    })
+
+    it('remembers the curriculum card width separately for each user', async () => {
+        window.localStorage.setItem('schooltool.admin.teaching.curriculum-card-width.user.42', '58')
+
+        const firstUserWrapper = mountCurriculumDetail({}, { user: { id: 42 } })
+        const firstUserSplitter = firstUserWrapper.find('.curriculum-detail__card-splitter')
+
+        expect((firstUserWrapper.vm as any).curriculumContentWidthPercent).toBe(58)
+
+        await firstUserSplitter.trigger('keydown', { key: 'ArrowRight' })
+
+        expect(window.localStorage.getItem('schooltool.admin.teaching.curriculum-card-width.user.42')).toBe('60')
+
+        firstUserWrapper.unmount()
+
+        const restoredWrapper = mountCurriculumDetail({}, { user: { id: 42 } })
+        const otherUserWrapper = mountCurriculumDetail({}, { user: { id: 43 } })
+
+        expect((restoredWrapper.vm as any).curriculumContentWidthPercent).toBe(60)
+        expect((otherUserWrapper.vm as any).curriculumContentWidthPercent).toBe(64)
+    })
+
+    it('remembers the opened curriculum document per user and curriculum', async () => {
+        const document = {
+            id: 902,
+            source_type: 'upload',
+            name: 'Deutsch Lehrplan.pdf',
+            preview_url: '/api/admin/teaching/curricula/15/documents/902/preview',
+        }
+        const storageKey = 'schooltool.admin.teaching.curriculum-document-preview.user.42.curriculum.15'
+        window.localStorage.setItem(storageKey, '902')
+
+        const wrapper = mountCurriculumDetail({}, { user: { id: 42 } })
+        await wrapper.setData({ documents: [document] })
+
+        ;(wrapper.vm as any).restoreCurriculumDocumentPreview()
+
+        expect((wrapper.vm as any).previewDoc).toEqual(document)
+
+        ;(wrapper.vm as any).setCurriculumDocumentPreview(null)
+
+        expect((wrapper.vm as any).previewDoc).toBeNull()
+        expect(window.localStorage.getItem(storageKey)).toBeNull()
+
+        ;(wrapper.vm as any).selectPreview(document)
+
+        expect(window.localStorage.getItem(storageKey)).toBe('902')
+
+        const otherCurriculumWrapper = mountCurriculumDetail({ id: 16 }, { user: { id: 42 } })
+        await otherCurriculumWrapper.setData({ documents: [document] })
+
+        ;(otherCurriculumWrapper.vm as any).restoreCurriculumDocumentPreview()
+
+        expect((otherCurriculumWrapper.vm as any).previewDoc).toBeNull()
+    })
+
+    it('remembers the PDF page position per user, curriculum, and document', async () => {
+        const document = {
+            id: 902,
+            source_type: 'upload',
+            name: 'Deutsch Lehrplan.pdf',
+            preview_mime_type: 'application/pdf',
+            preview_url: '/api/admin/teaching/curricula/15/documents/902/preview',
+        }
+        const storageKey = 'schooltool.admin.teaching.curriculum-document-position.user.42.curriculum.15.document.902'
+        window.localStorage.setItem(storageKey, JSON.stringify({ page: 4, offset: 0.35 }))
+
+        const wrapper = mountCurriculumDetail({}, { user: { id: 42 } })
+        await wrapper.setData({ documents: [document] })
+
+        ;(wrapper.vm as any).setCurriculumDocumentPreview(document)
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).curriculumDocumentPreviewPosition).toEqual({ page: 4, offset: 0.35 })
+        expect(wrapper.find('.curriculum-pdf-preview-stub').attributes('data-src')).toBe(document.preview_url)
+
+        ;(wrapper.vm as any).persistCurriculumDocumentPreviewPosition({ page: 7, offset: 0.62 })
+
+        expect(JSON.parse(window.localStorage.getItem(storageKey) || 'null')).toEqual({ page: 7, offset: 0.62 })
+        expect((wrapper.vm as any).curriculumDocumentPreviewPosition).toEqual({ page: 4, offset: 0.35 })
+
+        ;(wrapper.vm as any).setCurriculumDocumentPreview(null)
+        ;(wrapper.vm as any).persistCurriculumDocumentPreviewPosition({ page: 8, offset: 0.2 }, document.id)
+        ;(wrapper.vm as any).setCurriculumDocumentPreview(document)
+
+        expect((wrapper.vm as any).curriculumDocumentPreviewPosition).toEqual({ page: 8, offset: 0.2 })
+    })
+
+    it('remembers the relative scroll position of same-origin document previews', () => {
+        const methods = (CurriculumDetail as any).methods
+        const context = {
+            $refs: {
+                curriculumDocumentIframe: {
+                    contentWindow: {
+                        document: {
+                            body: { scrollHeight: 1980 },
+                            documentElement: { clientHeight: 500, scrollHeight: 2000 },
+                        },
+                        innerHeight: 500,
+                        scrollY: 750,
+                    },
+                },
+            },
+            curriculumDocumentIframeScrollMetrics: methods.curriculumDocumentIframeScrollMetrics,
+        }
+
+        expect(methods.currentCurriculumDocumentIframePosition.call(context)).toEqual({ scrollRatio: 0.5 })
+        expect(methods.normalizeCurriculumDocumentPreviewPosition({ scrollRatio: 4 })).toEqual({ scrollRatio: 1 })
+    })
+
+    it('restores a same-origin document preview before listening for new scrolling', () => {
+        const methods = (CurriculumDetail as any).methods
+        const scrollTo = vi.fn()
+        const addEventListener = vi.fn()
+        const context = {
+            $refs: {},
+            curriculumDocumentIframeScrollMetrics: () => ({
+                iframeWindow: { addEventListener, scrollTo },
+                maximumScrollTop: 1500,
+                scrollTop: 0,
+            }),
+            curriculumDocumentPreviewPosition: { scrollRatio: 0.5 },
+            detachCurriculumDocumentIframeScrollListener: vi.fn(),
+            handleCurriculumDocumentIframeScroll: vi.fn(),
+            normalizeCurriculumDocumentPreviewPosition: methods.normalizeCurriculumDocumentPreviewPosition,
+            persistCurriculumDocumentIframePosition: vi.fn(),
+        }
+
+        methods.restoreCurriculumDocumentIframePosition.call(context)
+
+        expect(scrollTo).toHaveBeenCalledWith(0, 750)
+        expect(addEventListener).toHaveBeenCalledWith('scroll', expect.any(Function), { passive: true })
+    })
+
     it('keeps topic actions compact', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue'), 'utf8')
 
@@ -168,7 +389,7 @@ describe('CurriculumDetail preview layout', () => {
         const examMarker = examUnit.find('.curriculum-detail__unit-exam-chip')
 
         expect(examUnit.exists()).toBe(true)
-        expect(examMarker.text()).toBe('Prüfung')
+        expect(examMarker.text()).toBe('Leistungsfeststellung')
         expect(examMarker.attributes('variant')).toBe('flat')
         expect(examMarker.attributes('color')).toBe('error')
         expect(examMarker.attributes()).toHaveProperty('tile')
@@ -208,6 +429,50 @@ describe('CurriculumDetail preview layout', () => {
         expect(topicHeader.attributes('aria-expanded')).toBe('true')
         expect(wrapper.find('.curriculum-detail__unit-section').exists()).toBe(true)
         expect(wrapper.find('.curriculum-detail__topic-collapse-toggle').exists()).toBe(false)
+    })
+
+    it('expands and collapses all themes from the content toolbar', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grundlagen',
+                    materials: [],
+                    units: [{ id: 'unit-1', title: 'Anmelden', materials: [] }],
+                },
+                {
+                    id: 'topic-2',
+                    title: 'Textverarbeitung',
+                    materials: [],
+                    units: [{ id: 'unit-2', title: 'Formatieren', materials: [] }],
+                },
+            ],
+        })
+        const expandAllButton = wrapper.find('.curriculum-detail__topic-expand-all-btn')
+        const collapseAllButton = wrapper.find('.curriculum-detail__topic-collapse-all-btn')
+
+        expect(expandAllButton.attributes('aria-label')).toBe('Alle Themen ausklappen')
+        expect(expandAllButton.attributes('icon')).toBe('mdi-unfold-more-horizontal')
+        expect(collapseAllButton.attributes('aria-label')).toBe('Alle Themen einklappen')
+        expect(collapseAllButton.attributes('icon')).toBe('mdi-unfold-less-horizontal')
+        expect(expandAllButton.attributes()).toHaveProperty('disabled')
+        expect(collapseAllButton.attributes()).not.toHaveProperty('disabled')
+        expect(wrapper.findAll('.curriculum-detail__unit-section')).toHaveLength(2)
+
+        await collapseAllButton.trigger('click')
+
+        expect((wrapper.vm as any).topicCollapseStates).toEqual({
+            'topic-1': true,
+            'topic-2': true,
+        })
+        expect(wrapper.findAll('.curriculum-detail__unit-section')).toHaveLength(0)
+        expect(expandAllButton.attributes()).not.toHaveProperty('disabled')
+        expect(collapseAllButton.attributes()).toHaveProperty('disabled')
+
+        await expandAllButton.trigger('click')
+
+        expect((wrapper.vm as any).topicCollapseStates).toEqual({})
+        expect(wrapper.findAll('.curriculum-detail__unit-section')).toHaveLength(2)
     })
 
     it('shows content actions in the topic dropdown menu', async () => {
@@ -347,6 +612,9 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(source).toContain('Curriculum exportieren')
         expect(source).toContain('@click="exportCurriculum"')
         expect(source).toContain("/export/json")
+        expect(source).toContain('PDF drucken')
+        expect(source).toContain('@click="printCurriculumPdf"')
+        expect(source).toContain("/export/pdf")
         expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable"')
         expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--content"')
         expect(source).toContain('class="curriculum-detail__content-footer"')
@@ -394,7 +662,7 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(source).toContain('margin-right: 0.3rem;')
         expect(source).toContain('class="curriculum-detail__unit-title-row"')
         expect(source).toContain('class="curriculum-detail__unit-exam-chip"')
-        expect(source).toContain('Prüfung')
+        expect(source).toContain('Leistungsfeststellung')
         expect(source).toContain("'curriculum-detail__unit-item--exam': unit.is_exam")
         expect(source).toContain('.curriculum-detail__unit-item--exam {')
         expect(source).toContain('rgba(245, 158, 11')
@@ -1001,6 +1269,35 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         }
     })
 
+    it('creates and downloads a clear curriculum PDF from the detail page', async () => {
+        const wrapper = mountCurriculumDetail({
+            title: 'Deutsch 5A',
+        })
+        const originalAxios = (globalThis as any).axios
+        const response = {
+            data: new Blob(['pdf'], { type: 'application/pdf' }),
+            headers: {
+                'content-disposition': 'attachment; filename="Curriculum_Deutsch_5A.pdf"',
+            },
+        }
+        const getMock = vi.fn().mockResolvedValue(response)
+        const downloadSpy = vi.spyOn(wrapper.vm as any, 'downloadCurriculumResponse').mockImplementation(() => {})
+
+        ;(globalThis as any).axios = { get: getMock }
+
+        try {
+            await (wrapper.vm as any).printCurriculumPdf()
+
+            expect(getMock).toHaveBeenCalledWith('/api/admin/teaching/curricula/15/export/pdf', {
+                responseType: 'blob',
+            })
+            expect(downloadSpy).toHaveBeenCalledWith(response, 'Curriculum_Deutsch 5A.pdf', 'application/pdf')
+            expect((wrapper.vm as any).isPrintingCurriculum).toBe(false)
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+
     it('does not render legacy topic materials in the overview', () => {
         const wrapper = mountCurriculumDetail({
             topics: [
@@ -1268,7 +1565,7 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(methods.isWeekAssignedToHighlightedItem.call(ctx, '2025-09-15')).toBe(false)
     })
 
-    it('shows an exam marker for units marked as Prüfung in the Inhalte card', () => {
+    it('shows a Leistungsfeststellung marker for exam units in the Inhalte card', () => {
         const wrapper = mountCurriculumDetail({
             topics: [
                 {
@@ -1302,10 +1599,10 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         const unitItems = wrapper.findAll('.curriculum-detail__unit-item')
 
         expect(unitItems).toHaveLength(2)
-        expect(unitItems[0].text()).toContain('Prüfung')
+        expect(unitItems[0].text()).toContain('Leistungsfeststellung')
         expect(unitItems[0].find('.curriculum-detail__unit-exam-chip').exists()).toBe(true)
         expect(unitItems[0].classes()).toContain('curriculum-detail__unit-item--exam')
-        expect(unitItems[1].text()).not.toContain('Prüfung')
+        expect(unitItems[1].text()).not.toContain('Leistungsfeststellung')
         expect(unitItems[1].find('.curriculum-detail__unit-exam-chip').exists()).toBe(false)
         expect(unitItems[1].classes()).not.toContain('curriculum-detail__unit-item--exam')
     })
@@ -1977,7 +2274,7 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(openMaterialAttachmentDialogSpy).not.toHaveBeenCalled()
         expect((wrapper.vm as any).previewDoc).toEqual(selectedMaterialDocument)
         expect((wrapper.vm as any).previewUsesIframe).toBe(true)
-        expect(wrapper.find('.lehrplaene__preview-iframe').attributes('src')).toBe(selectedMaterialDocument.preview_url)
+        expect(wrapper.find('.curriculum-pdf-preview-stub').attributes('data-src')).toBe(selectedMaterialDocument.preview_url)
 
         ;(wrapper.vm as any).selectPreview(unselectedMaterialDocument)
 

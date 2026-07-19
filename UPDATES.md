@@ -21,7 +21,13 @@
 - UI-Verbesserungen
 
 ### Unterrichtstool/Curricula
+
 - Auflösung der Datums-/Monatszuordnung
+
+### Curriculm
+
+- UI-Design
+- PDF
 
 ## 3.42.2
 

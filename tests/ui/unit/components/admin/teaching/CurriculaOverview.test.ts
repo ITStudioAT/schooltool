@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import CurriculaOverview from '@/pages/admin/teaching/curricula/CurriculaOverview.vue'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
@@ -97,6 +97,32 @@ describe('Teaching curricula overview actions', () => {
             id: 15,
             title: 'Deutsch',
         })
+    })
+
+    it('creates a curriculum when the dialog form is submitted', async () => {
+        const store = buildStore()
+        store.store.mockResolvedValue({ id: 16 })
+        const { wrapper } = mountCurriculaOverview(store)
+        const component = wrapper.vm as any
+
+        await wrapper.vm.$nextTick()
+
+        component.openCreateDialog()
+        component.form = {
+            title: ' INF 5+ TAG ',
+            description: ' Tagescurriculum ',
+        }
+        await wrapper.vm.$nextTick()
+
+        await wrapper.get('form.curricula-overview__form').trigger('submit')
+        await flushPromises()
+
+        expect(store.store).toHaveBeenCalledWith({
+            title: 'INF 5+ TAG',
+            description: 'Tagescurriculum',
+            topics: [],
+        })
+        expect(component.dialogOpen).toBe(false)
     })
 
     it('keeps the action container click-stopped in the component source', async () => {

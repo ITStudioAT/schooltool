@@ -1,9 +1,21 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import axios from 'axios'
 import CourseTable from '@/pages/admin/teaching/overview/components/CourseTable.vue'
 
+vi.mock('axios', () => ({
+    default: {
+        delete: vi.fn(),
+        post: vi.fn(),
+    },
+}))
+
 describe('CourseTable', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
     it('sorts course date rows by date', () => {
         const ctx = {
             selected_course: {
@@ -69,6 +81,263 @@ describe('CourseTable', () => {
         context.sortedCourseDates.push({ id: 234, date: '2026-07-14', attendance: {} })
 
         expect(computed.courseDateScrollSignature.call(context)).not.toBe(initialSignature)
+    })
+
+    it('shows the Curriculum row only when the selected course has an assigned curriculum', () => {
+        const computed = (CourseTable as any).computed
+
+        expect(computed.assignedCurriculumId.call({
+            selected_course: { teaching_curriculum_id: 3 },
+        })).toBe(3)
+        expect(computed.assignedCurriculumId.call({
+            selected_course: { teaching_curriculum: { id: 3 } },
+        })).toBe(3)
+        expect(computed.assignedCurriculumId.call({
+            selected_course: { teaching_curriculum_id: null, teaching_curriculum: null },
+        })).toBeNull()
+        expect(computed.hasAssignedCurriculum.call({ assignedCurriculumId: 3 })).toBe(true)
+        expect(computed.hasAssignedCurriculum.call({ assignedCurriculumId: null })).toBe(false)
+    })
+
+    it('returns unique assigned curriculum content for each course date', () => {
+        const methods = (CourseTable as any).methods
+
+        expect(methods.curriculumContentForCourseDate({
+            adopted_materials: [
+                { title: 'Schreibübungen: Schreibübungen' },
+                { title: 'Einleitung/Überblick: Einleitung/Überblick' },
+                { title: 'Schreibübungen: Schreibübungen' },
+                { title: 'Grundlagen: Operatoren: erweiterte Suche' },
+                { title: '  ' },
+                null,
+            ],
+        })).toEqual([
+            'Schreibübungen',
+            'Einleitung/Überblick',
+            'Operatoren: erweiterte Suche',
+        ])
+        expect(methods.curriculumContentForCourseDate({ adopted_materials: null })).toEqual([])
+    })
+
+    it('preserves natural curriculum breaks while allowing long words to wrap', () => {
+        const methods = (CourseTable as any).methods
+
+        expect(methods.curriculumContentSegments('Einleitung/Überblick')).toEqual([
+            { endsWithSeparator: true, text: 'Einleitung/' },
+            { endsWithSeparator: false, text: 'Überblick' },
+        ])
+        expect(methods.curriculumContentSegments('Sehr lange Schreibübungen')).toEqual([
+            { endsWithSeparator: false, text: 'Sehr' },
+            { endsWithSeparator: false, text: 'lange' },
+            { endsWithSeparator: false, text: 'Schreibübungen' },
+        ])
+    })
+
+    it('limits displayed curriculum content to three item rows', () => {
+        const methods = (CourseTable as any).methods
+        const context = {
+            curriculumContentForCourseDate: () => ['Eins', 'Zwei', 'Drei', 'Vier'],
+        }
+
+        expect(methods.displayedCurriculumContentForCourseDate.call(context, {})).toEqual(['Eins', 'Zwei', 'Drei'])
+        expect(methods.hasAdditionalCurriculumContent.call(context, {})).toBe(true)
+    })
+
+    it('normalizes every curriculum theme and unit for the persistent dialog', () => {
+        const computed = (CourseTable as any).computed
+
+        expect(computed.curriculumDialogTopics.call({
+            curriculumDialog: {
+                curriculum: {
+                    topics: [
+                        {
+                            id: 'topic-1',
+                            title: 'Grundlagen',
+                            materials: [{ id: 10, title: 'Themenmaterial' }],
+                            units: [
+                                {
+                                    id: 'unit-1',
+                                    title: 'Office 365',
+                                    is_exam: false,
+                                    materials: [
+                                        { id: 10, title: 'Themenmaterial' },
+                                        { id: 11, title: 'Einheitenmaterial' },
+                                    ],
+                                },
+                                { id: 'unit-2', title: 'Prüfung', is_exam: true },
+                            ],
+                        },
+                        { id: 'topic-2', title: 'Reserve', units: [] },
+                    ],
+                },
+            },
+        })).toEqual([
+            {
+                key: 'topic-1',
+                title: 'Grundlagen',
+                units: [
+                    {
+                        isExam: false,
+                        key: 'unit-1',
+                        materials: [
+                            { id: 10, title: 'Themenmaterial' },
+                            { id: 11, title: 'Einheitenmaterial' },
+                        ],
+                        title: 'Office 365',
+                    },
+                    {
+                        isExam: true,
+                        key: 'unit-2',
+                        materials: [{ id: 10, title: 'Themenmaterial' }],
+                        title: 'Prüfung',
+                    },
+                ],
+            },
+            { key: 'topic-2', title: 'Reserve', units: [] },
+        ])
+    })
+
+    it('loads the assigned curriculum when a Curriculum cell opens its dialog', async () => {
+        const methods = (CourseTable as any).methods
+        const curriculum = { id: 3, title: 'DGB 1', topics: [] }
+        const courseDate = {
+            id: 318,
+            date: '2026-09-14',
+            adopted_materials: [{ title: 'Grundlagen: Office 365' }],
+        }
+        const show = vi.fn().mockResolvedValue(curriculum)
+        const context = {
+            assignedCurriculumId: 3,
+            curriculumDialog: { courseDate: null, curriculum: null, loading: false, open: false },
+            curriculumDialogRequestId: 0,
+            curriculumStore: { show },
+        }
+
+        await methods.openCurriculumDialog.call(context, courseDate)
+
+        expect(show).toHaveBeenCalledWith(3)
+        expect(context.curriculumDialog).toEqual({
+            courseDate,
+            curriculum,
+            loading: false,
+            open: true,
+        })
+    })
+
+    it('closes and clears the Curriculum dialog', () => {
+        const methods = (CourseTable as any).methods
+        const context = {
+            curriculumDialog: { courseDate: { id: 318 }, curriculum: { id: 3 }, loading: true, open: true },
+            curriculumDialogRequestId: 4,
+        }
+
+        methods.closeCurriculumDialog.call(context)
+
+        expect(context.curriculumDialogRequestId).toBe(5)
+        expect(context.curriculumDialog).toEqual({ courseDate: null, curriculum: null, loading: false, open: false })
+    })
+
+    it('marks only curriculum units linked with the clicked date', () => {
+        const methods = (CourseTable as any).methods
+        const context = {
+            curriculumDialog: {
+                courseDate: {
+                    adopted_materials: [
+                        { title: 'Grundlagen: Office 365' },
+                        { title: 'Schreibübungen: Schreibübungen' },
+                    ],
+                },
+            },
+            curriculumUnitAdoptedMaterials: methods.curriculumUnitAdoptedMaterials,
+            curriculumUnitTitle: methods.curriculumUnitTitle,
+        }
+
+        expect(methods.isCurriculumUnitLinkedToDialogDate.call(
+            context,
+            { title: 'Grundlagen' },
+            { title: 'Office 365' },
+        )).toBe(true)
+        expect(methods.isCurriculumUnitLinkedToDialogDate.call(
+            context,
+            { title: 'Anderes Thema' },
+            { title: 'Office 365' },
+        )).toBe(false)
+        expect(methods.isCurriculumUnitLinkedToDialogDate.call(
+            context,
+            { title: 'Grundlagen' },
+            { title: 'E-Mails' },
+        )).toBe(false)
+    })
+
+    it('links an unlinked curriculum unit with its material cards', async () => {
+        const methods = (CourseTable as any).methods
+        const updatedCourseDate = {
+            id: 318,
+            adopted_materials: [{ id: 7, title: 'Grundlagen: Office 365' }],
+        }
+        vi.mocked(axios.post).mockResolvedValueOnce({
+            data: {
+                adopted_materials: [{ id: 7 }],
+                data: updatedCourseDate,
+            },
+        })
+        const applyCurriculumDialogCourseDate = vi.fn()
+        const context = {
+            applyCurriculumDialogCourseDate,
+            curriculumDialog: { courseDate: { id: 318, adopted_materials: [] } },
+            curriculumDialogUnitActionKey: methods.curriculumDialogUnitActionKey,
+            curriculumUnitActionKey: null,
+            curriculumUnitTitle: methods.curriculumUnitTitle,
+            isCurriculumUnitLinkedToDialogDate: () => false,
+        }
+        const topic = { key: 'topic-1', title: 'Grundlagen' }
+        const unit = {
+            key: 'unit-1',
+            title: 'Office 365',
+            materials: [{ id: 11 }, { id: 11 }, { id: 12 }],
+        }
+
+        await methods.linkCurriculumUnit.call(context, topic, unit)
+
+        expect(axios.post).toHaveBeenCalledWith(
+            '/api/admin/teaching/course_dates/318/adopt-curriculum-content',
+            {
+                content: 'Grundlagen: Office 365',
+                material_card_ids: [11, 12],
+            },
+        )
+        expect(applyCurriculumDialogCourseDate).toHaveBeenCalledWith(updatedCourseDate)
+        expect(context.curriculumUnitActionKey).toBeNull()
+    })
+
+    it('unlinks every adopted material belonging to the selected curriculum unit', async () => {
+        const methods = (CourseTable as any).methods
+        const refreshedCourseDate = { id: 318, adopted_materials: [] }
+        const index = vi.fn().mockResolvedValue(true)
+        const applyCurriculumDialogCourseDate = vi.fn()
+        vi.mocked(axios.delete).mockResolvedValue({ data: null })
+        const context = {
+            applyCurriculumDialogCourseDate,
+            curriculumDialog: { courseDate: { id: 318, adopted_materials: [] } },
+            curriculumDialogUnitActionKey: methods.curriculumDialogUnitActionKey,
+            curriculumUnitActionKey: null,
+            curriculumUnitAdoptedMaterials: () => [{ id: 7 }, { id: 8 }],
+            courseDateStore: { courseDates: [refreshedCourseDate], index },
+            selected_course: { id: 18 },
+        }
+
+        await methods.unlinkCurriculumUnit.call(
+            context,
+            { key: 'topic-1', title: 'Grundlagen' },
+            { key: 'unit-1', title: 'Office 365' },
+        )
+
+        expect(axios.delete).toHaveBeenCalledTimes(2)
+        expect(axios.delete).toHaveBeenNthCalledWith(1, '/api/admin/teaching/course_date_materials/7')
+        expect(axios.delete).toHaveBeenNthCalledWith(2, '/api/admin/teaching/course_date_materials/8')
+        expect(index).toHaveBeenCalledWith(18)
+        expect(applyCurriculumDialogCourseDate).toHaveBeenCalledWith(refreshedCourseDate)
+        expect(context.curriculumUnitActionKey).toBeNull()
     })
 
     it('sorts active students by selected student sort mode', () => {
@@ -173,6 +442,17 @@ describe('CourseTable', () => {
         expect(methods.freeCourseDateReason.call({}, { free_reason: 'Herbstferien' })).toBe('Herbstferien')
         expect(methods.freeCourseDateReason.call({}, { free_reason: '' })).toBe('Frei')
         expect(methods.freeCourseDateReason.call({}, { status: ['entfaellt'] })).toBe('Entfällt')
+    })
+
+    it('uses the student free-date background across the complete date column', () => {
+        const source = readFileSync(
+            resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/CourseTable.vue'),
+            'utf8',
+        )
+
+        expect(source).toContain('--course-table-free-cell-background: #e8f5e9;')
+        expect(source.match(/background: var\(--course-table-free-cell-background\);/gu)).toHaveLength(4)
+        expect(source).not.toContain('background: linear-gradient(180deg, #ecfdf3 0%, #dcfce7 100%);')
     })
 
     it('shows works at their corresponding dates including group-specific dates', () => {
@@ -292,7 +572,9 @@ describe('CourseTable', () => {
 
         context.tableView = 'attendance'
         context.courseWorksForDate.mockReturnValue([{ work: { type: 'PÜ' } }])
-        expect(methods.courseDateColumnMarkingColor.call(context, { date: '2026-10-12' })).toBeNull()
+        expect(methods.courseDateColumnMarkingColor.call(context, { date: '2026-10-12' })).toBe('red')
+        expect(methods.courseDateColumnMarkingClass.call(context, { date: '2026-10-12' }))
+            .toBe('course-table-column--marked-red')
     })
 
     it('opens the persistent work dialog for the selected date', () => {
@@ -332,6 +614,27 @@ describe('CourseTable', () => {
 
         expect(ctx.workDialog).toEqual({ courseDate, open: true })
         expect(ctx.startCreatingDateWork).toHaveBeenCalledTimes(1)
+    })
+
+    it('opens the source work from a student cell entry', () => {
+        const methods = (CourseTable as any).methods
+        const entry = { teaching_course_work_id: 12, uid: 'course-work-12' }
+        const work = { id: 12, title: 'Testarbeit' }
+        const courseDate = { id: 7, date: '2026-05-16' }
+        const ctx = {
+            courseWorkEntrySavingUid: null,
+            entryDialog: { courseDate, open: true, student: { id: 22 } },
+            courseWorkForCellEntry: vi.fn().mockReturnValue(work),
+            closeEntryDialog: vi.fn(),
+            openWorkDialog: vi.fn(),
+            startEditingDateWork: vi.fn(),
+        }
+
+        methods.openCourseWorkFromCellEntry.call(ctx, entry)
+
+        expect(ctx.closeEntryDialog).toHaveBeenCalledTimes(1)
+        expect(ctx.openWorkDialog).toHaveBeenCalledWith(courseDate)
+        expect(ctx.startEditingDateWork).toHaveBeenCalledWith(work)
     })
 
     it('opens the new-work form directly when the add icon is used', () => {
@@ -2665,10 +2968,34 @@ describe('CourseTable', () => {
         expect(source).toContain('class="course-table-work-row"')
         expect(source).toContain('class="course-table-work-label-content"')
         expect(source).toContain('<span>Arbeiten</span>')
+        expect(source).toContain("v-if=\"tableView === 'entries' && hasAssignedCurriculum\"")
+        expect(source).toContain('class="course-table-curriculum-row"')
+        expect(source).toContain('<span>Curriculum</span>')
+        expect(source).toContain('v-for="(content, contentIndex) in displayedCurriculumContentForCourseDate(courseDate)"')
+        expect(source).toContain('v-if="contentIndex === 2 && hasAdditionalCurriculumContent(courseDate)"')
+        expect(source).toContain('@click="openCurriculumDialog(courseDate)"')
+        expect(source).toContain('@keydown.enter.prevent="openCurriculumDialog(courseDate)"')
+        expect(source).toContain('@keydown.space.prevent="openCurriculumDialog(courseDate)"')
+        expect(source).toContain('<v-dialog v-model="curriculumDialog.open" persistent scrollable max-width="720">')
+        expect(source).toContain('data-testid="course-table-curriculum-dialog"')
+        expect(source).toContain('v-for="(topic, topicIndex) in curriculumDialogTopics"')
+        expect(source).toContain('v-for="unit in topic.units"')
+        expect(source).toContain("'course-table-curriculum-dialog-unit--linked': isCurriculumUnitLinkedToDialogDate(topic, unit)")
+        expect(source).toContain('@click.stop="unlinkCurriculumUnit(topic, unit)"')
+        expect(source).toContain('@click.stop="linkCurriculumUnit(topic, unit)"')
+        expect(source).toContain('Lösen')
+        expect(source).toContain('Verknüpfen')
+        expect(source).toContain(':deep(.course-table-curriculum-dialog-unit)')
+        expect(source).toContain('min-height: 32px !important;')
+        expect(source).toContain('@click="closeCurriculumDialog"')
+        expect(source).toContain('v-for="(segment, segmentIndex) in curriculumContentSegments(content)"')
+        expect(source).toMatch(/\.course-table-curriculum-content-item \{[\s\S]*-webkit-line-clamp: 3;[\s\S]*display: -webkit-box;[\s\S]*line-height: 13px;[\s\S]*max-height: 39px;[\s\S]*overflow: hidden;/u)
+        expect(source).toMatch(/\.course-table-curriculum-content-segment \{[\s\S]*overflow-wrap: anywhere;[\s\S]*white-space: normal;/u)
         expect(source).toContain('class="course-table-content-row"')
         expect(source).toContain('class="course-table-content-label-content"')
         expect(source).toContain('<span>Stoff</span>')
-        expect(source.indexOf('class="course-table-work-row"')).toBeLessThan(source.indexOf('class="course-table-content-row"'))
+        expect(source.indexOf('class="course-table-work-row"')).toBeLessThan(source.indexOf('class="course-table-curriculum-row"'))
+        expect(source.indexOf('class="course-table-curriculum-row"')).toBeLessThan(source.indexOf('class="course-table-content-row"'))
         expect(source.indexOf('class="course-table-content-row"')).toBeLessThan(source.indexOf('class="course-table-row"'))
         expect(source).toContain('@click="openContentDialog(courseDate)"')
         expect(source).toContain('@keydown.enter.prevent="openContentDialog(courseDate)"')
@@ -2911,6 +3238,7 @@ describe('CourseTable', () => {
         expect(source).toContain('course-table-cell-work-comment-${entry.uid}')
         expect(source).toContain('course-table-cell-work-grade-${entry.uid}')
         expect(source).toContain('course-table-cell-work-save-${entry.uid}')
+        expect(source).toContain('course-table-cell-work-open-${entry.uid}')
         expect(source).toContain("v-if=\"courseWorkEntryGradeInputMode(entry) === 'fixed'\"")
         expect(source).toContain("v-else-if=\"courseWorkEntryGradeInputMode(entry) === 'free'\"")
         expect(source).toContain('Für diesen Eintragstyp ist keine Bewertung vorgesehen.')
@@ -2926,6 +3254,7 @@ describe('CourseTable', () => {
         expect(source).toContain('v-for="item in courseWorkEntryGradeItems(entry)"')
         expect(source).toContain('toggledCourseWorkGrade(courseWorkEntryDraft(entry).grade, item.value)')
         expect(source).toContain('@click="saveCourseWorkCellEntry(entry)"')
+        expect(source).toContain('@click="openCourseWorkFromCellEntry(entry)"')
         expect(source).toContain('@click="toggleCellEntry(entry)">')
         expect(source).not.toContain('course-table-cell-edit-entry-${entry.uid}')
         expect(source).not.toContain('icon="mdi-pencil"')

@@ -198,8 +198,12 @@ describe('Teaching overview controls', () => {
         })
     })
 
-    it('activates the curriculum panel through functionalPanelSelection setter', () => {
+    it('redirects legacy curriculum panel links to students', () => {
+        const routerReplace = vi.fn().mockResolvedValue(undefined)
         const ctx = {
+            selectedCourseCurriculumId: null,
+            curriculumSelectionId: null,
+            curriculumEditMode: false,
             show_students: true,
             show_infos: false,
             show_works: false,
@@ -209,20 +213,29 @@ describe('Teaching overview controls', () => {
             show_attendance: false,
             show_performances: false,
             show_performances_plus: false,
-            action_2: '',
-            selected_course_student: null,
+            _urlPanelRestored: false,
+            _lastCourseId: null,
+            $route: {
+                path: '/admin/teaching',
+                query: { course: '18', panel: 'curriculum', date: '318' },
+            },
+            $router: { replace: routerReplace },
         }
 
-        ;(Overview as any).computed.functionalPanelSelection.set.call(ctx, 'curriculum')
+        ;(Overview as any).watch.selected_course.handler.call(ctx, { id: 18, title: 'Deutsch' })
 
-        expect(ctx.show_students).toBe(false)
+        expect(ctx.show_students).toBe(true)
         expect(ctx.show_infos).toBe(false)
         expect(ctx.show_works).toBe(false)
         expect(ctx.show_dates).toBe(false)
-        expect(ctx.show_curriculum).toBe(true)
+        expect(ctx.show_curriculum).toBe(false)
         expect(ctx.show_attendance).toBe(false)
         expect(ctx.show_performances).toBe(false)
         expect(ctx.show_performances_plus).toBe(false)
+        expect(routerReplace).toHaveBeenCalledWith({
+            path: '/admin/teaching',
+            query: { course: '18', panel: 'students', date: '318' },
+        })
     })
 
     it('does not render dates as a secondary panel while students is active', () => {

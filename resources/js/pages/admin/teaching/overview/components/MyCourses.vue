@@ -304,14 +304,14 @@
                         </div>
                         <v-list density="compact" class="mt-1 pa-0" v-if="student_search_results.length">
                             <v-list-item v-for="student in student_search_results" :key="student.id">
-                                <div class="d-flex align-center ga-2 w-100">
+                                <div class="course-student-candidate d-flex align-center ga-2 w-100">
                                     <v-chip v-if="student.class" size="x-small" variant="tonal" color="secondary">
                                         {{ student.class }}
                                     </v-chip>
-                                    <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
-                                    <v-spacer />
+                                    <div class="course-student-candidate__name text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
                                     <v-btn
                                         size="x-small"
+                                        class="course-student-candidate__action"
                                         color="primary"
                                         variant="tonal"
                                         prepend-icon="mdi-plus"
@@ -344,14 +344,14 @@
                     <v-card-text class="pa-0">
                         <v-list density="compact">
                             <v-list-item v-for="student in filteredImport116Students" :key="student.id">
-                                <div class="d-flex align-center ga-2 w-100">
+                                <div class="course-student-candidate d-flex align-center ga-2 w-100">
                                     <v-chip v-if="student.class" size="x-small" variant="tonal" color="primary">
                                         {{ student.class }}
                                     </v-chip>
-                                    <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
-                                    <v-spacer />
+                                    <div class="course-student-candidate__name text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
                                     <v-btn
                                         size="x-small"
+                                        class="course-student-candidate__action"
                                         color="primary"
                                         variant="tonal"
                                         prepend-icon="mdi-plus"
@@ -1251,6 +1251,21 @@ export default {
     letter-spacing: 0;
 }
 
+.course-student-candidate {
+    min-width: 0;
+}
+
+.course-student-candidate__name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.course-student-candidate__action {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
 @media (max-width: 900px) {
     .course-edit-students-sort-toggle {
         width: 100%;
@@ -1274,6 +1289,21 @@ export default {
 
     .my-courses-v2-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .course-student-candidate {
+        align-items: flex-start !important;
+        flex-wrap: wrap;
+    }
+
+    .course-student-candidate__name {
+        flex-basis: calc(100% - 70px);
+    }
+
+    .course-student-candidate__action {
+        margin-left: 0;
+        min-height: 44px;
+        width: 100%;
     }
 }
 </style>

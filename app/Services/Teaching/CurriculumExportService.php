@@ -132,7 +132,7 @@ class CurriculumExportService
                 $unitTitle = $unit['title'] ?? '';
                 $isExam = ! empty($unit['is_exam']);
                 $section->addText(
-                    $unitTitle.($isExam ? ' (Prüfung)' : ''),
+                    $unitTitle.($isExam ? ' (Leistungsfeststellung)' : ''),
                     [
                         'size' => 12,
                         'bold' => $isExam,
@@ -154,6 +154,18 @@ class CurriculumExportService
     public function toPdf(TeachingCurriculum $curriculum, $user = null): string
     {
         $topics = is_array($curriculum->topics) ? $curriculum->topics : [];
+        $unitCount = collect($topics)->sum(
+            fn (mixed $topic): int => is_array($topic) && is_array($topic['units'] ?? null)
+                ? count($topic['units'])
+                : 0
+        );
+        $assessmentCount = collect($topics)->sum(
+            fn (mixed $topic): int => is_array($topic) && is_array($topic['units'] ?? null)
+                ? collect($topic['units'])->filter(
+                    fn (mixed $unit): bool => is_array($unit) && ! empty($unit['is_exam'])
+                )->count()
+                : 0
+        );
         $path = storage_path('app/private/curriculum_export_'.$curriculum->id.'.pdf');
         $teacherName = $this->teacherName($curriculum, $user);
         $schoolName = $this->schoolName($curriculum, $user);
@@ -168,10 +180,13 @@ class CurriculumExportService
             'userName' => $teacherName,
             'schoolName' => $schoolName,
             'printDate' => now()->format('d.m.Y, H:i'),
+            'unitCount' => $unitCount,
+            'assessmentCount' => $assessmentCount,
             'embeddedFontCss' => $embeddedFontCss,
             'pdfFontFamily' => $pdfFontFamily,
         ])
             ->format(Format::A4)
+            ->margins(top: 12, right: 12, bottom: 14, left: 12, unit: 'mm')
             ->save($path);
 
         return $path;

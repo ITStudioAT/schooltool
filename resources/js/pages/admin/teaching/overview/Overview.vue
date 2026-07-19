@@ -98,79 +98,6 @@
             </v-col>
         </v-row>
 
-        <v-row v-if="secondaryOverviewPanelSelection === 'curriculum'" class="mt-n6">
-            <v-col>
-                <v-card variant="outlined" data-testid="teaching-curriculum-card">
-                    <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
-                        <v-icon size="18">mdi-book-open-variant</v-icon>
-                        Curriculum
-                        <v-spacer />
-                        <v-btn
-                            size="small"
-                            variant="tonal"
-                            prepend-icon="mdi-pencil"
-                            :disabled="curriculumEditMode || curriculumSaveLoading"
-                            @click="startCurriculumEdit">
-                            Bearbeiten
-                        </v-btn>
-                    </v-card-title>
-                    <v-divider />
-                    <v-card-text class="d-flex flex-column ga-3">
-                        <div class="text-caption text-medium-emphasis">
-                            Wähle ein Curriculum für dieses Fach aus oder entferne die aktuelle Zuweisung.
-                        </div>
-
-                        <v-select
-                            v-model="curriculumSelectionId"
-                            :items="curriculumOptions"
-                            :loading="curriculumLoading"
-                            :disabled="!curriculumEditMode || curriculumSaveLoading"
-                            item-title="title"
-                            item-value="value"
-                            label="Curriculum auswählen"
-                            variant="outlined"
-                            density="comfortable"
-                            :clearable="curriculumEditMode"
-                            hide-details="auto"
-                            no-data-text="Keine Curricula verfügbar" />
-
-                        <div v-if="selectedCourseCurriculum" class="text-caption text-medium-emphasis">
-                            Aktuell zugewiesen: <strong>{{ selectedCourseCurriculum.title }}</strong>
-                            <span v-if="selectedCourseCurriculum.description"> · {{ selectedCourseCurriculum.description }}</span>
-                        </div>
-                        <div v-else class="text-caption text-medium-emphasis">
-                            Aktuell ist kein Curriculum zugewiesen.
-                        </div>
-
-                        <div v-if="curriculumEditMode" class="d-flex flex-wrap ga-2">
-                            <v-btn
-                                color="primary"
-                                variant="tonal"
-                                :loading="curriculumSaveLoading"
-                                :disabled="!hasCurriculumSelectionChanges || curriculumSaveLoading"
-                                @click="saveCurriculumAssignment">
-                                Zuweisung speichern
-                            </v-btn>
-                            <v-btn
-                                color="warning"
-                                variant="tonal"
-                                :disabled="!selectedCourseCurriculum || curriculumSaveLoading"
-                                @click="removeCurriculumAssignment">
-                                Zuweisung entfernen
-                            </v-btn>
-                            <v-btn
-                                variant="text"
-                                :disabled="curriculumSaveLoading"
-                                @click="cancelCurriculumEdit">
-                                Abbrechen
-                            </v-btn>
-                        </div>
-
-                    </v-card-text>
-                </v-card>
-            </v-col>
-        </v-row>
-
         <v-row v-if="secondaryOverviewPanelSelection === 'print'" class="mt-n6">
             <v-col>
                 <CoursePrint />
@@ -307,7 +234,7 @@ export default {
             return this.action_2 === 'course_student_view' || !!this.selected_course_student
         },
         secondaryOverviewPanelSelection() {
-            const secondaryPanels = ['infos', 'dates', 'table', 'attendance', 'works', 'print', 'curriculum']
+            const secondaryPanels = ['infos', 'dates', 'table', 'attendance', 'works', 'print']
             const selectedPanel = this.functionalPanelSelection
 
             return secondaryPanels.includes(selectedPanel) ? selectedPanel : null
@@ -476,7 +403,6 @@ export default {
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
-                panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })
                 panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })
                 panels.push({ id: 'performances_plus', label: 'Leistungen Plus', icon: 'mdi-chart-bar' })
                 panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
@@ -496,7 +422,6 @@ export default {
                 if (this.show_dates) return 'dates'
                 if (this.show_table) return 'table'
                 if (this.show_attendance) return 'attendance'
-                if (this.show_curriculum) return 'curriculum'
                 if (this.show_performances) return 'performances'
                 if (this.show_performances_plus) return 'performances_plus'
                 return undefined
@@ -509,7 +434,7 @@ export default {
                 this.show_dates = value === 'dates'
                 this.show_table = value === 'table'
                 this.show_attendance = value === 'attendance'
-                this.show_curriculum = value === 'curriculum'
+                this.show_curriculum = false
                 this.show_performances = value === 'performances'
                 this.show_performances_plus = value === 'performances_plus'
                 if (!value) {
@@ -546,6 +471,29 @@ export default {
                     ? 'attendance'
                     : requestedPanel
                 const urlGrades = this.$route?.query?.grades
+                if (urlPanel === 'curriculum') {
+                    this._urlPanelRestored = true
+                    this._lastCourseId = newCourse.id
+                    this.show_students = true
+                    this.show_infos = false
+                    this.show_works = false
+                    this.show_print = false
+                    this.show_dates = false
+                    this.show_table = false
+                    this.show_attendance = false
+                    this.show_curriculum = false
+                    this.show_performances = false
+                    this.show_performances_plus = false
+
+                    if (this.$route && this.$router) {
+                        this.$router.replace({
+                            path: this.$route.path,
+                            query: { ...this.$route.query, panel: 'students' },
+                        }).catch(() => {})
+                    }
+
+                    return
+                }
                 const validPanels = [
                     'table',
                     'attendance',
@@ -554,7 +502,6 @@ export default {
                     'infos',
                     'works',
                     'print',
-                    'curriculum',
                     'performances',
                     'performances_plus',
                 ]
@@ -584,7 +531,7 @@ export default {
                     this.show_dates = urlPanel === 'dates'
                     this.show_table = urlPanel === 'table'
                     this.show_attendance = urlPanel === 'attendance'
-                    this.show_curriculum = urlPanel === 'curriculum'
+                    this.show_curriculum = false
                     this.show_performances = urlPanel === 'performances'
                     this.show_performances_plus = urlPanel === 'performances_plus'
                     return
@@ -619,27 +566,6 @@ export default {
             this.show_curriculum = false
             this.show_performances = false
             this.show_performances_plus = false
-            },
-        },
-        show_curriculum: {
-            immediate: true,
-            async handler(value) {
-                if (!value || !this.selected_course?.id) {
-                    return
-                }
-
-                await this.loadCurricula()
-                await this.loadSelectedCurriculumDetail()
-            },
-        },
-        selectedCourseCurriculumId: {
-            immediate: true,
-            async handler() {
-                if (!this.show_curriculum) {
-                    return
-                }
-
-                await this.loadSelectedCurriculumDetail()
             },
         },
         activeSemester(val) {
@@ -1051,7 +977,8 @@ export default {
     text-transform: none;
     letter-spacing: 0;
     font-weight: 650;
-    height: 40px !important;
+    min-height: 44px !important;
+    height: auto !important;
     border: 1px solid rgba(37, 99, 235, 0.16) !important;
     background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(219, 234, 254, 0.92) 100%) !important;
     color: #1e3a8a !important;
@@ -1094,6 +1021,7 @@ export default {
 
     .teaching-overview-toolbar-btn {
         justify-content: center;
+        min-height: 48px !important;
         min-width: 0 !important;
         width: 100%;
     }
@@ -1236,6 +1164,12 @@ export default {
 
     .curriculum-sync-entry-actions {
         justify-content: flex-start;
+    }
+
+    .curriculum-sync-entry-actions :deep(.v-btn) {
+        height: 44px;
+        min-width: 44px;
+        width: 44px;
     }
 }
 </style>

@@ -57,6 +57,12 @@ beforeEach(function () {
                         'assignment_type' => 'none',
                         'is_exam' => false,
                     ],
+                    [
+                        'id' => 'unit-2',
+                        'title' => 'Lesekompetenz überprüfen',
+                        'assignment_type' => 'none',
+                        'is_exam' => true,
+                    ],
                 ],
             ],
         ],
@@ -89,23 +95,33 @@ it('uses the curriculum owner name and school when saving the pdf export', funct
     expect($path)->toBe(storage_path('app/private/curriculum_export_'.$this->curriculum->id.'.pdf'));
 
     Pdf::assertSaved(function ($pdf, string $savedPath): bool {
-        return $savedPath === storage_path('app/private/curriculum_export_'.$this->curriculum->id.'.pdf')
-            && $pdf->viewName === 'pdfs.curriculum-export'
-            && $pdf->viewData['userName'] === $this->curriculumOwner->full_name
-            && $pdf->viewData['schoolName'] === 'Curriculum Test School'
-            && $pdf->contains('Lehrperson: '.$this->curriculumOwner->full_name)
-            && str_contains($pdf->html, "@font-face {\n    font-family: 'CurriculumPdfArial';")
-            && str_contains($pdf->html, base64_encode('fake-arial-regular'))
-            && str_contains($pdf->html, base64_encode('fake-arial-bold'))
-            && ! str_contains($pdf->html, '.topic-assignment {')
-            && str_contains($pdf->html, "font-family: 'CurriculumPdfArial', Arial, Helvetica, sans-serif !important;")
-            && str_contains($pdf->html, 'font-weight: 400;')
-            && ! str_contains($pdf->html, ".topic-assignment {\n            font-family: 'CurriculumPdfArial', Arial, Helvetica, sans-serif !important;\n            color: #6366f1;\n            font-size: 10pt;\n            font-weight: 600;")
-            && ! str_contains($pdf->html, ".unit-assignment {\n            font-family: 'CurriculumPdfArial', Arial, Helvetica, sans-serif !important;\n            color: #6366f1;\n            font-size: 10pt;\n            font-weight: 500;")
-            && str_contains($pdf->html, 'font-size: 10pt;')
-            && ! str_contains($pdf->html, 'font-size: 8px;')
-            && ! str_contains($pdf->html, 'font-size: 9px;')
-            && ! $pdf->contains('Lehrperson: '.$this->loggedInUser->full_name);
+        expect($savedPath)->toBe(storage_path('app/private/curriculum_export_'.$this->curriculum->id.'.pdf'))
+            ->and($pdf->viewName)->toBe('pdfs.curriculum-export')
+            ->and($pdf->viewData['userName'])->toBe($this->curriculumOwner->full_name)
+            ->and($pdf->viewData['schoolName'])->toBe('Curriculum Test School')
+            ->and($pdf->viewData['unitCount'])->toBe(2)
+            ->and($pdf->viewData['assessmentCount'])->toBe(1)
+            ->and($pdf->margins)->toBe(['top' => 12.0, 'right' => 12.0, 'bottom' => 14.0, 'left' => 12.0, 'unit' => 'mm'])
+            ->and($pdf->html)->toContain('Lehrperson: '.$this->curriculumOwner->full_name)
+            ->and($pdf->html)->toContain('Leistungsfeststellung')
+            ->and($pdf->html)->toContain('<span class="summary-value">2</span>')
+            ->and($pdf->html)->toContain('page-break-inside: avoid;')
+            ->and($pdf->html)->toContain("@font-face {\n    font-family: 'CurriculumPdfArial';")
+            ->and($pdf->html)->toContain(base64_encode('fake-arial-regular'))
+            ->and($pdf->html)->toContain(base64_encode('fake-arial-bold'))
+            ->and($pdf->html)->not->toContain('.topic-assignment {')
+            ->and($pdf->html)->toContain("font-family: 'CurriculumPdfArial', Arial, Helvetica, sans-serif !important;")
+            ->and($pdf->html)->toContain('font-weight: 400;')
+            ->and($pdf->html)->toContain('.unit-exam {')
+            ->and($pdf->html)->not->toContain('font-weight: 600;')
+            ->and($pdf->html)->not->toContain(".topic-assignment {\n            font-family: 'CurriculumPdfArial', Arial, Helvetica, sans-serif !important;\n            color: #6366f1;\n            font-size: 10pt;\n            font-weight: 600;")
+            ->and($pdf->html)->not->toContain(".unit-assignment {\n            font-family: 'CurriculumPdfArial', Arial, Helvetica, sans-serif !important;\n            color: #6366f1;\n            font-size: 10pt;\n            font-weight: 500;")
+            ->and($pdf->html)->toContain('font-size: 10pt;')
+            ->and($pdf->html)->not->toContain('font-size: 8px;')
+            ->and($pdf->html)->not->toContain('font-size: 9px;')
+            ->and($pdf->html)->not->toContain('Lehrperson: '.$this->loggedInUser->full_name);
+
+        return true;
     });
 });
 
@@ -128,6 +144,8 @@ it('uses the curriculum owner name and school in the word export', function () {
     expect($documentXml)->toBeString()
         ->and($documentXml)->toContain('Lehrperson: '.$this->curriculumOwner->full_name)
         ->and($documentXml)->toContain('Schule: Curriculum Test School')
+        ->and($documentXml)->toContain('Leistungsfeststellung')
+        ->and($documentXml)->not->toContain('(Prüfung)')
         ->and($documentXml)->not->toContain('2026-02-16')
         ->and($documentXml)->not->toContain('Lehrperson: '.$this->loggedInUser->full_name);
 });

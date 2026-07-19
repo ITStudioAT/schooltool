@@ -87,6 +87,32 @@ beforeEach(function () {
     $this->otherTeacher->assignRole('teacher');
 });
 
+test('teacher curricula are paginated in alphabetical order', function () {
+    collect(['Zoologie', 'Algebra', 'Biologie'])->each(function (string $title): void {
+        TeachingCurriculum::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => $title,
+            'description' => null,
+            'topics' => [],
+        ]);
+    });
+
+    $firstPage = $this->actingAs($this->teacher, 'sanctum')
+        ->getJson('/api/admin/teaching/curricula?per_page=2&page=1');
+
+    $firstPage->assertOk()
+        ->assertJsonPath('data.0.title', 'Algebra')
+        ->assertJsonPath('data.1.title', 'Biologie')
+        ->assertJsonPath('meta.last_page', 2);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson('/api/admin/teaching/curricula?per_page=2&page=2')
+        ->assertOk()
+        ->assertJsonPath('data.0.title', 'Zoologie');
+});
+
 test('teacher can create a curriculum with themes and units only', function () {
     $response = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/admin/teaching/curricula', [
         'title' => 'Deutsch 5A',

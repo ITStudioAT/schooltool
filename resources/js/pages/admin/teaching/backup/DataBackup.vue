@@ -304,7 +304,7 @@
                         </v-table>
                     </template>
                 </v-card-text>
-                <v-card-actions class="px-4 pb-4">
+                <v-card-actions class="teaching-data-backup-dialog-actions px-4 pb-4">
                     <v-spacer />
                     <v-btn variant="tonal" @click="preview_open = false">Schließen</v-btn>
                     <v-btn
@@ -439,7 +439,7 @@
                         </tbody>
                     </v-table>
                 </v-card-text>
-                <v-card-actions class="px-4 pb-4">
+                <v-card-actions class="teaching-data-backup-dialog-actions px-4 pb-4">
                     <v-spacer />
                     <v-btn variant="tonal" @click="restore_report_open = false">Schließen</v-btn>
                 </v-card-actions>
@@ -463,7 +463,7 @@
                         {{ delete_error }}
                     </v-alert>
                 </v-card-text>
-                <v-card-actions class="px-4 pb-4">
+                <v-card-actions class="teaching-data-backup-dialog-actions px-4 pb-4">
                     <v-spacer />
                     <v-btn variant="tonal" :disabled="delete_loading" @click="closeDeleteDialog">
                         Abbrechen
@@ -489,7 +489,7 @@
                         Diese Aktion betrifft nur die aktive Schule und das aktive Schuljahr.
                     </div>
                 </v-card-text>
-                <v-card-actions class="px-4 pb-4">
+                <v-card-actions class="teaching-data-backup-dialog-actions px-4 pb-4">
                     <v-spacer />
                     <v-btn variant="tonal" :disabled="full_restore_loading" @click="closeFullRestoreDialog">
                         Abbrechen
@@ -1528,6 +1528,14 @@ export default {
     border-top: 1px solid rgba(16, 38, 58, 0.1);
 }
 
+.teaching-data-backup-table :deep(.v-table__wrapper) {
+    overflow-x: auto;
+}
+
+.teaching-data-backup-table :deep(table) {
+    min-width: 860px;
+}
+
 .teaching-data-backup-file {
     max-width: 420px;
     overflow-wrap: anywhere;
@@ -1557,6 +1565,33 @@ export default {
 
     .teaching-data-backup-detail-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .teaching-data-backup-dialog-actions {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .teaching-data-backup-dialog-actions :deep(.v-spacer) {
+        display: none;
+    }
+
+    .teaching-data-backup-dialog-actions :deep(.v-btn) {
+        margin-inline: 0 !important;
+        min-height: 44px;
+        width: 100%;
+    }
+
+    .teaching-data-backup-table :deep(td .v-btn) {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}
+
+@media (max-width: 480px) {
+    .teaching-data-backup-detail-grid {
+        grid-template-columns: 1fr;
     }
 }
 </style>

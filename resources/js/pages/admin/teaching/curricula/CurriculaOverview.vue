@@ -16,7 +16,7 @@
         <v-row class="ma-0">
             <v-col cols="12" md="6" class="pa-0 pr-md-2 pb-3">
                 <v-sheet rounded="xl" class="curricula-overview__list pa-4 h-100">
-                    <div class="d-flex align-center justify-space-between ga-3 mb-3">
+                    <div class="curricula-overview__section-header d-flex align-center justify-space-between ga-3 mb-3">
                         <div>
                             <div class="text-subtitle-1 font-weight-bold">Eigene Curricula</div>
                             <div class="text-caption curricula-overview__muted">Deine persönlichen Curricula für den Unterricht.</div>
@@ -87,7 +87,7 @@
 
             <v-col cols="12" md="6" class="pa-0 pl-md-2 pb-3">
                 <v-sheet rounded="xl" class="curricula-overview__list pa-4 h-100">
-                    <div class="d-flex align-center justify-space-between ga-3 mb-3">
+                    <div class="curricula-overview__section-header d-flex align-center justify-space-between ga-3 mb-3">
                         <div>
                             <div class="text-subtitle-1 font-weight-bold">Importierte Curricula</div>
                             <div class="text-caption curricula-overview__muted">Getrennt von deinen eigenen Curricula, aber als Vorlage übernehmbar.</div>
@@ -203,32 +203,34 @@
                     <v-icon color="primary" size="22">mdi-book-education-outline</v-icon>
                     {{ editing ? 'Curriculum bearbeiten' : 'Neues Curriculum' }}
                 </v-card-title>
-                <v-card-text class="px-4">
-                    <v-text-field
-                        v-model="form.title"
-                        label="Titel"
-                        variant="outlined"
-                        density="comfortable"
-                        :error-messages="formErrors.title"
-                        autofocus
-                        class="mb-2" />
-                    <v-textarea
-                        v-model="form.description"
-                        label="Beschreibung"
-                        variant="outlined"
-                        density="comfortable"
-                        rows="3"
-                        auto-grow
-                        :error-messages="formErrors.description"
-                        class="mb-2" />
-                </v-card-text>
-                <v-card-actions class="px-4 pb-4">
-                    <v-btn variant="tonal" :disabled="saving" @click="closeDialog">Abbrechen</v-btn>
-                    <v-spacer />
-                    <v-btn color="primary" variant="flat" :loading="saving" @click="saveForm">
-                        {{ editing ? 'Speichern' : 'Anlegen' }}
-                    </v-btn>
-                </v-card-actions>
+                <form class="curricula-overview__form" @submit.prevent="saveForm">
+                    <v-card-text class="px-4">
+                        <v-text-field
+                            v-model="form.title"
+                            label="Titel"
+                            variant="outlined"
+                            density="comfortable"
+                            :error-messages="formErrors.title"
+                            autofocus
+                            class="mb-2" />
+                        <v-textarea
+                            v-model="form.description"
+                            label="Beschreibung"
+                            variant="outlined"
+                            density="comfortable"
+                            rows="3"
+                            auto-grow
+                            :error-messages="formErrors.description"
+                            class="mb-2" />
+                    </v-card-text>
+                    <v-card-actions class="px-4 pb-4">
+                        <v-btn type="button" variant="tonal" :disabled="saving" @click="closeDialog">Abbrechen</v-btn>
+                        <v-spacer />
+                        <v-btn type="submit" color="primary" variant="flat" :loading="saving" :disabled="saving">
+                            {{ editing ? 'Speichern' : 'Anlegen' }}
+                        </v-btn>
+                    </v-card-actions>
+                </form>
             </v-card>
         </v-dialog>
 
@@ -642,6 +644,10 @@ export default {
             }
         },
         async saveForm() {
+            if (this.saving) {
+                return
+            }
+
             this.formErrors = {}
             if (!this.form.title.trim()) {
                 this.formErrors = { title: 'Titel ist erforderlich.' }
@@ -806,5 +812,59 @@ export default {
 .curricula-overview__semester-badge {
     color: #4338ca;
     font-weight: 600;
+}
+@media (max-width: 600px) {
+    .curricula-overview__toolbar-inner :deep(.v-btn),
+    .curricula-overview__section-header :deep(.v-btn) {
+        min-height: 44px;
+        width: 100%;
+    }
+
+    .curricula-overview__section-header {
+        align-items: stretch !important;
+        flex-direction: column;
+    }
+
+    .curricula-overview__item {
+        grid-template-areas:
+            'prepend content'
+            'append append' !important;
+        grid-template-columns: max-content minmax(0, 1fr) !important;
+        padding-block: 8px !important;
+    }
+
+    .curricula-overview__item :deep(.v-list-item__append) {
+        margin-inline-start: 0;
+        padding-top: 8px;
+        width: 100%;
+    }
+
+    .curricula-overview__item-actions,
+    .curricula-overview__import-actions {
+        justify-content: flex-end;
+        width: 100%;
+    }
+
+    .curricula-overview__item-actions :deep(.v-btn),
+    .curricula-overview__import-actions :deep(.v-btn) {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    :deep(.v-card-actions) {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    :deep(.v-card-actions .v-spacer) {
+        display: none;
+    }
+
+    :deep(.v-card-actions .v-btn) {
+        margin-inline: 0 !important;
+        min-height: 44px;
+        width: 100%;
+    }
 }
 </style>

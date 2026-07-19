@@ -41,7 +41,7 @@
             :class="[
                 semesterCount === 2 ? 'mt-0' : 'mt-4',
                 {
-                    'course-dates-panels--connector-visible': selected_courseDate && selectedCurriculumItem,
+                    'course-dates-panels--connector-visible': selected_courseDate && selectedCurriculumItem && !isSelectedCurriculumItemLinked,
                 },
             ]">
         <v-card variant="outlined" class="course-dates-panel">
@@ -196,15 +196,14 @@
                                 </div>
                             <div
                                 v-if="courseDateAdoptedMaterials(courseDate).length"
-                                class="course-date-curriculum-inline pl-1 pr-2"
-                                @click.stop>
+                                class="course-date-curriculum-inline pl-1 pr-2">
                                 <div class="course-date-curriculum-stack">
                                     <div
                                         v-for="group in courseDateAdoptedMaterialGroups(courseDate)"
                                         :key="`${courseDate.id}-adopted-group-${group.key}`"
                                         class="course-date-curriculum-stack__adopted-group">
                                         <div class="course-date-curriculum-stack__adopted-title d-flex align-center">
-                                            <v-icon size="14" color="success" class="mr-1">mdi-check-circle-outline</v-icon>
+                                            <v-icon size="14" color="success" class="mr-1">mdi-link-variant</v-icon>
                                             <span class="flex-grow-1">{{ group.title }}</span>
                                             <template v-if="group.duplicateSingleMaterial">
                                                 <template v-if="group.materials[0].attachments && group.materials[0].attachments.length">
@@ -220,12 +219,13 @@
                                                 </template>
                                                 <v-chip v-if="group.materials[0].type" size="x-small" variant="tonal" color="primary" class="ml-1">{{ group.materials[0].type }}</v-chip>
                                                 <v-btn
-                                                    icon="mdi-close"
-                                                    size="x-small"
-                                                    variant="text"
+                                                    icon="mdi-link-off"
+                                                    size="22"
+                                                    variant="elevated"
                                                     color="error"
+                                                    elevation="2"
                                                     class="course-date-adopt-btn ml-1"
-                                                    title="Übernommenes Material entfernen"
+                                                    title="Curriculum-Verknüpfung lösen"
                                                     :disabled="isEditingContent || isSavingContent || adoptSaving || deletingAdoptedId === group.materials[0].id"
                                                     :loading="deletingAdoptedId === group.materials[0].id"
                                                     @click.stop="deleteAdoptedMaterialGroup(group.materials[0])" />
@@ -251,12 +251,13 @@
                                                 <span class="flex-grow-1">{{ material.title }}</span>
                                                 <v-chip v-if="material.type" size="x-small" variant="tonal" color="primary" class="ml-1">{{ material.type }}</v-chip>
                                                 <v-btn
-                                                    icon="mdi-close"
-                                                    size="x-small"
-                                                    variant="text"
+                                                    icon="mdi-link-off"
+                                                    size="22"
+                                                    variant="elevated"
                                                     color="error"
+                                                    elevation="2"
                                                     class="course-date-adopt-btn ml-1"
-                                                    title="Übernommenes Material entfernen"
+                                                    title="Curriculum-Verknüpfung lösen"
                                                     :disabled="isEditingContent || isSavingContent || adoptSaving || deletingAdoptedId === material.id"
                                                     :loading="deletingAdoptedId === material.id"
                                                     @click.stop="deleteAdoptedMaterialGroup(material)" />
@@ -306,37 +307,25 @@
         </v-card>
 
         <div
-            v-if="selected_courseDate && selectedCurriculumItem"
+            v-if="selected_courseDate && selectedCurriculumItem && !isSelectedCurriculumItemLinked"
             class="course-date-curriculum-connector"
-            :class="{
-                'course-date-curriculum-connector--linked': isSelectedCurriculumItemLinked,
-            }"
             @click="clearDateAndCurriculumSelection">
             <div
                 class="course-date-curriculum-connector__core">
                 <v-btn
                     data-testid="connect-date-curriculum-item"
-                    :icon="isSelectedCurriculumItemLinked ? 'mdi-link-variant-off' : 'mdi-link-variant'"
-                    size="large"
-                    :color="isSelectedCurriculumItemLinked ? 'error' : 'success'"
+                    icon="mdi-link-variant"
+                    size="default"
+                    color="success"
                     variant="elevated"
-                    elevation="10"
+                    elevation="6"
                     class="course-date-curriculum-connector__button"
-                    :class="{
-                        'course-date-curriculum-connector__button--linked': isSelectedCurriculumItemLinked,
-                    }"
-                    :title="curriculumLinkActionTitle"
-                    :aria-label="curriculumLinkActionTitle"
+                    title="Ausgewählten Termin und Curriculum-Einheit verknüpfen"
+                    aria-label="Ausgewählten Termin und Curriculum-Einheit verknüpfen"
                     :loading="connectingCurriculumItem"
                     :disabled="isBusyDateUi || connectingCurriculumItem"
-                    @click.stop="toggleSelectedDateAndCurriculumItem" />
-                <span
-                    class="course-date-curriculum-connector__label"
-                    :class="{
-                        'course-date-curriculum-connector__label--linked': isSelectedCurriculumItemLinked,
-                    }">
-                    {{ isSelectedCurriculumItemLinked ? 'Trennen' : 'Verknüpfen' }}
-                </span>
+                    @click.stop="linkSelectedDateAndCurriculumItem" />
+                <span class="course-date-curriculum-connector__label">Verknüpfen</span>
             </div>
         </div>
 
@@ -379,8 +368,15 @@
                 </v-btn>
             </v-card-text>
             <v-card-text v-else class="pa-0">
-                <div class="px-4 pt-4 pb-2 text-body-2 font-weight-medium">
-                    {{ selectedCourseCurriculumTitle }}
+                <div class="px-4 pt-4 pb-2 text-body-2 font-weight-medium d-flex align-center ga-2 flex-wrap">
+                    <span>{{ selectedCourseCurriculumTitle }}</span>
+                    <v-chip
+                        v-if="selectedCourseCurriculumUnitCount"
+                        size="x-small"
+                        color="primary"
+                        variant="tonal">
+                        {{ selectedCourseCurriculumUnitCount }}
+                    </v-chip>
                 </div>
                 <v-progress-linear
                     v-if="curriculumContentLoading"
@@ -402,11 +398,41 @@
                             :class="{
                                 'course-curriculum-item--selected': selectedCurriculumItemKey === unit.selectionKey,
                             }"
-                            :title="`${topicIndex + 1}.${unitIndex + 1} ${unit.title}`"
-                            :prepend-icon="unit.isExam ? 'mdi-clipboard-text-outline' : 'mdi-circle-small'"
+                            :prepend-icon="curriculumUnitPrependIcon(unit)"
                             :aria-pressed="selectedCurriculumItemKey === unit.selectionKey"
                             link
-                            @click="selectCurriculumItem(unit.selectionKey)" />
+                            @click="selectCurriculumItem(unit.selectionKey)">
+                            <v-list-item-title>
+                                {{ topicIndex + 1 }}.{{ unitIndex + 1 }} {{ unit.title }}
+                            </v-list-item-title>
+                            <div
+                                v-if="unit.assignedCourseDates.length"
+                                class="course-curriculum-item__assignments course-date-curriculum-stack mt-1">
+                                <div
+                                    v-for="assignment in unit.assignedCourseDates"
+                                    :key="assignment.courseDateId"
+                                    class="course-curriculum-item__assignment d-flex align-center ga-1 text-caption text-medium-emphasis font-weight-bold"
+                                    :class="{
+                                        'course-curriculum-item__assignment--selected': isCurriculumAssignmentForSelectedCourseDate(assignment),
+                                    }">
+                                    <v-icon icon="mdi-link-variant" size="14" color="success" />
+                                    <span>{{ formatCurriculumUnitAssignedDate(assignment.date) }}</span>
+                                    <v-btn
+                                        :data-testid="`unlink-curriculum-unit-date-${assignment.courseDateId}`"
+                                        icon="mdi-link-off"
+                                        size="22"
+                                        variant="elevated"
+                                        color="error"
+                                        elevation="2"
+                                        class="course-date-adopt-btn ml-auto flex-shrink-0"
+                                        title="Curriculum-Verknüpfung zu diesem Termin lösen"
+                                        aria-label="Curriculum-Verknüpfung zu diesem Termin lösen"
+                                        :loading="unlinkingCurriculumAssignmentKey === curriculumUnitAssignmentKey(unit, assignment)"
+                                        :disabled="Boolean(deletingAdoptedId) || Boolean(unlinkingCurriculumAssignmentKey)"
+                                        @click.stop="unlinkCurriculumUnitFromDate(topic, unit, assignment)" />
+                                </div>
+                            </div>
+                        </v-list-item>
                     </template>
                 </v-list>
                 <div v-else class="px-4 pb-4 text-body-2 text-medium-emphasis">
@@ -805,6 +831,7 @@ export default {
             adoptDialogSelectedAttachmentIdsByMaterial: {},
             adoptSaving: false,
             deletingAdoptedId: null,
+            unlinkingCurriculumAssignmentKey: null,
             togglingVisibilityId: null,
             dateRangeSelection: ['today'],
             data: {
@@ -869,26 +896,54 @@ export default {
             const topics = Array.isArray(this.selectedCourseCurriculumForContent?.topics)
                 ? this.selectedCourseCurriculumForContent.topics
                 : []
+            const courseDates = Array.isArray(this.selected_course?.course_dates)
+                ? this.selected_course.course_dates
+                : []
 
             return topics
                 .map((topic, topicIndex) => {
+                    const topicTitle = topic?.title ? String(topic.title) : `Thema ${topicIndex + 1}`
                     const units = (Array.isArray(topic?.units) ? topic.units : [])
                         .filter((unit) => unit?.title)
-                        .map((unit, unitIndex) => ({
-                            key: unit.id || `unit-${topicIndex}-${unitIndex}`,
-                            selectionKey: `unit:${topic?.id || topicIndex}:${unit.id || unitIndex}`,
-                            title: String(unit.title),
-                            isExam: Boolean(unit.is_exam),
-                        }))
+                        .map((unit, unitIndex) => {
+                            const unitTitle = String(unit.title)
+                            const curriculumItemTitle = `${topicTitle}: ${unitTitle}`
+                            const assignedCourseDates = courseDates
+                                .filter((courseDate) => (
+                                    courseDate?.id
+                                    && courseDate?.date
+                                    && Array.isArray(courseDate?.adopted_materials)
+                                    && courseDate.adopted_materials.some((material) => material?.title === curriculumItemTitle)
+                                ))
+                                .map((courseDate) => ({
+                                    courseDateId: courseDate.id,
+                                    date: courseDate.date,
+                                }))
+
+                            return {
+                                key: unit.id || `unit-${topicIndex}-${unitIndex}`,
+                                selectionKey: `unit:${topic?.id || topicIndex}:${unit.id || unitIndex}`,
+                                title: unitTitle,
+                                isExam: Boolean(unit.is_exam),
+                                assignedDates: assignedCourseDates.map((assignment) => assignment.date),
+                                assignedCourseDates,
+                            }
+                        })
 
                     return {
                         key: topic?.id || `topic-${topicIndex}`,
                         selectionKey: `topic:${topic?.id || topicIndex}`,
-                        title: topic?.title ? String(topic.title) : `Thema ${topicIndex + 1}`,
+                        title: topicTitle,
                         units,
                     }
                 })
                 .filter((topic) => topic.title || topic.units.length)
+        },
+        selectedCourseCurriculumUnitCount() {
+            return this.selectedCourseCurriculumTopics.reduce(
+                (count, topic) => count + (Array.isArray(topic?.units) ? topic.units.length : 0),
+                0,
+            )
         },
         selectedCurriculumItem() {
             if (!this.selectedCurriculumItemKey) {
@@ -927,25 +982,12 @@ export default {
 
             return null
         },
-        selectedCurriculumAdoptedMaterials() {
-            if (!this.selected_courseDate?.id || !this.selectedCurriculumItem) {
-                return []
-            }
-
-            return this.courseDateAdoptedMaterials(this.selected_courseDate)
-                .filter((adoptedMaterial) => adoptedMaterial?.title === this.selectedCurriculumItem.label)
-        },
         isSelectedCurriculumItemLinked() {
             if (!this.selected_courseDate?.id || !this.selectedCurriculumItem) {
                 return false
             }
 
             return this.isCurriculumEntryFullyAdopted(this.selected_courseDate, this.selectedCurriculumItem)
-        },
-        curriculumLinkActionTitle() {
-            return this.isSelectedCurriculumItemLinked
-                ? 'Verknüpfung zwischen Termin und Curriculum-Einheit lösen'
-                : 'Ausgewählten Termin und Curriculum-Einheit verknüpfen'
         },
         curriculumAssignmentOptions() {
             const curricula = Array.isArray(this.curriculumStore?.curricula) ? this.curriculumStore.curricula : []
@@ -1316,6 +1358,55 @@ export default {
             const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
+        formatCurriculumUnitAssignedDates(dates) {
+            if (!Array.isArray(dates)) return ''
+
+            return dates
+                .map((date) => [this.getWeekday(date), this.formatDate(date)].filter(Boolean).join(', '))
+                .filter(Boolean)
+                .join(' · ')
+        },
+        formatCurriculumUnitAssignedDate(date) {
+            return [this.getWeekday(date), this.formatDate(date)].filter(Boolean).join(', ')
+        },
+        curriculumUnitAssignmentKey(unit, assignment) {
+            return `${unit?.selectionKey || 'unit'}:${assignment?.courseDateId || 'date'}`
+        },
+        async unlinkCurriculumUnitFromDate(topic, unit, assignment) {
+            if (this.deletingAdoptedId || this.unlinkingCurriculumAssignmentKey || !assignment?.courseDateId) {
+                return
+            }
+
+            const courseDate = (Array.isArray(this.selected_course?.course_dates)
+                ? this.selected_course.course_dates
+                : [])
+                .find((candidate) => Number(candidate?.id) === Number(assignment.courseDateId))
+            const curriculumItemTitle = `${topic?.title || ''}: ${unit?.title || ''}`
+            const adoptedMaterials = this.courseDateAdoptedMaterials(courseDate)
+                .filter((material) => material?.title === curriculumItemTitle)
+
+            if (!adoptedMaterials.length) return
+
+            const assignmentKey = this.curriculumUnitAssignmentKey(unit, assignment)
+            this.unlinkingCurriculumAssignmentKey = assignmentKey
+            try {
+                await this.deleteAdoptedMaterialGroup({
+                    id: assignmentKey,
+                    items: adoptedMaterials,
+                })
+            } finally {
+                this.unlinkingCurriculumAssignmentKey = null
+            }
+        },
+        curriculumUnitPrependIcon(unit) {
+            return unit?.isExam ? 'mdi-clipboard-text-outline' : 'mdi-circle-small'
+        },
+        isCurriculumAssignmentForSelectedCourseDate(assignment) {
+            const selectedDate = this.selected_courseDate?.date
+
+            return Boolean(selectedDate)
+                && String(assignment?.date) === String(selectedDate)
         },
         async loadCourseWorks() {
             const courseId = this.selected_course?.id
@@ -1695,22 +1786,20 @@ export default {
             delete query.date
             this.$router.replace({ query }).catch(() => {})
         },
-        async toggleSelectedDateAndCurriculumItem() {
-            if (this.connectingCurriculumItem || !this.selected_courseDate?.id || !this.selectedCurriculumItem) {
+        async linkSelectedDateAndCurriculumItem() {
+            if (
+                this.connectingCurriculumItem
+                || !this.selected_courseDate?.id
+                || !this.selectedCurriculumItem
+                || this.isSelectedCurriculumItemLinked
+            ) {
                 return
             }
 
             this.connectingCurriculumItem = true
             try {
-                if (this.isSelectedCurriculumItemLinked) {
-                    await this.deleteAdoptedMaterialGroup({
-                        id: `curriculum-${this.selectedCurriculumItemKey}`,
-                        items: this.selectedCurriculumAdoptedMaterials,
-                    })
-                } else {
-                    await this.openAdoptDialog(this.selected_courseDate, this.selectedCurriculumItem)
-                    await this.confirmAdopt()
-                }
+                await this.openAdoptDialog(this.selected_courseDate, this.selectedCurriculumItem)
+                await this.confirmAdopt()
 
                 this.syncSelectedCourseDateFromCourse()
             } finally {
@@ -1864,6 +1953,7 @@ export default {
             try {
                 await axios.delete(`/api/admin/teaching/course_date_materials/${adopted.id}`)
                 await this.courseStore.index()
+                this.syncSelectedCourseDateFromCourse()
             } catch {
                 // handled by axios interceptor
             } finally {
@@ -1886,6 +1976,7 @@ export default {
                     }
                 }
                 await this.courseStore.index()
+                this.syncSelectedCourseDateFromCourse()
             } catch {
                 // handled by axios interceptor
             } finally {
@@ -2234,7 +2325,7 @@ export default {
 
 .course-dates-panels--connector-visible {
     gap: 0;
-    grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr);
 }
 
 .course-dates-panel,
@@ -2270,12 +2361,13 @@ export default {
 .course-date-curriculum-connector__core {
     align-items: center;
     backdrop-filter: blur(8px);
-    background: rgba(var(--v-theme-surface), 0.88);
-    border: 1px solid rgba(var(--v-theme-success), 0.3);
+    background: linear-gradient(145deg, rgba(var(--v-theme-surface), 0.98), rgba(var(--v-theme-success), 0.12));
+    border: 1px solid rgba(var(--v-theme-success), 0.42);
     border-radius: 999px;
-    box-shadow: 0 12px 36px rgba(15, 23, 42, 0.22);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.2), 0 0 18px rgba(var(--v-theme-success), 0.14);
     display: flex;
-    padding: 10px;
+    isolation: isolate;
+    padding: 5px;
     pointer-events: auto;
     position: fixed;
     top: 50vh;
@@ -2283,34 +2375,38 @@ export default {
     z-index: 1;
 }
 
-.course-date-curriculum-connector--linked .course-date-curriculum-connector__core {
-    border-color: rgba(var(--v-theme-error), 0.3);
+.course-date-curriculum-connector__core::before {
+    background: linear-gradient(90deg, transparent, rgba(var(--v-theme-success), 0.72), transparent);
+    box-shadow: 0 0 10px rgba(var(--v-theme-success), 0.36);
+    content: '';
+    height: 2px;
+    left: 50%;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 76px;
+    z-index: -1;
 }
 
 .course-date-curriculum-connector__button {
-    border: 4px solid rgb(var(--v-theme-surface));
-    box-shadow: 0 7px 20px rgba(var(--v-theme-success), 0.38) !important;
+    border: 2px solid rgb(var(--v-theme-surface));
+    box-shadow: 0 0 0 3px rgba(var(--v-theme-success), 0.12), 0 6px 18px rgba(var(--v-theme-success), 0.38) !important;
     transition: box-shadow 0.2s ease, transform 0.2s ease;
+    z-index: 1;
 }
 
 .course-date-curriculum-connector__button:hover {
-    box-shadow: 0 9px 24px rgba(var(--v-theme-success), 0.5) !important;
-    transform: scale(1.08);
-}
-
-.course-date-curriculum-connector__button--linked {
-    box-shadow: 0 7px 20px rgba(var(--v-theme-error), 0.38) !important;
-}
-
-.course-date-curriculum-connector__button--linked:hover {
-    box-shadow: 0 9px 24px rgba(var(--v-theme-error), 0.5) !important;
+    box-shadow: 0 0 0 4px rgba(var(--v-theme-success), 0.18), 0 8px 22px rgba(var(--v-theme-success), 0.52) !important;
+    transform: translateY(-1px) scale(1.08);
 }
 
 .course-date-curriculum-connector__label {
     background: rgba(var(--v-theme-surface), 0.92);
+    border: 1px solid rgba(var(--v-theme-success), 0.18);
     border-radius: 999px;
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.12);
     color: rgb(var(--v-theme-success));
-    font-size: 0.62rem;
+    font-size: 0.58rem;
     font-weight: 800;
     left: 50%;
     letter-spacing: 0.04em;
@@ -2318,13 +2414,9 @@ export default {
     padding: 4px 7px;
     position: absolute;
     text-transform: uppercase;
-    top: calc(100% + 4px);
+    top: calc(100% + 3px);
     transform: translateX(-50%);
     white-space: nowrap;
-}
-
-.course-date-curriculum-connector__label--linked {
-    color: rgb(var(--v-theme-error));
 }
 
 @media (max-width: 959px) {
@@ -2476,6 +2568,7 @@ export default {
 
 .course-date-curriculum-inline {
     margin-top: -2px;
+    padding-bottom: 5px;
 }
 
 .course-date-curriculum-divider {
@@ -2504,7 +2597,7 @@ export default {
 .course-date-curriculum-stack {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 5px;
     max-width: 100%;
 }
 
@@ -2546,6 +2639,24 @@ export default {
     font-size: 0.76rem;
     line-height: 1.25;
     padding-left: 8px;
+}
+
+.course-curriculum-item__assignment {
+    border-left: 2px solid rgba(var(--v-theme-success), 0.4);
+    padding-left: 8px;
+}
+
+.course-curriculum-item__assignment--selected {
+    background: rgba(var(--v-theme-success), 0.16);
+    border-left-color: rgb(var(--v-theme-success));
+    border-radius: 6px;
+    box-shadow: inset 0 0 0 1px rgba(var(--v-theme-success), 0.22);
+    font-size: 0.84rem !important;
+    padding: 3px 5px 3px 8px;
+}
+
+.course-curriculum-item__assignments {
+    padding-bottom: 5px;
 }
 
 .course-date-curriculum-stack__adopted-title {
@@ -2698,13 +2809,19 @@ export default {
 }
 
 .course-date-adopt-btn {
-    opacity: 0.4;
-    transition: opacity 0.15s;
+    border: 2px solid rgb(var(--v-theme-surface));
+    box-shadow: 0 0 0 1px rgba(var(--v-theme-error), 0.24), 0 0 7px rgba(var(--v-theme-error), 0.3), 0 2px 5px rgba(15, 23, 42, 0.2) !important;
     flex-shrink: 0;
+    transition: box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.course-date-curriculum-stack__entry:hover .course-date-adopt-btn {
-    opacity: 1;
+.course-date-adopt-btn :deep(.v-icon) {
+    font-size: 15px;
+}
+
+.course-date-adopt-btn:hover {
+    box-shadow: 0 0 0 2px rgba(var(--v-theme-error), 0.28), 0 0 10px rgba(var(--v-theme-error), 0.42), 0 3px 8px rgba(15, 23, 42, 0.22) !important;
+    transform: translateY(-1px) scale(1.06);
 }
 
 .material-overview-attachment {

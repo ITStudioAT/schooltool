@@ -182,6 +182,76 @@
                                     </v-tooltip>
                                 </td>
                             </tr>
+                            <tr
+                                v-if="tableView === 'entries' && hasAssignedCurriculum"
+                                class="course-table-curriculum-row">
+                                <th scope="row" class="course-table-curriculum-label">
+                                    <div class="course-table-curriculum-label-content">
+                                        <v-icon color="deep-purple" size="18">mdi-book-education-outline</v-icon>
+                                        <span>Curriculum</span>
+                                    </div>
+                                </th>
+                                <td
+                                    v-for="courseDate in sortedCourseDates"
+                                    :key="`date-curriculum-${courseDate.id || courseDate.date}`"
+                                    class="course-table-curriculum-cell"
+                                    :class="[
+                                        { 'course-table-curriculum-cell--free': isFreeCourseDate(courseDate) },
+                                        courseDateColumnMarkingClass(courseDate),
+                                    ]"
+                                    role="button"
+                                    tabindex="0"
+                                    :aria-label="`${compactCourseDateTitle(courseDate)}: Curriculum öffnen`"
+                                    @click="openCurriculumDialog(courseDate)"
+                                    @keydown.enter.prevent="openCurriculumDialog(courseDate)"
+                                    @keydown.space.prevent="openCurriculumDialog(courseDate)">
+                                    <div
+                                        v-if="curriculumContentForCourseDate(courseDate).length"
+                                        class="course-table-curriculum-content">
+                                        <div
+                                            v-for="(content, contentIndex) in displayedCurriculumContentForCourseDate(courseDate)"
+                                            :key="content"
+                                            class="course-table-curriculum-content-item">
+                                            <span
+                                                v-for="(segment, segmentIndex) in curriculumContentSegments(content)"
+                                                :key="`${content}-${segmentIndex}`"
+                                                class="course-table-curriculum-content-segment"
+                                                :class="{
+                                                    'course-table-curriculum-content-segment--separator': segment.endsWithSeparator,
+                                                }">
+                                                {{ segment.text }}
+                                            </span>
+                                            <span
+                                                v-if="contentIndex === 2 && hasAdditionalCurriculumContent(courseDate)"
+                                                class="course-table-curriculum-content-more"
+                                                aria-label="Weitere Curriculum-Einträge">
+                                                …
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <span v-else class="course-table-curriculum-empty" aria-label="Kein Curriculum-Inhalt">
+                                        &mdash;
+                                    </span>
+                                    <v-tooltip
+                                        v-if="curriculumContentForCourseDate(courseDate).length"
+                                        activator="parent"
+                                        content-class="course-table-student-tooltip"
+                                        location="top"
+                                        :max-width="420"
+                                        :open-delay="250">
+                                        <div class="course-table-student-tooltip-name">
+                                            {{ compactCourseDateTitle(courseDate) }}
+                                        </div>
+                                        <div class="course-table-curriculum-tooltip-title">Curriculum</div>
+                                        <div
+                                            v-for="content in curriculumContentForCourseDate(courseDate)"
+                                            :key="`tooltip-${content}`"
+                                            class="course-table-curriculum-tooltip-item">
+                                            {{ content }}
+                                        </div>
+                                    </v-tooltip>
+                                </td>
+                            </tr>
                             <tr v-if="tableView === 'entries'" class="course-table-content-row">
                                 <th scope="row" class="course-table-content-label">
                                     <div class="course-table-content-label-content">
@@ -438,6 +508,93 @@
                 </div>
             </v-card-text>
         </v-card>
+
+        <v-dialog v-model="curriculumDialog.open" persistent scrollable max-width="720">
+            <v-card class="course-table-curriculum-dialog-card" data-testid="course-table-curriculum-dialog">
+                <v-card-title class="course-table-curriculum-dialog-title">
+                    <v-icon color="deep-purple" size="22">mdi-book-education-outline</v-icon>
+                    <span>{{ curriculumDialogTitle }}</span>
+                    <v-chip
+                        v-if="curriculumDialogCourseDateTitle"
+                        class="ml-auto"
+                        color="deep-purple"
+                        size="small"
+                        variant="tonal">
+                        {{ curriculumDialogCourseDateTitle }}
+                    </v-chip>
+                </v-card-title>
+                <v-divider />
+                <v-card-text class="course-table-curriculum-dialog-content pa-0">
+                    <div v-if="curriculumDialog.loading" class="course-table-curriculum-dialog-loading">
+                        <v-progress-circular color="deep-purple" indeterminate />
+                        <span>Curriculum wird geladen …</span>
+                    </div>
+                    <v-list
+                        v-else-if="curriculumDialogTopics.length"
+                        class="course-table-curriculum-dialog-list"
+                        density="compact">
+                        <template v-for="(topic, topicIndex) in curriculumDialogTopics" :key="topic.key">
+                            <v-divider v-if="topicIndex > 0" />
+                            <v-list-subheader :title="topic.title" color="deep-purple" />
+                            <v-list-item
+                                v-for="unit in topic.units"
+                                :key="unit.key"
+                                class="course-table-curriculum-dialog-unit"
+                                :class="{
+                                    'course-table-curriculum-dialog-unit--linked': isCurriculumUnitLinkedToDialogDate(topic, unit),
+                                }"
+                                :prepend-icon="unit.isExam ? 'mdi-clipboard-text-outline' : 'mdi-circle-small'"
+                                :title="unit.title">
+                                <template #append>
+                                    <v-btn
+                                        v-if="isCurriculumUnitLinkedToDialogDate(topic, unit)"
+                                        color="error"
+                                        density="compact"
+                                        prepend-icon="mdi-link-variant-off"
+                                        size="x-small"
+                                        variant="tonal"
+                                        :disabled="Boolean(curriculumUnitActionKey)"
+                                        :loading="isCurriculumUnitActionPending(topic, unit)"
+                                        @click.stop="unlinkCurriculumUnit(topic, unit)">
+                                        Lösen
+                                    </v-btn>
+                                    <v-btn
+                                        v-else
+                                        color="success"
+                                        density="compact"
+                                        prepend-icon="mdi-link-variant"
+                                        size="x-small"
+                                        variant="tonal"
+                                        :disabled="Boolean(curriculumUnitActionKey)"
+                                        :loading="isCurriculumUnitActionPending(topic, unit)"
+                                        @click.stop="linkCurriculumUnit(topic, unit)">
+                                        Verknüpfen
+                                    </v-btn>
+                                </template>
+                            </v-list-item>
+                            <div v-if="!topic.units.length" class="course-table-curriculum-dialog-empty-topic">
+                                Keine Einheiten
+                            </div>
+                        </template>
+                    </v-list>
+                    <div v-else class="course-table-curriculum-dialog-empty">
+                        Dieses Curriculum enthält keine Themen.
+                    </div>
+                </v-card-text>
+                <v-divider />
+                <v-card-actions class="course-table-curriculum-dialog-actions">
+                    <v-spacer />
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        prepend-icon="mdi-close"
+                        :disabled="Boolean(curriculumUnitActionKey)"
+                        @click="closeCurriculumDialog">
+                        Schließen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <v-dialog v-model="contentDialog.open" persistent max-width="720">
             <v-card data-testid="course-table-content-dialog">
@@ -1317,7 +1474,16 @@
                                             Für diesen Eintragstyp ist keine Bewertung vorgesehen.
                                         </div>
                                     </div>
-                                    <div class="d-flex justify-end ga-2 mt-3">
+                                    <div class="d-flex align-center flex-wrap ga-2 mt-3">
+                                        <v-btn
+                                            :data-testid="`course-table-cell-work-open-${entry.uid}`"
+                                            prepend-icon="mdi-arrow-right-circle-outline"
+                                            variant="tonal"
+                                            :disabled="Boolean(courseWorkEntrySavingUid)"
+                                            @click="openCourseWorkFromCellEntry(entry)">
+                                            Zur Arbeit
+                                        </v-btn>
+                                        <v-spacer />
                                         <v-btn
                                             variant="text"
                                             :disabled="Boolean(courseWorkEntrySavingUid)"
@@ -1537,6 +1703,7 @@
 </template>
 
 <script>
+import axios from 'axios'
 import { mapWritableState } from 'pinia'
 import { parseLocalDate } from '@/helpers/date'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
@@ -1546,6 +1713,7 @@ import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
+import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
 const courseContentAllowedTags = new Set([
@@ -1590,6 +1758,15 @@ export default {
             behaviourEntryStore: null,
             courseDateStore: null,
             courseStore: null,
+            curriculumDialog: {
+                courseDate: null,
+                curriculum: null,
+                loading: false,
+                open: false,
+            },
+            curriculumDialogRequestId: 0,
+            curriculumStore: null,
+            curriculumUnitActionKey: null,
             courseEntriesRequestPromise: null,
             courseTableDataCourseId: null,
             courseTableDataRequestCourseId: null,
@@ -1682,6 +1859,7 @@ export default {
         this.restoreTableView(this.view)
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
         this.courseStore = useCourseStore()
+        this.curriculumStore = useCurriculumStore()
         this.entryStore = useCourseStudentEntryStore()
         this.courseWorkStore = useCourseWorkStore()
     },
@@ -1709,6 +1887,7 @@ export default {
             this.scrollToInitialCourseDate()
         },
         selected_course(course) {
+            this.closeCurriculumDialog()
             if (course?.id && this.tableView === 'entries') {
                 this.loadCourseTableData(course.id)
             } else if (course?.id) {
@@ -1777,6 +1956,51 @@ export default {
                 return selectedSemester === 1
                     ? date < semesterTwoStartDate
                     : date >= semesterTwoStartDate
+            })
+        },
+        hasAssignedCurriculum() {
+            return this.assignedCurriculumId !== null
+        },
+        assignedCurriculumId() {
+            const curriculumId = Number(
+                this.selected_course?.teaching_curriculum_id
+                || this.selected_course?.teaching_curriculum?.id,
+            )
+
+            return Number.isFinite(curriculumId) && curriculumId > 0 ? curriculumId : null
+        },
+        curriculumDialogTitle() {
+            return this.curriculumDialog.curriculum?.title
+                || this.selected_course?.teaching_curriculum?.title
+                || 'Curriculum'
+        },
+        curriculumDialogCourseDateTitle() {
+            return this.curriculumDialog.courseDate
+                ? this.compactCourseDateTitle(this.curriculumDialog.courseDate)
+                : ''
+        },
+        curriculumDialogTopics() {
+            const topics = Array.isArray(this.curriculumDialog.curriculum?.topics)
+                ? this.curriculumDialog.curriculum.topics
+                : []
+
+            return topics.map((topic, topicIndex) => {
+                const topicMaterials = Array.isArray(topic?.materials) ? topic.materials : []
+
+                return {
+                    key: topic?.id || `topic-${topicIndex}`,
+                    title: String(topic?.title || '').trim() || `Thema ${topicIndex + 1}`,
+                    units: (Array.isArray(topic?.units) ? topic.units : []).map((unit, unitIndex) => ({
+                        isExam: Boolean(unit?.is_exam),
+                        key: unit?.id || `unit-${topicIndex}-${unitIndex}`,
+                        materials: [...topicMaterials, ...(Array.isArray(unit?.materials) ? unit.materials : [])]
+                            .filter((material, materialIndex, materials) => (
+                                material?.id
+                                && materials.findIndex((candidate) => Number(candidate?.id) === Number(material.id)) === materialIndex
+                            )),
+                        title: String(unit?.title || '').trim() || `Einheit ${unitIndex + 1}`,
+                    })),
+                }
             })
         },
         sortedSelectedStudents() {
@@ -2049,6 +2273,183 @@ export default {
     },
 
     methods: {
+        async openCurriculumDialog(courseDate) {
+            const curriculumId = this.assignedCurriculumId
+            if (!curriculumId || !this.curriculumStore?.show) return
+
+            const requestId = ++this.curriculumDialogRequestId
+            this.curriculumDialog = {
+                courseDate: courseDate || null,
+                curriculum: null,
+                loading: true,
+                open: true,
+            }
+
+            try {
+                const curriculum = await this.curriculumStore.show(curriculumId)
+                if (requestId !== this.curriculumDialogRequestId) return
+
+                this.curriculumDialog.curriculum = curriculum || null
+            } finally {
+                if (requestId === this.curriculumDialogRequestId) {
+                    this.curriculumDialog.loading = false
+                }
+            }
+        },
+        closeCurriculumDialog() {
+            if (this.curriculumUnitActionKey) return
+
+            this.curriculumDialogRequestId++
+            this.curriculumDialog = {
+                courseDate: null,
+                curriculum: null,
+                loading: false,
+                open: false,
+            }
+        },
+        curriculumUnitTitle(topic, unit) {
+            return [topic?.title, unit?.title]
+                .map((title) => String(title || '').trim())
+                .filter(Boolean)
+                .join(': ')
+        },
+        curriculumDialogUnitActionKey(topic, unit) {
+            return `${topic?.key || topic?.title || 'topic'}:${unit?.key || unit?.title || 'unit'}`
+        },
+        isCurriculumUnitActionPending(topic, unit) {
+            return this.curriculumUnitActionKey === this.curriculumDialogUnitActionKey(topic, unit)
+        },
+        curriculumUnitAdoptedMaterials(topic, unit) {
+            const adoptedMaterials = Array.isArray(this.curriculumDialog.courseDate?.adopted_materials)
+                ? this.curriculumDialog.courseDate.adopted_materials
+                : []
+            const curriculumUnitTitle = this.curriculumUnitTitle(topic, unit)
+
+            return adoptedMaterials.filter(
+                (material) => String(material?.title || '').trim() === curriculumUnitTitle,
+            )
+        },
+        applyCurriculumDialogCourseDate(updatedCourseDate) {
+            if (!updatedCourseDate?.id) return
+
+            this.applyUpdatedCourseDate(updatedCourseDate)
+            this.curriculumDialog.courseDate = (Array.isArray(this.selected_course?.course_dates)
+                ? this.selected_course.course_dates
+                : [])
+                .find((courseDate) => Number(courseDate?.id) === Number(updatedCourseDate.id))
+                || updatedCourseDate
+        },
+        async linkCurriculumUnit(topic, unit) {
+            const courseDate = this.curriculumDialog.courseDate
+            const curriculumUnitTitle = this.curriculumUnitTitle(topic, unit)
+            if (
+                this.curriculumUnitActionKey
+                || !courseDate?.id
+                || !curriculumUnitTitle
+                || this.isCurriculumUnitLinkedToDialogDate(topic, unit)
+            ) {
+                return
+            }
+
+            this.curriculumUnitActionKey = this.curriculumDialogUnitActionKey(topic, unit)
+            try {
+                const materialCardIds = [...new Set(
+                    (Array.isArray(unit?.materials) ? unit.materials : [])
+                        .map((material) => Number(material?.id))
+                        .filter((materialId) => Number.isFinite(materialId) && materialId > 0),
+                )]
+                const endpoint = `/api/admin/teaching/course_dates/${courseDate.id}/adopt-curriculum-content`
+                let response = await axios.post(endpoint, {
+                    content: curriculumUnitTitle,
+                    material_card_ids: materialCardIds,
+                })
+
+                if (materialCardIds.length && !response.data?.adopted_materials?.length) {
+                    response = await axios.post(endpoint, {
+                        content: curriculumUnitTitle,
+                        material_card_ids: [],
+                    })
+                }
+
+                this.applyCurriculumDialogCourseDate(response.data?.data)
+            } catch {
+                // handled by the global axios interceptor
+            } finally {
+                this.curriculumUnitActionKey = null
+            }
+        },
+        async unlinkCurriculumUnit(topic, unit) {
+            const courseDate = this.curriculumDialog.courseDate
+            const adoptedMaterials = this.curriculumUnitAdoptedMaterials(topic, unit)
+            if (this.curriculumUnitActionKey || !courseDate?.id || !adoptedMaterials.length) return
+
+            this.curriculumUnitActionKey = this.curriculumDialogUnitActionKey(topic, unit)
+            try {
+                for (const adoptedMaterial of adoptedMaterials) {
+                    if (adoptedMaterial?.id) {
+                        await axios.delete(`/api/admin/teaching/course_date_materials/${adoptedMaterial.id}`)
+                    }
+                }
+
+                const courseId = this.selected_course?.id
+                if (courseId && this.courseDateStore?.index) {
+                    await this.courseDateStore.index(courseId)
+                }
+
+                const refreshedCourseDate = (Array.isArray(this.courseDateStore?.courseDates)
+                    ? this.courseDateStore.courseDates
+                    : [])
+                    .find((candidate) => Number(candidate?.id) === Number(courseDate.id))
+                const updatedCourseDate = refreshedCourseDate || {
+                    ...courseDate,
+                    adopted_materials: (Array.isArray(courseDate.adopted_materials) ? courseDate.adopted_materials : [])
+                        .filter((material) => !adoptedMaterials.some(
+                            (removedMaterial) => Number(removedMaterial?.id) === Number(material?.id),
+                        )),
+                }
+
+                this.applyCurriculumDialogCourseDate(updatedCourseDate)
+            } catch {
+                // handled by the global axios interceptor
+            } finally {
+                this.curriculumUnitActionKey = null
+            }
+        },
+        curriculumContentForCourseDate(courseDate) {
+            const adoptedMaterials = Array.isArray(courseDate?.adopted_materials)
+                ? courseDate.adopted_materials
+                : []
+
+            return [...new Set(
+                adoptedMaterials
+                    .map((material) => {
+                        const curriculumContent = String(material?.title || '').trim()
+                        const topicSeparatorPosition = curriculumContent.indexOf(': ')
+
+                        return topicSeparatorPosition === -1
+                            ? curriculumContent
+                            : curriculumContent.slice(topicSeparatorPosition + 2).trim()
+                    })
+                    .filter(Boolean),
+            )]
+        },
+        displayedCurriculumContentForCourseDate(courseDate) {
+            return this.curriculumContentForCourseDate(courseDate).slice(0, 3)
+        },
+        hasAdditionalCurriculumContent(courseDate) {
+            return this.curriculumContentForCourseDate(courseDate).length > 3
+        },
+        isCurriculumUnitLinkedToDialogDate(topic, unit) {
+            return this.curriculumUnitAdoptedMaterials(topic, unit).length > 0
+        },
+        curriculumContentSegments(content) {
+            const segments = String(content || '').match(/[^\s/]+\/?/gu) || []
+
+            return segments.map((segment) => ({
+                endsWithSeparator: segment.endsWith('/'),
+                text: segment,
+            }))
+        },
         compactCourseDateTitle(courseDate) {
             return [this.courseDateWeekday(courseDate), this.courseDateDateLabel(courseDate)].filter(Boolean).join(', ') || 'Ohne Datum'
         },
@@ -2104,6 +2505,17 @@ export default {
                 open: false,
                 student: null,
             }
+        },
+        openCourseWorkFromCellEntry(entry) {
+            if (this.courseWorkEntrySavingUid) return
+
+            const work = this.courseWorkForCellEntry(entry)
+            const courseDate = this.entryDialog.courseDate
+            if (!work?.id || !courseDate) return
+
+            this.closeEntryDialog()
+            this.openWorkDialog(courseDate)
+            this.startEditingDateWork(work)
         },
         async loadCourseEntries(courseId = this.selected_course?.id) {
             if (!courseId || !this.entryStore || !this.behaviourEntryStore) return
@@ -2288,7 +2700,7 @@ export default {
             }
         },
         courseDateColumnMarkingColor(courseDate) {
-            if (this.tableView !== 'entries' || !this.uses_entry_areas_for_grading_schema) return null
+            if (!this.uses_entry_areas_for_grading_schema) return null
 
             const entryDefinitions = this.selected_course?.teaching_entry_area?.entry_definitions
             if (!Array.isArray(entryDefinitions)) return null
@@ -4217,6 +4629,8 @@ export default {
 }
 
 .course-table {
+    --course-table-free-cell-background: #e8f5e9;
+
     border-collapse: separate;
     border-spacing: 0;
     min-width: 760px;
@@ -4339,7 +4753,7 @@ export default {
 }
 
 .course-table-work-cell--free {
-    background: linear-gradient(180deg, #ecfdf3 0%, #dcfce7 100%);
+    background: var(--course-table-free-cell-background);
 }
 
 .course-table-work-cell {
@@ -4363,6 +4777,195 @@ export default {
 .course-table-content-cell {
     background: #f8fafc;
     height: 44px;
+}
+
+.course-table-curriculum-label,
+.course-table-curriculum-cell {
+    background: #faf5ff;
+    border-bottom: 1px solid rgba(126, 34, 206, 0.22) !important;
+    height: 52px;
+}
+
+.course-table-curriculum-label {
+    color: #6b21a8;
+    font-size: 0.78rem;
+    font-weight: 850;
+    left: 0;
+    position: sticky;
+    z-index: 2;
+}
+
+.course-table-curriculum-label-content {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+}
+
+.course-table-curriculum-cell {
+    color: #581c87;
+    cursor: pointer;
+    outline: none;
+    text-align: left;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.course-table-curriculum-cell:hover,
+.course-table-curriculum-cell:focus-visible {
+    background: #ede9fe;
+    box-shadow: inset 0 0 0 2px #8b5cf6;
+}
+
+.course-table-curriculum-cell--free {
+    background: var(--course-table-free-cell-background);
+}
+
+.course-table-curriculum-content {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-width: 74px;
+    min-width: 0;
+}
+
+.course-table-curriculum-content-item {
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    display: -webkit-box;
+    font-size: 0.68rem;
+    font-weight: 650;
+    line-height: 13px;
+    max-height: 39px;
+    overflow: hidden;
+}
+
+.course-table-curriculum-content-segment {
+    display: inline-block;
+    margin-right: 0.25em;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    vertical-align: bottom;
+    white-space: normal;
+}
+
+.course-table-curriculum-content-segment--separator,
+.course-table-curriculum-content-segment:last-child {
+    margin-right: 0;
+}
+
+.course-table-curriculum-content-more {
+    white-space: nowrap;
+}
+
+.course-table-curriculum-empty {
+    color: #a78bfa;
+    display: block;
+    text-align: center;
+}
+
+.course-table-curriculum-tooltip-title {
+    color: #ddd6fe;
+    font-size: 0.72rem;
+    font-weight: 800;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+}
+
+.course-table-curriculum-tooltip-item {
+    line-height: 1.35;
+    padding: 3px 0;
+}
+
+.course-table-curriculum-tooltip-item + .course-table-curriculum-tooltip-item {
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    margin-top: 3px;
+    padding-top: 6px;
+}
+
+.course-table-curriculum-dialog-card {
+    max-height: min(82vh, 760px);
+}
+
+.course-table-curriculum-dialog-title {
+    align-items: center;
+    display: flex;
+    gap: 10px;
+    white-space: normal;
+}
+
+.course-table-curriculum-dialog-content {
+    overflow-y: auto;
+}
+
+.course-table-curriculum-dialog-loading,
+.course-table-curriculum-dialog-empty {
+    align-items: center;
+    color: #64748b;
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    min-height: 180px;
+    padding: 24px;
+    text-align: center;
+}
+
+.course-table-curriculum-dialog-empty-topic {
+    color: #64748b;
+    font-size: 0.8rem;
+    font-style: italic;
+    padding: 0 24px 14px 56px;
+}
+
+:deep(.course-table-curriculum-dialog-list .v-list-subheader) {
+    min-height: 30px;
+    padding-inline: 16px;
+}
+
+:deep(.course-table-curriculum-dialog-unit) {
+    min-height: 32px !important;
+    padding-bottom: 1px;
+    padding-top: 1px;
+}
+
+:deep(.course-table-curriculum-dialog-unit .v-list-item__prepend > .v-icon) {
+    margin-inline-end: 10px;
+}
+
+:deep(.course-table-curriculum-dialog-unit .v-list-item-title) {
+    font-size: 0.84rem;
+    line-height: 1.2;
+}
+
+:deep(.course-table-curriculum-dialog-unit .v-btn) {
+    min-height: 30px;
+}
+
+:deep(.course-table-curriculum-dialog-unit--linked) {
+    background: rgba(34, 197, 94, 0.12);
+    box-shadow: inset 3px 0 0 #22c55e;
+    color: #166534;
+    font-weight: 750;
+}
+
+.course-table-curriculum-dialog-actions .v-btn {
+    min-height: 44px;
+}
+
+@media (max-width: 600px) {
+    .course-table-curriculum-dialog-card {
+        max-height: 88vh;
+    }
+
+    .course-table-curriculum-dialog-actions {
+        padding: 12px 16px;
+    }
+
+    .course-table-curriculum-dialog-actions .v-spacer {
+        display: none;
+    }
+
+    .course-table-curriculum-dialog-actions .v-btn {
+        width: 100%;
+    }
 }
 
 .course-table-content-label {
@@ -4394,7 +4997,7 @@ export default {
 }
 
 .course-table-content-cell--free {
-    background: #ecfdf3;
+    background: var(--course-table-free-cell-background);
 }
 
 .course-table-content-cell--selected {
@@ -5133,7 +5736,7 @@ export default {
 .course-table thead th.course-table-date-col--free,
 .course-table-row td.course-table-entry-cell--free,
 .course-table-row:nth-child(even) td.course-table-entry-cell--free {
-    background: #e8f5e9;
+    background: var(--course-table-free-cell-background);
 }
 
 .course-table-entry-cell--free-reason {

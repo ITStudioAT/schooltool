@@ -102,7 +102,7 @@
                                 <div class="curricula-print__unit-title">
                                     <v-icon v-if="unit.is_exam" size="14" color="error" class="mr-1">mdi-clipboard-check-outline</v-icon>
                                     {{ unit.title }}
-                                    <v-chip v-if="unit.is_exam" size="x-small" color="error" variant="tonal" class="ml-2">Prüfung</v-chip>
+                                    <v-chip v-if="unit.is_exam" size="x-small" color="error" variant="tonal" class="ml-2">Leistungsfeststellung</v-chip>
                                 </div>
                             </div>
                         </div>

@@ -3,15 +3,27 @@
         <div class="curriculum-detail__header mb-4">
             <div class="curriculum-detail__header-actions">
                 <v-btn
-                    variant="tonal"
-                    color="secondary"
-                    size="small"
-                    rounded="xl"
+                    variant="flat"
+                    color="primary"
+                    size="default"
+                    rounded="lg"
                     prepend-icon="mdi-arrow-left"
-                    class="text-none"
+                    class="text-none curriculum-detail__back-btn"
                     :disabled="isPageActionLocked"
-                    @click="$emit('back')">
+                    @click="leaveCurriculum">
                     Zurück zur Übersicht
+                </v-btn>
+                <v-btn
+                    size="small"
+                    variant="flat"
+                    color="error"
+                    rounded="xl"
+                    prepend-icon="mdi-printer-outline"
+                    class="text-none curriculum-detail__print-btn"
+                    :loading="isPrintingCurriculum"
+                    :disabled="isPrintingCurriculum || isExportingCurriculum"
+                    @click="printCurriculumPdf">
+                    PDF drucken
                 </v-btn>
                 <v-btn
                     size="small"
@@ -21,7 +33,7 @@
                     prepend-icon="mdi-download-outline"
                     class="text-none"
                     :loading="isExportingCurriculum"
-                    :disabled="isExportingCurriculum"
+                    :disabled="isExportingCurriculum || isPrintingCurriculum"
                     @click="exportCurriculum">
                     Curriculum exportieren
                 </v-btn>
@@ -39,7 +51,11 @@
             </div>
         </div>
 
-        <div class="curriculum-detail__body">
+        <div
+            ref="curriculumBody"
+            class="curriculum-detail__body"
+            :class="{ 'curriculum-detail__body--resizing': isCurriculumCardResizing }"
+            :style="curriculumBodyStyle">
             <v-sheet rounded="xl" class="curriculum-detail__side-card curriculum-detail__side-card--content">
                 <div class="curriculum-detail__side-card-inner">
                     <div class="curriculum-detail__side-card-header">
@@ -54,17 +70,41 @@
                                     Themen und Einheiten bearbeiten, ergänzen oder neu anordnen.
                                 </div>
                             </div>
-                            <v-btn
-                                variant="flat"
-                                color="primary"
-                                size="small"
-                                rounded="lg"
-                                prepend-icon="mdi-plus"
-                                class="text-none curriculum-detail__content-add-btn"
-                                :disabled="isPageActionLocked"
-                                @click="openTopicForm()">
-                                Thema
-                            </v-btn>
+                            <div class="curriculum-detail__content-actions">
+                                <v-btn
+                                    variant="tonal"
+                                    color="primary"
+                                    size="small"
+                                    rounded="lg"
+                                    icon="mdi-unfold-more-horizontal"
+                                    class="curriculum-detail__topic-visibility-btn curriculum-detail__topic-expand-all-btn"
+                                    aria-label="Alle Themen ausklappen"
+                                    title="Alle Themen ausklappen"
+                                    :disabled="!hasCollapsedTopics"
+                                    @click="expandAllTopics" />
+                                <v-btn
+                                    variant="tonal"
+                                    color="primary"
+                                    size="small"
+                                    rounded="lg"
+                                    icon="mdi-unfold-less-horizontal"
+                                    class="curriculum-detail__topic-visibility-btn curriculum-detail__topic-collapse-all-btn"
+                                    aria-label="Alle Themen einklappen"
+                                    title="Alle Themen einklappen"
+                                    :disabled="!hasExpandedTopics"
+                                    @click="collapseAllTopics" />
+                                <v-btn
+                                    variant="flat"
+                                    color="primary"
+                                    size="small"
+                                    rounded="lg"
+                                    prepend-icon="mdi-plus"
+                                    class="text-none curriculum-detail__content-add-btn"
+                                    :disabled="isPageActionLocked"
+                                    @click="openTopicForm()">
+                                    Thema
+                                </v-btn>
+                            </div>
                         </div>
 
                         <div class="curriculum-detail__preview">
@@ -187,7 +227,7 @@
                                                             tile
                                                             prepend-icon="mdi-clipboard-text-outline"
                                                             class="curriculum-detail__unit-exam-chip">
-                                                            Prüfung
+                                                            Leistungsfeststellung
                                                         </v-chip>
                                                     </div>
                                                     <div v-if="unit.materials.length" class="curriculum-detail__attached-materials curriculum-detail__attached-materials--unit">
@@ -388,7 +428,7 @@
                                 class="mb-3" />
                             <v-checkbox
                                 v-model="unitForm.is_exam"
-                                label="Prüfung"
+                                label="Leistungsfeststellung"
                                 color="warning"
                                 density="comfortable"
                                 hide-details
@@ -972,6 +1012,30 @@
                 </v-card>
             </v-dialog>
 
+            <div
+                class="curriculum-detail__card-splitter"
+                role="separator"
+                aria-label="Breite von Inhalte und Lehrpläne ändern"
+                aria-orientation="vertical"
+                aria-valuemin="20"
+                aria-valuemax="80"
+                :aria-valuenow="Math.round(curriculumContentWidthPercent)"
+                tabindex="0"
+                title="Ziehen oder Pfeiltasten verwenden · Doppelklick zum Zurücksetzen"
+                @pointerdown="startCurriculumCardResize"
+                @pointermove="resizeCurriculumCards"
+                @pointerup="stopCurriculumCardResize"
+                @pointercancel="stopCurriculumCardResize"
+                @keydown.left.prevent="adjustCurriculumCardWidth(-2)"
+                @keydown.right.prevent="adjustCurriculumCardWidth(2)"
+                @dblclick="resetCurriculumCardWidth">
+                <span class="curriculum-detail__card-splitter-line" aria-hidden="true" />
+                <span class="curriculum-detail__card-splitter-handle" aria-hidden="true">
+                    <v-icon icon="mdi-chevron-left" size="16" />
+                    <v-icon icon="mdi-chevron-right" size="16" />
+                </span>
+            </div>
+
             <v-sheet rounded="xl" class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable">
                 <div class="curriculum-detail__side-card-inner">
                     <div class="curriculum-detail__side-card-header">
@@ -1041,14 +1105,24 @@
                                     size="x-small"
                                     color="secondary"
                                     :disabled="isPageActionLocked"
-                                    @click="previewDoc = null" />
+                                    @click="setCurriculumDocumentPreview(null)" />
                             </div>
                             <div class="lehrplaene__preview-body">
+                                <CurriculumPdfPreview
+                                    v-if="previewIsPdf && previewUrl"
+                                    ref="curriculumPdfPreview"
+                                    :key="`curriculum-pdf-${previewDoc.id}`"
+                                    :document-id="previewDoc.id"
+                                    :src="previewUrl"
+                                    :initial-position="curriculumDocumentPreviewPosition"
+                                    @position-change="persistCurriculumDocumentPreviewPosition" />
                                 <iframe
-                                    v-if="previewUsesIframe && previewUrl"
+                                    v-else-if="previewUsesIframe && previewUrl"
+                                    ref="curriculumDocumentIframe"
                                     :src="previewUrl"
                                     :title="`Vorschau: ${previewDoc.selected_attachment_name || previewDoc.name}`"
-                                    class="lehrplaene__preview-iframe" />
+                                    class="lehrplaene__preview-iframe"
+                                    @load="restoreCurriculumDocumentIframePosition" />
                                 <img
                                     v-else-if="previewIsImage && previewUrl"
                                     :src="previewUrl"
@@ -1290,25 +1364,33 @@ import { mapState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import FileUpload from '@/pages/components/FileUpload.vue'
+import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
 
 const DAY_NAMES_SHORT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+const CURRICULUM_CARD_WIDTH_STORAGE_PREFIX = 'schooltool.admin.teaching.curriculum-card-width.user'
+const CURRICULUM_DOCUMENT_PREVIEW_STORAGE_PREFIX = 'schooltool.admin.teaching.curriculum-document-preview.user'
+const CURRICULUM_DOCUMENT_PREVIEW_POSITION_STORAGE_PREFIX = 'schooltool.admin.teaching.curriculum-document-position.user'
 const MONTH_NAMES = [
     'Jänner', 'Februar', 'März', 'April', 'Mai', 'Juni',
     'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
 ]
 export default {
     name: 'CurriculumDetail',
-    components: { FileUpload },
+    components: { CurriculumPdfPreview, FileUpload },
     props: {
         curriculum: { type: Object, required: true },
     },
     emits: ['back', 'updated'],
 
     mounted() {
+        this.restoreCurriculumCardWidth()
         this.loadDocuments()
     },
 
     beforeUnmount() {
+        this.persistCurriculumDocumentIframePosition()
+        this.detachCurriculumDocumentIframeScrollListener()
+
         if (this._materialSearchTimer) {
             clearTimeout(this._materialSearchTimer)
         }
@@ -1335,6 +1417,7 @@ export default {
             selectedYear: initYear,
             weekDisplayMode: 'days',
             isExportingCurriculum: false,
+            isPrintingCurriculum: false,
             collapseFullMonths: true,
             topicCollapseStates: {},
             manualMonthCollapseStates: {},
@@ -1381,6 +1464,7 @@ export default {
             _materialSearchTimer: null,
             showUploadOptions: false,
             previewDoc: null,
+            curriculumDocumentPreviewPosition: null,
             topicSaving: false,
             topicFormError: null,
             showTopicForm: false,
@@ -1397,6 +1481,9 @@ export default {
             documentDeleteDialogOpen: false,
             documentDeleteLoading: false,
             documentToDelete: null,
+            curriculumContentWidthPercent: 64,
+            curriculumCardResizePointerId: null,
+            isCurriculumCardResizing: false,
             topicForm: {
                 id: null,
                 title: '',
@@ -1413,11 +1500,47 @@ export default {
         'curriculum.id'() {
             this.topicCollapseStates = {}
             this.manualMonthCollapseStates = {}
+            this.previewDoc = null
+            this.curriculumDocumentPreviewPosition = null
+            this.loadDocuments()
+        },
+        'config.user.id'() {
+            this.restoreCurriculumCardWidth()
+            this.restoreCurriculumDocumentPreview()
         },
     },
 
     computed: {
         ...mapState(useAdminStore, ['config']),
+
+        curriculumBodyStyle() {
+            const contentWidth = Math.min(80, Math.max(20, Number(this.curriculumContentWidthPercent) || 64))
+
+            return {
+                gridTemplateColumns: `${contentWidth}fr 36px ${100 - contentWidth}fr`,
+            }
+        },
+
+        curriculumCardWidthStorageKey() {
+            const userId = Number(this.config?.user?.id)
+
+            return Number.isInteger(userId) && userId > 0
+                ? `${CURRICULUM_CARD_WIDTH_STORAGE_PREFIX}.${userId}`
+                : null
+        },
+
+        curriculumDocumentPreviewStorageKey() {
+            const userId = Number(this.config?.user?.id)
+            const curriculumId = String(this.curriculum?.id ?? '').trim()
+
+            return Number.isInteger(userId) && userId > 0 && curriculumId
+                ? `${CURRICULUM_DOCUMENT_PREVIEW_STORAGE_PREFIX}.${userId}.curriculum.${curriculumId}`
+                : null
+        },
+
+        curriculumDocumentPreviewPositionStorageKey() {
+            return this.curriculumDocumentPreviewPositionStorageKeyForDocument(this.previewDoc?.id)
+        },
 
         hasMaterialsAccess() {
             const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
@@ -1455,6 +1578,14 @@ export default {
 
         curriculumUnitCount() {
             return this.curriculumTopics.reduce((total, topic) => total + topic.units.length, 0)
+        },
+
+        hasCollapsedTopics() {
+            return this.curriculumTopics.some((topic) => topic.units.length && this.isTopicCollapsed(topic.id))
+        },
+
+        hasExpandedTopics() {
+            return this.curriculumTopics.some((topic) => topic.units.length && !this.isTopicCollapsed(topic.id))
         },
 
         curriculumScopeLabel() {
@@ -1769,6 +1900,269 @@ export default {
     },
 
     methods: {
+        leaveCurriculum() {
+            this.persistCurriculumDocumentIframePosition()
+            this.$refs.curriculumPdfPreview?.emitCurrentPosition?.()
+            this.$emit('back')
+        },
+        restoreCurriculumDocumentPreview() {
+            this.previewDoc = null
+            this.curriculumDocumentPreviewPosition = null
+
+            if (!this.curriculumDocumentPreviewStorageKey) return
+
+            try {
+                const savedDocumentId = window.localStorage.getItem(this.curriculumDocumentPreviewStorageKey)
+                if (!savedDocumentId) return
+
+                const savedDocument = this.documents.find((document) => String(document?.id) === savedDocumentId)
+                const isPreviewableUpload = savedDocument?.source_type === 'upload'
+                const isPreviewableMaterial = savedDocument?.source_type === 'material'
+                    && savedDocument.material_card_attachment_id
+                    && savedDocument.preview_url
+
+                if (isPreviewableUpload || isPreviewableMaterial) {
+                    this.previewDoc = savedDocument
+                    this.restoreCurriculumDocumentPreviewPosition()
+                    return
+                }
+
+                window.localStorage.removeItem(this.curriculumDocumentPreviewStorageKey)
+            } catch {
+                // Keep the preview closed when browser storage is unavailable.
+            }
+        },
+        setCurriculumDocumentPreview(document) {
+            this.persistCurriculumDocumentIframePosition()
+            this.detachCurriculumDocumentIframeScrollListener()
+            this.previewDoc = document || null
+            this.restoreCurriculumDocumentPreviewPosition()
+
+            if (!this.curriculumDocumentPreviewStorageKey) return
+
+            try {
+                if (this.previewDoc?.id !== undefined && this.previewDoc?.id !== null) {
+                    window.localStorage.setItem(this.curriculumDocumentPreviewStorageKey, String(this.previewDoc.id))
+                } else {
+                    window.localStorage.removeItem(this.curriculumDocumentPreviewStorageKey)
+                }
+            } catch {
+                // The preview remains usable when browser storage is unavailable.
+            }
+        },
+        curriculumDocumentPreviewPositionStorageKeyForDocument(documentId) {
+            const userId = Number(this.config?.user?.id)
+            const curriculumId = String(this.curriculum?.id ?? '').trim()
+            const normalizedDocumentId = String(documentId ?? '').trim()
+
+            return Number.isInteger(userId) && userId > 0 && curriculumId && normalizedDocumentId
+                ? `${CURRICULUM_DOCUMENT_PREVIEW_POSITION_STORAGE_PREFIX}.${userId}.curriculum.${curriculumId}.document.${normalizedDocumentId}`
+                : null
+        },
+        normalizeCurriculumDocumentPreviewPosition(position) {
+            const scrollRatio = Number(position?.scrollRatio)
+            if (Number.isFinite(scrollRatio)) {
+                return {
+                    scrollRatio: Math.min(1, Math.max(0, scrollRatio)),
+                }
+            }
+
+            const page = Number.parseInt(position?.page, 10)
+            const offset = Number(position?.offset)
+
+            if (!Number.isInteger(page) || page < 1) return null
+
+            return {
+                offset: Number.isFinite(offset) ? Math.min(1, Math.max(0, offset)) : 0,
+                page,
+            }
+        },
+        curriculumDocumentIframeScrollMetrics() {
+            const iframeWindow = this.$refs.curriculumDocumentIframe?.contentWindow
+            if (!iframeWindow) return null
+
+            try {
+                const iframeDocument = iframeWindow.document
+                const documentElement = iframeDocument.documentElement
+                const body = iframeDocument.body
+                const scrollTop = Number(iframeWindow.scrollY ?? documentElement?.scrollTop ?? body?.scrollTop ?? 0)
+                const scrollHeight = Math.max(
+                    Number(documentElement?.scrollHeight || 0),
+                    Number(body?.scrollHeight || 0),
+                )
+                const viewportHeight = Number(iframeWindow.innerHeight || documentElement?.clientHeight || 0)
+
+                return {
+                    iframeWindow,
+                    maximumScrollTop: Math.max(scrollHeight - viewportHeight, 0),
+                    scrollTop: Number.isFinite(scrollTop) ? Math.max(scrollTop, 0) : 0,
+                }
+            } catch {
+                return null
+            }
+        },
+        currentCurriculumDocumentIframePosition() {
+            const metrics = this.curriculumDocumentIframeScrollMetrics()
+            if (!metrics || metrics.maximumScrollTop <= 0) return null
+
+            return {
+                scrollRatio: Math.min(1, Math.max(0, metrics.scrollTop / metrics.maximumScrollTop)),
+            }
+        },
+        persistCurriculumDocumentIframePosition() {
+            const position = this.currentCurriculumDocumentIframePosition()
+            if (!position || !this.previewDoc?.id) return
+
+            this.persistCurriculumDocumentPreviewPosition(position, this.previewDoc.id)
+        },
+        restoreCurriculumDocumentIframePosition() {
+            this.detachCurriculumDocumentIframeScrollListener()
+
+            const metrics = this.curriculumDocumentIframeScrollMetrics()
+            if (!metrics) return
+
+            const position = this.normalizeCurriculumDocumentPreviewPosition(this.curriculumDocumentPreviewPosition)
+            if (Number.isFinite(position?.scrollRatio) && metrics.maximumScrollTop > 0) {
+                metrics.iframeWindow.scrollTo(0, metrics.maximumScrollTop * position.scrollRatio)
+            }
+
+            metrics.iframeWindow.addEventListener('scroll', this.handleCurriculumDocumentIframeScroll, { passive: true })
+        },
+        handleCurriculumDocumentIframeScroll() {
+            this.persistCurriculumDocumentIframePosition()
+        },
+        detachCurriculumDocumentIframeScrollListener() {
+            const iframeWindow = this.$refs.curriculumDocumentIframe?.contentWindow
+            if (!iframeWindow) return
+
+            iframeWindow.removeEventListener('scroll', this.handleCurriculumDocumentIframeScroll)
+        },
+        restoreCurriculumDocumentPreviewPosition() {
+            this.curriculumDocumentPreviewPosition = null
+
+            if (!this.curriculumDocumentPreviewPositionStorageKey) return
+
+            try {
+                const savedPosition = JSON.parse(
+                    window.localStorage.getItem(this.curriculumDocumentPreviewPositionStorageKey) || 'null',
+                )
+                this.curriculumDocumentPreviewPosition = this.normalizeCurriculumDocumentPreviewPosition(savedPosition)
+            } catch {
+                this.curriculumDocumentPreviewPosition = null
+            }
+        },
+        persistCurriculumDocumentPreviewPosition(position, documentId = this.previewDoc?.id) {
+            const normalizedPosition = this.normalizeCurriculumDocumentPreviewPosition(position)
+            const storageKey = this.curriculumDocumentPreviewPositionStorageKeyForDocument(documentId)
+            if (!normalizedPosition || !storageKey) return
+
+            try {
+                window.localStorage.setItem(
+                    storageKey,
+                    JSON.stringify(normalizedPosition),
+                )
+            } catch {
+                // The current PDF position remains usable when browser storage is unavailable.
+            }
+        },
+        clearCurriculumDocumentPreviewPosition(documentId) {
+            const storageKey = this.curriculumDocumentPreviewPositionStorageKeyForDocument(documentId)
+            if (!storageKey) return
+
+            try {
+                window.localStorage.removeItem(storageKey)
+            } catch {
+                // Removing a document still works when browser storage is unavailable.
+            }
+
+            if (String(this.previewDoc?.id ?? '') === String(documentId ?? '')) {
+                this.curriculumDocumentPreviewPosition = null
+            }
+        },
+        restoreCurriculumCardWidth() {
+            this.curriculumContentWidthPercent = 64
+
+            if (!this.curriculumCardWidthStorageKey) return
+
+            try {
+                const savedWidth = Number(window.localStorage.getItem(this.curriculumCardWidthStorageKey))
+
+                if (Number.isFinite(savedWidth) && savedWidth >= 20 && savedWidth <= 80) {
+                    this.curriculumContentWidthPercent = savedWidth
+                }
+            } catch {
+                // Keep the default width when browser storage is unavailable.
+            }
+        },
+        persistCurriculumCardWidth() {
+            if (!this.curriculumCardWidthStorageKey) return
+
+            try {
+                window.localStorage.setItem(
+                    this.curriculumCardWidthStorageKey,
+                    String(Math.round(this.curriculumContentWidthPercent * 100) / 100),
+                )
+            } catch {
+                // The current layout remains usable when browser storage is unavailable.
+            }
+        },
+        curriculumCardResizeBounds(containerWidth) {
+            const availableWidth = Math.max(Number(containerWidth) - 52, 1)
+            const minimumContentWidth = Math.min(320, availableWidth / 2)
+            const minimumDocumentWidth = Math.min(280, availableWidth / 2)
+
+            return {
+                availableWidth,
+                maximumPercent: Math.max(50, 100 - ((minimumDocumentWidth / availableWidth) * 100)),
+                minimumPercent: Math.min(50, (minimumContentWidth / availableWidth) * 100),
+            }
+        },
+        startCurriculumCardResize(event) {
+            if (event.pointerType === 'mouse' && event.button !== 0) return
+
+            this.curriculumCardResizePointerId = event.pointerId
+            this.isCurriculumCardResizing = true
+            event.currentTarget?.setPointerCapture?.(event.pointerId)
+            this.resizeCurriculumCards(event)
+        },
+        resizeCurriculumCards(event) {
+            if (!this.isCurriculumCardResizing || event.pointerId !== this.curriculumCardResizePointerId) return
+
+            const curriculumBody = this.$refs.curriculumBody
+            if (!curriculumBody) return
+
+            const bounds = curriculumBody.getBoundingClientRect()
+            const resizeBounds = this.curriculumCardResizeBounds(bounds.width)
+            const contentWidth = event.clientX - bounds.left - 26
+            const requestedPercent = (contentWidth / resizeBounds.availableWidth) * 100
+
+            this.curriculumContentWidthPercent = Math.min(
+                resizeBounds.maximumPercent,
+                Math.max(resizeBounds.minimumPercent, requestedPercent),
+            )
+        },
+        stopCurriculumCardResize(event) {
+            if (event.pointerId !== this.curriculumCardResizePointerId) return
+
+            event.currentTarget?.releasePointerCapture?.(event.pointerId)
+            this.curriculumCardResizePointerId = null
+            this.isCurriculumCardResizing = false
+            this.persistCurriculumCardWidth()
+        },
+        adjustCurriculumCardWidth(change) {
+            const curriculumBody = this.$refs.curriculumBody
+            const resizeBounds = this.curriculumCardResizeBounds(curriculumBody?.getBoundingClientRect?.().width || 1200)
+
+            this.curriculumContentWidthPercent = Math.min(
+                resizeBounds.maximumPercent,
+                Math.max(resizeBounds.minimumPercent, this.curriculumContentWidthPercent + change),
+            )
+            this.persistCurriculumCardWidth()
+        },
+        resetCurriculumCardWidth() {
+            this.curriculumContentWidthPercent = 64
+            this.persistCurriculumCardWidth()
+        },
         newTopicForm(topic = null) {
             return {
                 id: topic?.id || null,
@@ -4080,6 +4474,30 @@ export default {
             this.topicCollapseStates = nextTopicCollapseStates
         },
 
+        expandAllTopics() {
+            this.topicCollapseStates = {}
+        },
+
+        collapseAllTopics() {
+            const nextTopicCollapseStates = {}
+
+            this.curriculumTopics.forEach((topic) => {
+                if (topic.units.length) {
+                    nextTopicCollapseStates[topic.id] = true
+                }
+            })
+
+            if (this.activeTopicAssignmentId !== null) {
+                this.closeTopicAssignmentEditor()
+            }
+
+            if (this.showUnitFormForTopicId !== null) {
+                this.cancelUnitForm()
+            }
+
+            this.topicCollapseStates = nextTopicCollapseStates
+        },
+
         toggleSelectedTopic(topicId) {
             const shouldDeselectTopic = this.isTopicSelected(topicId)
 
@@ -4595,8 +5013,10 @@ export default {
             try {
                 const res = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/documents`)
                 this.documents = res.data?.data || []
+                this.restoreCurriculumDocumentPreview()
             } catch {
                 this.documents = []
+                this.previewDoc = null
             } finally {
                 this.docsLoading = false
             }
@@ -4611,7 +5031,7 @@ export default {
             if (this.isPageActionLocked) return
             if (doc.source_type === 'material') {
                 if (doc.material_card_attachment_id && doc.preview_url) {
-                    this.previewDoc = this.previewDoc?.id === doc.id ? null : doc
+                    this.setCurriculumDocumentPreview(this.previewDoc?.id === doc.id ? null : doc)
                     return
                 }
 
@@ -4620,7 +5040,7 @@ export default {
             }
 
             if (doc.source_type !== 'upload') return
-            this.previewDoc = this.previewDoc?.id === doc.id ? null : doc
+            this.setCurriculumDocumentPreview(this.previewDoc?.id === doc.id ? null : doc)
         },
 
         removeDocument(doc) {
@@ -4647,7 +5067,8 @@ export default {
 
             try {
                 await axios.delete(`/api/admin/teaching/curricula/${this.curriculum.id}/documents/${this.documentToDelete.id}`)
-                if (this.previewDoc?.id === this.documentToDelete.id) this.previewDoc = null
+                this.clearCurriculumDocumentPreviewPosition(this.documentToDelete.id)
+                if (this.previewDoc?.id === this.documentToDelete.id) this.setCurriculumDocumentPreview(null)
                 this.documents = this.documents.filter((d) => d.id !== this.documentToDelete.id)
                 wasDeleted = true
             } catch {
@@ -4769,7 +5190,8 @@ export default {
                 this.documents = this.documents.map((document) => (
                     document.id === updatedDocument.id ? updatedDocument : document
                 ))
-                this.previewDoc = updatedDocument
+                this.clearCurriculumDocumentPreviewPosition(updatedDocument.id)
+                this.setCurriculumDocumentPreview(updatedDocument)
                 this.savingMaterialAttachment = false
                 this.closeMaterialAttachmentDialog()
             } catch {
@@ -4846,21 +5268,11 @@ export default {
                     responseType: 'blob',
                 })
 
-                const disposition = response?.headers?.['content-disposition']
-                const serverFileName = this.filenameFromContentDisposition(disposition)
-                const fallbackFileName = `Curriculum_${this.curriculum.title}.json`
-                const fileName = this.normalizeDownloadFileName(serverFileName || fallbackFileName)
-                const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data], {
-                    type: 'application/json',
-                })
-                const objectUrl = URL.createObjectURL(blob)
-                const link = document.createElement('a')
-                link.href = objectUrl
-                link.download = fileName
-                document.body.appendChild(link)
-                link.click()
-                link.remove()
-                URL.revokeObjectURL(objectUrl)
+                this.downloadCurriculumResponse(
+                    response,
+                    `Curriculum_${this.curriculum.title}.json`,
+                    'application/json',
+                )
             } catch (error) {
                 useNotificationStore().notify({
                     status: error?.response?.status,
@@ -4871,6 +5283,48 @@ export default {
             } finally {
                 this.isExportingCurriculum = false
             }
+        },
+
+        async printCurriculumPdf() {
+            if (this.isPrintingCurriculum) return
+
+            this.isPrintingCurriculum = true
+
+            try {
+                const response = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/export/pdf`, {
+                    responseType: 'blob',
+                })
+
+                this.downloadCurriculumResponse(
+                    response,
+                    `Curriculum_${this.curriculum.title}.pdf`,
+                    'application/pdf',
+                )
+            } catch (error) {
+                useNotificationStore().notify({
+                    status: error?.response?.status,
+                    message: error?.response?.data?.message || 'PDF konnte nicht erstellt werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.isPrintingCurriculum = false
+            }
+        },
+
+        downloadCurriculumResponse(response, fallbackFileName, mimeType) {
+            const disposition = response?.headers?.['content-disposition']
+            const serverFileName = this.filenameFromContentDisposition(disposition)
+            const fileName = this.normalizeDownloadFileName(serverFileName || fallbackFileName)
+            const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data], { type: mimeType })
+            const objectUrl = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = objectUrl
+            link.download = fileName
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            URL.revokeObjectURL(objectUrl)
         },
 
         async downloadContentMaterialAttachment(attachment) {
@@ -4976,6 +5430,30 @@ export default {
     margin-bottom: 18px;
 }
 
+.curriculum-detail__back-btn {
+    min-height: 44px;
+    padding-inline: 18px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.3);
+}
+
+.curriculum-detail__back-btn:hover:not(.v-btn--disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.38);
+}
+
+.curriculum-detail__back-btn:focus-visible {
+    outline: 3px solid rgba(37, 99, 235, 0.32);
+    outline-offset: 2px;
+}
+
+.curriculum-detail__print-btn {
+    min-height: 40px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
 .curriculum-detail__title-row {
     display: flex;
     align-items: flex-end;
@@ -5037,13 +5515,71 @@ export default {
 /* ---------- Body layout ---------- */
 .curriculum-detail__body {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+    grid-template-columns: 64fr 36px 36fr;
     align-items: start;
-    gap: 16px;
+    gap: 8px;
 }
 
 .curriculum-detail__body--compact-calendar {
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+    grid-template-columns: 64fr 36px 36fr;
+}
+
+.curriculum-detail__body--resizing {
+    cursor: col-resize;
+    user-select: none;
+}
+
+.curriculum-detail__card-splitter {
+    position: sticky;
+    top: 12px;
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    justify-content: center;
+    min-height: 200px;
+    outline: none;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+.curriculum-detail__card-splitter-line {
+    position: absolute;
+    inset-block: 10px;
+    width: 2px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, transparent, rgba(99, 102, 241, 0.55) 12%, rgba(37, 99, 235, 0.72) 88%, transparent);
+    transition: width 160ms ease, box-shadow 160ms ease;
+}
+
+.curriculum-detail__card-splitter-handle {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(99, 102, 241, 0.38);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 6px 18px rgba(30, 64, 175, 0.2);
+    color: #3730a3;
+    transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.curriculum-detail__card-splitter:hover .curriculum-detail__card-splitter-line,
+.curriculum-detail__card-splitter:focus-visible .curriculum-detail__card-splitter-line,
+.curriculum-detail__body--resizing .curriculum-detail__card-splitter-line {
+    width: 4px;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+}
+
+.curriculum-detail__card-splitter:hover .curriculum-detail__card-splitter-handle,
+.curriculum-detail__card-splitter:focus-visible .curriculum-detail__card-splitter-handle,
+.curriculum-detail__body--resizing .curriculum-detail__card-splitter-handle {
+    border-color: rgba(79, 70, 229, 0.72);
+    box-shadow: 0 8px 22px rgba(30, 64, 175, 0.3), 0 0 0 4px rgba(99, 102, 241, 0.12);
+    transform: scale(1.06);
 }
 
 /* ---------- Calendar ---------- */
@@ -5654,6 +6190,19 @@ export default {
     gap: 12px;
 }
 
+.curriculum-detail__content-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.curriculum-detail__topic-visibility-btn {
+    min-height: 44px;
+    min-width: 44px;
+}
+
 .curriculum-detail__content-count {
     font-size: 0.9rem;
     font-weight: 700;
@@ -6092,7 +6641,7 @@ export default {
 .curriculum-detail__topic-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 12px;
 }
 
 .curriculum-detail__topic-entry {
@@ -6676,8 +7225,13 @@ export default {
     }
 
     .curriculum-detail__body {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr !important;
+        gap: 16px;
         width: auto;
+    }
+
+    .curriculum-detail__card-splitter {
+        display: none;
     }
 
     .curriculum-detail__calendar,
@@ -6699,6 +7253,63 @@ export default {
 }
 
 @media (max-width: 700px) {
+    .curriculum-detail__fullscreen-preview-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .curriculum-detail__fullscreen-preview-header > div:first-child {
+        min-width: 0;
+    }
+
+    .curriculum-detail__fullscreen-preview-title,
+    .curriculum-detail__fullscreen-preview-subtitle {
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+
+    .curriculum-detail__fullscreen-preview-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .curriculum-detail__fullscreen-preview-actions :deep(.v-btn) {
+        margin-inline: 0 !important;
+        min-height: 44px;
+        min-width: 0;
+        width: 100%;
+    }
+
+    .curriculum-detail__fullscreen-preview-close-btn {
+        min-width: 0;
+    }
+
+    .curriculum-detail__fullscreen-preview-body {
+        min-height: 0;
+    }
+
+    .curriculum-detail__fullscreen-preview-iframe,
+    .curriculum-detail__fullscreen-preview-image,
+    .curriculum-detail__fullscreen-preview-empty {
+        height: 100%;
+    }
+
+    .curriculum-detail__material-preview-list-item {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .curriculum-detail__material-preview-list-actions {
+        justify-content: flex-end;
+        width: 100%;
+    }
+
+    .curriculum-detail__material-preview-list-actions :deep(.v-btn) {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
     .curriculum-detail__header {
         padding: 14px;
     }
@@ -6706,6 +7317,15 @@ export default {
     .curriculum-detail__header-actions,
     .curriculum-detail__title-row {
         align-items: stretch;
+    }
+
+    .curriculum-detail__header-actions {
+        flex-direction: column;
+    }
+
+    .curriculum-detail__header-actions :deep(.v-btn) {
+        min-height: 44px;
+        width: 100%;
     }
 
     .curriculum-detail__summary {
@@ -6733,6 +7353,14 @@ export default {
     .curriculum-detail__topic-assignment-options,
     .curriculum-detail__material-dialog-toolbar {
         flex-direction: column;
+    }
+
+    .curriculum-detail__content-actions {
+        width: 100%;
+    }
+
+    .curriculum-detail__content-add-btn {
+        flex: 1 1 auto;
     }
 
     .curriculum-detail__material-filter-grid {
