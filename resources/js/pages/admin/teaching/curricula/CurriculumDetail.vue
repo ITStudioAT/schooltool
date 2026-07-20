@@ -14,6 +14,20 @@
                     Zurück zur Übersicht
                 </v-btn>
                 <v-btn
+                    v-if="isCurriculumEmpty"
+                    size="small"
+                    variant="flat"
+                    color="primary"
+                    rounded="xl"
+                    prepend-icon="mdi-content-copy"
+                    class="text-none curriculum-detail__copy-content-btn"
+                    :loading="isLoadingCurriculumContentSources"
+                    :disabled="isPageActionLocked || isLoadingCurriculumContentSources"
+                    @click="openCurriculumContentCopyDialog">
+                    Inhalte aus Curriculum übernehmen
+                </v-btn>
+                <v-btn
+                    v-else
                     size="small"
                     variant="flat"
                     color="error"
@@ -33,7 +47,7 @@
                     prepend-icon="mdi-download-outline"
                     class="text-none"
                     :loading="isExportingCurriculum"
-                    :disabled="isExportingCurriculum || isPrintingCurriculum"
+                    :disabled="isExportingCurriculum || isPrintingCurriculum || isCopyingCurriculumContent"
                     @click="exportCurriculum">
                     Curriculum exportieren
                 </v-btn>
@@ -50,6 +64,57 @@
                 </div>
             </div>
         </div>
+
+        <v-dialog v-model="curriculumContentCopyDialogOpen" max-width="560" persistent>
+            <v-card rounded="xl" class="curriculum-detail__editor-dialog-card">
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                    <v-icon color="primary" size="20">mdi-content-copy</v-icon>
+                    Inhalte aus Curriculum übernehmen
+                </v-card-title>
+                <v-card-text class="px-4 pt-2 pb-2">
+                    <div class="curriculum-detail__copy-content-dialog">
+                        <p class="curriculum-detail__copy-content-hint">
+                            Wähle das Curriculum, dessen Themen und Einheiten übernommen werden sollen.
+                        </p>
+                        <v-select
+                            v-model="selectedCurriculumContentSourceId"
+                            :items="curriculumContentSourceOptions"
+                            label="Curriculum"
+                            variant="outlined"
+                            density="comfortable"
+                            :loading="isLoadingCurriculumContentSources"
+                            :disabled="isLoadingCurriculumContentSources || isCopyingCurriculumContent"
+                            no-data-text="Keine Curricula mit Inhalten verfügbar"
+                            hide-details="auto" />
+                        <div
+                            v-if="curriculumContentCopyError"
+                            class="curriculum-detail__topic-form-error mt-3">
+                            {{ curriculumContentCopyError }}
+                        </div>
+                    </div>
+                </v-card-text>
+                <v-card-actions class="px-4 pb-4">
+                    <v-spacer />
+                    <v-btn
+                        variant="text"
+                        color="secondary"
+                        class="text-none curriculum-detail__editor-dialog-cancel-btn"
+                        :disabled="isCopyingCurriculumContent"
+                        @click="closeCurriculumContentCopyDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        variant="flat"
+                        color="primary"
+                        class="text-none curriculum-detail__editor-dialog-save-btn"
+                        :loading="isCopyingCurriculumContent"
+                        :disabled="!selectedCurriculumContentSourceId || isLoadingCurriculumContentSources"
+                        @click="copyCurriculumContent">
+                        Übernehmen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <div
             ref="curriculumBody"
@@ -368,13 +433,18 @@
             </v-dialog>
 
             <v-dialog v-model="showTopicForm" max-width="520" persistent>
-                <v-card rounded="xl" class="curriculum-detail__editor-dialog-card">
+                <v-card
+                    rounded="xl"
+                    class="curriculum-detail__editor-dialog-card"
+                    @keydown.esc.stop.prevent="cancelTopicForm">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
                         <v-icon color="primary" size="20">mdi-text-box-edit-outline</v-icon>
                         {{ topicForm.id ? 'Thema bearbeiten' : 'Thema anlegen' }}
                     </v-card-title>
                     <v-card-text class="px-4 pt-2 pb-2">
-                        <div class="curriculum-detail__topic-form curriculum-detail__editor-dialog-form">
+                        <v-form
+                            class="curriculum-detail__topic-form curriculum-detail__editor-dialog-form"
+                            @submit.prevent="saveTopic">
                             <v-text-field
                                 v-model="topicForm.title"
                                 label="Thema"
@@ -393,7 +463,7 @@
                                     rounded="lg"
                                     class="text-none curriculum-detail__topic-save-btn curriculum-detail__editor-dialog-save-btn"
                                     :loading="topicSaving"
-                                    @click="saveTopic">
+                                    type="submit">
                                     {{ topicForm.id ? 'Thema speichern' : 'Thema anlegen' }}
                                 </v-btn>
                                 <v-btn
@@ -406,7 +476,7 @@
                                     Abbrechen
                                 </v-btn>
                             </div>
-                        </div>
+                        </v-form>
                     </v-card-text>
                 </v-card>
             </v-dialog>
@@ -1418,6 +1488,12 @@ export default {
             weekDisplayMode: 'days',
             isExportingCurriculum: false,
             isPrintingCurriculum: false,
+            curriculumContentCopyDialogOpen: false,
+            curriculumContentSources: [],
+            selectedCurriculumContentSourceId: null,
+            curriculumContentCopyError: null,
+            isLoadingCurriculumContentSources: false,
+            isCopyingCurriculumContent: false,
             collapseFullMonths: true,
             topicCollapseStates: {},
             manualMonthCollapseStates: {},
@@ -1502,6 +1578,10 @@ export default {
             this.manualMonthCollapseStates = {}
             this.previewDoc = null
             this.curriculumDocumentPreviewPosition = null
+            this.curriculumContentCopyDialogOpen = false
+            this.curriculumContentSources = []
+            this.selectedCurriculumContentSourceId = null
+            this.curriculumContentCopyError = null
             this.loadDocuments()
         },
         'config.user.id'() {
@@ -1580,6 +1660,27 @@ export default {
             return this.curriculumTopics.reduce((total, topic) => total + topic.units.length, 0)
         },
 
+        isCurriculumEmpty() {
+            return this.curriculumTopics.length === 0
+        },
+
+        curriculumContentSourceOptions() {
+            return this.curriculumContentSources.map((curriculum) => {
+                const topics = Array.isArray(curriculum?.topics) ? curriculum.topics : []
+                const unitCount = topics.reduce(
+                    (total, topic) => total + (Array.isArray(topic?.units) ? topic.units.length : 0),
+                    0,
+                )
+                const topicLabel = topics.length === 1 ? 'Thema' : 'Themen'
+                const unitLabel = unitCount === 1 ? 'Einheit' : 'Einheiten'
+
+                return {
+                    title: `${curriculum.title} (${topics.length} ${topicLabel} · ${unitCount} ${unitLabel})`,
+                    value: Number(curriculum.id),
+                }
+            })
+        },
+
         hasCollapsedTopics() {
             return this.curriculumTopics.some((topic) => topic.units.length && this.isTopicCollapsed(topic.id))
         },
@@ -1631,7 +1732,10 @@ export default {
         },
 
         isPageActionLocked() {
-            return this.isEditingTopic || this.isEditingUnit || this.activeTopicAssignmentId !== null
+            return this.isEditingTopic
+                || this.isEditingUnit
+                || this.activeTopicAssignmentId !== null
+                || this.isCopyingCurriculumContent
         },
 
         showWeekdays() {
@@ -1904,6 +2008,101 @@ export default {
             this.persistCurriculumDocumentIframePosition()
             this.$refs.curriculumPdfPreview?.emitCurrentPosition?.()
             this.$emit('back')
+        },
+        async openCurriculumContentCopyDialog() {
+            if (!this.isCurriculumEmpty || this.isPageActionLocked) return
+
+            this.curriculumContentCopyDialogOpen = true
+            this.selectedCurriculumContentSourceId = null
+            this.curriculumContentCopyError = null
+            await this.loadCurriculumContentSources()
+        },
+        closeCurriculumContentCopyDialog() {
+            if (this.isCopyingCurriculumContent) return
+
+            this.curriculumContentCopyDialogOpen = false
+            this.selectedCurriculumContentSourceId = null
+            this.curriculumContentCopyError = null
+        },
+        async loadCurriculumContentSources() {
+            this.isLoadingCurriculumContentSources = true
+            this.curriculumContentCopyError = null
+
+            try {
+                const response = await axios.get('/api/admin/teaching/curricula', {
+                    params: {
+                        page: 1,
+                        per_page: 100,
+                    },
+                })
+                this.curriculumContentSources = (Array.isArray(response.data?.data) ? response.data.data : [])
+                    .filter((curriculum) => (
+                        Number(curriculum?.id) !== Number(this.curriculum.id)
+                        && Array.isArray(curriculum?.topics)
+                        && curriculum.topics.length > 0
+                    ))
+
+                if (!this.curriculumContentSources.length) {
+                    this.curriculumContentCopyError = 'Es ist kein anderes Curriculum mit Inhalten verfügbar.'
+                }
+            } catch (error) {
+                this.curriculumContentSources = []
+                this.curriculumContentCopyError = error.response?.data?.message
+                    || 'Curricula konnten nicht geladen werden.'
+            } finally {
+                this.isLoadingCurriculumContentSources = false
+            }
+        },
+        async copyCurriculumContent() {
+            if (this.isCopyingCurriculumContent) return
+
+            if (!this.isCurriculumEmpty) {
+                this.curriculumContentCopyError = 'Inhalte können nur in ein leeres Curriculum übernommen werden.'
+                return
+            }
+
+            if (!this.selectedCurriculumContentSourceId) {
+                this.curriculumContentCopyError = 'Bitte ein Curriculum auswählen.'
+                return
+            }
+
+            this.isCopyingCurriculumContent = true
+            this.curriculumContentCopyError = null
+
+            try {
+                const response = await axios.post(
+                    `/api/admin/teaching/curricula/${this.curriculum.id}/copy-content`,
+                    {
+                        source_curriculum_id: this.selectedCurriculumContentSourceId,
+                    },
+                )
+                const updatedCurriculum = response.data?.data
+
+                if (!updatedCurriculum) {
+                    this.curriculumContentCopyError = 'Curriculuminhalte konnten nicht übernommen werden.'
+                    return
+                }
+
+                this.curriculumContentCopyDialogOpen = false
+                this.selectedCurriculumContentSourceId = null
+                this.$emit('updated', updatedCurriculum)
+                useNotificationStore().notify({
+                    message: 'Curriculuminhalte wurden übernommen.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+            } catch (error) {
+                const validationErrors = error.response?.data?.errors || {}
+                const firstValidationMessage = Object.values(validationErrors)
+                    .flat()
+                    .find((message) => typeof message === 'string')
+
+                this.curriculumContentCopyError = firstValidationMessage
+                    || error.response?.data?.message
+                    || 'Curriculuminhalte konnten nicht übernommen werden.'
+            } finally {
+                this.isCopyingCurriculumContent = false
+            }
         },
         restoreCurriculumDocumentPreview() {
             this.previewDoc = null
@@ -4776,6 +4975,8 @@ export default {
         },
 
         async saveTopic() {
+            if (this.topicSaving) return
+
             this.topicFormError = null
 
             const title = this.topicForm.title.trim()
@@ -5449,6 +5650,12 @@ export default {
 }
 
 .curriculum-detail__print-btn {
+    min-height: 40px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.curriculum-detail__copy-content-btn {
     min-height: 40px;
     font-weight: 700;
     letter-spacing: 0.01em;
@@ -6636,6 +6843,20 @@ export default {
 
 .curriculum-detail__editor-dialog-cancel-btn {
     color: #64748b !important;
+}
+
+.curriculum-detail__copy-content-dialog {
+    padding: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.82);
+}
+
+.curriculum-detail__copy-content-hint {
+    margin: 0 0 14px;
+    color: #475569;
+    font-size: 0.875rem;
+    line-height: 1.45;
 }
 
 .curriculum-detail__topic-list {

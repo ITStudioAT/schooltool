@@ -71,6 +71,7 @@ function mountCurriculumDetail(
                 'v-dialog': { template: '<div><slot /></div>' },
                 'v-divider': { template: '<hr />' },
                 'v-autocomplete': { template: '<div><slot /></div>' },
+                'v-form': { template: '<form><slot /></form>' },
                 'v-icon': { template: '<i><slot /></i>' },
                 'v-list': { template: '<div><slot /></div>' },
                 'v-list-item': { props: ['title'], template: '<div>{{ title }}<slot /></div>' },
@@ -80,6 +81,7 @@ function mountCurriculumDetail(
                 'v-progress-circular': { template: '<div />' },
                 'v-sheet': { template: '<div v-bind="$attrs"><slot /></div>' },
                 'v-spacer': { template: '<div />' },
+                'v-select': { template: '<select v-bind="$attrs" />' },
                 'v-text-field': { template: '<input />' },
             },
         },
@@ -555,6 +557,116 @@ describe('CurriculumDetail preview layout', () => {
     })
 })
 
+describe('Curriculum content copy', () => {
+    it('shows content copy instead of PDF printing when the curriculum is empty', () => {
+        const emptyCurriculumWrapper = mountCurriculumDetail({ topics: [] })
+        const filledCurriculumWrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    units: [],
+                },
+            ],
+        })
+
+        expect(emptyCurriculumWrapper.find('.curriculum-detail__copy-content-btn').exists()).toBe(true)
+        expect(emptyCurriculumWrapper.find('.curriculum-detail__print-btn').exists()).toBe(false)
+        expect(filledCurriculumWrapper.find('.curriculum-detail__copy-content-btn').exists()).toBe(false)
+        expect(filledCurriculumWrapper.find('.curriculum-detail__print-btn').exists()).toBe(true)
+    })
+
+    it('loads only other curricula containing content for the persistent copy dialog', async () => {
+        const wrapper = mountCurriculumDetail({ id: 6, topics: [] })
+        const originalAxios = (globalThis as any).axios
+        const getMock = vi.fn().mockResolvedValue({
+            data: {
+                data: [
+                    { id: 6, title: 'DGB 3', topics: [] },
+                    {
+                        id: 3,
+                        title: 'DGB 1',
+                        topics: [
+                            {
+                                id: 'topic-1',
+                                title: 'Grundlagen',
+                                units: [{ id: 'unit-1', title: 'Anmeldung' }],
+                            },
+                        ],
+                    },
+                    { id: 7, title: 'DGB 4', topics: [] },
+                ],
+            },
+        })
+
+        ;(globalThis as any).axios = { get: getMock }
+
+        try {
+            await (wrapper.vm as any).openCurriculumContentCopyDialog()
+
+            expect(getMock).toHaveBeenCalledWith('/api/admin/teaching/curricula', {
+                params: {
+                    page: 1,
+                    per_page: 100,
+                },
+            })
+            expect((wrapper.vm as any).curriculumContentCopyDialogOpen).toBe(true)
+            expect((wrapper.vm as any).curriculumContentSources.map((curriculum: any) => curriculum.id)).toEqual([3])
+            expect((wrapper.vm as any).curriculumContentSourceOptions).toEqual([
+                {
+                    title: 'DGB 1 (1 Thema · 1 Einheit)',
+                    value: 3,
+                },
+            ])
+
+            const source = readFileSync(resolve('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue'), 'utf8')
+            expect(source).toContain('<v-dialog v-model="curriculumContentCopyDialogOpen" max-width="560" persistent>')
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+
+    it('copies the selected curriculum content into the empty curriculum', async () => {
+        const wrapper = mountCurriculumDetail({ id: 6, title: 'DGB 3', topics: [] })
+        const originalAxios = (globalThis as any).axios
+        const updatedCurriculum = {
+            id: 6,
+            title: 'DGB 3',
+            topics: [
+                {
+                    id: 'copied-topic',
+                    title: 'Grundlagen',
+                    units: [],
+                },
+            ],
+        }
+        const postMock = vi.fn().mockResolvedValue({
+            data: {
+                data: updatedCurriculum,
+            },
+        })
+
+        ;(globalThis as any).axios = { post: postMock }
+        await wrapper.setData({
+            curriculumContentCopyDialogOpen: true,
+            selectedCurriculumContentSourceId: 3,
+        })
+
+        try {
+            await (wrapper.vm as any).copyCurriculumContent()
+
+            expect(postMock).toHaveBeenCalledWith('/api/admin/teaching/curricula/6/copy-content', {
+                source_curriculum_id: 3,
+            })
+            expect(wrapper.emitted('updated')?.[0]).toEqual([updatedCurriculum])
+            expect((wrapper.vm as any).curriculumContentCopyDialogOpen).toBe(false)
+            expect((wrapper.vm as any).selectedCurriculumContentSourceId).toBeNull()
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+})
+
 describe.skip('CurriculumDetail removed calendar behavior', () => {
     afterEach(() => {
         loadDocumentsSpy.mockClear()
@@ -911,6 +1023,33 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
 
         expect(wrapper.text()).toContain('Thema bearbeiten')
         expect(wrapper.text()).toContain('Thema speichern')
+    })
+
+    it('creates a topic with Enter and cancels the dialog with Escape', async () => {
+        const wrapper = mountCurriculumDetail()
+        const saveTopicSpy = vi.spyOn(wrapper.vm as any, 'saveTopic').mockResolvedValue(undefined)
+
+        await wrapper.setData({
+            showTopicForm: true,
+            topicForm: {
+                id: null,
+                title: 'Schreiben',
+            },
+        })
+
+        const topicForm = wrapper.find('form.curriculum-detail__topic-form')
+
+        expect(topicForm.exists()).toBe(true)
+        expect(topicForm.find('button[type="submit"]').text()).toContain('Thema anlegen')
+
+        await topicForm.trigger('submit')
+
+        expect(saveTopicSpy).toHaveBeenCalledOnce()
+
+        await topicForm.trigger('keydown', { key: 'Escape' })
+
+        expect((wrapper.vm as any).showTopicForm).toBe(false)
+        expect((wrapper.vm as any).topicForm).toMatchObject({ id: null, title: '' })
     })
 
     it('does not open the material selector for topics', async () => {

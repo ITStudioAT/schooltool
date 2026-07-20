@@ -186,7 +186,7 @@ class CurriculumExportService
             'pdfFontFamily' => $pdfFontFamily,
         ])
             ->format(Format::A4)
-            ->margins(top: 12, right: 12, bottom: 14, left: 12, unit: 'mm')
+            ->margins(top: 8, right: 9, bottom: 9, left: 9, unit: 'mm')
             ->save($path);
 
         return $path;

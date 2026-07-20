@@ -28,6 +28,7 @@
 
 - UI-Design
 - PDF
+- Curriculum übernehmen
 
 ## 3.42.2
 

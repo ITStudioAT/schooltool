@@ -16,6 +16,7 @@ use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class CurriculumController extends Controller
@@ -209,6 +210,60 @@ class CurriculumController extends Controller
         $curriculum->update($validated);
 
         return response()->json(['data' => $curriculum]);
+    }
+
+    public function copyContent(Request $request, TeachingCurriculum $curriculum)
+    {
+        $authUser = $this->authorizeCurriculum($curriculum);
+
+        $validated = $request->validate([
+            'source_curriculum_id' => [
+                'required',
+                'integer',
+                Rule::notIn([$curriculum->id]),
+                Rule::exists('teaching_curricula', 'id')->where(
+                    fn ($query) => $query
+                        ->where('school_id', $authUser->school_id)
+                        ->where('user_id', $authUser->id)
+                ),
+            ],
+        ]);
+
+        if (count($curriculum->topics) > 0) {
+            throw ValidationException::withMessages([
+                'curriculum' => 'Inhalte können nur in ein leeres Curriculum übernommen werden.',
+            ]);
+        }
+
+        $sourceCurriculum = TeachingCurriculum::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('user_id', $authUser->id)
+            ->findOrFail($validated['source_curriculum_id']);
+
+        if (count($sourceCurriculum->topics) === 0) {
+            throw ValidationException::withMessages([
+                'source_curriculum_id' => 'Das ausgewählte Curriculum enthält keine Inhalte.',
+            ]);
+        }
+
+        $copiedTopics = collect($sourceCurriculum->topics)
+            ->map(fn (array $topic): array => [
+                'title' => $topic['title'] ?? '',
+                'units' => collect($topic['units'] ?? [])
+                    ->map(fn (array $unit): array => [
+                        'title' => $unit['title'] ?? '',
+                        'is_exam' => (bool) ($unit['is_exam'] ?? false),
+                        'materials' => $unit['materials'] ?? [],
+                    ])
+                    ->all(),
+            ])
+            ->all();
+
+        $curriculum->update([
+            'topics' => $this->normalizeCurriculumTopics($copiedTopics),
+        ]);
+
+        return response()->json(['data' => $curriculum->fresh()]);
     }
 
     public function destroy(TeachingCurriculum $curriculum)

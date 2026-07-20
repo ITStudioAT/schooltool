@@ -509,6 +509,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/teaching/courses/{course}/curriculum', [TeachingCourseCurriculumController::class, 'destroy']);
         Route::apiResource('/admin/teaching/courses', TeachingCourseController::class);
         Route::apiResource('/admin/teaching/curricula', CurriculumController::class)->parameters(['curricula' => 'curriculum']);
+        Route::post('/admin/teaching/curricula/{curriculum}/copy-content', [CurriculumController::class, 'copyContent']);
         Route::get('/admin/teaching/imported-curricula', [ImportedCurriculumController::class, 'index']);
         Route::post('/admin/teaching/imported-curricula/import', [ImportedCurriculumController::class, 'import']);
         Route::post('/admin/teaching/imported-curricula/{imported_curriculum}/adopt', [ImportedCurriculumController::class, 'adopt']);

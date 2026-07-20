@@ -113,6 +113,113 @@ test('teacher curricula are paginated in alphabetical order', function () {
         ->assertJsonPath('data.0.title', 'Zoologie');
 });
 
+test('teacher can copy content from an own curriculum into an empty curriculum', function () {
+    $sourceCurriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Quelle',
+        'description' => null,
+        'topics' => [
+            [
+                'id' => 'source-topic',
+                'title' => 'Grammatik',
+                'units' => [
+                    [
+                        'id' => 'source-unit',
+                        'title' => 'Satzbau',
+                        'is_exam' => true,
+                        'materials' => [],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+    $targetCurriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Ziel',
+        'description' => null,
+        'topics' => [],
+    ]);
+
+    $response = $this->actingAs($this->teacher, 'sanctum')
+        ->postJson("/api/admin/teaching/curricula/{$targetCurriculum->id}/copy-content", [
+            'source_curriculum_id' => $sourceCurriculum->id,
+        ]);
+
+    $response->assertOk()
+        ->assertJsonPath('data.topics.0.title', 'Grammatik')
+        ->assertJsonPath('data.topics.0.units.0.title', 'Satzbau')
+        ->assertJsonPath('data.topics.0.units.0.is_exam', true);
+
+    $copiedTopics = $targetCurriculum->refresh()->topics;
+
+    expect($copiedTopics)->toHaveCount(1)
+        ->and($copiedTopics[0]['id'])->not->toBe('source-topic')
+        ->and($copiedTopics[0]['units'][0]['id'])->not->toBe('source-unit')
+        ->and($sourceCurriculum->refresh()->topics[0]['id'])->toBe('source-topic');
+});
+
+test('teacher cannot replace existing curriculum content through content copy', function () {
+    $sourceCurriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Quelle',
+        'topics' => [
+            ['id' => 'source-topic', 'title' => 'Quelle', 'units' => []],
+        ],
+    ]);
+    $targetCurriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Ziel',
+        'topics' => [
+            ['id' => 'target-topic', 'title' => 'Bestehend', 'units' => []],
+        ],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->postJson("/api/admin/teaching/curricula/{$targetCurriculum->id}/copy-content", [
+            'source_curriculum_id' => $sourceCurriculum->id,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('curriculum');
+
+    expect($targetCurriculum->refresh()->topics[0]['title'])->toBe('Bestehend');
+});
+
+test('teacher cannot copy curriculum content from another user', function () {
+    $foreignSourceCurriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->otherSchool->id,
+        'schoolyear_id' => $this->otherSchoolyear->id,
+        'user_id' => $this->otherTeacher->id,
+        'title' => 'Fremde Quelle',
+        'topics' => [
+            ['id' => 'foreign-topic', 'title' => 'Fremd', 'units' => []],
+        ],
+    ]);
+    $targetCurriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Ziel',
+        'topics' => [],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->postJson("/api/admin/teaching/curricula/{$targetCurriculum->id}/copy-content", [
+            'source_curriculum_id' => $foreignSourceCurriculum->id,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('source_curriculum_id');
+
+    expect($targetCurriculum->refresh()->topics)->toBeEmpty();
+});
+
 test('teacher can create a curriculum with themes and units only', function () {
     $response = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/admin/teaching/curricula', [
         'title' => 'Deutsch 5A',

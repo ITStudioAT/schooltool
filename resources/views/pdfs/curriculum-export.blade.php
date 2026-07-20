@@ -19,122 +19,122 @@
         body {
             font-family: {!! $pdfFontFamily !!};
             color: #172033;
-            font-size: 10pt;
+            font-size: 9pt;
             font-weight: 400;
-            line-height: 1.5;
+            line-height: 1.35;
             margin: 0;
         }
 
         .header {
-            margin-bottom: 18px;
-            padding: 16px 18px;
+            margin-bottom: 10px;
+            padding: 10px 12px;
             border: 1px solid #cbd5e1;
-            border-left: 5px solid #4f46e5;
-            border-radius: 8px;
+            border-left: 4px solid #4f46e5;
+            border-radius: 6px;
             background: #f8fafc;
         }
 
         .header-label {
-            font-size: 8.5pt;
+            font-size: 7.5pt;
             font-weight: 700;
             color: #4f46e5;
             text-transform: uppercase;
-            letter-spacing: 1.2px;
-            margin: 0 0 5px;
+            letter-spacing: 1px;
+            margin: 0 0 2px;
         }
 
         h1 {
-            font-size: 21pt;
+            font-size: 18pt;
             font-weight: 700;
-            line-height: 1.18;
-            margin: 0 0 6px;
+            line-height: 1.12;
+            margin: 0 0 3px;
             color: #0f172a;
         }
 
         .header-description {
-            font-size: 10pt;
+            font-size: 9pt;
             color: #475569;
-            margin: 0 0 10px;
+            margin: 0 0 6px;
         }
 
         .summary {
             display: table;
             width: 100%;
-            margin: 12px 0 10px;
-            border-spacing: 6px 0;
+            margin: 7px 0 6px;
+            border-spacing: 4px 0;
             table-layout: fixed;
         }
 
         .summary-item {
             display: table-cell;
-            padding: 7px 9px;
+            padding: 4px 6px;
             border: 1px solid #dbe3ee;
-            border-radius: 5px;
+            border-radius: 4px;
             background: #ffffff;
         }
 
         .summary-value {
             display: block;
             color: #0f172a;
-            font-size: 13pt;
+            font-size: 11.5pt;
             font-weight: 700;
-            line-height: 1.1;
+            line-height: 1;
         }
 
         .summary-label {
             display: block;
-            margin-top: 2px;
+            margin-top: 1px;
             color: #64748b;
-            font-size: 8pt;
+            font-size: 7.2pt;
             text-transform: uppercase;
-            letter-spacing: 0.4px;
+            letter-spacing: 0.3px;
         }
 
         .meta-info {
-            font-size: 8.5pt;
+            font-size: 7.8pt;
             color: #64748b;
             margin: 0;
         }
 
         .topic {
-            margin-bottom: 11px;
+            margin-bottom: 6px;
             border: 1px solid #d8e0eb;
-            border-radius: 6px;
+            border-radius: 5px;
             overflow: hidden;
             break-inside: avoid-page;
             page-break-inside: avoid;
         }
 
         .topic-header {
-            padding: 8px 11px;
+            padding: 5px 8px;
             border-bottom: 1px solid #d8e0eb;
             background: #eef2ff;
         }
 
         .topic-title {
             font-weight: 700;
-            font-size: 11pt;
+            font-size: 10pt;
             color: #1e1b4b;
         }
 
         .topic-number {
             display: inline-block;
-            min-width: 24px;
-            margin-right: 5px;
+            min-width: 22px;
+            margin-right: 4px;
             color: #4f46e5;
-            font-size: 9pt;
+            font-size: 8.2pt;
             font-weight: 700;
         }
 
         .units {
-            padding: 4px 12px 6px;
+            padding: 1px 9px 2px;
         }
 
         .unit {
-            padding: 5px 2px;
+            padding: 3px 1px;
             border-bottom: 1px solid #edf1f6;
             color: #334155;
-            font-size: 9.5pt;
+            font-size: 8.7pt;
         }
 
         .unit:last-child {
@@ -148,24 +148,24 @@
 
         .unit-number {
             display: inline-block;
-            min-width: 24px;
+            min-width: 22px;
             color: #94a3b8;
-            font-size: 8.5pt;
+            font-size: 8pt;
         }
 
         .exam-badge {
             font-family: {!! $pdfFontFamily !!} !important;
             background: #fef2f2;
             color: #991b1b;
-            font-size: 7.5pt;
-            padding: 2px 5px;
+            font-size: 6.8pt;
+            padding: 1px 4px;
             border-radius: 3px;
             font-weight: 700;
             white-space: nowrap;
         }
 
         .empty-state {
-            padding: 28px;
+            padding: 18px;
             border: 1px dashed #cbd5e1;
             border-radius: 7px;
             color: #64748b;
