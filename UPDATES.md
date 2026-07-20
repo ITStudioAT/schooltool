@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.43.1
+
+### Unterrichtstool
+
+- Curriculum: Status In Arbeit/Ok
+
 ## 3.43.0
 
 ### Unterrichtstool

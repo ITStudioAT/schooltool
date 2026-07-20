@@ -12,12 +12,17 @@ class TeachingCurriculum extends Model
 {
     protected $table = 'teaching_curricula';
 
+    protected $attributes = [
+        'is_finished' => false,
+    ];
+
     protected $fillable = [
         'school_id',
         'schoolyear_id',
         'user_id',
         'title',
         'description',
+        'is_finished',
         'export_key',
         'topics',
     ];
@@ -37,7 +42,9 @@ class TeachingCurriculum extends Model
 
     protected function casts(): array
     {
-        return [];
+        return [
+            'is_finished' => 'boolean',
+        ];
     }
 
     protected function topics(): Attribute

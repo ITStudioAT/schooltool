@@ -44,7 +44,19 @@
                             <template #prepend>
                                 <v-icon color="#a5b4fc" size="18" class="mr-2">mdi-book-education-outline</v-icon>
                             </template>
-                            <v-list-item-title class="text-body-2 font-weight-bold">{{ curriculum.title }}</v-list-item-title>
+                            <v-list-item-title class="text-body-2 font-weight-bold">
+                                <div class="curricula-overview__item-title">
+                                    <span>{{ curriculum.title }}</span>
+                                    <v-chip
+                                        size="x-small"
+                                        variant="tonal"
+                                        :color="curriculum.is_finished ? 'success' : 'warning'"
+                                        :prepend-icon="curriculum.is_finished ? 'mdi-check-circle-outline' : 'mdi-progress-clock'"
+                                        class="curricula-overview__status-marker">
+                                        {{ curriculum.is_finished ? 'Fertig' : 'In Arbeit' }}
+                                    </v-chip>
+                                </div>
+                            </v-list-item-title>
                             <v-list-item-subtitle class="text-caption">
                                 <span v-if="curriculum.description">{{ curriculum.description }}</span>
                             </v-list-item-subtitle>
@@ -86,28 +98,25 @@
             </v-col>
 
             <v-col cols="12" md="6" class="pa-0 pl-md-2 pb-3">
-                <v-sheet rounded="xl" class="curricula-overview__list pa-4 h-100">
-                    <div class="curricula-overview__section-header d-flex align-center justify-space-between ga-3 mb-3">
-                        <div>
-                            <div class="text-subtitle-1 font-weight-bold">Importierte Curricula</div>
-                            <div class="text-caption curricula-overview__muted">Getrennt von deinen eigenen Curricula, aber als Vorlage übernehmbar.</div>
-                        </div>
-                        <v-btn
-                            color="primary"
-                            variant="flat"
-                            rounded="xl"
-                            prepend-icon="mdi-import"
-                            @click="openImportDialog">
-                            Curriculum importieren
-                        </v-btn>
-                    </div>
+                <div class="d-flex justify-end mb-3">
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        rounded="xl"
+                        prepend-icon="mdi-import"
+                        class="curricula-overview__import-button"
+                        @click="openImportDialog">
+                        Curriculum importieren
+                    </v-btn>
+                </div>
 
-                    <div v-if="!imported_curricula.length" class="curricula-overview__empty text-center py-6">
-                        <v-icon size="40" color="primary" class="mb-2">mdi-tray-arrow-down</v-icon>
-                        <div class="text-body-2 font-weight-medium">Noch keine importierten Curricula vorhanden.</div>
-                        <div class="text-caption">Importiere ein Curriculum als getrennte Vorlage.</div>
-                    </div>
-                    <v-list v-else bg-color="transparent" density="compact" class="py-0">
+                <v-sheet
+                    v-if="imported_curricula.length"
+                    rounded="xl"
+                    class="curricula-overview__list curricula-overview__import-list pa-3">
+                    <div class="text-subtitle-1 font-weight-bold mb-3">Importierte Curricula</div>
+
+                    <v-list bg-color="transparent" density="compact" class="py-0">
                         <template v-for="curriculum in imported_curricula" :key="curriculum.id">
                             <v-list-item
                                 class="curricula-overview__item mb-2 px-3"
@@ -750,6 +759,18 @@ export default {
 .curricula-overview__item {
     background: rgba(255, 255, 255, 0.84);
     border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.curricula-overview__item-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.curricula-overview__status-marker {
+    flex-shrink: 0;
+    font-weight: 700;
 }
 
 .curricula-overview__item-actions {

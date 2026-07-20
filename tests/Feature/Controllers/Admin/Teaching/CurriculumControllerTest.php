@@ -257,6 +257,52 @@ test('teacher can create a curriculum with themes and units only', function () {
         ->and($curriculum->topics[0]['units'][0]['is_exam'])->toBeTrue();
 });
 
+test('teacher can mark an own curriculum as finished', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Deutsch 5A',
+        'description' => null,
+        'topics' => [],
+    ]);
+
+    expect($curriculum->is_finished)->toBeFalse();
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->putJson("/api/admin/teaching/curricula/{$curriculum->id}", [
+            'title' => $curriculum->title,
+            'description' => $curriculum->description,
+            'is_finished' => true,
+            'topics' => [],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.is_finished', true);
+
+    expect($curriculum->refresh()->is_finished)->toBeTrue();
+});
+
+test('curriculum finished marker must be boolean', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Deutsch 5A',
+        'description' => null,
+        'topics' => [],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->putJson("/api/admin/teaching/curricula/{$curriculum->id}", [
+            'title' => $curriculum->title,
+            'description' => $curriculum->description,
+            'is_finished' => 'finished',
+            'topics' => [],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('is_finished');
+});
+
 test('curriculum free-week settings are removed', function () {
     expect(Schema::hasColumn('teaching_curricula', 'free_weeks'))->toBeFalse()
         ->and(Schema::hasColumn('teaching_imported_curricula', 'free_weeks'))->toBeFalse()

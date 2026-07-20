@@ -350,6 +350,7 @@ class CurriculumController extends Controller
      * @return array{
      *     title: string,
      *     description: ?string,
+     *     is_finished?: bool,
      *     semester_count: int,
      *     topics: array<int, array{
      *         id: string,
@@ -388,6 +389,7 @@ class CurriculumController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'is_finished' => 'sometimes|boolean',
             'topics' => 'nullable|array',
             'topics.*' => 'array',
             'topics.*.id' => 'nullable|string|max:100',

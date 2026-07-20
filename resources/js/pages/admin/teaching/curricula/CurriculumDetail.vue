@@ -55,7 +55,22 @@
             <div class="curriculum-detail__title-row">
                 <div>
                     <div class="curriculum-detail__eyebrow">Curriculum</div>
-                    <h2 class="curriculum-detail__title">{{ curriculum.title }}</h2>
+                    <div class="curriculum-detail__title-heading">
+                        <h2 class="curriculum-detail__title">{{ curriculum.title }}</h2>
+                        <v-btn
+                            size="x-small"
+                            rounded="xl"
+                            variant="tonal"
+                            :color="curriculumIsFinished ? 'success' : 'warning'"
+                            :prepend-icon="curriculumIsFinished ? 'mdi-check-circle-outline' : 'mdi-progress-clock'"
+                            class="text-none curriculum-detail__status-marker"
+                            :loading="curriculumStatusSaving"
+                            :disabled="isPageActionLocked"
+                            :title="curriculumIsFinished ? 'Als in Arbeit markieren' : 'Als fertig markieren'"
+                            @click="toggleCurriculumStatus">
+                            {{ curriculumStatusLabel }}
+                        </v-btn>
+                    </div>
                     <p v-if="curriculum.description" class="curriculum-detail__desc">{{ curriculum.description }}</p>
                 </div>
                 <div class="curriculum-detail__summary" aria-label="Curriculum-Umfang">
@@ -66,7 +81,11 @@
         </div>
 
         <v-dialog v-model="curriculumContentCopyDialogOpen" max-width="560" persistent>
-            <v-card rounded="xl" class="curriculum-detail__editor-dialog-card">
+            <v-card
+                rounded="xl"
+                class="curriculum-detail__editor-dialog-card curriculum-detail__copy-content-dialog-card"
+                @keydown.enter.stop.prevent="submitCurriculumContentCopyDialog"
+                @keydown.esc.stop.prevent="closeCurriculumContentCopyDialog">
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
                     <v-icon color="primary" size="20">mdi-content-copy</v-icon>
                     Inhalte aus Curriculum übernehmen
@@ -482,13 +501,18 @@
             </v-dialog>
 
             <v-dialog v-model="showUnitForm" max-width="520" persistent>
-                <v-card rounded="xl" class="curriculum-detail__editor-dialog-card">
+                <v-card
+                    rounded="xl"
+                    class="curriculum-detail__editor-dialog-card curriculum-detail__unit-dialog-card"
+                    @keydown.esc.stop.prevent="cancelUnitForm">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
                         <v-icon color="primary" size="20">mdi-text-box-edit-outline</v-icon>
                         {{ unitForm.id ? 'Einheit bearbeiten' : 'Einheit anlegen' }}
                     </v-card-title>
                     <v-card-text class="px-4 pt-2 pb-2">
-                        <div class="curriculum-detail__topic-form curriculum-detail__unit-form curriculum-detail__editor-dialog-form">
+                        <v-form
+                            class="curriculum-detail__topic-form curriculum-detail__unit-form curriculum-detail__unit-dialog-form curriculum-detail__editor-dialog-form"
+                            @submit.prevent="saveUnit">
                             <v-text-field
                                 v-model="unitForm.title"
                                 label="Einheit"
@@ -541,7 +565,7 @@
                                         rounded="lg"
                                         class="text-none curriculum-detail__topic-save-btn curriculum-detail__editor-dialog-save-btn"
                                         :loading="topicSaving"
-                                        @click="saveUnit">
+                                        type="submit">
                                         {{ unitForm.id ? 'Einheit speichern' : 'Einheit anlegen' }}
                                     </v-btn>
                                     <v-btn
@@ -555,7 +579,7 @@
                                     </v-btn>
                                 </div>
                             </div>
-                        </div>
+                        </v-form>
                     </v-card-text>
                 </v-card>
             </v-dialog>
@@ -1488,6 +1512,7 @@ export default {
             weekDisplayMode: 'days',
             isExportingCurriculum: false,
             isPrintingCurriculum: false,
+            curriculumStatusSaving: false,
             curriculumContentCopyDialogOpen: false,
             curriculumContentSources: [],
             selectedCurriculumContentSourceId: null,
@@ -1664,6 +1689,14 @@ export default {
             return this.curriculumTopics.length === 0
         },
 
+        curriculumIsFinished() {
+            return Boolean(this.curriculum.is_finished)
+        },
+
+        curriculumStatusLabel() {
+            return this.curriculumIsFinished ? 'Fertig' : 'In Arbeit'
+        },
+
         curriculumContentSourceOptions() {
             return this.curriculumContentSources.map((curriculum) => {
                 const topics = Array.isArray(curriculum?.topics) ? curriculum.topics : []
@@ -1736,6 +1769,7 @@ export default {
                 || this.isEditingUnit
                 || this.activeTopicAssignmentId !== null
                 || this.isCopyingCurriculumContent
+                || this.curriculumStatusSaving
         },
 
         showWeekdays() {
@@ -2023,6 +2057,15 @@ export default {
             this.curriculumContentCopyDialogOpen = false
             this.selectedCurriculumContentSourceId = null
             this.curriculumContentCopyError = null
+        },
+        submitCurriculumContentCopyDialog() {
+            if (
+                !this.selectedCurriculumContentSourceId
+                || this.isLoadingCurriculumContentSources
+                || this.isCopyingCurriculumContent
+            ) return
+
+            this.copyCurriculumContent()
         },
         async loadCurriculumContentSources() {
             this.isLoadingCurriculumContentSources = true
@@ -4723,8 +4766,34 @@ export default {
             return {
                 title: this.curriculum.title,
                 description: this.curriculum.description,
+                is_finished: this.curriculumIsFinished,
                 topics: this.curriculumTopics,
                 ...overrides,
+            }
+        },
+
+        async toggleCurriculumStatus() {
+            if (this.isPageActionLocked) return
+
+            const isFinished = !this.curriculumIsFinished
+            this.curriculumStatusSaving = true
+
+            try {
+                const updatedCurriculum = await this.persistCurriculum({
+                    is_finished: isFinished,
+                }, 'Curriculumstatus konnte nicht gespeichert werden.')
+
+                if (!updatedCurriculum) return
+
+                useNotificationStore().notify({
+                    message: isFinished
+                        ? 'Curriculum wurde als fertig markiert.'
+                        : 'Curriculum wurde als in Arbeit markiert.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+            } finally {
+                this.curriculumStatusSaving = false
             }
         },
 
@@ -5683,6 +5752,19 @@ export default {
     color: #0f172a;
     line-height: 1.15;
     margin: 0;
+}
+
+.curriculum-detail__title-heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.curriculum-detail__status-marker {
+    flex-shrink: 0;
+    font-weight: 800;
+    letter-spacing: 0.01em;
 }
 
 .curriculum-detail__desc {

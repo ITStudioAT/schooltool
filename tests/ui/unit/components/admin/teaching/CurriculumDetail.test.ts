@@ -19,6 +19,7 @@ function buildCurriculum(overrides: Record<string, unknown> = {}) {
         id: 15,
         title: 'Deutsch',
         description: 'Lehrplan',
+        is_finished: false,
         semester_count: 2,
         free_weeks: [],
         topics: [],
@@ -168,6 +169,44 @@ describe('CurriculumDetail preview layout', () => {
         expect(source).toContain('.curriculum-detail__back-btn {\n    min-height: 44px;')
         expect(source).toContain('.curriculum-detail__back-btn:focus-visible {')
         expect(source).toContain('.curriculum-detail__header-actions :deep(.v-btn) {')
+    })
+
+    it('shows and updates the curriculum status marker', async () => {
+        const wrapper = mountCurriculumDetail({ id: 15, is_finished: false })
+        const originalAxios = (globalThis as any).axios
+        const putMock = vi.fn().mockResolvedValue({
+            data: {
+                data: buildCurriculum({ id: 15, is_finished: true }),
+            },
+        })
+
+        ;(globalThis as any).axios = { put: putMock }
+
+        try {
+            const statusMarker = wrapper.find('.curriculum-detail__status-marker')
+
+            expect(statusMarker.text()).toBe('In Arbeit')
+
+            await statusMarker.trigger('click')
+
+            await vi.waitFor(() => {
+                expect(putMock).toHaveBeenCalledWith(
+                    '/api/admin/teaching/curricula/15',
+                    expect.objectContaining({ is_finished: true }),
+                )
+            })
+
+            expect(wrapper.emitted('updated')?.[0]?.[0]).toMatchObject({
+                id: 15,
+                is_finished: true,
+            })
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+
+        const finishedWrapper = mountCurriculumDetail({ is_finished: true })
+
+        expect(finishedWrapper.find('.curriculum-detail__status-marker').text()).toBe('Fertig')
     })
 
     it('adds clear vertical spacing between curriculum themes', () => {
@@ -555,6 +594,44 @@ describe('CurriculumDetail preview layout', () => {
             unitId: 'unit-1',
         })
     })
+
+    it('submits the unit form with Enter and cancels it with Escape', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grundlagen',
+                    materials: [],
+                    units: [{ id: 'unit-1', title: 'Anmelden', materials: [] }],
+                },
+            ],
+        })
+
+        await wrapper.find('.curriculum-detail__unit-item').trigger('click')
+
+        const persistCurriculum = vi.spyOn(wrapper.vm as any, 'persistCurriculum').mockResolvedValue(null)
+        const saveButton = wrapper.find(
+            '.curriculum-detail__unit-dialog-form .curriculum-detail__editor-dialog-save-btn',
+        )
+
+        expect(saveButton.attributes('type')).toBe('submit')
+
+        await wrapper.find('.curriculum-detail__unit-dialog-form').trigger('submit')
+
+        await vi.waitFor(() => {
+            expect(persistCurriculum).toHaveBeenCalledOnce()
+        })
+
+        await wrapper.find('.curriculum-detail__unit-dialog-card').trigger('keydown', { key: 'Escape' })
+
+        expect((wrapper.vm as any).showUnitForm).toBe(false)
+        expect((wrapper.vm as any).showUnitFormForTopicId).toBeNull()
+        expect((wrapper.vm as any).unitForm).toMatchObject({
+            id: null,
+            topicId: null,
+            title: '',
+        })
+    })
 })
 
 describe('Curriculum content copy', () => {
@@ -664,6 +741,54 @@ describe('Curriculum content copy', () => {
         } finally {
             ;(globalThis as any).axios = originalAxios
         }
+    })
+
+    it('copies the selected curriculum content when Enter is pressed', async () => {
+        const wrapper = mountCurriculumDetail({ id: 6, title: 'DGB 3', topics: [] })
+        const originalAxios = (globalThis as any).axios
+        const postMock = vi.fn().mockResolvedValue({
+            data: {
+                data: {
+                    id: 6,
+                    title: 'DGB 3',
+                    topics: [{ id: 'copied-topic', title: 'Grundlagen', units: [] }],
+                },
+            },
+        })
+
+        ;(globalThis as any).axios = { post: postMock }
+        await wrapper.setData({
+            curriculumContentCopyDialogOpen: true,
+            selectedCurriculumContentSourceId: 3,
+        })
+
+        try {
+            await wrapper.find('.curriculum-detail__copy-content-dialog-card').trigger('keydown', { key: 'Enter' })
+
+            await vi.waitFor(() => {
+                expect(postMock).toHaveBeenCalledWith('/api/admin/teaching/curricula/6/copy-content', {
+                    source_curriculum_id: 3,
+                })
+            })
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+
+    it('cancels curriculum content copying when Escape is pressed', async () => {
+        const wrapper = mountCurriculumDetail({ id: 6, topics: [] })
+
+        await wrapper.setData({
+            curriculumContentCopyDialogOpen: true,
+            selectedCurriculumContentSourceId: 3,
+            curriculumContentCopyError: 'Fehler',
+        })
+
+        await wrapper.find('.curriculum-detail__copy-content-dialog-card').trigger('keydown', { key: 'Escape' })
+
+        expect((wrapper.vm as any).curriculumContentCopyDialogOpen).toBe(false)
+        expect((wrapper.vm as any).selectedCurriculumContentSourceId).toBeNull()
+        expect((wrapper.vm as any).curriculumContentCopyError).toBeNull()
     })
 })
 

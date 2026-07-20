@@ -227,6 +227,17 @@ describe('Teaching curricula route sync', () => {
         expect(source).toContain("this.$emit('select', result)")
     })
 
+    it('shows only the import button when there are no imported curricula', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/curricula/CurriculaOverview.vue', 'utf8')
+        )
+
+        expect(source).toContain('class="curricula-overview__import-button"')
+        expect(source).toContain('v-if="imported_curricula.length"\n                    rounded="xl"')
+        expect(source).not.toContain('Noch keine importierten Curricula vorhanden.')
+        expect(source).not.toContain('Getrennt von deinen eigenen Curricula')
+    })
+
     it('does not expose curriculum search controls or filtering', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/curricula/CurriculaOverview.vue', 'utf8')

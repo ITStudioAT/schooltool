@@ -15,6 +15,7 @@ function buildStore() {
                 id: 15,
                 title: 'Deutsch',
                 description: 'Lehrplan',
+                is_finished: false,
                 semester_count: 2,
                 free_weeks: [],
                 topics: [],
@@ -132,5 +133,22 @@ describe('Teaching curricula overview actions', () => {
 
         expect(source).toContain('<div class="curricula-overview__item-actions" @click.stop>')
         expect(source).toContain('<v-dialog v-model="dialogOpen" max-width="560" persistent>')
+    })
+
+    it('shows the curriculum status markers in the overview', async () => {
+        const store = buildStore()
+        store.curricula = [
+            { ...store.curricula[0], id: 15, title: 'Deutsch', is_finished: false },
+            { ...store.curricula[0], id: 16, title: 'Mathematik', is_finished: true },
+        ]
+        store.meta.total = 2
+        const { wrapper } = mountCurriculaOverview(store)
+
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.findAll('.curricula-overview__status-marker').map((marker) => marker.text())).toEqual([
+            'In Arbeit',
+            'Fertig',
+        ])
     })
 })
