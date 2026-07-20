@@ -1,6 +1,6 @@
 <template>
     <div class="curriculum-pdf-preview">
-        <div class="curriculum-pdf-preview__toolbar">
+        <div v-if="!useNativePreview" class="curriculum-pdf-preview__toolbar">
             <button
                 type="button"
                 class="curriculum-pdf-preview__page-button"
@@ -22,7 +22,12 @@
             </button>
         </div>
 
-        <div ref="viewport" class="curriculum-pdf-preview__viewport" @scroll.passive="handleScroll">
+        <iframe
+            v-if="useNativePreview"
+            :src="src"
+            class="curriculum-pdf-preview__native-preview"
+            title="PDF-Vorschau" />
+        <div v-else ref="viewport" class="curriculum-pdf-preview__viewport" @scroll.passive="handleScroll">
             <div v-if="errorMessage" class="curriculum-pdf-preview__state curriculum-pdf-preview__state--error">
                 <span>{{ errorMessage }}</span>
                 <a :href="src" target="_blank" rel="noopener">PDF direkt öffnen</a>
@@ -47,6 +52,25 @@
 
 <script>
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+
+let sameOriginPdfWorkerUrlPromise = null
+
+export async function resolvePdfWorkerUrl(baseUrl = window.location.href, sourceUrl = pdfWorkerUrl) {
+    const applicationUrl = new URL(baseUrl)
+    const workerUrl = new URL(sourceUrl, applicationUrl)
+
+    if (workerUrl.origin === applicationUrl.origin) return workerUrl.href
+
+    sameOriginPdfWorkerUrlPromise ??= fetch(workerUrl.href).then(async (response) => {
+        if (!response.ok) {
+            throw new Error(`PDF worker could not be loaded (${response.status}).`)
+        }
+
+        return URL.createObjectURL(await response.blob())
+    })
+
+    return sameOriginPdfWorkerUrlPromise
+}
 
 export default {
     name: 'CurriculumPdfPreview',
@@ -84,6 +108,7 @@ export default {
             resizeTimer: null,
             restoreReleaseTimer: null,
             scrollEmitTimer: null,
+            useNativePreview: false,
         }
     },
 
@@ -144,8 +169,8 @@ export default {
                     if (!this.pdfDocument) return
 
                     this.pendingPosition = this.pendingPosition || this.currentPosition()
-                    this.renderPages().catch(() => {
-                        this.errorMessage = 'Die PDF-Vorschau konnte nicht neu aufgebaut werden.'
+                    this.renderPages().catch((error) => {
+                        this.activateNativePreview(error)
                     })
                 }, 180)
             })
@@ -160,12 +185,14 @@ export default {
             this.isLoading = true
             this.pageCount = 0
             this.pendingPosition = this.normalizePosition(this.initialPosition)
+            this.useNativePreview = false
 
             try {
                 const pdfjs = await import('pdfjs-dist')
-                pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+                pdfjs.GlobalWorkerOptions.workerSrc = await resolvePdfWorkerUrl()
 
                 const loadingTask = pdfjs.getDocument({
+                    disableFontFace: true,
                     isEvalSupported: false,
                     url: this.src,
                     withCredentials: true,
@@ -182,9 +209,14 @@ export default {
                 this.pageCount = pdfDocument.numPages
                 await this.$nextTick()
                 await this.renderPages()
-            } catch {
+            } catch (error) {
                 if (generation === this.loadGeneration) {
-                    this.errorMessage = 'Die PDF-Vorschau konnte nicht geladen werden.'
+                    if (this.pageCount) {
+                        this.activateNativePreview(error)
+                    } else {
+                        console.error('Curriculum PDF preview failed.', error)
+                        this.errorMessage = 'Die PDF-Vorschau konnte nicht geladen werden.'
+                    }
                 }
             } finally {
                 if (generation === this.loadGeneration) {
@@ -225,6 +257,13 @@ export default {
             })
             this.renderTasks = []
         },
+        activateNativePreview(error) {
+            console.error('Curriculum PDF canvas rendering failed; using the native preview.', error)
+            this.cancelRenderTasks()
+            this.errorMessage = ''
+            this.isLoading = false
+            this.useNativePreview = true
+        },
         async renderPages() {
             if (!this.pdfDocument || !this.$refs.viewport) return
 
@@ -253,7 +292,6 @@ export default {
                 canvas.style.height = `${Math.floor(viewport.height)}px`
 
                 const renderTask = page.render({
-                    canvas,
                     canvasContext,
                     transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
                     viewport,
@@ -401,6 +439,15 @@ export default {
     overflow: auto;
     overscroll-behavior: contain;
     touch-action: pan-y pinch-zoom;
+}
+
+.curriculum-pdf-preview__native-preview {
+    display: block;
+    width: 100%;
+    height: min(70vh, 760px);
+    min-height: 240px;
+    border: 0;
+    background: #fff;
 }
 
 .curriculum-pdf-preview__pages {

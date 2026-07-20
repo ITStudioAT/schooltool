@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
+import CurriculumPdfPreview, { resolvePdfWorkerUrl } from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
 
 describe('CurriculumPdfPreview', () => {
     it('normalizes a saved page-relative position', () => {
@@ -111,8 +111,58 @@ describe('CurriculumPdfPreview', () => {
 
         expect(source).toContain("import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'")
         expect(source).toContain("const pdfjs = await import('pdfjs-dist')")
-        expect(source).toContain('pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl')
+        expect(source).toContain('pdfjs.GlobalWorkerOptions.workerSrc = await resolvePdfWorkerUrl()')
+        expect(source).toContain('disableFontFace: true')
         expect(source).toContain("this.$emit('position-change', position, this.documentId)")
         expect(source).not.toContain('scroll-behavior: smooth')
+    })
+
+    it('uses the native browser preview when canvas rendering fails', () => {
+        const methods = (CurriculumPdfPreview as any).methods
+        const error = new Error('Malformed embedded font')
+        const cancelRenderTasks = vi.fn()
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const context = {
+            cancelRenderTasks,
+            errorMessage: 'Previous error',
+            isLoading: true,
+            useNativePreview: false,
+        }
+
+        methods.activateNativePreview.call(context, error)
+
+        expect(cancelRenderTasks).toHaveBeenCalledOnce()
+        expect(consoleError).toHaveBeenCalledWith(
+            'Curriculum PDF canvas rendering failed; using the native preview.',
+            error,
+        )
+        expect(context.errorMessage).toBe('')
+        expect(context.isLoading).toBe(false)
+        expect(context.useNativePreview).toBe(true)
+
+        consoleError.mockRestore()
+    })
+
+    it('creates a same-origin worker URL when Vite runs on a different port', async () => {
+        const workerBlob = new Blob(['pdf-worker'])
+        const fetchMock = vi.fn().mockResolvedValue({
+            blob: vi.fn().mockResolvedValue(workerBlob),
+            ok: true,
+        })
+        const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:http://localhost:8000/pdf-worker')
+        vi.stubGlobal('fetch', fetchMock)
+
+        const resolvedWorkerUrl = await resolvePdfWorkerUrl(
+            'http://localhost:8000/admin/teaching/curricula',
+            'http://localhost:5173/pdf.worker.min.mjs',
+        )
+
+        expect(fetchMock).toHaveBeenCalledOnce()
+        expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/^http:\/\/localhost:5173\//))
+        expect(createObjectUrl).toHaveBeenCalledWith(workerBlob)
+        expect(resolvedWorkerUrl).toBe('blob:http://localhost:8000/pdf-worker')
+
+        vi.unstubAllGlobals()
+        vi.restoreAllMocks()
     })
 })

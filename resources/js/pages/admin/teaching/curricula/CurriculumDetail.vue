@@ -451,7 +451,11 @@
                 </v-card>
             </v-dialog>
 
-            <v-dialog v-model="showTopicForm" max-width="520" persistent>
+            <v-dialog
+                v-model="showTopicForm"
+                max-width="520"
+                persistent
+                @after-enter="focusTopicTitleField">
                 <v-card
                     rounded="xl"
                     class="curriculum-detail__editor-dialog-card"
@@ -465,12 +469,15 @@
                             class="curriculum-detail__topic-form curriculum-detail__editor-dialog-form"
                             @submit.prevent="saveTopic">
                             <v-text-field
+                                ref="topicTitleField"
                                 v-model="topicForm.title"
                                 label="Thema"
                                 variant="outlined"
                                 density="comfortable"
                                 hide-details="auto"
-                                class="mb-3" />
+                                autofocus
+                                class="mb-3 curriculum-detail__topic-title-field"
+                                @keydown.esc.stop.prevent="cancelTopicForm" />
                             <div v-if="topicFormError" class="curriculum-detail__topic-form-error mb-3">
                                 {{ topicFormError }}
                             </div>
@@ -4868,6 +4875,16 @@ export default {
             this.topicFormError = null
             this.showTopicForm = true
             this.topicForm = this.newTopicForm(topic)
+            this.focusTopicTitleField()
+        },
+
+        focusTopicTitleField() {
+            this.$nextTick(() => {
+                const topicTitleField = this.$refs.topicTitleField
+                const fieldElement = topicTitleField?.$el ?? topicTitleField
+
+                fieldElement?.querySelector?.('input')?.focus()
+            })
         },
 
         cancelTopicForm() {
@@ -6915,6 +6932,10 @@ export default {
 .curriculum-detail__editor-dialog-card :deep(textarea),
 .curriculum-detail__editor-dialog-card :deep(.v-field__input) {
     color: #0f172a !important;
+}
+
+.curriculum-detail__topic-title-field :deep(input) {
+    cursor: default;
 }
 
 .curriculum-detail__editor-dialog-save-btn {

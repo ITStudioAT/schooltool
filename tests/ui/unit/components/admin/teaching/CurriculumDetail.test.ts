@@ -215,6 +215,54 @@ describe('CurriculumDetail preview layout', () => {
         expect(source).toContain('.curriculum-detail__topic-list {\n    display: flex;\n    flex-direction: column;\n    gap: 12px;')
     })
 
+    it('uses the default cursor in the topic title input', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue'), 'utf8')
+
+        expect(source).toContain('@after-enter="focusTopicTitleField"')
+        expect(source).toContain('ref="topicTitleField"')
+        expect(source).toContain('autofocus')
+        expect(source).toContain('class="mb-3 curriculum-detail__topic-title-field"')
+        expect(source).toContain(`.curriculum-detail__topic-title-field :deep(input) {
+    cursor: default;
+}`)
+    })
+
+    it('focuses the topic title input after the dialog opens', () => {
+        const focus = vi.fn()
+        const methods = (CurriculumDetail as any).methods
+        const context = {
+            $nextTick: (callback: () => void) => callback(),
+            $refs: {
+                topicTitleField: {
+                    $el: {
+                        querySelector: () => ({ focus }),
+                    },
+                },
+            },
+        }
+
+        methods.focusTopicTitleField.call(context)
+
+        expect(focus).toHaveBeenCalledOnce()
+    })
+
+    it('cancels the topic dialog when Escape is pressed in the title input', async () => {
+        const wrapper = mountCurriculumDetail()
+
+        await wrapper.setData({
+            showTopicForm: true,
+            topicForm: {
+                id: null,
+                title: 'Schreiben',
+            },
+        })
+
+        await wrapper.find('.curriculum-detail__topic-title-field').trigger('keydown', { key: 'Escape' })
+
+        expect((wrapper.vm as any).showTopicForm).toBe(false)
+        expect((wrapper.vm as any).topicForm).toMatchObject({ id: null, title: '' })
+    })
+
     it('resizes the content and document cards with an accessible splitter', async () => {
         const wrapper = mountCurriculumDetail()
         const splitter = wrapper.find('.curriculum-detail__card-splitter')

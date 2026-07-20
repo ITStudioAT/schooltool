@@ -1,5 +1,12 @@
 # UPDATES
 
+## 3.43.2
+
+### Unterrichtstool
+
+- Curriculum: PDF-Vorschau fixed
+- Eingabe neues Thema: Fokus in Eingabefeld, ESC=Abbrechen
+
 ## 3.43.1
 
 ### Unterrichtstool
