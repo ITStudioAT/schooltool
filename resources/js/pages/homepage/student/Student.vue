@@ -181,6 +181,58 @@
             </div>
         </section>
 
+        <!-- Kind auswählen (Elternzugang) -->
+        <section v-if="school && login_step === 'select_student'" class="login-cover">
+            <div class="login-card">
+                <div class="login-head">
+                    <v-icon size="26">mdi-account-child-circle</v-icon>
+                    <h2>Kind auswählen</h2>
+                </div>
+                <p class="login-copy">
+                    Wähle das Kind aus, dessen Unterrichtsbereich du ansehen möchtest. Der Elternzugang ist schreibgeschützt.
+                </p>
+
+                <v-radio-group
+                    v-model="selected_parent_student_id"
+                    data-testid="parent-student-selection"
+                    color="primary"
+                    hide-details>
+                    <div class="student-selection-list">
+                        <div
+                            v-for="student in data.students || []"
+                            :key="student.id"
+                            class="student-selection-item"
+                            :class="{ 'is-active': Number(selected_parent_student_id) === Number(student.id) }">
+                            <v-radio :value="student.id">
+                                <template #label>
+                                    <span class="student-selection-label">
+                                        <strong>{{ student.name }}</strong>
+                                        <span>{{ student.schoolclass || 'Keine Klasse' }} · {{ student.age }} Jahre</span>
+                                    </span>
+                                </template>
+                            </v-radio>
+                        </div>
+                    </div>
+                </v-radio-group>
+
+                <div class="login-actions">
+                    <v-btn type="button" color="warning" variant="text" rounded="pill" @click="handleParentStudentBack">
+                        {{ isChangingParentStudent ? 'Abbrechen' : 'Zurück' }}
+                    </v-btn>
+                    <v-btn
+                        data-testid="parent-student-submit"
+                        type="button"
+                        color="success"
+                        variant="flat"
+                        rounded="pill"
+                        :disabled="!selected_parent_student_id"
+                        @click="submitParentStudent">
+                        Unterrichtsbereich öffnen
+                    </v-btn>
+                </div>
+            </div>
+        </section>
+
         <!-- Passwort Eingabe -->
         <section v-if="school && login_step === 'enter_password'" class="login-cover">
             <div class="login-card">
@@ -260,24 +312,15 @@ export default {
         this.studentStore = useStudentStore()
         const isAuthenticated = await this.studentStore.getCurrentUser()
         if (isAuthenticated && this.user) {
+            if (this.isChangingParentStudent && await this.openParentStudentSelection()) {
+                return
+            }
+
             this.$router.replace('/student/overview')
             return
         }
         await this.studentStore.loadConfig()
-        const schoolShortName = String(this.$route.query.school || '').trim()
-        const selectedSchoolFromUrl = schoolShortName
-            ? this.schools?.find((item) => item.short_name === schoolShortName)
-            : null
-
-        if (selectedSchoolFromUrl) {
-            this.selected_school_id = selectedSchoolFromUrl.id
-            this.school = selectedSchoolFromUrl
-        } else if (this.selected_school_id) {
-            this.school = this.schools?.find((item) => Number(item.id) === Number(this.selected_school_id)) || null
-        } else if (this.schools?.length === 1) {
-            this.selected_school_id = this.schools[0].id
-            this.school = this.schools[0]
-        }
+        this.selectSchool()
     },
 
     data() {
@@ -287,7 +330,8 @@ export default {
             login_email: '',
             login_code: '',
             login_password: '',
-            login_step: 'email', // 'email', 'code_sent', 'enter_password'
+            login_step: 'email', // 'email', 'code_sent', 'select_student', 'enter_password'
+            selected_parent_student_id: null,
             show_password: false,
             show_error_dialog: false,
             login_error: '',
@@ -299,7 +343,11 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useStudentStore, ['config', 'schools', 'selected_school_id', 'school', 'data', 'user']),
+        ...mapWritableState(useStudentStore, ['config', 'schools', 'selected_school_id', 'school', 'data', 'user', 'viewer_type']),
+
+        isChangingParentStudent() {
+            return this.viewer_type === 'parent' && String(this.$route.query.select_child || '') === '1'
+        },
 
         maxSchoolsShown() {
             const raw = this.config?.config?.schooltool?.teaching_max_schools_shown
@@ -356,6 +404,48 @@ export default {
     },
 
     methods: {
+        selectSchool(fallbackSchoolId = null) {
+            const schoolShortName = String(this.$route.query.school || '').trim()
+            const selectedSchoolFromUrl = schoolShortName
+                ? this.schools?.find((item) => item.short_name === schoolShortName)
+                : null
+
+            if (selectedSchoolFromUrl) {
+                this.selected_school_id = selectedSchoolFromUrl.id
+                this.school = selectedSchoolFromUrl
+            } else if (fallbackSchoolId) {
+                this.selected_school_id = fallbackSchoolId
+                this.school = this.schools?.find((item) => Number(item.id) === Number(fallbackSchoolId)) || null
+            } else if (this.selected_school_id) {
+                this.school = this.schools?.find((item) => Number(item.id) === Number(this.selected_school_id)) || null
+            } else if (this.schools?.length === 1) {
+                this.selected_school_id = this.schools[0].id
+                this.school = this.schools[0]
+            }
+        },
+
+        async openParentStudentSelection() {
+            if (!(await this.studentStore.loadParentStudents())) return false
+            if (!(await this.studentStore.loadConfig())) return false
+
+            this.selectSchool(this.studentStore.data?.school_id)
+            if (!this.school) return false
+
+            this.selected_parent_student_id = this.studentStore.data?.selected_student_import_id ?? null
+            this.login_step = 'select_student'
+
+            return true
+        },
+
+        handleParentStudentBack() {
+            if (this.isChangingParentStudent) {
+                this.$router.push('/student/overview')
+                return
+            }
+
+            this.backToEmail()
+        },
+
         async validateSchoolSearchForm() {
             if (!this.$refs.schoolSearchForm) return
             this.is_school_search_valid = false
@@ -434,8 +524,21 @@ export default {
                 if (status === 'code_not_valid') {
                     this.login_error = 'Der eingegebene Code ist ungültig. Bitte versuche es erneut.'
                     this.show_error_dialog = true
+                } else if (status === 'select_student') {
+                    this.selected_parent_student_id = null
+                    this.login_step = 'select_student'
                 } else if (status === 'login_ok') {
                     // Erfolgreicher Login - Weiterleitung zum Unterrichtsbereich
+                    this.$router.push('/student/overview')
+                }
+            }
+        },
+
+        async submitParentStudent() {
+            if (!this.selected_parent_student_id) return
+
+            if (await this.studentStore.loginStepParentStudent(this.selected_parent_student_id)) {
+                if (this.studentStore.data?.status === 'login_ok') {
                     this.$router.push('/student/overview')
                 }
             }
@@ -468,6 +571,7 @@ export default {
             this.login_step = 'email'
             this.login_code = ''
             this.login_password = ''
+            this.selected_parent_student_id = null
             this.show_password = false
         },
 
@@ -478,6 +582,7 @@ export default {
             this.login_email = ''
             this.login_code = ''
             this.login_password = ''
+            this.selected_parent_student_id = null
             this.show_password = false
         },
     },

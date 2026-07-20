@@ -36,7 +36,7 @@ class StudentService
         $importEmail = trim((string) ($import116User->email ?? ''));
         $resolvedEmail = $importEmail !== '' ? $importEmail : "import116.{$import116User->id}@schooltool.noemail";
 
-        $user = $this->resolveExistingImportUser($import116User);
+        $user = $this->existingUserForImport116($import116User);
 
         if (! $user) {
             $user = new User;
@@ -188,7 +188,7 @@ class StudentService
         return $user;
     }
 
-    private function resolveExistingImportUser(Import116 $import116User): ?User
+    public function existingUserForImport116(Import116 $import116User): ?User
     {
         $schoolId = (int) $import116User->school_id;
         $importId = (int) $import116User->id;

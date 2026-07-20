@@ -23,6 +23,8 @@
                     <span v-if="user?.schoolclass" class="hero-badge dark">{{ user.schoolclass }}</span>
                 </div>
 
+                <ParentAccessPanel />
+
                 <div class="hero-logout-row">
                     <v-btn class="logout-btn" data-testid="student-overview-logout" variant="text" prepend-icon="mdi-logout" @click="handleLogout">Abmelden</v-btn>
                 </div>
@@ -48,12 +50,14 @@
 <script>
 import { mapWritableState } from 'pinia'
 import { useStudentStore } from '@/stores/student/StudentStore'
+import ParentAccessPanel from '../components/ParentAccessPanel.vue'
 import StudentNavigationDrawer from '../components/StudentNavigationDrawer.vue'
 import MyCourses from './myCourses/MyCourses.vue'
 import '../../../../../css/student.css'
 
 export default {
     components: {
+        ParentAccessPanel,
         StudentNavigationDrawer,
         MyCourses,
     },

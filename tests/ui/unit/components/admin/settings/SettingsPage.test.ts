@@ -287,12 +287,63 @@ describe('Admin settings page', () => {
         expect(methods.canAccessRestaurantSettings(['lunch_admin'], {})).toBe(true)
     })
 
-    it('allows students timetables settings only for super admin and students timetables admin roles', () => {
+    it('requires both a students timetables role and the licence capability', () => {
         const methods = (Settings as any).methods
 
         expect(methods.canAccessStudentsTimetablesSettings(['super_admin'])).toBe(true)
         expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_admin'])).toBe(true)
         expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_moderator'])).toBe(false)
+        expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_admin'], { students_timetables: true })).toBe(true)
+        expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_admin'], { students_timetables: false })).toBe(false)
+        expect(methods.canAccessStudentsTimetablesSettings(['super_admin'], { students_timetables: false })).toBe(false)
+        expect(methods.canAccessStudentsTimetablesSettings(['studentstimetables_admin'], { profile: true })).toBe(false)
+    })
+
+    it('hides and redirects away from students timetables settings when the licence capability is unavailable', () => {
+        const replace = vi.fn()
+
+        render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['studentstimetables_admin'],
+                                    capabilities: {
+                                        students_timetables: false,
+                                        profile: true,
+                                    },
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=students_timetables',
+                        query: {
+                            tab: 'students_timetables',
+                        },
+                    },
+                    $router: {
+                        replace,
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    Profile: { template: '<div>Profile Component</div>' },
+                },
+            },
+        })
+
+        expect(screen.queryByText('Schülerstundenpläne')).not.toBeInTheDocument()
+        expect(screen.queryByText(/StudentsTimetablesAdminUsers Component/)).not.toBeInTheDocument()
+        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=profile')
     })
 
     it('shows the top-level admin and super-admin tabs only for allowed roles', () => {

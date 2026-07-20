@@ -260,6 +260,11 @@ class User extends Authenticatable
         return $this->belongsTo(Register::class, 'register_id');
     }
 
+    public function teachingCourseStudents(): HasMany
+    {
+        return $this->hasMany(TeachingCourseStudent::class);
+    }
+
     public function registerDateBookings(): HasMany
     {
         return $this->hasMany(RegisterDateBooking::class);

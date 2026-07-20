@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -78,4 +80,19 @@ class Import116 extends Model
         'import_date' => 'datetime',
         'exists_date' => 'datetime',
     ];
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function linkedUsers(): HasMany
+    {
+        return $this->hasMany(User::class, 'import116_id');
+    }
+
+    public function teachingCourseStudents(): HasMany
+    {
+        return $this->hasMany(TeachingCourseStudent::class, 'import116_id');
+    }
 }

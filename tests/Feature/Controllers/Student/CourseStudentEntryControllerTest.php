@@ -38,6 +38,7 @@ beforeEach(function () {
     SchoolTool::factory()->create([
         'school_id' => $this->school->id,
         'active_schoolyear_id' => $this->schoolyear->id,
+        'teaching_visible_user' => true,
     ]);
 
     $this->student = User::factory()->create([

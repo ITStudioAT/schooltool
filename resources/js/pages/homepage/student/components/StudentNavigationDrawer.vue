@@ -16,7 +16,12 @@
         <v-divider />
 
         <v-list>
-            <v-list-item data-testid="student-drawer-password" v-if="currentRoute !== 'password'" prepend-icon="mdi-lock-reset" @click="handlePasswordChange">
+            <v-list-item data-testid="student-drawer-change-child" v-if="viewer_type === 'parent'" prepend-icon="mdi-account-switch" @click="handleParentStudentChange">
+                <v-list-item-title>Kind wechseln</v-list-item-title>
+                <v-list-item-subtitle>Unterrichtsbereich eines anderen Kindes öffnen</v-list-item-subtitle>
+            </v-list-item>
+
+            <v-list-item data-testid="student-drawer-password" v-if="viewer_type !== 'parent' && currentRoute !== 'password'" prepend-icon="mdi-lock-reset" @click="handlePasswordChange">
                 <v-list-item-title>Passwort ändern</v-list-item-title>
                 <v-list-item-subtitle>Ändere dein Passwort für mehr Sicherheit</v-list-item-subtitle>
             </v-list-item>
@@ -82,7 +87,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useStudentStore, ['user']),
+        ...mapWritableState(useStudentStore, ['user', 'viewer_type']),
 
         drawerModel: {
             get() {
@@ -115,6 +120,11 @@ export default {
         handlePasswordChange() {
             this.drawerModel = false
             this.$router.push('/student/password')
+        },
+
+        handleParentStudentChange() {
+            this.drawerModel = false
+            this.$router.push({ path: '/student', query: { select_child: '1' } })
         },
 
         handleProfileView() {

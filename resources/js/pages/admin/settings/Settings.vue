@@ -424,7 +424,7 @@ export default {
             return ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => this.configuredRoleNames.includes(role))
         },
         canAccessStudentsTimetablesSettingsTab() {
-            return this.canAccessStudentsTimetablesSettings(this.configuredRoleNames)
+            return this.canAccessStudentsTimetablesSettings(this.configuredRoleNames, this.configuredCapabilities)
         },
         canAccessProfileTab() {
             if (typeof this.configuredCapabilities.profile === 'boolean') {
@@ -650,8 +650,18 @@ export default {
 
             return ['super_admin', 'admin', 'lunch_admin'].some((role) => configuredRoleNames.includes(role))
         },
-        canAccessStudentsTimetablesSettings(configuredRoleNames) {
-            return ['super_admin', 'studentstimetables_admin'].some((role) => configuredRoleNames.includes(role))
+        canAccessStudentsTimetablesSettings(configuredRoleNames, configuredCapabilities = {}) {
+            const hasAllowedRole = ['super_admin', 'studentstimetables_admin'].some((role) => configuredRoleNames.includes(role))
+
+            if (typeof configuredCapabilities.students_timetables === 'boolean') {
+                return configuredCapabilities.students_timetables && hasAllowedRole
+            }
+
+            if (Object.keys(configuredCapabilities).length > 0) {
+                return false
+            }
+
+            return hasAllowedRole
         },
         initialTab() {
             const tab = this.$route?.query?.tab || 'super_admin'
@@ -669,7 +679,7 @@ export default {
             const canAccessTeachingTab = typeof configuredCapabilities.teaching === 'boolean'
                 ? configuredCapabilities.teaching
                 : ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => configuredRoleNames.includes(role))
-            const canAccessStudentsTimetablesTab = this.canAccessStudentsTimetablesSettings(configuredRoleNames)
+            const canAccessStudentsTimetablesTab = this.canAccessStudentsTimetablesSettings(configuredRoleNames, configuredCapabilities)
             const canAccessMaterialsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
             const canAccessGroupsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
             const canAccessRestaurantTab = this.canAccessRestaurantSettings(configuredRoleNames, configuredCapabilities)
@@ -708,7 +718,7 @@ export default {
             const canAccessTeachingTab = typeof configuredCapabilities.teaching === 'boolean'
                 ? configuredCapabilities.teaching
                 : ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => configuredRoleNames.includes(role))
-            const canAccessStudentsTimetablesTab = this.canAccessStudentsTimetablesSettings(configuredRoleNames)
+            const canAccessStudentsTimetablesTab = this.canAccessStudentsTimetablesSettings(configuredRoleNames, configuredCapabilities)
             const canAccessMaterialsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
             const canAccessGroupsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
             const canAccessRestaurantTab = this.canAccessRestaurantSettings(configuredRoleNames, configuredCapabilities)

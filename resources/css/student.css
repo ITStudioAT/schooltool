@@ -297,6 +297,37 @@
     flex-wrap: wrap;
 }
 
+.student-selection-list {
+    display: grid;
+    gap: 10px;
+}
+
+.student-selection-item {
+    padding: 10px 14px;
+    border: 1px solid rgba(35, 61, 76, 0.18);
+    border-radius: 14px;
+    background: rgba(35, 61, 76, 0.06);
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.student-selection-item.is-active {
+    border-color: rgba(58, 170, 53, 0.65);
+    background: rgba(58, 170, 53, 0.12);
+}
+
+.student-selection-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    color: #1d3645;
+}
+
+.student-selection-label span {
+    color: #48606f;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
 /* Drawer Styles */
 .drawer-header {
     padding: 24px 16px;

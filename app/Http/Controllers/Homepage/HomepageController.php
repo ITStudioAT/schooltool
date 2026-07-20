@@ -573,9 +573,12 @@ class HomepageController extends Controller
     {
         if (Auth::check()) {
             Auth::guard('web')->logout();
-            session()->invalidate();
-            session()->regenerateToken();
         }
+
+        session()->invalidate();
+        session()->regenerateToken();
+
+        return response()->json(['status' => 'OK']);
     }
 
     private function ensureRestaurantLicenceForSchool(?School $school, LicenceService $licenceService): void

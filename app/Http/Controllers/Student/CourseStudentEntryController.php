@@ -8,13 +8,14 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\User;
+use App\Services\ParentStudentAccessService;
 use App\Services\TeachingService;
 
 class CourseStudentEntryController extends Controller
 {
-    public function index($courseId)
+    public function index($courseId, ParentStudentAccessService $parentAccess)
     {
-        if (! $auth_user = $this->userHasRole(['student'])) {
+        if (! $auth_user = $parentAccess->currentStudent()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

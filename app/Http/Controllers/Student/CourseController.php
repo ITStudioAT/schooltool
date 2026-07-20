@@ -11,6 +11,7 @@ use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
+use App\Services\ParentStudentAccessService;
 use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingService;
 use Illuminate\Support\Collection;
@@ -18,9 +19,9 @@ use Illuminate\Support\Facades\Storage;
 
 class CourseController extends Controller
 {
-    public function index()
+    public function index(ParentStudentAccessService $parentAccess)
     {
-        if (! $auth_user = $this->userHasRole(['student'])) {
+        if (! $auth_user = $parentAccess->currentStudent()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -190,9 +191,9 @@ class CourseController extends Controller
         return $timestamp === false ? null : $timestamp;
     }
 
-    public function show($courseId)
+    public function show($courseId, ParentStudentAccessService $parentAccess)
     {
-        if (! $auth_user = $this->userHasRole(['student'])) {
+        if (! $auth_user = $parentAccess->currentStudent()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -361,9 +362,11 @@ class CourseController extends Controller
         ], 200);
     }
 
-    public function previewAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment)
-    {
-        if (! $auth_user = $this->userHasRole(['student'])) {
+    public function previewAdoptedAttachment(
+        TeachingCourseDateMaterialAttachment $attachment,
+        ParentStudentAccessService $parentAccess,
+    ) {
+        if (! $auth_user = $parentAccess->currentStudent()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -372,9 +375,11 @@ class CourseController extends Controller
         return $this->serveAdoptedAttachment($attachment, 'inline');
     }
 
-    public function downloadAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment)
-    {
-        if (! $auth_user = $this->userHasRole(['student'])) {
+    public function downloadAdoptedAttachment(
+        TeachingCourseDateMaterialAttachment $attachment,
+        ParentStudentAccessService $parentAccess,
+    ) {
+        if (! $auth_user = $parentAccess->currentStudent()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

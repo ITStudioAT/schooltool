@@ -142,6 +142,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/student/login_step_email', [StudentController::class, 'loginStepEmail'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
     Route::post('/homepage/student/login_step_code', [StudentController::class, 'loginStepCode'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
     Route::post('/homepage/student/login_step_password', [StudentController::class, 'loginStepPassword'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
+    Route::post('/homepage/student/login_step_parent_student', [StudentController::class, 'loginStepParentStudent'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
+    Route::get('/homepage/student/parent_students', [StudentController::class, 'parentStudents'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
     Route::get('/homepage/student/user', [StudentController::class, 'user'])->middleware('tool-licensed:Lehrertool');
     Route::post('/homepage/student/change_password', [StudentController::class, 'changePassword'])->middleware('tool-licensed:Lehrertool');
     Route::get('/homepage/student/courses', [CourseController::class, 'index'])->middleware('tool-licensed:Lehrertool');

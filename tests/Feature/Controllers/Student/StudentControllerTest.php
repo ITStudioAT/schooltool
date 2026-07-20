@@ -6,12 +6,20 @@ use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\TeachingCourse;
 use App\Models\User;
+use App\Notifications\StandardEmail;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+afterEach(function () {
+    Carbon::setTestNow();
+});
 
 beforeEach(function () {
     collect(['student', 'teacher', 'super_admin'])->each(function (string $role) {
@@ -35,6 +43,7 @@ beforeEach(function () {
     SchoolTool::factory()->create([
         'school_id' => $this->school->id,
         'active_schoolyear_id' => $this->schoolyear->id,
+        'teaching_visible_user' => true,
     ]);
 
     $licence = Licence::create([
@@ -234,4 +243,455 @@ test('login step email reuses existing import-linked user when import email chan
     expect(User::query()->count())->toBe($usersBefore)
         ->and($existingLinkedUser->email)->toBe('new.import.email@student.test')
         ->and((int) $importRow->user_id)->toBe($existingLinkedUser->id);
+});
+
+test('parent verifies its email and selects one of multiple eligible children without authenticating as the child', function () {
+    Carbon::setTestNow(Carbon::parse('2026-07-21 10:00:00', 'Europe/Vienna'));
+    Notification::fake();
+
+    $parentEmail = 'parent@example.test';
+    $firstChild = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Anna',
+        'last_name' => 'Adler',
+        'class' => '2A',
+        'birth_date' => '2007-07-22',
+        'mother_email' => $parentEmail,
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+    $secondChild = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Berta',
+        'last_name' => 'Bauer',
+        'class' => '4B',
+        'birth_date' => '2010-03-12',
+        'mother_email' => null,
+        'father_email' => $parentEmail,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Digitale Grundbildung',
+        'students' => [
+            ['import116_id' => $firstChild->id],
+            ['import116_id' => $secondChild->id],
+        ],
+    ]);
+
+    $emailResponse = $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => 'login_with_password',
+        'school_id' => $this->school->id,
+        'email' => $parentEmail,
+    ]);
+
+    $emailResponse->assertOk()
+        ->assertJsonPath('status', 'code_sent')
+        ->assertJsonPath('login_context', 'parent')
+        ->assertJsonMissingPath('students');
+
+    $loginCode = null;
+    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification) use (&$loginCode): bool {
+        $loginCode = (string) $notification->data['token_2fa'];
+
+        return $notification->data['subject'] === 'Ihr Eltern-Login-Code für das Unterrichtstool';
+    });
+
+    $codeResponse = $this->postJson('/api/homepage/student/login_step_code', [
+        'type' => 'login_with_password',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => $parentEmail,
+        'login_code' => $loginCode,
+        'login_context' => 'parent',
+    ]);
+
+    $codeResponse->assertOk()
+        ->assertJsonPath('status', 'select_student')
+        ->assertJsonCount(2, 'students')
+        ->assertJsonPath('students.0.id', $firstChild->id)
+        ->assertJsonPath('students.0.age', 18)
+        ->assertJsonPath('students.1.id', $secondChild->id);
+
+    $this->assertGuest();
+
+    $selectionResponse = $this->postJson('/api/homepage/student/login_step_parent_student', [
+        'student_import_id' => $secondChild->id,
+    ]);
+
+    $selectionResponse->assertOk()
+        ->assertJsonPath('status', 'login_ok')
+        ->assertJsonPath('viewer_type', 'parent')
+        ->assertJsonPath('user.first_name', 'Berta');
+
+    $this->assertGuest();
+
+    $selectedChildUser = User::query()->where('import116_id', $secondChild->id)->firstOrFail();
+
+    $this->getJson('/api/homepage/student/user?school_id='.$this->school->id)
+        ->assertOk()
+        ->assertJsonPath('viewer_type', 'parent')
+        ->assertJsonPath('user.id', $selectedChildUser->id);
+
+    $this->getJson('/api/homepage/student/parent_students')
+        ->assertOk()
+        ->assertJsonPath('status', 'select_student')
+        ->assertJsonPath('school_id', $this->school->id)
+        ->assertJsonPath('selected_student_import_id', $secondChild->id)
+        ->assertJsonCount(2, 'students')
+        ->assertJsonPath('students.0.id', $firstChild->id)
+        ->assertJsonPath('students.1.id', $secondChild->id);
+
+    $this->postJson('/api/homepage/student/login_step_parent_student', [
+        'student_import_id' => $firstChild->id,
+    ])->assertOk()
+        ->assertJsonPath('viewer_type', 'parent')
+        ->assertJsonPath('user.first_name', 'Anna');
+
+    $selectedChildUser = User::query()->where('import116_id', $firstChild->id)->firstOrFail();
+
+    $this->getJson('/api/homepage/student/user?school_id='.$this->school->id)
+        ->assertOk()
+        ->assertJsonPath('viewer_type', 'parent')
+        ->assertJsonPath('user.id', $selectedChildUser->id);
+
+    $this->getJson('/api/homepage/student/courses')
+        ->assertOk()
+        ->assertJsonCount(1, 'courses')
+        ->assertJsonPath('courses.0.id', $course->id);
+
+    $originalPassword = $selectedChildUser->password;
+
+    $this->postJson('/api/homepage/student/change_password', [
+        'new_password' => 'parent-must-not-change-this',
+        'confirm_password' => 'parent-must-not-change-this',
+    ])->assertForbidden();
+
+    expect($selectedChildUser->fresh()->password)->toBe($originalPassword);
+
+    $this->postJson('/api/homepage/logout')
+        ->assertOk()
+        ->assertJsonPath('status', 'OK');
+
+    $this->getJson('/api/homepage/student/user?school_id='.$this->school->id)
+        ->assertOk()
+        ->assertJsonPath('user', null)
+        ->assertJsonPath('viewer_type', null);
+
+    $this->assertGuest();
+});
+
+test('parent login only exposes active children aged 18 or less from the active schoolyear', function () {
+    Carbon::setTestNow(Carbon::parse('2026-07-21 10:00:00', 'Europe/Vienna'));
+    Notification::fake();
+
+    $parentEmail = 'filtered.parent@example.test';
+    $eligibleChild = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'birth_date' => '2007-07-22',
+        'mother_email' => $parentEmail,
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+    $adultChild = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'birth_date' => '2007-07-21',
+        'mother_email' => $parentEmail,
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+    $inactiveChild = Import116::factory()->deleted()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'birth_date' => '2011-02-10',
+        'mother_email' => $parentEmail,
+        'father_email' => null,
+        'import_user_id' => $this->teacher->id,
+    ]);
+    $otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+        'is_active' => false,
+    ]);
+    $otherSchoolyearChild = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+        'birth_date' => '2012-05-04',
+        'mother_email' => $parentEmail,
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+    TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            ['import116_id' => $eligibleChild->id],
+            ['import116_id' => $adultChild->id],
+            ['import116_id' => $inactiveChild->id],
+        ],
+    ]);
+
+    $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => 'login_without_password',
+        'school_id' => $this->school->id,
+        'email' => strtoupper($parentEmail),
+    ])->assertOk();
+
+    $loginCode = null;
+    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification) use (&$loginCode): bool {
+        $loginCode = (string) $notification->data['token_2fa'];
+
+        return true;
+    });
+
+    $response = $this->postJson('/api/homepage/student/login_step_code', [
+        'type' => 'login_without_password',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => strtoupper($parentEmail),
+        'login_code' => $loginCode,
+        'login_context' => 'parent',
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('status', 'select_student')
+        ->assertJsonCount(1, 'students')
+        ->assertJsonPath('students.0.id', $eligibleChild->id);
+
+    expect(collect($response->json('students'))->pluck('id'))
+        ->not->toContain($adultChild->id)
+        ->not->toContain($inactiveChild->id)
+        ->not->toContain($otherSchoolyearChild->id);
+});
+
+test('parent cannot select another parents child and loses access when the selected child becomes inactive', function () {
+    Notification::fake();
+
+    $parentEmail = 'authorized.parent@example.test';
+    $eligibleChild = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'birth_date' => now()->subYears(12)->toDateString(),
+        'mother_email' => $parentEmail,
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+    $otherParentsChild = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'birth_date' => now()->subYears(10)->toDateString(),
+        'mother_email' => 'other.parent@example.test',
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+    TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            ['import116_id' => $eligibleChild->id],
+            ['import116_id' => $otherParentsChild->id],
+        ],
+    ]);
+
+    $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => 'login_with_password',
+        'school_id' => $this->school->id,
+        'email' => $parentEmail,
+    ])->assertOk();
+
+    $loginCode = null;
+    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification) use (&$loginCode): bool {
+        $loginCode = (string) $notification->data['token_2fa'];
+
+        return true;
+    });
+
+    $this->postJson('/api/homepage/student/login_step_code', [
+        'type' => 'login_with_password',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => $parentEmail,
+        'login_code' => $loginCode,
+        'login_context' => 'parent',
+    ])->assertOk()->assertJsonPath('status', 'select_student');
+
+    $this->postJson('/api/homepage/student/login_step_parent_student', [
+        'student_import_id' => $otherParentsChild->id,
+    ])->assertForbidden();
+
+    $this->postJson('/api/homepage/student/login_step_parent_student', [
+        'student_import_id' => $eligibleChild->id,
+    ])->assertOk();
+
+    $eligibleChild->update(['exists_date' => null]);
+
+    $this->getJson('/api/homepage/student/user')
+        ->assertOk()
+        ->assertJsonPath('user', null)
+        ->assertJsonPath('viewer_type', null);
+});
+
+test('student password endpoint rejects non-student users', function () {
+    $this->postJson('/api/homepage/student/login_step_password', [
+        'type' => 'login_with_password',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => $this->teacher->email,
+        'password' => 'password',
+    ])->assertForbidden();
+
+    $this->assertGuest();
+});
+
+test('student cannot open the parent child selection', function () {
+    $this->actingAs($this->student)
+        ->getJson('/api/homepage/student/parent_students')
+        ->assertForbidden();
+});
+
+test('student email takes precedence when the same address is also a parent contact', function () {
+    Notification::fake();
+
+    Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'birth_date' => now()->subYears(10)->toDateString(),
+        'mother_email' => $this->student->email,
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+
+    $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => 'login_with_password',
+        'school_id' => $this->school->id,
+        'email' => $this->student->email,
+    ])->assertOk()
+        ->assertJsonPath('status', 'enter_password')
+        ->assertJsonPath('login_context', 'student');
+
+    Notification::assertNothingSent();
+});
+
+test('parent without an active child aged 18 or less cannot start a login', function () {
+    Carbon::setTestNow(Carbon::parse('2026-07-21 10:00:00', 'Europe/Vienna'));
+    Notification::fake();
+
+    $adultChild = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'birth_date' => '2007-07-21',
+        'mother_email' => 'adult-only.parent@example.test',
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+    TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            ['import116_id' => $adultChild->id],
+        ],
+    ]);
+
+    $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => 'login_without_password',
+        'school_id' => $this->school->id,
+        'email' => 'adult-only.parent@example.test',
+    ])->assertForbidden();
+
+    Notification::assertNothingSent();
+});
+
+test('parent child selection only includes children with an active course', function () {
+    Notification::fake();
+
+    $parentEmail = 'courses-only.parent@example.test';
+    $childWithCourse = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'birth_date' => now()->subYears(12)->toDateString(),
+        'mother_email' => $parentEmail,
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+    $childWithoutCourse = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'birth_date' => now()->subYears(10)->toDateString(),
+        'mother_email' => $parentEmail,
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+    $childWithCancelledCourse = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'birth_date' => now()->subYears(8)->toDateString(),
+        'mother_email' => $parentEmail,
+        'father_email' => null,
+        'exists_date' => now(),
+        'import_user_id' => $this->teacher->id,
+    ]);
+    TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            ['import116_id' => $childWithCourse->id],
+            [
+                'import116_id' => $childWithCancelledCourse->id,
+                'canceled_at' => now()->subDay()->toDateTimeString(),
+            ],
+        ],
+    ]);
+
+    $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => 'login_without_password',
+        'school_id' => $this->school->id,
+        'email' => $parentEmail,
+    ])->assertOk();
+
+    $loginCode = null;
+    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification) use (&$loginCode): bool {
+        $loginCode = (string) $notification->data['token_2fa'];
+
+        return true;
+    });
+
+    $this->postJson('/api/homepage/student/login_step_code', [
+        'type' => 'login_without_password',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => $parentEmail,
+        'login_code' => $loginCode,
+        'login_context' => 'parent',
+    ])->assertOk()
+        ->assertJsonPath('status', 'select_student')
+        ->assertJsonCount(1, 'students')
+        ->assertJsonPath('students.0.id', $childWithCourse->id);
+
+    $this->postJson('/api/homepage/student/login_step_parent_student', [
+        'student_import_id' => $childWithoutCourse->id,
+    ])->assertForbidden();
+
+    $this->postJson('/api/homepage/student/login_step_parent_student', [
+        'student_import_id' => $childWithCancelledCourse->id,
+    ])->assertForbidden();
 });

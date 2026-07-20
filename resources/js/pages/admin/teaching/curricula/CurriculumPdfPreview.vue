@@ -27,7 +27,7 @@
             :src="src"
             class="curriculum-pdf-preview__native-preview"
             title="PDF-Vorschau" />
-        <div v-else ref="viewport" class="curriculum-pdf-preview__viewport" @scroll.passive="handleScroll">
+        <div v-show="!useNativePreview" ref="viewport" class="curriculum-pdf-preview__viewport" @scroll.passive="handleScroll">
             <div v-if="errorMessage" class="curriculum-pdf-preview__state curriculum-pdf-preview__state--error">
                 <span>{{ errorMessage }}</span>
                 <a :href="src" target="_blank" rel="noopener">PDF direkt öffnen</a>

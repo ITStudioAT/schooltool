@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 
@@ -11,6 +11,7 @@ export const useStudentStore = defineStore('StudentStudentStore', {
             school: null,
             data: {},
             user: null,
+            viewer_type: null,
         }
     },
 
@@ -66,6 +67,7 @@ export const useStudentStore = defineStore('StudentStudentStore', {
                 this.response = await axios.post('/api/homepage/student/login_step_code', data)
                 this.data = this.response.data
                 this.user = this.response.data?.user ?? null
+                this.viewer_type = this.response.data?.viewer_type ?? null
                 return true
             } catch (error) {
                 notification.notify({
@@ -88,6 +90,7 @@ export const useStudentStore = defineStore('StudentStudentStore', {
                 this.response = await axios.post('/api/homepage/student/login_step_password', data)
                 this.data = this.response.data
                 this.user = this.response.data?.user ?? null
+                this.viewer_type = this.response.data?.viewer_type ?? null
                 return true
             } catch (error) {
                 notification.notify({
@@ -102,13 +105,61 @@ export const useStudentStore = defineStore('StudentStudentStore', {
             }
         },
 
+        async loginStepParentStudent(studentImportId) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                this.response = await axios.post('/api/homepage/student/login_step_parent_student', {
+                    student_import_id: studentImportId,
+                })
+                this.data = this.response.data
+                this.user = this.response.data?.user ?? null
+                this.viewer_type = this.response.data?.viewer_type ?? null
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status ?? null,
+                    message: error.response?.data?.message ?? 'Der Unterrichtsbereich konnte nicht geöffnet werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async loadParentStudents() {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                this.response = await axios.get('/api/homepage/student/parent_students')
+                this.data = this.response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status ?? null,
+                    message: error.response?.data?.message ?? 'Die Kinder konnten nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
         async getCurrentUser() {
             try {
                 const response = await axios.get('/api/homepage/student/user')
                 this.user = response.data?.user ?? null
+                this.viewer_type = response.data?.viewer_type ?? null
                 return this.user !== null
             } catch (error) {
                 this.user = null
+                this.viewer_type = null
                 return false
             }
         },
@@ -118,6 +169,7 @@ export const useStudentStore = defineStore('StudentStudentStore', {
                 await axios.post('/api/homepage/logout')
                 this.user = null
                 this.data = {}
+                this.viewer_type = null
                 this.school = null
                 this.selected_school_id = null
                 return true
@@ -155,3 +207,7 @@ export const useStudentStore = defineStore('StudentStudentStore', {
         },
     },
 })
+
+if (import.meta.hot) {
+    import.meta.hot.accept(acceptHMRUpdate(useStudentStore, import.meta.hot))
+}

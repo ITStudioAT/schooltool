@@ -146,7 +146,7 @@ export default {
         const isAuthenticated = await this.studentStore.getCurrentUser()
 
         // Prüfen ob User eingeloggt ist
-        if (!isAuthenticated || !this.user) {
+        if (!isAuthenticated || !this.user || this.viewer_type === 'parent') {
             this.$router.push('/student')
         }
     },
@@ -165,7 +165,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useStudentStore, ['user']),
+        ...mapWritableState(useStudentStore, ['user', 'viewer_type']),
 
         weekdayLabel() {
             return new Intl.DateTimeFormat('de-AT', { weekday: 'long' }).format(new Date())

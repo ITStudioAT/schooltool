@@ -28,6 +28,8 @@
                     <span v-if="user?.schoolclass" class="hero-badge dark">{{ user.schoolclass }}</span>
                 </div>
 
+                <ParentAccessPanel />
+
                 <div class="hero-logout-row">
                     <v-btn class="logout-btn" variant="text" prepend-icon="mdi-logout" @click="handleLogout">Abmelden</v-btn>
                 </div>
@@ -572,11 +574,13 @@ import {
     teachingCategoryEvaluationColorForValue,
     teachingCategoryEvaluationValueLabels,
 } from '@/helpers/teachingCategoryEvaluation'
+import ParentAccessPanel from '../../components/ParentAccessPanel.vue'
 import StudentNavigationDrawer from '../../components/StudentNavigationDrawer.vue'
 import '../../../../../../css/student.css'
 
 export default {
     components: {
+        ParentAccessPanel,
         StudentNavigationDrawer,
     },
 

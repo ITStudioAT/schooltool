@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\School;
 use App\Services\AccessScopeService;
 use App\Services\LicenceService;
+use App\Services\ParentStudentAccessService;
 use App\Services\SchoolToolModuleStatusService;
 use Closure;
 use Illuminate\Http\Request;
@@ -53,7 +54,11 @@ class ToolLicensed
         $schoolFromRequest = $this->resolveSchoolFromRequest($request);
 
         if ($request->is('homepage/*') || $request->is('api/homepage/*')) {
-            return $schoolFromRequest ?? $user?->selectedSchool;
+            $parentAccessSchool = $request->is('api/homepage/student/*')
+                ? app(ParentStudentAccessService::class)->school()
+                : null;
+
+            return $schoolFromRequest ?? $parentAccessSchool ?? $user?->selectedSchool;
         }
 
         return $user?->selectedSchool ?? $schoolFromRequest;

@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.43.3 X
+
+### Unterrichtstool
+
+- Eltern können sich einloggen
+
 ## 3.43.2
 
 ### Unterrichtstool

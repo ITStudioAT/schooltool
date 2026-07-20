@@ -22,6 +22,8 @@
                     <span class="hero-badge dark">{{ dateLabel }}</span>
                     <span v-if="user" class="hero-badge">{{ user.first_name }} {{ user.last_name }}</span>
                 </div>
+
+                <ParentAccessPanel />
             </div>
         </section>
 
@@ -116,11 +118,13 @@
 <script>
 import { mapWritableState } from 'pinia'
 import { useStudentStore } from '@/stores/student/StudentStore'
+import ParentAccessPanel from '../components/ParentAccessPanel.vue'
 import StudentNavigationDrawer from '../components/StudentNavigationDrawer.vue'
 import '../../../../../css/student.css'
 
 export default {
     components: {
+        ParentAccessPanel,
         StudentNavigationDrawer,
     },
 

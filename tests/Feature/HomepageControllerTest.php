@@ -612,6 +612,27 @@ describe('logout', function () {
         $response->assertStatus(200);
     });
 
+    test('logout invalidates an unauthenticated parent session', function () {
+        $response = $this
+            ->withSession([
+                'student_parent_access' => [
+                    'school_id' => $this->school->id,
+                    'schoolyear_id' => $this->schoolyear->id,
+                    'email' => 'parent@example.test',
+                    'verified_at' => now()->timestamp,
+                    'student_import_id' => 123,
+                ],
+            ])
+            ->postJson('/api/homepage/logout');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('status', 'OK')
+            ->assertSessionMissing('student_parent_access');
+
+        expect(Auth::check())->toBeFalse();
+    });
+
     test('logout regenerates session token', function () {
         $user = User::factory()->create([
             'school_id' => $this->school->id,
