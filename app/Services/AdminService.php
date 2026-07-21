@@ -10,6 +10,7 @@ use App\Notifications\StandardEmail;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Laravel\Fortify\Events\TwoFactorAuthenticationChallenged;
 
 class AdminService
 {
@@ -112,16 +113,7 @@ class AdminService
             ->where('school_id', $data['school']['id'])
             ->first();
 
-        $this->syncTeacherSchoolyearFromSchoolTool($user);
-
-        $user->login_at = now();
-        $user->login_ip = request()->ip();
-        $user->save();
-
-        Auth::guard('web')->login($user, $this->resolveRemember($data));
-        session()->regenerate();
-
-        return $user;
+        return $this->completeLogin($user, $this->resolveRemember($data));
     }
 
     public function login2Fa(array $data): User
@@ -134,13 +126,7 @@ class AdminService
             abort(423, 'Der Token ist ungültig oder abgelaufen.');
         }
 
-        $this->syncTeacherSchoolyearFromSchoolTool($user);
-        $user->save();
-
-        Auth::guard('web')->login($user, $this->resolveRemember($data));
-        session()->regenerate();
-
-        return $user;
+        return $this->completeLogin($user, $this->resolveRemember($data));
     }
 
     public function checkEmail(array $data): array
@@ -232,7 +218,17 @@ class AdminService
             ->where('school_id', $data['school']['id'])
             ->first();
 
-        if ($user->is_2fa) {
+        if ($user->hasEnabledTwoFactorAuthentication()) {
+            session()->put([
+                'login.id' => $user->getKey(),
+                'login.remember' => $this->resolveRemember($data),
+                'login.two_factor_started_at' => now()->timestamp,
+                'login.context' => 'admin',
+            ]);
+
+            event(new TwoFactorAuthenticationChallenged($user));
+            $data['step'] = 'LOGIN_ENTER_TWO_FACTOR';
+        } elseif ($user->is_2fa) {
             $this->setToken2FaSendingTo2FaEmail($user, $data, 'Code für Login');
             $data['step'] = 'LOGIN_ENTER_TOKEN';
         } else {
@@ -240,6 +236,20 @@ class AdminService
         }
 
         return $data;
+    }
+
+    public function completeLogin(User $user, bool $remember = false): User
+    {
+        $this->syncTeacherSchoolyearFromSchoolTool($user);
+
+        $user->login_at = now();
+        $user->login_ip = request()->ip();
+        $user->save();
+
+        Auth::guard('web')->login($user, $remember);
+        session()->regenerate();
+
+        return $user;
     }
 
     public function setToken2FaSendingTo2FaEmail($user, array $data, string $subject): void

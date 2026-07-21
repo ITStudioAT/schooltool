@@ -140,6 +140,10 @@ class StudentsTimetablesStudentController extends Controller
             return response()->json($data);
         }
 
+        if ($user->hasEnabledTwoFactorAuthentication()) {
+            abort(423, 'Dieses Benutzerkonto ist mit Zwei-Faktor-Authentifizierung geschützt. Bitte verwenden Sie die Admin-Anmeldung.');
+        }
+
         $service->performLogin($user);
         $data['user'] = new StudentsTimetablesUserResource($user);
         $data['status'] = 'login_ok';

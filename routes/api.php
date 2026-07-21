@@ -78,7 +78,10 @@ use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaEntryCopiesController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaImportsController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryDefinitionController;
+use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartController;
 use App\Http\Controllers\Admin\Teaching\TeachingTestEnvironmentController;
+use App\Http\Controllers\Admin\TwoFactorAuthenticationController;
+use App\Http\Controllers\Admin\TwoFactorChallengeController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UserHopperAccountController;
 use App\Http\Controllers\Admin\UserWithRoleController;
@@ -241,6 +244,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/admin/login_step_email', [AdminController::class, 'loginStepEmail'])->middleware('throttle:authentication');
     Route::post('/admin/login_step_2', [AdminController::class, 'loginStep2'])->middleware('throttle:authentication');
     Route::post('/admin/login_step_3', [AdminController::class, 'loginStep3'])->middleware('throttle:authentication');
+    Route::post('/admin/two-factor-challenge', TwoFactorChallengeController::class)->middleware('throttle:two-factor-challenge');
 
     Route::post('/admin/new_teacher_step_email', [AdminController::class, 'newTeacherStepEmail'])->middleware('throttle:authentication');
     Route::post('/admin/new_teacher_step_school', [AdminController::class, 'newTeacherStepSchool'])->middleware('throttle:authentication');
@@ -304,6 +308,21 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         // Notes API - Accessible to all authenticated users
         Route::apiResource('/homepage/notes', NoteController::class);
         Route::post('/homepage/notes/{note}/toggle-pin', [NoteController::class, 'togglePin']);
+
+        Route::get('/admin/two-factor-authentication', [TwoFactorAuthenticationController::class, 'status']);
+        Route::post('/admin/confirm-password', [TwoFactorAuthenticationController::class, 'confirmPassword'])
+            ->middleware('throttle:password-confirmation');
+
+        Route::middleware(['password.confirm', 'throttle:two-factor-management'])->group(function () {
+            Route::post('/admin/two-factor-authentication', [TwoFactorAuthenticationController::class, 'store']);
+            Route::delete('/admin/two-factor-authentication/setup', [TwoFactorAuthenticationController::class, 'cancel']);
+            Route::get('/admin/two-factor-authentication/recovery-codes', [TwoFactorAuthenticationController::class, 'recoveryCodes']);
+            Route::post('/admin/two-factor-authentication/recovery-codes', [TwoFactorAuthenticationController::class, 'regenerateRecoveryCodes']);
+            Route::delete('/admin/two-factor-authentication', [TwoFactorAuthenticationController::class, 'destroy']);
+        });
+
+        Route::post('/admin/two-factor-authentication/confirm', [TwoFactorAuthenticationController::class, 'confirm'])
+            ->middleware(['password.confirm', 'throttle:two-factor-confirmation']);
     });
 
     /* SANCTUM - aba_teacher */
@@ -550,6 +569,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/entry_areas', TeachingEntryAreaController::class)
             ->only(['index', 'store', 'update', 'destroy'])
             ->parameters(['entry_areas' => 'entryArea']);
+        Route::apiResource('/admin/teaching/entry_grading_parts', TeachingEntryGradingPartController::class)
+            ->only(['index', 'store', 'destroy'])
+            ->parameters(['entry_grading_parts' => 'entryGradingPart']);
         Route::post('/admin/teaching/entry-area-imports', [TeachingEntryAreaImportsController::class, 'store']);
         Route::post('/admin/teaching/entry_areas/{entryArea}/entry-copies', [TeachingEntryAreaEntryCopiesController::class, 'store']);
         Route::apiResource('/admin/teaching/my_holidays', MyHolidayController::class)

@@ -16,6 +16,7 @@
     "sail": false,
     "skills": [
         "ai-sdk-development",
+        "fortify-development",
         "laravel-best-practices",
         "pest-testing",
         "echo-vue-development",

@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Admin\Teaching;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Teaching\TeachingEntryAreaResource;
 use App\Http\Resources\Admin\Teaching\TeachingEntryDefinitionResource;
+use App\Http\Resources\Admin\Teaching\TeachingEntryGradingPartResource;
 use App\Models\Schoolyear;
 use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
+use App\Models\TeachingEntryGradingPart;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\JsonResponse;
@@ -56,12 +58,14 @@ class TeachingEntryAreaImportsController extends Controller
             }
 
             $copiedEntries = collect();
-            $copiedAreas = $sourceAreas->map(function (TeachingEntryArea $sourceArea) use ($user, $currentSchoolyear, $copiedEntries): TeachingEntryArea {
+            $copiedGradingParts = collect();
+            $copiedAreas = $sourceAreas->map(function (TeachingEntryArea $sourceArea) use ($user, $currentSchoolyear, $copiedEntries, $copiedGradingParts): TeachingEntryArea {
                 $copiedArea = $sourceArea->replicate();
                 $copiedArea->school_id = $user->school_id;
                 $copiedArea->schoolyear_id = $currentSchoolyear->id;
                 $copiedArea->user_id = $user->id;
                 $copiedArea->save();
+                $copiedGradingParts->push($copiedArea->createInitialGradingPart());
 
                 $sourceArea->entryDefinitions->each(function (TeachingEntryDefinition $sourceEntry) use ($user, $currentSchoolyear, $copiedArea, $copiedEntries): void {
                     $copiedEntry = $sourceEntry->replicate();
@@ -79,20 +83,22 @@ class TeachingEntryAreaImportsController extends Controller
                 return $copiedArea;
             });
 
-            return $this->importResponse($copiedAreas, $copiedEntries);
+            return $this->importResponse($copiedAreas, $copiedEntries, $copiedGradingParts);
         });
     }
 
     /**
      * @param  Collection<int, TeachingEntryArea>  $areas
      * @param  Collection<int, TeachingEntryDefinition>  $entries
+     * @param  Collection<int, TeachingEntryGradingPart>  $gradingParts
      */
-    private function importResponse(Collection $areas, Collection $entries): JsonResponse
+    private function importResponse(Collection $areas, Collection $entries, Collection $gradingParts): JsonResponse
     {
         return response()->json([
             'data' => [
                 'areas' => TeachingEntryAreaResource::collection($areas)->resolve(),
                 'entries' => TeachingEntryDefinitionResource::collection($entries)->resolve(),
+                'grading_parts' => TeachingEntryGradingPartResource::collection($gradingParts)->resolve(),
             ],
             'imported_area_count' => $areas->count(),
             'imported_entry_count' => $entries->count(),

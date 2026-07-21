@@ -35,6 +35,21 @@ class TeachingEntryArea extends Model
         return $this->hasMany(TeachingEntryDefinition::class);
     }
 
+    public function gradingParts(): HasMany
+    {
+        return $this->hasMany(TeachingEntryGradingPart::class);
+    }
+
+    public function createInitialGradingPart(): TeachingEntryGradingPart
+    {
+        return $this->gradingParts()->create([
+            'school_id' => $this->school_id,
+            'schoolyear_id' => $this->schoolyear_id,
+            'user_id' => $this->user_id,
+            'name' => $this->name,
+        ]);
+    }
+
     public function teachingCourses(): HasMany
     {
         return $this->hasMany(TeachingCourse::class);

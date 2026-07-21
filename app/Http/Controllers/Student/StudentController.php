@@ -195,6 +195,10 @@ class StudentController extends Controller
             // Code ist ungültig
             $data['status'] = 'password_not_valid';
         } else {
+            if ($user->hasEnabledTwoFactorAuthentication()) {
+                abort(423, 'Dieses Benutzerkonto ist mit Zwei-Faktor-Authentifizierung geschützt. Bitte verwenden Sie die Admin-Anmeldung.');
+            }
+
             // Code ist gültig
             $parentAccess->clear();
             $service->performLogin($user);

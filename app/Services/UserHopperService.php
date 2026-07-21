@@ -257,9 +257,23 @@ class UserHopperService
             abort(403, 'Dieses Hopper-Konto ist nicht mehr verfügbar.');
         }
 
+        if ($targetUser->hasEnabledTwoFactorAuthentication()) {
+            abort(423, 'Dieses Konto ist mit Zwei-Faktor-Authentifizierung geschützt. Bitte melden Sie sich direkt beim Zielkonto an.');
+        }
+
         if (Auth::check()) {
             Auth::guard('web')->logout();
         }
+
+        session()->forget([
+            'auth.password_confirmed_at',
+            'login.id',
+            'login.remember',
+            'login.two_factor_started_at',
+            'login.context',
+            'two_factor_empty_at',
+            'two_factor_confirming_at',
+        ]);
 
         Auth::guard('web')->login($targetUser, true);
         session()->regenerate();

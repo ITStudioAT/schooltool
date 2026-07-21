@@ -271,6 +271,10 @@ class TutoringService
         $passwordValid = Hash::check($data['password'], $user->password);
 
         if ($passwordValid) {
+            if ($user->hasEnabledTwoFactorAuthentication()) {
+                abort(423, 'Dieses Benutzerkonto ist mit Zwei-Faktor-Authentifizierung geschützt. Bitte verwenden Sie die Admin-Anmeldung.');
+            }
+
             $this->performLogin($user);
             $data['status'] = 'LOGGED_IN';
         } else {

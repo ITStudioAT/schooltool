@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Teaching\StoreTeachingEntryAreaRequest;
 use App\Http\Requests\Admin\Teaching\UpdateTeachingEntryAreaRequest;
 use App\Http\Resources\Admin\Teaching\TeachingEntryAreaResource;
+use App\Http\Resources\Admin\Teaching\TeachingEntryGradingPartResource;
 use App\Models\Schoolyear;
 use App\Models\TeachingEntryArea;
 use App\Models\User;
@@ -46,8 +47,14 @@ class TeachingEntryAreaController extends Controller
             'name' => $request->validated('name'),
         ]);
         $area->setAttribute('entry_definitions_count', 0);
+        $gradingPart = $area->createInitialGradingPart();
 
-        return (new TeachingEntryAreaResource($area))->response()->setStatusCode(201);
+        return (new TeachingEntryAreaResource($area))
+            ->additional([
+                'grading_part' => (new TeachingEntryGradingPartResource($gradingPart))->resolve(),
+            ])
+            ->response()
+            ->setStatusCode(201);
     }
 
     public function update(UpdateTeachingEntryAreaRequest $request, TeachingEntryArea $entryArea): TeachingEntryAreaResource

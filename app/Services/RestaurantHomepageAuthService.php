@@ -456,6 +456,10 @@ class RestaurantHomepageAuthService
             ];
         }
 
+        if ($user->hasEnabledTwoFactorAuthentication()) {
+            abort(423, 'Dieses Benutzerkonto ist mit Zwei-Faktor-Authentifizierung geschützt. Bitte verwenden Sie die Admin-Anmeldung.');
+        }
+
         $this->loginRestaurantUser($user);
 
         if ($sepaResponse = $this->sepaRequiredLoginResponse($user, $schoolId, $normalizedEmail)) {

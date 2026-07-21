@@ -718,6 +718,10 @@ class SchoolService
             abort(403, 'Wechsel zu der Schule nicht möglich.');
         }
 
+        if ($targetUser->hasEnabledTwoFactorAuthentication()) {
+            abort(423, 'Dieses Konto ist mit Zwei-Faktor-Authentifizierung geschützt. Bitte melden Sie sich direkt bei der Zielschule an.');
+        }
+
         $sameIdentitySwitch = strcasecmp((string) $user->email, (string) $email) === 0;
         if ($sameIdentitySwitch && $user->hasRole('super_admin') && ! $targetUser->hasRole('super_admin')) {
             $targetUser->assignRole('super_admin');
@@ -726,6 +730,16 @@ class SchoolService
         if (Auth::check()) {
             Auth::guard('web')->logout();
         }
+
+        session()->forget([
+            'auth.password_confirmed_at',
+            'login.id',
+            'login.remember',
+            'login.two_factor_started_at',
+            'login.context',
+            'two_factor_empty_at',
+            'two_factor_confirming_at',
+        ]);
 
         Auth::guard('web')->login($targetUser, true);
         session()->regenerate();

@@ -119,54 +119,48 @@ export const useUserStore = defineStore('AdminUserStore', {
             }
         },
 
-        async save2Fa(data) {
-            const notification = useNotificationStore()
+        async twoFactorRequest(method, url, data = undefined) {
             const adminStore = useAdminStore()
             adminStore.is_loading++
-            this.api_answer = null
+
             try {
-                const response = await axios.post('/api/admin/users/save_2fa', data)
-                await this.show(data.id)
-                if (response.data.result) {
-                    return response.data.result
-                }
-                return true
-            } catch (error) {
-                notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: this.adminStore?.timeout,
-                })
-                return false
+                const response = await axios({ method, url, data })
+                return response.data
             } finally {
                 adminStore.is_loading--
             }
         },
 
-        async save2FaWithCode(data) {
-            const notification = useNotificationStore()
-            const adminStore = useAdminStore()
-            adminStore.is_loading++
-            this.api_answer = null
-            try {
-                const response = await axios.post('/api/admin/users/save_2fa_with_code', data)
-                await this.show(data.id)
-                if (response.data.result) {
-                    return response.data.result
-                }
-                return true
-            } catch (error) {
-                notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: this.adminStore?.timeout,
-                })
-                return false
-            } finally {
-                adminStore.is_loading--
-            }
+        twoFactorStatus() {
+            return this.twoFactorRequest('get', '/api/admin/two-factor-authentication')
+        },
+
+        confirmCurrentPassword(password) {
+            return this.twoFactorRequest('post', '/api/admin/confirm-password', { password })
+        },
+
+        enableTwoFactorAuthentication() {
+            return this.twoFactorRequest('post', '/api/admin/two-factor-authentication')
+        },
+
+        confirmTwoFactorAuthentication(code) {
+            return this.twoFactorRequest('post', '/api/admin/two-factor-authentication/confirm', { code })
+        },
+
+        cancelTwoFactorSetup() {
+            return this.twoFactorRequest('delete', '/api/admin/two-factor-authentication/setup')
+        },
+
+        loadTwoFactorRecoveryCodes() {
+            return this.twoFactorRequest('get', '/api/admin/two-factor-authentication/recovery-codes')
+        },
+
+        regenerateTwoFactorRecoveryCodes() {
+            return this.twoFactorRequest('post', '/api/admin/two-factor-authentication/recovery-codes')
+        },
+
+        disableTwoFactorAuthentication() {
+            return this.twoFactorRequest('delete', '/api/admin/two-factor-authentication')
         },
 
         async confirm(ids) {

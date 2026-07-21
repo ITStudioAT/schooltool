@@ -17,6 +17,7 @@
         "intervention/image": "^3.11",
         "lab404/laravel-impersonate": "^1.7.8",
         "laravel/ai": "^0.3.2",
+        "laravel/fortify": "^1.37.2",
         "laravel/framework": "^13.0",
         "laravel/sanctum": "^4.3.1",
         "laravel/tinker": "^3.0",

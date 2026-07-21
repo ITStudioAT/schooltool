@@ -23,6 +23,10 @@ const vuetifyStubs = {
     VAlert: { template: '<div><slot /></div>' },
     'v-otp-input': { template: '<input />' },
     VOtpInput: { template: '<input />' },
+    'v-progress-circular': { template: '<div />' },
+    VProgressCircular: { template: '<div />' },
+    'v-btn-toggle': { template: '<div><slot /></div>' },
+    VBtnToggle: { template: '<div><slot /></div>' },
     'v-btn': VBtnStub,
     VBtn: VBtnStub,
 }
@@ -54,7 +58,7 @@ function mountLogin(queueWorking: boolean) {
             stubs: vuetifyStubs,
             mocks: {
                 $router: { push: vi.fn() },
-                $route: { path: '/admin/login' },
+                $route: { path: '/admin/login', query: {} },
             },
         },
     })
@@ -81,5 +85,53 @@ describe('Admin login unknown password availability', () => {
 
         expect(wrapper.get('[data-testid="admin-login-unknown-password"]').attributes('disabled')).toBeUndefined()
         expect(wrapper.text()).not.toContain(warningText)
+    })
+})
+
+describe('Admin two-factor challenge', () => {
+    const methods = (Login as any).methods
+
+    it('sends only a normalized authenticator code and follows the server redirect', async () => {
+        const push = vi.fn()
+        const loginTwoFactorChallenge = vi.fn().mockResolvedValue({
+            step: 'LOGIN_SUCCESS',
+            auth: true,
+            redirect_url: '/admin/teaching?panel=entries',
+        })
+        const context: any = {
+            twoFactorMode: 'code',
+            twoFactorCode: ' 123 456 ',
+            recoveryCode: 'must-not-be-sent',
+            step: 'LOGIN_ENTER_TWO_FACTOR',
+            adminStore: {
+                loginTwoFactorChallenge,
+                loadConfig: vi.fn().mockResolvedValue(true),
+            },
+            $router: { push },
+        }
+
+        await methods.submitTwoFactorChallenge.call(context)
+
+        expect(loginTwoFactorChallenge).toHaveBeenCalledWith({ code: '123456' })
+        expect(push).toHaveBeenCalledWith('/admin/teaching?panel=entries')
+        expect(context.twoFactorCode).toBe('')
+        expect(context.recoveryCode).toBe('')
+    })
+
+    it('sends a recovery code without resubmitting credentials', async () => {
+        const loginTwoFactorChallenge = vi.fn().mockResolvedValue(false)
+        const context: any = {
+            twoFactorMode: 'recovery',
+            twoFactorCode: '123456',
+            recoveryCode: ' recovery-code ',
+            step: 'LOGIN_ENTER_TWO_FACTOR',
+            adminStore: { loginTwoFactorChallenge },
+            $router: { push: vi.fn() },
+        }
+
+        await methods.submitTwoFactorChallenge.call(context)
+
+        expect(loginTwoFactorChallenge).toHaveBeenCalledWith({ recovery_code: 'recovery-code' })
+        expect(context.step).toBe('LOGIN_ENTER_TWO_FACTOR')
     })
 })

@@ -6,6 +6,11 @@
 
 - Eltern können sich einloggen
 
+### General
+
+- 2-Factor-Authetification renewed completly
+- 2-Factor-Authetification now works with official apps
+
 ## 3.43.2
 
 ### Unterrichtstool

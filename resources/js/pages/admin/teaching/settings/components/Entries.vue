@@ -20,16 +20,26 @@
                         <v-icon v-if="activeAreaId === area.id" class="entry-area-check" icon="mdi-check-circle" color="primary" size="21" />
                     </button>
                     <div class="entry-area-actions">
-                        <v-btn prepend-icon="mdi-pencil-outline" size="small" variant="text" @click="openEditAreaDialog(area)">Bearbeiten</v-btn>
                         <v-btn
-                            prepend-icon="mdi-delete-outline"
-                            size="small"
+                            class="entry-area-action-button entry-area-action-button--edit"
+                            height="42"
+                            rounded="0"
+                            variant="text"
+                            @click="openEditAreaDialog(area)">
+                            <v-icon icon="mdi-pencil-outline" size="18" />
+                            <span>Bearbeiten</span>
+                        </v-btn>
+                        <v-btn
+                            class="entry-area-action-button entry-area-action-button--delete"
+                            height="42"
+                            rounded="0"
                             variant="text"
                             color="error"
                             :disabled="entryCountForArea(area.id) > 0"
                             :title="entryCountForArea(area.id) ? 'Zuerst alle Einträge entfernen' : 'Bereich löschen'"
                             @click="openDeleteAreaDialog(area)">
-                            Löschen
+                            <v-icon icon="mdi-delete-outline" size="18" />
+                            <span>Löschen</span>
                         </v-btn>
                     </div>
                 </div>
@@ -103,10 +113,12 @@
             <div class="entry-section-header mt-7">
                 <div>
                     <div class="text-h6 font-weight-bold">Einträge</div>
-                    <div class="text-body-2 text-medium-emphasis">Aktiver Bereich: {{ activeAreaName }}</div>
+                    <div v-if="activeCategory === 'Berechnung'" class="text-body-2 text-medium-emphasis">Benotungseinträge im aktiven Bereich: {{ activeAreaName }}</div>
+                    <div v-else class="text-body-2 text-medium-emphasis">Aktiver Bereich: {{ activeAreaName }}</div>
                 </div>
-                <div class="entry-section-actions">
+                <div v-if="activeCategory !== 'Berechnung'" class="entry-section-actions">
                     <v-btn
+                        v-if="entryCountForArea(activeAreaId) === 0"
                         color="primary"
                         variant="tonal"
                         rounded="lg"
@@ -117,36 +129,97 @@
                     </v-btn>
                     <v-btn color="primary" variant="flat" rounded="lg" prepend-icon="mdi-plus" :disabled="isLoading" @click="openCreateDialog">Eintrag</v-btn>
                 </div>
+                <div v-else class="entry-section-actions">
+                    <v-btn color="primary" variant="flat" rounded="lg" prepend-icon="mdi-shape-square-plus" :disabled="isLoading" @click="openCreateGradingPartDialog">
+                        Benotungsteil hinzufügen
+                    </v-btn>
+                </div>
             </div>
 
             <v-tabs v-model="activeCategory" class="entry-tabs mt-3" color="primary" show-arrows>
                 <v-tab v-for="category in categoryOptions" :key="category" :value="category">{{ category }}</v-tab>
             </v-tabs>
 
-            <v-list class="bg-transparent pa-0 mt-2">
-                <v-list-item v-for="entry in filteredEntries" :key="entry.id" class="entry-row mb-2">
-                    <div class="entry-row-content">
-                        <v-chip class="entry-short-chip" color="primary" variant="flat">{{ entry.short_name }}</v-chip>
-                        <span class="entry-name" :title="entry.name">{{ entry.name }}</span>
-                        <div v-if="entry.category === 'Benotung'" class="entry-properties">
-                            <v-chip v-if="entry.has_properties && entry.properties_mode === 'free'" class="entry-property-chip entry-free-input-chip" color="info" variant="tonal">
-                                Freie Eingabe
-                            </v-chip>
-                            <v-chip v-for="property in entry.fixed_properties" :key="property" class="entry-property-chip" variant="tonal">
-                                {{ property }}
-                            </v-chip>
-                        </div>
-                        <div class="entry-actions">
-                            <v-btn icon="mdi-pencil-outline" variant="tonal" color="primary" size="small" title="Eintrag bearbeiten" @click="openEditDialog(entry)" />
-                            <v-btn icon="mdi-delete-outline" variant="tonal" color="error" size="small" title="Eintrag löschen" @click="openDeleteDialog(entry)" />
-                        </div>
-                    </div>
-                </v-list-item>
-            </v-list>
+            <template v-if="activeCategory === 'Berechnung'">
+                <div class="calculation-area-list mt-3">
+                    <section v-for="area in calculationAreas" :key="area.id" class="calculation-area-card">
+                        <header class="calculation-area-header">
+                            <span class="calculation-area-icon"><v-icon icon="mdi-folder-outline" size="20" /></span>
+                            <div class="calculation-area-heading">
+                                <div class="calculation-area-name">{{ area.name }}</div>
+                                <div class="text-caption text-medium-emphasis">
+                                    {{ area.entries.length }} {{ area.entries.length === 1 ? 'Benotungseintrag' : 'Benotungseinträge' }}
+                                </div>
+                            </div>
+                            <v-btn
+                                icon="mdi-delete-outline"
+                                color="error"
+                                variant="tonal"
+                                size="x-small"
+                                title="Benotungsteil löschen"
+                                @click="openDeleteGradingPartDialog(area)" />
+                        </header>
 
-            <v-alert v-if="!isLoading && !filteredEntries.length" type="info" variant="tonal" class="mt-3">
-                In diesem Bereich gibt es noch keine Einträge der Kategorie {{ activeCategory }}.
-            </v-alert>
+                        <ul v-if="area.entries.length" class="calculation-entry-list">
+                            <li v-for="entry in area.entries" :key="entry.id" class="calculation-entry-item">
+                                <v-chip class="calculation-entry-code" color="primary" variant="tonal" size="x-small">{{ entry.short_name }}</v-chip>
+                                <div class="calculation-entry-details">
+                                    <span class="calculation-entry-name" :title="entry.name">{{ entry.name }}</span>
+                                    <div class="calculation-entry-values">
+                                        <span class="calculation-entry-values-label">Mögliche Werte:</span>
+                                        <v-chip
+                                            v-if="entry.has_properties && entry.properties_mode === 'free'"
+                                            class="calculation-entry-value"
+                                            color="info"
+                                            variant="tonal"
+                                            size="x-small">
+                                            Freie Eingabe
+                                        </v-chip>
+                                        <v-chip
+                                            v-for="property in entry.fixed_properties"
+                                            v-else-if="entry.has_properties"
+                                            :key="property"
+                                            class="calculation-entry-value"
+                                            variant="tonal"
+                                            size="x-small">
+                                            {{ property }}
+                                        </v-chip>
+                                        <span v-else class="calculation-entry-no-values">Keine zusätzlichen Werte</span>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+                        <div v-else class="text-body-2 text-medium-emphasis">Noch keine Benotungseinträge in diesem Bereich.</div>
+                    </section>
+                </div>
+            </template>
+
+            <template v-if="activeCategory !== 'Berechnung'">
+                <v-list class="bg-transparent pa-0 mt-2">
+                    <v-list-item v-for="entry in filteredEntries" :key="entry.id" class="entry-row mb-2">
+                        <div class="entry-row-content">
+                            <v-chip class="entry-short-chip" color="primary" variant="flat">{{ entry.short_name }}</v-chip>
+                            <span class="entry-name" :title="entry.name">{{ entry.name }}</span>
+                            <div v-if="entry.category === 'Benotung'" class="entry-properties">
+                                <v-chip v-if="entry.has_properties && entry.properties_mode === 'free'" class="entry-property-chip entry-free-input-chip" color="info" variant="tonal">
+                                    Freie Eingabe
+                                </v-chip>
+                                <v-chip v-for="property in entry.fixed_properties" :key="property" class="entry-property-chip" variant="tonal">
+                                    {{ property }}
+                                </v-chip>
+                            </div>
+                            <div class="entry-actions">
+                                <v-btn icon="mdi-pencil-outline" variant="tonal" color="primary" size="small" title="Eintrag bearbeiten" @click="openEditDialog(entry)" />
+                                <v-btn icon="mdi-delete-outline" variant="tonal" color="error" size="small" title="Eintrag löschen" @click="openDeleteDialog(entry)" />
+                            </div>
+                        </div>
+                    </v-list-item>
+                </v-list>
+
+                <v-alert v-if="!isLoading && !filteredEntries.length" type="info" variant="tonal" class="mt-3">
+                    In diesem Bereich gibt es noch keine Einträge der Kategorie {{ activeCategory }}.
+                </v-alert>
+            </template>
         </template>
 
         <v-dialog v-model="entryCopyDialogOpen" persistent max-width="620">
@@ -246,6 +319,61 @@
                 <v-card-actions class="dialog-actions">
                     <v-btn variant="text" @click="closeAreaDeleteDialog">Abbrechen</v-btn>
                     <v-btn color="error" variant="flat" :loading="isDeletingArea" @click="confirmAreaDelete">Löschen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="gradingPartDialogOpen" persistent max-width="520">
+            <v-card tag="form" rounded="xl" @submit.prevent="saveGradingPart">
+                <v-card-title class="dialog-header">
+                    <div class="dialog-title-group">
+                        <span class="dialog-icon"><v-icon icon="mdi-folder-plus-outline" /></span>
+                        <div>
+                            <div class="dialog-eyebrow">Berechnung</div>
+                            <div>Benotungsteil hinzufügen</div>
+                        </div>
+                    </div>
+                    <v-btn icon="mdi-close" variant="text" :disabled="isSavingGradingPart" @click="closeGradingPartDialog" />
+                </v-card-title>
+                <v-card-text class="pt-6">
+                    <v-text-field
+                        v-model="gradingPartForm.name"
+                        label="Name des Benotungsteils"
+                        placeholder="z. B. Mündlich"
+                        variant="outlined"
+                        color="primary"
+                        maxlength="100"
+                        autofocus
+                        :error-messages="gradingPartFormErrors.name" />
+                </v-card-text>
+                <v-card-actions class="dialog-actions">
+                    <v-btn variant="text" :disabled="isSavingGradingPart" @click="closeGradingPartDialog">Abbrechen</v-btn>
+                    <v-btn
+                        type="submit"
+                        color="primary"
+                        variant="flat"
+                        rounded="lg"
+                        :loading="isSavingGradingPart"
+                        :disabled="!gradingPartForm.name.trim()">
+                        Speichern
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="gradingPartDeleteDialogOpen" persistent max-width="480">
+            <v-card rounded="xl">
+                <v-card-title>Benotungsteil löschen</v-card-title>
+                <v-card-text>
+                    <v-alert type="warning" variant="tonal">
+                        Soll das Benotungsteil
+                        <strong>{{ gradingPartPendingDeletion?.name }}</strong>
+                        gelöscht werden? Die Benotungseinträge bleiben erhalten.
+                    </v-alert>
+                </v-card-text>
+                <v-card-actions class="dialog-actions">
+                    <v-btn variant="text" :disabled="isDeletingGradingPart" @click="closeDeleteGradingPartDialog">Abbrechen</v-btn>
+                    <v-btn color="error" variant="flat" :loading="isDeletingGradingPart" @click="confirmGradingPartDelete">Löschen</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -444,15 +572,18 @@ export default {
         return {
             areas: [],
             entries: [],
+            gradingParts: [],
             courseStore: null,
             activeAreaId: null,
             activeCategory: 'Benotung',
-            categoryOptions: ['Benotung', 'Verhalten', 'Weitere'],
+            categoryOptions: ['Benotung', 'Berechnung', 'Verhalten', 'Weitere'],
             tableMarkingColors,
             editDialogOpen: false,
             deleteDialogOpen: false,
             areaDialogOpen: false,
             areaDeleteDialogOpen: false,
+            gradingPartDialogOpen: false,
+            gradingPartDeleteDialogOpen: false,
             entryCopyDialogOpen: false,
             previousYearImportDialogOpen: false,
             previousYearImportOffer: null,
@@ -461,17 +592,22 @@ export default {
             isDeleting: false,
             isSavingArea: false,
             isDeletingArea: false,
+            isSavingGradingPart: false,
+            isDeletingGradingPart: false,
             isCopyingEntries: false,
             isImportingPreviousYear: false,
             selectedEntryId: null,
             deleteEntryId: null,
             editingAreaId: null,
             deleteAreaId: null,
+            deleteGradingPartId: null,
             selectedSourceAreaId: null,
             formErrors: {},
             areaFormErrors: {},
+            gradingPartFormErrors: {},
             entryCopyErrors: {},
             areaForm: { name: '' },
+            gradingPartForm: { name: '' },
             entryForm: {
                 teaching_entry_area_id: null,
                 short_name: '',
@@ -489,6 +625,20 @@ export default {
     },
 
     computed: {
+        calculationAreas() {
+            const selectedArea = this.areas.find((area) => area.id === this.activeAreaId)
+            if (!selectedArea) return []
+
+            const entries = this.entries.filter((entry) => entry.teaching_entry_area_id === selectedArea.id && entry.category === 'Benotung')
+            return this.gradingParts
+                .filter((gradingPart) => gradingPart.teaching_entry_area_id === selectedArea.id)
+                .map((gradingPart) => ({
+                    ...gradingPart,
+                    id: `grading-part-${gradingPart.id}`,
+                    gradingPartId: gradingPart.id,
+                    entries,
+                }))
+        },
         filteredEntries() {
             return this.entries.filter((entry) => entry.teaching_entry_area_id === this.activeAreaId && entry.category === this.activeCategory)
         },
@@ -524,6 +674,9 @@ export default {
         areaPendingDeletion() {
             return this.areas.find((area) => area.id === this.deleteAreaId) || null
         },
+        gradingPartPendingDeletion() {
+            return this.gradingParts.find((gradingPart) => gradingPart.id === this.deleteGradingPartId) || null
+        },
     },
 
     beforeMount() {
@@ -535,9 +688,14 @@ export default {
         async loadData() {
             this.isLoading = true
             try {
-                const [areaResponse, entryResponse] = await Promise.all([axios.get('/api/admin/teaching/entry_areas'), axios.get('/api/admin/teaching/entry_definitions')])
+                const [areaResponse, entryResponse, gradingPartResponse] = await Promise.all([
+                    axios.get('/api/admin/teaching/entry_areas'),
+                    axios.get('/api/admin/teaching/entry_definitions'),
+                    axios.get('/api/admin/teaching/entry_grading_parts'),
+                ])
                 this.areas = areaResponse.data?.data || []
                 this.entries = entryResponse.data?.data || []
+                this.gradingParts = gradingPartResponse.data?.data || []
                 this.previousYearImportOffer = areaResponse.data?.meta?.previous_year_import || null
                 if (!this.areas.some((area) => area.id === this.activeAreaId)) this.activeAreaId = this.areas[0]?.id || null
             } catch (error) {
@@ -707,6 +865,7 @@ export default {
                 const response = await axios.post('/api/admin/teaching/entry-area-imports')
                 this.areas = response.data?.data?.areas || []
                 this.entries = response.data?.data?.entries || []
+                this.gradingParts = response.data?.data?.grading_parts || []
                 this.activeAreaId = this.areas[0]?.id || null
                 this.previousYearImportOffer = null
                 this.previousYearImportDialogOpen = false
@@ -726,6 +885,60 @@ export default {
             this.areaForm = { name: '' }
             this.areaFormErrors = {}
             this.areaDialogOpen = true
+        },
+        openCreateGradingPartDialog() {
+            if (!this.activeAreaId) return
+
+            this.gradingPartForm = { name: '' }
+            this.gradingPartFormErrors = {}
+            this.gradingPartDialogOpen = true
+        },
+        closeGradingPartDialog() {
+            this.gradingPartDialogOpen = false
+            this.gradingPartForm = { name: '' }
+            this.gradingPartFormErrors = {}
+        },
+        async saveGradingPart() {
+            if (!this.activeAreaId || !this.gradingPartForm.name.trim()) return
+
+            this.isSavingGradingPart = true
+            this.gradingPartFormErrors = {}
+            try {
+                const response = await axios.post('/api/admin/teaching/entry_grading_parts', {
+                    teaching_entry_area_id: this.activeAreaId,
+                    name: this.gradingPartForm.name.trim(),
+                })
+                this.gradingParts.push(response.data.data)
+                this.gradingParts.sort((a, b) => a.name.localeCompare(b.name, 'de'))
+                this.closeGradingPartDialog()
+            } catch (error) {
+                this.gradingPartFormErrors = error?.response?.data?.errors || {}
+                this.notifyError(error)
+            } finally {
+                this.isSavingGradingPart = false
+            }
+        },
+        openDeleteGradingPartDialog(gradingPartArea) {
+            this.deleteGradingPartId = gradingPartArea.gradingPartId
+            this.gradingPartDeleteDialogOpen = true
+        },
+        closeDeleteGradingPartDialog() {
+            this.gradingPartDeleteDialogOpen = false
+            this.deleteGradingPartId = null
+        },
+        async confirmGradingPartDelete() {
+            if (!this.deleteGradingPartId) return
+
+            this.isDeletingGradingPart = true
+            try {
+                await axios.delete(`/api/admin/teaching/entry_grading_parts/${this.deleteGradingPartId}`)
+                this.gradingParts = this.gradingParts.filter((gradingPart) => gradingPart.id !== this.deleteGradingPartId)
+                this.closeDeleteGradingPartDialog()
+            } catch (error) {
+                this.notifyError(error)
+            } finally {
+                this.isDeletingGradingPart = false
+            }
         },
         openEditAreaDialog(area) {
             this.editingAreaId = area.id
@@ -748,9 +961,11 @@ export default {
                     ? await axios.put(`/api/admin/teaching/entry_areas/${this.editingAreaId}`, payload)
                     : await axios.post('/api/admin/teaching/entry_areas', payload)
                 const saved = response.data.data
+                const initialGradingPart = response.data.grading_part
                 const index = this.areas.findIndex((area) => area.id === saved.id)
                 if (index === -1) this.areas.push(saved)
                 else this.areas.splice(index, 1, saved)
+                if (initialGradingPart) this.gradingParts.push(initialGradingPart)
                 this.areas.sort((a, b) => a.name.localeCompare(b.name))
                 this.activeAreaId = saved.id
                 this.closeAreaDialog()
@@ -838,6 +1053,7 @@ export default {
 .entry-area-select {
     position: relative;
     display: flex;
+    flex: 1 1 auto;
     align-items: center;
     gap: 13px;
     width: 100%;
@@ -883,12 +1099,36 @@ export default {
     font-size: 0.78rem;
 }
 .entry-area-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 2px;
-    padding: 7px 9px;
+    display: grid;
+    flex: 0 0 auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: auto;
     border-top: 1px solid rgba(var(--v-border-color), 0.12);
-    background: rgba(var(--v-theme-on-surface), 0.018);
+    overflow: hidden;
+}
+.entry-area-action-button {
+    min-width: 0 !important;
+    border-radius: 0 !important;
+    font-size: 0.78rem;
+    font-weight: 650;
+    letter-spacing: 0;
+    text-transform: none;
+    transition:
+        color 150ms ease,
+        background-color 150ms ease;
+}
+.entry-area-action-button :deep(.v-btn__content) {
+    gap: 7px;
+}
+.entry-area-action-button--edit {
+    border-right: 1px solid rgba(var(--v-border-color), 0.12);
+}
+.entry-area-action-button--edit:hover {
+    color: rgb(var(--v-theme-primary));
+    background: rgba(var(--v-theme-primary), 0.08);
+}
+.entry-area-action-button--delete:hover:not(.v-btn--disabled) {
+    background: rgba(var(--v-theme-error), 0.08);
 }
 .entry-area-check {
     position: absolute;
@@ -917,6 +1157,97 @@ export default {
 }
 .entry-tabs {
     border-bottom: 1px solid rgba(var(--v-border-color), 0.15);
+}
+.calculation-area-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.calculation-area-card {
+    padding: 14px;
+    border: 1px solid rgba(var(--v-border-color), 0.16);
+    border-radius: 16px;
+    background: rgb(var(--v-theme-surface));
+}
+.calculation-area-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.calculation-area-heading {
+    flex: 1;
+    min-width: 0;
+}
+.calculation-area-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    color: rgb(var(--v-theme-primary));
+    border-radius: 10px;
+    background: rgba(var(--v-theme-primary), 0.1);
+}
+.calculation-area-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+.calculation-entry-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 6px;
+    padding: 0;
+    list-style: none;
+}
+.calculation-entry-item {
+    display: flex;
+    align-items: flex-start;
+    min-width: 0;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid rgba(var(--v-border-color), 0.14);
+    border-radius: 10px;
+    background: rgba(var(--v-theme-on-surface), 0.025);
+}
+.calculation-entry-code {
+    min-width: 34px;
+    margin-top: 1px;
+    font-weight: 700;
+}
+.calculation-entry-code :deep(.v-chip__content) {
+    width: 100%;
+    justify-content: center;
+}
+.calculation-entry-details {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    gap: 6px;
+}
+.calculation-entry-name {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.calculation-entry-values {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    min-width: 0;
+    gap: 5px;
+}
+.calculation-entry-values-label,
+.calculation-entry-no-values {
+    color: rgba(var(--v-theme-on-surface), 0.62);
+    font-size: 0.72rem;
+}
+.calculation-entry-value {
+    font-weight: 600;
 }
 .entry-row {
     border: 1px solid rgba(var(--v-border-color), 0.16);

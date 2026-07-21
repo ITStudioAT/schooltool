@@ -32,6 +32,42 @@ describe('Teaching entries settings', () => {
         expect((Entries as any).computed.filteredEntries.call(ctx).map((entry: any) => entry.id)).toEqual([2])
     })
 
+    it('shows calculation entries only for the selected area', () => {
+        const ctx = {
+            activeAreaId: 20,
+            areas: [
+                { id: 10, name: 'Unterstufe' },
+                { id: 20, name: 'Oberstufe' },
+            ],
+            entries: [
+                entryFixture(),
+                entryFixture({ id: 2, category: 'Verhalten' }),
+                entryFixture({ id: 3, teaching_entry_area_id: 20 }),
+            ],
+            gradingParts: [
+                { id: 100, teaching_entry_area_id: 20, name: 'Mündlich' },
+                { id: 200, teaching_entry_area_id: 10, name: 'Schriftlich' },
+            ],
+        }
+
+        expect((Entries as any).computed.calculationAreas.call(ctx)).toEqual([
+            expect.objectContaining({ id: 'grading-part-100', gradingPartId: 100, entries: [expect.objectContaining({ id: 3 })] }),
+        ])
+    })
+
+    it('shows the possible values for every calculation entry type', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
+
+        expect(source).toContain('Mögliche Werte:')
+        expect(source).toContain('v-for="area in calculationAreas"')
+        expect(source).toContain('Benotungsteil hinzufügen')
+        expect(source).toContain('@click="openCreateGradingPartDialog"')
+        expect(source).toContain('v-for="property in entry.fixed_properties"')
+        expect(source).toContain("entry.has_properties && entry.properties_mode === 'free'")
+        expect(source).toContain('Freie Eingabe')
+        expect(source).toContain('Keine zusätzlichen Werte')
+    })
+
     it('opens a blank entry in the selected area', () => {
         const methods = (Entries as any).methods
         const ctx: any = {
@@ -164,11 +200,15 @@ describe('Teaching entries settings', () => {
 
     it('creates and renames areas through their API', async () => {
         const methods = (Entries as any).methods
-        const post = vi.fn().mockResolvedValue({ data: { data: { id: 10, name: 'Unterstufe', entry_count: 0 } } })
+        const initialGradingPart = { id: 20, teaching_entry_area_id: 10, name: 'Unterstufe' }
+        const post = vi.fn().mockResolvedValue({
+            data: { data: { id: 10, name: 'Unterstufe', entry_count: 0 }, grading_part: initialGradingPart },
+        })
         const put = vi.fn().mockResolvedValue({ data: { data: { id: 10, name: 'Mittelstufe', entry_count: 0 } } })
         ;(globalThis as any).axios = { post, put }
         const ctx: any = {
             areas: [],
+            gradingParts: [],
             activeAreaId: null,
             editingAreaId: null,
             areaForm: { name: '  Unterstufe  ' },
@@ -181,6 +221,7 @@ describe('Teaching entries settings', () => {
 
         await methods.saveArea.call(ctx)
         expect(ctx.areas[0].name).toBe('Unterstufe')
+        expect(ctx.gradingParts).toEqual([initialGradingPart])
         expect(post).toHaveBeenCalledWith('/api/admin/teaching/entry_areas', { name: 'Unterstufe' })
 
         ctx.editingAreaId = 10
@@ -188,6 +229,53 @@ describe('Teaching entries settings', () => {
         await methods.saveArea.call(ctx)
         expect(ctx.areas[0].name).toBe('Mittelstufe')
         expect(put).toHaveBeenCalledWith('/api/admin/teaching/entry_areas/10', { name: 'Mittelstufe' })
+    })
+
+    it('keeps the selected area visible after adding a grading part', async () => {
+        const methods = (Entries as any).methods
+        const post = vi.fn().mockResolvedValue({ data: { data: { id: 20, teaching_entry_area_id: 10, name: 'Mündlich' } } })
+        ;(globalThis as any).axios = { post }
+        const ctx: any = {
+            gradingParts: [],
+            activeAreaId: 10,
+            gradingPartForm: { name: 'Mündlich' },
+            gradingPartFormErrors: {},
+            gradingPartDialogOpen: true,
+            isSavingGradingPart: false,
+            closeGradingPartDialog: methods.closeGradingPartDialog,
+            notifyError: vi.fn(),
+        }
+
+        await methods.saveGradingPart.call(ctx)
+
+        expect(ctx.activeAreaId).toBe(10)
+        expect(ctx.gradingParts).toContainEqual(expect.objectContaining({ id: 20, name: 'Mündlich' }))
+        expect(post).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts', {
+            teaching_entry_area_id: 10,
+            name: 'Mündlich',
+        })
+    })
+
+    it('deletes a grading part without removing entries', async () => {
+        const methods = (Entries as any).methods
+        const deleteRequest = vi.fn().mockResolvedValue({})
+        ;(globalThis as any).axios = { delete: deleteRequest }
+        const entries = [entryFixture()]
+        const ctx: any = {
+            gradingParts: [{ id: 20, teaching_entry_area_id: 10, name: 'Mündlich' }],
+            entries,
+            deleteGradingPartId: 20,
+            gradingPartDeleteDialogOpen: true,
+            isDeletingGradingPart: false,
+            closeDeleteGradingPartDialog: methods.closeDeleteGradingPartDialog,
+            notifyError: vi.fn(),
+        }
+
+        await methods.confirmGradingPartDelete.call(ctx)
+
+        expect(deleteRequest).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts/20')
+        expect(ctx.gradingParts).toEqual([])
+        expect(ctx.entries).toEqual(entries)
     })
 
     it('removes only empty areas after confirmation', async () => {
@@ -259,6 +347,7 @@ describe('Teaching entries settings', () => {
         const ctx: any = {
             areas: [],
             entries: [],
+            gradingParts: [],
             activeAreaId: null,
             isLoading: false,
             previousYearImportOffer: null,
@@ -279,9 +368,10 @@ describe('Teaching entries settings', () => {
         const methods = (Entries as any).methods
         const areas = [{ id: 30, name: 'Unterstufe', entry_count: 1 }]
         const entries = [entryFixture({ id: 40, teaching_entry_area_id: 30 })]
+        const gradingParts = [{ id: 50, teaching_entry_area_id: 30, name: 'Unterstufe' }]
         const post = vi.fn().mockResolvedValue({
             data: {
-                data: { areas, entries },
+                data: { areas, entries, grading_parts: gradingParts },
                 imported_area_count: 1,
                 imported_entry_count: 1,
             },
@@ -290,6 +380,7 @@ describe('Teaching entries settings', () => {
         const ctx: any = {
             areas: [],
             entries: [],
+            gradingParts: [],
             activeAreaId: null,
             previousYearImportOffer: { schoolyear: { id: 5, label: '2025/26' } },
             previousYearImportDialogOpen: true,
@@ -303,6 +394,7 @@ describe('Teaching entries settings', () => {
         expect(post).toHaveBeenCalledWith('/api/admin/teaching/entry-area-imports')
         expect(ctx.areas).toEqual(areas)
         expect(ctx.entries).toEqual(entries)
+        expect(ctx.gradingParts).toEqual(gradingParts)
         expect(ctx.activeAreaId).toBe(30)
         expect(ctx.previousYearImportDialogOpen).toBe(false)
         expect(ctx.notifySuccess).toHaveBeenCalledWith('1 Bereich und 1 Eintrag wurden übernommen.')
@@ -322,11 +414,21 @@ describe('Teaching entries settings', () => {
         expect(propertiesCardIndex).toBeGreaterThan(tableMarkingCardIndex)
         expect(source).toContain('Aktiver Bereich: {{ activeAreaName }}')
         expect(source).toContain('@click="openEntryCopyDialog"')
+        expect(source).toContain('v-if="entryCountForArea(activeAreaId) === 0"')
         expect(source).toContain('v-model="entryCopyDialogOpen"')
         expect(source).toContain('Einträge übernehmen')
         expect(source).toContain('Quellbereich auswählen')
         expect(source).toContain('@click="copyEntriesFromArea"')
         expect(source).toContain('class="entry-area-grid mt-4"')
+        expect(source).toContain("categoryOptions: ['Benotung', 'Berechnung', 'Verhalten', 'Weitere']")
+        expect(source).toContain('v-for="entry in area.entries"')
+        expect(source).toContain('class="calculation-area-list mt-3"')
+        expect(source).toContain('class="calculation-entry-list"')
+        expect(source).toContain('title="Benotungsteil löschen"')
+        expect(source).toContain('@click="openDeleteGradingPartDialog(area)"')
+        expect(source).toContain('@click="confirmGradingPartDelete"')
+        expect(source).toContain('<template v-if="activeCategory !== \'Berechnung\'">')
+        expect(source).toContain('<div v-if="activeCategory !== \'Berechnung\'" class="entry-section-actions">')
         expect(source).toContain('grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))')
         expect(source).toContain('class="entry-area-card"')
         expect(source).toContain('@click="activeAreaId = area.id"')
@@ -334,8 +436,15 @@ describe('Teaching entries settings', () => {
         expect(source).toContain('@click="openCreateAreaDialog"')
         expect(source).toContain('class="entry-area-actions"')
         expect(source).toContain('@click="openEditAreaDialog(area)"')
-        expect(source).toContain('>Bearbeiten</v-btn>')
-        expect(source).toContain('Löschen')
+        expect(source).toContain('class="entry-area-action-button entry-area-action-button--edit"')
+        expect(source).toContain('class="entry-area-action-button entry-area-action-button--delete"')
+        expect(source).toContain('<v-icon icon="mdi-pencil-outline" size="18" />')
+        expect(source).toContain('<v-icon icon="mdi-delete-outline" size="18" />')
+        expect(source).toContain('<span>Bearbeiten</span>')
+        expect(source).toContain('<span>Löschen</span>')
+        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+        expect(source).toContain('margin-top: auto')
+        expect(source).toContain('text-transform: none')
         expect(source).toContain('@click="confirmAreaDelete"')
         expect(source).toContain("axios.get('/api/admin/teaching/entry_areas')")
         expect(source).toContain('v-model="previousYearImportDialogOpen"')

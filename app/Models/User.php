@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Lab404\Impersonate\Models\Impersonate as ImpersonateTrait;
+use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 use Laravel\Sanctum\PersonalAccessToken;
 use Spatie\Permission\Models\Permission;
@@ -36,6 +37,9 @@ use Spatie\Permission\Traits\HasRoles;
  * @property Carbon|null $email_verified_at
  * @property string $password
  * @property string|null $remember_token
+ * @property string|null $two_factor_secret
+ * @property string|null $two_factor_recovery_codes
+ * @property Carbon|null $two_factor_confirmed_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $last_name
@@ -146,6 +150,7 @@ class User extends Authenticatable
     use HasRoles;
     use ImpersonateTrait;
     use Notifiable;
+    use TwoFactorAuthenticatable;
     use UserTrait;
 
     /**
@@ -194,7 +199,8 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
-
+        'two_factor_secret',
+        'two_factor_recovery_codes',
     ];
 
     /**
@@ -206,6 +212,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'two_factor_confirmed_at' => 'datetime',
             'restaurant_confirmed_at' => 'datetime',
             'token_2fa_expires_at' => 'datetime',
             'sepa_at' => 'datetime',

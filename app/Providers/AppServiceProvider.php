@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Listeners\TwoFactorSecuritySubscriber;
 use App\Models\User;
 use App\Services\EmailAliasResolver;
 use Barryvdh\Debugbar\Facades\Debugbar;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use Laravel\Fortify\Fortify;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -26,6 +28,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        Fortify::ignoreRoutes();
 
         $loader = AliasLoader::getInstance();
         if (config('app.env') === 'local') {
@@ -75,6 +78,44 @@ class AppServiceProvider extends ServiceProvider
                 Limit::perMinute(60)->by("authentication-ip:{$ip}"),
             ];
         });
+
+        RateLimiter::for('two-factor-challenge', function (Request $request) {
+            $userId = (string) $request->session()->get('login.id', 'missing');
+
+            return [
+                Limit::perMinute(5)->by("two-factor-challenge-user:{$userId}"),
+                Limit::perMinute(30)->by('two-factor-challenge-ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('two-factor-management', function (Request $request) {
+            $userId = (string) ($request->user()?->getAuthIdentifier() ?? 'missing');
+
+            return [
+                Limit::perMinute(5)->by("two-factor-management-user:{$userId}"),
+                Limit::perMinute(30)->by('two-factor-management-ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('two-factor-confirmation', function (Request $request) {
+            $userId = (string) ($request->user()?->getAuthIdentifier() ?? 'missing');
+
+            return [
+                Limit::perMinute(5)->by("two-factor-confirmation-user:{$userId}"),
+                Limit::perMinute(30)->by('two-factor-confirmation-ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('password-confirmation', function (Request $request) {
+            $userId = (string) ($request->user()?->getAuthIdentifier() ?? 'missing');
+
+            return [
+                Limit::perMinute(5)->by("password-confirmation-user:{$userId}"),
+                Limit::perMinute(30)->by('password-confirmation-ip:'.$request->ip()),
+            ];
+        });
+
+        Event::subscribe(TwoFactorSecuritySubscriber::class);
 
         Event::listen(MessageSending::class, function (MessageSending $event): void {
             app(EmailAliasResolver::class)->rewriteMessageRecipients($event->message);

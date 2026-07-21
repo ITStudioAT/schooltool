@@ -7,6 +7,7 @@ use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
+use App\Models\TeachingEntryGradingPart;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -153,7 +154,8 @@ test('imports owned areas and entries from the previous schoolyear', function ()
         ->assertJsonPath('imported_area_count', 2)
         ->assertJsonPath('imported_entry_count', 2)
         ->assertJsonCount(2, 'data.areas')
-        ->assertJsonCount(2, 'data.entries');
+        ->assertJsonCount(2, 'data.entries')
+        ->assertJsonCount(2, 'data.grading_parts');
 
     $copiedUnderSchoolArea = TeachingEntryArea::query()
         ->where('user_id', $this->teacher->id)
@@ -166,6 +168,7 @@ test('imports owned areas and entries from the previous schoolyear', function ()
         ->and($copiedUnderSchoolArea->entryDefinitions()->firstOrFail()->fixed_properties)->toBe(['+', '-'])
         ->and($copiedUnderSchoolArea->entryDefinitions()->firstOrFail()->has_table_marking)->toBeTrue()
         ->and($copiedUnderSchoolArea->entryDefinitions()->firstOrFail()->table_marking_color)->toBe('purple')
+        ->and($copiedUnderSchoolArea->gradingParts()->value('name'))->toBe('Unterstufe')
         ->and(TeachingEntryArea::query()
             ->where('user_id', $this->teacher->id)
             ->where('schoolyear_id', $this->schoolyear->id)
@@ -205,7 +208,12 @@ test('store trims names and rejects duplicate names', function () {
         ->postJson('/api/admin/teaching/entry_areas', ['name' => '  Oberstufe  '])
         ->assertCreated()
         ->assertJsonPath('data.name', 'Oberstufe')
-        ->assertJsonPath('data.entry_count', 0);
+        ->assertJsonPath('data.entry_count', 0)
+        ->assertJsonPath('grading_part.name', 'Oberstufe');
+
+    expect(TeachingEntryGradingPart::query()
+        ->where('teaching_entry_area_id', TeachingEntryArea::query()->where('name', 'Oberstufe')->value('id'))
+        ->value('name'))->toBe('Oberstufe');
 
     $this->postJson('/api/admin/teaching/entry_areas', ['name' => 'Oberstufe'])
         ->assertUnprocessable()

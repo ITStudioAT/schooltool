@@ -194,6 +194,17 @@ class ImpersonationController extends Controller
             abort(500, 'Benutzer-Übernahme konnte nicht gestartet werden.');
         }
 
+        $request->session()->forget([
+            'auth.password_confirmed_at',
+            'login.id',
+            'login.remember',
+            'login.two_factor_started_at',
+            'login.context',
+            'two_factor_empty_at',
+            'two_factor_confirming_at',
+        ]);
+        $request->session()->regenerate();
+
         return response()->json([
             'message' => 'Benutzer-Übernahme gestartet.',
         ], 200);
@@ -213,6 +224,17 @@ class ImpersonationController extends Controller
             $manager->clear();
             abort(500, 'Benutzer-Übernahme konnte nicht beendet werden.');
         }
+
+        $request->session()->forget([
+            'auth.password_confirmed_at',
+            'login.id',
+            'login.remember',
+            'login.two_factor_started_at',
+            'login.context',
+            'two_factor_empty_at',
+            'two_factor_confirming_at',
+        ]);
+        $request->session()->regenerate();
 
         return response()->json([
             'message' => 'Benutzer-Übernahme beendet.',

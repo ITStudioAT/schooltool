@@ -628,9 +628,10 @@ class AdminController extends Controller
         $data = $adminService->check2Fa($data);
 
         if ($data['step'] == 'LOGIN_SUCCESS') {
-            $user = $adminService->login($data);
-            unset($data['password']);
+            $adminService->login($data);
         }
+
+        unset($data['password']);
 
         return response()->json($data, 200);
     }
@@ -643,7 +644,7 @@ class AdminController extends Controller
         $data = $adminService->checkLogin($validated['data']);
         $user = $adminService->login2Fa($data);
         unset($data['password']);
-        unset($data['token_2_fa']);
+        unset($data['token_2fa']);
 
         $data = [
             'step' => 'LOGIN_SUCCESS',

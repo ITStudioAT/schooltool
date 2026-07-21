@@ -52,7 +52,7 @@
                     <v-icon size="18" icon="mdi-two-factor-authentication" class="mr-2" />
                     <span class="profile-nav__button-copy">
                         <span class="profile-nav__button-title">2-Faktor-Auth</span>
-                        <span class="profile-nav__button-meta">{{ data.is_2fa ? 'Aktiviert' : 'Deaktiviert' }}</span>
+                        <span class="profile-nav__button-meta">{{ data.two_factor_enabled ? 'Aktiviert' : data.two_factor_pending ? 'Einrichtung offen' : 'Deaktiviert' }}</span>
                     </span>
                 </v-btn>
 
@@ -72,7 +72,7 @@
         </v-sheet>
 
         <v-row class="w-100" dense>
-            <v-col cols="12" sm="9" md="7" lg="5" xl="4">
+            <v-col cols="12" :sm="is2FaStep ? 12 : 9" :md="is2FaStep ? 10 : 7" :lg="is2FaStep ? 8 : 5" :xl="is2FaStep ? 7 : 4">
 
                 <!-- PROFILDATEN ÄNDERN -->
                 <v-card v-if="step === ''" rounded="xl" class="profile-card" flat>
@@ -118,22 +118,12 @@
 
                             <v-switch
                                 true-icon="mdi-check"
-                                v-model="data.is_2fa"
-                                label="2-Faktoren-Authentifizierung"
+                                :model-value="data.two_factor_enabled"
+                                label="Zwei-Faktor-Authentifizierung"
                                 hide-details
                                 color="success"
-                                :base-color="is_edit ? 'error' : ''"
                                 disabled
                                 class="mb-2" />
-
-                            <v-text-field
-                                v-if="data.is_2fa"
-                                variant="outlined"
-                                density="comfortable"
-                                rounded="lg"
-                                v-model="data.email_2fa"
-                                label="E-Mail 2-FA"
-                                disabled />
                         </v-form>
                     </v-card-text>
 
@@ -286,126 +276,7 @@
                     </v-card-actions>
                 </v-card>
 
-                <!-- 2FA ÄNDERN -->
-                <v-card v-if="step === 'CHANGE_2FA'" rounded="xl" class="profile-card" flat>
-                    <v-card-text class="pa-5">
-                        <div class="profile-card__header mb-5">
-                            <div class="profile-card__header-icon-wrap">
-                                <v-icon size="20" icon="mdi-shield-key-outline" />
-                            </div>
-                            <div>
-                                <div class="profile-card__header-title">2-Faktoren-Authentifizierung</div>
-                                <div class="profile-card__header-sub">{{ config.user.last_name }} {{ config.user.first_name }}</div>
-                            </div>
-                        </div>
-
-                        <v-form ref="form" @submit.prevent="save2Fa(data)" v-model="is_valid">
-                            <v-switch
-                                true-icon="mdi-check"
-                                v-model="data.is_2fa"
-                                label="2-Faktoren-Authentifizierung aktivieren"
-                                hide-details
-                                color="success"
-                                :base-color="is_edit ? 'error' : ''"
-                                class="mb-4" />
-
-                            <v-text-field
-                                v-if="data.is_2fa"
-                                variant="outlined"
-                                density="comfortable"
-                                rounded="lg"
-                                v-model="data.email_2fa"
-                                label="E-Mail für 2-Faktor-Codes"
-                                :rules="[required(), mail(), maxLength(255)]" />
-                        </v-form>
-                    </v-card-text>
-
-                    <v-card-actions class="pa-5 pt-0 ga-2">
-                        <v-btn color="success" variant="flat" rounded="lg" @click="save2Fa(data)" class="flex-1-1">
-                            <v-icon size="16" class="mr-1">mdi-check</v-icon>
-                            Speichern
-                        </v-btn>
-                        <v-btn color="warning" variant="text" rounded="lg" @click="abort2Fa" class="flex-1-1">
-                            Abbruch
-                        </v-btn>
-                    </v-card-actions>
-                </v-card>
-
-                <!-- 2FA abgeschaltet -->
-                <v-card v-if="step === 'TWO_FA_DELETE'" rounded="xl" class="profile-card" flat>
-                    <v-card-text class="pa-5">
-                        <div class="profile-card__header mb-5">
-                            <div class="profile-card__header-icon-wrap profile-card__header-icon-wrap--warning">
-                                <v-icon size="20" icon="mdi-shield-off-outline" />
-                            </div>
-                            <div>
-                                <div class="profile-card__header-title">2-Faktor-Auth deaktiviert</div>
-                                <div class="profile-card__header-sub">{{ config.user.last_name }} {{ config.user.first_name }}</div>
-                            </div>
-                        </div>
-                        <v-alert type="success" variant="tonal" rounded="lg" density="compact">
-                            Die Zwei-Faktoren-Authentifizierung wurde ausgeschaltet.
-                        </v-alert>
-                    </v-card-text>
-                    <v-card-actions class="pa-5 pt-0">
-                        <v-btn block color="primary" variant="flat" rounded="lg" @click="abort2Fa">Fertig</v-btn>
-                    </v-card-actions>
-                </v-card>
-
-                <!-- 2FA Code erfassen -->
-                <v-card v-if="step === 'TWO_FA_EMAIL_IS_NEW' || step === 'TWO_FA_EMAIL_MUST_BE_VERIFIED'" rounded="xl" class="profile-card" flat>
-                    <v-card-text class="pa-5">
-                        <div class="profile-card__header mb-5">
-                            <div class="profile-card__header-icon-wrap">
-                                <v-icon size="20" icon="mdi-shield-check-outline" />
-                            </div>
-                            <div>
-                                <div class="profile-card__header-title">2-FA E-Mail bestätigen</div>
-                                <div class="profile-card__header-sub">{{ config.user.last_name }} {{ config.user.first_name }}</div>
-                            </div>
-                        </div>
-
-                        <v-alert type="info" variant="tonal" rounded="lg" class="mb-4" density="compact">
-                            Bitte prüfen Sie Ihre E-Mails: {{ data.email_2fa }}
-                        </v-alert>
-
-                        <v-form ref="form" v-model="is_valid">
-                            <div class="profile-card__otp-label mb-2">Code aus der E-Mail eingeben</div>
-                            <v-otp-input autofocus v-model="data.token_2fa" />
-                        </v-form>
-                    </v-card-text>
-
-                    <v-card-actions class="pa-5 pt-0 ga-2">
-                        <v-btn color="success" variant="flat" rounded="lg" @click="save2FaWithCode(data)" class="flex-1-1">
-                            <v-icon size="16" class="mr-1">mdi-arrow-right</v-icon>
-                            Weiter
-                        </v-btn>
-                        <v-btn color="warning" variant="text" rounded="lg" @click="abort2Fa" class="flex-1-1">
-                            Abbruch
-                        </v-btn>
-                    </v-card-actions>
-                </v-card>
-
-                <!-- 2FA aktiviert -->
-                <v-card v-if="step === 'TWO_FA_SET' || step === 'TWO_FA_OK'" rounded="xl" class="profile-card" flat>
-                    <v-card-text class="pa-5">
-                        <div class="profile-card__header mb-5">
-                            <div class="profile-card__header-icon-wrap profile-card__header-icon-wrap--success">
-                                <v-icon size="20" icon="mdi-shield-check" />
-                            </div>
-                            <div>
-                                <div class="profile-card__header-title">2-Faktor-Auth aktiviert</div>
-                                <div class="profile-card__header-sub">{{ config.user.last_name }} {{ config.user.first_name }}</div>
-                            </div>
-                        </div>
-                        <v-alert type="success" variant="tonal" rounded="lg" density="compact">
-                            Die Zwei-Faktoren-Authentifizierung wurde eingeschaltet.
-                        </v-alert>
-                    </v-card-text>
-                    <v-card-actions class="pa-5 pt-0">
-                        <v-btn block color="primary" variant="flat" rounded="lg" @click="abort2Fa">Fertig</v-btn>
-                    </v-card-actions>
-                </v-card>
+                <TwoFactorAuthentication v-if="step === 'CHANGE_2FA'" @updated="updateTwoFactorStatus" />
 
                 <HopperSchools v-if="step === 'HOPPER_SCHOOLS'" />
 
@@ -422,13 +293,14 @@ import { useUserStore } from '@/stores/admin/UserStore'
 import { useNavigationStore } from '@/stores/admin/NavigationStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 import HopperSchools from '@/pages/admin/profile/components/HopperSchools.vue'
+import TwoFactorAuthentication from '@/pages/admin/profile/components/TwoFactorAuthentication.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: { AdminSectionHero, HopperSchools },
+    components: { AdminSectionHero, HopperSchools, TwoFactorAuthentication },
 
     props: {
         embedded: { type: Boolean, default: false },
@@ -468,7 +340,7 @@ export default {
         ...mapWritableState(useUserStore, ['item', 'api_answer']),
 
         is2FaStep() {
-            return ['CHANGE_2FA', 'TWO_FA_DELETE', 'TWO_FA_EMAIL_IS_NEW', 'TWO_FA_EMAIL_MUST_BE_VERIFIED', 'TWO_FA_SET', 'TWO_FA_OK'].includes(this.step)
+            return this.step === 'CHANGE_2FA'
         },
 
         heroChips() {
@@ -478,10 +350,10 @@ export default {
             }
             chips.push({
                 key: '2fa',
-                text: this.data?.is_2fa ? '2-FA aktiv' : '2-FA inaktiv',
-                icon: this.data?.is_2fa ? 'mdi-shield-check-outline' : 'mdi-shield-off-outline',
-                color: this.data?.is_2fa ? 'success' : 'white',
-                variant: this.data?.is_2fa ? 'flat' : 'tonal',
+                text: this.data?.two_factor_enabled ? '2-FA aktiv' : this.data?.two_factor_pending ? '2-FA offen' : '2-FA inaktiv',
+                icon: this.data?.two_factor_enabled ? 'mdi-shield-check-outline' : 'mdi-shield-off-outline',
+                color: this.data?.two_factor_enabled ? 'success' : 'white',
+                variant: this.data?.two_factor_enabled ? 'flat' : 'tonal',
             })
             return chips
         },
@@ -494,11 +366,6 @@ export default {
                 PASSWORD_ENTER_TOKEN: { icon: 'mdi-lock-check-outline', label: 'Kennwort bestätigen', note: 'Änderung per Code verifizieren.' },
                 HOPPER_SCHOOLS: { icon: 'mdi-account-switch-outline', label: 'Hopper Schulen', note: 'Gespeicherte Konten für den Schnellwechsel verwalten.' },
                 CHANGE_2FA: { icon: 'mdi-shield-key-outline', label: '2-Faktor-Auth', note: 'Zwei-Faktor-Authentifizierung konfigurieren.' },
-                TWO_FA_DELETE: { icon: 'mdi-shield-off-outline', label: '2-FA deaktiviert', note: 'Zwei-Faktor-Authentifizierung ausgeschaltet.' },
-                TWO_FA_EMAIL_IS_NEW: { icon: 'mdi-shield-check-outline', label: '2-FA E-Mail bestätigen', note: 'Code aus der E-Mail eingeben.' },
-                TWO_FA_EMAIL_MUST_BE_VERIFIED: { icon: 'mdi-shield-check-outline', label: '2-FA E-Mail bestätigen', note: 'Code aus der E-Mail eingeben.' },
-                TWO_FA_SET: { icon: 'mdi-shield-check', label: '2-FA aktiviert', note: 'Zwei-Faktor-Authentifizierung eingeschaltet.' },
-                TWO_FA_OK: { icon: 'mdi-shield-check', label: '2-FA aktiviert', note: 'Zwei-Faktor-Authentifizierung eingeschaltet.' },
             }
             return sections[this.step] || sections['']
         },
@@ -507,11 +374,6 @@ export default {
     methods: {
         abort() {
             this.is_edit = false
-            this.step = ''
-            this.data = JSON.parse(JSON.stringify(this.item))
-        },
-
-        abort2Fa() {
             this.step = ''
             this.data = JSON.parse(JSON.stringify(this.item))
         },
@@ -550,22 +412,10 @@ export default {
             }
         },
 
-        async save2Fa(data) {
-            await this.$refs.form.validate()
-            if (!this.is_valid) return
-            const result = await this.userStore.save2Fa(data)
-            if (result) {
-                this.step = result
-            }
-        },
-
-        async save2FaWithCode(data) {
-            await this.$refs.form.validate()
-            if (!this.is_valid) return
-            const result = await this.userStore.save2FaWithCode(data)
-            if (result) {
-                this.step = result
-            }
+        updateTwoFactorStatus(status) {
+            this.data.two_factor_enabled = status.enabled
+            this.data.two_factor_pending = status.pending
+            this.data.two_factor_confirmed_at = status.confirmed_at
         },
 
         async updateWithCode(data) {

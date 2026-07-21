@@ -11,7 +11,7 @@
                 <header class="cloud-header">
                     <div class="cloud-header-left">
                         <div class="login-brand-link">
-                            <img src="/storage/images/schooltool/schooltool-wordmark.svg" alt="SchoolTool" class="st-header-logo" />
+                            <img :src="'/storage/images/schooltool/schooltool-wordmark.svg'" alt="SchoolTool" class="st-header-logo" />
                         </div>
 
                     </div>
@@ -30,7 +30,7 @@
                         <div class="login-card">
                     <!-- Logo -->
                     <div class="school-logo-area">
-                        <img src="/storage/images/schooltool/schooltool-mark.svg" alt="SchoolTool" class="st-card-mark hover" @click="homepage" />
+                        <img :src="'/storage/images/schooltool/schooltool-mark.svg'" alt="SchoolTool" class="st-card-mark hover" @click="homepage" />
                     </div>
 
                     <!-- Step: Enter Email -->
@@ -149,6 +149,44 @@
                         <v-btn block variant="text" color="warning" data-testid="admin-login-back-from-token" @click="restartLogin">Zurück</v-btn>
                     </div>
 
+                    <!-- Step: Enter authenticator or recovery code -->
+                    <div class="card-body" v-if="step == 'LOGIN_ENTER_TWO_FACTOR'">
+                        <h2 class="step-title">Zwei-Faktor-Authentifizierung</h2>
+                        <p class="step-hint school-name">{{ data?.school?.long_name }}</p>
+                        <v-btn-toggle v-model="twoFactorMode" mandatory color="primary" variant="outlined" divided class="mb-4 w-100">
+                            <v-btn value="code" class="flex-1-1">Authenticator-Code</v-btn>
+                            <v-btn value="recovery" class="flex-1-1">Wiederherstellungscode</v-btn>
+                        </v-btn-toggle>
+
+                        <v-form v-if="twoFactorMode === 'code'" @submit.prevent="submitTwoFactorChallenge">
+                            <p class="step-hint">Geben Sie den sechsstelligen Code aus Ihrer Authenticator-App ein.</p>
+                            <v-otp-input
+                                v-model="twoFactorCode"
+                                autofocus
+                                length="6"
+                                type="number"
+                                data-testid="admin-login-two-factor-code"
+                                class="mb-3"
+                                @finish="submitTwoFactorChallenge" />
+                        </v-form>
+
+                        <v-form v-else @submit.prevent="submitTwoFactorChallenge">
+                            <v-text-field
+                                v-model="recoveryCode"
+                                autofocus
+                                label="Wiederherstellungscode"
+                                variant="outlined"
+                                autocomplete="one-time-code"
+                                data-testid="admin-login-recovery-code"
+                                class="mb-3" />
+                        </v-form>
+
+                        <v-btn block color="success" flat size="large" data-testid="admin-login-submit-two-factor" @click="submitTwoFactorChallenge" class="mb-3">
+                            Anmeldung abschließen
+                        </v-btn>
+                        <v-btn block variant="text" color="warning" @click="restartLogin">Zurück</v-btn>
+                    </div>
+
                     <!-- New Teacher: Select School -->
                     <div class="card-body" v-if="step == 'NEW_TEACHER_SELECT_SCHOOL'">
                         <h2 class="step-title">Neue:r Lehrer:in</h2>
@@ -236,6 +274,9 @@ export default {
             is_valid: false,
             step: null,
             is_password_visible: false,
+            twoFactorMode: 'code',
+            twoFactorCode: '',
+            recoveryCode: '',
         }
     },
 
@@ -308,6 +349,9 @@ export default {
         restartLogin() {
             this.data.password = null
             this.data.token_2fa = null
+            this.twoFactorCode = ''
+            this.recoveryCode = ''
+            this.twoFactorMode = 'code'
             this.data.remember = true
             this.step = 'LOGIN_ENTER_EMAIL'
         },
@@ -346,9 +390,34 @@ export default {
             if (this.data.step == 'LOGIN_SUCCESS') {
                 await this.adminStore.loadConfig()
                 this.$router.push('/admin')
+            } else if (this.data.step == 'LOGIN_ENTER_TWO_FACTOR') {
+                this.data.password = null
+                this.step = 'LOGIN_ENTER_TWO_FACTOR'
             } else {
                 this.step = 'LOGIN_ENTER_TOKEN'
             }
+        },
+
+        async submitTwoFactorChallenge() {
+            const payload = this.twoFactorMode === 'recovery'
+                ? { recovery_code: String(this.recoveryCode || '').trim() }
+                : { code: String(this.twoFactorCode || '').replace(/\s+/g, '') }
+
+            if (this.twoFactorMode === 'code' && !/^\d{6}$/.test(payload.code)) return
+            if (this.twoFactorMode === 'recovery' && !payload.recovery_code) return
+
+            this.step = 'LOGIN_PROCESSING'
+            const response = await this.adminStore.loginTwoFactorChallenge(payload)
+            this.twoFactorCode = ''
+            this.recoveryCode = ''
+
+            if (!response) {
+                this.step = 'LOGIN_ENTER_TWO_FACTOR'
+                return
+            }
+
+            await this.adminStore.loadConfig()
+            await this.$router.push(response.redirect_url || '/admin')
         },
 
         async loginStep3() {

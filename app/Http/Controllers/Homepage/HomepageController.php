@@ -180,6 +180,10 @@ class HomepageController extends Controller
             abort(401, 'Login funktioniert mit diesem Kennwort nicht.');
         }
 
+        if ($user->hasEnabledTwoFactorAuthentication()) {
+            abort(423, 'Dieses Benutzerkonto ist mit Zwei-Faktor-Authentifizierung geschützt. Bitte verwenden Sie die Admin-Anmeldung.');
+        }
+
         if ($user->is_2fa) {
             $adminService = new AdminService;
             $school = School::find($validated['school_id']);

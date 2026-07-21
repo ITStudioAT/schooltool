@@ -568,6 +568,30 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             }
         },
 
+        async loginTwoFactorChallenge(payload) {
+            const notification = useNotificationStore()
+            this.is_loading++
+            this.api_response = null
+
+            try {
+                await ensureCsrfCookie()
+                const response = await axios.post('/api/admin/two-factor-challenge', payload)
+                return response.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.status === 429
+                        ? 'Zu viele Versuche. Bitte warten Sie kurz.'
+                        : error.response?.data?.message || 'Der Sicherheitscode ist ungültig.',
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
         async executeLogout() {
             await ensureCsrfCookie()
             const notification = useNotificationStore()
