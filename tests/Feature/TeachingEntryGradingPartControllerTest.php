@@ -136,6 +136,7 @@ test('destroy removes only the grading part and keeps grading entries', function
         'schoolyear_id' => $this->schoolyear->id,
         'user_id' => $this->teacher->id,
         'teaching_entry_area_id' => $this->area->id,
+        'teaching_entry_grading_part_id' => $gradingPart->id,
         'category' => 'Benotung',
     ]);
 
@@ -145,6 +146,7 @@ test('destroy removes only the grading part and keeps grading entries', function
 
     $this->assertModelMissing($gradingPart);
     $this->assertModelExists($entry);
+    expect($entry->refresh()->teaching_entry_grading_part_id)->toBeNull();
 });
 
 test('destroy rejects a grading part owned by another teacher', function () {
@@ -159,4 +161,126 @@ test('destroy rejects a grading part owned by another teacher', function () {
         ->assertForbidden();
 
     $this->assertModelExists($gradingPart);
+});
+
+test('a grading entry can be assigned to a grading part in the same area', function () {
+    $gradingPart = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id,
+        'name' => 'Mündlich',
+    ]);
+    $entry = TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id,
+        'category' => 'Benotung',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->postJson("/api/admin/teaching/entry_grading_parts/{$gradingPart->id}/entries", [
+            'teaching_entry_definition_id' => $entry->id,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.id', $entry->id)
+        ->assertJsonPath('data.teaching_entry_grading_part_id', $gradingPart->id);
+
+    expect($entry->refresh()->teaching_entry_grading_part_id)->toBe($gradingPart->id);
+});
+
+test('an assigned grading entry can be unassigned without being deleted', function () {
+    $gradingPart = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id,
+    ]);
+    $entry = TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id,
+        'teaching_entry_grading_part_id' => $gradingPart->id,
+        'category' => 'Benotung',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->deleteJson("/api/admin/teaching/entry_grading_parts/{$gradingPart->id}/entries/{$entry->id}")
+        ->assertNoContent();
+
+    $this->assertModelExists($entry);
+    expect($entry->refresh()->teaching_entry_grading_part_id)->toBeNull();
+});
+
+test('assignment rejects entries outside the grading part scope', function (array $entryOverrides) {
+    $gradingPart = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id,
+    ]);
+    $entry = TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id,
+        'category' => 'Benotung',
+        ...$entryOverrides,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->postJson("/api/admin/teaching/entry_grading_parts/{$gradingPart->id}/entries", [
+            'teaching_entry_definition_id' => $entry->id,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('teaching_entry_definition_id');
+
+    expect($entry->refresh()->teaching_entry_grading_part_id)->toBe($entryOverrides['teaching_entry_grading_part_id'] ?? null);
+})->with([
+    'another area' => fn () => ['teaching_entry_area_id' => TeachingEntryArea::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+    ])->id],
+    'non-grading category' => [['category' => 'Verhalten']],
+    'another teacher' => fn () => [
+        'user_id' => $this->otherTeacher->id,
+        'teaching_entry_area_id' => TeachingEntryArea::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->otherTeacher->id,
+        ])->id,
+    ],
+    'already assigned' => fn () => ['teaching_entry_grading_part_id' => TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id,
+    ])->id],
+]);
+
+test('assignment and removal reject resources owned by another teacher', function () {
+    $foreignPart = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->otherTeacher->id,
+    ]);
+    $ownedEntry = TeachingEntryDefinition::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id,
+        'category' => 'Benotung',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->postJson("/api/admin/teaching/entry_grading_parts/{$foreignPart->id}/entries", [
+            'teaching_entry_definition_id' => $ownedEntry->id,
+        ])
+        ->assertForbidden();
+
+    $this->deleteJson("/api/admin/teaching/entry_grading_parts/{$foreignPart->id}/entries/{$ownedEntry->id}")
+        ->assertForbidden();
 });

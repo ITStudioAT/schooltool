@@ -6,6 +6,7 @@ use Database\Factories\TeachingEntryGradingPartFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TeachingEntryGradingPart extends Model
 {
@@ -38,5 +39,11 @@ class TeachingEntryGradingPart extends Model
     public function area(): BelongsTo
     {
         return $this->belongsTo(TeachingEntryArea::class, 'teaching_entry_area_id');
+    }
+
+    /** @return HasMany<TeachingEntryDefinition, $this> */
+    public function entryDefinitions(): HasMany
+    {
+        return $this->hasMany(TeachingEntryDefinition::class, 'teaching_entry_grading_part_id');
     }
 }

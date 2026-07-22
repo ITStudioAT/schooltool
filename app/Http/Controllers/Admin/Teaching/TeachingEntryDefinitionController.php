@@ -53,7 +53,15 @@ class TeachingEntryDefinitionController extends Controller
         $authUser = $this->authorizedUser();
         $this->ensureEntryBelongsToUser($entryDefinition, $authUser);
 
-        $entryDefinition->update($this->entryPayload($request->validated()));
+        $payload = $this->entryPayload($request->validated());
+
+        if ($entryDefinition->teaching_entry_grading_part_id !== null
+            && ($payload['category'] !== 'Benotung'
+                || $payload['teaching_entry_area_id'] !== $entryDefinition->teaching_entry_area_id)) {
+            $payload['teaching_entry_grading_part_id'] = null;
+        }
+
+        $entryDefinition->update($payload);
 
         return new TeachingEntryDefinitionResource($entryDefinition->refresh());
     }

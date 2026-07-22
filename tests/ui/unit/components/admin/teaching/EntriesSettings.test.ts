@@ -7,6 +7,7 @@ function entryFixture(overrides = {}) {
     return {
         id: 1,
         teaching_entry_area_id: 10,
+        teaching_entry_grading_part_id: null,
         short_name: 'M',
         name: 'Mitarbeit',
         category: 'Benotung',
@@ -35,31 +36,72 @@ describe('Teaching entries settings', () => {
     it('shows calculation entries only for the selected area', () => {
         const ctx = {
             activeAreaId: 20,
-            areas: [
-                { id: 10, name: 'Unterstufe' },
-                { id: 20, name: 'Oberstufe' },
-            ],
             entries: [
                 entryFixture(),
                 entryFixture({ id: 2, category: 'Verhalten' }),
                 entryFixture({ id: 3, teaching_entry_area_id: 20 }),
             ],
+        }
+
+        expect((Entries as any).computed.calculationEntries.call(ctx)).toEqual([expect.objectContaining({ id: 3 })])
+    })
+
+    it('shows all grading entries and their properties independently from grading parts', () => {
+        const entries = [
+            entryFixture({ id: 3, teaching_entry_area_id: 20, fixed_properties: ['+', '++', '-'] }),
+            entryFixture({ id: 4, teaching_entry_area_id: 20, properties_mode: 'free', fixed_properties: [] }),
+            entryFixture({ id: 5, teaching_entry_area_id: 20, category: 'Verhalten' }),
+        ]
+        const ctx = {
+            activeAreaId: 20,
+            entries,
+        }
+
+        expect((Entries as any).computed.calculationEntries.call(ctx)).toEqual([entries[0], entries[1]])
+    })
+
+    it('renders assigned grading entries in their grading part card', () => {
+        const assignedEntry = entryFixture({
+            id: 3,
+            teaching_entry_area_id: 20,
+            teaching_entry_grading_part_id: 100,
+        })
+        const ctx = {
+            activeAreaId: 20,
+            calculationEntries: [assignedEntry, entryFixture({ id: 4, teaching_entry_area_id: 20 })],
             gradingParts: [
                 { id: 100, teaching_entry_area_id: 20, name: 'Mündlich' },
                 { id: 200, teaching_entry_area_id: 10, name: 'Schriftlich' },
             ],
         }
 
-        expect((Entries as any).computed.calculationAreas.call(ctx)).toEqual([
-            expect.objectContaining({ id: 'grading-part-100', gradingPartId: 100, entries: [expect.objectContaining({ id: 3 })] }),
+        expect((Entries as any).computed.calculationAreas.call(ctx)).toEqual([{
+            id: 'grading-part-100',
+            gradingPartId: 100,
+            teaching_entry_area_id: 20,
+            name: 'Mündlich',
+            entries: [assignedEntry],
+        }])
+    })
+
+    it('offers only unassigned grading entries from the active area', () => {
+        const ctx = {
+            calculationEntries: [
+                entryFixture({ id: 1, short_name: 'M', name: 'Mitarbeit' }),
+                entryFixture({ id: 2, short_name: 'S', name: 'Schularbeit', teaching_entry_grading_part_id: 100 }),
+            ],
+        }
+
+        expect((Entries as any).computed.unassignedGradingEntries.call(ctx)).toEqual([
+            expect.objectContaining({ id: 1, name: 'Mitarbeit' }),
         ])
     })
 
     it('shows the possible values for every calculation entry type', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/settings/components/Entries.vue'), 'utf8')
 
-        expect(source).toContain('Mögliche Werte:')
-        expect(source).toContain('v-for="area in calculationAreas"')
+        expect(source).not.toContain('Mögliche Werte:')
+        expect(source).toContain('v-for="entry in calculationEntries"')
         expect(source).toContain('Benotungsteil hinzufügen')
         expect(source).toContain('@click="openCreateGradingPartDialog"')
         expect(source).toContain('v-for="property in entry.fixed_properties"')
@@ -278,6 +320,45 @@ describe('Teaching entries settings', () => {
         expect(ctx.entries).toEqual(entries)
     })
 
+    it('assigns a clicked grading entry and closes inline selection mode', async () => {
+        const methods = (Entries as any).methods
+        const assignedEntry = entryFixture({ teaching_entry_grading_part_id: 20 })
+        const post = vi.fn().mockResolvedValue({ data: { data: assignedEntry } })
+        ;(globalThis as any).axios = { post }
+        const ctx: any = {
+            entries: [entryFixture()],
+            assignGradingPartId: 20,
+            isAssigningGradingEntry: false,
+            cancelGradingEntryAssignment: methods.cancelGradingEntryAssignment,
+            notifyError: vi.fn(),
+        }
+
+        await methods.assignGradingEntry.call(ctx, entryFixture())
+
+        expect(post).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts/20/entries', {
+            teaching_entry_definition_id: 1,
+        })
+        expect(ctx.entries).toEqual([assignedEntry])
+        expect(ctx.assignGradingPartId).toBeNull()
+    })
+
+    it('removes an entry assignment without deleting the entry', async () => {
+        const methods = (Entries as any).methods
+        const assignedEntry = entryFixture({ teaching_entry_grading_part_id: 20 })
+        const deleteRequest = vi.fn().mockResolvedValue({})
+        ;(globalThis as any).axios = { delete: deleteRequest }
+        const ctx: any = {
+            entries: [assignedEntry],
+            isUnassigningGradingEntryId: null,
+            notifyError: vi.fn(),
+        }
+
+        await methods.unassignGradingEntry.call(ctx, { gradingPartId: 20 }, assignedEntry)
+
+        expect(deleteRequest).toHaveBeenCalledWith('/api/admin/teaching/entry_grading_parts/20/entries/1')
+        expect(ctx.entries).toEqual([expect.objectContaining({ id: 1, teaching_entry_grading_part_id: null })])
+    })
+
     it('removes only empty areas after confirmation', async () => {
         const methods = (Entries as any).methods
         const deleteRequest = vi.fn().mockResolvedValue({})
@@ -421,10 +502,19 @@ describe('Teaching entries settings', () => {
         expect(source).toContain('@click="copyEntriesFromArea"')
         expect(source).toContain('class="entry-area-grid mt-4"')
         expect(source).toContain("categoryOptions: ['Benotung', 'Berechnung', 'Verhalten', 'Weitere']")
+        expect(source).toContain('v-for="area in calculationAreas"')
         expect(source).toContain('v-for="entry in area.entries"')
         expect(source).toContain('class="calculation-area-list mt-3"')
         expect(source).toContain('class="calculation-entry-list"')
+        expect(source).toContain('@click="toggleGradingEntryAssignment(area)"')
+        expect(source).toContain('@click="assignGradingEntry(entry)"')
+        expect(source).toContain('calculation-entry-item--selectable')
+        expect(source).toContain('.calculation-entry-item--selectable:hover')
+        expect(source).not.toContain('v-model="assignGradingEntryDialogOpen"')
+        expect(source).not.toContain('v-model="selectedGradingEntryId"')
+        expect(source).toContain('@click="unassignGradingEntry(area, entry)"')
         expect(source).toContain('title="Benotungsteil löschen"')
+        expect(source).toContain('class="calculation-area-card calculation-part-card"')
         expect(source).toContain('@click="openDeleteGradingPartDialog(area)"')
         expect(source).toContain('@click="confirmGradingPartDelete"')
         expect(source).toContain('<template v-if="activeCategory !== \'Berechnung\'">')

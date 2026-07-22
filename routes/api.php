@@ -79,6 +79,7 @@ use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaEntryCopiesController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryAreaImportsController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryDefinitionController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartController;
+use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartEntryController;
 use App\Http\Controllers\Admin\Teaching\TeachingTestEnvironmentController;
 use App\Http\Controllers\Admin\TwoFactorAuthenticationController;
 use App\Http\Controllers\Admin\TwoFactorChallengeController;
@@ -569,6 +570,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/entry_areas', TeachingEntryAreaController::class)
             ->only(['index', 'store', 'update', 'destroy'])
             ->parameters(['entry_areas' => 'entryArea']);
+        Route::post('/admin/teaching/entry_grading_parts/{entryGradingPart}/entries', [TeachingEntryGradingPartEntryController::class, 'store']);
+        Route::delete('/admin/teaching/entry_grading_parts/{entryGradingPart}/entries/{entryDefinition}', [TeachingEntryGradingPartEntryController::class, 'destroy']);
         Route::apiResource('/admin/teaching/entry_grading_parts', TeachingEntryGradingPartController::class)
             ->only(['index', 'store', 'destroy'])
             ->parameters(['entry_grading_parts' => 'entryGradingPart']);

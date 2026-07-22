@@ -6,6 +6,7 @@ use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
+use App\Models\TeachingEntryGradingPart;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -295,6 +296,31 @@ test('update can move an entry to another area and clears irrelevant properties'
         ->assertJsonPath('data.has_notifications', true)
         ->assertJsonPath('data.notification_recipients', ['student']);
 });
+
+test('changing an assigned entry area or category clears its grading part assignment', function (array $payloadOverrides) {
+    $gradingPart = TeachingEntryGradingPart::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'teaching_entry_area_id' => $this->area->id,
+    ]);
+    $entry = teachingEntryFor($this->teacher, $this->schoolyear, $this->area, [
+        'teaching_entry_grading_part_id' => $gradingPart->id,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->putJson(
+            "/api/admin/teaching/entry_definitions/{$entry->id}",
+            validEntryPayload($this->area, ['short_name' => 'M', ...$payloadOverrides])
+        )
+        ->assertOk()
+        ->assertJsonPath('data.teaching_entry_grading_part_id', null);
+
+    expect($entry->refresh()->teaching_entry_grading_part_id)->toBeNull();
+})->with([
+    'area changes' => fn () => ['teaching_entry_area_id' => $this->otherArea->id],
+    'category changes' => [['category' => 'Verhalten']],
+]);
 
 test('update and destroy reject foreign entries and destroy removes an owned entry', function () {
     $foreign = teachingEntryFor($this->otherTeacher, $this->schoolyear, $this->foreignArea);

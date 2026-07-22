@@ -19,6 +19,7 @@ class TeachingEntryDefinition extends Model
         'schoolyear_id',
         'user_id',
         'teaching_entry_area_id',
+        'teaching_entry_grading_part_id',
         'short_name',
         'name',
         'category',
@@ -64,5 +65,10 @@ class TeachingEntryDefinition extends Model
     public function area(): BelongsTo
     {
         return $this->belongsTo(TeachingEntryArea::class, 'teaching_entry_area_id');
+    }
+
+    public function gradingPart(): BelongsTo
+    {
+        return $this->belongsTo(TeachingEntryGradingPart::class, 'teaching_entry_grading_part_id');
     }
 }
