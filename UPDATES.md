@@ -5,7 +5,8 @@
 ### Unterrichtstool
 
 - Eltern können sich einloggen
-- Curricula können Materialien anheften
+- Curricula können Attachments haben
+- Curricula sind von Materialien unabhängig
 
 ### General
 
