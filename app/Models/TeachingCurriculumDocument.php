@@ -9,9 +9,12 @@ class TeachingCurriculumDocument extends Model
 {
     protected $fillable = [
         'teaching_curriculum_id',
+        'topic_id',
+        'unit_id',
         'source_type',
         'name',
         'file_path',
+        'storage_disk',
         'mime_type',
         'size_bytes',
         'material_card_id',

@@ -3,6 +3,7 @@
 namespace App\Services\Materials;
 
 use App\Models\MaterialCardAttachment;
+use App\Models\TeachingCurriculumDocument;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpPresentation\IOFactory as PresentationIOFactory;
@@ -60,8 +61,11 @@ class MaterialAttachmentPreviewService
     /**
      * @param  array<int, string>  $diskCandidates
      */
-    public function preview(MaterialCardAttachment $attachment, string $downloadUrl = '', array $diskCandidates = []): Response
-    {
+    public function preview(
+        MaterialCardAttachment|TeachingCurriculumDocument $attachment,
+        string $downloadUrl = '',
+        array $diskCandidates = []
+    ): Response {
         $relativePath = (string) ($attachment->file_path ?? '');
         if ($relativePath === '') {
             abort(404, 'Datei nicht gefunden');
@@ -374,6 +378,9 @@ class MaterialAttachmentPreviewService
         ]);
 
         $response->setContentDisposition('inline', $fileName);
+        $response->setPrivate();
+        $response->setMaxAge(0);
+        $response->headers->addCacheControlDirective('no-store');
 
         if ($deleteAfterSend) {
             $response->deleteFileAfterSend(true);
@@ -656,7 +663,7 @@ class MaterialAttachmentPreviewService
         HTML;
     }
 
-    private function displayName(MaterialCardAttachment $attachment): string
+    private function displayName(MaterialCardAttachment|TeachingCurriculumDocument $attachment): string
     {
         $name = trim((string) ($attachment->name ?? ''));
         if ($name !== '') {
@@ -671,7 +678,7 @@ class MaterialAttachmentPreviewService
         return 'Datei';
     }
 
-    private function fileExtension(MaterialCardAttachment $attachment): string
+    private function fileExtension(MaterialCardAttachment|TeachingCurriculumDocument $attachment): string
     {
         $candidates = [
             trim((string) ($attachment->name ?? '')),

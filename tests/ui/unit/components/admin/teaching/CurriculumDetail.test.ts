@@ -12,6 +12,9 @@ vi.mock('@/stores/spa/NotificationStore', () => ({
 }))
 
 const loadDocumentsSpy = vi.spyOn((CurriculumDetail as any).methods, 'loadDocuments').mockResolvedValue(undefined)
+const loadSelectedUnitFilesSpy = vi
+    .spyOn((CurriculumDetail as any).methods, 'loadSelectedUnitFiles')
+    .mockResolvedValue(undefined)
 const openMaterialAttachmentDialogSpy = vi.spyOn((CurriculumDetail as any).methods, 'openMaterialAttachmentDialog').mockResolvedValue(undefined)
 
 function buildCurriculum(overrides: Record<string, unknown> = {}) {
@@ -60,6 +63,12 @@ function mountCurriculumDetail(
                     props: ['documentId', 'src', 'initialPosition'],
                     template: '<div class="curriculum-pdf-preview-stub" :data-src="src" />',
                 },
+                CurriculumUnitFilesDialog: {
+                    name: 'CurriculumUnitFilesDialog',
+                    props: ['modelValue', 'curriculumId', 'topicId', 'unitId', 'unitTitle'],
+                    emits: ['update:modelValue', 'changed'],
+                    template: '<div class="curriculum-unit-files-dialog-stub" />',
+                },
                 FileUpload: { template: '<div class="file-upload-stub" />' },
                 'v-btn': { template: '<button><slot /></button>' },
                 'v-btn-toggle': { template: '<div class="v-btn-toggle"><slot /></div>' },
@@ -72,10 +81,14 @@ function mountCurriculumDetail(
                 'v-dialog': { template: '<div><slot /></div>' },
                 'v-divider': { template: '<hr />' },
                 'v-autocomplete': { template: '<div><slot /></div>' },
+                'v-alert': { template: '<div><slot /><slot name="append" /></div>' },
                 'v-form': { template: '<form><slot /></form>' },
                 'v-icon': { template: '<i><slot /></i>' },
                 'v-list': { template: '<div><slot /></div>' },
-                'v-list-item': { props: ['title'], template: '<div>{{ title }}<slot /></div>' },
+                'v-list-item': {
+                    props: ['title'],
+                    template: '<div>{{ title }}<slot name="prepend" /><slot /><slot name="append" /></div>',
+                },
                 'v-list-item-subtitle': { template: '<div><slot /></div>' },
                 'v-list-item-title': { template: '<div><slot /></div>' },
                 'v-menu': { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
@@ -83,7 +96,10 @@ function mountCurriculumDetail(
                 'v-sheet': { template: '<div v-bind="$attrs"><slot /></div>' },
                 'v-spacer': { template: '<div />' },
                 'v-select': { template: '<select v-bind="$attrs" />' },
-                'v-text-field': { template: '<input />' },
+                'v-text-field': {
+                    props: ['modelValue', 'suffix', 'maxlength'],
+                    template: '<input class="v-text-field-stub" :data-suffix="suffix" :maxlength="maxlength" />',
+                },
             },
         },
     })
@@ -110,6 +126,7 @@ describe('CurriculumDetail preview layout', () => {
 
     afterEach(() => {
         loadDocumentsSpy.mockClear()
+        loadSelectedUnitFilesSpy.mockClear()
         openMaterialAttachmentDialogSpy.mockClear()
         window.localStorage.clear()
     })
@@ -587,8 +604,13 @@ describe('CurriculumDetail preview layout', () => {
         expect(actionMenu.text()).toContain('Einheit hinzufügen')
     })
 
-    it('opens the edit dialog when a unit is clicked', async () => {
+    it('shows unit actions instead of documents when a unit is selected', async () => {
         const wrapper = mountCurriculumDetail({
+            unit_file_counts: {
+                'topic-1': {
+                    'unit-1': 2,
+                },
+            },
             topics: [
                 {
                     id: 'topic-1',
@@ -605,34 +627,85 @@ describe('CurriculumDetail preview layout', () => {
             ],
         })
 
+        expect(wrapper.find('.curriculum-detail__unit-file-count-value').text()).toBe('2')
+        expect(wrapper.find('.curriculum-detail__unit-file-count').attributes('aria-label')).toBe('2 angehängte Dateien')
+
+        expect(wrapper.find('.curriculum-detail__side-card--scrollable').exists()).toBe(true)
+        expect(wrapper.find('.curriculum-detail__side-card--unit-actions').exists()).toBe(false)
+
         await wrapper.find('.curriculum-detail__unit-item').trigger('click')
 
         expect(wrapper.findAll('.curriculum-detail__unit-item .curriculum-detail__topic-actions button')).toHaveLength(2)
         expect(wrapper.find('[title="Einheit bearbeiten"]').exists()).toBe(false)
-        expect(wrapper.find('.curriculum-detail__unit-dialog-material-btn').text()).toBe('Material hinzufügen')
-        expect(wrapper.find('.curriculum-detail__unit-dialog-delete-btn').text()).toBe('Einheit löschen')
         expect((wrapper.vm as any).selectedUnitId).toBe('unit-1')
-        expect((wrapper.vm as any).showUnitForm).toBe(true)
-        expect((wrapper.vm as any).showUnitFormForTopicId).toBe('topic-1')
-        expect((wrapper.vm as any).unitForm).toMatchObject({
-            id: 'unit-1',
-            topicId: 'topic-1',
-            title: 'Anmelden',
+        expect(loadSelectedUnitFilesSpy).toHaveBeenCalledOnce()
+        expect((wrapper.vm as any).showUnitForm).toBe(false)
+        expect(wrapper.find('.curriculum-detail__side-card--scrollable').exists()).toBe(false)
+        expect(wrapper.find('.curriculum-detail__side-card--unit-actions').exists()).toBe(true)
+        expect(wrapper.find('.curriculum-detail__side-card--unit-actions').text()).toContain('Anmelden')
+        expect(wrapper.find('.curriculum-detail__unit-action-edit').text()).toBe('Ändern')
+        expect(wrapper.find('.curriculum-detail__unit-action-material').text()).toBe('Material hinzufügen')
+        expect(wrapper.find('.curriculum-detail__unit-action-delete').text()).toBe('Einheit löschen')
+
+        await wrapper.setData({
+            selectedUnitFiles: [
+                {
+                    id: 21,
+                    name: 'Arbeitsblatt.pdf',
+                    mime_type: 'application/pdf',
+                    size_bytes: 2048,
+                    preview_url: '/preview/21',
+                    download_url: '/download/21',
+                },
+                {
+                    id: 22,
+                    name: 'Notizen.txt',
+                    mime_type: 'text/plain',
+                    size_bytes: 512,
+                    preview_url: '/preview/22',
+                    download_url: '/download/22',
+                },
+            ],
         })
 
-        const openContentMaterialDialog = vi
-            .spyOn(wrapper.vm as any, 'openContentMaterialDialog')
-            .mockResolvedValue(undefined)
+        expect(wrapper.findAll('.curriculum-detail__unit-file')).toHaveLength(2)
+        expect(wrapper.find('.curriculum-detail__unit-files-list').text()).toContain('Arbeitsblatt.pdf')
+        expect(wrapper.find('.curriculum-detail__unit-files-list').text()).toContain('Notizen.txt')
+        expect(wrapper.find('.curriculum-detail__unit-files-list').text()).toContain('2.0 KB')
+        expect(wrapper.find('.curriculum-detail__unit-files-list').text()).not.toContain('application/pdf')
+        expect(wrapper.find('.curriculum-detail__unit-files-list').text()).not.toContain('text/plain')
+        expect(wrapper.findAll('.curriculum-detail__unit-file-preview')).toHaveLength(2)
+        expect(wrapper.findAll('.curriculum-detail__unit-file-preview')[1].attributes('href')).toBe('/preview/22')
 
-        await wrapper.find('.curriculum-detail__unit-dialog-material-btn').trigger('click')
+        await wrapper.find('.curriculum-detail__unit-action-material').trigger('click')
 
-        expect(openContentMaterialDialog).toHaveBeenCalledWith({
-            type: 'unit',
+        expect((wrapper.vm as any).unitFilesDialogOpen).toBe(true)
+        expect(wrapper.getComponent({ name: 'CurriculumUnitFilesDialog' }).props()).toMatchObject({
+            modelValue: true,
+            curriculumId: 15,
             topicId: 'topic-1',
             unitId: 'unit-1',
+            unitTitle: 'Anmelden',
         })
 
-        await wrapper.find('.curriculum-detail__unit-dialog-delete-btn').trigger('click')
+        wrapper.getComponent({ name: 'CurriculumUnitFilesDialog' }).vm.$emit('changed', [
+            {
+                id: 23,
+                name: 'Neu.pdf',
+                mime_type: 'application/pdf',
+                size_bytes: 1024,
+                preview_url: '/preview/23',
+                download_url: '/download/23',
+            },
+        ])
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).selectedUnitFiles).toHaveLength(1)
+        expect(wrapper.find('.curriculum-detail__unit-files-list').text()).toContain('Neu.pdf')
+        expect(wrapper.find('.curriculum-detail__unit-file-count-value').text()).toBe('1')
+        expect(wrapper.find('.curriculum-detail__unit-file-count').attributes('aria-label')).toBe('1 angehängte Datei')
+
+        await wrapper.find('.curriculum-detail__unit-action-delete').trigger('click')
 
         expect((wrapper.vm as any).contentDeleteDialogOpen).toBe(true)
         expect((wrapper.vm as any).contentToDelete).toEqual({
@@ -641,6 +714,26 @@ describe('CurriculumDetail preview layout', () => {
             topicId: 'topic-1',
             unitId: 'unit-1',
         })
+
+        ;(wrapper.vm as any).closeTopicDeleteDialog()
+        await wrapper.find('.curriculum-detail__unit-action-edit').trigger('click')
+
+        expect((wrapper.vm as any).showUnitForm).toBe(true)
+        expect(wrapper.find('.curriculum-detail__unit-dialog-material-btn').exists()).toBe(false)
+        expect(wrapper.find('.curriculum-detail__unit-dialog-delete-btn').exists()).toBe(false)
+        expect((wrapper.vm as any).showUnitFormForTopicId).toBe('topic-1')
+        expect((wrapper.vm as any).unitForm).toMatchObject({
+            id: 'unit-1',
+            topicId: 'topic-1',
+            title: 'Anmelden',
+        })
+
+        ;(wrapper.vm as any).cancelUnitForm()
+        await wrapper.find('.curriculum-detail__unit-item').trigger('click')
+
+        expect((wrapper.vm as any).selectedUnitId).toBeNull()
+        expect(wrapper.find('.curriculum-detail__side-card--unit-actions').exists()).toBe(false)
+        expect(wrapper.find('.curriculum-detail__side-card--scrollable').exists()).toBe(true)
     })
 
     it('submits the unit form with Enter and cancels it with Escape', async () => {
@@ -656,6 +749,7 @@ describe('CurriculumDetail preview layout', () => {
         })
 
         await wrapper.find('.curriculum-detail__unit-item').trigger('click')
+        await wrapper.find('.curriculum-detail__unit-action-edit').trigger('click')
 
         const persistCurriculum = vi.spyOn(wrapper.vm as any, 'persistCurriculum').mockResolvedValue(null)
         const saveButton = wrapper.find(
@@ -679,6 +773,123 @@ describe('CurriculumDetail preview layout', () => {
             topicId: null,
             title: '',
         })
+    })
+
+    it('requires confirmation before removing a selected unit material file', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grundlagen',
+                    materials: [],
+                    units: [{ id: 'unit-1', title: 'Anmelden', materials: [] }],
+                },
+            ],
+        })
+        const originalAxios = (globalThis as any).axios
+        const deleteMock = vi.fn().mockResolvedValue({ data: null })
+        ;(globalThis as any).axios = { delete: deleteMock }
+
+        try {
+            await wrapper.find('.curriculum-detail__unit-item').trigger('click')
+            await wrapper.setData({
+                selectedUnitFiles: [
+                    {
+                        id: 27,
+                        name: 'Arbeitsblatt.docx',
+                        mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        size_bytes: 4096,
+                        preview_url: '/preview/27',
+                        download_url: '/download/27',
+                    },
+                ],
+            })
+
+            expect(wrapper.find('.curriculum-detail__unit-file-preview').attributes('href')).toBe('/preview/27')
+
+            await wrapper.find('.curriculum-detail__unit-file-remove').trigger('click')
+
+            expect(deleteMock).not.toHaveBeenCalled()
+            expect((wrapper.vm as any).selectedUnitFileToDelete).toMatchObject({
+                id: 27,
+                name: 'Arbeitsblatt.docx',
+            })
+
+            await (wrapper.vm as any).confirmSelectedUnitFileDelete()
+
+            expect(deleteMock).toHaveBeenCalledWith(
+                '/api/admin/teaching/curricula/15/topics/topic-1/units/unit-1/files/27',
+            )
+            expect((wrapper.vm as any).selectedUnitFiles).toEqual([])
+            expect((wrapper.vm as any).selectedUnitFileToDelete).toBeNull()
+            expect(wrapper.find('.curriculum-detail__unit-file-count').exists()).toBe(false)
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+
+    it('renames a selected unit material file from a persistent dialog', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grundlagen',
+                    materials: [],
+                    units: [{ id: 'unit-1', title: 'Anmelden', materials: [] }],
+                },
+            ],
+        })
+        const originalAxios = (globalThis as any).axios
+        const patchMock = vi.fn().mockResolvedValue({
+            data: {
+                data: {
+                    id: 28,
+                    name: 'Umbenannt.pdf',
+                    mime_type: 'application/pdf',
+                    size_bytes: 2048,
+                    preview_url: '/preview/28',
+                    download_url: '/download/28',
+                },
+            },
+        })
+        ;(globalThis as any).axios = { patch: patchMock }
+
+        try {
+            await wrapper.find('.curriculum-detail__unit-item').trigger('click')
+            await wrapper.setData({
+                selectedUnitFiles: [
+                    {
+                        id: 28,
+                        name: 'Original.pdf',
+                        mime_type: 'application/pdf',
+                        size_bytes: 2048,
+                        preview_url: '/preview/28',
+                        download_url: '/download/28',
+                    },
+                ],
+            })
+
+            await wrapper.find('.curriculum-detail__unit-file-rename').trigger('click')
+
+            expect((wrapper.vm as any).selectedUnitFileToRename).toMatchObject({ id: 28 })
+            expect((wrapper.vm as any).selectedUnitFileRenameName).toBe('Original')
+            expect((wrapper.vm as any).selectedUnitFileRenameExtension).toBe('.pdf')
+            expect(
+                wrapper.find('.curriculum-detail__unit-file-rename-dialog .v-text-field-stub').attributes('data-suffix'),
+            ).toBe('.pdf')
+
+            await wrapper.setData({ selectedUnitFileRenameName: 'Umbenannt' })
+            await (wrapper.vm as any).confirmSelectedUnitFileRename()
+
+            expect(patchMock).toHaveBeenCalledWith(
+                '/api/admin/teaching/curricula/15/topics/topic-1/units/unit-1/files/28',
+                { basename: 'Umbenannt' },
+            )
+            expect(wrapper.find('.curriculum-detail__unit-files-list').text()).toContain('Umbenannt.pdf')
+            expect((wrapper.vm as any).selectedUnitFileToRename).toBeNull()
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
     })
 })
 
@@ -960,7 +1171,7 @@ describe.skip('CurriculumDetail removed calendar behavior', () => {
         expect(source).toContain('border-color: rgba(79, 70, 229, 0.62);')
         expect(source).toContain('background: rgba(79, 70, 229, 0.3);')
         expect(source).toContain('color: #1e1b4b !important;')
-        expect(source).toContain('@click="openSelectedUnitForm(topic.id, unit)"')
+        expect(source).toContain('@click="toggleSelectedUnit(topic.id, unit.id)"')
         expect(source).toContain('class="curriculum-detail__topic-actions" @click.stop')
         expect(source).toContain('.curriculum-detail__topic-entry {')
         expect(source).toContain('justify-content: space-between;')

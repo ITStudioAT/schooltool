@@ -1310,6 +1310,7 @@ class TeachingBackupService
             $this->insertRestoredRow('teaching_curriculum_documents', $document, [
                 'teaching_curriculum_id' => $curriculumIdMap[$oldCurriculumId],
                 'file_path' => $newPath,
+                'storage_disk' => $newPath !== null ? 'local' : null,
                 'material_card_id' => null,
                 'material_card_attachment_id' => null,
             ]);
@@ -1977,6 +1978,7 @@ class TeachingBackupService
             $this->insertRestoredRow('teaching_curriculum_documents', $row, [
                 'teaching_curriculum_id' => $newCurriculumId,
                 'file_path' => $newPath,
+                'storage_disk' => $newPath !== null ? 'local' : null,
                 'material_card_id' => null,
                 'material_card_attachment_id' => null,
             ]);
@@ -2386,21 +2388,30 @@ class TeachingBackupService
      */
     private function filesForTables(array $tables): array
     {
-        return collect($tables['teaching_curriculum_documents'] ?? [])
+        $curriculumFiles = collect($tables['teaching_curriculum_documents'] ?? [])
             ->filter(fn (array $row): bool => ($row['source_type'] ?? null) === 'upload')
-            ->pluck('file_path')
-            ->merge(collect($tables['teaching_course_date_material_attachments'] ?? [])->pluck('file_path'))
-            ->filter(fn (mixed $path): bool => is_string($path) && trim($path) !== '')
-            ->unique()
+            ->concat(collect($tables['teaching_curriculum_documents'] ?? [])
+                ->filter(fn (array $row): bool => ($row['source_type'] ?? null) === 'unit_file'))
+            ->filter(fn (array $row): bool => is_string($row['file_path'] ?? null) && trim($row['file_path']) !== '')
+            ->map(fn (array $row): array => $this->filePayload(
+                (string) $row['file_path'],
+                is_string($row['storage_disk'] ?? null) ? $row['storage_disk'] : null
+            ));
+
+        return $curriculumFiles
+            ->merge(collect($tables['teaching_course_date_material_attachments'] ?? [])
+                ->pluck('file_path')
+                ->filter(fn (mixed $path): bool => is_string($path) && trim($path) !== '')
+                ->map(fn (string $path): array => $this->filePayload($path, 'local')))
+            ->unique('path')
             ->values()
-            ->map(fn (string $path): array => $this->filePayload($path))
             ->all();
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function filePayload(string $path): array
+    private function filePayload(string $path, ?string $preferredDisk = null): array
     {
         $path = trim($path);
 
@@ -2419,7 +2430,7 @@ class TeachingBackupService
             }
         }
 
-        foreach ($this->fileDiskCandidates() as $diskName) {
+        foreach ($this->fileDiskCandidates($preferredDisk) as $diskName) {
             $disk = Storage::disk($diskName);
 
             if (! $disk->exists($path)) {
@@ -2449,14 +2460,15 @@ class TeachingBackupService
     /**
      * @return array<int, string>
      */
-    private function fileDiskCandidates(): array
+    private function fileDiskCandidates(?string $preferredDisk = null): array
     {
         return collect([
+            $preferredDisk,
             (string) config('filesystems.default'),
             'local',
             'public',
         ])
-            ->filter(fn (string $disk): bool => $disk !== '' && $disk !== 's3')
+            ->filter(fn (?string $disk): bool => filled($disk))
             ->unique()
             ->values()
             ->all();

@@ -5,11 +5,12 @@
 ### Unterrichtstool
 
 - Eltern können sich einloggen
+- Curricula können Materialien anheften
 
 ### General
 
-- 2-Factor-Authetification renewed completly
-- 2-Factor-Authetification now works with official apps
+- 2-Factor-Authentification renewed completly
+- 2-Factor-Authentification now works with official apps
 
 ## 3.43.2
 

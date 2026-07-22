@@ -294,15 +294,23 @@
                                             role="button"
                                             tabindex="0"
                                             :aria-pressed="isUnitSelected(topic.id, unit.id)"
-                                            @click="openSelectedUnitForm(topic.id, unit)"
-                                            @keydown.enter.prevent="openSelectedUnitForm(topic.id, unit)"
-                                            @keydown.space.prevent="openSelectedUnitForm(topic.id, unit)">
+                                            @click="toggleSelectedUnit(topic.id, unit.id)"
+                                            @keydown.enter.prevent="toggleSelectedUnit(topic.id, unit.id)"
+                                            @keydown.space.prevent="toggleSelectedUnit(topic.id, unit.id)">
                                             <div class="curriculum-detail__topic-row">
                                                 <div class="curriculum-detail__topic-main">
                                                     <div class="curriculum-detail__unit-title-row">
                                                         <div class="curriculum-detail__unit-title">
                                                             {{ topicIndex + 1 }}.{{ unitIndex + 1 }} {{ unit.title }}
                                                         </div>
+                                                        <span
+                                                            v-if="unitFileCount(topic.id, unit.id) > 0"
+                                                            class="curriculum-detail__unit-file-count"
+                                                            :title="unitFileCountLabel(topic.id, unit.id)"
+                                                            :aria-label="unitFileCountLabel(topic.id, unit.id)">
+                                                            <v-icon size="13">mdi-paperclip</v-icon>
+                                                            <span class="curriculum-detail__unit-file-count-value">{{ unitFileCount(topic.id, unit.id) }}</span>
+                                                        </span>
                                                         <v-chip
                                                             v-if="unit.is_exam"
                                                             size="x-small"
@@ -452,6 +460,95 @@
             </v-dialog>
 
             <v-dialog
+                :model-value="Boolean(selectedUnitFileToRename)"
+                persistent
+                max-width="440"
+                class="curriculum-detail__unit-file-rename-dialog">
+                <v-card rounded="xl" @keydown.esc.prevent="closeSelectedUnitFileRenameDialog">
+                    <v-form @submit.prevent="confirmSelectedUnitFileRename">
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                            <v-icon color="primary" size="20">mdi-pencil-outline</v-icon>
+                            Materialdatei umbenennen
+                        </v-card-title>
+                        <v-card-text class="px-4 pb-2">
+                            <v-text-field
+                                v-model="selectedUnitFileRenameName"
+                                label="Dateiname"
+                                variant="outlined"
+                                density="comfortable"
+                                :suffix="selectedUnitFileRenameExtension"
+                                :maxlength="Math.max(1, 255 - selectedUnitFileRenameExtension.length)"
+                                counter
+                                autofocus
+                                :disabled="selectedUnitFileRenaming"
+                                :error-messages="selectedUnitFileRenameError ? [selectedUnitFileRenameError] : []" />
+                        </v-card-text>
+                        <v-card-actions class="px-4 pb-4">
+                            <v-spacer />
+                            <v-btn
+                                variant="text"
+                                color="secondary"
+                                :disabled="selectedUnitFileRenaming"
+                                @click="closeSelectedUnitFileRenameDialog">
+                                Abbrechen
+                            </v-btn>
+                            <v-btn
+                                type="submit"
+                                color="primary"
+                                variant="flat"
+                                :loading="selectedUnitFileRenaming"
+                                :disabled="!selectedUnitFileRenameName.trim() || selectedUnitFileRenaming">
+                                Umbenennen
+                            </v-btn>
+                        </v-card-actions>
+                    </v-form>
+                </v-card>
+            </v-dialog>
+
+            <v-dialog
+                :model-value="Boolean(selectedUnitFileToDelete)"
+                persistent
+                max-width="420"
+                class="curriculum-detail__unit-file-delete-dialog">
+                <v-card rounded="xl">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                        <v-icon color="error" size="20">mdi-delete-outline</v-icon>
+                        Materialdatei entfernen
+                    </v-card-title>
+                    <v-card-text class="px-4 pb-2">
+                        <div class="text-body-2" style="color: #475569">
+                            Soll <strong>{{ selectedUnitFileToDelete?.name }}</strong> wirklich dauerhaft entfernt werden?
+                        </div>
+                        <v-alert
+                            v-if="selectedUnitFileDeleteError"
+                            type="error"
+                            variant="tonal"
+                            density="compact"
+                            class="mt-3">
+                            {{ selectedUnitFileDeleteError }}
+                        </v-alert>
+                    </v-card-text>
+                    <v-card-actions class="px-4 pb-4">
+                        <v-spacer />
+                        <v-btn
+                            variant="text"
+                            color="secondary"
+                            :disabled="selectedUnitFileDeleting"
+                            @click="closeSelectedUnitFileDeleteDialog">
+                            Abbrechen
+                        </v-btn>
+                        <v-btn
+                            color="error"
+                            variant="flat"
+                            :loading="selectedUnitFileDeleting"
+                            @click="confirmSelectedUnitFileDelete">
+                            Entfernen
+                        </v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
+
+            <v-dialog
                 v-model="showTopicForm"
                 max-width="520"
                 persistent
@@ -538,32 +635,6 @@
                                 {{ unitFormError }}
                             </div>
                             <div class="curriculum-detail__unit-dialog-actions">
-                                <div
-                                    v-if="unitForm.id"
-                                    class="curriculum-detail__unit-dialog-secondary-actions">
-                                    <v-btn
-                                        prepend-icon="mdi-book-plus-outline"
-                                        variant="tonal"
-                                        color="primary"
-                                        size="small"
-                                        rounded="lg"
-                                        class="text-none curriculum-detail__unit-dialog-material-btn"
-                                        :disabled="topicSaving"
-                                        @click="openUnitMaterialDialog">
-                                        Material hinzufügen
-                                    </v-btn>
-                                    <v-btn
-                                        prepend-icon="mdi-delete-outline"
-                                        variant="text"
-                                        color="error"
-                                        size="small"
-                                        rounded="lg"
-                                        class="text-none curriculum-detail__unit-dialog-delete-btn"
-                                        :disabled="topicSaving"
-                                        @click="promptDeleteEditingUnit">
-                                        Einheit löschen
-                                    </v-btn>
-                                </div>
                                 <div class="curriculum-detail__topic-form-actions">
                                     <v-btn
                                         variant="flat"
@@ -590,6 +661,14 @@
                     </v-card-text>
                 </v-card>
             </v-dialog>
+
+            <CurriculumUnitFilesDialog
+                v-model="unitFilesDialogOpen"
+                :curriculum-id="curriculum.id"
+                :topic-id="selectedTopic?.id"
+                :unit-id="selectedUnit?.id"
+                :unit-title="selectedUnit?.title || ''"
+                @changed="onUnitFilesChanged" />
 
             <v-dialog v-model="contentMaterialDialogOpen" max-width="980" persistent>
                 <v-card rounded="xl" class="curriculum-detail__editor-dialog-card">
@@ -1137,7 +1216,159 @@
                 </span>
             </div>
 
-            <v-sheet rounded="xl" class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable">
+            <v-sheet
+                v-if="selectedUnit"
+                rounded="xl"
+                class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--unit-actions">
+                <div class="curriculum-detail__side-card-inner">
+                    <div class="curriculum-detail__side-card-header">
+                        <v-icon size="20" color="#a5b4fc" class="mr-2">mdi-format-list-bulleted</v-icon>
+                        Einheit
+                    </div>
+                    <div class="curriculum-detail__side-card-body">
+                        <div class="curriculum-detail__selected-unit-title mb-3">
+                            {{ selectedUnit.title }}
+                        </div>
+
+                        <div class="curriculum-detail__unit-files-heading">
+                            <span>Materialdateien</span>
+                            <v-chip
+                                v-if="selectedUnitFiles.length"
+                                size="x-small"
+                                color="primary"
+                                variant="tonal">
+                                {{ selectedUnitFiles.length }}
+                            </v-chip>
+                        </div>
+
+                        <div v-if="selectedUnitFilesLoading" class="text-center py-4">
+                            <v-progress-circular indeterminate color="primary" size="22" />
+                        </div>
+
+                        <v-alert
+                            v-else-if="selectedUnitFilesError"
+                            type="error"
+                            variant="tonal"
+                            density="compact"
+                            class="curriculum-detail__unit-files-error mb-3">
+                            {{ selectedUnitFilesError }}
+                            <template #append>
+                                <v-btn
+                                    icon="mdi-refresh"
+                                    variant="text"
+                                    size="x-small"
+                                    title="Erneut laden"
+                                    @click="loadSelectedUnitFiles" />
+                            </template>
+                        </v-alert>
+
+                        <v-list
+                            v-else-if="selectedUnitFiles.length"
+                            bg-color="transparent"
+                            density="compact"
+                            aria-label="Materialdateien der ausgewählten Einheit"
+                            class="curriculum-detail__unit-files-list pa-0 mb-3">
+                            <v-list-item
+                                v-for="file in selectedUnitFiles"
+                                :key="file.id"
+                                rounded="lg"
+                                class="curriculum-detail__unit-file px-3">
+                                <template #prepend>
+                                    <v-icon size="18" color="primary" class="mr-2">
+                                        {{ unitFileIcon(file) }}
+                                    </v-icon>
+                                </template>
+                                <v-list-item-title class="curriculum-detail__unit-file-name">
+                                    {{ file.name }}
+                                </v-list-item-title>
+                                <v-list-item-subtitle class="text-caption">
+                                    {{ unitFileMeta(file) }}
+                                </v-list-item-subtitle>
+                                <template #append>
+                                    <v-btn
+                                        icon="mdi-eye-outline"
+                                        variant="text"
+                                        size="x-small"
+                                        color="primary"
+                                        title="Vorschau"
+                                        aria-label="Vorschau"
+                                        class="curriculum-detail__unit-file-preview"
+                                        :href="unitFilePreviewUrl(file)"
+                                        target="_blank" />
+                                    <v-btn
+                                        icon="mdi-download-outline"
+                                        variant="text"
+                                        size="x-small"
+                                        color="primary"
+                                        title="Herunterladen"
+                                        :href="file.download_url"
+                                        target="_blank" />
+                                    <v-btn
+                                        icon="mdi-pencil-outline"
+                                        variant="text"
+                                        size="x-small"
+                                        color="primary"
+                                        title="Materialdatei umbenennen"
+                                        aria-label="Materialdatei umbenennen"
+                                        class="curriculum-detail__unit-file-rename"
+                                        :disabled="selectedUnitFileRenaming || selectedUnitFileDeleting || isPageActionLocked"
+                                        @click="promptRenameSelectedUnitFile(file)" />
+                                    <v-btn
+                                        icon="mdi-delete-outline"
+                                        variant="text"
+                                        size="x-small"
+                                        color="error"
+                                        title="Materialdatei entfernen"
+                                        aria-label="Materialdatei entfernen"
+                                        class="curriculum-detail__unit-file-remove"
+                                        :disabled="selectedUnitFileRenaming || selectedUnitFileDeleting || isPageActionLocked"
+                                        @click="promptDeleteSelectedUnitFile(file)" />
+                                </template>
+                            </v-list-item>
+                        </v-list>
+
+                        <div v-else class="curriculum-detail__unit-files-empty mb-3">
+                            Noch keine Materialdateien hochgeladen.
+                        </div>
+
+                        <v-divider class="mb-3" />
+                        <div class="curriculum-detail__unit-actions-heading mb-2">Aktionen</div>
+                        <v-list
+                            bg-color="transparent"
+                            density="compact"
+                            aria-label="Aktionen für ausgewählte Einheit"
+                            class="curriculum-detail__unit-action-list pa-0">
+                            <v-list-item
+                                prepend-icon="mdi-pencil-outline"
+                                title="Ändern"
+                                rounded="lg"
+                                class="curriculum-detail__unit-action-edit"
+                                :disabled="topicSaving || isPageActionLocked"
+                                @click="editSelectedUnit" />
+                            <v-list-item
+                                prepend-icon="mdi-book-plus-outline"
+                                title="Material hinzufügen"
+                                rounded="lg"
+                                class="curriculum-detail__unit-action-material"
+                                :disabled="topicSaving || isPageActionLocked"
+                                @click="openSelectedUnitMaterialDialog" />
+                            <v-list-item
+                                prepend-icon="mdi-delete-outline"
+                                title="Einheit löschen"
+                                rounded="lg"
+                                base-color="error"
+                                class="curriculum-detail__unit-action-delete"
+                                :disabled="topicSaving || isPageActionLocked"
+                                @click="promptDeleteSelectedUnit" />
+                        </v-list>
+                    </div>
+                </div>
+            </v-sheet>
+
+            <v-sheet
+                v-else
+                rounded="xl"
+                class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable">
                 <div class="curriculum-detail__side-card-inner">
                     <div class="curriculum-detail__side-card-header">
                         <v-icon size="20" color="#a5b4fc" class="mr-2">mdi-book-open-page-variant-outline</v-icon>
@@ -1278,20 +1509,6 @@
                                     :allowed-file-types="['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/*']"
                                     @fileUploadFinished="onFileUploaded"
                                     @uploadStart="docsLoading = true" />
-
-                                <v-btn
-                                    v-if="hasMaterialsAccess"
-                                    variant="tonal"
-                                    color="primary"
-                                    size="small"
-                                    rounded="lg"
-                                    block
-                                    prepend-icon="mdi-package-variant-closed"
-                                    class="text-none mt-2"
-                                    :disabled="isPageActionLocked"
-                                    @click="materialDialogOpen = true">
-                                    Aus Materialien wählen
-                                </v-btn>
 
                                 <v-btn
                                     variant="text"
@@ -1466,6 +1683,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import FileUpload from '@/pages/components/FileUpload.vue'
 import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
+import CurriculumUnitFilesDialog from '@/pages/admin/teaching/curricula/CurriculumUnitFilesDialog.vue'
 
 const DAY_NAMES_SHORT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 const CURRICULUM_CARD_WIDTH_STORAGE_PREFIX = 'schooltool.admin.teaching.curriculum-card-width.user'
@@ -1477,7 +1695,7 @@ const MONTH_NAMES = [
 ]
 export default {
     name: 'CurriculumDetail',
-    components: { CurriculumPdfPreview, FileUpload },
+    components: { CurriculumPdfPreview, CurriculumUnitFilesDialog, FileUpload },
     props: {
         curriculum: { type: Object, required: true },
     },
@@ -1532,6 +1750,19 @@ export default {
             selectedTopicId: null,
             selectedUnitTopicId: null,
             selectedUnitId: null,
+            unitFilesDialogOpen: false,
+            unitFileCounts: {},
+            selectedUnitFiles: [],
+            selectedUnitFilesLoading: false,
+            selectedUnitFilesError: '',
+            selectedUnitFileToRename: null,
+            selectedUnitFileRenameName: '',
+            selectedUnitFileRenameExtension: '',
+            selectedUnitFileRenaming: false,
+            selectedUnitFileRenameError: '',
+            selectedUnitFileToDelete: null,
+            selectedUnitFileDeleting: false,
+            selectedUnitFileDeleteError: '',
             documents: [],
             docsLoading: false,
             contentMaterialDialogOpen: false,
@@ -1605,6 +1836,13 @@ export default {
     },
 
     watch: {
+        'curriculum.unit_file_counts': {
+            immediate: true,
+            deep: true,
+            handler(counts) {
+                this.unitFileCounts = this.normalizeUnitFileCounts(counts)
+            },
+        },
         'curriculum.id'() {
             this.topicCollapseStates = {}
             this.manualMonthCollapseStates = {}
@@ -1614,6 +1852,17 @@ export default {
             this.curriculumContentSources = []
             this.selectedCurriculumContentSourceId = null
             this.curriculumContentCopyError = null
+            this.selectedUnitFiles = []
+            this.selectedUnitFilesLoading = false
+            this.selectedUnitFilesError = ''
+            this.selectedUnitFileToRename = null
+            this.selectedUnitFileRenameName = ''
+            this.selectedUnitFileRenameExtension = ''
+            this.selectedUnitFileRenaming = false
+            this.selectedUnitFileRenameError = ''
+            this.selectedUnitFileToDelete = null
+            this.selectedUnitFileDeleting = false
+            this.selectedUnitFileDeleteError = ''
             this.loadDocuments()
         },
         'config.user.id'() {
@@ -1811,11 +2060,24 @@ export default {
             return this.curriculumTopics.find((topic) => topic.id === this.selectedTopicId) ?? null
         },
 
-        selectedAssignmentItems() {
-            if (this.selectedTopic && this.selectedUnitTopicId === this.selectedTopic.id && this.selectedUnitId) {
-                const selectedUnit = this.selectedTopic.units.find((unit) => unit.id === this.selectedUnitId) ?? null
+        selectedUnit() {
+            if (!this.selectedTopic || this.selectedUnitTopicId !== this.selectedTopic.id || !this.selectedUnitId) {
+                return null
+            }
 
-                return selectedUnit ? [selectedUnit] : []
+            return this.selectedTopic.units.find((unit) => unit.id === this.selectedUnitId) ?? null
+        },
+
+        selectedUnitFilesEndpoint() {
+            if (!this.selectedTopic || !this.selectedUnit) return null
+
+            return `/api/admin/teaching/curricula/${this.curriculum.id}/topics/`
+                + `${encodeURIComponent(this.selectedTopic.id)}/units/${encodeURIComponent(this.selectedUnit.id)}/files`
+        },
+
+        selectedAssignmentItems() {
+            if (this.selectedUnit) {
+                return [this.selectedUnit]
             }
 
             if (this.selectedTopic && this.isTopicSelected(this.selectedTopic.id)) {
@@ -4753,6 +5015,17 @@ export default {
             this.selectedTopicId = shouldDeselectTopic ? null : topicId
             this.selectedUnitTopicId = null
             this.selectedUnitId = null
+            this.selectedUnitFiles = []
+            this.selectedUnitFilesLoading = false
+            this.selectedUnitFilesError = ''
+            this.selectedUnitFileToRename = null
+            this.selectedUnitFileRenameName = ''
+            this.selectedUnitFileRenameExtension = ''
+            this.selectedUnitFileRenaming = false
+            this.selectedUnitFileRenameError = ''
+            this.selectedUnitFileToDelete = null
+            this.selectedUnitFileDeleting = false
+            this.selectedUnitFileDeleteError = ''
 
         },
 
@@ -4766,7 +5039,21 @@ export default {
             this.selectedTopicId = shouldDeselectUnit ? null : topicId
             this.selectedUnitTopicId = shouldDeselectUnit ? null : topicId
             this.selectedUnitId = shouldDeselectUnit ? null : unitId
+            this.selectedUnitFiles = []
+            this.selectedUnitFilesLoading = false
+            this.selectedUnitFilesError = ''
+            this.selectedUnitFileToRename = null
+            this.selectedUnitFileRenameName = ''
+            this.selectedUnitFileRenameExtension = ''
+            this.selectedUnitFileRenaming = false
+            this.selectedUnitFileRenameError = ''
+            this.selectedUnitFileToDelete = null
+            this.selectedUnitFileDeleting = false
+            this.selectedUnitFileDeleteError = ''
 
+            if (!shouldDeselectUnit) {
+                this.loadSelectedUnitFiles()
+            }
         },
 
         buildCurriculumPayload(overrides = {}) {
@@ -4901,39 +5188,234 @@ export default {
             this.unitForm = this.newUnitForm(topicId, unit)
         },
 
-        openSelectedUnitForm(topicId, unit) {
+        editSelectedUnit() {
             if (this.topicSaving || this.isPageActionLocked) return
+            if (!this.selectedTopic || !this.selectedUnit) return
 
-            if (!this.isUnitSelected(topicId, unit.id)) {
-                this.toggleSelectedUnit(topicId, unit.id)
+            this.openUnitForm(this.selectedTopic.id, this.selectedUnit)
+        },
+
+        openSelectedUnitMaterialDialog() {
+            if (this.topicSaving || this.isPageActionLocked) return
+            if (!this.selectedTopic || !this.selectedUnit) return
+
+            this.unitFilesDialogOpen = true
+        },
+
+        async loadSelectedUnitFiles() {
+            const endpoint = this.selectedUnitFilesEndpoint
+            if (!endpoint) {
+                this.selectedUnitFiles = []
+                this.selectedUnitFilesError = ''
+                return
             }
 
-            this.openUnitForm(topicId, unit)
+            this.selectedUnitFilesLoading = true
+            this.selectedUnitFilesError = ''
+
+            try {
+                const response = await axios.get(endpoint)
+
+                if (this.selectedUnitFilesEndpoint === endpoint) {
+                    this.selectedUnitFiles = Array.isArray(response?.data?.data) ? response.data.data : []
+                    this.setSelectedUnitFileCount(this.selectedUnitFiles.length)
+                }
+            } catch {
+                if (this.selectedUnitFilesEndpoint === endpoint) {
+                    this.selectedUnitFiles = []
+                    this.selectedUnitFilesError = 'Die Materialdateien konnten nicht geladen werden.'
+                }
+            } finally {
+                if (this.selectedUnitFilesEndpoint === endpoint) {
+                    this.selectedUnitFilesLoading = false
+                }
+            }
         },
 
-        openUnitMaterialDialog() {
-            if (!this.unitForm.topicId || !this.unitForm.id) return
-
-            return this.openContentMaterialDialog({
-                type: 'unit',
-                topicId: this.unitForm.topicId,
-                unitId: this.unitForm.id,
-            })
+        onUnitFilesChanged(files) {
+            this.selectedUnitFiles = Array.isArray(files) ? files : []
+            this.selectedUnitFilesError = ''
+            this.setSelectedUnitFileCount(this.selectedUnitFiles.length)
         },
 
-        promptDeleteEditingUnit() {
-            if (this.topicSaving || !this.unitForm.topicId || !this.unitForm.id) return
+        normalizeUnitFileCounts(counts) {
+            if (!counts || typeof counts !== 'object' || Array.isArray(counts)) return {}
 
-            const topic = this.findTopic(this.unitForm.topicId)
-            const unit = topic?.units.find((topicUnit) => topicUnit.id === this.unitForm.id)
+            return Object.entries(counts).reduce((normalizedTopics, [topicId, unitCounts]) => {
+                if (!unitCounts || typeof unitCounts !== 'object' || Array.isArray(unitCounts)) return normalizedTopics
 
-            if (!topic || !unit) return
+                const normalizedUnits = Object.entries(unitCounts).reduce((units, [unitId, count]) => {
+                    const normalizedCount = Math.max(0, Math.trunc(Number(count) || 0))
+                    if (normalizedCount > 0) units[String(unitId)] = normalizedCount
+
+                    return units
+                }, {})
+
+                if (Object.keys(normalizedUnits).length > 0) normalizedTopics[String(topicId)] = normalizedUnits
+
+                return normalizedTopics
+            }, {})
+        },
+
+        unitFileCount(topicId, unitId) {
+            return this.unitFileCounts?.[String(topicId)]?.[String(unitId)] || 0
+        },
+
+        unitFileCountLabel(topicId, unitId) {
+            const count = this.unitFileCount(topicId, unitId)
+
+            return count === 1 ? '1 angehängte Datei' : `${count} angehängte Dateien`
+        },
+
+        setSelectedUnitFileCount(count) {
+            if (!this.selectedUnitTopicId || !this.selectedUnitId) return
+
+            const topicId = String(this.selectedUnitTopicId)
+            const unitId = String(this.selectedUnitId)
+            const normalizedCount = Math.max(0, Math.trunc(Number(count) || 0))
+            const topicCounts = { ...(this.unitFileCounts[topicId] || {}) }
+
+            if (normalizedCount > 0) topicCounts[unitId] = normalizedCount
+            else delete topicCounts[unitId]
+
+            const nextCounts = { ...this.unitFileCounts }
+            if (Object.keys(topicCounts).length > 0) nextCounts[topicId] = topicCounts
+            else delete nextCounts[topicId]
+
+            this.unitFileCounts = nextCounts
+        },
+
+        unitFilePreviewUrl(file) {
+            return file?.preview_url || null
+        },
+
+        promptRenameSelectedUnitFile(file) {
+            if (this.selectedUnitFileRenaming || this.selectedUnitFileDeleting || this.isPageActionLocked || !file?.id) return
+
+            const { basename, extension } = this.splitUnitFileName(file.name)
+
+            this.selectedUnitFileRenameError = ''
+            this.selectedUnitFileRenameName = basename
+            this.selectedUnitFileRenameExtension = extension
+            this.selectedUnitFileToRename = file
+        },
+
+        splitUnitFileName(fileName) {
+            const name = String(fileName || '')
+            const lastDotPosition = name.lastIndexOf('.')
+
+            if (lastDotPosition <= 0 || lastDotPosition === name.length - 1) {
+                return { basename: name, extension: '' }
+            }
+
+            return {
+                basename: name.slice(0, lastDotPosition),
+                extension: name.slice(lastDotPosition),
+            }
+        },
+
+        closeSelectedUnitFileRenameDialog() {
+            if (this.selectedUnitFileRenaming) return
+
+            this.selectedUnitFileToRename = null
+            this.selectedUnitFileRenameName = ''
+            this.selectedUnitFileRenameExtension = ''
+            this.selectedUnitFileRenameError = ''
+        },
+
+        async confirmSelectedUnitFileRename() {
+            const endpoint = this.selectedUnitFilesEndpoint
+            const file = this.selectedUnitFileToRename
+            const name = this.selectedUnitFileRenameName.trim()
+            if (!endpoint || !file?.id || !name || this.selectedUnitFileRenaming || this.isPageActionLocked) return
+
+            this.selectedUnitFileRenaming = true
+            this.selectedUnitFileRenameError = ''
+
+            try {
+                const response = await axios.patch(`${endpoint}/${file.id}`, { basename: name })
+                if (this.selectedUnitFilesEndpoint !== endpoint) return
+
+                const renamedFile = response?.data?.data
+
+                if (renamedFile?.id) {
+                    this.selectedUnitFiles = this.selectedUnitFiles.map((selectedFile) => (
+                        selectedFile.id === renamedFile.id ? renamedFile : selectedFile
+                    ))
+                }
+
+                this.selectedUnitFileToRename = null
+                this.selectedUnitFileRenameName = ''
+                this.selectedUnitFileRenameExtension = ''
+            } catch (error) {
+                const validationErrors = error?.response?.data?.errors || {}
+                this.selectedUnitFileRenameError = validationErrors.basename?.[0]
+                    || error?.response?.data?.message
+                    || 'Die Materialdatei konnte nicht umbenannt werden.'
+            } finally {
+                this.selectedUnitFileRenaming = false
+            }
+        },
+
+        promptDeleteSelectedUnitFile(file) {
+            if (this.selectedUnitFileRenaming || this.selectedUnitFileDeleting || this.isPageActionLocked || !file?.id) return
+
+            this.selectedUnitFileDeleteError = ''
+            this.selectedUnitFileToDelete = file
+        },
+
+        closeSelectedUnitFileDeleteDialog() {
+            if (this.selectedUnitFileDeleting) return
+
+            this.selectedUnitFileToDelete = null
+            this.selectedUnitFileDeleteError = ''
+        },
+
+        async confirmSelectedUnitFileDelete() {
+            const endpoint = this.selectedUnitFilesEndpoint
+            const file = this.selectedUnitFileToDelete
+            if (!endpoint || !file?.id || this.selectedUnitFileDeleting || this.isPageActionLocked) return
+
+            this.selectedUnitFileDeleting = true
+            this.selectedUnitFileDeleteError = ''
+
+            try {
+                await axios.delete(`${endpoint}/${file.id}`)
+                this.selectedUnitFiles = this.selectedUnitFiles.filter((selectedFile) => selectedFile.id !== file.id)
+                this.setSelectedUnitFileCount(this.selectedUnitFiles.length)
+                this.selectedUnitFileToDelete = null
+            } catch (error) {
+                this.selectedUnitFileDeleteError = error?.response?.data?.message
+                    || 'Die Materialdatei konnte nicht entfernt werden.'
+            } finally {
+                this.selectedUnitFileDeleting = false
+            }
+        },
+
+        unitFileIcon(file) {
+            const mimeType = String(file?.mime_type || '').toLowerCase()
+
+            if (mimeType === 'application/pdf') return 'mdi-file-pdf-box'
+            if (mimeType.startsWith('image/')) return 'mdi-file-image-outline'
+
+            return 'mdi-file-document-outline'
+        },
+
+        unitFileMeta(file) {
+            const size = this.formatBytes(file?.size_bytes)
+
+            return size || 'Datei'
+        },
+
+        promptDeleteSelectedUnit() {
+            if (this.topicSaving || this.isPageActionLocked) return
+            if (!this.selectedTopic || !this.selectedUnit) return
 
             this.contentToDelete = {
                 type: 'unit',
-                title: unit.title,
-                topicId: topic.id,
-                unitId: unit.id,
+                title: this.selectedUnit.title,
+                topicId: this.selectedTopic.id,
+                unitId: this.selectedUnit.id,
             }
             this.contentDeleteDialogOpen = true
         },
@@ -5287,6 +5769,12 @@ export default {
                     this.activeTopicAssignmentId = null
                     this.activeTopicAssignmentUnitId = null
                     this.activeTopicAssignmentType = null
+                }
+
+                if (updatedCurriculum && this.isUnitSelected(topicId, unitId)) {
+                    this.selectedTopicId = null
+                    this.selectedUnitTopicId = null
+                    this.selectedUnitId = null
                 }
 
                 return updatedCurriculum !== null
@@ -6484,6 +6972,77 @@ export default {
     color: #1e293b;
 }
 
+.curriculum-detail__selected-unit-title {
+    color: #0f172a;
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.curriculum-detail__side-card--unit-actions .curriculum-detail__side-card-body {
+    max-height: calc(100vh - 190px);
+    overflow-y: auto;
+}
+
+.curriculum-detail__unit-files-heading,
+.curriculum-detail__unit-actions-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.curriculum-detail__unit-files-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.curriculum-detail__unit-file {
+    border: 1px solid rgba(37, 99, 235, 0.16);
+    background: rgba(239, 246, 255, 0.72);
+}
+
+.curriculum-detail__unit-file-name {
+    font-size: 0.78rem;
+    line-height: 1.2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.curriculum-detail__unit-files-empty {
+    padding: 10px 12px;
+    border: 1px dashed rgba(100, 116, 139, 0.28);
+    border-radius: 10px;
+    color: #64748b;
+    font-size: 0.78rem;
+    text-align: center;
+}
+
+.curriculum-detail__unit-files-error {
+    font-size: 0.78rem;
+}
+
+.curriculum-detail__unit-action-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.curriculum-detail__unit-action-list :deep(.v-list-item) {
+    border: 1px solid rgba(99, 102, 241, 0.16);
+    background: rgba(238, 242, 255, 0.76);
+}
+
+.curriculum-detail__unit-action-list :deep(.v-list-item:hover) {
+    border-color: rgba(79, 70, 229, 0.32);
+    background: rgba(224, 231, 255, 0.92);
+}
+
 .curriculum-detail__side-card--content .curriculum-detail__side-card-body {
     padding: 10px 14px;
     color: #1e293b;
@@ -6561,15 +7120,8 @@ export default {
 .curriculum-detail__unit-dialog-actions {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 12px;
-    flex-wrap: wrap;
-}
-
-.curriculum-detail__unit-dialog-secondary-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
     flex-wrap: wrap;
 }
 
@@ -7227,6 +7779,20 @@ export default {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+.curriculum-detail__unit-file-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    min-height: 18px;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.1);
+    color: #1d4ed8;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1;
 }
 
 .curriculum-detail__unit-exam-chip {

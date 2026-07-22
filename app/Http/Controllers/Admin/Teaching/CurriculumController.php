@@ -11,6 +11,7 @@ use App\Models\MaterialCardAttachment;
 use App\Models\TeachingCurriculum;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\Materials\MaterialService;
+use App\Services\Teaching\CurriculumUnitFileService;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\Request;
@@ -21,7 +22,7 @@ use Illuminate\Validation\ValidationException;
 
 class CurriculumController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, CurriculumUnitFileService $unitFileService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -45,8 +46,16 @@ class CurriculumController extends Controller
 
         $paginated = $query->paginate($perPage)->withQueryString();
 
+        $curricula = collect($paginated->items());
+        $unitFileCounts = $unitFileService->countsByCurriculum($curricula);
+
         return response()->json([
-            'data' => $paginated->items(),
+            'data' => $curricula
+                ->map(fn (TeachingCurriculum $curriculum): array => $unitFileService->curriculumPayload(
+                    $curriculum,
+                    $unitFileCounts[$curriculum->id] ?? []
+                ))
+                ->all(),
             'meta' => [
                 'current_page' => $paginated->currentPage(),
                 'last_page' => $paginated->lastPage(),
@@ -56,7 +65,7 @@ class CurriculumController extends Controller
         ]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, CurriculumUnitFileService $unitFileService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -73,14 +82,14 @@ class CurriculumController extends Controller
             'topics' => $validated['topics'],
         ]);
 
-        return response()->json(['data' => $curriculum], 201);
+        return response()->json(['data' => $unitFileService->curriculumPayload($curriculum, [])], 201);
     }
 
-    public function show(TeachingCurriculum $curriculum)
+    public function show(TeachingCurriculum $curriculum, CurriculumUnitFileService $unitFileService)
     {
         $auth_user = $this->authorizeCurriculum($curriculum);
 
-        return response()->json(['data' => $curriculum]);
+        return response()->json(['data' => $unitFileService->curriculumPayload($curriculum)]);
     }
 
     public function materialsConfig(TeachingCurriculum $curriculum, MaterialService $service)
@@ -201,19 +210,26 @@ class CurriculumController extends Controller
         );
     }
 
-    public function update(Request $request, TeachingCurriculum $curriculum)
-    {
+    public function update(
+        Request $request,
+        TeachingCurriculum $curriculum,
+        CurriculumUnitFileService $unitFileService
+    ) {
         $this->authorizeCurriculum($curriculum);
 
         $validated = $this->validatedPayload($request, $curriculum);
 
         $curriculum->update($validated);
+        $unitFileService->deleteFilesForMissingUnits($curriculum);
 
-        return response()->json(['data' => $curriculum]);
+        return response()->json(['data' => $unitFileService->curriculumPayload($curriculum)]);
     }
 
-    public function copyContent(Request $request, TeachingCurriculum $curriculum)
-    {
+    public function copyContent(
+        Request $request,
+        TeachingCurriculum $curriculum,
+        CurriculumUnitFileService $unitFileService
+    ) {
         $authUser = $this->authorizeCurriculum($curriculum);
 
         $validated = $request->validate([
@@ -263,13 +279,14 @@ class CurriculumController extends Controller
             'topics' => $this->normalizeCurriculumTopics($copiedTopics),
         ]);
 
-        return response()->json(['data' => $curriculum->fresh()]);
+        return response()->json(['data' => $unitFileService->curriculumPayload($curriculum->fresh(), [])]);
     }
 
-    public function destroy(TeachingCurriculum $curriculum)
+    public function destroy(TeachingCurriculum $curriculum, CurriculumUnitFileService $unitFileService)
     {
         $this->authorizeCurriculum($curriculum);
 
+        $unitFileService->deleteAll($curriculum);
         $curriculum->delete();
 
         return response()->json(null, 204);

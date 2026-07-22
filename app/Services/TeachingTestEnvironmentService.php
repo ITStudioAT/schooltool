@@ -563,8 +563,11 @@ class TeachingTestEnvironmentService
         $files = $files->merge(DB::table('teaching_curriculum_documents')
             ->whereIn('teaching_curriculum_id', $curriculumIds ?: [-1])
             ->whereNotNull('file_path')
-            ->pluck('file_path')
-            ->map(fn (string $path): array => ['disk' => 'local', 'path' => $path]));
+            ->get(['storage_disk', 'file_path'])
+            ->map(fn (object $document): array => [
+                'disk' => (string) ($document->storage_disk ?: 'local'),
+                'path' => (string) $document->file_path,
+            ]));
 
         $files = $files->merge(DB::table('aba_attachments')
             ->join('abas', 'abas.id', '=', 'aba_attachments.aba_id')

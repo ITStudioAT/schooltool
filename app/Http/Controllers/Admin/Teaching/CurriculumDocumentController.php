@@ -23,6 +23,8 @@ class CurriculumDocumentController extends Controller
         $this->authorizeCurriculum($curriculum);
 
         $documents = $curriculum->documents()
+            ->whereNull('topic_id')
+            ->whereNull('unit_id')
             ->with('materialAttachment')
             ->orderByDesc('created_at')
             ->get();
@@ -435,6 +437,10 @@ class CurriculumDocumentController extends Controller
     {
         if ($document->teaching_curriculum_id !== $curriculum->id) {
             abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if ($document->topic_id !== null || $document->unit_id !== null) {
+            abort(404);
         }
     }
 
