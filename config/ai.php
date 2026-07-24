@@ -19,6 +19,7 @@ return [
     'default_for_transcription' => 'openai',
     'default_for_embeddings' => 'openai',
     'default_for_reranking' => 'openai',
+    'materials_v2_keyword_enrichment' => env('MATERIALS_V2_AI_KEYWORDS_ENABLED', false),
 
     /*
     |--------------------------------------------------------------------------

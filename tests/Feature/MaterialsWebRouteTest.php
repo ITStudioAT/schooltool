@@ -48,6 +48,11 @@ it('renders the admin spa on hard reload for authorized materials users', functi
         ->get('/admin/materials')
         ->assertSuccessful()
         ->assertViewIs('spa::admin');
+
+    $this->actingAs($user)
+        ->get('/admin/materials-v2')
+        ->assertSuccessful()
+        ->assertViewIs('spa::admin');
 });
 
 it('does not expose the document ai diagnostic route', function () {

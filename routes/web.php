@@ -64,6 +64,14 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         'tool-licensed:Materialientool,auth,scope:materials_access',
     ]);
 
+    Route::get('/admin/materials-v2/{any?}', function () {
+        return view('spa::admin');
+    })->where('any', '.*')->middleware([
+        'auth:sanctum',
+        'web-allowed:scope:materials_access',
+        'tool-licensed:Materialientool,auth,scope:materials_access',
+    ]);
+
     Route::get('/admin/restaurant/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware([

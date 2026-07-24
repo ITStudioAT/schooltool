@@ -1,12 +1,18 @@
 # UPDATES
 
-## 3.43.3 X
+## 3.43.3
 
 ### Unterrichtstool
 
 - Eltern können sich einloggen
 - Curricula können Attachments haben
 - Curricula sind von Materialien unabhängig
+
+## Materialien
+- Version 2 gestartet
+- Keine 3-schichtige Einteilung
+- Nur noch eine Kategorie plus Suchbegriffe
+- Tolerante Flex-Suche
 
 ### General
 

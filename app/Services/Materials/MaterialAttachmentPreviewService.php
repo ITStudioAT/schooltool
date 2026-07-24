@@ -3,12 +3,16 @@
 namespace App\Services\Materials;
 
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialV2Attachment;
 use App\Models\TeachingCurriculumDocument;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpPresentation\IOFactory as PresentationIOFactory;
 use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
 use PhpOffice\PhpSpreadsheet\Writer\Html as SpreadsheetHtmlWriter;
+use PhpOffice\PhpWord\Element\AbstractContainer;
+use PhpOffice\PhpWord\Element\ListItemRun;
+use PhpOffice\PhpWord\Element\Text;
 use PhpOffice\PhpWord\IOFactory as WordIOFactory;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
@@ -62,11 +66,11 @@ class MaterialAttachmentPreviewService
      * @param  array<int, string>  $diskCandidates
      */
     public function preview(
-        MaterialCardAttachment|TeachingCurriculumDocument $attachment,
+        MaterialCardAttachment|MaterialV2Attachment|TeachingCurriculumDocument $attachment,
         string $downloadUrl = '',
         array $diskCandidates = []
     ): Response {
-        $relativePath = (string) ($attachment->file_path ?? '');
+        $relativePath = (string) ($attachment->file_path ?? $attachment->path ?? '');
         if ($relativePath === '') {
             abort(404, 'Datei nicht gefunden');
         }
@@ -323,9 +327,11 @@ class MaterialAttachmentPreviewService
         foreach ($candidates as $readerName) {
             try {
                 $phpWord = WordIOFactory::load($absolutePath, $readerName);
+                $listItemMarkers = $this->markWordListItemRuns($phpWord->getSections());
                 $writer = WordIOFactory::createWriter($phpWord, 'HTML');
+                $html = $this->captureOutput(fn () => $writer->save('php://output'));
 
-                return $this->captureOutput(fn () => $writer->save('php://output'));
+                return $this->mergeWordListItemParagraphFragments($html, $listItemMarkers);
             } catch (\Throwable $error) {
                 $lastError = $error;
             }
@@ -336,6 +342,104 @@ class MaterialAttachmentPreviewService
         }
 
         throw new \RuntimeException('Word-Vorschau konnte nicht erzeugt werden.');
+    }
+
+    /**
+     * @param  array<int, AbstractContainer>  $containers
+     * @return array<int, array{start: string, end: string}>
+     */
+    private function markWordListItemRuns(array $containers): array
+    {
+        $markers = [];
+        $markerNonce = bin2hex(random_bytes(12));
+        $markerIndex = 0;
+
+        foreach ($containers as $container) {
+            $this->markWordListItemRunsInContainer(
+                $container,
+                $markers,
+                $markerNonce,
+                $markerIndex,
+            );
+        }
+
+        return $markers;
+    }
+
+    /**
+     * @param  array<int, array{start: string, end: string}>  $markers
+     */
+    private function markWordListItemRunsInContainer(
+        AbstractContainer $container,
+        array &$markers,
+        string $markerNonce,
+        int &$markerIndex,
+    ): void {
+        foreach ($container->getElements() as $element) {
+            if ($element instanceof ListItemRun) {
+                $firstText = $this->firstDirectTextElement($element);
+
+                if ($firstText) {
+                    $markerIndex++;
+                    $startMarker = "MATERIALPREVIEWLISTSTART{$markerNonce}{$markerIndex}";
+                    $endMarker = "MATERIALPREVIEWLISTEND{$markerNonce}{$markerIndex}";
+
+                    $firstText->setText($startMarker.(string) $firstText->getText());
+                    $element->addText($endMarker);
+                    $markers[] = [
+                        'start' => $startMarker,
+                        'end' => $endMarker,
+                    ];
+                }
+            }
+
+            if ($element instanceof AbstractContainer) {
+                $this->markWordListItemRunsInContainer(
+                    $element,
+                    $markers,
+                    $markerNonce,
+                    $markerIndex,
+                );
+            }
+        }
+    }
+
+    private function firstDirectTextElement(ListItemRun $listItem): ?Text
+    {
+        foreach ($listItem->getElements() as $element) {
+            if ($element instanceof Text) {
+                return $element;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, array{start: string, end: string}>  $markers
+     */
+    private function mergeWordListItemParagraphFragments(string $html, array $markers): string
+    {
+        foreach ($markers as $marker) {
+            $startPosition = strpos($html, $marker['start']);
+            $endPosition = strpos($html, $marker['end']);
+
+            if ($startPosition === false || $endPosition === false || $endPosition < $startPosition) {
+                $html = str_replace([$marker['start'], $marker['end']], '', $html);
+
+                continue;
+            }
+
+            $contentStart = $startPosition + strlen($marker['start']);
+            $fragment = substr($html, $contentStart, $endPosition - $contentStart);
+            $fragment = preg_replace('/<\/p>\R<p(?:\s[^>]*)?>/i', '', $fragment) ?? $fragment;
+
+            $html = substr($html, 0, $startPosition)
+                .$fragment
+                .substr($html, $endPosition + strlen($marker['end']));
+        }
+
+        return $html;
     }
 
     private function renderPresentationHtml(string $absolutePath): string
@@ -663,14 +767,15 @@ class MaterialAttachmentPreviewService
         HTML;
     }
 
-    private function displayName(MaterialCardAttachment|TeachingCurriculumDocument $attachment): string
-    {
-        $name = trim((string) ($attachment->name ?? ''));
+    private function displayName(
+        MaterialCardAttachment|MaterialV2Attachment|TeachingCurriculumDocument $attachment
+    ): string {
+        $name = trim((string) ($attachment->name ?? $attachment->original_name ?? ''));
         if ($name !== '') {
             return $name;
         }
 
-        $path = trim((string) ($attachment->file_path ?? ''));
+        $path = trim((string) ($attachment->file_path ?? $attachment->path ?? ''));
         if ($path !== '') {
             return basename($path);
         }
@@ -678,11 +783,12 @@ class MaterialAttachmentPreviewService
         return 'Datei';
     }
 
-    private function fileExtension(MaterialCardAttachment|TeachingCurriculumDocument $attachment): string
-    {
+    private function fileExtension(
+        MaterialCardAttachment|MaterialV2Attachment|TeachingCurriculumDocument $attachment
+    ): string {
         $candidates = [
-            trim((string) ($attachment->name ?? '')),
-            trim((string) ($attachment->file_path ?? '')),
+            trim((string) ($attachment->name ?? $attachment->original_name ?? '')),
+            trim((string) ($attachment->file_path ?? $attachment->path ?? '')),
         ];
 
         foreach ($candidates as $candidate) {

@@ -145,6 +145,13 @@ class AdminNavigationService
                     'active_paths' => ['/admin/materials'],
                     'is_active' => ($materialsLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($materialsLicenceStatus, $materialsModuleStatus, 'Materialien');
+                $menu[] = [
+                    'title' => 'Materialien 2',
+                    'icon' => 'mdi-text-box-search-outline',
+                    'to' => '/admin/materials-v2',
+                    'active_paths' => ['/admin/materials-v2'],
+                    'is_active' => ($materialsLicenceStatus === 'active'),
+                ] + $this->dashboardStatusMeta($materialsLicenceStatus, $materialsModuleStatus, 'Materialien 2');
             }
         }
 
@@ -200,6 +207,7 @@ class AdminNavigationService
             'tutoring' => false,
             'teaching' => false,
             'materials' => false,
+            'materials_v2' => false,
             'groups' => false,
             'restaurant' => false,
             'students_timetables' => false,
@@ -222,6 +230,7 @@ class AdminNavigationService
         $capabilities['tutoring'] = $this->menuRouteCapability($user, $menuByPath, '/admin/tutoring', self::TUTORING_DASHBOARD_ROLES);
         $capabilities['teaching'] = $this->menuRouteCapability($user, $menuByPath, '/admin/teaching', self::TEACHING_DASHBOARD_ROLES);
         $capabilities['materials'] = $this->menuRouteCapability($user, $menuByPath, '/admin/materials', self::MATERIALS_DASHBOARD_ROLES);
+        $capabilities['materials_v2'] = $this->menuRouteCapability($user, $menuByPath, '/admin/materials-v2', self::MATERIALS_DASHBOARD_ROLES);
         $capabilities['groups'] = false;
         $capabilities['restaurant'] = $this->menuRouteCapability($user, $menuByPath, '/admin/restaurant', self::RESTAURANT_DASHBOARD_ROLES);
         $capabilities['students_timetables'] = $this->menuRouteCapability($user, $menuByPath, '/admin/students-timetables', self::STUDENTS_TIMETABLES_DASHBOARD_ROLES);

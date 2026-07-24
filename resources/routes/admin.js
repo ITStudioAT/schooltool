@@ -19,6 +19,7 @@ const Tutoring = () => import('@/pages/admin/tutoring/Tutoring.vue')
 const Teaching = () => import('@/pages/admin/teaching/Teaching.vue')
 const Materials = () => import('@/pages/admin/materials/Materials.vue')
 const MaterialsSubjectsOverview = () => import('@/pages/admin/materials/MaterialsSubjectsOverview.vue')
+const MaterialsV2 = () => import('@/pages/admin/materialsV2/MaterialsV2.vue')
 const Restaurant = () => import('@/pages/admin/restaurant/Restaurant.vue')
 const MenuPlansEntry = () => import('@/pages/admin/restaurant/components/MenuPlansEntry.vue')
 const StudentsTimetables = () => import('@/pages/admin/studentsTimetables/StudentsTimetables.vue')
@@ -45,6 +46,7 @@ export const routes = [
     { path: '/admin/teaching/:section?', component: Teaching, meta: { capability: 'teaching' } },
     { path: '/admin/materials', component: Materials, meta: { capability: 'materials' } },
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview, meta: { capability: 'materials' } },
+    { path: '/admin/materials-v2', component: MaterialsV2, meta: { capability: 'materials_v2' } },
     { path: '/admin/restaurant/:section?', component: Restaurant, meta: { capability: 'restaurant' } },
     { path: '/admin/menu-plans', component: MenuPlansEntry, meta: { capability: 'restaurant' } },
     { path: '/admin/students-timetables/:section?/:subsection?/:detail?/:action?', component: StudentsTimetables, meta: { capability: 'students_timetables' } },

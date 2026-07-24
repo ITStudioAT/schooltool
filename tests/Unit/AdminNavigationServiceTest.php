@@ -371,11 +371,15 @@ describe('dashboardMenu', function () {
 
         $result = $this->service->dashboardMenu();
         $materialsItem = collect($result)->firstWhere('title', 'Materialien');
+        $materialsV2Item = collect($result)->firstWhere('title', 'Materialien 2');
 
         expect($materialsItem)
             ->not->toBeNull()
             ->and($materialsItem['to'])->toBe('/admin/materials')
-            ->and($materialsItem['is_active'])->toBeTrue();
+            ->and($materialsItem['is_active'])->toBeTrue()
+            ->and($materialsV2Item)->not->toBeNull()
+            ->and($materialsV2Item['to'])->toBe('/admin/materials-v2')
+            ->and($materialsV2Item['is_active'])->toBeTrue();
     });
 
     it('adds expired status metadata for materials menu item when Materialientool licence is expired', function () {
@@ -1138,6 +1142,7 @@ describe('routeCapabilities', function () {
             'tutoring' => false,
             'teaching' => false,
             'materials' => false,
+            'materials_v2' => false,
             'groups' => false,
             'restaurant' => false,
             'students_timetables' => false,

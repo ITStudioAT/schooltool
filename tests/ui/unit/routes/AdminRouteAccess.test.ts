@@ -23,6 +23,13 @@ describe('admin route access metadata', () => {
         })
     })
 
+    it('maps the independent materials v2 route to its own capability', () => {
+        expect(resolveAdminRouteAccess('/admin/materials-v2')).toEqual({
+            public: false,
+            capability: 'materials_v2',
+        })
+    })
+
     it('treats removed aba legacy routes as unknown', () => {
         expect(resolveAdminRouteAccess('/admin/aba/results/1')).toBeNull()
         expect(resolveAdminRouteAccess('/admin/aba/ai-settings/seed-report/review')).toBeNull()

@@ -22,6 +22,7 @@ use App\Http\Controllers\Admin\Materials\MaterialStorageAuditController;
 use App\Http\Controllers\Admin\Materials\MaterialTypeController;
 use App\Http\Controllers\Admin\Materials\MaterialUserSettingsController;
 use App\Http\Controllers\Admin\Materials\MaterialWorkspaceController;
+use App\Http\Controllers\Admin\MaterialsV2\MaterialV2ItemController;
 use App\Http\Controllers\Admin\NavigationController;
 use App\Http\Controllers\Admin\RegisterDateBookingController;
 use App\Http\Controllers\Admin\RegisterDateController;
@@ -597,6 +598,20 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/course_student_entries', App\Http\Controllers\Admin\Teaching\CourseStudentEntryController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/teaching/course_student_category_evaluations', CourseStudentCategoryEvaluationController::class)->only(['index', 'store']);
         Route::apiResource('/admin/teaching/course_behaviour_entries', CourseBehaviourEntryController::class)->only(['index', 'store', 'update', 'destroy']);
+    });
+
+    Route::middleware(['auth:sanctum', 'api-allowed:scope:materials_access', 'tool-licensed:Materialientool,auto,scope:materials_access'])->group(function () {
+        Route::get('/admin/materials-v2/config', [MaterialV2ItemController::class, 'config']);
+        Route::get('/admin/materials-v2/items', [MaterialV2ItemController::class, 'index']);
+        Route::post('/admin/materials-v2/items', [MaterialV2ItemController::class, 'store']);
+        Route::get('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'show']);
+        Route::put('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'update']);
+        Route::delete('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'destroy']);
+        Route::post('/admin/materials-v2/items/{materialV2Item}/attachments', [MaterialV2ItemController::class, 'storeAttachments']);
+        Route::post('/admin/materials-v2/items/{materialV2Item}/retry-processing', [MaterialV2ItemController::class, 'retryProcessing']);
+        Route::get('/admin/materials-v2/attachments/{materialV2Attachment}/preview', [MaterialV2ItemController::class, 'previewAttachment']);
+        Route::get('/admin/materials-v2/attachments/{materialV2Attachment}/download', [MaterialV2ItemController::class, 'downloadAttachment']);
+        Route::delete('/admin/materials-v2/attachments/{materialV2Attachment}', [MaterialV2ItemController::class, 'destroyAttachment']);
     });
 
     Route::get('/admin/materials/storage-audit', [MaterialStorageAuditController::class, 'show'])->middleware(['auth:sanctum']);
