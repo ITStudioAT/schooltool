@@ -6,13 +6,14 @@ use App\Models\MaterialV2Attachment;
 use App\Models\MaterialV2Item;
 use App\Services\MaterialsV2\MaterialV2DocumentTextExtractor;
 use App\Services\MaterialsV2\MaterialV2KeywordService;
-use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class ProcessMaterialV2Item implements ShouldBeUnique, ShouldQueue
+class ProcessMaterialV2Item implements ShouldBeUniqueUntilProcessing, ShouldQueue
 {
     use Queueable;
 
@@ -25,11 +26,26 @@ class ProcessMaterialV2Item implements ShouldBeUnique, ShouldQueue
     /** @var array<int, int> */
     public array $backoff = [10, 60, 300];
 
-    public function __construct(public int $itemId) {}
+    public function __construct(
+        public int $itemId,
+        public bool $force = false,
+    ) {}
 
     public function uniqueId(): string
     {
         return (string) $this->itemId;
+    }
+
+    /**
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [
+            (new WithoutOverlapping("materials-v2:item:{$this->itemId}"))
+                ->releaseAfter(10)
+                ->expireAfter(240),
+        ];
     }
 
     public function handle(
@@ -94,13 +110,14 @@ class ProcessMaterialV2Item implements ShouldBeUnique, ShouldQueue
         }
 
         $item->refresh()->load('attachments');
-        $item->generated_keywords = $keywordService->generate($item);
-        $item->search_text = $keywordService->rebuildSearchText($item);
-        $item->processing_status = $failedAttachments > 0
+        $keywordResult = $keywordService->extractAndPersist($item, $this->force);
+        $totalFailures = $failedAttachments + $keywordResult['failed'];
+        $item->refresh();
+        $item->processing_status = $totalFailures > 0
             ? MaterialV2Item::STATUS_PARTIAL
             : MaterialV2Item::STATUS_READY;
-        $item->processing_error = $failedAttachments > 0
-            ? "{$failedAttachments} Anlage(n) konnten nicht gelesen werden."
+        $item->processing_error = $totalFailures > 0
+            ? "{$totalFailures} Anlage(n) konnten nicht vollständig analysiert werden."
             : null;
         $item->processed_at = now();
         $item->save();

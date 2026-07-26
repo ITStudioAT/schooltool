@@ -3,6 +3,7 @@
 use App\Jobs\MaterialsV2\ProcessMaterialV2Item;
 use App\Models\Licence;
 use App\Models\MaterialV2Attachment;
+use App\Models\MaterialV2Category;
 use App\Models\MaterialV2Item;
 use App\Models\School;
 use App\Models\SchoolTool;
@@ -57,6 +58,193 @@ beforeEach(function () {
 
 it('requires authentication', function () {
     $this->getJson('/api/admin/materials-v2/items')->assertUnauthorized();
+    $this->postJson('/api/admin/materials-v2/categories', ['name' => 'Biologie'])->assertUnauthorized();
+    $this->putJson('/api/admin/materials-v2/categories', [
+        'original_name' => 'Biologie',
+        'name' => 'Naturkunde',
+    ])->assertUnauthorized();
+    $this->deleteJson('/api/admin/materials-v2/categories', ['name' => 'Biologie'])->assertUnauthorized();
+});
+
+it('creates a persistent user category without a material', function () {
+    $this->actingAs($this->user, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials-v2/categories', [
+        'name' => '  Biologie  ',
+    ]);
+
+    $response
+        ->assertCreated()
+        ->assertJsonPath('data.name', 'Biologie');
+
+    $category = MaterialV2Category::query()->sole();
+
+    expect($category->school_id)->toBe($this->school->id)
+        ->and($category->user_id)->toBe($this->user->id)
+        ->and($category->normalized_name)->toBe('biologie');
+
+    $this->getJson('/api/admin/materials-v2/config')
+        ->assertSuccessful()
+        ->assertJsonPath('categories.0', 'Biologie')
+        ->assertJsonPath('category_details.0.name', 'Biologie')
+        ->assertJsonPath('category_details.0.items_count', 0);
+
+    $this->actingAs($this->otherUser, 'sanctum')
+        ->getJson('/api/admin/materials-v2/config')
+        ->assertSuccessful()
+        ->assertJsonPath('categories', []);
+
+    $this->putJson('/api/admin/materials-v2/categories', [
+        'original_name' => 'Biologie',
+        'name' => 'Naturkunde',
+    ])->assertNotFound();
+});
+
+it('counts category items and only deletes an empty category', function () {
+    $this->actingAs($this->user, 'sanctum');
+
+    $this->postJson('/api/admin/materials-v2/categories', ['name' => 'Biologie'])
+        ->assertCreated();
+    $this->postJson('/api/admin/materials-v2/categories', ['name' => 'Mathematik'])
+        ->assertCreated();
+
+    MaterialV2Item::factory()->count(2)->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->user->id,
+        'category' => 'Biologie',
+    ]);
+    MaterialV2Item::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->otherUser->id,
+        'category' => 'Biologie',
+    ]);
+
+    $this->getJson('/api/admin/materials-v2/config')
+        ->assertSuccessful()
+        ->assertJsonPath('category_details.0.name', 'Biologie')
+        ->assertJsonPath('category_details.0.items_count', 2)
+        ->assertJsonPath('category_details.1.name', 'Mathematik')
+        ->assertJsonPath('category_details.1.items_count', 0);
+
+    $this->deleteJson('/api/admin/materials-v2/categories', ['name' => 'Biologie'])
+        ->assertConflict();
+
+    $this->assertDatabaseHas('material_v2_categories', [
+        'user_id' => $this->user->id,
+        'normalized_name' => 'biologie',
+    ]);
+
+    $this->deleteJson('/api/admin/materials-v2/categories', ['name' => 'Mathematik'])
+        ->assertNoContent();
+
+    $this->assertDatabaseMissing('material_v2_categories', [
+        'user_id' => $this->user->id,
+        'normalized_name' => 'mathematik',
+    ]);
+});
+
+it('warns instead of creating the same category with different casing', function () {
+    $this->actingAs($this->user, 'sanctum');
+
+    MaterialV2Item::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->user->id,
+        'title' => 'Lernvideo',
+        'category' => 'Video',
+    ]);
+
+    $this->postJson('/api/admin/materials-v2/categories', ['name' => 'video'])
+        ->assertConflict()
+        ->assertJsonPath('category_conflict.entered', 'video')
+        ->assertJsonPath('category_conflict.existing', 'Video');
+
+    expect(MaterialV2Category::query()->count())->toBe(0);
+
+    $this->getJson('/api/admin/materials-v2/config')
+        ->assertSuccessful()
+        ->assertJsonPath('categories', ['Video']);
+});
+
+it('prefers the original material spelling over a legacy manual duplicate', function () {
+    $this->actingAs($this->user, 'sanctum');
+
+    MaterialV2Item::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->user->id,
+        'title' => 'Lernvideo',
+        'category' => 'Video',
+    ]);
+    MaterialV2Category::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->user->id,
+        'name' => 'video',
+        'normalized_name' => 'video',
+    ]);
+
+    $this->getJson('/api/admin/materials-v2/config')
+        ->assertSuccessful()
+        ->assertJsonPath('categories', ['Video']);
+});
+
+it('renames a category and updates its materials', function () {
+    $this->actingAs($this->user, 'sanctum');
+
+    $this->postJson('/api/admin/materials-v2/categories', ['name' => 'Video'])
+        ->assertCreated();
+    $item = MaterialV2Item::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->user->id,
+        'title' => 'Lernvideo',
+        'category' => 'Video',
+    ]);
+
+    $this->putJson('/api/admin/materials-v2/categories', [
+        'original_name' => 'Video',
+        'name' => 'Medien',
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.name', 'Medien');
+
+    expect($item->refresh()->category)->toBe('Medien')
+        ->and(MaterialV2Category::query()->sole()->name)->toBe('Medien')
+        ->and(MaterialV2Category::query()->sole()->normalized_name)->toBe('medien');
+
+    $this->getJson('/api/admin/materials-v2/config')
+        ->assertSuccessful()
+        ->assertJsonPath('categories', ['Medien']);
+});
+
+it('warns instead of renaming a category to an existing category', function () {
+    $this->actingAs($this->user, 'sanctum');
+
+    $this->postJson('/api/admin/materials-v2/categories', ['name' => 'Video'])
+        ->assertCreated();
+    $this->postJson('/api/admin/materials-v2/categories', ['name' => 'Medien'])
+        ->assertCreated();
+
+    $this->putJson('/api/admin/materials-v2/categories', [
+        'original_name' => 'Video',
+        'name' => 'medien',
+    ])
+        ->assertConflict()
+        ->assertJsonPath('category_conflict.existing', 'Medien');
+
+    expect(MaterialV2Category::query()->orderBy('name')->pluck('name')->all())
+        ->toBe(['Medien', 'Video']);
+});
+
+it('validates manually created category names', function () {
+    $this->actingAs($this->user, 'sanctum')
+        ->postJson('/api/admin/materials-v2/categories', ['name' => ''])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('name');
+
+    $this->putJson('/api/admin/materials-v2/categories', [
+        'original_name' => '',
+        'name' => '',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['original_name', 'name']);
 });
 
 it('creates a standalone material with optional attachments', function () {
@@ -207,6 +395,29 @@ it('finds materials by category', function () {
         ->assertSuccessful()
         ->assertJsonPath('data.0.id', $item->id)
         ->assertJsonPath('data.0.category', 'Physik');
+});
+
+it('combines text search with an exact category filter', function () {
+    $this->actingAs($this->user, 'sanctum');
+
+    $biologyItem = MaterialV2Item::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->user->id,
+        'title' => 'Arbeitsblatt Zellen',
+        'category' => 'Biologie',
+    ]);
+    MaterialV2Item::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->user->id,
+        'title' => 'Arbeitsblatt Brüche',
+        'category' => 'Mathematik',
+    ]);
+
+    $this->getJson('/api/admin/materials-v2/items?search=Arbeitsblatt&category=Biologie')
+        ->assertSuccessful()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $biologyItem->id)
+        ->assertJsonPath('meta.total', 1);
 });
 
 it('returns flexible multi-word fuzzy search results in relevance order', function () {
@@ -441,7 +652,7 @@ it('reads document content and creates local search keywords', function () {
     $item->refresh();
 
     expect($item->processing_status)->toBe(MaterialV2Item::STATUS_READY)
-        ->and($item->generated_keywords)->toContain('chlorophyll')
+        ->and($item->generated_keywords)->toContain('Chlorophyll')
         ->and($item->search_text)->toContain('Photosynthese');
 });
 

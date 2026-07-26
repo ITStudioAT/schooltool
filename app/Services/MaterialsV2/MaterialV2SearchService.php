@@ -12,12 +12,22 @@ class MaterialV2SearchService
 {
     private const MAX_FUZZY_CANDIDATES = 500;
 
-    public function search(User $user, string $search, int $page, int $perPage): LengthAwarePaginator
-    {
+    public function search(
+        User $user,
+        string $search,
+        int $page,
+        int $perPage,
+        string $category = '',
+    ): LengthAwarePaginator {
         $query = MaterialV2Item::query()
             ->whereBelongsTo($user)
             ->where('school_id', $user->school_id)
-            ->with('attachments');
+            ->with(['attachments', 'automaticTagSuggestions']);
+
+        $normalizedCategory = Str::squish($category);
+        if ($normalizedCategory !== '') {
+            $query->where('category', $normalizedCategory);
+        }
 
         $normalizedSearch = $this->normalize($search);
         if ($normalizedSearch === '') {
@@ -76,7 +86,7 @@ class MaterialV2SearchService
         $description = $this->normalize((string) $item->description);
         $keywords = $this->normalize(collect([
             ...($item->user_keywords ?? []),
-            ...($item->generated_keywords ?? []),
+            ...$item->automaticTagSuggestions->pluck('tag_name')->all(),
         ])->implode(' '));
         $document = $this->normalize((string) $item->search_text);
         $searchWords = collect(preg_split('/\s+/u', "{$title} {$category} {$description} {$keywords} {$document}") ?: [])

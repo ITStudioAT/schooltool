@@ -69,4 +69,12 @@ class MaterialV2Item extends Model
     {
         return $this->hasMany(MaterialV2Attachment::class)->latest('id');
     }
+
+    public function automaticTagSuggestions(): HasMany
+    {
+        return $this->hasMany(MaterialV2TagSuggestion::class)
+            ->whereNull('dismissed_at')
+            ->orderByDesc('final_score')
+            ->orderBy('rank');
+    }
 }

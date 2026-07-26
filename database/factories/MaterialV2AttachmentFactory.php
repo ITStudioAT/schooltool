@@ -31,6 +31,10 @@ class MaterialV2AttachmentFactory extends Factory
             'extraction_status' => MaterialV2Attachment::STATUS_READY,
             'extraction_error' => null,
             'extracted_at' => now(),
+            'keyword_extraction_status' => MaterialV2Attachment::KEYWORD_STATUS_PENDING,
+            'keyword_extraction_error' => null,
+            'keywords_extracted_at' => null,
+            'keyword_source_hash' => null,
         ];
     }
 }

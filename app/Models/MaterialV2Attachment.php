@@ -6,6 +6,7 @@ use Database\Factories\MaterialV2AttachmentFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class MaterialV2Attachment extends Model
@@ -25,6 +26,18 @@ class MaterialV2Attachment extends Model
 
     public const STATUS_FAILED = 'failed';
 
+    public const KEYWORD_STATUS_PENDING = 'pending';
+
+    public const KEYWORD_STATUS_PROCESSING = 'processing';
+
+    public const KEYWORD_STATUS_READY = 'ready';
+
+    public const KEYWORD_STATUS_EMPTY = 'empty';
+
+    public const KEYWORD_STATUS_SKIPPED = 'skipped';
+
+    public const KEYWORD_STATUS_FAILED = 'failed';
+
     protected $fillable = [
         'material_v2_item_id',
         'disk',
@@ -36,6 +49,10 @@ class MaterialV2Attachment extends Model
         'extraction_status',
         'extraction_error',
         'extracted_at',
+        'keyword_extraction_status',
+        'keyword_extraction_error',
+        'keywords_extracted_at',
+        'keyword_source_hash',
     ];
 
     protected $attributes = [
@@ -47,11 +64,17 @@ class MaterialV2Attachment extends Model
         return [
             'size_bytes' => 'integer',
             'extracted_at' => 'datetime',
+            'keywords_extracted_at' => 'datetime',
         ];
     }
 
     public function item(): BelongsTo
     {
         return $this->belongsTo(MaterialV2Item::class, 'material_v2_item_id');
+    }
+
+    public function automaticTagSuggestions(): HasMany
+    {
+        return $this->hasMany(MaterialV2TagSuggestion::class, 'material_v2_attachment_id');
     }
 }

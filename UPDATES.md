@@ -1,5 +1,15 @@
 # UPDATES
 
+## 3.43.4
+
+### Materialien
+- Anzeige auswählbar nach Kategorien
+- Kategorien Safety-check bei Anlegen
+- Automatische Tag-Erzeugung 
+
+### General
+- Ladepunkte werden zuverlässig ausgeblendet
+
 ## 3.43.3
 
 ### Unterrichtstool

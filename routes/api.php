@@ -22,6 +22,7 @@ use App\Http\Controllers\Admin\Materials\MaterialStorageAuditController;
 use App\Http\Controllers\Admin\Materials\MaterialTypeController;
 use App\Http\Controllers\Admin\Materials\MaterialUserSettingsController;
 use App\Http\Controllers\Admin\Materials\MaterialWorkspaceController;
+use App\Http\Controllers\Admin\MaterialsV2\MaterialV2CategoryController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2ItemController;
 use App\Http\Controllers\Admin\NavigationController;
 use App\Http\Controllers\Admin\RegisterDateBookingController;
@@ -602,6 +603,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     Route::middleware(['auth:sanctum', 'api-allowed:scope:materials_access', 'tool-licensed:Materialientool,auto,scope:materials_access'])->group(function () {
         Route::get('/admin/materials-v2/config', [MaterialV2ItemController::class, 'config']);
+        Route::post('/admin/materials-v2/categories', [MaterialV2CategoryController::class, 'store']);
+        Route::put('/admin/materials-v2/categories', [MaterialV2CategoryController::class, 'update']);
+        Route::delete('/admin/materials-v2/categories', [MaterialV2CategoryController::class, 'destroy']);
         Route::get('/admin/materials-v2/items', [MaterialV2ItemController::class, 'index']);
         Route::post('/admin/materials-v2/items', [MaterialV2ItemController::class, 'store']);
         Route::get('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'show']);
@@ -609,6 +613,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'destroy']);
         Route::post('/admin/materials-v2/items/{materialV2Item}/attachments', [MaterialV2ItemController::class, 'storeAttachments']);
         Route::post('/admin/materials-v2/items/{materialV2Item}/retry-processing', [MaterialV2ItemController::class, 'retryProcessing']);
+        Route::post('/admin/materials-v2/items/{materialV2Item}/recalculate-automatic-tags', [MaterialV2ItemController::class, 'recalculateAutomaticTags']);
+        Route::delete('/admin/materials-v2/items/{materialV2Item}/automatic-tags', [MaterialV2ItemController::class, 'destroyAutomaticTag']);
+        Route::post('/admin/materials-v2/items/{materialV2Item}/automatic-tags/convert', [MaterialV2ItemController::class, 'convertAutomaticTag']);
         Route::get('/admin/materials-v2/attachments/{materialV2Attachment}/preview', [MaterialV2ItemController::class, 'previewAttachment']);
         Route::get('/admin/materials-v2/attachments/{materialV2Attachment}/download', [MaterialV2ItemController::class, 'downloadAttachment']);
         Route::delete('/admin/materials-v2/attachments/{materialV2Attachment}', [MaterialV2ItemController::class, 'destroyAttachment']);

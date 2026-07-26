@@ -114,7 +114,7 @@ export function useAdminRouteNavigation({ router, getCurrentRoute, adminStore })
 
     function unregisterRouteNavigationHooks() {
         clearNavigationLockTimers()
-        clearRouteLoadingFallbackTimer()
+        finishAllRouteLoading()
 
         if (typeof state.removeRouteBeforeEachHook === 'function') {
             state.removeRouteBeforeEachHook()

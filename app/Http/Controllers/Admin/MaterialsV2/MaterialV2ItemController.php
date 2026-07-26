@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\MaterialsV2;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\MaterialsV2\MaterialV2AttachmentStoreRequest;
+use App\Http\Requests\Admin\MaterialsV2\MaterialV2AutomaticTagRequest;
 use App\Http\Requests\Admin\MaterialsV2\MaterialV2IndexRequest;
 use App\Http\Requests\Admin\MaterialsV2\MaterialV2StoreRequest;
 use App\Http\Requests\Admin\MaterialsV2\MaterialV2UpdateRequest;
@@ -14,6 +15,7 @@ use App\Models\MaterialV2Item;
 use App\Models\User;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\MaterialsV2\MaterialV2CategoryService;
+use App\Services\MaterialsV2\MaterialV2KeywordService;
 use App\Services\MaterialsV2\MaterialV2SearchService;
 use App\Services\MaterialsV2\MaterialV2StorageService;
 use Illuminate\Http\JsonResponse;
@@ -36,14 +38,16 @@ class MaterialV2ItemController extends Controller
         /** @var User $user */
         $user = $request->user();
         $maxUploadSizeKb = (int) ($user->selectedSchool?->schoolTool?->material_max_file_upload_size ?? 0);
+        $categoryDetails = $categoryService->categoryDetails($user);
 
         return response()->json([
             'module' => 'materials_v2',
             'storage_disk' => (string) config('filesystems.default', 'local'),
             'max_file_upload_size_kb' => $maxUploadSizeKb > 0 ? $maxUploadSizeKb : 20480,
-            'categories' => $categoryService->categories($user),
-            'ai_keyword_enrichment' => config('ai.materials_v2_keyword_enrichment', false)
-                && trim((string) config('ai.providers.openai.key')) !== '',
+            'categories' => collect($categoryDetails)->pluck('name')->all(),
+            'category_details' => $categoryDetails,
+            'automatic_tag_extraction' => 'local',
+            'ai_keyword_enrichment' => false,
         ]);
     }
 
@@ -60,6 +64,7 @@ class MaterialV2ItemController extends Controller
             search: trim((string) ($validated['search'] ?? '')),
             page: (int) ($validated['page'] ?? 1),
             perPage: (int) ($validated['per_page'] ?? 18),
+            category: trim((string) ($validated['category'] ?? '')),
         );
 
         return MaterialV2ItemResource::collection($items);
@@ -102,9 +107,9 @@ class MaterialV2ItemController extends Controller
             return $item;
         });
 
-        ProcessMaterialV2Item::dispatch($item->id);
+        $this->dispatchProcessing($item);
 
-        return (new MaterialV2ItemResource($item->load('attachments')))
+        return (new MaterialV2ItemResource($item->load(['attachments', 'automaticTagSuggestions'])))
             ->response()
             ->setStatusCode(201);
     }
@@ -113,13 +118,16 @@ class MaterialV2ItemController extends Controller
     {
         $this->authorizeItem($request, $materialV2Item);
 
-        return new MaterialV2ItemResource($materialV2Item->load('attachments'));
+        return new MaterialV2ItemResource(
+            $materialV2Item->load(['attachments', 'automaticTagSuggestions']),
+        );
     }
 
     public function update(
         MaterialV2UpdateRequest $request,
         MaterialV2Item $materialV2Item,
         MaterialV2CategoryService $categoryService,
+        MaterialV2KeywordService $keywordService,
     ): MaterialV2ItemResource|JsonResponse {
         $this->authorizeItem($request, $materialV2Item);
         $validated = $request->validated();
@@ -135,18 +143,33 @@ class MaterialV2ItemController extends Controller
             return $this->categoryConflictResponse($categoryResolution);
         }
 
+        $previousTitle = $materialV2Item->title;
+        $previousDescription = $materialV2Item->description;
+
         $materialV2Item->update([
             'title' => Str::squish($validated['title']),
             'category' => $categoryResolution['category'],
             'description' => $this->nullableString($validated['description'] ?? null),
             'user_keywords' => $this->normalizeKeywords($validated['user_keywords'] ?? []),
-            'processing_status' => MaterialV2Item::STATUS_PENDING,
-            'processing_error' => null,
         ]);
 
-        ProcessMaterialV2Item::dispatch($materialV2Item->id);
+        $requiresTagExtraction = $previousTitle !== $materialV2Item->title
+            || $previousDescription !== $materialV2Item->description;
 
-        return new MaterialV2ItemResource($materialV2Item->load('attachments'));
+        if ($requiresTagExtraction) {
+            $materialV2Item->update([
+                'processing_status' => MaterialV2Item::STATUS_PENDING,
+                'processing_error' => null,
+            ]);
+            $this->dispatchProcessing($materialV2Item);
+        } else {
+            $materialV2Item->search_text = $keywordService->rebuildSearchText($materialV2Item);
+            $materialV2Item->save();
+        }
+
+        return new MaterialV2ItemResource(
+            $materialV2Item->load(['attachments', 'automaticTagSuggestions']),
+        );
     }
 
     public function destroy(Request $request, MaterialV2Item $materialV2Item): JsonResponse
@@ -184,9 +207,11 @@ class MaterialV2ItemController extends Controller
             ]);
         });
 
-        ProcessMaterialV2Item::dispatch($materialV2Item->id);
+        $this->dispatchProcessing($materialV2Item);
 
-        return new MaterialV2ItemResource($materialV2Item->load('attachments'));
+        return new MaterialV2ItemResource(
+            $materialV2Item->load(['attachments', 'automaticTagSuggestions']),
+        );
     }
 
     public function destroyAttachment(Request $request, MaterialV2Attachment $materialV2Attachment): JsonResponse
@@ -194,13 +219,16 @@ class MaterialV2ItemController extends Controller
         $this->authorizeAttachment($request, $materialV2Attachment);
 
         $item = $materialV2Attachment->item;
-        $materialV2Attachment->delete();
-        $item->update([
-            'processing_status' => MaterialV2Item::STATUS_PENDING,
-            'processing_error' => null,
-        ]);
+        DB::transaction(function () use ($materialV2Attachment, $item): void {
+            $materialV2Attachment->automaticTagSuggestions()->delete();
+            $materialV2Attachment->delete();
+            $item->update([
+                'processing_status' => MaterialV2Item::STATUS_PENDING,
+                'processing_error' => null,
+            ]);
+        });
 
-        ProcessMaterialV2Item::dispatch($item->id);
+        $this->dispatchProcessing($item);
 
         return response()->json(status: 204);
     }
@@ -221,9 +249,56 @@ class MaterialV2ItemController extends Controller
             'processing_error' => null,
         ]);
 
-        ProcessMaterialV2Item::dispatch($materialV2Item->id);
+        $this->dispatchProcessing($materialV2Item, true);
 
         return response()->json(['message' => 'Die Verarbeitung wurde neu gestartet.'], 202);
+    }
+
+    public function recalculateAutomaticTags(
+        Request $request,
+        MaterialV2Item $materialV2Item,
+    ): JsonResponse {
+        $this->authorizeItem($request, $materialV2Item);
+
+        $materialV2Item->update([
+            'processing_status' => MaterialV2Item::STATUS_PENDING,
+            'processing_error' => null,
+        ]);
+        $this->dispatchProcessing($materialV2Item, true);
+
+        return response()->json(['message' => 'Die automatische Tag-Erkennung wurde gestartet.'], 202);
+    }
+
+    public function destroyAutomaticTag(
+        MaterialV2AutomaticTagRequest $request,
+        MaterialV2Item $materialV2Item,
+        MaterialV2KeywordService $keywordService,
+    ): MaterialV2ItemResource {
+        $this->authorizeItem($request, $materialV2Item);
+        $keywordService->dismissAutomaticTag(
+            $materialV2Item,
+            (string) $request->validated('tag_name'),
+        );
+
+        return new MaterialV2ItemResource(
+            $materialV2Item->refresh()->load(['attachments', 'automaticTagSuggestions']),
+        );
+    }
+
+    public function convertAutomaticTag(
+        MaterialV2AutomaticTagRequest $request,
+        MaterialV2Item $materialV2Item,
+        MaterialV2KeywordService $keywordService,
+    ): MaterialV2ItemResource {
+        $this->authorizeItem($request, $materialV2Item);
+        $keywordService->convertAutomaticTagToManual(
+            $materialV2Item,
+            (string) $request->validated('tag_name'),
+        );
+
+        return new MaterialV2ItemResource(
+            $materialV2Item->refresh()->load(['attachments', 'automaticTagSuggestions']),
+        );
     }
 
     public function previewAttachment(
@@ -343,5 +418,10 @@ class MaterialV2ItemController extends Controller
         $normalized = trim((string) $value);
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    private function dispatchProcessing(MaterialV2Item $item, bool $force = false): void
+    {
+        ProcessMaterialV2Item::dispatch($item->id, $force)->afterCommit();
     }
 }

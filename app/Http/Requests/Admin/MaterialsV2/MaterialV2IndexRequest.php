@@ -15,6 +15,7 @@ class MaterialV2IndexRequest extends FormRequest
     {
         return [
             'search' => ['nullable', 'string', 'max:255'],
+            'category' => ['nullable', 'string', 'max:255'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:6', 'max:48'],
         ];

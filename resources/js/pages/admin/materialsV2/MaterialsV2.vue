@@ -24,41 +24,157 @@
                 </v-btn>
             </header>
 
-            <section class="materials-v2-search-panel">
-                <v-text-field
-                    v-model="search"
-                    class="materials-v2-search"
-                    variant="solo"
-                    flat
-                    rounded="xl"
-                    clearable
-                    hide-details
-                    autocomplete="off"
-                    prepend-inner-icon="mdi-magnify"
-                    placeholder="Was suchst du? Mehrere Wörter, Wortteile und kleine Tippfehler sind erlaubt …"
-                    :loading="loading"
-                    @click:clear="clearSearch" />
+            <div class="materials-v2-filter-layout">
+                <v-sheet rounded="xl" class="materials-v2-category-panel pa-4">
+                    <div class="materials-v2-category-panel-heading">
+                        <div>
+                            <div class="text-subtitle-1 font-weight-bold">Kategorien</div>
+                            <div class="text-caption materials-v2-category-panel-subtitle">
+                                Wähle eine Kategorie für deine Materialliste.
+                            </div>
+                        </div>
+                        <div class="materials-v2-category-panel-actions">
+                            <v-chip size="small" color="primary" variant="tonal">
+                                {{ categoryOptions.length }}
+                            </v-chip>
+                            <v-btn
+                                class="materials-v2-category-create-button"
+                                color="primary"
+                                size="small"
+                                variant="tonal"
+                                prepend-icon="mdi-plus"
+                                @click="openCategoryDialog()">
+                                Kategorie
+                            </v-btn>
+                        </div>
+                    </div>
 
-                <div class="materials-v2-search-hints">
-                    <span><v-icon size="16">mdi-auto-fix</v-icon> flexibel & fehlertolerant</span>
-                    <span><v-icon size="16">mdi-file-document-search-outline</v-icon> durchsucht Dokumentinhalte</span>
-                    <span><v-icon size="16">mdi-sort-descending</v-icon> beste Treffer zuerst</span>
-                </div>
-            </section>
+                    <v-list
+                        bg-color="transparent"
+                        density="compact"
+                        class="materials-v2-category-list py-0"
+                        aria-label="Materialien nach Kategorie filtern">
+                        <v-list-item
+                            class="materials-v2-category-item mb-2 px-3"
+                            min-height="44"
+                            rounded="lg"
+                            :active="selectedCategory === allCategoriesValue"
+                            color="primary"
+                            @click="selectCategory(allCategoriesValue)">
+                            <template #prepend>
+                                <v-icon size="18" class="mr-2">mdi-view-grid-outline</v-icon>
+                            </template>
+                            <v-list-item-title class="text-body-2 font-weight-bold">
+                                Alle Materialien
+                            </v-list-item-title>
+                            <template v-if="selectedCategory === allCategoriesValue" #append>
+                                <v-icon size="18">mdi-check-circle</v-icon>
+                            </template>
+                        </v-list-item>
+
+                        <v-list-item
+                            v-for="category in categoryDetails"
+                            :key="category.name"
+                            class="materials-v2-category-item mb-2 px-3"
+                            min-height="44"
+                            rounded="lg"
+                            :active="selectedCategory === category.name"
+                            color="primary"
+                            @click="selectCategory(category.name)">
+                            <template #prepend>
+                                <v-icon size="18" class="mr-2">mdi-shape-outline</v-icon>
+                            </template>
+                            <v-list-item-title class="text-body-2 font-weight-bold">
+                                {{ category.name }}
+                            </v-list-item-title>
+                            <template #append>
+                                <div class="materials-v2-category-item-actions">
+                                    <v-chip
+                                        class="materials-v2-category-item-count"
+                                        size="x-small"
+                                        color="secondary"
+                                        variant="tonal"
+                                        :title="`${category.items_count} Items`">
+                                        {{ category.items_count }}
+                                    </v-chip>
+                                    <v-icon v-if="selectedCategory === category.name" size="18">
+                                        mdi-check-circle
+                                    </v-icon>
+                                    <v-btn
+                                        class="materials-v2-category-edit-button"
+                                        icon="mdi-pencil-outline"
+                                        size="x-small"
+                                        variant="text"
+                                        title="Kategorie bearbeiten"
+                                        @click.stop="openCategoryDialog(category.name)" />
+                                    <v-btn
+                                        v-if="category.items_count === 0"
+                                        class="materials-v2-category-delete-button"
+                                        icon="mdi-delete-outline"
+                                        size="x-small"
+                                        variant="text"
+                                        color="error"
+                                        title="Kategorie löschen"
+                                        @click.stop="openCategoryDeleteDialog(category.name)" />
+                                </div>
+                            </template>
+                        </v-list-item>
+                    </v-list>
+                </v-sheet>
+
+                <section class="materials-v2-search-panel">
+                    <v-text-field
+                        v-model="search"
+                        class="materials-v2-search"
+                        variant="solo"
+                        flat
+                        rounded="xl"
+                        clearable
+                        hide-details
+                        autocomplete="off"
+                        prepend-inner-icon="mdi-magnify"
+                        placeholder="Was suchst du? Mehrere Wörter, Wortteile und kleine Tippfehler sind erlaubt …"
+                        :loading="loading"
+                        @click:clear="clearSearch" />
+
+                    <div class="materials-v2-search-hints">
+                        <span><v-icon size="16">mdi-auto-fix</v-icon> flexibel & fehlertolerant</span>
+                        <span><v-icon size="16">mdi-file-document-search-outline</v-icon> durchsucht Dokumentinhalte</span>
+                        <span><v-icon size="16">mdi-sort-descending</v-icon> beste Treffer zuerst</span>
+                    </div>
+                </section>
+            </div>
 
             <div class="materials-v2-toolbar">
                 <div>
                     <span class="text-subtitle-1 font-weight-bold">
-                        {{ search.trim() ? 'Suchergebnisse' : 'Deine Materialien' }}
+                        {{ hasActiveFilters ? 'Suchergebnisse' : 'Deine Materialien' }}
                     </span>
                     <span v-if="!loading" class="text-body-2 text-medium-emphasis ml-2">
                         {{ meta.total }} {{ meta.total === 1 ? 'Material' : 'Materialien' }}
                     </span>
                 </div>
 
-                <v-chip v-if="hasProcessingItems" color="info" variant="tonal" prepend-icon="mdi-progress-clock">
-                    Inhalte werden analysiert
-                </v-chip>
+                <div class="materials-v2-toolbar-actions">
+                    <v-btn-toggle
+                        v-model="displayMode"
+                        class="materials-v2-display-toggle"
+                        color="primary"
+                        variant="outlined"
+                        density="compact"
+                        rounded="lg"
+                        divided
+                        mandatory
+                        aria-label="Darstellungsgröße der Materialien">
+                        <v-btn value="large" size="small">Groß</v-btn>
+                        <v-btn value="standard" size="small">Standard</v-btn>
+                        <v-btn value="compact" size="small">Kompakt</v-btn>
+                    </v-btn-toggle>
+
+                    <v-chip v-if="hasProcessingItems" color="info" variant="tonal" prepend-icon="mdi-progress-clock">
+                        Inhalte werden analysiert
+                    </v-chip>
+                </div>
             </div>
 
             <v-alert
@@ -73,15 +189,20 @@
             </v-alert>
 
             <v-row v-if="loading && !items.length" dense>
-                <v-col v-for="index in 6" :key="index" cols="12" md="6" xl="4">
-                    <v-skeleton-loader class="materials-v2-card" type="article, actions" />
+                <v-col v-for="index in 6" :key="index" v-bind="materialColumnProps">
+                    <v-skeleton-loader
+                        :class="['materials-v2-card', `materials-v2-card--${displayMode}`]"
+                        type="article, actions" />
                 </v-col>
             </v-row>
 
             <v-row v-else-if="items.length" dense>
-                <v-col v-for="item in items" :key="item.id" cols="12" md="6" xl="4">
-                    <v-card class="materials-v2-card h-100" rounded="xl" elevation="0">
-                        <v-card-text class="pa-5">
+                <v-col v-for="item in items" :key="item.id" v-bind="materialColumnProps">
+                    <v-card
+                        :class="['materials-v2-card', `materials-v2-card--${displayMode}`, 'h-100']"
+                        :rounded="displayMode === 'large' ? 'xl' : 'lg'"
+                        elevation="0">
+                        <v-card-text :class="materialCardPaddingClass">
                             <div class="d-flex align-start justify-space-between ga-3">
                                 <div class="min-width-0">
                                     <div class="d-flex align-center flex-wrap ga-2 mb-2">
@@ -122,9 +243,13 @@
                                         <v-list-item prepend-icon="mdi-pencil-outline" title="Bearbeiten" @click="openEditDialog(item)" />
                                         <v-list-item prepend-icon="mdi-paperclip-plus" title="Anlagen hinzufügen" @click="openAttachmentDialog(item)" />
                                         <v-list-item
-                                            v-if="['failed', 'partial'].includes(item.processing_status)"
                                             prepend-icon="mdi-refresh"
-                                            title="Verarbeitung wiederholen"
+                                            title="Automatische Tags neu berechnen"
+                                            @click="recalculateAutomaticTags(item)" />
+                                        <v-list-item
+                                            v-if="['failed', 'partial'].includes(item.processing_status)"
+                                            prepend-icon="mdi-file-refresh-outline"
+                                            title="Dateiverarbeitung wiederholen"
                                             @click="retryProcessing(item)" />
                                         <v-divider />
                                         <v-list-item
@@ -136,10 +261,12 @@
                                 </v-menu>
                             </div>
 
-                            <p v-if="item.description" class="materials-v2-description">
+                            <p v-if="displayMode !== 'compact' && item.description" class="materials-v2-description">
                                 {{ item.description }}
                             </p>
-                            <p v-else class="materials-v2-description materials-v2-description--empty">
+                            <p
+                                v-else-if="displayMode === 'large'"
+                                class="materials-v2-description materials-v2-description--empty">
                                 Keine Beschreibung
                             </p>
 
@@ -152,33 +279,44 @@
                                 {{ item.processing_error }}
                             </v-alert>
 
-                            <div v-if="item.user_keywords?.length" class="materials-v2-keyword-block">
-                                <div class="materials-v2-keyword-label">Deine Suchwörter</div>
+                            <div
+                                v-if="displayMode !== 'compact' && item.user_keywords?.length"
+                                class="materials-v2-keyword-block">
                                 <div class="d-flex flex-wrap ga-1">
                                     <v-chip
-                                        v-for="keyword in item.user_keywords"
+                                        v-for="keyword in visibleUserKeywords(item)"
                                         :key="`user-${item.id}-${keyword}`"
                                         size="small"
                                         color="secondary"
                                         variant="outlined">
                                         {{ keyword }}
                                     </v-chip>
+                                    <v-chip
+                                        v-if="displayMode === 'standard' && item.user_keywords.length > 4"
+                                        size="small"
+                                        color="secondary"
+                                        variant="text">
+                                        +{{ item.user_keywords.length - 4 }}
+                                    </v-chip>
                                 </div>
                             </div>
 
-                            <div v-if="item.generated_keywords?.length" class="materials-v2-keyword-block">
+                            <div
+                                v-if="displayMode === 'large' && item.automatic_tag_suggestions?.length"
+                                class="materials-v2-keyword-block">
                                 <div class="materials-v2-keyword-label">
                                     <v-icon size="15" class="mr-1">mdi-sparkles</v-icon>
                                     Aus dem Inhalt erkannt
                                 </div>
                                 <div class="d-flex flex-wrap ga-1">
                                     <v-chip
-                                        v-for="keyword in item.generated_keywords.slice(0, 8)"
-                                        :key="`generated-${item.id}-${keyword}`"
+                                        v-for="suggestion in item.automatic_tag_suggestions.slice(0, 8)"
+                                        :key="`generated-${item.id}-${suggestion.name}`"
                                         size="small"
                                         color="primary"
-                                        variant="tonal">
-                                        {{ keyword }}
+                                        variant="tonal"
+                                        :title="`Rang ${suggestion.rank} · ${suggestion.score} Punkte`">
+                                        {{ suggestion.name }}
                                     </v-chip>
                                 </div>
                             </div>
@@ -190,7 +328,9 @@
                                     {{ item.attachments?.length === 1 ? 'Anlage' : 'Anlagen' }}
                                 </div>
 
-                                <div v-if="item.attachments?.length" class="d-flex flex-column ga-2 mt-2">
+                                <div
+                                    v-if="displayMode === 'large' && item.attachments?.length"
+                                    class="d-flex flex-column ga-2 mt-2">
                                     <div
                                         v-for="attachment in item.attachments"
                                         :key="attachment.id"
@@ -231,17 +371,17 @@
 
             <v-card v-else class="materials-v2-empty" rounded="xl" elevation="0">
                 <v-icon size="54" color="primary">
-                    {{ search.trim() ? 'mdi-file-search-outline' : 'mdi-folder-plus-outline' }}
+                    {{ hasActiveFilters ? 'mdi-file-search-outline' : 'mdi-folder-plus-outline' }}
                 </v-icon>
-                <h2>{{ search.trim() ? 'Noch kein passender Treffer' : 'Deine neue Materialsammlung ist leer' }}</h2>
+                <h2>{{ hasActiveFilters ? 'Noch kein passender Treffer' : 'Deine neue Materialsammlung ist leer' }}</h2>
                 <p>
                     {{
-                        search.trim()
+                        hasActiveFilters
                             ? 'Versuche andere Begriffe oder nur einen Wortteil.'
                             : 'Erstelle dein erstes Material – mit oder ohne Kategorie.'
                     }}
                 </p>
-                <v-btn v-if="!search.trim()" color="primary" rounded="xl" prepend-icon="mdi-plus" @click="openCreateDialog">
+                <v-btn v-if="!hasActiveFilters" color="primary" rounded="xl" prepend-icon="mdi-plus" @click="openCreateDialog">
                     Erstes Material erstellen
                 </v-btn>
             </v-card>
@@ -312,6 +452,86 @@
                         prepend-inner-icon="mdi-tag-multiple-outline"
                         :error-messages="formErrors.user_keywords"
                         :disabled="materialDialog.saving" />
+                    <section
+                        v-if="materialDialog.mode === 'edit'"
+                        class="materials-v2-automatic-tag-review mt-5">
+                        <div class="d-flex align-center justify-space-between ga-3 mb-3">
+                            <div>
+                                <div class="text-subtitle-2 font-weight-bold">Automatisch erkannte Tags</div>
+                                <div class="text-caption text-medium-emphasis">
+                                    Lokal aus dem Dokumentinhalt ermittelt. Eigene Suchwörter bleiben unverändert.
+                                </div>
+                            </div>
+                            <v-btn
+                                size="small"
+                                variant="tonal"
+                                color="primary"
+                                prepend-icon="mdi-refresh"
+                                :loading="tagAction.type === 'recalculate'"
+                                @click="recalculateAutomaticTags(materialDialog.item)">
+                                Neu berechnen
+                            </v-btn>
+                        </div>
+
+                        <div
+                            v-if="materialDialog.item?.automatic_tag_suggestions?.length"
+                            class="d-flex flex-column ga-2">
+                            <div
+                                v-for="suggestion in materialDialog.item.automatic_tag_suggestions"
+                                :key="`review-${suggestion.attachment_id}-${suggestion.name}`"
+                                class="materials-v2-automatic-tag-row">
+                                <v-chip color="primary" variant="tonal" size="small">
+                                    {{ suggestion.rank }}. {{ suggestion.name }}
+                                </v-chip>
+                                <span class="text-caption text-medium-emphasis">
+                                    {{ suggestion.score }} Punkte · {{ suggestion.language.toUpperCase() }}
+                                </span>
+                                <v-spacer />
+                                <v-btn
+                                    icon="mdi-tag-plus-outline"
+                                    size="x-small"
+                                    variant="text"
+                                    color="secondary"
+                                    title="Als eigenes Suchwort übernehmen"
+                                    :loading="isTagAction('convert', suggestion.name)"
+                                    @click="convertAutomaticTag(materialDialog.item, suggestion)" />
+                                <v-btn
+                                    icon="mdi-close"
+                                    size="x-small"
+                                    variant="text"
+                                    color="error"
+                                    title="Automatischen Tag entfernen"
+                                    :loading="isTagAction('remove', suggestion.name)"
+                                    @click="removeAutomaticTag(materialDialog.item, suggestion)" />
+                            </div>
+                        </div>
+                        <v-alert v-else type="info" variant="tonal" density="compact">
+                            Für dieses Material wurden keine ausreichend relevanten automatischen Tags gefunden.
+                        </v-alert>
+
+                        <div v-if="materialDialog.item?.attachments?.length" class="mt-4">
+                            <div
+                                v-for="attachment in materialDialog.item.attachments"
+                                :key="`tag-status-${attachment.id}`"
+                                class="materials-v2-tag-status-row">
+                                <span class="text-body-2">{{ attachment.original_name }}</span>
+                                <v-chip
+                                    size="x-small"
+                                    :color="keywordStatusMeta(attachment.keyword_extraction_status).color"
+                                    variant="tonal">
+                                    {{ keywordStatusMeta(attachment.keyword_extraction_status).label }}
+                                </v-chip>
+                                <span v-if="attachment.keywords_extracted_at" class="text-caption text-medium-emphasis">
+                                    {{ formatDateTime(attachment.keywords_extracted_at) }}
+                                </span>
+                                <div
+                                    v-if="attachment.keyword_extraction_error"
+                                    class="text-caption text-error flex-1-1-100">
+                                    {{ attachment.keyword_extraction_error }}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                     <v-file-input
                         v-if="materialDialog.mode === 'create'"
                         v-model="materialForm.attachments"
@@ -327,7 +547,8 @@
                         :error-messages="formErrors.attachments"
                         :disabled="materialDialog.saving" />
                     <v-alert class="mt-4" type="info" variant="tonal" density="compact">
-                        Dokumente werden nach dem Speichern gelesen. Daraus entstehen automatisch zusätzliche Suchwörter.
+                        Dokumente werden nach dem Speichern lokal gelesen. Nur ausreichend relevante Themenbegriffe
+                        werden als zusätzliche Tags vorgeschlagen.
                     </v-alert>
                 </v-card-text>
                 <v-card-actions class="px-6 pb-5">
@@ -340,6 +561,81 @@
                         :disabled="!materialForm.title.trim()"
                         @click="saveMaterial()">
                         {{ materialDialog.mode === 'create' ? 'Erstellen' : 'Speichern' }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog
+            v-model="categoryDialog.open"
+            class="materials-v2-category-dialog"
+            persistent
+            max-width="520">
+            <v-card rounded="xl">
+                <v-card-title class="materials-v2-dialog-title">
+                    <v-icon color="primary" class="mr-2">mdi-shape-plus-outline</v-icon>
+                    {{ categoryDialog.mode === 'create' ? 'Kategorie erstellen' : 'Kategorie bearbeiten' }}
+                </v-card-title>
+                <v-card-text class="px-6 pb-2">
+                    <v-text-field
+                        v-model="categoryDialog.name"
+                        label="Name"
+                        variant="outlined"
+                        maxlength="255"
+                        counter
+                        autofocus
+                        :error-messages="categoryDialog.error"
+                        :disabled="categoryDialog.saving"
+                        @update:model-value="categoryDialog.warning = ''"
+                        @keydown.enter.prevent="saveCategory" />
+                    <v-alert
+                        v-if="categoryDialog.warning"
+                        class="materials-v2-category-warning mt-3"
+                        type="warning"
+                        variant="tonal"
+                        density="compact">
+                        {{ categoryDialog.warning }}
+                    </v-alert>
+                </v-card-text>
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn
+                        variant="text"
+                        :disabled="categoryDialog.saving"
+                        @click="closeCategoryDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="primary"
+                        rounded="lg"
+                        :loading="categoryDialog.saving"
+                        :disabled="!categoryDialog.name.trim()"
+                        @click="saveCategory">
+                        {{ categoryDialog.mode === 'create' ? 'Erstellen' : 'Speichern' }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="categoryDeleteDialog.open" persistent max-width="500">
+            <v-card rounded="xl">
+                <v-card-title>Kategorie löschen?</v-card-title>
+                <v-card-text>
+                    Die leere Kategorie <strong>{{ categoryDeleteDialog.name }}</strong> wird dauerhaft gelöscht.
+                </v-card-text>
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn
+                        variant="text"
+                        :disabled="categoryDeleteDialog.saving"
+                        @click="closeCategoryDeleteDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="error"
+                        :loading="categoryDeleteDialog.saving"
+                        @click="deleteCategory">
+                        Löschen
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -465,16 +761,21 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import axios from 'axios'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 const notification = useNotificationStore()
 
+const allCategoriesValue = '__all_categories__'
+const displayModeStorageKey = 'materials-v2-display-mode'
+const displayModeOptions = ['large', 'standard', 'compact']
 const search = ref('')
+const selectedCategory = ref(allCategoriesValue)
+const displayMode = ref(loadStoredDisplayMode())
 const page = ref(1)
 const items = ref([])
-const categoryOptions = ref([])
+const categoryDetails = ref([])
 const loading = ref(false)
 const loadError = ref('')
 const meta = reactive({
@@ -518,25 +819,77 @@ const categorySuggestionDialog = reactive({
     entered: '',
     existing: '',
 })
+const categoryDialog = reactive({
+    open: false,
+    mode: 'create',
+    originalName: '',
+    name: '',
+    error: [],
+    warning: '',
+    saving: false,
+})
+const categoryDeleteDialog = reactive({
+    open: false,
+    name: '',
+    saving: false,
+})
 const deleteDialog = reactive({
     open: false,
     item: null,
     saving: false,
 })
+const tagAction = reactive({
+    type: '',
+    itemId: null,
+    tagName: '',
+})
 
 let searchTimer = null
 let pollingTimer = null
+let isResettingFiltersAfterCreate = false
 
 const hasProcessingItems = computed(() =>
     items.value.some((item) => ['pending', 'processing'].includes(item.processing_status)),
 )
+const categoryOptions = computed(() => categoryDetails.value.map((category) => category.name))
+const hasActiveFilters = computed(
+    () => search.value.trim() !== '' || selectedCategory.value !== allCategoriesValue,
+)
+const materialColumnProps = computed(() => ({
+    large: { cols: 12, md: 6, xl: 4 },
+    standard: { cols: 12, sm: 6, lg: 4, xl: 3 },
+    compact: { cols: 12, sm: 6, md: 4, lg: 3, xl: 2 },
+}[displayMode.value]))
+const materialCardPaddingClass = computed(() => ({
+    large: 'pa-5',
+    standard: 'pa-4',
+    compact: 'pa-3',
+}[displayMode.value]))
 
 watch(search, () => {
     window.clearTimeout(searchTimer)
+
+    if (isResettingFiltersAfterCreate) {
+        return
+    }
+
     searchTimer = window.setTimeout(() => {
         page.value = 1
         loadItems()
     }, 350)
+})
+
+watch(selectedCategory, () => {
+    if (isResettingFiltersAfterCreate) {
+        return
+    }
+
+    page.value = 1
+    loadItems()
+})
+
+watch(displayMode, (mode) => {
+    persistDisplayMode(mode)
 })
 
 watch(hasProcessingItems, (isProcessing) => {
@@ -560,12 +913,19 @@ async function loadItems() {
         const response = await axios.get('/api/admin/materials-v2/items', {
             params: {
                 search: search.value.trim() || undefined,
+                category: selectedCategory.value === allCategoriesValue ? undefined : selectedCategory.value,
                 page: page.value,
                 per_page: 18,
             },
         })
 
         items.value = response.data?.data || []
+        if (materialDialog.open && materialDialog.mode === 'edit' && materialDialog.item) {
+            const refreshedItem = items.value.find((item) => item.id === materialDialog.item.id)
+            if (refreshedItem) {
+                materialDialog.item = refreshedItem
+            }
+        }
         Object.assign(meta, response.data?.meta || {
             total: items.value.length,
             current_page: 1,
@@ -581,9 +941,12 @@ async function loadItems() {
 async function loadConfig() {
     try {
         const response = await axios.get('/api/admin/materials-v2/config')
-        categoryOptions.value = Array.isArray(response.data?.categories) ? response.data.categories : []
+        const categories = Array.isArray(response.data?.categories) ? response.data.categories : []
+        categoryDetails.value = Array.isArray(response.data?.category_details)
+            ? response.data.category_details
+            : categories.map((name) => ({ name, items_count: null }))
     } catch {
-        categoryOptions.value = []
+        categoryDetails.value = []
     }
 }
 
@@ -591,6 +954,143 @@ function clearSearch() {
     search.value = ''
     page.value = 1
     loadItems()
+}
+
+function selectCategory(category) {
+    selectedCategory.value = category
+}
+
+function loadStoredDisplayMode() {
+    try {
+        const storedMode = window.localStorage.getItem(displayModeStorageKey)
+
+        return displayModeOptions.includes(storedMode) ? storedMode : 'large'
+    } catch {
+        return 'large'
+    }
+}
+
+function persistDisplayMode(mode) {
+    if (!displayModeOptions.includes(mode)) {
+        return
+    }
+
+    try {
+        window.localStorage.setItem(displayModeStorageKey, mode)
+    } catch {
+        return
+    }
+}
+
+function visibleUserKeywords(item) {
+    const keywords = item.user_keywords || []
+
+    return displayMode.value === 'large' ? keywords : keywords.slice(0, 4)
+}
+
+function openCategoryDialog(category = '') {
+    categoryDialog.mode = category ? 'edit' : 'create'
+    categoryDialog.originalName = category
+    categoryDialog.name = category
+    categoryDialog.error = []
+    categoryDialog.warning = ''
+    categoryDialog.open = true
+}
+
+function closeCategoryDialog() {
+    if (!categoryDialog.saving) {
+        categoryDialog.open = false
+    }
+}
+
+function openCategoryDeleteDialog(categoryName) {
+    categoryDeleteDialog.name = categoryName
+    categoryDeleteDialog.open = true
+}
+
+function closeCategoryDeleteDialog() {
+    if (categoryDeleteDialog.saving) {
+        return
+    }
+
+    categoryDeleteDialog.open = false
+    categoryDeleteDialog.name = ''
+}
+
+async function deleteCategory() {
+    if (!categoryDeleteDialog.name || categoryDeleteDialog.saving) {
+        return
+    }
+
+    categoryDeleteDialog.saving = true
+
+    try {
+        const categoryName = categoryDeleteDialog.name
+        await axios.delete('/api/admin/materials-v2/categories', {
+            data: {
+                name: categoryName,
+            },
+        })
+
+        if (selectedCategory.value === categoryName) {
+            selectedCategory.value = allCategoriesValue
+        }
+
+        await loadConfig()
+        categoryDeleteDialog.open = false
+        categoryDeleteDialog.name = ''
+        notify('Kategorie gelöscht.')
+    } catch (error) {
+        notify(apiErrorMessage(error, 'Die Kategorie konnte nicht gelöscht werden.'), 'error')
+    } finally {
+        categoryDeleteDialog.saving = false
+    }
+}
+
+async function saveCategory() {
+    const categoryName = categoryDialog.name.trim()
+    if (!categoryName || categoryDialog.saving) {
+        return
+    }
+
+    categoryDialog.error = []
+    categoryDialog.warning = ''
+    categoryDialog.saving = true
+
+    try {
+        const isEditing = categoryDialog.mode === 'edit'
+        const response = isEditing
+            ? await axios.put('/api/admin/materials-v2/categories', {
+                original_name: categoryDialog.originalName,
+                name: categoryName,
+            })
+            : await axios.post('/api/admin/materials-v2/categories', {
+                name: categoryName,
+            })
+        const savedCategoryName = response.data?.data?.name || categoryName
+
+        if (isEditing && selectedCategory.value === categoryDialog.originalName) {
+            selectedCategory.value = savedCategoryName
+        }
+
+        await Promise.all([loadConfig(), isEditing ? loadItems() : Promise.resolve()])
+        categoryDialog.open = false
+        notify(isEditing ? 'Kategorie aktualisiert.' : 'Kategorie gespeichert.')
+    } catch (error) {
+        const conflict = error.response?.data?.category_conflict
+        if (error.response?.status === 409 && conflict?.existing) {
+            categoryDialog.warning = `Die Kategorie „${conflict.existing}“ existiert bereits. Bitte wähle einen anderen Namen.`
+
+            return
+        }
+
+        categoryDialog.error = error.response?.data?.errors?.name || []
+        if (error.response?.status !== 422) {
+            notify(apiErrorMessage(error, 'Die Kategorie konnte nicht gespeichert werden.'), 'error')
+        }
+    } finally {
+        categoryDialog.saving = false
+    }
 }
 
 function openCreateDialog() {
@@ -620,9 +1120,10 @@ function closeMaterialDialog() {
 async function saveMaterial({ forceNewCategory = false } = {}) {
     clearFormErrors()
     materialDialog.saving = true
+    const isCreating = materialDialog.mode === 'create'
 
     try {
-        if (materialDialog.mode === 'create') {
+        if (isCreating) {
             const payload = new FormData()
             payload.append('title', materialForm.title.trim())
 
@@ -654,7 +1155,13 @@ async function saveMaterial({ forceNewCategory = false } = {}) {
         }
 
         materialDialog.open = false
-        page.value = 1
+
+        if (isCreating) {
+            await resetFiltersAfterCreate()
+        } else {
+            page.value = 1
+        }
+
         await Promise.all([loadItems(), loadConfig()])
         notify('Material gespeichert.')
     } catch (error) {
@@ -669,6 +1176,18 @@ async function saveMaterial({ forceNewCategory = false } = {}) {
     } finally {
         materialDialog.saving = false
     }
+}
+
+async function resetFiltersAfterCreate() {
+    window.clearTimeout(searchTimer)
+    isResettingFiltersAfterCreate = true
+    search.value = ''
+    selectedCategory.value = allCategoriesValue
+    page.value = 1
+
+    await nextTick()
+
+    isResettingFiltersAfterCreate = false
 }
 
 function showCategorySuggestion(error) {
@@ -772,6 +1291,87 @@ async function retryProcessing(item) {
     }
 }
 
+async function recalculateAutomaticTags(item) {
+    tagAction.type = 'recalculate'
+    tagAction.itemId = item.id
+    tagAction.tagName = ''
+
+    try {
+        await axios.post(`/api/admin/materials-v2/items/${item.id}/recalculate-automatic-tags`)
+        item.processing_status = 'pending'
+        await loadItems()
+        notify('Automatische Tag-Erkennung gestartet.', 'info')
+    } catch (error) {
+        notify(apiErrorMessage(error, 'Die automatischen Tags konnten nicht neu berechnet werden.'), 'error')
+    } finally {
+        resetTagAction()
+    }
+}
+
+async function removeAutomaticTag(item, suggestion) {
+    tagAction.type = 'remove'
+    tagAction.itemId = item.id
+    tagAction.tagName = suggestion.name
+
+    try {
+        const response = await axios.delete(`/api/admin/materials-v2/items/${item.id}/automatic-tags`, {
+            data: {
+                tag_name: suggestion.name,
+            },
+        })
+        applyUpdatedMaterial(response.data?.data)
+        notify('Automatischer Tag entfernt.')
+    } catch (error) {
+        notify(apiErrorMessage(error, 'Der automatische Tag konnte nicht entfernt werden.'), 'error')
+    } finally {
+        resetTagAction()
+    }
+}
+
+async function convertAutomaticTag(item, suggestion) {
+    tagAction.type = 'convert'
+    tagAction.itemId = item.id
+    tagAction.tagName = suggestion.name
+
+    try {
+        const response = await axios.post(`/api/admin/materials-v2/items/${item.id}/automatic-tags/convert`, {
+            tag_name: suggestion.name,
+        })
+        applyUpdatedMaterial(response.data?.data)
+        materialForm.keywords = (materialDialog.item?.user_keywords || []).join(', ')
+        notify('Tag als eigenes Suchwort übernommen.')
+    } catch (error) {
+        notify(apiErrorMessage(error, 'Der Tag konnte nicht übernommen werden.'), 'error')
+    } finally {
+        resetTagAction()
+    }
+}
+
+function applyUpdatedMaterial(updatedItem) {
+    if (!updatedItem) {
+        return
+    }
+
+    const index = items.value.findIndex((item) => item.id === updatedItem.id)
+    if (index !== -1) {
+        items.value[index] = updatedItem
+    }
+
+    if (materialDialog.item?.id === updatedItem.id) {
+        materialDialog.item = updatedItem
+    }
+}
+
+function isTagAction(type, tagName) {
+    return tagAction.type === type && tagAction.tagName === tagName
+}
+
+function resetTagAction() {
+    tagAction.type = ''
+    tagAction.itemId = null
+    tagAction.tagName = ''
+}
+
 function previewAttachment(attachment) {
     previewDialog.attachment = attachment
     previewDialog.open = true
@@ -847,6 +1447,17 @@ function statusMeta(status) {
     }[status] || { label: status || 'Unbekannt', color: 'default', icon: 'mdi-help-circle-outline' }
 }
 
+function keywordStatusMeta(status) {
+    return {
+        pending: { label: 'Wartet auf Analyse', color: 'info' },
+        processing: { label: 'Tags werden ermittelt', color: 'info' },
+        ready: { label: 'Tags erkannt', color: 'success' },
+        empty: { label: 'Keine relevanten Tags', color: 'warning' },
+        skipped: { label: 'Nicht auswertbar', color: 'warning' },
+        failed: { label: 'Tag-Erkennung fehlgeschlagen', color: 'error' },
+    }[status] || { label: status || 'Noch nicht verarbeitet', color: 'default' }
+}
+
 function attachmentIcon(attachment) {
     const mimeType = String(attachment.mime_type || '').toLowerCase()
     const name = String(attachment.original_name || '').toLowerCase()
@@ -864,6 +1475,17 @@ function formatFileSize(bytes) {
     if (size < 1024) return `${size} B`
     if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
     return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatDateTime(value) {
+    const date = new Date(value)
+
+    return Number.isNaN(date.getTime())
+        ? ''
+        : new Intl.DateTimeFormat('de-AT', {
+            dateStyle: 'short',
+            timeStyle: 'short',
+        }).format(date)
 }
 
 function apiErrorMessage(error, fallback) {
@@ -957,6 +1579,64 @@ function notify(message, type = 'success') {
     line-height: 1.55;
 }
 
+.materials-v2-filter-layout {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.8fr) minmax(0, 2fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.materials-v2-category-panel {
+    border: 1px solid rgba(23, 45, 59, 0.1);
+    background:
+        radial-gradient(circle at top right, rgba(47, 191, 145, 0.15), transparent 52%),
+        linear-gradient(150deg, rgba(255, 255, 255, 0.95), rgba(240, 253, 250, 0.92));
+    box-shadow:
+        0 16px 42px rgba(23, 45, 59, 0.09),
+        inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.materials-v2-category-panel-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.8rem;
+}
+
+.materials-v2-category-panel-subtitle {
+    color: var(--materials-v2-muted);
+}
+
+.materials-v2-category-panel-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.materials-v2-category-list {
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.materials-v2-category-item {
+    border: 1px solid rgba(23, 45, 59, 0.08);
+    background: rgba(255, 255, 255, 0.84);
+    cursor: pointer;
+}
+
+.materials-v2-category-item.v-list-item--active {
+    border-color: rgba(47, 191, 145, 0.42);
+}
+
+.materials-v2-category-item-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+}
+
 .materials-v2-search-panel {
     padding: 1rem;
     border: 1px solid rgba(23, 45, 59, 0.08);
@@ -1003,6 +1683,24 @@ function notify(message, type = 'success') {
     gap: 1rem;
 }
 
+.materials-v2-toolbar-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.materials-v2-display-toggle {
+    border-color: rgba(23, 45, 59, 0.14);
+    background: rgba(255, 255, 255, 0.88);
+}
+
+.materials-v2-display-toggle :deep(.v-btn) {
+    min-width: 78px;
+    text-transform: none;
+}
+
 .materials-v2-card {
     border: 1px solid rgba(23, 45, 59, 0.08);
     background: rgba(255, 255, 255, 0.92);
@@ -1016,6 +1714,18 @@ function notify(message, type = 'success') {
     box-shadow: 0 18px 50px rgba(23, 45, 59, 0.12);
 }
 
+.materials-v2-card--standard {
+    box-shadow: 0 9px 28px rgba(23, 45, 59, 0.065);
+}
+
+.materials-v2-card--compact {
+    box-shadow: 0 6px 20px rgba(23, 45, 59, 0.055);
+}
+
+.materials-v2-card--compact:hover {
+    transform: translateY(-1px);
+}
+
 .materials-v2-card-title {
     overflow: hidden;
     margin: 0;
@@ -1024,6 +1734,18 @@ function notify(message, type = 'success') {
     letter-spacing: -0.02em;
     line-height: 1.3;
     text-overflow: ellipsis;
+}
+
+.materials-v2-card--standard .materials-v2-card-title {
+    font-size: 1.05rem;
+}
+
+.materials-v2-card--compact .materials-v2-card-title {
+    display: -webkit-box;
+    font-size: 0.95rem;
+    line-height: 1.25;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
 }
 
 .materials-v2-description {
@@ -1036,6 +1758,13 @@ function notify(message, type = 'success') {
     line-height: 1.55;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+}
+
+.materials-v2-card--standard .materials-v2-description {
+    min-height: 2.6rem;
+    margin: 0.75rem 0;
+    font-size: 0.86rem;
+    line-height: 1.45;
 }
 
 .materials-v2-description--empty {
@@ -1058,10 +1787,44 @@ function notify(message, type = 'success') {
     text-transform: uppercase;
 }
 
+.materials-v2-automatic-tag-review {
+    padding: 1rem;
+    border: 1px solid rgba(var(--v-theme-primary), 0.18);
+    border-radius: 14px;
+    background: rgba(var(--v-theme-primary), 0.035);
+}
+
+.materials-v2-automatic-tag-row,
+.materials-v2-tag-status-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.materials-v2-automatic-tag-row {
+    min-height: 36px;
+}
+
+.materials-v2-tag-status-row {
+    padding: 0.55rem 0;
+    border-top: 1px solid rgba(23, 45, 59, 0.08);
+}
+
 .materials-v2-attachments {
     margin-top: 1.15rem;
     padding-top: 1rem;
     border-top: 1px solid rgba(23, 45, 59, 0.08);
+}
+
+.materials-v2-card--standard .materials-v2-attachments {
+    margin-top: 0.85rem;
+    padding-top: 0.75rem;
+}
+
+.materials-v2-card--compact .materials-v2-attachments {
+    margin-top: 0.65rem;
+    padding-top: 0.6rem;
 }
 
 .materials-v2-attachment-heading {
@@ -1172,6 +1935,10 @@ function notify(message, type = 'success') {
 }
 
 @media (max-width: 700px) {
+    .materials-v2-filter-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .materials-v2-header {
         align-items: stretch;
         flex-direction: column;
@@ -1187,6 +1954,22 @@ function notify(message, type = 'success') {
         align-items: flex-start;
         flex-direction: column;
         padding: 1rem 0;
+    }
+
+    .materials-v2-toolbar-actions {
+        width: 100%;
+        align-items: stretch;
+        justify-content: flex-start;
+        flex-direction: column;
+    }
+
+    .materials-v2-display-toggle {
+        width: 100%;
+    }
+
+    .materials-v2-display-toggle :deep(.v-btn) {
+        min-width: 0;
+        flex: 1 1 0;
     }
 
     .materials-v2-file-size {

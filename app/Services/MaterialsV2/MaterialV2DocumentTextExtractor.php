@@ -270,6 +270,7 @@ class MaterialV2DocumentTextExtractor
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $text = preg_replace('/[^\P{C}\n\t]+/u', ' ', $text) ?? $text;
         $text = preg_replace('/[ \t]+/u', ' ', $text) ?? $text;
+        $text = preg_replace('/[ \t]*\n[ \t]*/u', "\n", $text) ?? $text;
         $text = preg_replace('/\n{3,}/u', "\n\n", $text) ?? $text;
 
         return trim($text);

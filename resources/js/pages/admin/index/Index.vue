@@ -476,19 +476,22 @@ export default {
         this.healthStore = useHealthStore()
         this.schoolStore = useSchoolStore()
         this.adminStore.is_loading++
-        if (this.config?.is_auth && !this.config?.environment_versions) {
-            await this.adminStore.loadConfig({ includeSchoolInfos: true, includeEnvironmentVersions: true })
-        }
-        if (this.config?.is_auth) {
-            if (this.config?.school_infos) {
-                this.schoolStore.applySchoolInfos(this.config.school_infos)
-            } else {
-                await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
+        try {
+            if (this.config?.is_auth && !this.config?.environment_versions) {
+                await this.adminStore.loadConfig({ includeSchoolInfos: true, includeEnvironmentVersions: true })
             }
-            await this.healthStore.fetchStatus()
-            this.health_loaded = true
+            if (this.config?.is_auth) {
+                if (this.config?.school_infos) {
+                    this.schoolStore.applySchoolInfos(this.config.school_infos)
+                } else {
+                    await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
+                }
+                await this.healthStore.fetchStatus()
+                this.health_loaded = true
+            }
+        } finally {
+            this.adminStore.is_loading = Math.max(0, Number(this.adminStore.is_loading || 0) - 1)
         }
-        this.adminStore.is_loading--
     },
 
     unmounted() {},
