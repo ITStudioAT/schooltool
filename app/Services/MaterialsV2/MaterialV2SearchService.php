@@ -18,6 +18,9 @@ class MaterialV2SearchService
         int $page,
         int $perPage,
         string $category = '',
+        string $reminderFrom = '',
+        string $reminderTo = '',
+        string $reminderOrder = '',
     ): LengthAwarePaginator {
         $query = MaterialV2Item::query()
             ->whereBelongsTo($user)
@@ -29,8 +32,43 @@ class MaterialV2SearchService
             $query->where('category', $normalizedCategory);
         }
 
+        if ($reminderFrom !== '') {
+            $query->whereDate('reminder_date', '>=', $reminderFrom);
+        }
+
+        if ($reminderTo !== '') {
+            $query->whereDate('reminder_date', '<=', $reminderTo);
+        }
+
         $normalizedSearch = $this->normalize($search);
         if ($normalizedSearch === '') {
+            if (
+                $normalizedCategory === MaterialV2CategoryService::REMINDER_CATEGORY
+                && in_array($reminderOrder, ['asc', 'desc'], true)
+            ) {
+                return $query
+                    ->orderBy('reminder_date', $reminderOrder)
+                    ->orderBy('reminder_time', $reminderOrder)
+                    ->latest('id')
+                    ->paginate($perPage, page: $page);
+            }
+
+            if ($normalizedCategory === MaterialV2CategoryService::REMINDER_CATEGORY) {
+                return $query
+                    ->orderByRaw('CASE WHEN reminder_date >= ? THEN 0 ELSE 1 END', [now()->toDateString()])
+                    ->orderByRaw(
+                        'CASE WHEN reminder_date >= ? THEN reminder_date END ASC',
+                        [now()->toDateString()],
+                    )
+                    ->orderByRaw(
+                        'CASE WHEN reminder_date < ? THEN reminder_date END DESC',
+                        [now()->toDateString()],
+                    )
+                    ->orderBy('reminder_time')
+                    ->latest('id')
+                    ->paginate($perPage, page: $page);
+            }
+
             return $query
                 ->latest()
                 ->paginate($perPage, page: $page);
@@ -84,12 +122,13 @@ class MaterialV2SearchService
         $title = $this->normalize($item->title);
         $category = $this->normalize((string) $item->category);
         $description = $this->normalize((string) $item->description);
+        $linkUrl = $this->normalize((string) $item->link_url);
         $keywords = $this->normalize(collect([
             ...($item->user_keywords ?? []),
             ...$item->automaticTagSuggestions->pluck('tag_name')->all(),
         ])->implode(' '));
         $document = $this->normalize((string) $item->search_text);
-        $searchWords = collect(preg_split('/\s+/u', "{$title} {$category} {$description} {$keywords} {$document}") ?: [])
+        $searchWords = collect(preg_split('/\s+/u', "{$title} {$category} {$description} {$linkUrl} {$keywords} {$document}") ?: [])
             ->filter()
             ->unique()
             ->take(5000)
@@ -109,6 +148,7 @@ class MaterialV2SearchService
                 $this->fieldScore($title, $queryToken, 24),
                 $this->fieldScore($category, $queryToken, 22),
                 $this->fieldScore($keywords, $queryToken, 20),
+                $this->fieldScore($linkUrl, $queryToken, 16),
                 $this->fieldScore($description, $queryToken, 14),
                 $this->fieldScore($document, $queryToken, 9),
                 $this->fuzzyWordScore($searchWords, $queryToken),

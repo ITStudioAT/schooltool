@@ -243,6 +243,8 @@ class CurriculumController extends Controller
                         ->where('user_id', $authUser->id)
                 ),
             ],
+            'selected_topic_ids' => ['required', 'array', 'min:1'],
+            'selected_topic_ids.*' => ['required', 'string', 'max:100', 'distinct:strict'],
         ]);
 
         if (count($curriculum->topics) > 0) {
@@ -262,7 +264,30 @@ class CurriculumController extends Controller
             ]);
         }
 
+        $selectedTopicIds = collect($validated['selected_topic_ids'])
+            ->map(fn (string $topicId): string => trim($topicId));
+        $sourceTopicIds = collect($sourceCurriculum->topics)
+            ->map(
+                fn (array $topic, int $topicIndex): string => filled($topic['id'] ?? null)
+                    ? (string) $topic['id']
+                    : (string) $topicIndex
+            );
+        $unknownTopicIds = $selectedTopicIds->diff($sourceTopicIds);
+
+        if ($unknownTopicIds->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'selected_topic_ids' => 'Mindestens ein ausgewähltes Thema gehört nicht zum Quellcurriculum.',
+            ]);
+        }
+
         $copiedTopics = collect($sourceCurriculum->topics)
+            ->filter(function (array $topic, int $topicIndex) use ($selectedTopicIds): bool {
+                $topicId = filled($topic['id'] ?? null)
+                    ? (string) $topic['id']
+                    : (string) $topicIndex;
+
+                return $selectedTopicIds->containsStrict($topicId);
+            })
             ->map(fn (array $topic): array => [
                 'title' => $topic['title'] ?? '',
                 'units' => collect($topic['units'] ?? [])

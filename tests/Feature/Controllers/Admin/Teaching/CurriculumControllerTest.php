@@ -133,6 +133,11 @@ test('teacher can copy content from an own curriculum into an empty curriculum',
                     ],
                 ],
             ],
+            [
+                'id' => 'unselected-topic',
+                'title' => 'Rechtschreibung',
+                'units' => [],
+            ],
         ],
     ]);
     $targetCurriculum = TeachingCurriculum::query()->create([
@@ -147,12 +152,14 @@ test('teacher can copy content from an own curriculum into an empty curriculum',
     $response = $this->actingAs($this->teacher, 'sanctum')
         ->postJson("/api/admin/teaching/curricula/{$targetCurriculum->id}/copy-content", [
             'source_curriculum_id' => $sourceCurriculum->id,
+            'selected_topic_ids' => ['source-topic'],
         ]);
 
     $response->assertOk()
         ->assertJsonPath('data.topics.0.title', 'Grammatik')
         ->assertJsonPath('data.topics.0.units.0.title', 'Satzbau')
-        ->assertJsonPath('data.topics.0.units.0.is_exam', true);
+        ->assertJsonPath('data.topics.0.units.0.is_exam', true)
+        ->assertJsonCount(1, 'data.topics');
 
     $copiedTopics = $targetCurriculum->refresh()->topics;
 
@@ -185,6 +192,7 @@ test('teacher cannot replace existing curriculum content through content copy', 
     $this->actingAs($this->teacher, 'sanctum')
         ->postJson("/api/admin/teaching/curricula/{$targetCurriculum->id}/copy-content", [
             'source_curriculum_id' => $sourceCurriculum->id,
+            'selected_topic_ids' => ['source-topic'],
         ])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('curriculum');
@@ -213,9 +221,47 @@ test('teacher cannot copy curriculum content from another user', function () {
     $this->actingAs($this->teacher, 'sanctum')
         ->postJson("/api/admin/teaching/curricula/{$targetCurriculum->id}/copy-content", [
             'source_curriculum_id' => $foreignSourceCurriculum->id,
+            'selected_topic_ids' => ['foreign-topic'],
         ])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('source_curriculum_id');
+
+    expect($targetCurriculum->refresh()->topics)->toBeEmpty();
+});
+
+test('teacher cannot copy unselected or unknown curriculum themes', function () {
+    $sourceCurriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Quelle',
+        'topics' => [
+            ['id' => 'source-topic', 'title' => 'Quelle', 'units' => []],
+        ],
+    ]);
+    $targetCurriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Ziel',
+        'topics' => [],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->postJson("/api/admin/teaching/curricula/{$targetCurriculum->id}/copy-content", [
+            'source_curriculum_id' => $sourceCurriculum->id,
+            'selected_topic_ids' => [],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('selected_topic_ids');
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->postJson("/api/admin/teaching/curricula/{$targetCurriculum->id}/copy-content", [
+            'source_curriculum_id' => $sourceCurriculum->id,
+            'selected_topic_ids' => ['unknown-topic'],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('selected_topic_ids');
 
     expect($targetCurriculum->refresh()->topics)->toBeEmpty();
 });

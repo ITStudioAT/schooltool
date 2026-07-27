@@ -19,6 +19,11 @@ class MaterialV2ItemResource extends JsonResource
             'title' => $this->title,
             'category' => $this->category,
             'description' => $this->description,
+            'reminder_date' => $this->reminder_date?->format('Y-m-d'),
+            'reminder_time' => $this->reminder_time
+                ? mb_substr((string) $this->reminder_time, 0, 5)
+                : null,
+            'link_url' => $this->link_url,
             'user_keywords' => $this->user_keywords ?? [],
             'generated_keywords' => $this->generated_keywords ?? [],
             'automatic_tag_suggestions' => $this->when(

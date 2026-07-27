@@ -24,6 +24,7 @@ use App\Http\Controllers\Admin\Materials\MaterialUserSettingsController;
 use App\Http\Controllers\Admin\Materials\MaterialWorkspaceController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2CategoryController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2ItemController;
+use App\Http\Controllers\Admin\MaterialsV2\MaterialV2LinkPreviewController;
 use App\Http\Controllers\Admin\NavigationController;
 use App\Http\Controllers\Admin\RegisterDateBookingController;
 use App\Http\Controllers\Admin\RegisterDateController;
@@ -608,6 +609,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/materials-v2/categories', [MaterialV2CategoryController::class, 'destroy']);
         Route::get('/admin/materials-v2/items', [MaterialV2ItemController::class, 'index']);
         Route::post('/admin/materials-v2/items', [MaterialV2ItemController::class, 'store']);
+        Route::post('/admin/materials-v2/link-preview', MaterialV2LinkPreviewController::class)
+            ->middleware('throttle:20,1');
         Route::get('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'show']);
         Route::put('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'update']);
         Route::delete('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'destroy']);

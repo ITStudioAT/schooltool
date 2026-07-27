@@ -202,6 +202,7 @@ class MaterialV2KeywordService
             collect([
                 $item->title,
                 $item->description,
+                $item->link_url,
                 ...($item->user_keywords ?? []),
                 ...($item->generated_keywords ?? []),
                 ...$item->attachments->pluck('original_name')->all(),

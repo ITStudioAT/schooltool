@@ -1,5 +1,15 @@
 # UPDATES
 
+## 3.43.5 x
+
+### Materialien
+- Kategorien Links, Termine, Screenshot by default vorhanden
+- UI-Design adaptiert
+- Screenshots werden in der Übersicht auch angezeigt
+
+### Curriculum
+- Übernahme einzelner Einheiten aus anderem Curriculum
+
 ## 3.43.4
 
 ### Materialien

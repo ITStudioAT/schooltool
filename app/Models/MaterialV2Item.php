@@ -32,6 +32,9 @@ class MaterialV2Item extends Model
         'title',
         'category',
         'description',
+        'reminder_date',
+        'reminder_time',
+        'link_url',
         'user_keywords',
         'generated_keywords',
         'search_text',
@@ -50,6 +53,7 @@ class MaterialV2Item extends Model
         return [
             'user_keywords' => 'array',
             'generated_keywords' => 'array',
+            'reminder_date' => 'date:Y-m-d',
             'processing_started_at' => 'datetime',
             'processed_at' => 'datetime',
         ];

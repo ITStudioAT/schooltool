@@ -65,6 +65,9 @@ class MaterialV2ItemController extends Controller
             page: (int) ($validated['page'] ?? 1),
             perPage: (int) ($validated['per_page'] ?? 18),
             category: trim((string) ($validated['category'] ?? '')),
+            reminderFrom: trim((string) ($validated['reminder_from'] ?? '')),
+            reminderTo: trim((string) ($validated['reminder_to'] ?? '')),
+            reminderOrder: trim((string) ($validated['reminder_order'] ?? '')),
         );
 
         return MaterialV2ItemResource::collection($items);
@@ -90,16 +93,44 @@ class MaterialV2ItemController extends Controller
             return $this->categoryConflictResponse($categoryResolution);
         }
 
-        $item = DB::transaction(function () use ($user, $validated, $files, $storageService, $categoryResolution): MaterialV2Item {
+        $isReminder = $categoryService->isReminderCategory($categoryResolution['category']);
+        $isScreenshot = $categoryService->isScreenshotCategory($categoryResolution['category']);
+        $isLink = $categoryService->isLinkCategory($categoryResolution['category']);
+        $isNote = $categoryService->isNoteCategory($categoryResolution['category']);
+        $skipsProcessing = $isReminder || $isScreenshot || $isLink || $isNote;
+        $this->validateReminder($validated, $isReminder);
+
+        $item = DB::transaction(function () use (
+            $user,
+            $validated,
+            $files,
+            $storageService,
+            $categoryResolution,
+            $isReminder,
+            $isLink,
+            $skipsProcessing,
+        ): MaterialV2Item {
             $item = MaterialV2Item::query()->create([
                 'school_id' => $user->school_id,
                 'user_id' => $user->id,
                 'title' => Str::squish($validated['title']),
                 'category' => $categoryResolution['category'],
                 'description' => $this->nullableString($validated['description'] ?? null),
-                'user_keywords' => $this->normalizeKeywords($validated['user_keywords'] ?? []),
+                'reminder_date' => $isReminder ? $validated['reminder_date'] : null,
+                'reminder_time' => $isReminder
+                    ? $this->nullableString($validated['reminder_time'] ?? null)
+                    : null,
+                'link_url' => $isLink
+                    ? $this->nullableString($validated['link_url'] ?? null)
+                    : null,
+                'user_keywords' => $skipsProcessing
+                    ? []
+                    : $this->normalizeKeywords($validated['user_keywords'] ?? []),
                 'generated_keywords' => [],
-                'processing_status' => MaterialV2Item::STATUS_PENDING,
+                'processing_status' => $skipsProcessing
+                    ? MaterialV2Item::STATUS_READY
+                    : MaterialV2Item::STATUS_PENDING,
+                'processed_at' => $skipsProcessing ? now() : null,
             ]);
 
             $storageService->store($item, $files);
@@ -107,7 +138,9 @@ class MaterialV2ItemController extends Controller
             return $item;
         });
 
-        $this->dispatchProcessing($item);
+        if (! $skipsProcessing) {
+            $this->dispatchProcessing($item);
+        }
 
         return (new MaterialV2ItemResource($item->load(['attachments', 'automaticTagSuggestions'])))
             ->response()
@@ -143,18 +176,41 @@ class MaterialV2ItemController extends Controller
             return $this->categoryConflictResponse($categoryResolution);
         }
 
+        $isReminder = $categoryService->isReminderCategory($categoryResolution['category']);
+        $isScreenshot = $categoryService->isScreenshotCategory($categoryResolution['category']);
+        $isLink = $categoryService->isLinkCategory($categoryResolution['category']);
+        $isNote = $categoryService->isNoteCategory($categoryResolution['category']);
+        $skipsProcessing = $isReminder || $isScreenshot || $isLink || $isNote;
+        $this->validateReminder($validated, $isReminder);
         $previousTitle = $materialV2Item->title;
         $previousDescription = $materialV2Item->description;
+        $wasReminder = $categoryService->isReminderCategory($materialV2Item->category);
+        $wasScreenshot = $categoryService->isScreenshotCategory($materialV2Item->category);
+        $wasLink = $categoryService->isLinkCategory($materialV2Item->category);
+        $wasNote = $categoryService->isNoteCategory($materialV2Item->category);
+        $previouslySkippedProcessing = $wasReminder || $wasScreenshot || $wasLink || $wasNote;
 
         $materialV2Item->update([
             'title' => Str::squish($validated['title']),
             'category' => $categoryResolution['category'],
             'description' => $this->nullableString($validated['description'] ?? null),
-            'user_keywords' => $this->normalizeKeywords($validated['user_keywords'] ?? []),
+            'reminder_date' => $isReminder ? $validated['reminder_date'] : null,
+            'reminder_time' => $isReminder
+                ? $this->nullableString($validated['reminder_time'] ?? null)
+                : null,
+            'link_url' => $isLink
+                ? $this->nullableString($validated['link_url'] ?? null)
+                : null,
+            'user_keywords' => $skipsProcessing
+                ? []
+                : $this->normalizeKeywords($validated['user_keywords'] ?? []),
         ]);
 
-        $requiresTagExtraction = $previousTitle !== $materialV2Item->title
-            || $previousDescription !== $materialV2Item->description;
+        $requiresTagExtraction = ! $skipsProcessing && (
+            $previousTitle !== $materialV2Item->title
+            || $previousDescription !== $materialV2Item->description
+            || $previouslySkippedProcessing
+        );
 
         if ($requiresTagExtraction) {
             $materialV2Item->update([
@@ -162,6 +218,14 @@ class MaterialV2ItemController extends Controller
                 'processing_error' => null,
             ]);
             $this->dispatchProcessing($materialV2Item);
+        } elseif ($skipsProcessing) {
+            $materialV2Item->update([
+                'processing_status' => MaterialV2Item::STATUS_READY,
+                'processing_error' => null,
+                'processed_at' => now(),
+            ]);
+            $materialV2Item->search_text = $keywordService->rebuildSearchText($materialV2Item);
+            $materialV2Item->save();
         } else {
             $materialV2Item->search_text = $keywordService->rebuildSearchText($materialV2Item);
             $materialV2Item->save();
@@ -418,6 +482,20 @@ class MaterialV2ItemController extends Controller
         $normalized = trim((string) $value);
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function validateReminder(array $validated, bool $isReminder): void
+    {
+        if (! $isReminder || filled($validated['reminder_date'] ?? null)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'reminder_date' => 'Bitte wähle ein Datum für den Termin.',
+        ]);
     }
 
     private function dispatchProcessing(MaterialV2Item $item, bool $force = false): void

@@ -956,7 +956,7 @@ describe('Curriculum content copy', () => {
             ])
 
             const source = readFileSync(resolve('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue'), 'utf8')
-            expect(source).toContain('<v-dialog v-model="curriculumContentCopyDialogOpen" max-width="560" persistent>')
+            expect(source).toContain('<v-dialog v-model="curriculumContentCopyDialogOpen" max-width="640" persistent>')
         } finally {
             ;(globalThis as any).axios = originalAxios
         }
@@ -987,16 +987,21 @@ describe('Curriculum content copy', () => {
             curriculumContentCopyDialogOpen: true,
             selectedCurriculumContentSourceId: 3,
         })
+        await wrapper.setData({
+            selectedCurriculumContentTopicIds: ['topic-1'],
+        })
 
         try {
             await (wrapper.vm as any).copyCurriculumContent()
 
             expect(postMock).toHaveBeenCalledWith('/api/admin/teaching/curricula/6/copy-content', {
                 source_curriculum_id: 3,
+                selected_topic_ids: ['topic-1'],
             })
             expect(wrapper.emitted('updated')?.[0]).toEqual([updatedCurriculum])
             expect((wrapper.vm as any).curriculumContentCopyDialogOpen).toBe(false)
             expect((wrapper.vm as any).selectedCurriculumContentSourceId).toBeNull()
+            expect((wrapper.vm as any).selectedCurriculumContentTopicIds).toEqual([])
         } finally {
             ;(globalThis as any).axios = originalAxios
         }
@@ -1020,6 +1025,9 @@ describe('Curriculum content copy', () => {
             curriculumContentCopyDialogOpen: true,
             selectedCurriculumContentSourceId: 3,
         })
+        await wrapper.setData({
+            selectedCurriculumContentTopicIds: ['topic-1'],
+        })
 
         try {
             await wrapper.find('.curriculum-detail__copy-content-dialog-card').trigger('keydown', { key: 'Enter' })
@@ -1027,6 +1035,7 @@ describe('Curriculum content copy', () => {
             await vi.waitFor(() => {
                 expect(postMock).toHaveBeenCalledWith('/api/admin/teaching/curricula/6/copy-content', {
                     source_curriculum_id: 3,
+                    selected_topic_ids: ['topic-1'],
                 })
             })
         } finally {
@@ -1040,6 +1049,9 @@ describe('Curriculum content copy', () => {
         await wrapper.setData({
             curriculumContentCopyDialogOpen: true,
             selectedCurriculumContentSourceId: 3,
+        })
+        await wrapper.setData({
+            selectedCurriculumContentTopicIds: ['topic-1'],
             curriculumContentCopyError: 'Fehler',
         })
 
@@ -1047,7 +1059,59 @@ describe('Curriculum content copy', () => {
 
         expect((wrapper.vm as any).curriculumContentCopyDialogOpen).toBe(false)
         expect((wrapper.vm as any).selectedCurriculumContentSourceId).toBeNull()
+        expect((wrapper.vm as any).selectedCurriculumContentTopicIds).toEqual([])
         expect((wrapper.vm as any).curriculumContentCopyError).toBeNull()
+    })
+
+    it('selects individual themes or toggles all themes for copying', async () => {
+        const wrapper = mountCurriculumDetail({ id: 6, topics: [] })
+
+        await wrapper.setData({
+            curriculumContentSources: [
+                {
+                    id: 3,
+                    title: 'DGB 1',
+                    topics: [
+                        {
+                            id: 'topic-1',
+                            title: 'Grundlagen',
+                            units: [{ id: 'unit-1', title: 'Anmeldung' }],
+                        },
+                        {
+                            id: 'topic-2',
+                            title: 'Vertiefung',
+                            units: [],
+                        },
+                    ],
+                },
+            ],
+            selectedCurriculumContentSourceId: 3,
+        })
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).curriculumContentSourceTopics).toEqual([
+            { id: 'topic-1', title: 'Grundlagen', unitCount: 1 },
+            { id: 'topic-2', title: 'Vertiefung', unitCount: 0 },
+        ])
+        expect((wrapper.vm as any).allCurriculumContentTopicsSelected).toBe(false)
+        expect((wrapper.vm as any).someCurriculumContentTopicsSelected).toBe(false)
+
+        await wrapper.setData({ selectedCurriculumContentTopicIds: ['topic-1'] })
+
+        expect((wrapper.vm as any).someCurriculumContentTopicsSelected).toBe(true)
+
+        ;(wrapper.vm as any).toggleAllCurriculumContentTopics(true)
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).selectedCurriculumContentTopicIds).toEqual(['topic-1', 'topic-2'])
+        expect((wrapper.vm as any).allCurriculumContentTopicsSelected).toBe(true)
+
+        ;(wrapper.vm as any).toggleAllCurriculumContentTopics(false)
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).selectedCurriculumContentTopicIds).toEqual([])
+        expect(wrapper.text()).toContain('Themen auswählen')
+        expect(wrapper.text()).toContain('0 von 2 ausgewählt')
     })
 })
 

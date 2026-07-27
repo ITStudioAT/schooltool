@@ -80,7 +80,7 @@
             </div>
         </div>
 
-        <v-dialog v-model="curriculumContentCopyDialogOpen" max-width="560" persistent>
+        <v-dialog v-model="curriculumContentCopyDialogOpen" max-width="640" persistent>
             <v-card
                 rounded="xl"
                 class="curriculum-detail__editor-dialog-card curriculum-detail__copy-content-dialog-card"
@@ -106,6 +106,56 @@
                             no-data-text="Keine Curricula mit Inhalten verfügbar"
                             hide-details="auto" />
                         <div
+                            v-if="selectedCurriculumContentSource"
+                            class="curriculum-detail__copy-content-topic-selection mt-4">
+                            <div class="curriculum-detail__copy-content-topic-selection-header">
+                                <div>
+                                    <div class="curriculum-detail__copy-content-topic-selection-title">
+                                        Themen auswählen
+                                    </div>
+                                    <div class="curriculum-detail__copy-content-topic-selection-count">
+                                        {{ selectedCurriculumContentTopicIds.length }}
+                                        von {{ curriculumContentSourceTopics.length }} ausgewählt
+                                    </div>
+                                </div>
+                                <v-checkbox
+                                    :model-value="allCurriculumContentTopicsSelected"
+                                    :indeterminate="someCurriculumContentTopicsSelected"
+                                    label="Alle auswählen"
+                                    color="primary"
+                                    density="compact"
+                                    :disabled="isCopyingCurriculumContent"
+                                    hide-details
+                                    class="curriculum-detail__copy-content-select-all"
+                                    @update:model-value="toggleAllCurriculumContentTopics" />
+                            </div>
+                            <div class="curriculum-detail__copy-content-topic-list">
+                                <v-checkbox
+                                    v-for="topic in curriculumContentSourceTopics"
+                                    :key="topic.id"
+                                    v-model="selectedCurriculumContentTopicIds"
+                                    :value="topic.id"
+                                    multiple
+                                    color="primary"
+                                    density="compact"
+                                    :disabled="isCopyingCurriculumContent"
+                                    hide-details
+                                    class="curriculum-detail__copy-content-topic-checkbox">
+                                    <template #label>
+                                        <span class="curriculum-detail__copy-content-topic-label">
+                                            <span class="curriculum-detail__copy-content-topic-title">
+                                                {{ topic.title }}
+                                            </span>
+                                            <span class="curriculum-detail__copy-content-topic-unit-count">
+                                                {{ topic.unitCount }}
+                                                {{ topic.unitCount === 1 ? 'Einheit' : 'Einheiten' }}
+                                            </span>
+                                        </span>
+                                    </template>
+                                </v-checkbox>
+                            </div>
+                        </div>
+                        <div
                             v-if="curriculumContentCopyError"
                             class="curriculum-detail__topic-form-error mt-3">
                             {{ curriculumContentCopyError }}
@@ -127,7 +177,11 @@
                         color="primary"
                         class="text-none curriculum-detail__editor-dialog-save-btn"
                         :loading="isCopyingCurriculumContent"
-                        :disabled="!selectedCurriculumContentSourceId || isLoadingCurriculumContentSources"
+                        :disabled="
+                            !selectedCurriculumContentSourceId
+                            || !selectedCurriculumContentTopicIds.length
+                            || isLoadingCurriculumContentSources
+                        "
                         @click="copyCurriculumContent">
                         Übernehmen
                     </v-btn>
@@ -1741,6 +1795,7 @@ export default {
             curriculumContentCopyDialogOpen: false,
             curriculumContentSources: [],
             selectedCurriculumContentSourceId: null,
+            selectedCurriculumContentTopicIds: [],
             curriculumContentCopyError: null,
             isLoadingCurriculumContentSources: false,
             isCopyingCurriculumContent: false,
@@ -1851,6 +1906,7 @@ export default {
             this.curriculumContentCopyDialogOpen = false
             this.curriculumContentSources = []
             this.selectedCurriculumContentSourceId = null
+            this.selectedCurriculumContentTopicIds = []
             this.curriculumContentCopyError = null
             this.selectedUnitFiles = []
             this.selectedUnitFilesLoading = false
@@ -1868,6 +1924,10 @@ export default {
         'config.user.id'() {
             this.restoreCurriculumCardWidth()
             this.restoreCurriculumDocumentPreview()
+        },
+        selectedCurriculumContentSourceId() {
+            this.selectedCurriculumContentTopicIds = []
+            this.curriculumContentCopyError = null
         },
     },
 
@@ -1968,6 +2028,33 @@ export default {
                     value: Number(curriculum.id),
                 }
             })
+        },
+
+        selectedCurriculumContentSource() {
+            return this.curriculumContentSources.find(
+                (curriculum) => Number(curriculum?.id) === Number(this.selectedCurriculumContentSourceId),
+            ) || null
+        },
+
+        curriculumContentSourceTopics() {
+            const topics = Array.isArray(this.selectedCurriculumContentSource?.topics)
+                ? this.selectedCurriculumContentSource.topics
+                : []
+
+            return topics.map((topic, index) => ({
+                id: String(topic?.id ?? index),
+                title: String(topic?.title ?? '').trim() || `Thema ${index + 1}`,
+                unitCount: Array.isArray(topic?.units) ? topic.units.length : 0,
+            }))
+        },
+
+        allCurriculumContentTopicsSelected() {
+            return this.curriculumContentSourceTopics.length > 0
+                && this.selectedCurriculumContentTopicIds.length === this.curriculumContentSourceTopics.length
+        },
+
+        someCurriculumContentTopicsSelected() {
+            return this.selectedCurriculumContentTopicIds.length > 0 && !this.allCurriculumContentTopicsSelected
         },
 
         hasCollapsedTopics() {
@@ -2317,6 +2404,7 @@ export default {
 
             this.curriculumContentCopyDialogOpen = true
             this.selectedCurriculumContentSourceId = null
+            this.selectedCurriculumContentTopicIds = []
             this.curriculumContentCopyError = null
             await this.loadCurriculumContentSources()
         },
@@ -2325,16 +2413,23 @@ export default {
 
             this.curriculumContentCopyDialogOpen = false
             this.selectedCurriculumContentSourceId = null
+            this.selectedCurriculumContentTopicIds = []
             this.curriculumContentCopyError = null
         },
         submitCurriculumContentCopyDialog() {
             if (
                 !this.selectedCurriculumContentSourceId
+                || !this.selectedCurriculumContentTopicIds.length
                 || this.isLoadingCurriculumContentSources
                 || this.isCopyingCurriculumContent
             ) return
 
             this.copyCurriculumContent()
+        },
+        toggleAllCurriculumContentTopics(shouldSelect) {
+            this.selectedCurriculumContentTopicIds = shouldSelect
+                ? this.curriculumContentSourceTopics.map((topic) => topic.id)
+                : []
         },
         async loadCurriculumContentSources() {
             this.isLoadingCurriculumContentSources = true
@@ -2378,6 +2473,11 @@ export default {
                 return
             }
 
+            if (!this.selectedCurriculumContentTopicIds.length) {
+                this.curriculumContentCopyError = 'Bitte mindestens ein Thema auswählen.'
+                return
+            }
+
             this.isCopyingCurriculumContent = true
             this.curriculumContentCopyError = null
 
@@ -2386,6 +2486,7 @@ export default {
                     `/api/admin/teaching/curricula/${this.curriculum.id}/copy-content`,
                     {
                         source_curriculum_id: this.selectedCurriculumContentSourceId,
+                        selected_topic_ids: this.selectedCurriculumContentTopicIds,
                     },
                 )
                 const updatedCurriculum = response.data?.data
@@ -2397,6 +2498,7 @@ export default {
 
                 this.curriculumContentCopyDialogOpen = false
                 this.selectedCurriculumContentSourceId = null
+                this.selectedCurriculumContentTopicIds = []
                 this.$emit('updated', updatedCurriculum)
                 useNotificationStore().notify({
                     message: 'Curriculuminhalte wurden übernommen.',
@@ -7512,6 +7614,72 @@ export default {
     color: #475569;
     font-size: 0.875rem;
     line-height: 1.45;
+}
+
+.curriculum-detail__copy-content-topic-selection {
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 12px;
+    background: rgba(248, 250, 252, 0.9);
+}
+
+.curriculum-detail__copy-content-topic-selection-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.curriculum-detail__copy-content-topic-selection-title {
+    color: #1e293b;
+    font-size: 0.875rem;
+    font-weight: 700;
+}
+
+.curriculum-detail__copy-content-topic-selection-count,
+.curriculum-detail__copy-content-topic-unit-count {
+    color: #64748b;
+    font-size: 0.75rem;
+}
+
+.curriculum-detail__copy-content-select-all {
+    flex: 0 0 auto;
+}
+
+.curriculum-detail__copy-content-topic-list {
+    display: flex;
+    max-height: 280px;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 4px 8px;
+}
+
+.curriculum-detail__copy-content-topic-checkbox {
+    min-width: 0;
+}
+
+.curriculum-detail__copy-content-topic-label {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.curriculum-detail__copy-content-topic-title {
+    min-width: 0;
+    overflow: hidden;
+    color: #334155;
+    font-size: 0.875rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.curriculum-detail__copy-content-topic-unit-count {
+    flex: 0 0 auto;
 }
 
 .curriculum-detail__topic-list {

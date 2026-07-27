@@ -1,82 +1,99 @@
 <template>
-    <v-container fluid class="materials-v2-page pa-3 pa-md-6">
+    <v-container fluid class="materials-v2-page pa-0">
         <div class="materials-v2-orb materials-v2-orb--one" />
         <div class="materials-v2-orb materials-v2-orb--two" />
 
         <div class="materials-v2-content">
             <header class="materials-v2-header">
-                <div>
-                    <div class="materials-v2-eyebrow">Einfach speichern. Intelligent finden.</div>
-                    <h1 class="materials-v2-title">Materialien 2</h1>
-                    <p class="materials-v2-subtitle">
-                        Dein Material, seine Inhalte, flexible Kategorien und eine Suche, die mitdenkt.
-                    </p>
+                <div class="materials-v2-brand">
+                    <img
+                        v-if="schoolLogoSrc"
+                        class="materials-v2-school-logo"
+                        :src="schoolLogoSrc"
+                        :alt="`${schoolName} Logo`" />
+                    <div v-else class="materials-v2-school-logo-placeholder">
+                        <v-icon size="22">mdi-school-outline</v-icon>
+                    </div>
+                    <div class="materials-v2-brand-copy">
+                        <h1 class="materials-v2-title">Materialien</h1>
+                        <p class="materials-v2-school-name">{{ schoolName }}</p>
+                    </div>
                 </div>
 
-                <v-btn
-                    color="primary"
-                    size="large"
-                    rounded="xl"
-                    elevation="0"
-                    prepend-icon="mdi-plus"
-                    @click="openCreateDialog">
-                    Material erstellen
-                </v-btn>
+                <v-text-field
+                    v-model="search"
+                    class="materials-v2-header-search"
+                    variant="solo"
+                    density="compact"
+                    flat
+                    rounded="lg"
+                    clearable
+                    hide-details
+                    autocomplete="off"
+                    prepend-inner-icon="mdi-magnify"
+                    placeholder="Was suchst du? Wortteile und kleine Tippfehler sind erlaubt …"
+                    :loading="loading"
+                    @click:clear="clearSearch" />
+
             </header>
 
-            <div class="materials-v2-filter-layout">
-                <v-sheet rounded="xl" class="materials-v2-category-panel pa-4">
+            <nav class="materials-v2-system-navigation" aria-label="Systemkategorien">
+                <v-tabs
+                    v-model="selectedCategory"
+                    class="materials-v2-system-tabs"
+                    color="#ff7a32"
+                    slider-color="#ff7a32"
+                    height="56"
+                    :mandatory="false"
+                    show-arrows>
+                    <template v-for="category in systemCategoryDetails" :key="category.name">
+                        <v-tab
+                            class="materials-v2-system-tab"
+                            :value="category.name"
+                            :prepend-icon="category.icon"
+                            @click="selectCategory(category.name)">
+                            <span>{{ category.label }}</span>
+                            <span class="materials-v2-system-tab-count">{{ category.items_count }}</span>
+                        </v-tab>
+                        <v-btn
+                            v-if="isDefaultCategory(category.name)"
+                            class="materials-v2-system-tab-create-button"
+                            color="#ff7a32"
+                            icon="mdi-plus"
+                            size="x-small"
+                            variant="text"
+                            :title="createActionLabel(category.name, 'Material erstellen')"
+                            :aria-label="createActionLabel(category.name, 'Material erstellen')"
+                            @click.stop="openSystemCategoryCreateDialog(category.name)" />
+                    </template>
+                </v-tabs>
+            </nav>
+
+            <div class="materials-v2-workspace">
+                <aside class="materials-v2-category-panel">
                     <div class="materials-v2-category-panel-heading">
-                        <div>
-                            <div class="text-subtitle-1 font-weight-bold">Kategorien</div>
-                            <div class="text-caption materials-v2-category-panel-subtitle">
-                                Wähle eine Kategorie für deine Materialliste.
-                            </div>
-                        </div>
-                        <div class="materials-v2-category-panel-actions">
-                            <v-chip size="small" color="primary" variant="tonal">
-                                {{ categoryOptions.length }}
-                            </v-chip>
-                            <v-btn
-                                class="materials-v2-category-create-button"
-                                color="primary"
-                                size="small"
-                                variant="tonal"
-                                prepend-icon="mdi-plus"
-                                @click="openCategoryDialog()">
-                                Kategorie
-                            </v-btn>
-                        </div>
+                        <span>Eigene Kategorien</span>
+                        <v-btn
+                            class="materials-v2-category-create-button"
+                            color="primary"
+                            icon="mdi-plus"
+                            size="small"
+                            variant="text"
+                            title="Kategorie hinzufügen"
+                            aria-label="Kategorie hinzufügen"
+                            @click="openCategoryDialog()" />
                     </div>
 
                     <v-list
                         bg-color="transparent"
                         density="compact"
                         class="materials-v2-category-list py-0"
-                        aria-label="Materialien nach Kategorie filtern">
+                        aria-label="Materialien nach eigener Kategorie filtern">
                         <v-list-item
-                            class="materials-v2-category-item mb-2 px-3"
-                            min-height="44"
-                            rounded="lg"
-                            :active="selectedCategory === allCategoriesValue"
-                            color="primary"
-                            @click="selectCategory(allCategoriesValue)">
-                            <template #prepend>
-                                <v-icon size="18" class="mr-2">mdi-view-grid-outline</v-icon>
-                            </template>
-                            <v-list-item-title class="text-body-2 font-weight-bold">
-                                Alle Materialien
-                            </v-list-item-title>
-                            <template v-if="selectedCategory === allCategoriesValue" #append>
-                                <v-icon size="18">mdi-check-circle</v-icon>
-                            </template>
-                        </v-list-item>
-
-                        <v-list-item
-                            v-for="category in categoryDetails"
+                            v-for="category in customCategoryDetails"
                             :key="category.name"
-                            class="materials-v2-category-item mb-2 px-3"
-                            min-height="44"
+                            class="materials-v2-category-item mb-1 px-2"
+                            min-height="42"
                             rounded="lg"
                             :active="selectedCategory === category.name"
                             color="primary"
@@ -84,22 +101,16 @@
                             <template #prepend>
                                 <v-icon size="18" class="mr-2">mdi-shape-outline</v-icon>
                             </template>
-                            <v-list-item-title class="text-body-2 font-weight-bold">
+                            <v-list-item-title class="text-body-2">
                                 {{ category.name }}
                             </v-list-item-title>
                             <template #append>
                                 <div class="materials-v2-category-item-actions">
-                                    <v-chip
+                                    <span
                                         class="materials-v2-category-item-count"
-                                        size="x-small"
-                                        color="secondary"
-                                        variant="tonal"
                                         :title="`${category.items_count} Items`">
                                         {{ category.items_count }}
-                                    </v-chip>
-                                    <v-icon v-if="selectedCategory === category.name" size="18">
-                                        mdi-check-circle
-                                    </v-icon>
+                                    </span>
                                     <v-btn
                                         class="materials-v2-category-edit-button"
                                         icon="mdi-pencil-outline"
@@ -120,62 +131,70 @@
                             </template>
                         </v-list-item>
                     </v-list>
-                </v-sheet>
+                </aside>
 
-                <section class="materials-v2-search-panel">
-                    <v-text-field
-                        v-model="search"
-                        class="materials-v2-search"
-                        variant="solo"
-                        flat
-                        rounded="xl"
-                        clearable
-                        hide-details
-                        autocomplete="off"
-                        prepend-inner-icon="mdi-magnify"
-                        placeholder="Was suchst du? Mehrere Wörter, Wortteile und kleine Tippfehler sind erlaubt …"
-                        :loading="loading"
-                        @click:clear="clearSearch" />
+                <main class="materials-v2-main">
+                    <div class="materials-v2-toolbar">
+                        <div class="materials-v2-result-heading">
+                            <span>{{ selectedCategoryLabel }}</span>
+                            <span v-if="!loading">
+                                · {{ meta.total }} {{ meta.total === 1 ? 'Material' : 'Materialien' }}
+                            </span>
+                        </div>
 
-                    <div class="materials-v2-search-hints">
-                        <span><v-icon size="16">mdi-auto-fix</v-icon> flexibel & fehlertolerant</span>
-                        <span><v-icon size="16">mdi-file-document-search-outline</v-icon> durchsucht Dokumentinhalte</span>
-                        <span><v-icon size="16">mdi-sort-descending</v-icon> beste Treffer zuerst</span>
+                        <div class="materials-v2-toolbar-actions">
+                            <v-btn
+                                v-if="!isReminderCategory(selectedCategory)"
+                                class="materials-v2-material-create-button"
+                                color="primary"
+                                size="small"
+                                variant="tonal"
+                                :prepend-icon="createActionIcon(selectedCategory)"
+                                @click="openCreateDialog">
+                                {{ createActionLabel(selectedCategory, 'Material erstellen') }}
+                            </v-btn>
+
+                            <v-btn-toggle
+                                v-if="isCustomCategorySelected"
+                                v-model="displayMode"
+                                class="materials-v2-display-toggle"
+                                color="primary"
+                                variant="outlined"
+                                density="compact"
+                                rounded="lg"
+                                divided
+                                mandatory
+                                aria-label="Darstellungsgröße der Materialien">
+                                <v-btn value="large" size="small">Groß</v-btn>
+                                <v-btn value="standard" size="small">Standard</v-btn>
+                                <v-btn value="compact" size="small">Kompakt</v-btn>
+                            </v-btn-toggle>
+
+                            <v-btn-toggle
+                                v-else-if="isReminderCategorySelected"
+                                v-model="reminderViewSelection"
+                                class="materials-v2-display-toggle materials-v2-reminder-display-toggle"
+                                color="primary"
+                                variant="outlined"
+                                density="compact"
+                                rounded="lg"
+                                divided
+                                mandatory
+                                aria-label="Darstellung der Termine">
+                                <v-btn value="standard" size="small">Standard</v-btn>
+                                <v-btn value="month" size="small">Monat</v-btn>
+                                <v-btn value="week" size="small">Woche</v-btn>
+                            </v-btn-toggle>
+
+                            <v-chip
+                                v-if="hasProcessingItems"
+                                color="info"
+                                variant="tonal"
+                                prepend-icon="mdi-progress-clock">
+                                Inhalte werden analysiert
+                            </v-chip>
+                        </div>
                     </div>
-                </section>
-            </div>
-
-            <div class="materials-v2-toolbar">
-                <div>
-                    <span class="text-subtitle-1 font-weight-bold">
-                        {{ hasActiveFilters ? 'Suchergebnisse' : 'Deine Materialien' }}
-                    </span>
-                    <span v-if="!loading" class="text-body-2 text-medium-emphasis ml-2">
-                        {{ meta.total }} {{ meta.total === 1 ? 'Material' : 'Materialien' }}
-                    </span>
-                </div>
-
-                <div class="materials-v2-toolbar-actions">
-                    <v-btn-toggle
-                        v-model="displayMode"
-                        class="materials-v2-display-toggle"
-                        color="primary"
-                        variant="outlined"
-                        density="compact"
-                        rounded="lg"
-                        divided
-                        mandatory
-                        aria-label="Darstellungsgröße der Materialien">
-                        <v-btn value="large" size="small">Groß</v-btn>
-                        <v-btn value="standard" size="small">Standard</v-btn>
-                        <v-btn value="compact" size="small">Kompakt</v-btn>
-                    </v-btn-toggle>
-
-                    <v-chip v-if="hasProcessingItems" color="info" variant="tonal" prepend-icon="mdi-progress-clock">
-                        Inhalte werden analysiert
-                    </v-chip>
-                </div>
-            </div>
 
             <v-alert
                 v-if="loadError"
@@ -188,10 +207,116 @@
                 {{ loadError }}
             </v-alert>
 
-            <v-row v-if="loading && !items.length" dense>
+            <section v-if="isReminderCalendarView" class="materials-v2-calendar" aria-label="Terminkalender">
+                <div v-if="loading" class="materials-v2-calendar-loading" role="status" aria-live="polite">
+                    <span class="materials-v2-calendar-loading-spinner" aria-hidden="true" />
+                    Termine werden geladen …
+                </div>
+
+                <div class="materials-v2-calendar-toolbar">
+                    <div class="materials-v2-calendar-navigation">
+        <v-btn
+            class="materials-v2-calendar-previous"
+            icon="mdi-chevron-left"
+            size="small"
+            variant="text"
+            :title="previousCalendarPeriodLabel"
+            :aria-label="previousCalendarPeriodLabel"
+            @click="moveCalendar(-1)"
+        />
+        <v-btn
+            class="materials-v2-calendar-today"
+            icon="mdi-calendar-today"
+            size="small"
+            variant="tonal"
+            title="Heute"
+            aria-label="Heute"
+            @click="showToday"
+        />
+        <v-btn
+            class="materials-v2-calendar-next"
+            icon="mdi-chevron-right"
+            size="small"
+            variant="text"
+            :title="nextCalendarPeriodLabel"
+            :aria-label="nextCalendarPeriodLabel"
+            @click="moveCalendar(1)"
+        />
+                    </div>
+                    <div class="materials-v2-calendar-item-navigation" aria-label="Zwischen Terminen springen">
+        <v-btn
+            class="materials-v2-calendar-previous-item"
+            icon="mdi-calendar-arrow-left"
+            size="small"
+            variant="outlined"
+            title="Vorheriger Termin"
+            aria-label="Vorheriger Termin"
+            :loading="adjacentReminderLoading === 'previous'"
+            :disabled="adjacentReminderLoading !== ''"
+            @click="jumpToAdjacentReminder('previous')"
+        />
+        <v-btn
+            class="materials-v2-calendar-next-item"
+            icon="mdi-calendar-arrow-right"
+            size="small"
+            variant="outlined"
+            title="Nächster Termin"
+            aria-label="Nächster Termin"
+            :loading="adjacentReminderLoading === 'next'"
+            :disabled="adjacentReminderLoading !== ''"
+            @click="jumpToAdjacentReminder('next')"
+        />
+                    </div>
+                    <h2 class="materials-v2-calendar-period">{{ calendarPeriodLabel }}</h2>
+                </div>
+
+                <div class="materials-v2-calendar-weekdays" aria-hidden="true">
+                    <span v-for="weekday in calendarWeekdays" :key="weekday">{{ weekday }}</span>
+                </div>
+
+                <div
+                    :class="[
+                        'materials-v2-calendar-grid',
+                        `materials-v2-calendar-grid--${calendarDisplayMode}`,
+                    ]">
+                    <article
+                        v-for="day in calendarDays"
+                        :key="day.key"
+                        :class="[
+                            'materials-v2-calendar-day',
+                            { 'materials-v2-calendar-day--outside': !day.isCurrentMonth },
+                            { 'materials-v2-calendar-day--today': day.isToday },
+                        ]">
+                        <div class="materials-v2-calendar-day-heading">
+                            <span v-if="calendarDisplayMode === 'week'" class="materials-v2-calendar-day-weekday">
+                                {{ day.weekday }}
+                            </span>
+                            <time :datetime="day.key">{{ day.dayNumber }}</time>
+                        </div>
+
+                        <div class="materials-v2-calendar-events">
+                            <button
+                                v-for="item in day.items"
+                                :key="item.id"
+                                type="button"
+                                class="materials-v2-calendar-event"
+                                :title="calendarEventTitle(item)"
+                                @click="openEditDialog(item)">
+                                <span class="materials-v2-calendar-event-time">
+                                    {{ item.reminder_time || 'Ganztägig' }}
+                                </span>
+                                <span class="materials-v2-calendar-event-title">{{ item.title }}</span>
+                            </button>
+                            <span v-if="!day.items.length" class="materials-v2-calendar-day-empty">Keine Termine</span>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <v-row v-else-if="loading && !items.length" dense>
                 <v-col v-for="index in 6" :key="index" v-bind="materialColumnProps">
                     <v-skeleton-loader
-                        :class="['materials-v2-card', `materials-v2-card--${displayMode}`]"
+                        :class="['materials-v2-card', `materials-v2-card--${activeCardDisplayMode}`]"
                         type="article, actions" />
                 </v-col>
             </v-row>
@@ -199,8 +324,14 @@
             <v-row v-else-if="items.length" dense>
                 <v-col v-for="item in items" :key="item.id" v-bind="materialColumnProps">
                     <v-card
-                        :class="['materials-v2-card', `materials-v2-card--${displayMode}`, 'h-100']"
-                        :rounded="displayMode === 'large' ? 'xl' : 'lg'"
+                        :class="[
+                            'materials-v2-card',
+                            `materials-v2-card--${activeCardDisplayMode}`,
+                            { 'materials-v2-card--reminder': isReminderCategory(item.category) },
+                            { 'materials-v2-card--link': isLinkCategory(item.category) },
+                            'h-100',
+                        ]"
+                        :rounded="activeCardDisplayMode === 'large' ? 'xl' : 'lg'"
                         elevation="0">
                         <v-card-text :class="materialCardPaddingClass">
                             <div class="d-flex align-start justify-space-between ga-3">
@@ -214,6 +345,7 @@
                                             {{ Math.round(item.search_score) }} Punkte
                                         </v-chip>
                                         <v-chip
+                                            v-if="!isDefaultCategory(item.category)"
                                             size="x-small"
                                             :color="statusMeta(item.processing_status).color"
                                             variant="tonal"
@@ -229,7 +361,7 @@
                                             size="x-small"
                                             color="secondary"
                                             variant="tonal"
-                                            prepend-icon="mdi-shape-outline">
+                                            :prepend-icon="categoryIcon(item.category)">
                                             {{ item.category }}
                                         </v-chip>
                                     </div>
@@ -241,13 +373,21 @@
                                     </template>
                                     <v-list density="compact">
                                         <v-list-item prepend-icon="mdi-pencil-outline" title="Bearbeiten" @click="openEditDialog(item)" />
-                                        <v-list-item prepend-icon="mdi-paperclip-plus" title="Anlagen hinzufügen" @click="openAttachmentDialog(item)" />
                                         <v-list-item
+                                            v-if="!isDefaultCategory(item.category)"
+                                            prepend-icon="mdi-paperclip-plus"
+                                            title="Anlagen hinzufügen"
+                                            @click="openAttachmentDialog(item)" />
+                                        <v-list-item
+                                            v-if="!isDefaultCategory(item.category)"
                                             prepend-icon="mdi-refresh"
                                             title="Automatische Tags neu berechnen"
                                             @click="recalculateAutomaticTags(item)" />
                                         <v-list-item
-                                            v-if="['failed', 'partial'].includes(item.processing_status)"
+                                            v-if="
+                                                !isDefaultCategory(item.category)
+                                                && ['failed', 'partial'].includes(item.processing_status)
+                                            "
                                             prepend-icon="mdi-file-refresh-outline"
                                             title="Dateiverarbeitung wiederholen"
                                             @click="retryProcessing(item)" />
@@ -261,17 +401,61 @@
                                 </v-menu>
                             </div>
 
-                            <p v-if="displayMode !== 'compact' && item.description" class="materials-v2-description">
+                            <button
+                                v-if="isScreenshotCategory(item.category) && item.attachments?.[0]?.preview_url"
+                                type="button"
+                                class="materials-v2-screenshot-thumbnail-button"
+                                :aria-label="`${item.title} in der Vorschau öffnen`"
+                                @click="previewAttachment(item.attachments[0])">
+                                <img
+                                    class="materials-v2-screenshot-thumbnail"
+                                    :src="item.attachments[0].preview_url"
+                                    :alt="`Screenshot: ${item.title}`"
+                                    loading="lazy" />
+                            </button>
+
+                            <div
+                                v-if="isReminderCategory(item.category) && item.reminder_date"
+                                class="materials-v2-reminder-date">
+                                <div class="materials-v2-reminder-date-icon">
+                                    <v-icon size="24">mdi-calendar-blank-outline</v-icon>
+                                </div>
+                                <div class="materials-v2-reminder-date-copy">
+                                    <strong>{{ formatReminderDate(item.reminder_date) }}</strong>
+                                    <span v-if="item.reminder_time">{{ item.reminder_time }} Uhr</span>
+                                    <span v-else>Ganztägig</span>
+                                </div>
+                                <v-chip
+                                    v-if="reminderBadge(item.reminder_date)"
+                                    size="x-small"
+                                    :color="reminderBadge(item.reminder_date).color"
+                                    variant="tonal">
+                                    {{ reminderBadge(item.reminder_date).label }}
+                                </v-chip>
+                            </div>
+
+                            <a
+                                v-if="isLinkCategory(item.category) && isHttpUrl(item.link_url)"
+                                class="materials-v2-link-target"
+                                :href="normalizedHttpUrl(item.link_url)"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                :title="item.link_url">
+                                <v-icon size="20">mdi-open-in-new</v-icon>
+                                <span>{{ linkDisplay(item.link_url) }}</span>
+                            </a>
+
+                            <p v-if="activeCardDisplayMode !== 'compact' && item.description" class="materials-v2-description">
                                 {{ item.description }}
                             </p>
                             <p
-                                v-else-if="displayMode === 'large'"
+                                v-else-if="activeCardDisplayMode === 'large'"
                                 class="materials-v2-description materials-v2-description--empty">
-                                Keine Beschreibung
+                                {{ isReminderCategory(item.category) || isLinkCategory(item.category) ? 'Keine Notiz' : 'Keine Beschreibung' }}
                             </p>
 
                             <v-alert
-                                v-if="item.processing_error"
+                                v-if="!isDefaultCategory(item.category) && item.processing_error"
                                 class="mb-4"
                                 density="compact"
                                 type="warning"
@@ -280,7 +464,11 @@
                             </v-alert>
 
                             <div
-                                v-if="displayMode !== 'compact' && item.user_keywords?.length"
+                                v-if="
+                                    !isDefaultCategory(item.category)
+                                    && activeCardDisplayMode !== 'compact'
+                                    && item.user_keywords?.length
+                                "
                                 class="materials-v2-keyword-block">
                                 <div class="d-flex flex-wrap ga-1">
                                     <v-chip
@@ -292,7 +480,7 @@
                                         {{ keyword }}
                                     </v-chip>
                                     <v-chip
-                                        v-if="displayMode === 'standard' && item.user_keywords.length > 4"
+                                        v-if="activeCardDisplayMode === 'standard' && item.user_keywords.length > 4"
                                         size="small"
                                         color="secondary"
                                         variant="text">
@@ -302,7 +490,11 @@
                             </div>
 
                             <div
-                                v-if="displayMode === 'large' && item.automatic_tag_suggestions?.length"
+                                v-if="
+                                    !isDefaultCategory(item.category)
+                                    && activeCardDisplayMode === 'large'
+                                    && item.automatic_tag_suggestions?.length
+                                "
                                 class="materials-v2-keyword-block">
                                 <div class="materials-v2-keyword-label">
                                     <v-icon size="15" class="mr-1">mdi-sparkles</v-icon>
@@ -321,7 +513,13 @@
                                 </div>
                             </div>
 
-                            <div class="materials-v2-attachments">
+                            <div
+                                v-if="
+                                    !isReminderCategory(item.category)
+                                    && !isLinkCategory(item.category)
+                                    && !isNoteCategory(item.category)
+                                "
+                                class="materials-v2-attachments">
                                 <div class="materials-v2-attachment-heading">
                                     <v-icon size="18">mdi-paperclip</v-icon>
                                     {{ item.attachments?.length || 0 }}
@@ -329,7 +527,7 @@
                                 </div>
 
                                 <div
-                                    v-if="displayMode === 'large' && item.attachments?.length"
+                                    v-if="activeCardDisplayMode === 'large' && item.attachments?.length"
                                     class="d-flex flex-column ga-2 mt-2">
                                     <div
                                         v-for="attachment in item.attachments"
@@ -381,12 +579,17 @@
                             : 'Erstelle dein erstes Material – mit oder ohne Kategorie.'
                     }}
                 </p>
-                <v-btn v-if="!hasActiveFilters" color="primary" rounded="xl" prepend-icon="mdi-plus" @click="openCreateDialog">
-                    Erstes Material erstellen
+                <v-btn
+                    v-if="!hasActiveFilters || isDefaultCategory(selectedCategory)"
+                    color="primary"
+                    rounded="xl"
+                    :prepend-icon="createActionIcon(selectedCategory)"
+                    @click="openCreateDialog">
+                    {{ createActionLabel(selectedCategory, 'Erstes Material erstellen') }}
                 </v-btn>
             </v-card>
 
-            <div v-if="meta.last_page > 1" class="d-flex justify-center mt-7">
+            <div v-if="!isReminderCalendarView && meta.last_page > 1" class="d-flex justify-center mt-7">
                 <v-pagination
                     v-model="page"
                     :length="meta.last_page"
@@ -394,15 +597,28 @@
                     rounded="circle"
                     @update:model-value="loadItems" />
             </div>
+                </main>
+            </div>
         </div>
 
         <v-dialog v-model="materialDialog.open" persistent max-width="720">
-            <v-card rounded="xl">
+            <v-card rounded="xl" @paste="handleSpecializedPaste">
                 <v-card-title class="materials-v2-dialog-title">
                     <v-icon color="primary" class="mr-2">
-                        {{ materialDialog.mode === 'create' ? 'mdi-file-plus-outline' : 'mdi-file-edit-outline' }}
+                        {{ materialDialogIcon }}
                     </v-icon>
-                    {{ materialDialog.mode === 'create' ? 'Material erstellen' : 'Material bearbeiten' }}
+                    {{ materialDialogTitle }}
+                    <v-spacer />
+                    <v-btn
+                        v-if="materialDialog.mode === 'edit'"
+                        class="materials-v2-material-dialog-close"
+                        icon="mdi-close"
+                        size="small"
+                        variant="text"
+                        title="Schließen"
+                        aria-label="Material bearbeiten schließen"
+                        :disabled="materialDialog.saving"
+                        @click="closeMaterialDialog" />
                 </v-card-title>
                 <v-card-text class="pa-6 pt-3">
                     <v-row dense>
@@ -419,7 +635,9 @@
                         </v-col>
                         <v-col cols="12" md="5">
                             <v-combobox
+                                v-if="!isDefaultForm"
                                 v-model="materialForm.category"
+                                class="materials-v2-category-chooser"
                                 label="Kategorie (optional)"
                                 variant="outlined"
                                 maxlength="255"
@@ -430,12 +648,136 @@
                                 :disabled="materialDialog.saving"
                                 hint="Bestehende Kategorie wählen oder eine neue eingeben"
                                 persistent-hint />
+                            <v-text-field
+                                v-else
+                                class="materials-v2-fixed-category"
+                                :model-value="materialForm.category"
+                                label="Kategorie"
+                                variant="outlined"
+                                :prepend-inner-icon="categoryIcon(materialForm.category)"
+                                readonly
+                                hide-details />
                         </v-col>
                     </v-row>
+                    <v-row v-if="isReminderForm" dense class="materials-v2-reminder-fields">
+                        <v-col cols="12" sm="7">
+                            <v-text-field
+                                v-model="materialForm.reminderDate"
+                                type="date"
+                                label="Datum"
+                                variant="outlined"
+                                prepend-inner-icon="mdi-calendar-blank-outline"
+                                :error-messages="formErrors.reminder_date"
+                                :disabled="materialDialog.saving" />
+                        </v-col>
+                        <v-col cols="12" sm="5">
+                            <v-text-field
+                                v-model="materialForm.reminderTime"
+                                type="time"
+                                label="Uhrzeit (optional)"
+                                variant="outlined"
+                                clearable
+                                prepend-inner-icon="mdi-clock-outline"
+                                :error-messages="formErrors.reminder_time"
+                                :disabled="materialDialog.saving" />
+                        </v-col>
+                    </v-row>
+                    <section
+                        v-if="isScreenshotForm && materialDialog.mode === 'create'"
+                        class="materials-v2-screenshot-input">
+                        <div
+                            class="materials-v2-screenshot-paste-zone"
+                            tabindex="0"
+                            role="button"
+                            aria-label="Screenshot aus der Zwischenablage einfügen"
+                            @click="focusScreenshotPasteZone">
+                            <img
+                                v-if="screenshotPreviewUrl"
+                                class="materials-v2-screenshot-preview"
+                                :src="screenshotPreviewUrl"
+                                alt="Vorschau des ausgewählten Screenshots" />
+                            <template v-else>
+                                <v-icon size="42" color="primary">mdi-content-paste</v-icon>
+                                <strong>Screenshot mit Strg+V einfügen</strong>
+                                <span>Klicke hier und füge das Bild aus der Zwischenablage ein.</span>
+                            </template>
+                        </div>
+                        <v-file-input
+                            :model-value="materialForm.attachments"
+                            class="mt-3"
+                            label="Oder Bild auswählen"
+                            variant="outlined"
+                            accept="image/png,image/jpeg,image/gif,image/webp"
+                            chips
+                            show-size
+                            prepend-icon=""
+                            prepend-inner-icon="mdi-image-plus-outline"
+                            :error-messages="formErrors.attachments"
+                            :disabled="materialDialog.saving"
+                            @update:model-value="setScreenshotFiles" />
+                    </section>
+                    <section v-if="isLinkForm" class="materials-v2-link-input">
+                        <div
+                            v-if="materialDialog.mode === 'create'"
+                            class="materials-v2-link-paste-zone"
+                            tabindex="0"
+                            role="button"
+                            aria-label="Link aus der Zwischenablage einfügen"
+                            @click="focusLinkPasteZone">
+                            <v-icon size="36" color="primary">
+                                {{ materialForm.linkUrl ? 'mdi-link-check' : 'mdi-content-paste' }}
+                            </v-icon>
+                            <strong v-if="materialForm.linkUrl">{{ linkDisplay(materialForm.linkUrl) }}</strong>
+                            <strong v-else>Link mit Strg+V einfügen</strong>
+                            <span>
+                                {{
+                                    materialForm.linkUrl
+                                        ? 'Der Link wurde aus der Zwischenablage übernommen.'
+                                        : 'Klicke hier und füge eine Webadresse aus der Zwischenablage ein.'
+                                }}
+                            </span>
+                        </div>
+                        <v-text-field
+                            v-model="materialForm.linkUrl"
+                            class="mt-3"
+                            type="url"
+                            label="Webadresse"
+                            placeholder="https://example.com"
+                            variant="outlined"
+                            clearable
+                            prepend-inner-icon="mdi-link-variant"
+                            :error-messages="formErrors.link_url"
+                            :loading="linkPreview.state === 'checking'"
+                            :disabled="materialDialog.saving"
+                            @blur="inspectLinkUrl({ force: true })" />
+                        <v-alert
+                            v-if="linkPreview.state !== 'idle'"
+                            class="materials-v2-link-status"
+                            :type="linkPreviewAlertType"
+                            :title="linkPreviewAlertTitle"
+                            :text="linkPreview.message"
+                            density="compact"
+                            variant="tonal" />
+                        <a
+                            v-if="isHttpUrl(materialForm.linkUrl)"
+                            class="materials-v2-link-preview"
+                            :href="normalizedHttpUrl(materialForm.linkUrl)"
+                            target="_blank"
+                            rel="noopener noreferrer">
+                            Link in neuem Tab testen
+                            <v-icon size="16">mdi-open-in-new</v-icon>
+                        </a>
+                    </section>
                     <v-textarea
                         v-model="materialForm.description"
-                        class="mt-2"
-                        label="Beschreibung (optional)"
+                        :class="['mt-2', { 'materials-v2-note-body': isNoteForm }]"
+                        :label="
+                            isNoteForm
+                                ? 'Notiz'
+                                : isReminderForm || isLinkForm
+                                  ? 'Notiz (optional)'
+                                  : 'Beschreibung (optional)'
+                        "
                         variant="outlined"
                         rows="3"
                         auto-grow
@@ -443,8 +785,9 @@
                         :error-messages="formErrors.description"
                         :disabled="materialDialog.saving" />
                     <v-text-field
+                        v-if="!isDefaultForm"
                         v-model="materialForm.keywords"
-                        class="mt-2"
+                        class="materials-v2-keywords-field mt-2"
                         label="Eigene Suchwörter (optional)"
                         hint="Mit Komma trennen, z. B. Bruchrechnen, Übung, 2. Klasse"
                         persistent-hint
@@ -453,87 +796,170 @@
                         :error-messages="formErrors.user_keywords"
                         :disabled="materialDialog.saving" />
                     <section
-                        v-if="materialDialog.mode === 'edit'"
-                        class="materials-v2-automatic-tag-review mt-5">
-                        <div class="d-flex align-center justify-space-between ga-3 mb-3">
-                            <div>
-                                <div class="text-subtitle-2 font-weight-bold">Automatisch erkannte Tags</div>
-                                <div class="text-caption text-medium-emphasis">
-                                    Lokal aus dem Dokumentinhalt ermittelt. Eigene Suchwörter bleiben unverändert.
-                                </div>
+                        v-if="materialDialog.mode === 'edit' && !isReminderForm && !isLinkForm && !isNoteForm"
+                        class="materials-v2-edit-attachments">
+                        <div class="materials-v2-edit-attachments-heading">
+                            <div class="materials-v2-attachment-heading">
+                                <v-icon size="18">mdi-paperclip</v-icon>
+                                Anlagen
+                                <span>({{ materialDialog.item?.attachments?.length || 0 }})</span>
                             </div>
                             <v-btn
-                                size="small"
-                                variant="tonal"
-                                color="primary"
-                                prepend-icon="mdi-refresh"
-                                :loading="tagAction.type === 'recalculate'"
-                                @click="recalculateAutomaticTags(materialDialog.item)">
-                                Neu berechnen
-                            </v-btn>
+                                v-if="!isScreenshotForm"
+                                icon="mdi-paperclip-plus"
+                                size="x-small"
+                                variant="plain"
+                                title="Anlagen hinzufügen"
+                                aria-label="Anlagen hinzufügen"
+                                @click="openAttachmentDialog(materialDialog.item)" />
                         </div>
 
                         <div
-                            v-if="materialDialog.item?.automatic_tag_suggestions?.length"
-                            class="d-flex flex-column ga-2">
+                            v-if="materialDialog.item?.attachments?.length"
+                            class="materials-v2-edit-attachment-list">
                             <div
-                                v-for="suggestion in materialDialog.item.automatic_tag_suggestions"
-                                :key="`review-${suggestion.attachment_id}-${suggestion.name}`"
-                                class="materials-v2-automatic-tag-row">
-                                <v-chip color="primary" variant="tonal" size="small">
-                                    {{ suggestion.rank }}. {{ suggestion.name }}
-                                </v-chip>
-                                <span class="text-caption text-medium-emphasis">
-                                    {{ suggestion.score }} Punkte · {{ suggestion.language.toUpperCase() }}
-                                </span>
-                                <v-spacer />
+                                v-for="attachment in materialDialog.item.attachments"
+                                :key="`edit-attachment-${attachment.id}`"
+                                class="materials-v2-attachment-row">
+                                <v-icon size="20" color="primary">{{ attachmentIcon(attachment) }}</v-icon>
+                                <button
+                                    type="button"
+                                    class="materials-v2-attachment-name materials-v2-edit-attachment-name"
+                                    @click="previewAttachment(attachment)">
+                                    {{ attachment.original_name }}
+                                </button>
+                                <span class="materials-v2-file-size">{{ formatFileSize(attachment.size_bytes) }}</span>
                                 <v-btn
-                                    icon="mdi-tag-plus-outline"
+                                    icon="mdi-eye-outline"
                                     size="x-small"
                                     variant="text"
-                                    color="secondary"
-                                    title="Als eigenes Suchwort übernehmen"
-                                    :loading="isTagAction('convert', suggestion.name)"
-                                    @click="convertAutomaticTag(materialDialog.item, suggestion)" />
+                                    title="Vorschau"
+                                    :aria-label="`${attachment.original_name} in der Vorschau öffnen`"
+                                    @click="previewAttachment(attachment)" />
+                                <v-btn
+                                    :href="attachment.download_url"
+                                    target="_blank"
+                                    icon="mdi-download"
+                                    size="x-small"
+                                    variant="text"
+                                    title="Herunterladen" />
                                 <v-btn
                                     icon="mdi-close"
                                     size="x-small"
                                     variant="text"
                                     color="error"
-                                    title="Automatischen Tag entfernen"
-                                    :loading="isTagAction('remove', suggestion.name)"
-                                    @click="removeAutomaticTag(materialDialog.item, suggestion)" />
+                                    title="Anlage entfernen"
+                                    @click="removeAttachment(materialDialog.item, attachment)" />
                             </div>
                         </div>
-                        <v-alert v-else type="info" variant="tonal" density="compact">
-                            Für dieses Material wurden keine ausreichend relevanten automatischen Tags gefunden.
-                        </v-alert>
+                        <p v-else class="materials-v2-edit-attachments-empty">Keine Anlagen vorhanden.</p>
+                    </section>
+                    <section
+                        v-if="materialDialog.mode === 'edit' && !isDefaultForm"
+                        class="materials-v2-automatic-tag-review mt-3">
+                        <div class="materials-v2-automatic-tag-heading">
+                            <div class="materials-v2-automatic-tag-summary">
+                                <span class="materials-v2-automatic-tag-label">Automatisch erkannte Tags:</span>
+                                <span class="materials-v2-automatic-tag-names">{{ automaticTagNames || 'Keine' }}</span>
+                            </div>
+                            <v-btn
+                                v-if="!isAutomaticTagEditing"
+                                class="materials-v2-automatic-tag-edit"
+                                icon="mdi-pencil-outline"
+                                size="x-small"
+                                variant="plain"
+                                title="Automatische Tags bearbeiten"
+                                aria-label="Automatische Tags bearbeiten"
+                                @click="isAutomaticTagEditing = true" />
+                            <v-btn
+                                v-else
+                                class="materials-v2-automatic-tag-edit"
+                                icon="mdi-check"
+                                size="x-small"
+                                variant="plain"
+                                title="Bearbeitung beenden"
+                                aria-label="Bearbeitung beenden"
+                                @click="isAutomaticTagEditing = false" />
+                        </div>
 
-                        <div v-if="materialDialog.item?.attachments?.length" class="mt-4">
-                            <div
-                                v-for="attachment in materialDialog.item.attachments"
-                                :key="`tag-status-${attachment.id}`"
-                                class="materials-v2-tag-status-row">
-                                <span class="text-body-2">{{ attachment.original_name }}</span>
-                                <v-chip
+                        <div v-if="isAutomaticTagEditing" class="materials-v2-automatic-tag-editor">
+                            <div class="materials-v2-automatic-tag-editor-heading">
+                                <span>Tag-Verwaltung</span>
+                                <v-btn
+                                    icon="mdi-refresh"
                                     size="x-small"
-                                    :color="keywordStatusMeta(attachment.keyword_extraction_status).color"
-                                    variant="tonal">
-                                    {{ keywordStatusMeta(attachment.keyword_extraction_status).label }}
-                                </v-chip>
-                                <span v-if="attachment.keywords_extracted_at" class="text-caption text-medium-emphasis">
-                                    {{ formatDateTime(attachment.keywords_extracted_at) }}
-                                </span>
+                                    variant="plain"
+                                    title="Automatische Tags neu berechnen"
+                                    aria-label="Automatische Tags neu berechnen"
+                                    :loading="tagAction.type === 'recalculate'"
+                                    @click="recalculateAutomaticTags(materialDialog.item)" />
+                            </div>
+
+                            <div
+                                v-if="materialDialog.item?.automatic_tag_suggestions?.length"
+                                class="materials-v2-automatic-tag-list">
                                 <div
-                                    v-if="attachment.keyword_extraction_error"
-                                    class="text-caption text-error flex-1-1-100">
-                                    {{ attachment.keyword_extraction_error }}
+                                    v-for="suggestion in materialDialog.item.automatic_tag_suggestions"
+                                    :key="`review-${suggestion.attachment_id}-${suggestion.name}`"
+                                    class="materials-v2-automatic-tag-row">
+                                    <v-chip color="primary" variant="tonal" size="x-small">
+                                        {{ suggestion.rank }}. {{ suggestion.name }}
+                                    </v-chip>
+                                    <span class="materials-v2-automatic-tag-meta">
+                                        {{ suggestion.score }} Punkte · {{ suggestion.language.toUpperCase() }}
+                                    </span>
+                                    <v-btn
+                                        icon="mdi-tag-plus-outline"
+                                        size="x-small"
+                                        variant="plain"
+                                        color="secondary"
+                                        title="Als eigenes Suchwort übernehmen"
+                                        :loading="isTagAction('convert', suggestion.name)"
+                                        @click="convertAutomaticTag(materialDialog.item, suggestion)" />
+                                    <v-btn
+                                        icon="mdi-close"
+                                        size="x-small"
+                                        variant="plain"
+                                        color="error"
+                                        title="Automatischen Tag entfernen"
+                                        :loading="isTagAction('remove', suggestion.name)"
+                                        @click="removeAutomaticTag(materialDialog.item, suggestion)" />
+                                </div>
+                            </div>
+                            <p v-else class="materials-v2-automatic-tag-empty">
+                                Für dieses Material wurden keine ausreichend relevanten automatischen Tags gefunden.
+                            </p>
+
+                            <div
+                                v-if="materialDialog.item?.attachments?.length"
+                                class="materials-v2-tag-status-list">
+                                <div
+                                    v-for="attachment in materialDialog.item.attachments"
+                                    :key="`tag-status-${attachment.id}`"
+                                    class="materials-v2-tag-status-row">
+                                    <span class="materials-v2-tag-status-name">{{ attachment.original_name }}</span>
+                                    <v-chip
+                                        size="x-small"
+                                        :color="keywordStatusMeta(attachment.keyword_extraction_status).color"
+                                        variant="tonal">
+                                        {{ keywordStatusMeta(attachment.keyword_extraction_status).label }}
+                                    </v-chip>
+                                    <span
+                                        v-if="attachment.keywords_extracted_at"
+                                        class="text-caption text-medium-emphasis">
+                                        {{ formatDateTime(attachment.keywords_extracted_at) }}
+                                    </span>
+                                    <div
+                                        v-if="attachment.keyword_extraction_error"
+                                        class="text-caption text-error flex-1-1-100">
+                                        {{ attachment.keyword_extraction_error }}
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </section>
                     <v-file-input
-                        v-if="materialDialog.mode === 'create'"
+                        v-if="materialDialog.mode === 'create' && !isDefaultForm"
                         v-model="materialForm.attachments"
                         class="mt-5"
                         label="Anlagen (optional)"
@@ -546,10 +972,6 @@
                         prepend-inner-icon="mdi-paperclip"
                         :error-messages="formErrors.attachments"
                         :disabled="materialDialog.saving" />
-                    <v-alert class="mt-4" type="info" variant="tonal" density="compact">
-                        Dokumente werden nach dem Speichern lokal gelesen. Nur ausreichend relevante Themenbegriffe
-                        werden als zusätzliche Tags vorgeschlagen.
-                    </v-alert>
                 </v-card-text>
                 <v-card-actions class="px-6 pb-5">
                     <v-spacer />
@@ -558,9 +980,16 @@
                         color="primary"
                         rounded="lg"
                         :loading="materialDialog.saving"
-                        :disabled="!materialForm.title.trim()"
+                        :disabled="
+                            !materialForm.title.trim()
+                            || (isReminderForm && !materialForm.reminderDate)
+                            || (isScreenshotForm && materialDialog.mode === 'create' && !screenshotFile)
+                            || (isLinkForm && !materialForm.linkUrl.trim())
+                            || (isLinkForm && linkPreview.state === 'checking')
+                            || (isNoteForm && !materialForm.description.trim())
+                        "
                         @click="saveMaterial()">
-                        {{ materialDialog.mode === 'create' ? 'Erstellen' : 'Speichern' }}
+                        {{ materialDialog.mode === 'create' ? (isDefaultForm ? 'Hinzufügen' : 'Erstellen') : 'Speichern' }}
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -762,22 +1191,42 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
+import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
+const adminStore = useAdminStore()
 const notification = useNotificationStore()
+const route = useRoute()
+const router = useRouter()
 
 const allCategoriesValue = '__all_categories__'
+const reminderCategoryName = 'Termine'
+const screenshotCategoryName = 'Screenshots'
+const linkCategoryName = 'Links'
+const noteCategoryName = 'Notizen'
+const screenshotMimeTypes = ['image/gif', 'image/jpeg', 'image/png', 'image/webp']
 const displayModeStorageKey = 'materials-v2-display-mode'
 const displayModeOptions = ['large', 'standard', 'compact']
+const reminderDisplayModeOptions = ['standard', 'calendar']
+const calendarDisplayModeOptions = ['month', 'week']
+const calendarWeekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 const search = ref('')
-const selectedCategory = ref(allCategoriesValue)
-const displayMode = ref(loadStoredDisplayMode())
+const selectedCategory = ref(categoryFromQuery(route.query.category))
+const displayMode = ref(displayModeFromQuery(route.query.view) || loadStoredDisplayMode())
+const reminderDisplayMode = ref(reminderDisplayModeFromQuery(route.query.view))
+const calendarDisplayMode = ref(calendarDisplayModeFromQuery(route.query.calendar))
+const calendarFocusDate = ref(calendarDateFromQuery(route.query.date))
 const page = ref(1)
 const items = ref([])
 const categoryDetails = ref([])
 const loading = ref(false)
 const loadError = ref('')
+const isAutomaticTagEditing = ref(false)
+const screenshotPreviewUrl = ref('')
+const adjacentReminderLoading = ref('')
 const meta = reactive({
     total: 0,
     current_page: 1,
@@ -793,6 +1242,9 @@ const materialForm = reactive({
     title: '',
     category: '',
     description: '',
+    reminderDate: '',
+    reminderTime: '',
+    linkUrl: '',
     keywords: '',
     attachments: [],
 })
@@ -800,8 +1252,17 @@ const formErrors = reactive({
     title: [],
     category: [],
     description: [],
+    reminder_date: [],
+    reminder_time: [],
+    link_url: [],
     user_keywords: [],
     attachments: [],
+})
+const linkPreview = reactive({
+    state: 'idle',
+    message: '',
+    checkedUrl: '',
+    suggestedTitle: '',
 })
 const attachmentDialog = reactive({
     open: false,
@@ -846,12 +1307,224 @@ const tagAction = reactive({
 
 let searchTimer = null
 let pollingTimer = null
+let linkPreviewTimer = null
+let linkPreviewRequestId = 0
 let isResettingFiltersAfterCreate = false
 
 const hasProcessingItems = computed(() =>
     items.value.some((item) => ['pending', 'processing'].includes(item.processing_status)),
 )
 const categoryOptions = computed(() => categoryDetails.value.map((category) => category.name))
+const customCategoryDetails = computed(() =>
+    categoryDetails.value.filter((category) => !isDefaultCategory(category.name)),
+)
+const systemCategoryDetails = computed(() => [
+    {
+        name: allCategoriesValue,
+        label: 'Alle Materialien',
+        icon: 'mdi-view-grid-outline',
+        items_count: categoryDetails.value.reduce((total, category) => total + Number(category.items_count || 0), 0),
+    },
+    {
+        name: reminderCategoryName,
+        label: reminderCategoryName,
+        icon: categoryIcon(reminderCategoryName),
+        items_count: categoryItemCount(reminderCategoryName),
+    },
+    {
+        name: screenshotCategoryName,
+        label: screenshotCategoryName,
+        icon: categoryIcon(screenshotCategoryName),
+        items_count: categoryItemCount(screenshotCategoryName),
+    },
+    {
+        name: linkCategoryName,
+        label: linkCategoryName,
+        icon: categoryIcon(linkCategoryName),
+        items_count: categoryItemCount(linkCategoryName),
+    },
+    {
+        name: noteCategoryName,
+        label: noteCategoryName,
+        icon: categoryIcon(noteCategoryName),
+        items_count: categoryItemCount(noteCategoryName),
+    },
+])
+const selectedCategoryLabel = computed(() =>
+    selectedCategory.value === allCategoriesValue ? 'Alle Materialien' : selectedCategory.value,
+)
+const isCustomCategorySelected = computed(
+    () => selectedCategory.value !== allCategoriesValue && !isDefaultCategory(selectedCategory.value),
+)
+const isReminderCategorySelected = computed(() => isReminderCategory(selectedCategory.value))
+const isReminderCalendarView = computed(
+    () => isReminderCategorySelected.value && reminderDisplayMode.value === 'calendar',
+)
+const reminderViewSelection = computed({
+    get() {
+        return reminderDisplayMode.value === 'calendar' ? calendarDisplayMode.value : 'standard'
+    },
+    set(selection) {
+        if (selection === 'standard') {
+            reminderDisplayMode.value = 'standard'
+
+            return
+        }
+
+        if (!calendarDisplayModeOptions.includes(selection)) {
+            return
+        }
+
+        calendarDisplayMode.value = selection
+        reminderDisplayMode.value = 'calendar'
+    },
+})
+const activeCardDisplayMode = computed(() => (isCustomCategorySelected.value ? displayMode.value : 'standard'))
+const calendarVisibleRange = computed(() => {
+    const focusDate = parseCalendarDate(calendarFocusDate.value)
+
+    if (calendarDisplayMode.value === 'week') {
+        const start = startOfCalendarWeek(focusDate)
+
+        return {
+            start,
+            end: addCalendarDays(start, 6),
+        }
+    }
+
+    const monthStart = new Date(focusDate.getFullYear(), focusDate.getMonth(), 1)
+    const monthEnd = new Date(focusDate.getFullYear(), focusDate.getMonth() + 1, 0)
+
+    return {
+        start: startOfCalendarWeek(monthStart),
+        end: addCalendarDays(startOfCalendarWeek(monthEnd), 6),
+    }
+})
+const calendarDays = computed(() => {
+    const focusDate = parseCalendarDate(calendarFocusDate.value)
+    const today = formatCalendarDate(new Date())
+    const itemsByDate = items.value.reduce((groupedItems, item) => {
+        if (item.reminder_date) {
+            groupedItems[item.reminder_date] ||= []
+            groupedItems[item.reminder_date].push(item)
+        }
+
+        return groupedItems
+    }, {})
+    const days = []
+
+    for (
+        let date = new Date(calendarVisibleRange.value.start);
+        date <= calendarVisibleRange.value.end;
+        date = addCalendarDays(date, 1)
+    ) {
+        const key = formatCalendarDate(date)
+
+        days.push({
+            key,
+            dayNumber: date.getDate(),
+            weekday: new Intl.DateTimeFormat('de-AT', { weekday: 'short' }).format(date),
+            isCurrentMonth: date.getMonth() === focusDate.getMonth(),
+            isToday: key === today,
+            items: [...(itemsByDate[key] || [])].sort(compareReminderItems),
+        })
+    }
+
+    return days
+})
+const calendarPeriodLabel = computed(() => {
+    const focusDate = parseCalendarDate(calendarFocusDate.value)
+
+    if (calendarDisplayMode.value === 'month') {
+        return new Intl.DateTimeFormat('de-AT', {
+            month: 'long',
+            year: 'numeric',
+        }).format(focusDate)
+    }
+
+    const { start, end } = calendarVisibleRange.value
+    const startLabel = new Intl.DateTimeFormat('de-AT', {
+        day: 'numeric',
+        month: start.getMonth() === end.getMonth() ? undefined : 'long',
+    }).format(start)
+    const endLabel = new Intl.DateTimeFormat('de-AT', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+    }).format(end)
+
+    return `${startLabel} – ${endLabel}`
+})
+const previousCalendarPeriodLabel = computed(
+    () => (calendarDisplayMode.value === 'month' ? 'Vorheriger Monat' : 'Vorherige Woche'),
+)
+const nextCalendarPeriodLabel = computed(
+    () => (calendarDisplayMode.value === 'month' ? 'Nächster Monat' : 'Nächste Woche'),
+)
+const schoolName = computed(() =>
+    adminStore.config?.selected_school?.long_name
+    || adminStore.config?.selected_school?.short_name
+    || 'Schule',
+)
+const schoolLogoSrc = computed(() =>
+    resolveSelectedSchoolLogoSrc(adminStore.config?.selected_school?.logo),
+)
+const isReminderForm = computed(() => isReminderCategory(materialForm.category))
+const isScreenshotForm = computed(() => isScreenshotCategory(materialForm.category))
+const isLinkForm = computed(() => isLinkCategory(materialForm.category))
+const isNoteForm = computed(() => isNoteCategory(materialForm.category))
+const isDefaultForm = computed(
+    () => isReminderForm.value || isScreenshotForm.value || isLinkForm.value || isNoteForm.value,
+)
+const screenshotFile = computed(() => normalizedFiles(materialForm.attachments)[0] || null)
+const linkPreviewAlertType = computed(() => ({
+    checking: 'info',
+    success: 'success',
+    warning: 'warning',
+}[linkPreview.state] || 'info'))
+const linkPreviewAlertTitle = computed(() => ({
+    checking: 'Zieladresse wird geprüft',
+    success: 'Zieladresse bestätigt',
+    warning: 'Zieladresse nicht bestätigt',
+}[linkPreview.state] || ''))
+const materialDialogIcon = computed(() => {
+    if (isReminderForm.value) {
+        return materialDialog.mode === 'create' ? 'mdi-calendar-plus' : 'mdi-calendar-edit'
+    }
+
+    if (isScreenshotForm.value) {
+        return materialDialog.mode === 'create' ? 'mdi-image-plus-outline' : 'mdi-image-edit-outline'
+    }
+
+    if (isLinkForm.value) {
+        return materialDialog.mode === 'create' ? 'mdi-link-plus' : 'mdi-link-variant'
+    }
+
+    if (isNoteForm.value) {
+        return 'mdi-note-text-outline'
+    }
+
+    return materialDialog.mode === 'create' ? 'mdi-file-plus-outline' : 'mdi-file-edit-outline'
+})
+const materialDialogTitle = computed(() => {
+    if (isReminderForm.value) {
+        return materialDialog.mode === 'create' ? 'Termin hinzufügen' : 'Termin bearbeiten'
+    }
+
+    if (isScreenshotForm.value) {
+        return materialDialog.mode === 'create' ? 'Screenshot hinzufügen' : 'Screenshot bearbeiten'
+    }
+
+    if (isLinkForm.value) {
+        return materialDialog.mode === 'create' ? 'Link hinzufügen' : 'Link bearbeiten'
+    }
+
+    if (isNoteForm.value) {
+        return materialDialog.mode === 'create' ? 'Notiz hinzufügen' : 'Notiz bearbeiten'
+    }
+
+    return materialDialog.mode === 'create' ? 'Material erstellen' : 'Material bearbeiten'
+})
 const hasActiveFilters = computed(
     () => search.value.trim() !== '' || selectedCategory.value !== allCategoriesValue,
 )
@@ -859,12 +1532,15 @@ const materialColumnProps = computed(() => ({
     large: { cols: 12, md: 6, xl: 4 },
     standard: { cols: 12, sm: 6, lg: 4, xl: 3 },
     compact: { cols: 12, sm: 6, md: 4, lg: 3, xl: 2 },
-}[displayMode.value]))
+}[activeCardDisplayMode.value]))
 const materialCardPaddingClass = computed(() => ({
     large: 'pa-5',
     standard: 'pa-4',
     compact: 'pa-3',
-}[displayMode.value]))
+}[activeCardDisplayMode.value]))
+const automaticTagNames = computed(() =>
+    (materialDialog.item?.automatic_tag_suggestions || []).map(({ name }) => name).join(', '),
+)
 
 watch(search, () => {
     window.clearTimeout(searchTimer)
@@ -879,7 +1555,20 @@ watch(search, () => {
     }, 350)
 })
 
-watch(selectedCategory, () => {
+watch(
+    () => materialForm.linkUrl,
+    () => {
+        if (!materialDialog.open || !isLinkForm.value) {
+            return
+        }
+
+        scheduleLinkInspection()
+    },
+)
+
+watch(selectedCategory, (category) => {
+    syncRouteQuery(category)
+
     if (isResettingFiltersAfterCreate) {
         return
     }
@@ -888,9 +1577,79 @@ watch(selectedCategory, () => {
     loadItems()
 })
 
+watch(
+    () => route.query.category,
+    (category) => {
+        const routeCategory = categoryFromQuery(category)
+
+        if (routeCategory !== selectedCategory.value) {
+            selectedCategory.value = routeCategory
+        }
+    },
+)
+
 watch(displayMode, (mode) => {
     persistDisplayMode(mode)
+
+    if (isCustomCategorySelected.value) {
+        syncRouteQuery(selectedCategory.value)
+    }
 })
+
+watch(reminderDisplayMode, () => {
+    if (!isReminderCategorySelected.value) {
+        return
+    }
+
+    page.value = 1
+    syncRouteQuery(selectedCategory.value)
+    loadItems()
+})
+
+watch([calendarDisplayMode, calendarFocusDate], () => {
+    if (!isReminderCalendarView.value) {
+        return
+    }
+
+    page.value = 1
+    syncRouteQuery(selectedCategory.value)
+    loadItems()
+})
+
+watch(
+    () => route.query.view,
+    (view) => {
+        const routeDisplayMode = displayModeFromQuery(view)
+        if (routeDisplayMode && routeDisplayMode !== displayMode.value) {
+            displayMode.value = routeDisplayMode
+        }
+
+        const routeReminderDisplayMode = reminderDisplayModeFromQuery(view)
+        if (routeReminderDisplayMode !== reminderDisplayMode.value) {
+            reminderDisplayMode.value = routeReminderDisplayMode
+        }
+    },
+)
+
+watch(
+    () => route.query.calendar,
+    (calendar) => {
+        const routeCalendarDisplayMode = calendarDisplayModeFromQuery(calendar)
+        if (routeCalendarDisplayMode !== calendarDisplayMode.value) {
+            calendarDisplayMode.value = routeCalendarDisplayMode
+        }
+    },
+)
+
+watch(
+    () => route.query.date,
+    (date) => {
+        const routeCalendarDate = calendarDateFromQuery(date)
+        if (routeCalendarDate !== calendarFocusDate.value) {
+            calendarFocusDate.value = routeCalendarDate
+        }
+    },
+)
 
 watch(hasProcessingItems, (isProcessing) => {
     configurePolling(isProcessing)
@@ -902,7 +1661,10 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
     window.clearTimeout(searchTimer)
+    window.clearTimeout(linkPreviewTimer)
     window.clearInterval(pollingTimer)
+    linkPreviewRequestId += 1
+    revokeScreenshotPreview()
 })
 
 async function loadItems() {
@@ -910,27 +1672,64 @@ async function loadItems() {
     loadError.value = ''
 
     try {
+        const requestPage = isReminderCalendarView.value ? 1 : page.value
+        const perPage = isReminderCalendarView.value ? 48 : 18
+        const calendarRange = isReminderCalendarView.value
+            ? {
+                reminder_from: formatCalendarDate(calendarVisibleRange.value.start),
+                reminder_to: formatCalendarDate(calendarVisibleRange.value.end),
+            }
+            : {}
         const response = await axios.get('/api/admin/materials-v2/items', {
             params: {
                 search: search.value.trim() || undefined,
                 category: selectedCategory.value === allCategoriesValue ? undefined : selectedCategory.value,
-                page: page.value,
-                per_page: 18,
+                ...calendarRange,
+                page: requestPage,
+                per_page: perPage,
             },
         })
 
-        items.value = response.data?.data || []
+        const firstPageItems = response.data?.data || []
+        const responseMeta = response.data?.meta || {}
+        const loadedItems = [...firstPageItems]
+
+        if (isReminderCalendarView.value) {
+            for (let calendarPage = 2; calendarPage <= Number(responseMeta.last_page || 1); calendarPage += 1) {
+                const additionalResponse = await axios.get('/api/admin/materials-v2/items', {
+                    params: {
+                        search: search.value.trim() || undefined,
+                        category: reminderCategoryName,
+                        ...calendarRange,
+                        page: calendarPage,
+                        per_page: perPage,
+                    },
+                })
+
+                loadedItems.push(...(additionalResponse.data?.data || []))
+            }
+        }
+
+        items.value = loadedItems
         if (materialDialog.open && materialDialog.mode === 'edit' && materialDialog.item) {
             const refreshedItem = items.value.find((item) => item.id === materialDialog.item.id)
             if (refreshedItem) {
                 materialDialog.item = refreshedItem
             }
         }
-        Object.assign(meta, response.data?.meta || {
-            total: items.value.length,
-            current_page: 1,
-            last_page: 1,
-        })
+        const nextMeta = isReminderCalendarView.value
+            ? {
+                total: Number(responseMeta.total || items.value.length),
+                current_page: 1,
+                last_page: 1,
+            }
+            : response.data?.meta || {
+                total: items.value.length,
+                current_page: 1,
+                last_page: 1,
+            }
+
+        Object.assign(meta, nextMeta)
     } catch (error) {
         loadError.value = apiErrorMessage(error, 'Die Materialien konnten nicht geladen werden.')
     } finally {
@@ -960,13 +1759,276 @@ function selectCategory(category) {
     selectedCategory.value = category
 }
 
+function categoryFromQuery(category) {
+    const normalizedCategory = queryString(category)
+
+    return normalizedCategory || allCategoriesValue
+}
+
+function syncRouteQuery(category) {
+    const query = { ...route.query }
+    if (category === allCategoriesValue) {
+        delete query.category
+    } else {
+        query.category = category
+    }
+
+    delete query.calendar
+    delete query.date
+
+    if (category !== allCategoriesValue && !isDefaultCategory(category)) {
+        query.view = displayMode.value
+    } else if (isReminderCategory(category)) {
+        query.view = reminderDisplayMode.value
+
+        if (reminderDisplayMode.value === 'calendar') {
+            query.calendar = calendarDisplayMode.value
+            query.date = calendarFocusDate.value
+        }
+    } else {
+        delete query.view
+    }
+
+    if (JSON.stringify(query) === JSON.stringify(route.query)) {
+        return
+    }
+
+    router.replace({ query }).catch(() => {})
+}
+
+function queryString(value) {
+    const queryValue = Array.isArray(value) ? value[0] : value
+
+    return String(queryValue || '').trim()
+}
+
+function displayModeFromQuery(view) {
+    const mode = queryString(view)
+
+    return displayModeOptions.includes(mode) ? mode : ''
+}
+
+function reminderDisplayModeFromQuery(view) {
+    const mode = queryString(view)
+
+    return reminderDisplayModeOptions.includes(mode) ? mode : 'standard'
+}
+
+function calendarDisplayModeFromQuery(calendar) {
+    const mode = queryString(calendar)
+
+    return calendarDisplayModeOptions.includes(mode) ? mode : 'month'
+}
+
+function calendarDateFromQuery(date) {
+    const normalizedDate = queryString(date)
+
+    return isCalendarDate(normalizedDate) ? normalizedDate : formatCalendarDate(new Date())
+}
+
+function parseCalendarDate(value) {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/u)
+    if (!match) {
+        return new Date()
+    }
+
+    const [, year, month, day] = match
+    const date = new Date(Number(year), Number(month) - 1, Number(day))
+
+    return Number.isNaN(date.getTime()) ? new Date() : date
+}
+
+function isCalendarDate(value) {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/u)
+    if (!match) {
+        return false
+    }
+
+    const [, year, month, day] = match
+    const date = new Date(Number(year), Number(month) - 1, Number(day))
+
+    return date.getFullYear() === Number(year)
+        && date.getMonth() === Number(month) - 1
+        && date.getDate() === Number(day)
+}
+
+function formatCalendarDate(date) {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+
+    return `${year}-${month}-${day}`
+}
+
+function startOfCalendarWeek(date) {
+    const start = new Date(date)
+    const daysSinceMonday = (start.getDay() + 6) % 7
+
+    start.setDate(start.getDate() - daysSinceMonday)
+    start.setHours(0, 0, 0, 0)
+
+    return start
+}
+
+function addCalendarDays(date, days) {
+    const result = new Date(date)
+
+    result.setDate(result.getDate() + days)
+
+    return result
+}
+
+function moveCalendar(direction) {
+    const focusDate = parseCalendarDate(calendarFocusDate.value)
+
+    if (calendarDisplayMode.value === 'month') {
+        const day = focusDate.getDate()
+
+        focusDate.setDate(1)
+        focusDate.setMonth(focusDate.getMonth() + direction)
+        const lastDayOfTargetMonth = new Date(focusDate.getFullYear(), focusDate.getMonth() + 1, 0).getDate()
+
+        focusDate.setDate(Math.min(day, lastDayOfTargetMonth))
+    } else {
+        focusDate.setDate(focusDate.getDate() + (direction * 7))
+    }
+
+    calendarFocusDate.value = formatCalendarDate(focusDate)
+}
+
+function showToday() {
+    calendarFocusDate.value = formatCalendarDate(new Date())
+}
+
+async function jumpToAdjacentReminder(direction) {
+    if (!['previous', 'next'].includes(direction) || adjacentReminderLoading.value !== '') {
+        return
+    }
+
+    adjacentReminderLoading.value = direction
+    const isNext = direction === 'next'
+    const referenceDate = parseCalendarDate(calendarFocusDate.value)
+    const boundaryDate = formatCalendarDate(addCalendarDays(referenceDate, isNext ? 1 : -1))
+
+    try {
+        const response = await axios.get('/api/admin/materials-v2/items', {
+            params: {
+                category: reminderCategoryName,
+                reminder_from: isNext ? boundaryDate : undefined,
+                reminder_to: isNext ? undefined : boundaryDate,
+                reminder_order: isNext ? 'asc' : 'desc',
+                page: 1,
+                per_page: 6,
+            },
+        })
+        const adjacentReminder = (response.data?.data || []).find((item) => item.reminder_date)
+
+        if (!adjacentReminder) {
+            notify(isNext ? 'Kein späterer Termin gefunden.' : 'Kein früherer Termin gefunden.', 'info')
+
+            return
+        }
+
+        calendarFocusDate.value = adjacentReminder.reminder_date
+    } catch (error) {
+        notify(apiErrorMessage(error, 'Der nächste Termin konnte nicht geladen werden.'), 'error')
+    } finally {
+        adjacentReminderLoading.value = ''
+    }
+}
+
+function compareReminderItems(left, right) {
+    const timeComparison = String(left.reminder_time || '').localeCompare(String(right.reminder_time || ''))
+
+    return timeComparison !== 0 ? timeComparison : String(left.title || '').localeCompare(String(right.title || ''), 'de-AT')
+}
+
+function calendarEventTitle(item) {
+    return `${item.reminder_time || 'Ganztägig'} · ${item.title}`
+}
+
+function isReminderCategory(category) {
+    return String(category || '').trim().toLocaleLowerCase('de-AT') === reminderCategoryName.toLocaleLowerCase('de-AT')
+}
+
+function isScreenshotCategory(category) {
+    return String(category || '').trim().toLocaleLowerCase('de-AT') === screenshotCategoryName.toLocaleLowerCase('de-AT')
+}
+
+function isLinkCategory(category) {
+    return String(category || '').trim().toLocaleLowerCase('de-AT') === linkCategoryName.toLocaleLowerCase('de-AT')
+}
+
+function isNoteCategory(category) {
+    return String(category || '').trim().toLocaleLowerCase('de-AT') === noteCategoryName.toLocaleLowerCase('de-AT')
+}
+
+function isDefaultCategory(category) {
+    return isReminderCategory(category)
+        || isScreenshotCategory(category)
+        || isLinkCategory(category)
+        || isNoteCategory(category)
+}
+
+function categoryItemCount(categoryName) {
+    return categoryDetails.value.find((category) => category.name === categoryName)?.items_count || 0
+}
+
+function categoryIcon(category) {
+    if (isReminderCategory(category)) {
+        return 'mdi-calendar-clock-outline'
+    }
+
+    if (isScreenshotCategory(category)) {
+        return 'mdi-monitor-screenshot'
+    }
+
+    if (isNoteCategory(category)) {
+        return 'mdi-note-text-outline'
+    }
+
+    return isLinkCategory(category) ? 'mdi-link-variant' : 'mdi-shape-outline'
+}
+
+function createActionIcon(category) {
+    if (isReminderCategory(category)) {
+        return 'mdi-calendar-plus'
+    }
+
+    if (isScreenshotCategory(category)) {
+        return 'mdi-image-plus-outline'
+    }
+
+    if (isNoteCategory(category)) {
+        return 'mdi-note-text-outline'
+    }
+
+    return isLinkCategory(category) ? 'mdi-link-plus' : 'mdi-plus'
+}
+
+function createActionLabel(category, fallback) {
+    if (isReminderCategory(category)) {
+        return 'Termin hinzufügen'
+    }
+
+    if (isScreenshotCategory(category)) {
+        return 'Screenshot hinzufügen'
+    }
+
+    if (isNoteCategory(category)) {
+        return 'Notiz hinzufügen'
+    }
+
+    return isLinkCategory(category) ? 'Link hinzufügen' : fallback
+}
+
 function loadStoredDisplayMode() {
     try {
         const storedMode = window.localStorage.getItem(displayModeStorageKey)
 
-        return displayModeOptions.includes(storedMode) ? storedMode : 'large'
+        return displayModeOptions.includes(storedMode) ? storedMode : 'compact'
     } catch {
-        return 'large'
+        return 'compact'
     }
 }
 
@@ -985,7 +2047,7 @@ function persistDisplayMode(mode) {
 function visibleUserKeywords(item) {
     const keywords = item.user_keywords || []
 
-    return displayMode.value === 'large' ? keywords : keywords.slice(0, 4)
+    return activeCardDisplayMode.value === 'large' ? keywords : keywords.slice(0, 4)
 }
 
 function openCategoryDialog(category = '') {
@@ -1095,25 +2157,364 @@ async function saveCategory() {
 
 function openCreateDialog() {
     resetForm()
+    isAutomaticTagEditing.value = false
     materialDialog.mode = 'create'
     materialDialog.item = null
+    materialForm.category = selectedCategory.value === allCategoriesValue ? '' : selectedCategory.value
+    if (isScreenshotCategory(materialForm.category)) {
+        materialForm.title = 'Screenshot'
+    }
+    if (isLinkCategory(materialForm.category)) {
+        materialForm.title = 'Link'
+    }
+    if (isNoteCategory(materialForm.category)) {
+        materialForm.title = 'Notiz'
+    }
     materialDialog.open = true
+}
+
+function openReminderDialog() {
+    resetForm()
+    isAutomaticTagEditing.value = false
+    materialDialog.mode = 'create'
+    materialDialog.item = null
+    materialForm.category = reminderCategoryName
+    materialDialog.open = true
+}
+
+function openSystemCategoryCreateDialog(category) {
+    if (isReminderCategory(category)) {
+        openReminderDialog()
+
+        return
+    }
+
+    if (isScreenshotCategory(category)) {
+        openScreenshotDialog()
+
+        return
+    }
+
+    if (isLinkCategory(category)) {
+        openLinkDialog()
+
+        return
+    }
+
+    if (isNoteCategory(category)) {
+        openNoteDialog()
+    }
+}
+
+function openScreenshotDialog() {
+    resetForm()
+    isAutomaticTagEditing.value = false
+    materialDialog.mode = 'create'
+    materialDialog.item = null
+    materialForm.title = 'Screenshot'
+    materialForm.category = screenshotCategoryName
+    materialDialog.open = true
+}
+
+function openLinkDialog() {
+    resetForm()
+    isAutomaticTagEditing.value = false
+    materialDialog.mode = 'create'
+    materialDialog.item = null
+    materialForm.title = 'Link'
+    materialForm.category = linkCategoryName
+    materialDialog.open = true
+}
+
+function openNoteDialog() {
+    resetForm()
+    isAutomaticTagEditing.value = false
+    materialDialog.mode = 'create'
+    materialDialog.item = null
+    materialForm.title = 'Notiz'
+    materialForm.category = noteCategoryName
+    materialDialog.open = true
+}
+
+function handleSpecializedPaste(event) {
+    if (isScreenshotForm.value) {
+        handleScreenshotPaste(event)
+
+        return
+    }
+
+    if (isLinkForm.value) {
+        handleLinkPaste(event)
+    }
+}
+
+function handleScreenshotPaste(event) {
+    if (!materialDialog.open || materialDialog.mode !== 'create' || !isScreenshotForm.value) {
+        return
+    }
+
+    const imageItem = Array.from(event.clipboardData?.items || [])
+        .find((item) => item.kind === 'file' && String(item.type).startsWith('image/'))
+    const imageFile = imageItem?.getAsFile?.()
+
+    if (!imageFile) {
+        return
+    }
+
+    event.preventDefault()
+    setScreenshotFiles(imageFile)
+}
+
+function handleLinkPaste(event) {
+    if (!materialDialog.open || materialDialog.mode !== 'create' || !isLinkForm.value) {
+        return
+    }
+
+    const pastedText = String(event.clipboardData?.getData?.('text/plain') || '').trim()
+    if (!pastedText) {
+        return
+    }
+
+    event.preventDefault()
+    return setLinkUrl(pastedText)
+}
+
+async function setLinkUrl(value) {
+    const url = normalizedHttpUrl(value)
+    formErrors.link_url = []
+
+    if (!url) {
+        materialForm.linkUrl = String(value || '').trim()
+        formErrors.link_url = ['Bitte füge eine gültige Webadresse ein.']
+        resetLinkPreview()
+
+        return
+    }
+
+    materialForm.linkUrl = url
+    await nextTick()
+    await inspectLinkUrl({ force: true })
+}
+
+function scheduleLinkInspection() {
+    window.clearTimeout(linkPreviewTimer)
+
+    const url = normalizedHttpUrl(materialForm.linkUrl)
+    if (
+        url
+        && linkPreview.checkedUrl === url
+        && ['success', 'warning'].includes(linkPreview.state)
+    ) {
+        return
+    }
+
+    linkPreviewRequestId += 1
+    linkPreview.state = 'idle'
+    linkPreview.message = ''
+    linkPreview.checkedUrl = ''
+
+    if (!materialForm.linkUrl.trim()) {
+        return
+    }
+
+    linkPreviewTimer = window.setTimeout(() => {
+        inspectLinkUrl()
+    }, 650)
+}
+
+async function inspectLinkUrl({ force = false } = {}) {
+    window.clearTimeout(linkPreviewTimer)
+
+    const requestedUrl = normalizedHttpUrl(materialForm.linkUrl)
+    if (!requestedUrl) {
+        linkPreviewRequestId += 1
+        linkPreview.state = materialForm.linkUrl.trim() ? 'warning' : 'idle'
+        linkPreview.message = materialForm.linkUrl.trim()
+            ? 'Bitte gib eine vollständige HTTP- oder HTTPS-Adresse ein.'
+            : ''
+        linkPreview.checkedUrl = ''
+
+        return false
+    }
+
+    if (
+        !force
+        && linkPreview.checkedUrl === requestedUrl
+        && ['success', 'warning'].includes(linkPreview.state)
+    ) {
+        return linkPreview.state === 'success'
+    }
+
+    applySuggestedLinkTitle(linkDisplay(requestedUrl))
+
+    const requestId = ++linkPreviewRequestId
+    linkPreview.state = 'checking'
+    linkPreview.message = 'Die Webseite wird sicher auf Erreichbarkeit und Seitentitel geprüft.'
+    linkPreview.checkedUrl = ''
+
+    try {
+        const response = await axios.post('/api/admin/materials-v2/link-preview', {
+            url: requestedUrl,
+        })
+
+        if (requestId !== linkPreviewRequestId) {
+            return false
+        }
+
+        const result = response.data?.data || {}
+        const resolvedUrl = normalizedHttpUrl(result.url) || requestedUrl
+
+        linkPreview.state = result.status === 'success' ? 'success' : 'warning'
+        linkPreview.message = String(result.message || 'Die Zieladresse konnte nicht bestätigt werden.')
+        linkPreview.checkedUrl = resolvedUrl
+
+        if (normalizedHttpUrl(materialForm.linkUrl) === requestedUrl && resolvedUrl !== requestedUrl) {
+            materialForm.linkUrl = resolvedUrl
+        }
+
+        if (result.title) {
+            applySuggestedLinkTitle(String(result.title))
+        }
+
+        return linkPreview.state === 'success'
+    } catch (error) {
+        if (requestId !== linkPreviewRequestId) {
+            return false
+        }
+
+        linkPreview.state = 'warning'
+        linkPreview.message = validationMessages(error, 'url')[0]
+            || apiErrorMessage(error, 'Die Zieladresse konnte nicht bestätigt werden.')
+        linkPreview.checkedUrl = requestedUrl
+
+        return false
+    }
+}
+
+function applySuggestedLinkTitle(title) {
+    const suggestedTitle = String(title || '').trim()
+    if (!suggestedTitle) {
+        return
+    }
+
+    const currentTitle = materialForm.title.trim()
+    if (!currentTitle || currentTitle === 'Link' || currentTitle === linkPreview.suggestedTitle) {
+        materialForm.title = suggestedTitle
+    }
+
+    linkPreview.suggestedTitle = suggestedTitle
+}
+
+function resetLinkPreview() {
+    window.clearTimeout(linkPreviewTimer)
+    linkPreviewRequestId += 1
+    linkPreview.state = 'idle'
+    linkPreview.message = ''
+    linkPreview.checkedUrl = ''
+    linkPreview.suggestedTitle = ''
+}
+
+function normalizedHttpUrl(value) {
+    const trimmedValue = String(value || '').trim()
+    if (!trimmedValue) {
+        return ''
+    }
+
+    const candidate = /^[a-z][a-z\d+.-]*:/iu.test(trimmedValue)
+        ? trimmedValue
+        : `https://${trimmedValue}`
+
+    try {
+        const url = new URL(candidate)
+
+        return ['http:', 'https:'].includes(url.protocol) ? url.toString() : ''
+    } catch {
+        return ''
+    }
+}
+
+function isHttpUrl(value) {
+    return normalizedHttpUrl(value) !== ''
+}
+
+function linkDisplay(value) {
+    const url = normalizedHttpUrl(value)
+    if (!url) {
+        return String(value || '')
+    }
+
+    const parsedUrl = new URL(url)
+    const hostname = parsedUrl.hostname.replace(/^www\./iu, '')
+    const path = parsedUrl.pathname === '/' ? '' : parsedUrl.pathname.replace(/\/$/u, '')
+
+    return `${hostname}${path}`
+}
+
+function setScreenshotFiles(files) {
+    const file = normalizedFiles(files)[0] || null
+    revokeScreenshotPreview()
+    formErrors.attachments = []
+
+    if (!file) {
+        materialForm.attachments = []
+
+        return
+    }
+
+    if (!screenshotMimeTypes.includes(file.type)) {
+        materialForm.attachments = []
+        formErrors.attachments = ['Bitte füge ein Bild im Format PNG, JPG, GIF oder WebP ein.']
+
+        return
+    }
+
+    materialForm.attachments = [file]
+    if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        screenshotPreviewUrl.value = URL.createObjectURL(file)
+    }
+}
+
+function focusScreenshotPasteZone(event) {
+    event.currentTarget?.focus?.()
+}
+
+function focusLinkPasteZone(event) {
+    event.currentTarget?.focus?.()
+}
+
+function revokeScreenshotPreview() {
+    if (
+        screenshotPreviewUrl.value
+        && typeof URL !== 'undefined'
+        && typeof URL.revokeObjectURL === 'function'
+    ) {
+        URL.revokeObjectURL(screenshotPreviewUrl.value)
+    }
+
+    screenshotPreviewUrl.value = ''
 }
 
 function openEditDialog(item) {
     resetForm()
+    isAutomaticTagEditing.value = false
     materialDialog.mode = 'edit'
     materialDialog.item = item
     materialForm.title = item.title || ''
     materialForm.category = item.category || ''
     materialForm.description = item.description || ''
+    materialForm.reminderDate = item.reminder_date || ''
+    materialForm.reminderTime = item.reminder_time || ''
+    materialForm.linkUrl = item.link_url || ''
     materialForm.keywords = (item.user_keywords || []).join(', ')
     materialDialog.open = true
 }
 
 function closeMaterialDialog() {
     if (!materialDialog.saving) {
+        isAutomaticTagEditing.value = false
         materialDialog.open = false
+        resetLinkPreview()
+        revokeScreenshotPreview()
     }
 }
 
@@ -1121,8 +2522,19 @@ async function saveMaterial({ forceNewCategory = false } = {}) {
     clearFormErrors()
     materialDialog.saving = true
     const isCreating = materialDialog.mode === 'create'
+    const isSavingReminder = isReminderForm.value
+    const isSavingScreenshot = isScreenshotForm.value
+    const isSavingLink = isLinkForm.value
+    const isSavingNote = isNoteForm.value
 
     try {
+        const initialLinkUrl = normalizedHttpUrl(materialForm.linkUrl)
+        if (isSavingLink && initialLinkUrl && linkPreview.checkedUrl !== initialLinkUrl) {
+            await inspectLinkUrl({ force: true })
+        }
+
+        const linkUrl = normalizedHttpUrl(materialForm.linkUrl) || materialForm.linkUrl.trim()
+
         if (isCreating) {
             const payload = new FormData()
             payload.append('title', materialForm.title.trim())
@@ -1139,9 +2551,19 @@ async function saveMaterial({ forceNewCategory = false } = {}) {
                 payload.append('description', materialForm.description.trim())
             }
 
-            normalizedKeywords().forEach((keyword) => payload.append('user_keywords[]', keyword))
-            const attachments = materialForm.attachments || []
-            attachments.forEach((file) => payload.append('attachments[]', file))
+            if (isSavingReminder) {
+                payload.append('reminder_date', materialForm.reminderDate)
+                if (materialForm.reminderTime) {
+                    payload.append('reminder_time', materialForm.reminderTime)
+                }
+            } else if (isSavingLink) {
+                payload.append('link_url', linkUrl)
+            } else {
+                if (!isSavingScreenshot) {
+                    normalizedKeywords().forEach((keyword) => payload.append('user_keywords[]', keyword))
+                }
+                normalizedFiles(materialForm.attachments).forEach((file) => payload.append('attachments[]', file))
+            }
 
             await axios.post('/api/admin/materials-v2/items', payload)
         } else {
@@ -1150,20 +2572,44 @@ async function saveMaterial({ forceNewCategory = false } = {}) {
                 category: normalizedCategory() || null,
                 force_new_category: forceNewCategory,
                 description: materialForm.description.trim() || null,
-                user_keywords: normalizedKeywords(),
+                reminder_date: isSavingReminder ? materialForm.reminderDate : null,
+                reminder_time: isSavingReminder ? materialForm.reminderTime || null : null,
+                link_url: isSavingLink ? linkUrl : null,
+                user_keywords: isDefaultForm.value ? [] : normalizedKeywords(),
             })
         }
 
         materialDialog.open = false
+        revokeScreenshotPreview()
 
         if (isCreating) {
-            await resetFiltersAfterCreate()
+            await resetFiltersAfterCreate(
+                isSavingReminder
+                    ? reminderCategoryName
+                    : isSavingScreenshot
+                      ? screenshotCategoryName
+                      : isSavingLink
+                        ? linkCategoryName
+                        : isSavingNote
+                          ? noteCategoryName
+                        : null,
+            )
         } else {
             page.value = 1
         }
 
         await Promise.all([loadItems(), loadConfig()])
-        notify('Material gespeichert.')
+        notify(
+            isSavingReminder
+                ? 'Termin gespeichert.'
+                : isSavingScreenshot
+                  ? 'Screenshot gespeichert.'
+                  : isSavingLink
+                    ? 'Link gespeichert.'
+                    : isSavingNote
+                      ? 'Notiz gespeichert.'
+                    : 'Material gespeichert.',
+        )
     } catch (error) {
         if (showCategorySuggestion(error)) {
             return
@@ -1178,11 +2624,11 @@ async function saveMaterial({ forceNewCategory = false } = {}) {
     }
 }
 
-async function resetFiltersAfterCreate() {
+async function resetFiltersAfterCreate(category = null) {
     window.clearTimeout(searchTimer)
     isResettingFiltersAfterCreate = true
     search.value = ''
-    selectedCategory.value = allCategoriesValue
+    selectedCategory.value = category || allCategoriesValue
     page.value = 1
 
     await nextTick()
@@ -1395,9 +2841,14 @@ function configurePolling(isProcessing) {
 }
 
 function resetForm() {
+    revokeScreenshotPreview()
+    resetLinkPreview()
     materialForm.title = ''
     materialForm.category = ''
     materialForm.description = ''
+    materialForm.reminderDate = ''
+    materialForm.reminderTime = ''
+    materialForm.linkUrl = ''
     materialForm.keywords = ''
     materialForm.attachments = []
     clearFormErrors()
@@ -1413,6 +2864,9 @@ function applyValidationErrors(error) {
     formErrors.title = validationMessages(error, 'title')
     formErrors.category = validationMessages(error, 'category')
     formErrors.description = validationMessages(error, 'description')
+    formErrors.reminder_date = validationMessages(error, 'reminder_date')
+    formErrors.reminder_time = validationMessages(error, 'reminder_time')
+    formErrors.link_url = validationMessages(error, 'link_url')
     formErrors.user_keywords = validationMessages(error, 'user_keywords')
     formErrors.attachments = [
         ...validationMessages(error, 'attachments'),
@@ -1422,6 +2876,14 @@ function applyValidationErrors(error) {
 
 function normalizedCategory() {
     return String(materialForm.category || '').trim()
+}
+
+function normalizedFiles(files) {
+    if (!files) {
+        return []
+    }
+
+    return Array.isArray(files) ? files : [files]
 }
 
 function validationMessages(error, key) {
@@ -1488,6 +2950,56 @@ function formatDateTime(value) {
         }).format(date)
 }
 
+function formatReminderDate(value) {
+    const date = reminderDate(value)
+
+    return date
+        ? new Intl.DateTimeFormat('de-AT', {
+            weekday: 'short',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+        }).format(date)
+        : ''
+}
+
+function reminderBadge(value) {
+    const date = reminderDate(value)
+    if (!date) {
+        return null
+    }
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const differenceInDays = Math.round((date.getTime() - today.getTime()) / 86400000)
+
+    if (differenceInDays < 0) {
+        return { label: 'Vergangen', color: 'default' }
+    }
+
+    if (differenceInDays === 0) {
+        return { label: 'Heute', color: 'error' }
+    }
+
+    if (differenceInDays === 1) {
+        return { label: 'Morgen', color: 'warning' }
+    }
+
+    return null
+}
+
+function reminderDate(value) {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/u)
+    if (!match) {
+        return null
+    }
+
+    const [, year, month, day] = match
+    const date = new Date(Number(year), Number(month) - 1, Number(day))
+
+    return Number.isNaN(date.getTime()) ? null : date
+}
+
 function apiErrorMessage(error, fallback) {
     return error.response?.data?.message || fallback
 }
@@ -1547,88 +3059,165 @@ function notify(message, type = 'success') {
 }
 
 .materials-v2-header {
-    display: flex;
-    align-items: flex-end;
+    display: grid;
+    min-height: 64px;
+    padding: 9px 22px;
+    align-items: center;
+    grid-template-columns: minmax(190px, 270px) minmax(260px, 640px);
     justify-content: space-between;
-    gap: 2rem;
-    padding: 1.5rem 0 1.8rem;
+    gap: 1.25rem;
+    border-bottom: 1px solid rgba(23, 45, 59, 0.08);
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(18px);
 }
 
-.materials-v2-eyebrow {
-    margin-bottom: 0.35rem;
-    color: var(--materials-v2-accent);
-    font-size: 0.78rem;
-    font-weight: 800;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+.materials-v2-brand {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.materials-v2-school-logo,
+.materials-v2-school-logo-placeholder {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+}
+
+.materials-v2-school-logo {
+    object-fit: contain;
+}
+
+.materials-v2-school-logo-placeholder {
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: rgba(var(--v-theme-primary), 0.08);
+    color: rgb(var(--v-theme-primary));
+}
+
+.materials-v2-brand-copy {
+    min-width: 0;
 }
 
 .materials-v2-title {
     margin: 0;
-    font-size: clamp(2.2rem, 5vw, 4.4rem);
-    font-weight: 850;
-    letter-spacing: -0.055em;
-    line-height: 1;
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: -0.015em;
+    line-height: 1.15;
 }
 
-.materials-v2-subtitle {
-    max-width: 780px;
-    margin: 0.85rem 0 0;
+.materials-v2-school-name {
+    margin: 0.15rem 0 0;
+    overflow: hidden;
     color: var(--materials-v2-muted);
-    font-size: clamp(1rem, 1.7vw, 1.2rem);
-    line-height: 1.55;
+    font-size: 0.7rem;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.materials-v2-filter-layout {
+.materials-v2-header-search {
+    width: 100%;
+    max-width: 640px;
+    justify-self: center;
+}
+
+.materials-v2-header-search :deep(.v-field) {
+    min-height: 42px;
+    border: 1px solid rgba(23, 45, 59, 0.12);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: none;
+    font-size: 0.88rem;
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.materials-v2-header-search :deep(.v-field--focused) {
+    border-color: var(--materials-v2-accent);
+    box-shadow: 0 0 0 4px rgba(255, 122, 50, 0.1);
+}
+
+.materials-v2-system-navigation {
+    border-bottom: 1px solid rgba(23, 45, 59, 0.08);
+    background: rgba(248, 250, 253, 0.94);
+}
+
+.materials-v2-system-tabs {
+    padding: 0 22px;
+}
+
+.materials-v2-system-tab {
+    min-width: auto;
+    padding: 0 1.05rem;
+    color: var(--materials-v2-muted);
+    font-size: 0.78rem;
+    font-weight: 650;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.materials-v2-system-tab :deep(.v-btn__content) {
+    gap: 0.35rem;
+}
+
+.materials-v2-system-tab.v-tab--selected {
+    color: var(--materials-v2-accent);
+    font-weight: 800;
+}
+
+.materials-v2-system-tab-count {
+    color: inherit;
+    font-size: 0.7rem;
+    opacity: 0.72;
+}
+
+.materials-v2-system-tab-create-button {
+    align-self: center;
+    margin-inline: -0.45rem 0.15rem;
+}
+
+.materials-v2-workspace {
     display: grid;
-    grid-template-columns: minmax(260px, 0.8fr) minmax(0, 2fr);
-    gap: 1rem;
-    align-items: start;
+    min-height: calc(100vh - 184px);
+    grid-template-columns: 250px minmax(0, 1fr);
 }
 
 .materials-v2-category-panel {
-    border: 1px solid rgba(23, 45, 59, 0.1);
-    background:
-        radial-gradient(circle at top right, rgba(47, 191, 145, 0.15), transparent 52%),
-        linear-gradient(150deg, rgba(255, 255, 255, 0.95), rgba(240, 253, 250, 0.92));
-    box-shadow:
-        0 16px 42px rgba(23, 45, 59, 0.09),
-        inset 0 1px 0 rgba(255, 255, 255, 0.75);
+    padding: 1.25rem 0.85rem;
+    border-right: 1px solid rgba(23, 45, 59, 0.08);
+    background: rgba(247, 249, 252, 0.78);
 }
 
 .materials-v2-category-panel-heading {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.8rem;
-}
-
-.materials-v2-category-panel-subtitle {
-    color: var(--materials-v2-muted);
-}
-
-.materials-v2-category-panel-actions {
-    display: flex;
+    min-height: 32px;
+    padding: 0 0.35rem 0.65rem;
     align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
+    justify-content: space-between;
     gap: 0.5rem;
+    color: var(--materials-v2-muted);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .materials-v2-category-list {
-    max-height: 320px;
+    max-height: calc(100vh - 265px);
     overflow-y: auto;
 }
 
 .materials-v2-category-item {
-    border: 1px solid rgba(23, 45, 59, 0.08);
-    background: rgba(255, 255, 255, 0.84);
+    border: 1px solid transparent;
+    background: transparent;
     cursor: pointer;
 }
 
 .materials-v2-category-item.v-list-item--active {
-    border-color: rgba(47, 191, 145, 0.42);
+    border-color: rgba(var(--v-theme-primary), 0.14);
+    background: rgba(var(--v-theme-primary), 0.06);
 }
 
 .materials-v2-category-item-actions {
@@ -1637,50 +3226,28 @@ function notify(message, type = 'success') {
     gap: 0.2rem;
 }
 
-.materials-v2-search-panel {
-    padding: 1rem;
-    border: 1px solid rgba(23, 45, 59, 0.08);
-    border-radius: 26px;
-    background: rgba(255, 255, 255, 0.84);
-    box-shadow: 0 22px 65px rgba(23, 45, 59, 0.09);
-    backdrop-filter: blur(18px);
-}
-
-.materials-v2-search :deep(.v-field) {
-    min-height: 64px;
-    border: 2px solid rgba(23, 45, 59, 0.09);
-    background: #fff;
-    box-shadow: none;
-    font-size: 1.05rem;
-    transition: border-color 180ms ease, box-shadow 180ms ease;
-}
-
-.materials-v2-search :deep(.v-field--focused) {
-    border-color: var(--materials-v2-accent);
-    box-shadow: 0 0 0 5px rgba(255, 122, 50, 0.11);
-}
-
-.materials-v2-search-hints {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem 1.2rem;
-    padding: 0.75rem 0.6rem 0.1rem;
+.materials-v2-category-item-count {
     color: var(--materials-v2-muted);
-    font-size: 0.78rem;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
 }
 
-.materials-v2-search-hints span {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
+.materials-v2-main {
+    min-width: 0;
+    padding: 0.85rem 1.8rem 2rem;
 }
 
 .materials-v2-toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    min-height: 68px;
+    min-height: 48px;
     gap: 1rem;
+}
+
+.materials-v2-result-heading {
+    font-size: 0.9rem;
+    font-weight: 800;
 }
 
 .materials-v2-toolbar-actions {
@@ -1699,6 +3266,206 @@ function notify(message, type = 'success') {
 .materials-v2-display-toggle :deep(.v-btn) {
     min-width: 78px;
     text-transform: none;
+}
+
+.materials-v2-calendar {
+    position: relative;
+    margin-top: 0.5rem;
+    overflow-x: auto;
+    border: 1px solid rgba(23, 45, 59, 0.1);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 12px 40px rgba(23, 45, 59, 0.06);
+}
+
+.materials-v2-calendar-loading {
+    position: absolute;
+    z-index: 3;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem;
+    border-radius: inherit;
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--materials-v2-ink);
+    font-size: 0.82rem;
+    font-weight: 750;
+    backdrop-filter: blur(2px);
+}
+
+.materials-v2-calendar-loading-spinner {
+    width: 22px;
+    height: 22px;
+    border: 3px solid rgba(255, 122, 50, 0.2);
+    border-top-color: var(--materials-v2-accent);
+    border-radius: 999px;
+    animation: materials-v2-calendar-spin 700ms linear infinite;
+}
+
+@keyframes materials-v2-calendar-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.materials-v2-calendar-toolbar {
+    display: flex;
+    min-width: 720px;
+    padding: 0.8rem 1rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid rgba(23, 45, 59, 0.08);
+}
+
+.materials-v2-calendar-navigation {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+}
+
+.materials-v2-calendar-item-navigation {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.materials-v2-calendar-period {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 800;
+    text-transform: capitalize;
+}
+
+.materials-v2-calendar-weekdays {
+    display: grid;
+    min-width: 720px;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    border-bottom: 1px solid rgba(23, 45, 59, 0.08);
+    background: rgba(247, 249, 252, 0.86);
+}
+
+.materials-v2-calendar-weekdays span {
+    padding: 0.55rem 0.7rem;
+    color: var(--materials-v2-muted);
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.materials-v2-calendar-grid {
+    display: grid;
+    min-width: 720px;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.materials-v2-calendar-day {
+    min-width: 0;
+    min-height: 128px;
+    padding: 0.55rem;
+    border-right: 1px solid rgba(23, 45, 59, 0.07);
+    border-bottom: 1px solid rgba(23, 45, 59, 0.07);
+}
+
+.materials-v2-calendar-grid--week .materials-v2-calendar-day {
+    min-height: 420px;
+}
+
+.materials-v2-calendar-day:nth-child(7n) {
+    border-right: 0;
+}
+
+.materials-v2-calendar-day--outside {
+    background: rgba(247, 249, 252, 0.72);
+    color: rgba(97, 116, 130, 0.6);
+}
+
+.materials-v2-calendar-day-heading {
+    display: flex;
+    min-height: 28px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 800;
+}
+
+.materials-v2-calendar-day-weekday {
+    margin-right: auto;
+    color: var(--materials-v2-muted);
+    text-transform: capitalize;
+}
+
+.materials-v2-calendar-day-heading time {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border-radius: 999px;
+}
+
+.materials-v2-calendar-day--today .materials-v2-calendar-day-heading time {
+    background: var(--materials-v2-accent);
+    color: #fff;
+}
+
+.materials-v2-calendar-events {
+    display: flex;
+    margin-top: 0.35rem;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.materials-v2-calendar-event {
+    display: flex;
+    width: 100%;
+    padding: 0.38rem 0.45rem;
+    align-items: flex-start;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(255, 122, 50, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 122, 50, 0.09);
+    color: var(--materials-v2-ink);
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+}
+
+.materials-v2-calendar-event:hover,
+.materials-v2-calendar-event:focus-visible {
+    border-color: rgba(255, 122, 50, 0.45);
+    background: rgba(255, 122, 50, 0.15);
+    outline: none;
+}
+
+.materials-v2-calendar-event-time {
+    color: var(--materials-v2-accent);
+    font-size: 0.64rem;
+    font-weight: 800;
+}
+
+.materials-v2-calendar-event-title {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.materials-v2-calendar-day-empty {
+    display: none;
+    color: var(--materials-v2-muted);
+    font-size: 0.72rem;
+}
+
+.materials-v2-calendar-grid--week .materials-v2-calendar-day-empty {
+    display: inline;
+    padding: 0.4rem 0.2rem;
 }
 
 .materials-v2-card {
@@ -1724,6 +3491,108 @@ function notify(message, type = 'success') {
 
 .materials-v2-card--compact:hover {
     transform: translateY(-1px);
+}
+
+.materials-v2-card--reminder {
+    border-color: rgba(255, 122, 50, 0.22);
+    background: linear-gradient(145deg, rgba(255, 248, 242, 0.96), rgba(255, 255, 255, 0.96));
+}
+
+.materials-v2-card--link {
+    border-color: rgba(0, 137, 123, 0.2);
+    background: linear-gradient(145deg, rgba(241, 253, 251, 0.96), rgba(255, 255, 255, 0.96));
+}
+
+.materials-v2-screenshot-thumbnail-button {
+    display: block;
+    width: 100%;
+    height: 150px;
+    margin-top: 0.9rem;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid rgba(23, 45, 59, 0.1);
+    border-radius: 12px;
+    background: #f4f6f7;
+    cursor: zoom-in;
+}
+
+.materials-v2-screenshot-thumbnail-button:focus-visible {
+    border-color: rgb(var(--v-theme-primary));
+    outline: 2px solid rgba(var(--v-theme-primary), 0.25);
+    outline-offset: 2px;
+}
+
+.materials-v2-screenshot-thumbnail {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.materials-v2-link-target {
+    display: flex;
+    min-width: 0;
+    margin-top: 0.9rem;
+    padding: 0.65rem 0.75rem;
+    align-items: center;
+    gap: 0.5rem;
+    overflow: hidden;
+    border: 1px solid rgba(0, 137, 123, 0.16);
+    border-radius: 12px;
+    background: rgba(0, 137, 123, 0.07);
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.materials-v2-link-target span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.materials-v2-link-target:hover {
+    text-decoration: underline;
+}
+
+.materials-v2-reminder-date {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin-top: 0.9rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid rgba(255, 122, 50, 0.14);
+    border-radius: 12px;
+    background: rgba(255, 122, 50, 0.075);
+}
+
+.materials-v2-reminder-date-icon {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    place-items: center;
+    border-radius: 10px;
+    color: var(--materials-v2-accent);
+    background: rgba(255, 255, 255, 0.82);
+}
+
+.materials-v2-reminder-date-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    line-height: 1.25;
+}
+
+.materials-v2-reminder-date-copy strong {
+    font-size: 0.86rem;
+}
+
+.materials-v2-reminder-date-copy span {
+    margin-top: 0.12rem;
+    color: var(--materials-v2-muted);
+    font-size: 0.74rem;
 }
 
 .materials-v2-card-title {
@@ -1788,27 +3657,227 @@ function notify(message, type = 'success') {
 }
 
 .materials-v2-automatic-tag-review {
-    padding: 1rem;
-    border: 1px solid rgba(var(--v-theme-primary), 0.18);
-    border-radius: 14px;
-    background: rgba(var(--v-theme-primary), 0.035);
+    padding: 0.55rem 0.7rem;
+    border-radius: 10px;
+    background: rgba(23, 45, 59, 0.035);
 }
 
-.materials-v2-automatic-tag-row,
+.materials-v2-automatic-tag-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 24px;
+    color: var(--materials-v2-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.materials-v2-automatic-tag-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+.materials-v2-automatic-tag-label {
+    white-space: nowrap;
+}
+
+.materials-v2-automatic-tag-names {
+    font-weight: 400;
+}
+
+.materials-v2-automatic-tag-editor {
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgba(23, 45, 59, 0.06);
+}
+
+.materials-v2-automatic-tag-editor-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--materials-v2-muted);
+    font-size: 0.65rem;
+    font-weight: 650;
+}
+
+.materials-v2-automatic-tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.3rem;
+}
+
+.materials-v2-automatic-tag-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    min-height: 28px;
+    padding: 0.1rem 0.15rem 0.1rem 0.25rem;
+    border: 1px solid rgba(23, 45, 59, 0.07);
+    border-radius: 999px;
+    background: rgba(var(--v-theme-surface), 0.65);
+}
+
+.materials-v2-automatic-tag-meta {
+    color: var(--materials-v2-muted);
+    font-size: 0.65rem;
+    white-space: nowrap;
+}
+
+.materials-v2-automatic-tag-empty {
+    margin: 0.2rem 0 0;
+    color: var(--materials-v2-muted);
+    font-size: 0.7rem;
+}
+
+.materials-v2-tag-status-list {
+    margin-top: 0.4rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid rgba(23, 45, 59, 0.06);
+}
+
 .materials-v2-tag-status-row {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
+    gap: 0.3rem;
+    min-height: 24px;
+    color: var(--materials-v2-muted);
+    font-size: 0.7rem;
+}
+
+.materials-v2-tag-status-name {
+    overflow: hidden;
+    max-width: 240px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.materials-v2-screenshot-input {
+    margin-top: 0.75rem;
+}
+
+.materials-v2-screenshot-paste-zone {
+    display: flex;
+    min-height: 180px;
+    padding: 1rem;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 0.45rem;
+    overflow: hidden;
+    border: 2px dashed rgba(var(--v-theme-primary), 0.45);
+    border-radius: 16px;
+    background: rgba(var(--v-theme-primary), 0.045);
+    color: rgb(var(--v-theme-on-surface));
+    cursor: pointer;
+    text-align: center;
+}
+
+.materials-v2-screenshot-paste-zone:focus-visible {
+    border-color: rgb(var(--v-theme-primary));
+    box-shadow: 0 0 0 4px rgba(var(--v-theme-primary), 0.14);
+    outline: none;
+}
+
+.materials-v2-screenshot-paste-zone span {
+    color: var(--materials-v2-muted);
+    font-size: 0.8rem;
+}
+
+.materials-v2-screenshot-preview {
+    display: block;
+    max-width: 100%;
+    max-height: 320px;
+    border-radius: 10px;
+    object-fit: contain;
+}
+
+.materials-v2-link-input {
+    margin-top: 0.75rem;
+}
+
+.materials-v2-link-paste-zone {
+    display: flex;
+    min-height: 140px;
+    padding: 1rem;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 0.45rem;
+    overflow: hidden;
+    border: 2px dashed rgba(0, 137, 123, 0.42);
+    border-radius: 16px;
+    background: rgba(0, 137, 123, 0.045);
+    color: rgb(var(--v-theme-on-surface));
+    cursor: pointer;
+    text-align: center;
+}
+
+.materials-v2-link-paste-zone:focus-visible {
+    border-color: rgb(var(--v-theme-primary));
+    box-shadow: 0 0 0 4px rgba(var(--v-theme-primary), 0.14);
+    outline: none;
+}
+
+.materials-v2-link-paste-zone strong {
+    overflow: hidden;
+    max-width: 100%;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.materials-v2-link-paste-zone span {
+    color: var(--materials-v2-muted);
+    font-size: 0.8rem;
+}
+
+.materials-v2-link-preview {
+    display: inline-flex;
+    margin-top: 0.25rem;
+    align-items: center;
+    gap: 0.25rem;
+    color: rgb(var(--v-theme-primary));
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.materials-v2-link-preview:hover {
+    text-decoration: underline;
+}
+
+.materials-v2-link-status {
+    margin-top: -0.5rem;
+}
+
+.materials-v2-edit-attachments {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(23, 45, 59, 0.08);
+}
+
+.materials-v2-edit-attachments-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     gap: 0.5rem;
 }
 
-.materials-v2-automatic-tag-row {
-    min-height: 36px;
+.materials-v2-edit-attachment-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
 }
 
-.materials-v2-tag-status-row {
-    padding: 0.55rem 0;
-    border-top: 1px solid rgba(23, 45, 59, 0.08);
+.materials-v2-edit-attachments-empty {
+    margin: 0.25rem 0 0;
+    color: var(--materials-v2-muted);
+    font-size: 0.72rem;
 }
 
 .materials-v2-attachments {
@@ -1934,20 +4003,53 @@ function notify(message, type = 'success') {
     min-width: 0;
 }
 
+@media (max-width: 900px) {
+    .materials-v2-header {
+        min-height: auto;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.65rem 1rem;
+    }
+
+    .materials-v2-header-search {
+        max-width: none;
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
+    .materials-v2-workspace {
+        grid-template-columns: 220px minmax(0, 1fr);
+    }
+}
+
 @media (max-width: 700px) {
-    .materials-v2-filter-layout {
+    .materials-v2-header {
+        padding: 10px 12px;
+    }
+
+    .materials-v2-system-tabs {
+        padding: 0 6px;
+    }
+
+    .materials-v2-system-tab {
+        padding: 0 0.75rem;
+    }
+
+    .materials-v2-workspace {
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .materials-v2-header {
-        align-items: stretch;
-        flex-direction: column;
-        gap: 1.2rem;
+    .materials-v2-category-panel {
+        padding: 0.8rem;
+        border-right: 0;
+        border-bottom: 1px solid rgba(23, 45, 59, 0.08);
     }
 
-    .materials-v2-search-hints {
-        align-items: flex-start;
-        flex-direction: column;
+    .materials-v2-category-list {
+        max-height: 190px;
+    }
+
+    .materials-v2-main {
+        padding: 0.75rem 0.85rem 1.5rem;
     }
 
     .materials-v2-toolbar {
