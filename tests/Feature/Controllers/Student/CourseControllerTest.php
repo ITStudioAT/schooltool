@@ -558,6 +558,52 @@ test('student attachment names keep storage extension for word files', function 
         ->assertHeader('content-disposition', 'attachment; filename="Schreibübung.docx"');
 });
 
+test('student html attachment preview is sandboxed', function () {
+    Storage::fake('local');
+
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            ['id' => $this->studentA->id],
+        ],
+    ]);
+
+    $courseDate = TeachingCourseDate::create([
+        'teaching_course_id' => $course->id,
+        'date' => '2026-04-15',
+        'hours' => [1],
+        'status' => [],
+    ]);
+
+    $material = TeachingCourseDateMaterial::create([
+        'teaching_course_date_id' => $courseDate->id,
+        'title' => 'HTML-Arbeitsblatt',
+    ]);
+
+    $path = 'teaching/course_date_materials/'.$material->id.'/arbeitsblatt.html';
+    Storage::disk('local')->put($path, '<script>alert(document.domain)</script>');
+
+    $attachment = TeachingCourseDateMaterialAttachment::create([
+        'teaching_course_date_material_id' => $material->id,
+        'name' => 'Arbeitsblatt.html',
+        'file_path' => $path,
+        'mime_type' => 'text/html',
+        'size_bytes' => 47,
+        'student_visible' => true,
+    ]);
+
+    $this->actingAs($this->studentA)
+        ->get("/api/homepage/student/course-date-materials/attachments/{$attachment->id}/preview")
+        ->assertOk()
+        ->assertHeader(
+            'content-security-policy',
+            "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'"
+        )
+        ->assertHeader('x-content-type-options', 'nosniff');
+});
+
 test('student attachment route forbids hidden and foreign course attachments', function () {
     Storage::fake('local');
 

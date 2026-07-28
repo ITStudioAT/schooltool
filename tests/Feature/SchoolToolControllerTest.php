@@ -362,7 +362,7 @@ describe('saveModuleStatuses', function () {
         ]);
     });
 
-    test('save module statuses updates all school rows app wide', function () {
+    test('save module statuses only updates the authenticated school', function () {
         $otherSchool = School::factory()->create();
         $otherSchoolTool = SchoolTool::factory()->create([
             'school_id' => $otherSchool->id,
@@ -404,8 +404,8 @@ describe('saveModuleStatuses', function () {
 
         $this->assertDatabaseHas('school_tools', [
             'id' => $otherSchoolTool->id,
-            'register_visible_admin' => true,
-            'register_visible_user' => true,
+            'register_visible_admin' => false,
+            'register_visible_user' => false,
         ]);
     });
 
@@ -746,4 +746,49 @@ describe('saveTutoringSettings', function () {
             'may_visible_for_other_schools' => false,
         ]);
     });
+
+    test('save tutoring settings rejects a school tool from another school', function () {
+        $otherSchool = School::factory()->create();
+        $otherSchoolTool = SchoolTool::factory()->create([
+            'school_id' => $otherSchool->id,
+            'tutoring_student_must_be_confirmed' => false,
+            'tutoring_confirmer_email' => 'other@test.com',
+            'may_visible_for_other_schools' => false,
+        ]);
+
+        $this->actingAs($this->tutoringAdmin);
+
+        $this->postJson('/api/admin/school_tools/save_tutoring_settings', [
+            'data' => [
+                'id' => $otherSchoolTool->id,
+                'tutoring_student_must_be_confirmed' => true,
+                'tutoring_confirmer_email' => 'attacker@test.com',
+                'may_visible_for_other_schools' => true,
+            ],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['data.id']);
+
+        $this->assertDatabaseHas('school_tools', [
+            'id' => $otherSchoolTool->id,
+            'tutoring_student_must_be_confirmed' => false,
+            'tutoring_confirmer_email' => 'other@test.com',
+            'may_visible_for_other_schools' => false,
+        ]);
+    });
+});
+
+test('set active schoolyear rejects a schoolyear from another school', function () {
+    $otherSchool = School::factory()->create();
+    $otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $otherSchool->id,
+    ]);
+
+    $this->actingAs($this->admin);
+
+    $this->postJson('/api/admin/school_tools/set_active_schoolyear', [
+        'schoolyear_id' => $otherSchoolyear->id,
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors(['schoolyear_id']);
+
+    expect($this->schoolTool->fresh()->active_schoolyear_id)->toBeNull();
 });

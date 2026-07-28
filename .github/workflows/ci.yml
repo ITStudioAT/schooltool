@@ -80,6 +80,12 @@ jobs:
       - name: Reject invalid UTF-8 and mojibake
         run: php scripts/check-encoding.php
 
+      - name: Reject Laravel keys introduced anywhere in commit history
+        if: github.event_name != 'schedule'
+        env:
+          SECRET_SCAN_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: php scripts/check-secret-history.php --base="$SECRET_SCAN_BASE_SHA"
+
       - name: Validate Composer metadata
         run: composer validate --strict
 

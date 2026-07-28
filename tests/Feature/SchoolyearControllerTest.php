@@ -203,6 +203,24 @@ test('register admin cannot update schoolyear', function () {
     ])->assertStatus(403);
 });
 
+test('admin cannot update a schoolyear from another school', function () {
+    $otherSchool = School::factory()->create();
+    $foreignSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $otherSchool->id,
+        'name' => 'Foreign',
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->putJson("/api/admin/schoolyears/{$foreignSchoolyear->id}", [
+        'id' => $foreignSchoolyear->id,
+        'name' => 'Compromised',
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors(['id']);
+
+    expect($foreignSchoolyear->fresh()->name)->toBe('Foreign');
+});
+
 // ============================================================================
 // destroy
 // ============================================================================
@@ -272,6 +290,21 @@ test('guest cannot delete schoolyear', function () {
 
     $this->deleteJson("/api/admin/schoolyears/{$deletable->id}")
         ->assertStatus(401);
+});
+
+test('admin cannot delete a schoolyear from another school', function () {
+    $otherSchool = School::factory()->create();
+    $foreignSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $otherSchool->id,
+        'name' => 'Foreign',
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->deleteJson("/api/admin/schoolyears/{$foreignSchoolyear->id}")
+        ->assertNotFound();
+
+    $this->assertModelExists($foreignSchoolyear);
 });
 
 // ============================================================================
@@ -347,4 +380,18 @@ test('set active schoolyear requires authentication and valid payload', function
 
     $this->postJson('/api/admin/schoolyears/set_active', [])
         ->assertStatus(422);
+});
+
+test('user cannot select a schoolyear from another school', function () {
+    $otherSchool = School::factory()->create();
+    $foreignSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $otherSchool->id,
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->postJson('/api/admin/schoolyears/set_active', [
+        'schoolyear_id' => $foreignSchoolyear->id,
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors(['schoolyear_id']);
 });

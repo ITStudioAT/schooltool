@@ -4,6 +4,7 @@ namespace App\Http\Resources\Admin\Materials;
 
 use App\Models\MaterialInboxImport;
 use App\Models\MaterialShareTarget;
+use App\Support\SafeExternalUrl;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -24,7 +25,7 @@ class MaterialCardResource extends JsonResource
             'is_shared_material' => (bool) ($this->is_shared_material ?? false),
             'shared_rule_id' => $this->shared_rule_id !== null ? (int) $this->shared_rule_id : null,
             'title' => $this->title,
-            'source_url' => $this->source_url,
+            'source_url' => SafeExternalUrl::sanitize($this->source_url),
             'source_text' => $this->source_text,
             'subject' => $this->subject,
             'area' => $this->area,

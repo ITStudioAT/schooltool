@@ -5,6 +5,7 @@ namespace App\Http\Requests\Admin;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class SchoolyearUpdateRequest extends FormRequest
 {
@@ -24,7 +25,12 @@ class SchoolyearUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'id' => 'required|exists:schoolyears,id',
+            'id' => [
+                'required',
+                'integer',
+                Rule::exists('schoolyears', 'id')
+                    ->where('school_id', Auth::user()?->school_id),
+            ],
             'name' => 'required|string|max:255',
             'concerns' => 'nullable|string|max:255',
             'from' => 'nullable|date',

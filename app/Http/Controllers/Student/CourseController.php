@@ -446,10 +446,27 @@ class CourseController extends Controller
         $name = $this->attachmentNameWithStorageExtension($attachment->name, $path);
         $mime = $attachment->mime_type ?: ($disk->mimeType($path) ?: 'application/octet-stream');
 
-        return $disk->response($path, $name, [
+        $headers = [
             'Content-Type' => $mime,
             'Content-Disposition' => $disposition.'; filename="'.addcslashes($name, '"').'"',
-        ]);
+            'Cache-Control' => 'private, no-store, max-age=0',
+            'X-Content-Type-Options' => 'nosniff',
+        ];
+
+        if ($disposition === 'inline' && $this->isActiveAttachmentContent($name, $mime)) {
+            $headers['Content-Security-Policy'] = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'";
+        }
+
+        return $disk->response($path, $name, $headers);
+    }
+
+    private function isActiveAttachmentContent(string $name, string $mimeType): bool
+    {
+        $extension = strtolower((string) pathinfo($name, PATHINFO_EXTENSION));
+        $normalizedMimeType = strtolower(trim($mimeType));
+
+        return in_array($extension, ['html', 'htm', 'xhtml', 'svg'], true)
+            || in_array($normalizedMimeType, ['text/html', 'application/xhtml+xml', 'image/svg+xml'], true);
     }
 
     private function attachmentNameWithStorageExtension(?string $name, ?string $path): string

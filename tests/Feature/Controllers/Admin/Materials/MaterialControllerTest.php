@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Resources\Admin\Materials\MaterialCardResource;
 use App\Jobs\SynchronizeMaterialLinkedContent;
 use App\Models\Licence;
 use App\Models\MaterialCard;
@@ -1457,6 +1458,71 @@ test('quick store creates inbox card', function () {
         ]);
 });
 
+test('material card mutations reject active URL schemes', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/materials/cards', [
+        'data' => [
+            'title' => 'Unsafe card',
+            'source_url' => 'javascript:alert(document.domain)',
+        ],
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors(['data.source_url']);
+
+    $this->postJson('/api/admin/materials/cards/quick_store', [
+        'data' => [
+            'title' => 'Unsafe quick card',
+            'source_url' => 'data:text/html,<script>alert(1)</script>',
+        ],
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors(['data.source_url']);
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Existing card',
+    ]);
+
+    $this->putJson("/api/admin/materials/cards/{$card->id}", [
+        'data' => [
+            'title' => 'Existing card',
+            'source_url' => 'vbscript:msgbox(1)',
+        ],
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors(['data.source_url']);
+
+    $this->postJson("/api/admin/materials/cards/{$card->id}/attachments/link", [
+        'data' => [
+            'name' => 'Unsafe attachment',
+            'url' => 'javascript:alert(1)',
+        ],
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors(['data.url']);
+});
+
+test('material resources suppress unsafe legacy URLs', function () {
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Legacy unsafe URL',
+        'source_url' => 'javascript:alert(1)',
+    ]);
+    $card->attachments()->create([
+        'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+        'name' => 'Legacy link',
+        'url' => 'data:text/html,<script>alert(1)</script>',
+        'source_url' => 'vbscript:msgbox(1)',
+    ]);
+
+    $payload = (new MaterialCardResource($card->load('attachments')))
+        ->response()
+        ->getData(true)['data'];
+
+    expect($payload['source_url'])->toBeNull()
+        ->and($payload['attachments'][0]['url'])->toBeNull()
+        ->and($payload['attachments'][0]['source_url'])->toBeNull();
+});
+
 test('material card creation rejects subject and topic level classifications', function () {
     $this->actingAs($this->teacher, 'sanctum');
 
@@ -2779,6 +2845,55 @@ test('adding file attachment stores file and allows download', function () {
     $previewResponse = $this->get('/api/admin/materials/attachments/'.$attachment->id.'/preview');
     $previewResponse->assertStatus(200);
     expect(strtolower((string) $previewResponse->headers->get('content-type')))->toContain('application/pdf');
+});
+
+test('SVG attachments are not rendered inline and HTML previews are sandboxed', function () {
+    Storage::fake('local');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Active previews',
+    ]);
+
+    Storage::disk('local')->put(
+        'materials/cards/active.svg',
+        '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(document.domain)</script></svg>'
+    );
+    $svgAttachment = $card->attachments()->create([
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'active.svg',
+        'file_path' => 'materials/cards/active.svg',
+        'mime_type' => 'image/svg+xml',
+    ]);
+
+    Storage::disk('local')->put(
+        'materials/cards/active.html',
+        '<html><body><script>alert(document.domain)</script><p>Safe text</p></body></html>'
+    );
+    $htmlAttachment = $card->attachments()->create([
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'active.html',
+        'file_path' => 'materials/cards/active.html',
+        'mime_type' => 'text/html',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $svgResponse = $this->get("/api/admin/materials/attachments/{$svgAttachment->id}/preview");
+    $svgResponse->assertSuccessful();
+
+    expect($svgResponse->headers->get('content-type'))->toContain('text/html')
+        ->and($svgResponse->headers->get('content-security-policy'))->toContain('sandbox')
+        ->and($svgResponse->getContent())->toContain('nicht direkt im Browser angezeigt')
+        ->not->toContain('<svg');
+
+    $htmlResponse = $this->get("/api/admin/materials/attachments/{$htmlAttachment->id}/preview");
+    $htmlResponse->assertSuccessful();
+
+    expect($htmlResponse->headers->get('content-security-policy'))->toContain('sandbox')
+        ->and($htmlResponse->getContent())->toContain('Safe text')
+        ->not->toContain('<script');
 });
 
 test('owner can open a docx attachment through a temporary signed Word URL', function () {

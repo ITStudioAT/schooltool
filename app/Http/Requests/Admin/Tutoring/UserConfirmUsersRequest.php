@@ -5,6 +5,7 @@ namespace App\Http\Requests\Admin\Tutoring;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class UserConfirmUsersRequest extends FormRequest
 {
@@ -25,7 +26,12 @@ class UserConfirmUsersRequest extends FormRequest
     {
         return [
             'data' => 'required|array',
-            'data.*' => 'required|integer|exists:users,id',
+            'data.*' => [
+                'required',
+                'integer',
+                Rule::exists('users', 'id')
+                    ->where('school_id', Auth::user()?->school_id),
+            ],
         ];
     }
 }

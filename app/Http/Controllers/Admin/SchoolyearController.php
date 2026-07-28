@@ -90,6 +90,8 @@ class SchoolyearController extends Controller
         if (! $auth_user = $this->userHasRole(['admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+        $this->assertSchoolyearBelongsToSchool($schoolyear, $auth_user->school_id);
+
         $validated = $request->validated();
         $schoolyear->update($validated);
 
@@ -104,6 +106,7 @@ class SchoolyearController extends Controller
         if (! $auth_user = $this->userHasRole(['admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+        $this->assertSchoolyearBelongsToSchool($schoolyear, $auth_user->school_id);
 
         if ($schoolyear->hasDependencies()) {
             abort(409, 'Das Schuljahr hat noch Abhängigkeiten und kann nicht gelöscht werden');
@@ -128,5 +131,12 @@ class SchoolyearController extends Controller
         $schoolyear = $schoolyearService->setToUser($auth_user, $validated['schoolyear_id']);
 
         return response()->json(new SchoolyearResource($schoolyear), 200);
+    }
+
+    private function assertSchoolyearBelongsToSchool(Schoolyear $schoolyear, int $schoolId): void
+    {
+        if ((int) $schoolyear->school_id !== $schoolId) {
+            abort(404);
+        }
     }
 }

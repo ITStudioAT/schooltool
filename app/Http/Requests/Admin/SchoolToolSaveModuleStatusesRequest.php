@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class SchoolToolSaveModuleStatusesRequest extends FormRequest
 {
@@ -15,7 +16,12 @@ class SchoolToolSaveModuleStatusesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'data.id' => ['required', 'integer', 'exists:school_tools,id'],
+            'data.id' => [
+                'required',
+                'integer',
+                Rule::exists('school_tools', 'id')
+                    ->where('school_id', Auth::user()?->school_id),
+            ],
             'data.register_visible_admin' => ['required', 'boolean'],
             'data.register_visible_user' => ['required', 'boolean'],
             'data.register_user_test_mode' => ['required', 'boolean'],

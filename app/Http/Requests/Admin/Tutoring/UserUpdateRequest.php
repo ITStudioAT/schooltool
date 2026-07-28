@@ -5,6 +5,7 @@ namespace App\Http\Requests\Admin\Tutoring;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class UserUpdateRequest extends FormRequest
 {
@@ -24,7 +25,12 @@ class UserUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'id' => 'required|integer|exists:users,id',
+            'id' => [
+                'required',
+                'integer',
+                Rule::exists('users', 'id')
+                    ->where('school_id', Auth::user()?->school_id),
+            ],
             'last_name' => 'required|string|max:255',
             'first_name' => 'nullable|string|max:255',
             'email' => 'required|email|max:255',

@@ -9,6 +9,7 @@ use App\Http\Resources\Admin\SchoolToolResource;
 use App\Models\SchoolTool;
 use App\Services\SchoolToolModuleStatusService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class SchoolToolController extends Controller
 {
@@ -39,7 +40,10 @@ class SchoolToolController extends Controller
         }
 
         $validated = $request->validated()['data'];
-        $schoolTool = SchoolTool::query()->whereKey($validated['id'])->firstOrFail();
+        $schoolTool = SchoolTool::query()
+            ->where('school_id', $auth_user->school_id)
+            ->whereKey($validated['id'])
+            ->firstOrFail();
         $moduleStatusService = app(SchoolToolModuleStatusService::class);
         $updatable = collect($moduleStatusService->existingSchoolToolAttributes(
             collect($validated)
@@ -52,12 +56,8 @@ class SchoolToolController extends Controller
         $updatable = $this->normalizeModuleVisibilityFlags($updatable);
 
         if ($updatable !== []) {
-            SchoolTool::query()->update($updatable);
+            $schoolTool->update($updatable);
             $schoolTool->refresh();
-        }
-
-        if ($schoolTool->school_id !== $auth_user->school_id) {
-            $schoolTool = SchoolTool::query()->where('school_id', $auth_user->school_id)->firstOrFail();
         }
 
         return response()->json(new SchoolToolResource($schoolTool), 200);
@@ -70,7 +70,10 @@ class SchoolToolController extends Controller
         }
 
         $validated = $request->validated()['data'];
-        $schoolTool = SchoolTool::findOrFail($validated['id']);
+        $schoolTool = SchoolTool::query()
+            ->where('school_id', $auth_user->school_id)
+            ->whereKey($validated['id'])
+            ->firstOrFail();
 
         // Legacy-safe: ignore fields that are missing in older DB schemas.
         $moduleStatusService = app(SchoolToolModuleStatusService::class);
@@ -91,7 +94,12 @@ class SchoolToolController extends Controller
         }
 
         $validated = $request->validate([
-            'schoolyear_id' => 'required|integer|exists:schoolyears,id',
+            'schoolyear_id' => [
+                'required',
+                'integer',
+                Rule::exists('schoolyears', 'id')
+                    ->where('school_id', $auth_user->school_id),
+            ],
         ]);
 
         $schoolTool = SchoolTool::where('school_id', $auth_user->school_id)->first();

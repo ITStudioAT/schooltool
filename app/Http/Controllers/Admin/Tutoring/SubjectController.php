@@ -50,6 +50,7 @@ class SubjectController extends Controller
         if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+        $this->assertSubjectBelongsToSchool($subject, $auth_user->school_id);
 
         $validated = $request->validated();
         $data = $validated['data'];
@@ -80,6 +81,7 @@ class SubjectController extends Controller
         if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+        $this->assertSubjectBelongsToSchool($subject, $auth_user->school_id);
 
         if ($subject->hasDependencies()) {
             abort(422, 'Es existieren noch Abhängigkeiten.');
@@ -103,5 +105,12 @@ class SubjectController extends Controller
         $service->create($auth_user->school_id, $data);
 
         return response()->noContent();
+    }
+
+    private function assertSubjectBelongsToSchool(TutoringSubject $subject, int $schoolId): void
+    {
+        if ((int) $subject->school_id !== $schoolId) {
+            abort(404);
+        }
     }
 }

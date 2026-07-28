@@ -5,6 +5,7 @@ namespace App\Http\Requests\Admin;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class SchoolToolSaveTutoringSettingsRequest extends FormRequest
 {
@@ -24,7 +25,12 @@ class SchoolToolSaveTutoringSettingsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'data.id' => ['required', 'integer', 'exists:school_tools,id'],
+            'data.id' => [
+                'required',
+                'integer',
+                Rule::exists('school_tools', 'id')
+                    ->where('school_id', Auth::user()?->school_id),
+            ],
             'data.tutoring_student_must_be_confirmed' => ['required', 'boolean'],
             'data.tutoring_confirmer_email' => ['nullable', 'email', 'max:255'],
             'data.tutoring_max_offers_per_student' => ['integer', 'min:0'],

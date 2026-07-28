@@ -31,18 +31,21 @@ $configuredCorsOrigins = array_values(array_filter(array_map(
     explode(',', (string) env('CORS_ALLOWED_ORIGINS', ''))
 )));
 
+$isProduction = strtolower((string) env('APP_ENV', 'production')) === 'production';
+
 $defaultCorsOrigins = array_values(array_unique(array_filter([
     $normalizeCorsOrigin((string) env('APP_URL', '')),
     $normalizeCorsOrigin((string) env('FRONTEND_URL', '')),
-    'http://localhost',
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://127.0.0.1',
-    'http://127.0.0.1:8000',
-    'http://127.0.0.1:5173',
-    'https://localhost',
-    'https://127.0.0.1',
-    'https://schooltool.at',
+    ...($isProduction ? [] : [
+        'http://localhost',
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1',
+        'http://127.0.0.1:8000',
+        'http://127.0.0.1:5173',
+        'https://localhost',
+        'https://127.0.0.1',
+    ]),
 ])));
 
 return [
@@ -66,7 +69,7 @@ return [
 
     'allowed_origins' => $configuredCorsOrigins !== [] ? $configuredCorsOrigins : $defaultCorsOrigins,
 
-    'allowed_origins_patterns' => [
+    'allowed_origins_patterns' => $isProduction ? [] : [
         '#^https?://.*\\.localhost(:\\d+)?$#',
         '#^https?://.*\\.test(:\\d+)?$#',
     ],

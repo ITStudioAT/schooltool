@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AbaAttachment;
+use App\Support\DiagnosticLogContextSanitizer;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\IOFactory as WordIOFactory;
@@ -1960,9 +1961,10 @@ class AbaLocalDocumentTextExtractor
         }
 
         try {
-            Log::channel('aba-run-debug')->debug($message, $context);
+            $safeContext = app(DiagnosticLogContextSanitizer::class)->sanitize($context);
+            Log::channel('aba-run-debug')->debug($message, $safeContext);
         } catch (\Throwable) {
-            Log::debug($message, $context);
+            Log::debug($message, $safeContext ?? []);
         }
     }
 }

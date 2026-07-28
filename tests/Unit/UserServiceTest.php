@@ -669,7 +669,7 @@ describe('deleteTutoringUsers', function () {
         $user = User::factory()->create(['school_id' => $this->school->id]);
         $user->assignRole('tutoring_user');
 
-        $this->service->deleteTutoringUsers([$user->id]);
+        $this->service->deleteTutoringUsers([$user->id], (int) $this->school->id);
 
         expect(User::find($user->id))->toBeNull();
     });
@@ -678,7 +678,7 @@ describe('deleteTutoringUsers', function () {
         $user = User::factory()->create(['school_id' => $this->school->id]);
         $user->assignRole(['tutoring_user', 'admin']);
 
-        $this->service->deleteTutoringUsers([$user->id]);
+        $this->service->deleteTutoringUsers([$user->id], (int) $this->school->id);
 
         expect(User::find($user->id))->not->toBeNull();
     });
@@ -694,7 +694,7 @@ describe('deleteTutoringUsers', function () {
             'user_id' => $user->id,
         ]);
 
-        $this->service->deleteTutoringUsers([$user->id]);
+        $this->service->deleteTutoringUsers([$user->id], (int) $this->school->id);
 
         expect(User::find($user->id))->not->toBeNull();
     });
@@ -709,7 +709,7 @@ describe('confirmTutoringUsers', function () {
         ]);
         $user->assignRole('tutoring_user');
 
-        $this->service->confirmTutoringUsers([$user->id]);
+        $this->service->confirmTutoringUsers([$user->id], (int) $this->school->id);
 
         $user->refresh();
 
@@ -724,7 +724,7 @@ describe('confirmTutoringUsers', function () {
         ]);
         $user->assignRole('tutoring_user');
 
-        $this->service->confirmTutoringUsers([$user->id]);
+        $this->service->confirmTutoringUsers([$user->id], (int) $this->school->id);
 
         $user->refresh();
 
@@ -743,7 +743,7 @@ describe('confirmTutoringUsers', function () {
 
         $originalConfirmedAt = $user->confirmed_at;
 
-        $this->service->confirmTutoringUsers([$user->id]);
+        $this->service->confirmTutoringUsers([$user->id], (int) $this->school->id);
 
         $user->refresh();
 

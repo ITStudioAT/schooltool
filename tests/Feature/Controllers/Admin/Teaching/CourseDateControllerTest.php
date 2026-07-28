@@ -577,3 +577,56 @@ it('teacher cannot access another teachers course or another schoolyear', functi
     $this->getJson('/api/admin/teaching/course_dates?course_id='.$this->course->id)->assertStatus(403);
     $this->getJson('/api/admin/teaching/course_dates?course_id='.$otherYearCourse->id)->assertStatus(403);
 });
+
+it('forbids preview and download of adopted attachments from another school', function () {
+    Storage::fake('local');
+
+    $foreignCourseDate = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->otherCourse->id,
+        'date' => '2026-05-01',
+        'hours' => [1],
+        'status' => [],
+    ]);
+    $foreignMaterial = $foreignCourseDate->materials()->create([
+        'title' => 'Foreign material',
+    ]);
+    $foreignAttachment = $foreignMaterial->attachments()->create([
+        'name' => 'foreign.pdf',
+        'file_path' => 'teaching/foreign.pdf',
+        'mime_type' => 'application/pdf',
+    ]);
+    Storage::disk('local')->put('teaching/foreign.pdf', '%PDF foreign');
+
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->get("/api/admin/teaching/course_date_materials/attachments/{$foreignAttachment->id}/preview")
+        ->assertForbidden();
+    $this->get("/api/admin/teaching/course_date_materials/attachments/{$foreignAttachment->id}/download")
+        ->assertForbidden();
+});
+
+it('sandboxes active adopted attachment previews', function () {
+    Storage::fake('local');
+
+    $courseDate = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-05-02',
+        'hours' => [1],
+        'status' => [],
+    ]);
+    $material = $courseDate->materials()->create([
+        'title' => 'HTML material',
+    ]);
+    $attachment = $material->attachments()->create([
+        'name' => 'active.html',
+        'file_path' => 'teaching/active.html',
+        'mime_type' => 'text/html',
+    ]);
+    Storage::disk('local')->put('teaching/active.html', '<script>alert(document.domain)</script>');
+
+    $response = $this->actingAs($this->admin, 'sanctum')
+        ->get("/api/admin/teaching/course_date_materials/attachments/{$attachment->id}/preview");
+
+    $response->assertSuccessful();
+    expect($response->headers->get('content-security-policy'))->toContain('sandbox');
+});

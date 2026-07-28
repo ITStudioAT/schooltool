@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Support\SafeExternalUrl;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -31,6 +33,20 @@ class MaterialCardAttachment extends Model
     protected $casts = [
         'downloaded_at' => 'datetime',
     ];
+
+    protected function url(): Attribute
+    {
+        return Attribute::get(
+            fn (?string $value): ?string => SafeExternalUrl::sanitize($value)
+        );
+    }
+
+    protected function sourceUrl(): Attribute
+    {
+        return Attribute::get(
+            fn (?string $value): ?string => SafeExternalUrl::sanitize($value)
+        );
+    }
 
     public function materialCard(): BelongsTo
     {

@@ -47,3 +47,50 @@ it('accepts explicit origins from CORS_ALLOWED_ORIGINS', function () {
         }
     }
 });
+
+it('does not include development origins or patterns in production defaults', function () {
+    $previousAppEnvironment = getenv('APP_ENV');
+    $previousAppUrl = getenv('APP_URL');
+    $previousFrontendUrl = getenv('FRONTEND_URL');
+    $previousCorsAllowedOrigins = getenv('CORS_ALLOWED_ORIGINS');
+
+    putenv('APP_ENV=production');
+    putenv('APP_URL=https://schooltool.example');
+    putenv('FRONTEND_URL');
+    putenv('CORS_ALLOWED_ORIGINS');
+    $_ENV['APP_ENV'] = $_SERVER['APP_ENV'] = 'production';
+    $_ENV['APP_URL'] = $_SERVER['APP_URL'] = 'https://schooltool.example';
+    unset(
+        $_ENV['FRONTEND_URL'],
+        $_SERVER['FRONTEND_URL'],
+        $_ENV['CORS_ALLOWED_ORIGINS'],
+        $_SERVER['CORS_ALLOWED_ORIGINS'],
+    );
+
+    try {
+        $corsConfig = require base_path('config/cors.php');
+
+        expect($corsConfig['allowed_origins'])->toBe(['https://schooltool.example'])
+            ->and($corsConfig['allowed_origins_patterns'])->toBeEmpty()
+            ->and($corsConfig['allowed_origins'])
+            ->not->toContain('http://localhost:5173', 'http://127.0.0.1:5173');
+    } finally {
+        foreach ([
+            'APP_ENV' => $previousAppEnvironment,
+            'APP_URL' => $previousAppUrl,
+            'FRONTEND_URL' => $previousFrontendUrl,
+            'CORS_ALLOWED_ORIGINS' => $previousCorsAllowedOrigins,
+        ] as $name => $previousValue) {
+            if ($previousValue === false) {
+                putenv($name);
+                unset($_ENV[$name], $_SERVER[$name]);
+
+                continue;
+            }
+
+            putenv("{$name}={$previousValue}");
+            $_ENV[$name] = $previousValue;
+            $_SERVER[$name] = $previousValue;
+        }
+    }
+});

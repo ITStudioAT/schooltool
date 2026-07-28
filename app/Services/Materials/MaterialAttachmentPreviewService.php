@@ -25,7 +25,7 @@ class MaterialAttachmentPreviewService
     /**
      * @var array<int, string>
      */
-    private array $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tif', 'tiff'];
+    private array $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff'];
 
     /**
      * @var array<int, string>
@@ -159,6 +159,18 @@ class MaterialAttachmentPreviewService
             }
 
             return $response;
+        }
+
+        if ($this->isSvg($extension, $mimeType)) {
+            if ($isTempFile) {
+                @unlink($absolutePath);
+            }
+
+            return $this->messageResponse(
+                $fileName,
+                'SVG-Dateien werden aus Sicherheitsgründen nicht direkt im Browser angezeigt.',
+                $downloadUrl
+            );
         }
 
         if ($this->isInlineMedia($extension, $mimeType)) {
@@ -479,6 +491,7 @@ class MaterialAttachmentPreviewService
             'Content-Type' => $mimeType,
             'Cache-Control' => 'private, no-store, max-age=0',
             'X-Content-Type-Options' => 'nosniff',
+            'Content-Security-Policy' => "sandbox; default-src 'none'; img-src data: blob:; media-src data: blob:; style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'",
         ]);
 
         $response->setContentDisposition('inline', $fileName);
@@ -644,7 +657,7 @@ class MaterialAttachmentPreviewService
             'Content-Type' => 'text/html; charset=UTF-8',
             'Cache-Control' => 'private, no-store, max-age=0',
             'X-Content-Type-Options' => 'nosniff',
-            'Content-Security-Policy' => "default-src 'none'; img-src data: blob:; media-src data: blob:; style-src 'unsafe-inline'; font-src data:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
+            'Content-Security-Policy' => "sandbox; default-src 'none'; img-src data: blob:; media-src data: blob:; style-src 'unsafe-inline'; font-src data:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
         ];
     }
 
@@ -846,6 +859,11 @@ class MaterialAttachmentPreviewService
             || $extension === 'pdf';
     }
 
+    private function isSvg(string $extension, string $mimeType): bool
+    {
+        return $extension === 'svg' || $mimeType === 'image/svg+xml';
+    }
+
     private function inlineMimeType(string $extension, string $mimeType): string
     {
         if ($mimeType !== '' && $mimeType !== 'application/octet-stream') {
@@ -858,7 +876,6 @@ class MaterialAttachmentPreviewService
             'png' => 'image/png',
             'gif' => 'image/gif',
             'webp' => 'image/webp',
-            'svg' => 'image/svg+xml',
             'bmp' => 'image/bmp',
             'mp4', 'm4v' => 'video/mp4',
             'webm' => 'video/webm',

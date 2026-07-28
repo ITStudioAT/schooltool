@@ -5,6 +5,7 @@ namespace App\Http\Requests\Admin\Tutoring;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class SubjectUpdateSubjectRequest extends FormRequest
 {
@@ -26,7 +27,12 @@ class SubjectUpdateSubjectRequest extends FormRequest
         return [
 
             'data' => 'required|array',
-            'data.id' => 'required|integer|exists:tutoring_subjects,id',
+            'data.id' => [
+                'required',
+                'integer',
+                Rule::exists('tutoring_subjects', 'id')
+                    ->where('school_id', Auth::user()?->school_id),
+            ],
             'data.short_name' => 'required|string|max:10',
             'data.long_name' => 'required|string|max:255',
             'data.must_be_accepted' => 'boolean',

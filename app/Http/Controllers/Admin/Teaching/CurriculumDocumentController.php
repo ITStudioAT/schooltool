@@ -211,23 +211,22 @@ class CurriculumDocumentController extends Controller
         $authUser = $this->authorizeCurriculum($curriculum);
         $this->assertDocumentBelongsToCurriculum($curriculum, $document);
 
-        if ($document->source_type === 'upload') {
-            $fullPath = $this->uploadedDocumentPath($document);
-
-            return response()->file($fullPath, [
-                'Content-Type' => $document->mime_type ?? 'application/octet-stream',
-                'Content-Disposition' => 'inline; filename="'.$document->name.'"',
-            ]);
-        }
-
-        $this->authorizeDocumentMaterialAccess($authUser, $document, $materialService);
-        $attachment = $this->selectedMaterialAttachment($document);
-
         $downloadUrl = $this->documentDownloadUrl($curriculum, $document);
         $query = trim((string) $request->getQueryString());
         if ($query !== '') {
             $downloadUrl .= '?'.$query;
         }
+
+        if ($document->source_type === 'upload') {
+            return $previewService->preview(
+                $document,
+                $downloadUrl,
+                $this->attachmentStorageDiskCandidates()
+            );
+        }
+
+        $this->authorizeDocumentMaterialAccess($authUser, $document, $materialService);
+        $attachment = $this->selectedMaterialAttachment($document);
 
         return $previewService->preview(
             $attachment,

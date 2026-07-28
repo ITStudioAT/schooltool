@@ -2,6 +2,7 @@
 
 use Checkpoint\Checks\FilePermissionsCheck;
 use Checkpoint\Checks\GitIgnoreCheck;
+use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
 it('keeps the public opcache reset endpoint disabled', function () {
@@ -85,6 +86,94 @@ it('does not commit Laravel application keys', function () {
     }
 
     expect($committedKeyLocations)->toBeEmpty();
+});
+
+it('scans every commit in the CI range for Laravel application keys', function () {
+    $basePath = dirname(__DIR__, 2);
+    $script = file_get_contents($basePath.'/scripts/check-secret-history.php');
+    $workflow = file_get_contents($basePath.'/.github/workflows/ci.yml');
+
+    expect($script)
+        ->toContain("'rev-list', '--reverse'")
+        ->toContain("'show'")
+        ->toContain('Values were intentionally not printed')
+        ->and($workflow)
+        ->toContain('fetch-depth: 0')
+        ->toContain('check-secret-history.php --base="$SECRET_SCAN_BASE_SHA"');
+
+    $process = new Process([
+        PHP_BINARY,
+        'scripts/check-secret-history.php',
+        '--base=HEAD',
+    ], $basePath);
+    $process->mustRun();
+
+    expect($process->getOutput())->toContain('No Laravel APP_KEY was introduced');
+});
+
+it('detects a Laravel application key that was removed in a later commit', function () {
+    $basePath = dirname(__DIR__, 2);
+    $filesystem = new Filesystem;
+    $temporaryRepository = sys_get_temp_dir().DIRECTORY_SEPARATOR.'schooltool-secret-scan-'.bin2hex(random_bytes(8));
+    $generatedTestKey = 'base64:'.base64_encode(random_bytes(32));
+
+    $filesystem->makeDirectory($temporaryRepository);
+
+    $runGit = function (array $arguments) use ($temporaryRepository): Process {
+        $process = new Process(['git', ...$arguments], $temporaryRepository);
+        $process->mustRun();
+
+        return $process;
+    };
+
+    try {
+        $runGit(['init']);
+        $runGit(['config', 'user.email', 'security-test@example.invalid']);
+        $runGit(['config', 'user.name', 'Security Test']);
+
+        $filesystem->put($temporaryRepository.DIRECTORY_SEPARATOR.'README.md', "safe\n");
+        $runGit(['add', 'README.md']);
+        $runGit(['commit', '-m', 'Initial safe commit']);
+        $baseCommit = trim($runGit(['rev-parse', 'HEAD'])->getOutput());
+
+        $filesystem->put(
+            $temporaryRepository.DIRECTORY_SEPARATOR.'.env',
+            "APP_KEY={$generatedTestKey}\n",
+        );
+        $runGit(['add', '.env']);
+        $runGit(['commit', '-m', 'Introduce key']);
+
+        $filesystem->delete($temporaryRepository.DIRECTORY_SEPARATOR.'.env');
+        $runGit(['add', '-A']);
+        $runGit(['commit', '-m', 'Remove key']);
+
+        $scan = new Process([
+            PHP_BINARY,
+            $basePath.'/scripts/check-secret-history.php',
+            "--base={$baseCommit}",
+        ], $temporaryRepository);
+        $scan->run();
+
+        expect($scan->getExitCode())->toBe(1)
+            ->and($scan->getErrorOutput())
+            ->toContain('Potential Laravel APP_KEY introduced in commit')
+            ->not->toContain($generatedTestKey);
+    } finally {
+        if (is_dir($temporaryRepository)) {
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($temporaryRepository, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::CHILD_FIRST,
+            );
+
+            foreach ($iterator as $item) {
+                @chmod($item->getPathname(), $item->isDir() ? 0777 : 0666);
+            }
+
+            @chmod($temporaryRepository, 0777);
+        }
+
+        $filesystem->deleteDirectory($temporaryRepository);
+    }
 });
 
 it('generates isolated application keys for CI and E2E at runtime', function () {

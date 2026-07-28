@@ -91,8 +91,10 @@ class UserController extends Controller
         $validated['roles'] = [
             ['name' => 'tutoring_user', 'checked' => true],
         ];
+        $this->assertTutoringUserBelongsToSchool($user, $auth_user->school_id);
+        $validated['id'] = $user->id;
 
-        $user = $service->update($validated);
+        $user = $service->update($validated, $auth_user);
 
         return response()->json(new UserResource($user), 200);
     }
@@ -104,7 +106,7 @@ class UserController extends Controller
         }
 
         $validated = $request->validated();
-        $service->deleteTutoringUsers($validated['data']);
+        $service->deleteTutoringUsers($validated['data'], $auth_user->school_id);
 
         return response()->noContent();
     }
@@ -116,7 +118,7 @@ class UserController extends Controller
         }
 
         $validated = $request->validated();
-        $service->confirmTutoringUsers($validated['data']);
+        $service->confirmTutoringUsers($validated['data'], $auth_user->school_id);
 
         return response()->noContent();
     }
@@ -131,5 +133,12 @@ class UserController extends Controller
         $service->cleanTutoringUsers($auth_user->school_id);
 
         return response()->noContent();
+    }
+
+    private function assertTutoringUserBelongsToSchool(User $user, int $schoolId): void
+    {
+        if ((int) $user->school_id !== $schoolId || ! $user->hasRole('tutoring_user')) {
+            abort(404);
+        }
     }
 }

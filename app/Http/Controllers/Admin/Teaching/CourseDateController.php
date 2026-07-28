@@ -8,6 +8,7 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseDateMaterial;
 use App\Models\TeachingCourseDateMaterialAttachment;
+use App\Models\User;
 use App\Services\TeachingCourseDateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -262,20 +263,36 @@ class CourseDateController extends Controller
 
     public function previewAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment)
     {
-        if (! $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+        if (! $authUser = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+        $this->authorizeAdoptedAttachmentAccess($attachment, $authUser);
 
         return $this->serveAdoptedAttachment($attachment, 'inline');
     }
 
     public function downloadAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment)
     {
-        if (! $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+        if (! $authUser = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+        $this->authorizeAdoptedAttachmentAccess($attachment, $authUser);
+
+        return $this->serveAdoptedAttachment($attachment, 'attachment');
+    }
+
+    private function authorizeAdoptedAttachmentAccess(
+        TeachingCourseDateMaterialAttachment $attachment,
+        User $authUser
+    ): void {
+        $attachment->loadMissing('material.courseDate.teachingCourse');
+        $course = $attachment->material?->courseDate?->teachingCourse;
+
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        return $this->serveAdoptedAttachment($attachment, 'attachment');
+        $this->authorizeTeachingCourseAccess($course, $authUser);
     }
 
     private function serveAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment, string $disposition)
@@ -307,10 +324,27 @@ class CourseDateController extends Controller
         $name = $this->attachmentNameWithStorageExtension($attachment->name, $path);
         $mime = $attachment->mime_type ?: ($disk->mimeType($path) ?: 'application/octet-stream');
 
-        return $disk->response($path, $name, [
+        $headers = [
             'Content-Type' => $mime,
             'Content-Disposition' => $disposition.'; filename="'.addcslashes($name, '"').'"',
-        ]);
+            'Cache-Control' => 'private, no-store, max-age=0',
+            'X-Content-Type-Options' => 'nosniff',
+        ];
+
+        if ($disposition === 'inline' && $this->isActiveAttachmentContent($name, $mime)) {
+            $headers['Content-Security-Policy'] = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'";
+        }
+
+        return $disk->response($path, $name, $headers);
+    }
+
+    private function isActiveAttachmentContent(string $name, string $mimeType): bool
+    {
+        $extension = strtolower((string) pathinfo($name, PATHINFO_EXTENSION));
+        $normalizedMimeType = strtolower(trim($mimeType));
+
+        return in_array($extension, ['html', 'htm', 'xhtml', 'svg'], true)
+            || in_array($normalizedMimeType, ['text/html', 'application/xhtml+xml', 'image/svg+xml'], true);
     }
 
     private function attachmentNameWithStorageExtension(?string $name, ?string $path): string

@@ -416,6 +416,23 @@ describe('update', function () {
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['id']);
     });
+
+    it('cannot update a tutoring user from another school', function () {
+        $originalEmail = $this->otherSchoolUser->email;
+
+        $this->actingAs($this->tutoringAdmin)
+            ->putJson("/api/admin/tutoring/users/{$this->otherSchoolUser->id}", [
+                'id' => $this->otherSchoolUser->id,
+                'last_name' => 'Compromised',
+                'first_name' => 'Other',
+                'email' => 'compromised@otherschool.com',
+                'sex' => 'm',
+                'schoolclass' => '10A',
+            ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['id']);
+
+        expect($this->otherSchoolUser->fresh()->email)->toBe($originalEmail);
+    });
 });
 
 describe('deleteUsers', function () {
@@ -500,6 +517,16 @@ describe('deleteUsers', function () {
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['data.0']);
     });
+
+    it('cannot delete tutoring users from another school', function () {
+        $this->actingAs($this->admin)
+            ->postJson('/api/admin/tutoring/delete_users', [
+                'data' => [$this->otherSchoolUser->id],
+            ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['data.0']);
+
+        $this->assertModelExists($this->otherSchoolUser);
+    });
 });
 
 describe('confirmUsers', function () {
@@ -560,6 +587,21 @@ describe('confirmUsers', function () {
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['data']);
+    });
+
+    it('cannot confirm tutoring users from another school', function () {
+        $this->otherSchoolUser->forceFill([
+            'email_verified_at' => now(),
+            'confirmed_at' => null,
+        ])->save();
+
+        $this->actingAs($this->tutoringAdmin)
+            ->postJson('/api/admin/tutoring/confirm_users', [
+                'data' => [$this->otherSchoolUser->id],
+            ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['data.0']);
+
+        expect($this->otherSchoolUser->fresh()->confirmed_at)->toBeNull();
     });
 });
 

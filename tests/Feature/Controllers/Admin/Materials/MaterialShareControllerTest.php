@@ -963,6 +963,16 @@ test('inbox full access creates original materials only under units', function (
 
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
+    $this->postJson('/api/admin/materials/shares/inbox/units/'.$unit->id.'/materials', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'title' => 'Unsicheres Bereichsmaterial',
+            'source_url' => 'javascript:alert(document.domain)',
+        ],
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['data.source_url']);
+
     $this->postJson('/api/admin/materials/shares/inbox/subjects/'.$subject->id.'/materials', [
         'rule_id' => (int) $rule->id,
         'data' => [
@@ -996,7 +1006,7 @@ test('inbox full access creates original materials only under units', function (
     $cards = MaterialCard::query()
         ->where('user_id', $creator->id)
         ->where('workspace_id', $workspace->id)
-        ->whereIn('title', ['Fachmaterial', 'Themamaterial', 'Bereichsmaterial'])
+        ->whereIn('title', ['Unsicheres Bereichsmaterial', 'Fachmaterial', 'Themamaterial', 'Bereichsmaterial'])
         ->with(['classifications.subject', 'classifications.topic', 'classifications.unit'])
         ->orderBy('title')
         ->get();

@@ -23,7 +23,7 @@ class MaterialCardQuickStoreRequest extends FormRequest
     {
         return [
             'data.title' => ['required', 'string', 'max:255'],
-            'data.source_url' => ['nullable', 'string', 'max:2048'],
+            'data.source_url' => ['nullable', 'string', 'max:2048', 'url:http,https'],
             'data.source_text' => ['nullable', 'string', 'max:10000'],
             'data.type' => $this->typeRules(),
             'data.status' => $this->statusRules(),

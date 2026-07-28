@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\DiagnosticLogContextSanitizer;
 use Illuminate\Support\Facades\Log;
 
 class AbaLocalDocumentStructureExtractor
@@ -7669,9 +7670,10 @@ class AbaLocalDocumentStructureExtractor
         }
 
         try {
-            Log::channel('aba-run-debug')->debug($message, $context);
+            $safeContext = app(DiagnosticLogContextSanitizer::class)->sanitize($context);
+            Log::channel('aba-run-debug')->debug($message, $safeContext);
         } catch (\Throwable) {
-            Log::debug($message, $context);
+            Log::debug($message, $safeContext ?? []);
         }
     }
 }

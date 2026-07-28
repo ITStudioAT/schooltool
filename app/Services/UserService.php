@@ -10,6 +10,7 @@ use App\Models\Schoolyear;
 use App\Models\TutoringOffer;
 use App\Models\User;
 use App\Notifications\StandardEmail;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -384,10 +385,11 @@ class UserService
         Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail($mail));
     }
 
-    public function deleteTutoringUsers(array $data): void
+    public function deleteTutoringUsers(array $data, int $schoolId): void
     {
-        foreach ($data as $id) {
-            $user = User::findOrFail($id);
+        $users = $this->tutoringUsersForSchool($data, $schoolId);
+
+        foreach ($users as $user) {
             $canDelete = ! $user->hasDependencies()
                 && $user->roles->count() === 1
                 && $user->hasRole('tutoring_user');
@@ -399,12 +401,12 @@ class UserService
         }
     }
 
-    public function confirmTutoringUsers(array $data): void
+    public function confirmTutoringUsers(array $data, int $schoolId): void
     {
         $tutoringService = new TutoringService;
+        $users = $this->tutoringUsersForSchool($data, $schoolId);
 
-        foreach ($data as $id) {
-            $user = User::findOrFail($id);
+        foreach ($users as $user) {
             $canConfirm = $user->hasRole('tutoring_user')
                 && $user->email_verified_at
                 && ! $user->confirmed_at;
@@ -430,6 +432,29 @@ class UserService
                 $user->removeRole('tutoring_user');
                 $user->delete();
             });
+    }
+
+    /**
+     * @param  array<int, int|string>  $userIds
+     * @return Collection<int, User>
+     */
+    private function tutoringUsersForSchool(array $userIds, int $schoolId): Collection
+    {
+        $uniqueUserIds = collect($userIds)
+            ->map(fn ($userId): int => (int) $userId)
+            ->unique()
+            ->values();
+
+        $users = User::bySchoolAndRole($schoolId, 'tutoring_user')
+            ->whereKey($uniqueUserIds)
+            ->with('roles')
+            ->get();
+
+        if ($users->count() !== $uniqueUserIds->count()) {
+            abort(404);
+        }
+
+        return $users;
     }
 
     public static function logout(): void

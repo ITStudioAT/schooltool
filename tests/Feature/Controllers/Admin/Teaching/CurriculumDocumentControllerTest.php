@@ -211,3 +211,45 @@ test('teacher can attach hopper account material to curriculum documents while t
         ->getJson("/api/admin/teaching/curricula/{$this->curriculum->id}/documents/{$documentId}/material-attachments")
         ->assertForbidden();
 });
+
+test('uploaded curriculum HTML is sandboxed and SVG is not rendered inline', function () {
+    Storage::fake('local');
+
+    Storage::disk('local')->put(
+        'curricula/active.html',
+        '<html><body><script>alert(document.domain)</script><p>Curriculum text</p></body></html>'
+    );
+    $htmlDocument = $this->curriculum->documents()->create([
+        'source_type' => 'upload',
+        'name' => 'active.html',
+        'file_path' => 'curricula/active.html',
+        'mime_type' => 'text/html',
+    ]);
+
+    Storage::disk('local')->put(
+        'curricula/active.svg',
+        '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(document.domain)</script></svg>'
+    );
+    $svgDocument = $this->curriculum->documents()->create([
+        'source_type' => 'upload',
+        'name' => 'active.svg',
+        'file_path' => 'curricula/active.svg',
+        'mime_type' => 'image/svg+xml',
+    ]);
+
+    $htmlResponse = $this->actingAs($this->teacher, 'sanctum')
+        ->get("/api/admin/teaching/curricula/{$this->curriculum->id}/documents/{$htmlDocument->id}/preview");
+
+    $htmlResponse->assertSuccessful();
+    expect($htmlResponse->headers->get('content-security-policy'))->toContain('sandbox')
+        ->and($htmlResponse->getContent())->toContain('Curriculum text')
+        ->not->toContain('<script');
+
+    $svgResponse = $this->actingAs($this->teacher, 'sanctum')
+        ->get("/api/admin/teaching/curricula/{$this->curriculum->id}/documents/{$svgDocument->id}/preview");
+
+    $svgResponse->assertSuccessful();
+    expect($svgResponse->headers->get('content-security-policy'))->toContain('sandbox')
+        ->and($svgResponse->getContent())->toContain('nicht direkt im Browser angezeigt')
+        ->not->toContain('<svg');
+});

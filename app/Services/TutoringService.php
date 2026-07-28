@@ -177,7 +177,7 @@ class TutoringService
         }
 
         $userService = new UserService;
-        $userService->deleteTutoringUsers([$userId]);
+        $userService->deleteTutoringUsers([$userId], (int) $user->school_id);
 
         return true;
     }

@@ -3130,7 +3130,7 @@ class MaterialShareController extends Controller
     {
         $validated = $request->validate([
             'data.title' => ['required', 'string', 'max:255'],
-            'data.source_url' => ['nullable', 'string', 'max:2048'],
+            'data.source_url' => ['nullable', 'string', 'max:2048', 'url:http,https'],
             'data.source_text' => ['nullable', 'string', 'max:10000'],
             'data.type' => $this->sharedQuickStoreTypeRules($sourceOwner),
             'data.status' => $this->sharedQuickStoreStatusRules($sourceOwner),

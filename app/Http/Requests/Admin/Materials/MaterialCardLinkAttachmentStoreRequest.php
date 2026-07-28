@@ -15,7 +15,7 @@ class MaterialCardLinkAttachmentStoreRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'data.url' => ['required', 'string', 'max:2048'],
+            'data.url' => ['required', 'string', 'max:2048', 'url:http,https'],
             'data.name' => ['nullable', 'string', 'max:255'],
         ];
     }

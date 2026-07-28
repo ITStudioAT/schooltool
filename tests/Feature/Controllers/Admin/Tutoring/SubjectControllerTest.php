@@ -350,6 +350,21 @@ describe('update', function () {
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['data.id']);
     });
+
+    it('cannot update a subject from another school', function () {
+        $this->actingAs($this->tutoringAdmin)
+            ->putJson("/api/admin/tutoring/subjects/{$this->otherSchoolSubject->id}", [
+                'data' => [
+                    'id' => $this->otherSchoolSubject->id,
+                    'short_name' => 'Hack',
+                    'long_name' => 'Compromised',
+                    'must_be_accepted' => false,
+                ],
+            ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['data.id']);
+
+        expect($this->otherSchoolSubject->fresh()->long_name)->toBe('Biology');
+    });
 });
 
 describe('destroy', function () {
@@ -409,6 +424,14 @@ describe('destroy', function () {
         $this->assertDatabaseHas('tutoring_subjects', [
             'id' => $this->subject1->id,
         ]);
+    });
+
+    it('cannot delete a subject from another school', function () {
+        $this->actingAs($this->admin)
+            ->deleteJson("/api/admin/tutoring/subjects/{$this->otherSchoolSubject->id}")
+            ->assertNotFound();
+
+        $this->assertModelExists($this->otherSchoolSubject);
     });
 });
 
