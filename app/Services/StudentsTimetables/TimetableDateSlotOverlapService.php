@@ -21,7 +21,7 @@ class TimetableDateSlotOverlapService
         foreach ($dateKeys as $dateKey) {
             $parts = explode('|', $dateKey);
 
-            if (($parts[0] ?? '') === 'weekly') {
+            if ($parts[0] === 'weekly') {
                 $slot = ($parts[1] ?? '').'|'.($parts[2] ?? '');
                 $summary['has_overlap'] = $summary['has_overlap'] || isset($summary['weekly'][$slot]);
                 $summary['weekly'][$slot] = true;
@@ -29,7 +29,7 @@ class TimetableDateSlotOverlapService
                 continue;
             }
 
-            if (($parts[0] ?? '') === 'range') {
+            if ($parts[0] === 'range') {
                 $rangeStart = (int) ($parts[1] ?? 0);
                 $rangeEnd = (int) ($parts[2] ?? 0);
                 $weekdaySlot = ($parts[3] ?? '').'|'.($parts[4] ?? '');
@@ -52,7 +52,7 @@ class TimetableDateSlotOverlapService
                 continue;
             }
 
-            if (($parts[0] ?? '') !== 'date') {
+            if ($parts[0] !== 'date') {
                 continue;
             }
 

@@ -107,6 +107,9 @@ jobs:
           vendor/bin/pint --format agent
           git diff --exit-code
 
+      - name: Run gradual static analysis
+        run: composer analyse
+
       - name: Run frontend unit tests
         run: npm run test:ui
 

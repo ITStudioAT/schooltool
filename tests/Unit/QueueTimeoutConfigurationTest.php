@@ -92,6 +92,27 @@ it('segments latency-sensitive, import, material, and maintenance workloads', fu
         ->and((new StandardEmail([]))->viaQueues())->toBe(['mail' => 'notifications']);
 });
 
+it('starts segmented queue workers and the scheduler in the local development workflow', function (): void {
+    $composer = json_decode(
+        file_get_contents(base_path('composer.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $developmentCommand = implode(' ', $composer['scripts']['dev']);
+    $localQueueCommand = implode(' ', $composer['scripts']['queues:local']);
+
+    expect($developmentCommand)
+        ->toContain('composer run queues:local')
+        ->toContain('php artisan schedule:work')
+        ->not->toContain('php artisan horizon')
+        ->not->toContain('queue:listen')
+        ->and($localQueueCommand)
+        ->toContain('--queue=critical,notifications')
+        ->toContain('--queue=default')
+        ->toContain('--queue=imports')
+        ->toContain('--queue=materials,maintenance');
+});
+
 it('ships a production process monitor for Horizon', function (): void {
     $supervisorConfig = file_get_contents(base_path('supervisor.horizon.conf.example'));
     $horizonTimeout = collect(config('horizon.defaults'))->max('timeout');

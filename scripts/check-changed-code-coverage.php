@@ -140,7 +140,7 @@ class ChangedCodeCoverageGate
             }
 
             $startLine = (int) $matches[1];
-            $lineCount = array_key_exists(2, $matches) && $matches[2] !== ''
+            $lineCount = array_key_exists(2, $matches)
                 ? (int) $matches[2]
                 : 1;
 
