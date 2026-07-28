@@ -1,15 +1,15 @@
-# Queue Auto-Recovery System
+# Queue-Überwachung mit Horizon
 
-Dieses Dokument beschreibt das automatische Queue-Überwachungs- und Wiederherstellungssystem für SchoolTool.
+Dieses Dokument beschreibt die Queue-Überwachung und den durch Supervisor abgesicherten Horizon-Betrieb für SchoolTool.
 
 ## Übersicht
 
-Das System bietet automatische Erkennung und Behebung von Queue-Worker-Ausfällen durch:
+Das System bietet Queue-Überwachung und Wiederherstellung durch:
 
-1. **Automatische Überwachung**: Laravel Scheduler prüft jede Minute den Queue-Status
-2. **Automatischer Neustart**: Bei erkannten Problemen wird der Worker automatisch neu gestartet
+1. **Gesundheitsprüfung**: Der Artisan-Command meldet den Horizon-Status
+2. **Automatischer Neustart**: Supervisor startet Horizon bei einem Prozessabbruch neu
 3. **Manuelle Steuerung**: Admin-Dashboard zur manuellen Verwaltung
-4. **Metriken**: Echtzeit-Überwachung von wartenden, verarbeitenden und fehlgeschlagenen Jobs
+4. **Metriken**: `horizon:snapshot` erfasst Queue-Metriken alle fünf Minuten
 
 ## Komponenten
 
@@ -20,31 +20,24 @@ Das System bietet automatische Erkennung und Behebung von Queue-Worker-Ausfälle
 Dieser Artisan-Command überprüft die Queue-Gesundheit:
 
 ```bash
-# Nur Prüfung (ohne Neustart)
 php artisan queue:health-check
-
-# Automatischer Neustart bei Ausfall
-php artisan queue:health-check --restart
 ```
 
 **Funktionen**:
 - Erkennt ob Queue Worker läuft
-- Identifiziert "hängende" Jobs (>5 Minuten in Bearbeitung)
-- Startet Worker automatisch neu (mit --restart Option)
-- Cross-Platform kompatibel (Windows & Linux)
-- Logging aller Aktionen
+- Liefert einen Fehlercode, wenn Horizon nicht aktiv ist
+- Verändert keine Prozesse und keine Queue-Daten
 
-### 2. Scheduled Task
+### 2. Scheduled Tasks
 
 **Datei**: `routes/console.php`
 
-Der Scheduler führt die Gesundheitsprüfung automatisch aus:
+Der Scheduler erzeugt die Horizon-Metrik-Snapshots:
 
 ```php
-Schedule::command('queue:health-check --restart')
-    ->everyMinute()
-    ->withoutOverlapping()
-    ->runInBackground()
+Schedule::command('horizon:snapshot')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
 ```
 
 **Wichtig**: Der Laravel Scheduler muss aktiviert sein!
@@ -133,7 +126,7 @@ Das Dashboard zeigt:
 
 #### Schritt 1: Supervisor Konfiguration
 
-Supervisor stellt sicher, dass Queue Worker permanent läuft.
+Supervisor stellt sicher, dass Horizon permanent läuft und alle segmentierten Redis-Queues verarbeitet.
 
 **SSH zu Cloudways Server verbinden**:
 ```bash
@@ -142,14 +135,15 @@ ssh master@[SERVER-IP] -p [PORT]
 
 **Supervisor Config erstellen**:
 ```bash
-sudo nano /etc/supervisor/conf.d/schooltool-worker.conf
+sudo nano /etc/supervisor/conf.d/schooltool-horizon.conf
 ```
 
-**Config-Inhalt**:
+Die mitgelieferte Datei `supervisor.horizon.conf.example` als Vorlage verwenden und `[APP-NAME]` ersetzen:
 ```ini
-[program:schooltool-worker]
-process_name=%(program_name)s_%(process_num)02d
-command=php /home/master/applications/[APP-NAME]/public_html/artisan queue:work database --sleep=3 --tries=1 --max-time=3600
+[program:schooltool-horizon]
+process_name=%(program_name)s
+directory=/home/master/applications/[APP-NAME]/public_html
+command=php artisan horizon
 autostart=true
 autorestart=true
 stopasgroup=true
@@ -157,24 +151,25 @@ killasgroup=true
 user=master
 numprocs=1
 redirect_stderr=true
-stdout_logfile=/home/master/applications/[APP-NAME]/public_html/storage/logs/worker.log
+stdout_logfile=/home/master/applications/[APP-NAME]/public_html/storage/logs/horizon.log
 stopwaitsecs=3600
 ```
 
 **Wichtig**: Pfade anpassen!
 - `[APP-NAME]` durch tatsächlichen Cloudways App-Namen ersetzen
-- `database` ist der Queue-Connection Name (siehe `.env`)
+- `.env` muss `QUEUE_CONNECTION=redis` verwenden
 
 **Supervisor neu laden**:
 ```bash
 sudo supervisorctl reread
 sudo supervisorctl update
-sudo supervisorctl start schooltool-worker:*
+sudo supervisorctl start schooltool-horizon
 ```
 
 **Status prüfen**:
 ```bash
-sudo supervisorctl status
+sudo supervisorctl status schooltool-horizon
+php artisan horizon:status
 ```
 
 #### Schritt 2: Laravel Scheduler aktivieren
@@ -212,12 +207,13 @@ chmod -R 775 bootstrap/cache
 
 **Worker Status prüfen**:
 ```bash
-sudo supervisorctl status schooltool-worker:*
+sudo supervisorctl status schooltool-horizon
+php artisan horizon:status
 ```
 
 **Logs prüfen**:
 ```bash
-tail -f storage/logs/worker.log
+tail -f storage/logs/horizon.log
 tail -f storage/logs/laravel.log
 ```
 
@@ -261,14 +257,11 @@ Das System läuft nach Installation vollständig automatisch:
 # Health Check durchführen
 php artisan queue:health-check
 
-# Mit automatischem Neustart
-php artisan queue:health-check --restart
-
 # Fehlgeschlagene Jobs wiederholen
 php artisan queue:retry all
 
 # Queue-Status anzeigen
-php artisan queue:work --once
+php artisan horizon:status
 ```
 
 ## Troubleshooting
@@ -284,7 +277,8 @@ php artisan queue:listen --tries=1
 
 **Production mit Supervisor**:
 ```bash
-sudo supervisorctl restart schooltool-worker:*
+sudo supervisorctl restart schooltool-horizon
+php artisan horizon:status
 ```
 
 ### Scheduler läuft nicht
@@ -344,49 +338,29 @@ chmod -R 775 storage
 
 ### Worker-Anzahl erhöhen
 
-Bei hoher Last mehrere Worker starten:
+Bei hoher Last die `maxProcesses`-Werte der betroffenen Supervisor-Gruppe in `config/horizon.php` erhöhen:
 
-**Supervisor Config**:
-```ini
-numprocs=3  # Statt 1
+```php
+'supervisor-imports' => [
+    'minProcesses' => 1,
+    'maxProcesses' => 3,
+],
 ```
 
-**Neu laden**:
+**Horizon neu laden**:
 ```bash
-sudo supervisorctl restart schooltool-worker:*
+php artisan horizon:terminate
 ```
 
 ### Queue Prioritäten
 
-Verschiedene Queues für unterschiedliche Prioritäten:
-
-```php
-// High priority queue
-dispatch(new ImportantJob())->onQueue('high');
-
-// Default queue
-dispatch(new RegularJob());
-
-// Low priority queue
-dispatch(new BackgroundJob())->onQueue('low');
-```
-
-**Supervisor Config anpassen**:
-```ini
-command=php artisan queue:work database --queue=high,default,low
-```
+Die Queues `critical`, `notifications`, `default`, `imports`, `materials` und `maintenance` sind in `config/horizon.php` auf getrennte Horizon-Supervisoren aufgeteilt. Jobs werden mit `onQueue()` der passenden Queue zugeordnet.
 
 ### Timeout erhöhen
 
-Für lange laufende Jobs:
+Für lange laufende Jobs müssen Job-Timeout, Horizon-Timeout und Redis-`retry_after` in dieser Reihenfolge bleiben:
 
-```ini
-# In supervisor config
---timeout=300  # 5 Minuten
-
-# In Job-Klasse
-public $timeout = 300;
-```
+`Job timeout < Horizon timeout < REDIS_QUEUE_RETRY_AFTER`
 
 ## Monitoring & Alerts
 
@@ -446,10 +420,10 @@ Bei Problemen:
 
 1. Logs prüfen: `storage/logs/laravel.log`
 2. Worker Status prüfen: Admin Dashboard
-3. Command manuell testen: `php artisan queue:health-check --restart`
-4. Supervisor Status prüfen: `sudo supervisorctl status`
+3. Command manuell testen: `php artisan queue:health-check`
+4. Supervisor Status prüfen: `sudo supervisorctl status schooltool-horizon`
 
 ---
 
-**Letzte Aktualisierung**: 2025-12-15
+**Letzte Aktualisierung**: 2026-07-28
 **Version**: 1.0.0

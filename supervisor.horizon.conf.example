@@ -1,0 +1,13 @@
+[program:schooltool-horizon]
+process_name=%(program_name)s
+directory=/home/master/applications/[APP-NAME]/public_html
+command=php artisan horizon
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+user=master
+numprocs=1
+redirect_stderr=true
+stdout_logfile=/home/master/applications/[APP-NAME]/public_html/storage/logs/horizon.log
+stopwaitsecs=3600

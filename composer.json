@@ -106,7 +106,7 @@
         ],
         "test:integration": [
             "@php artisan config:clear --ansi",
-            "@php artisan test --compact tests/Feature/InfrastructureIntegrationTest.php"
+            "@php artisan test --compact tests/Feature/InfrastructureIntegrationTest.php --fail-on-skipped"
         ],
         "test:php:import116": [
             "@php artisan config:clear --ansi",

@@ -3,11 +3,10 @@
 use App\Events\TeachersListImportFinishedEvent;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
-uses(TestCase::class, RefreshDatabase::class);
+uses(TestCase::class);
 
 describe('TeachersListImportFinishedEvent', function () {
     it('can be instantiated with all parameters', function () {
@@ -147,5 +146,27 @@ describe('TeachersListImportFinishedEvent', function () {
         expect($event->data)->toBe($data)
             ->and($event->data['custom_field'])->toBe('custom_value')
             ->and($event->data['nested']['key'])->toBe('value');
+    });
+
+    it('broadcasts only client-safe import counts', function () {
+        $event = new TeachersListImportFinishedEvent(200, 1, 'Message', [
+            'created' => 10,
+            'updated' => 5,
+            'deleted' => 3,
+            'custom_field' => 'custom_value',
+            'nested' => [
+                'key' => 'value',
+            ],
+        ]);
+
+        expect($event->broadcastWith())->toBe([
+            'status' => 200,
+            'message' => 'Message',
+            'data' => [
+                'created' => 10,
+                'updated' => 5,
+                'deleted' => 3,
+            ],
+        ]);
     });
 });

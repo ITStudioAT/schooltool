@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { teachersListApi } from '@/domains/teachersList/api'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
@@ -30,7 +31,7 @@ export const useTeachersListStore = defineStore('AdminTeachersListStore', {
             const search_string = this.search_string
             const role = this.role
             try {
-                const response = await axios.get(`/api/admin/teachers_list`, { params: { role, search_string, page } })
+                const response = await axios.get(teachersListApi.index(), { params: { role, search_string, page } })
                 this.teachers = response.data.items ?? []
                 const pagination = response.data.pagination ?? {}
                 const currentPage = Number(pagination.current_page || 1)
@@ -64,7 +65,7 @@ export const useTeachersListStore = defineStore('AdminTeachersListStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.put(`/api/admin/teachers_list/${data.id}`, data)
+                const response = await axios.put(teachersListApi.update(data.id), data)
                 this.saved_teacher = response.data
                 return true
             } catch (error) {
@@ -85,7 +86,7 @@ export const useTeachersListStore = defineStore('AdminTeachersListStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.post(`/api/admin/teachers_list`, data)
+                const response = await axios.post(teachersListApi.store(), data)
                 this.saved_teacher = response.data
                 return true
             } catch (error) {
@@ -106,7 +107,7 @@ export const useTeachersListStore = defineStore('AdminTeachersListStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                this.answer = await axios.post(`/api/admin/teachers_list/delete_teachers`, { data })
+                this.answer = await axios.post(teachersListApi.deleteTeachers(), { data })
 
                 notification.notify({
                     message: 'Löschbare Benutzer wurden gelöscht.',

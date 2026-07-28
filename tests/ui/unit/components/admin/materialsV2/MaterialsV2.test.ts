@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { config, flushPromises, shallowMount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import axios from 'axios'
 import MaterialsV2 from '@/pages/admin/materialsV2/MaterialsV2.vue'
+import { useMaterialsV2Store } from '@/stores/admin/materialsV2/MaterialsV2Store'
 
 const notify = vi.fn()
 const { routeQuery, routerReplace } = vi.hoisted(() => ({
@@ -16,6 +18,8 @@ config.global.stubs = {
     'v-tabs': {
         template: '<div><slot /></div>',
     },
+    MaterialsV2Calendar: false,
+    MaterialsV2Header: false,
 }
 
 vi.mock('axios', () => ({
@@ -47,12 +51,25 @@ vi.mock('@/stores/admin/AdminStore', () => ({
     }),
 }))
 
+function deferredResponse() {
+    let resolve = (_value: unknown) => {}
+    const promise = new Promise((promiseResolve) => {
+        resolve = promiseResolve
+    })
+
+    return {
+        promise,
+        resolve,
+    }
+}
+
 describe('MaterialsV2', () => {
     afterEach(() => {
         vi.useRealTimers()
     })
 
     beforeEach(() => {
+        setActivePinia(createPinia())
         window.localStorage.clear()
         vi.clearAllMocks()
         Object.keys(routeQuery).forEach((key) => delete routeQuery[key])
@@ -182,6 +199,88 @@ describe('MaterialsV2', () => {
         expect(wrapper.find('.materials-v2-reminder-header-button').exists()).toBe(false)
         expect(wrapper.text()).toContain('Photosynthese')
         expect(wrapper.text()).toContain('Biologie')
+    })
+
+    it('keeps the latest search response and resets scoped state on unmount', async () => {
+        vi.useFakeTimers()
+        const initialResponse = deferredResponse()
+        const searchResponse = deferredResponse()
+        const itemResponses = [initialResponse.promise, searchResponse.promise]
+        vi.mocked(axios.get).mockImplementation(async (url) => {
+            if (url === '/api/admin/materials-v2/config') {
+                return {
+                    data: {
+                        categories: ['Biologie'],
+                        category_details: [{ name: 'Biologie', items_count: 1 }],
+                    },
+                }
+            }
+
+            return await itemResponses.shift()
+        })
+        const wrapper = shallowMount(MaterialsV2, {
+            global: {
+                renderStubDefaultSlot: true,
+                stubs: {
+                    'v-alert': true,
+                    'v-btn': true,
+                    'v-btn-toggle': true,
+                    'v-card': true,
+                    'v-card-actions': true,
+                    'v-card-text': true,
+                    'v-card-title': true,
+                    'v-chip': true,
+                    'v-col': true,
+                    'v-combobox': true,
+                    'v-container': true,
+                    'v-dialog': true,
+                    'v-divider': true,
+                    'v-file-input': true,
+                    'v-icon': true,
+                    'v-list': true,
+                    'v-list-item': true,
+                    'v-list-item-title': true,
+                    'v-menu': true,
+                    'v-pagination': true,
+                    'v-row': true,
+                    'v-sheet': true,
+                    'v-skeleton-loader': true,
+                    'v-spacer': true,
+                    'v-text-field': true,
+                    'v-textarea': true,
+                },
+            },
+        })
+        const component = wrapper.vm as any
+
+        component.search = 'neu'
+        await wrapper.vm.$nextTick()
+        await vi.advanceTimersByTimeAsync(350)
+
+        searchResponse.resolve({
+            data: {
+                data: [{ id: 2, title: 'Neues Ergebnis', processing_status: 'ready', attachments: [] }],
+                meta: { total: 1, current_page: 1, last_page: 1 },
+            },
+        })
+        await flushPromises()
+        expect(component.items.map((item) => item.title)).toEqual(['Neues Ergebnis'])
+
+        initialResponse.resolve({
+            data: {
+                data: [{ id: 1, title: 'Altes Ergebnis', processing_status: 'ready', attachments: [] }],
+                meta: { total: 1, current_page: 1, last_page: 1 },
+            },
+        })
+        await flushPromises()
+        expect(component.items.map((item) => item.title)).toEqual(['Neues Ergebnis'])
+
+        const materialsStore = useMaterialsV2Store()
+        wrapper.unmount()
+
+        expect(materialsStore.items).toEqual([])
+        expect(materialsStore.categoryDetails).toEqual([])
+        expect(materialsStore.loadError).toBe('')
     })
 
     it('shows a small screenshot preview in the overview', async () => {

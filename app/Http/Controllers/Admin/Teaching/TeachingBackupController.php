@@ -90,18 +90,18 @@ class TeachingBackupController extends Controller
         }
 
         $validated = $request->validate([
-            'backup' => ['required', 'file', 'mimes:json,txt', 'max:51200'],
+            'backup' => ['required', 'file', 'mimes:json,txt,zip', 'max:51200'],
         ]);
 
         $file = $validated['backup'];
-        $content = file_get_contents($file->getRealPath());
+        $sourcePath = $file->getRealPath();
 
-        if (! is_string($content) || trim($content) === '') {
+        if (! is_string($sourcePath)) {
             abort(422, 'Datensicherung kann nicht gelesen werden');
         }
 
         try {
-            $result = $service->importForUser($authUser, $content, $file->getClientOriginalName());
+            $result = $service->importForUser($authUser, $sourcePath, $file->getClientOriginalName());
         } catch (JsonException) {
             abort(422, 'Datensicherung kann nicht gelesen werden');
         }
@@ -144,9 +144,14 @@ class TeachingBackupController extends Controller
         }
 
         $filename = $this->downloadFilename($backup);
+        $contentType = ($backup->summary['container_format'] ?? null) === 'zip'
+            ? 'application/zip'
+            : 'application/json';
 
         return $disk->download($backup->path, $filename, [
-            'Content-Type' => 'application/json',
+            'Cache-Control' => 'private, no-store',
+            'Content-Type' => $contentType,
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 
@@ -319,22 +324,20 @@ class TeachingBackupController extends Controller
 
     private function downloadFilename(TeachingBackup $backup): string
     {
+        $extension = ($backup->summary['container_format'] ?? null) === 'zip' ? 'zip' : 'json';
         $filename = basename(str_replace('\\', '/', $backup->filename));
-        $filename = trim($filename) !== '' ? $filename : "teaching-backup-{$backup->id}.json";
+        $filename = trim($filename) !== '' ? $filename : "teaching-backup-{$backup->id}.{$extension}";
         $filename = Str::ascii($filename);
         $filename = preg_replace('/[^\x20-\x7E]/', '', $filename) ?? '';
         $filename = preg_replace('/[\/\\\\]+/', '-', $filename) ?? '';
         $filename = trim($filename, " \t\n\r\0\x0B.");
+        $filename = preg_replace('/\.(json|zip)\z/i', '', $filename) ?? $filename;
 
         if ($filename === '') {
-            return "teaching-backup-{$backup->id}.json";
+            return "teaching-backup-{$backup->id}.{$extension}";
         }
 
-        if (! str_ends_with(Str::lower($filename), '.json')) {
-            return "{$filename}.json";
-        }
-
-        return $filename;
+        return "{$filename}.{$extension}";
     }
 
     /**

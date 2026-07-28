@@ -13,7 +13,9 @@ use Illuminate\Support\Str;
 uses(DatabaseTruncation::class);
 
 it('uses MySQL and executes the Materials V2 full-text Scout index', function (): void {
-    expect(DB::connection()->getDriverName())->toBe('mysql');
+    expect(DB::connection()->getDriverName())->toBe('mysql')
+        ->and(DB::connection()->getDatabaseName())
+        ->toMatch('/^pest_test(?:_test_\d+)?$/');
 
     $fullTextIndex = collect(DB::select(
         "SHOW INDEX FROM material_v2_items WHERE Key_name = 'material_v2_items_search_fulltext'",
@@ -78,10 +80,6 @@ it('uses MySQL and executes the Materials V2 full-text Scout index', function ()
 })->group('integration', 'mysql');
 
 it('pushes and consumes an isolated Redis queue job', function (): void {
-    if (! filter_var(env('RUN_REDIS_INTEGRATION_TESTS', false), FILTER_VALIDATE_BOOL)) {
-        $this->markTestSkipped('Set RUN_REDIS_INTEGRATION_TESTS=true to run the Redis transport test.');
-    }
-
     $queueName = 'integration-'.Str::lower(Str::random(20));
     config()->set('queue.connections.redis-integration', [
         'driver' => 'redis',
@@ -118,6 +116,7 @@ it('pushes and consumes an isolated Redis queue job', function (): void {
 
         expect($queue->size($queueName))->toBe(0);
     } finally {
+        $queue->clear($queueName);
         $redis->del($probeKey);
         Redis::purge('integration');
     }

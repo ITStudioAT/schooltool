@@ -1,8 +1,6 @@
 import { defineStore } from 'pinia'
 import { createResourceStore } from './ResourceStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
-import Echo from 'laravel-echo'
-import Pusher from 'pusher-js'
 
 const resourceStore = createResourceStore('users') // <-- first create it
 
@@ -37,8 +35,6 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         health: null,
         main_menu: '',
         main_action: '',
-        echo: null,
-        pusher_count: 0,
         schools: null,
         impersonatable_schools: [],
         impersonatable_users: [],
@@ -48,80 +44,6 @@ export const useAdminStore = defineStore('AdminAdminStore', {
 
     actions: {
         ...resourceStore.actions(),
-
-        async initializeEcho() {
-            // Sicherstellen, dass CSRF-Cookie vorhanden ist
-            await ensureCsrfCookie()
-
-            this.pusher_count++
-
-            // Pusher global setzen
-            window.Pusher = Pusher
-
-            // Echo initialisieren
-            this.echo = new Echo({
-                broadcaster: 'pusher',
-                key: import.meta.env.VITE_PUSHER_APP_KEY,
-                cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER,
-                forceTLS: true,
-                authEndpoint: '/broadcasting/auth',
-                authorizer: (channel) => {
-                    return {
-                        authorize: (socketId, callback) => {
-                            // Axios nutzt automatisch withCredentials und withXSRFToken
-                            axios
-                                .post('/broadcasting/auth', {
-                                    socket_id: socketId,
-                                    channel_name: channel.name,
-                                })
-                                .then((response) => {
-                                    callback(null, response.data)
-                                })
-                                .catch((error) => {
-                                    console.error('Broadcasting auth error:', error)
-                                    callback(error)
-                                })
-                        },
-                    }
-                },
-            })
-
-            // Private Channel für User
-            this.echo
-                .private(`user.${this.config.user.id}`)
-                .listen('TeachersListImportFinishedEvent', (e) => {
-                    const notification = useNotificationStore()
-                    notification.notify({
-                        message: e.message,
-                        type: e.status === 200 ? 'success' : 'error',
-                        persistent: true,
-                    })
-                    this.pusher_count--
-                    if (this.pusher_count == 0) this.disconnectEcho()
-                })
-                .listen('Import116FinishedEvent', (e) => {
-                    const notification = useNotificationStore()
-                    notification.notify({
-                        message: e.message,
-                        type: e.status === 200 ? 'success' : 'error',
-                        persistent: true,
-                    })
-                    window.dispatchEvent(new CustomEvent('import116-finished', { detail: e }))
-                    this.pusher_count--
-                    if (this.pusher_count == 0) this.disconnectEcho()
-                })
-        },
-
-        disconnectEcho() {
-            if (this.echo) {
-                // Leave specific channel first (optional)
-                this.echo.leave(`user.${this.config.user.id}`)
-
-                // Disconnect completely
-                this.echo.disconnect()
-                this.echo = null
-            }
-        },
 
         async loadConfig(options = {}) {
             if (this.config_request_promise) {

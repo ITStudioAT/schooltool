@@ -92,6 +92,47 @@ it('segments latency-sensitive, import, material, and maintenance workloads', fu
         ->and((new StandardEmail([]))->viaQueues())->toBe(['mail' => 'notifications']);
 });
 
+it('ships a production process monitor for Horizon', function (): void {
+    $supervisorConfig = file_get_contents(base_path('supervisor.horizon.conf.example'));
+    $horizonTimeout = collect(config('horizon.defaults'))->max('timeout');
+
+    preg_match('/^stopwaitsecs=(\d+)$/m', $supervisorConfig, $stopWaitMatches);
+
+    expect($supervisorConfig)
+        ->toContain('[program:schooltool-horizon]')
+        ->toContain('command=php artisan horizon')
+        ->toContain('autostart=true')
+        ->toContain('autorestart=true')
+        ->not->toContain('queue:work')
+        ->and($stopWaitMatches)
+        ->toHaveKey(1)
+        ->and((int) $stopWaitMatches[1])
+        ->toBeGreaterThan((int) $horizonTimeout);
+});
+
+it('runs isolated infrastructure and Horizon smoke coverage in CI', function (): void {
+    $workflow = file_get_contents(base_path('.github/workflows/ci.yml'));
+    $composer = json_decode(
+        file_get_contents(base_path('composer.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    expect(config('database.redis.integration.url'))->toBeNull()
+        ->and(config('database.redis.integration.host'))->toBe('127.0.0.1')
+        ->and((int) config('database.redis.integration.database'))->toBe(15)
+        ->and(config('database.redis.integration.prefix'))->toContain('integration')
+        ->and($composer['scripts']['test:integration'])
+        ->toContain('@php artisan test --compact tests/Feature/InfrastructureIntegrationTest.php --fail-on-skipped')
+        ->and($workflow)
+        ->toContain('mysql:')
+        ->toContain('redis:')
+        ->toContain('composer test:integration')
+        ->toContain('php artisan horizon')
+        ->toContain('php artisan horizon:status')
+        ->not->toContain('RUN_REDIS_INTEGRATION_TESTS');
+});
+
 it('keeps sensitive Pulse user and request recording disabled', function (): void {
     expect(config('pulse.recorders.'.UserJobs::class.'.enabled'))->toBeFalse()
         ->and(config('pulse.recorders.'.UserRequests::class.'.enabled'))->toBeFalse()

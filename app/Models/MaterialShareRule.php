@@ -42,22 +42,37 @@ class MaterialShareRule extends Model
     protected static function booted(): void
     {
         static::creating(function (MaterialShareRule $rule): void {
-            if ((int) ($rule->workspace_id ?? 0) > 0 || (int) ($rule->created_by_user_id ?? 0) <= 0) {
-                return;
+            if ((int) ($rule->workspace_id ?? 0) <= 0 && (int) ($rule->created_by_user_id ?? 0) > 0) {
+                $workspace = MaterialWorkspace::query()->firstOrCreate(
+                    [
+                        'user_id' => (int) $rule->created_by_user_id,
+                        'name' => 'Workspace',
+                    ],
+                    [
+                        'is_default' => true,
+                    ]
+                );
+
+                $rule->workspace_id = (int) $workspace->id;
             }
 
-            $workspace = MaterialWorkspace::query()->firstOrCreate(
-                [
-                    'user_id' => (int) $rule->created_by_user_id,
-                    'name' => 'Workspace',
-                ],
-                [
-                    'is_default' => true,
-                ]
-            );
-
-            $rule->workspace_id = (int) $workspace->id;
+            $rule->natural_key = $rule->naturalKey();
         });
+
+        static::updating(function (MaterialShareRule $rule): void {
+            $rule->natural_key = $rule->naturalKey();
+        });
+    }
+
+    public function naturalKey(): string
+    {
+        return implode(':', [
+            (int) $this->school_id,
+            (int) ($this->created_by_user_id ?? 0),
+            (int) ($this->workspace_id ?? 0),
+            (string) $this->scope_type,
+            (int) ($this->scope_id ?? 0),
+        ]);
     }
 
     public function creator(): BelongsTo

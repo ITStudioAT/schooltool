@@ -42,6 +42,7 @@ use App\Models\UserGroupMember;
 use App\Services\Materials\MaterialInboxImportStatusStore;
 use App\Services\Materials\MaterialKeywordService;
 use App\Services\Materials\MaterialService;
+use App\Services\Materials\MaterialShareService;
 use App\Services\Materials\MaterialWorkspaceService;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\Request;
@@ -88,6 +89,7 @@ class MaterialShareController extends Controller
     public function __construct(
         private readonly MaterialWorkspaceService $workspaceService,
         private readonly MaterialService $materialService,
+        private readonly MaterialShareService $materialShareService,
     ) {}
 
     public function index(Request $request)
@@ -5218,34 +5220,8 @@ class MaterialShareController extends Controller
             }
         }
 
-        $rule = MaterialShareRule::query()
-            ->where('school_id', (int) $authUser->school_id)
-            ->where('created_by_user_id', (int) $authUser->id)
-            ->when($workspaceId !== null, fn ($query) => $query->where('workspace_id', $workspaceId))
-            ->where('scope_type', $scopeType)
-            ->where('scope_id', $scopeId)
-            ->orderByDesc('id')
-            ->first();
-
-        if (! $rule) {
-            $rule = MaterialShareRule::create([
-                'school_id' => (int) $authUser->school_id,
-                'created_by_user_id' => (int) $authUser->id,
-                'workspace_id' => $workspaceId,
-                'scope_type' => $scopeType,
-                'scope_id' => $scopeId,
-                'is_active' => true,
-            ]);
-        } else {
-            if (! $rule->is_active) {
-                $rule->is_active = true;
-                $rule->save();
-            }
-        }
-
-        $target = $this->findExistingTargetForScope(
-            schoolId: (int) $authUser->school_id,
-            creatorUserId: (int) $authUser->id,
+        $result = $this->materialShareService->storeTarget(
+            actor: $authUser,
             workspaceId: $workspaceId,
             scopeType: $scopeType,
             scopeId: $scopeId,
@@ -5253,19 +5229,10 @@ class MaterialShareController extends Controller
             audienceScope: $audienceScope,
             userId: $userId,
             groupId: $groupId,
+            permission: (string) $data['permission'],
         );
-
-        if (! $target) {
-            $target = new MaterialShareTarget;
-        }
-
-        $target->material_share_rule_id = (int) $rule->id;
-        $target->target_type = $targetType;
-        $target->audience_scope = $audienceScope;
-        $target->permission = (string) $data['permission'];
-        $target->user_id = $targetType === MaterialShareTarget::TARGET_USER ? $userId : null;
-        $target->user_group_id = $targetType === MaterialShareTarget::TARGET_GROUP ? $groupId : null;
-        $target->save();
+        $rule = $result['rule'];
+        $target = $result['target'];
 
         $rule->refresh()->load([
             'creator:id,first_name,last_name,email',
@@ -5287,23 +5254,7 @@ class MaterialShareController extends Controller
         $authUser = $this->materialsShareUser();
         $this->abortIfShareTablesMissing();
 
-        $material_share_target->loadMissing('rule');
-        $rule = $material_share_target->rule;
-
-        if (! $rule || (int) $rule->school_id !== (int) $authUser->school_id) {
-            abort(404, 'Freigabe-Ziel nicht gefunden.');
-        }
-
-        $ruleId = (int) $rule->id;
-        $material_share_target->delete();
-
-        $hasTargets = MaterialShareTarget::query()
-            ->where('material_share_rule_id', $ruleId)
-            ->exists();
-
-        if (! $hasTargets) {
-            MaterialShareRule::query()->whereKey($ruleId)->delete();
-        }
+        $this->materialShareService->destroyTarget($authUser, $material_share_target);
 
         return response()->json([
             'message' => 'Freigabe entfernt.',
@@ -5315,20 +5266,15 @@ class MaterialShareController extends Controller
         $authUser = $this->materialsShareUser();
         $this->abortIfShareTablesMissing();
 
-        $material_share_target->loadMissing('rule');
-        $rule = $material_share_target->rule;
-
-        if (! $rule || (int) $rule->school_id !== (int) $authUser->school_id) {
-            abort(404, 'Freigabe-Ziel nicht gefunden.');
-        }
-
         $data = $request->validate([
             'permission' => ['required', 'string', Rule::in(MaterialShareTarget::PERMISSIONS)],
         ]);
 
-        $material_share_target->permission = (string) $data['permission'];
-        $material_share_target->save();
-        $rule->touch();
+        $rule = $this->materialShareService->updateTargetPermission(
+            $authUser,
+            $material_share_target,
+            (string) $data['permission'],
+        );
 
         $rule->refresh()->load([
             'creator:id,first_name,last_name,email',
@@ -5350,16 +5296,15 @@ class MaterialShareController extends Controller
         $authUser = $this->materialsShareUser();
         $this->abortIfShareTablesMissing();
 
-        if ((int) $material_share_rule->school_id !== (int) $authUser->school_id) {
-            abort(404, 'Freigabe nicht gefunden.');
-        }
-
         $data = $request->validate([
             'is_active' => ['required', 'boolean'],
         ]);
 
-        $material_share_rule->is_active = (bool) $data['is_active'];
-        $material_share_rule->save();
+        $material_share_rule = $this->materialShareService->updateRuleActiveState(
+            $authUser,
+            $material_share_rule,
+            (bool) $data['is_active'],
+        );
 
         $material_share_rule->load([
             'creator:id,first_name,last_name,email',
@@ -5423,34 +5368,6 @@ class MaterialShareController extends Controller
         }
 
         abort(409, 'Freigaben-Tabellen fehlen. Bitte Migration ausführen.');
-    }
-
-    private function findExistingTargetForScope(
-        int $schoolId,
-        int $creatorUserId,
-        ?int $workspaceId,
-        string $scopeType,
-        ?int $scopeId,
-        string $targetType,
-        ?string $audienceScope,
-        ?int $userId,
-        ?int $groupId,
-    ): ?MaterialShareTarget {
-        return MaterialShareTarget::query()
-            ->where('target_type', $targetType)
-            ->when($targetType === MaterialShareTarget::TARGET_EVERYONE, fn ($query) => $query->where('audience_scope', $audienceScope))
-            ->when($targetType === MaterialShareTarget::TARGET_USER, fn ($query) => $query->where('user_id', $userId))
-            ->when($targetType === MaterialShareTarget::TARGET_GROUP, fn ($query) => $query->where('user_group_id', $groupId))
-            ->whereHas('rule', function ($query) use ($schoolId, $creatorUserId, $workspaceId, $scopeType, $scopeId) {
-                $query
-                    ->where('school_id', $schoolId)
-                    ->where('created_by_user_id', $creatorUserId)
-                    ->when($workspaceId !== null, fn ($ruleQuery) => $ruleQuery->where('workspace_id', $workspaceId))
-                    ->where('scope_type', $scopeType)
-                    ->where('scope_id', $scopeId);
-            })
-            ->orderByDesc('id')
-            ->first();
     }
 
     private function activeWorkspaceIdForUser(User $user): ?int

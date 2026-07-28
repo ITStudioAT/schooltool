@@ -57,10 +57,6 @@ export default defineConfig({
                 manualChunks(id) {
                     if (!id.includes('node_modules')) return;
 
-                    if (id.includes('vuetify')) {
-                        return 'vendor-vuetify';
-                    }
-
                     if (
                         id.includes('/vue/') ||
                         id.includes('\\vue\\') ||

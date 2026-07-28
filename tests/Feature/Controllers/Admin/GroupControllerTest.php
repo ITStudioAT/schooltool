@@ -13,6 +13,7 @@ use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\UserGroupMember;
+use App\Services\Groups\GroupSynchronizationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
@@ -158,6 +159,62 @@ test('groups index dispatches heavy sync as unique background job and exposes sy
         return $job->schoolId === (int) $this->school->id
             && $job->actorUserId === (int) $this->materialsAdmin->id;
     });
+});
+
+test('groups sync job delegates to the synchronization service and records completion', function () {
+    Cache::flush();
+
+    $service = Mockery::mock(GroupSynchronizationService::class);
+    $service->shouldReceive('runHeavySync')
+        ->once()
+        ->withArgs(function (?User $actor, int $schoolId, int $actorUserId): bool {
+            return (int) $actor?->id === (int) $this->materialsAdmin->id
+                && $schoolId === (int) $this->school->id
+                && $actorUserId === (int) $this->materialsAdmin->id;
+        });
+
+    Cache::put(
+        SyncGroupsJob::queuedCacheKey((int) $this->school->id),
+        true,
+        now()->addMinute(),
+    );
+
+    $job = new SyncGroupsJob(
+        (int) $this->school->id,
+        (int) $this->materialsAdmin->id,
+    );
+    $job->handle($service);
+
+    expect(Cache::get(SyncGroupsJob::queuedCacheKey((int) $this->school->id)))->toBeNull()
+        ->and(Cache::get(SyncGroupsJob::runningCacheKey((int) $this->school->id)))->toBeNull()
+        ->and(Cache::get(SyncGroupsJob::lastSyncedAtCacheKey((int) $this->school->id)))->toBeString();
+});
+
+test('groups sync job clears transient cache state when synchronization fails', function () {
+    Cache::flush();
+
+    $service = Mockery::mock(GroupSynchronizationService::class);
+    $service->shouldReceive('runHeavySync')
+        ->once()
+        ->andThrow(new RuntimeException('sync failed'));
+
+    Cache::put(
+        SyncGroupsJob::queuedCacheKey((int) $this->school->id),
+        true,
+        now()->addMinute(),
+    );
+
+    $job = new SyncGroupsJob(
+        (int) $this->school->id,
+        (int) $this->materialsAdmin->id,
+    );
+
+    expect(fn () => $job->handle($service))
+        ->toThrow(RuntimeException::class, 'sync failed');
+
+    expect(Cache::get(SyncGroupsJob::queuedCacheKey((int) $this->school->id)))->toBeNull()
+        ->and(Cache::get(SyncGroupsJob::runningCacheKey((int) $this->school->id)))->toBeNull()
+        ->and(Cache::get(SyncGroupsJob::lastSyncedAtCacheKey((int) $this->school->id)))->toBeNull();
 });
 
 test('school groups only consider import116 rows from the active schoolyear', function () {

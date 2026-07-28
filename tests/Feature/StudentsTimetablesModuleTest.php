@@ -26,6 +26,7 @@ use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
@@ -2164,6 +2165,131 @@ it('does not duplicate active recognition rows when the same csv is imported aga
         ->getJson('/api/admin/students-timetables/recognitions-csv')
         ->assertSuccessful()
         ->assertJsonPath('active_dataset.entries_count', 2);
+});
+
+it('streams recognition csv rows across database batch boundaries', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $directory = storage_path("app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}");
+    File::deleteDirectory($directory);
+    File::ensureDirectoryExists($directory);
+
+    $header = 'Studierende;SchülerInnenkennzahl;Gegenstand;Note;Kolloquien;Modulwiederholungen;Lehrerkürzel';
+    $rows = collect(range(0, 500))
+        ->map(fn (int $index): string => sprintf(
+            'Student %04d;%04d;Deutsch;1;0;0/0;',
+            $index,
+            $index,
+        ))
+        ->all();
+    $rows[0] = "\"Student\n0000\";0000;Deutsch;1;0;0/0;";
+    $rows[] = $rows[0];
+    $csv = implode("\n", [$header, ...$rows, '']);
+    $filename = 'recognition-batches.csv';
+    File::put("{$directory}/{$filename}", $csv);
+
+    $import = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => $filename,
+        'stored_filename' => $filename,
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/{$filename}",
+        'file_size' => strlen($csv),
+        'total_rows' => 0,
+        'imported_rows' => 0,
+        'skipped_rows' => 0,
+        'import_status' => 'pending',
+        'imported_at' => now(),
+    ]);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    app(RecognitionImportService::class)->processImport($import);
+    $upsertQueries = collect(DB::getQueryLog())
+        ->pluck('query')
+        ->filter(fn (string $query): bool => str_contains(
+            strtolower($query),
+            'insert into `student_timetable_recognition_rows`',
+        ) || str_contains(
+            strtolower($query),
+            'insert into "student_timetable_recognition_rows"',
+        ))
+        ->count();
+    DB::disableQueryLog();
+
+    $import->refresh();
+
+    expect($import->total_rows)->toBe(502)
+        ->and($import->imported_rows)->toBe(501)
+        ->and($import->skipped_rows)->toBe(1)
+        ->and(StudentTimetableRecognitionRow::query()
+            ->where('student_timetable_recognition_import_id', $import->id)
+            ->count())->toBe(501)
+        ->and(substr_count(File::get("{$directory}/{$filename}"), "\"Student\n0000\";"))->toBe(2)
+        ->and($upsertQueries)->toBe(2);
+});
+
+it('restores the original recognition csv when database persistence fails', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $directory = storage_path("app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}");
+    File::deleteDirectory($directory);
+    File::ensureDirectoryExists($directory);
+
+    $csv = implode("\n", [
+        'Studierende;SchülerInnenkennzahl;Gegenstand;Note;Kolloquien;Modulwiederholungen;Lehrerkürzel',
+        'Imported Student;100;Deutsch;1;0;0/0;',
+        'Skipped Student;200;Deutsch;;0;0/0;',
+        '',
+    ]);
+    $filename = 'recognition-failure.csv';
+    $absolutePath = "{$directory}/{$filename}";
+    File::put($absolutePath, $csv);
+
+    $import = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => $filename,
+        'stored_filename' => $filename,
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/{$filename}",
+        'file_size' => strlen($csv),
+        'total_rows' => 0,
+        'imported_rows' => 0,
+        'skipped_rows' => 0,
+        'import_status' => 'pending',
+        'imported_at' => now(),
+    ]);
+
+    $service = new class extends RecognitionImportService
+    {
+        protected function upsertRecognitionRows(array $rows): void
+        {
+            throw new RuntimeException('Forced recognition persistence failure.');
+        }
+    };
+
+    expect(fn () => $service->processImport($import))
+        ->toThrow(RuntimeException::class, 'Forced recognition persistence failure.');
+
+    $import->refresh();
+
+    expect(File::get($absolutePath))->toBe($csv)
+        ->and(glob($absolutePath.'.import-*') ?: [])->toBe([])
+        ->and($import->total_rows)->toBe(0)
+        ->and($import->imported_rows)->toBe(0)
+        ->and(StudentTimetableRecognitionRow::query()
+            ->where('student_timetable_recognition_import_id', $import->id)
+            ->count())->toBe(0);
 });
 
 it('keeps subject overview json import history for a schoolyear', function () {

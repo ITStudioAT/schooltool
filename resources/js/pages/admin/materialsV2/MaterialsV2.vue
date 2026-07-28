@@ -4,38 +4,13 @@
         <div class="materials-v2-orb materials-v2-orb--two" />
 
         <div class="materials-v2-content">
-            <header class="materials-v2-header">
-                <div class="materials-v2-brand">
-                    <img
-                        v-if="schoolLogoSrc"
-                        class="materials-v2-school-logo"
-                        :src="schoolLogoSrc"
-                        :alt="`${schoolName} Logo`" />
-                    <div v-else class="materials-v2-school-logo-placeholder">
-                        <v-icon size="22">mdi-school-outline</v-icon>
-                    </div>
-                    <div class="materials-v2-brand-copy">
-                        <h1 class="materials-v2-title">Materialien</h1>
-                        <p class="materials-v2-school-name">{{ schoolName }}</p>
-                    </div>
-                </div>
-
-                <v-text-field
-                    v-model="search"
-                    class="materials-v2-header-search"
-                    variant="solo"
-                    density="compact"
-                    flat
-                    rounded="lg"
-                    clearable
-                    hide-details
-                    autocomplete="off"
-                    prepend-inner-icon="mdi-magnify"
-                    placeholder="Was suchst du? Wortteile und kleine Tippfehler sind erlaubt …"
-                    :loading="loading"
-                    @click:clear="clearSearch" />
-
-            </header>
+            <MaterialsV2Header
+                :search="search"
+                :loading="loading"
+                :school-name="schoolName"
+                :school-logo-src="schoolLogoSrc"
+                @update:search="search = $event"
+                @clear="clearSearch" />
 
             <nav class="materials-v2-system-navigation" aria-label="Systemkategorien">
                 <v-tabs
@@ -207,111 +182,20 @@
                 {{ loadError }}
             </v-alert>
 
-            <section v-if="isReminderCalendarView" class="materials-v2-calendar" aria-label="Terminkalender">
-                <div v-if="loading" class="materials-v2-calendar-loading" role="status" aria-live="polite">
-                    <span class="materials-v2-calendar-loading-spinner" aria-hidden="true" />
-                    Termine werden geladen …
-                </div>
-
-                <div class="materials-v2-calendar-toolbar">
-                    <div class="materials-v2-calendar-navigation">
-        <v-btn
-            class="materials-v2-calendar-previous"
-            icon="mdi-chevron-left"
-            size="small"
-            variant="text"
-            :title="previousCalendarPeriodLabel"
-            :aria-label="previousCalendarPeriodLabel"
-            @click="moveCalendar(-1)"
-        />
-        <v-btn
-            class="materials-v2-calendar-today"
-            icon="mdi-calendar-today"
-            size="small"
-            variant="tonal"
-            title="Heute"
-            aria-label="Heute"
-            @click="showToday"
-        />
-        <v-btn
-            class="materials-v2-calendar-next"
-            icon="mdi-chevron-right"
-            size="small"
-            variant="text"
-            :title="nextCalendarPeriodLabel"
-            :aria-label="nextCalendarPeriodLabel"
-            @click="moveCalendar(1)"
-        />
-                    </div>
-                    <div class="materials-v2-calendar-item-navigation" aria-label="Zwischen Terminen springen">
-        <v-btn
-            class="materials-v2-calendar-previous-item"
-            icon="mdi-calendar-arrow-left"
-            size="small"
-            variant="outlined"
-            title="Vorheriger Termin"
-            aria-label="Vorheriger Termin"
-            :loading="adjacentReminderLoading === 'previous'"
-            :disabled="adjacentReminderLoading !== ''"
-            @click="jumpToAdjacentReminder('previous')"
-        />
-        <v-btn
-            class="materials-v2-calendar-next-item"
-            icon="mdi-calendar-arrow-right"
-            size="small"
-            variant="outlined"
-            title="Nächster Termin"
-            aria-label="Nächster Termin"
-            :loading="adjacentReminderLoading === 'next'"
-            :disabled="adjacentReminderLoading !== ''"
-            @click="jumpToAdjacentReminder('next')"
-        />
-                    </div>
-                    <h2 class="materials-v2-calendar-period">{{ calendarPeriodLabel }}</h2>
-                </div>
-
-                <div class="materials-v2-calendar-weekdays" aria-hidden="true">
-                    <span v-for="weekday in calendarWeekdays" :key="weekday">{{ weekday }}</span>
-                </div>
-
-                <div
-                    :class="[
-                        'materials-v2-calendar-grid',
-                        `materials-v2-calendar-grid--${calendarDisplayMode}`,
-                    ]">
-                    <article
-                        v-for="day in calendarDays"
-                        :key="day.key"
-                        :class="[
-                            'materials-v2-calendar-day',
-                            { 'materials-v2-calendar-day--outside': !day.isCurrentMonth },
-                            { 'materials-v2-calendar-day--today': day.isToday },
-                        ]">
-                        <div class="materials-v2-calendar-day-heading">
-                            <span v-if="calendarDisplayMode === 'week'" class="materials-v2-calendar-day-weekday">
-                                {{ day.weekday }}
-                            </span>
-                            <time :datetime="day.key">{{ day.dayNumber }}</time>
-                        </div>
-
-                        <div class="materials-v2-calendar-events">
-                            <button
-                                v-for="item in day.items"
-                                :key="item.id"
-                                type="button"
-                                class="materials-v2-calendar-event"
-                                :title="calendarEventTitle(item)"
-                                @click="openEditDialog(item)">
-                                <span class="materials-v2-calendar-event-time">
-                                    {{ item.reminder_time || 'Ganztägig' }}
-                                </span>
-                                <span class="materials-v2-calendar-event-title">{{ item.title }}</span>
-                            </button>
-                            <span v-if="!day.items.length" class="materials-v2-calendar-day-empty">Keine Termine</span>
-                        </div>
-                    </article>
-                </div>
-            </section>
+            <MaterialsV2Calendar
+                v-if="isReminderCalendarView"
+                :loading="loading"
+                :period-label="calendarPeriodLabel"
+                :previous-period-label="previousCalendarPeriodLabel"
+                :next-period-label="nextCalendarPeriodLabel"
+                :adjacent-reminder-loading="adjacentReminderLoading"
+                :weekdays="calendarWeekdays"
+                :display-mode="calendarDisplayMode"
+                :days="calendarDays"
+                @move="moveCalendar"
+                @today="showToday"
+                @jump-adjacent="jumpToAdjacentReminder"
+                @edit="openEditDialog" />
 
             <v-row v-else-if="loading && !items.length" dense>
                 <v-col v-for="index in 6" :key="index" v-bind="materialColumnProps">
@@ -1197,24 +1081,64 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import { materialsV2Api } from '@/domains/materialsV2/api'
+import {
+    addCalendarDays,
+    buildCalendarDays,
+    calendarPeriodLabel as buildCalendarPeriodLabel,
+    calendarVisibleRange as buildCalendarVisibleRange,
+    formatCalendarDate,
+    isCalendarDate,
+    moveCalendarDate,
+    parseCalendarDate,
+} from '@/domains/materialsV2/calendar'
+import {
+    allCategoriesValue,
+    attachmentIcon,
+    categoryIcon,
+    createActionIcon,
+    createActionLabel,
+    formatDateTime,
+    formatFileSize,
+    formatReminderDate,
+    isDefaultCategory,
+    isLinkCategory,
+    isNoteCategory,
+    isReminderCategory,
+    isScreenshotCategory,
+    keywordStatusMeta,
+    linkCategoryName,
+    noteCategoryName,
+    reminderBadge,
+    reminderCategoryName,
+    screenshotCategoryName,
+    statusMeta,
+} from '@/domains/materialsV2/presentation'
 import { useMaterialV2Precognition } from '@/domains/materialsV2/useMaterialV2Precognition'
+import { useMaterialsV2Polling } from '@/domains/materialsV2/useMaterialsV2Polling'
 import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'
+import MaterialsV2Calendar from '@/pages/admin/materialsV2/components/MaterialsV2Calendar.vue'
+import MaterialsV2Header from '@/pages/admin/materialsV2/components/MaterialsV2Header.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useMaterialsV2Store } from '@/stores/admin/materialsV2/MaterialsV2Store'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 const adminStore = useAdminStore()
+const materialsStore = useMaterialsV2Store()
 const notification = useNotificationStore()
 const route = useRoute()
 const router = useRouter()
+const {
+    items,
+    categoryDetails,
+    loading,
+    loadError,
+    meta,
+} = storeToRefs(materialsStore)
 
-const allCategoriesValue = '__all_categories__'
-const reminderCategoryName = 'Termine'
-const screenshotCategoryName = 'Screenshots'
-const linkCategoryName = 'Links'
-const noteCategoryName = 'Notizen'
 const screenshotMimeTypes = ['image/gif', 'image/jpeg', 'image/png', 'image/webp']
 const displayModeStorageKey = 'materials-v2-display-mode'
 const displayModeOptions = ['large', 'standard', 'compact']
@@ -1228,18 +1152,9 @@ const reminderDisplayMode = ref(reminderDisplayModeFromQuery(route.query.view))
 const calendarDisplayMode = ref(calendarDisplayModeFromQuery(route.query.calendar))
 const calendarFocusDate = ref(calendarDateFromQuery(route.query.date))
 const page = ref(1)
-const items = ref([])
-const categoryDetails = ref([])
-const loading = ref(false)
-const loadError = ref('')
 const isAutomaticTagEditing = ref(false)
 const screenshotPreviewUrl = ref('')
 const adjacentReminderLoading = ref('')
-const meta = reactive({
-    total: 0,
-    current_page: 1,
-    last_page: 1,
-})
 const materialDialog = reactive({
     open: false,
     mode: 'create',
@@ -1318,10 +1233,14 @@ const tagAction = reactive({
 })
 
 let searchTimer = null
-let pollingTimer = null
 let linkPreviewTimer = null
 let linkPreviewRequestId = 0
 let isResettingFiltersAfterCreate = false
+const { configurePolling } = useMaterialsV2Polling(() => {
+    if (!loading.value) {
+        loadItems()
+    }
+}, 4000)
 
 const hasProcessingItems = computed(() =>
     items.value.some((item) => ['pending', 'processing'].includes(item.processing_status)),
@@ -1395,77 +1314,21 @@ const activeCardDisplayMode = computed(() => (isCustomCategorySelected.value ? d
 const calendarVisibleRange = computed(() => {
     const focusDate = parseCalendarDate(calendarFocusDate.value)
 
-    if (calendarDisplayMode.value === 'week') {
-        const start = startOfCalendarWeek(focusDate)
-
-        return {
-            start,
-            end: addCalendarDays(start, 6),
-        }
-    }
-
-    const monthStart = new Date(focusDate.getFullYear(), focusDate.getMonth(), 1)
-    const monthEnd = new Date(focusDate.getFullYear(), focusDate.getMonth() + 1, 0)
-
-    return {
-        start: startOfCalendarWeek(monthStart),
-        end: addCalendarDays(startOfCalendarWeek(monthEnd), 6),
-    }
+    return buildCalendarVisibleRange(focusDate, calendarDisplayMode.value)
 })
 const calendarDays = computed(() => {
     const focusDate = parseCalendarDate(calendarFocusDate.value)
-    const today = formatCalendarDate(new Date())
-    const itemsByDate = items.value.reduce((groupedItems, item) => {
-        if (item.reminder_date) {
-            groupedItems[item.reminder_date] ||= []
-            groupedItems[item.reminder_date].push(item)
-        }
 
-        return groupedItems
-    }, {})
-    const days = []
-
-    for (
-        let date = new Date(calendarVisibleRange.value.start);
-        date <= calendarVisibleRange.value.end;
-        date = addCalendarDays(date, 1)
-    ) {
-        const key = formatCalendarDate(date)
-
-        days.push({
-            key,
-            dayNumber: date.getDate(),
-            weekday: new Intl.DateTimeFormat('de-AT', { weekday: 'short' }).format(date),
-            isCurrentMonth: date.getMonth() === focusDate.getMonth(),
-            isToday: key === today,
-            items: [...(itemsByDate[key] || [])].sort(compareReminderItems),
-        })
-    }
-
-    return days
+    return buildCalendarDays({
+        focusDate,
+        range: calendarVisibleRange.value,
+        items: items.value,
+    })
 })
 const calendarPeriodLabel = computed(() => {
     const focusDate = parseCalendarDate(calendarFocusDate.value)
 
-    if (calendarDisplayMode.value === 'month') {
-        return new Intl.DateTimeFormat('de-AT', {
-            month: 'long',
-            year: 'numeric',
-        }).format(focusDate)
-    }
-
-    const { start, end } = calendarVisibleRange.value
-    const startLabel = new Intl.DateTimeFormat('de-AT', {
-        day: 'numeric',
-        month: start.getMonth() === end.getMonth() ? undefined : 'long',
-    }).format(start)
-    const endLabel = new Intl.DateTimeFormat('de-AT', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-    }).format(end)
-
-    return `${startLabel} – ${endLabel}`
+    return buildCalendarPeriodLabel(focusDate, calendarDisplayMode.value, calendarVisibleRange.value)
 })
 const previousCalendarPeriodLabel = computed(
     () => (calendarDisplayMode.value === 'month' ? 'Vorheriger Monat' : 'Vorherige Woche'),
@@ -1674,91 +1537,37 @@ onMounted(async () => {
 onBeforeUnmount(() => {
     window.clearTimeout(searchTimer)
     window.clearTimeout(linkPreviewTimer)
-    window.clearInterval(pollingTimer)
     linkPreviewRequestId += 1
     revokeScreenshotPreview()
+    materialsStore.resetPage()
 })
 
 async function loadItems() {
-    loading.value = true
-    loadError.value = ''
-
-    try {
-        const requestPage = isReminderCalendarView.value ? 1 : page.value
-        const perPage = isReminderCalendarView.value ? 48 : 18
-        const calendarRange = isReminderCalendarView.value
-            ? {
-                reminder_from: formatCalendarDate(calendarVisibleRange.value.start),
-                reminder_to: formatCalendarDate(calendarVisibleRange.value.end),
-            }
-            : {}
-        const response = await axios.get(materialsV2Api.items(), {
-            params: {
-                search: search.value.trim() || undefined,
-                category: selectedCategory.value === allCategoriesValue ? undefined : selectedCategory.value,
-                ...calendarRange,
-                page: requestPage,
-                per_page: perPage,
-            },
-        })
-
-        const firstPageItems = response.data?.data || []
-        const responseMeta = response.data?.meta || {}
-        const loadedItems = [...firstPageItems]
-
-        if (isReminderCalendarView.value) {
-            for (let calendarPage = 2; calendarPage <= Number(responseMeta.last_page || 1); calendarPage += 1) {
-                const additionalResponse = await axios.get(materialsV2Api.items(), {
-                    params: {
-                        search: search.value.trim() || undefined,
-                        category: reminderCategoryName,
-                        ...calendarRange,
-                        page: calendarPage,
-                        per_page: perPage,
-                    },
-                })
-
-                loadedItems.push(...(additionalResponse.data?.data || []))
-            }
+    const range = isReminderCalendarView.value
+        ? {
+            start: formatCalendarDate(calendarVisibleRange.value.start),
+            end: formatCalendarDate(calendarVisibleRange.value.end),
         }
+        : null
 
-        items.value = loadedItems
-        if (materialDialog.open && materialDialog.mode === 'edit' && materialDialog.item) {
-            const refreshedItem = items.value.find((item) => item.id === materialDialog.item.id)
-            if (refreshedItem) {
-                materialDialog.item = refreshedItem
-            }
+    await materialsStore.loadItems({
+        search: search.value,
+        category: selectedCategory.value === allCategoriesValue ? undefined : selectedCategory.value,
+        page: page.value,
+        calendarRange: range,
+        reminderCategory: reminderCategoryName,
+    })
+
+    if (materialDialog.open && materialDialog.mode === 'edit' && materialDialog.item) {
+        const refreshedItem = items.value.find((item) => item.id === materialDialog.item.id)
+        if (refreshedItem) {
+            materialDialog.item = refreshedItem
         }
-        const nextMeta = isReminderCalendarView.value
-            ? {
-                total: Number(responseMeta.total || items.value.length),
-                current_page: 1,
-                last_page: 1,
-            }
-            : response.data?.meta || {
-                total: items.value.length,
-                current_page: 1,
-                last_page: 1,
-            }
-
-        Object.assign(meta, nextMeta)
-    } catch (error) {
-        loadError.value = apiErrorMessage(error, 'Die Materialien konnten nicht geladen werden.')
-    } finally {
-        loading.value = false
     }
 }
 
 async function loadConfig() {
-    try {
-        const response = await axios.get(materialsV2Api.config())
-        const categories = Array.isArray(response.data?.categories) ? response.data.categories : []
-        categoryDetails.value = Array.isArray(response.data?.category_details)
-            ? response.data.category_details
-            : categories.map((name) => ({ name, items_count: null }))
-    } catch {
-        categoryDetails.value = []
-    }
+    await materialsStore.loadConfig()
 }
 
 function clearSearch() {
@@ -1838,74 +1647,8 @@ function calendarDateFromQuery(date) {
     return isCalendarDate(normalizedDate) ? normalizedDate : formatCalendarDate(new Date())
 }
 
-function parseCalendarDate(value) {
-    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/u)
-    if (!match) {
-        return new Date()
-    }
-
-    const [, year, month, day] = match
-    const date = new Date(Number(year), Number(month) - 1, Number(day))
-
-    return Number.isNaN(date.getTime()) ? new Date() : date
-}
-
-function isCalendarDate(value) {
-    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/u)
-    if (!match) {
-        return false
-    }
-
-    const [, year, month, day] = match
-    const date = new Date(Number(year), Number(month) - 1, Number(day))
-
-    return date.getFullYear() === Number(year)
-        && date.getMonth() === Number(month) - 1
-        && date.getDate() === Number(day)
-}
-
-function formatCalendarDate(date) {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-
-    return `${year}-${month}-${day}`
-}
-
-function startOfCalendarWeek(date) {
-    const start = new Date(date)
-    const daysSinceMonday = (start.getDay() + 6) % 7
-
-    start.setDate(start.getDate() - daysSinceMonday)
-    start.setHours(0, 0, 0, 0)
-
-    return start
-}
-
-function addCalendarDays(date, days) {
-    const result = new Date(date)
-
-    result.setDate(result.getDate() + days)
-
-    return result
-}
-
 function moveCalendar(direction) {
-    const focusDate = parseCalendarDate(calendarFocusDate.value)
-
-    if (calendarDisplayMode.value === 'month') {
-        const day = focusDate.getDate()
-
-        focusDate.setDate(1)
-        focusDate.setMonth(focusDate.getMonth() + direction)
-        const lastDayOfTargetMonth = new Date(focusDate.getFullYear(), focusDate.getMonth() + 1, 0).getDate()
-
-        focusDate.setDate(Math.min(day, lastDayOfTargetMonth))
-    } else {
-        focusDate.setDate(focusDate.getDate() + (direction * 7))
-    }
-
-    calendarFocusDate.value = formatCalendarDate(focusDate)
+    calendarFocusDate.value = moveCalendarDate(calendarFocusDate.value, calendarDisplayMode.value, direction)
 }
 
 function showToday() {
@@ -1949,89 +1692,8 @@ async function jumpToAdjacentReminder(direction) {
     }
 }
 
-function compareReminderItems(left, right) {
-    const timeComparison = String(left.reminder_time || '').localeCompare(String(right.reminder_time || ''))
-
-    return timeComparison !== 0 ? timeComparison : String(left.title || '').localeCompare(String(right.title || ''), 'de-AT')
-}
-
-function calendarEventTitle(item) {
-    return `${item.reminder_time || 'Ganztägig'} · ${item.title}`
-}
-
-function isReminderCategory(category) {
-    return String(category || '').trim().toLocaleLowerCase('de-AT') === reminderCategoryName.toLocaleLowerCase('de-AT')
-}
-
-function isScreenshotCategory(category) {
-    return String(category || '').trim().toLocaleLowerCase('de-AT') === screenshotCategoryName.toLocaleLowerCase('de-AT')
-}
-
-function isLinkCategory(category) {
-    return String(category || '').trim().toLocaleLowerCase('de-AT') === linkCategoryName.toLocaleLowerCase('de-AT')
-}
-
-function isNoteCategory(category) {
-    return String(category || '').trim().toLocaleLowerCase('de-AT') === noteCategoryName.toLocaleLowerCase('de-AT')
-}
-
-function isDefaultCategory(category) {
-    return isReminderCategory(category)
-        || isScreenshotCategory(category)
-        || isLinkCategory(category)
-        || isNoteCategory(category)
-}
-
 function categoryItemCount(categoryName) {
     return categoryDetails.value.find((category) => category.name === categoryName)?.items_count || 0
-}
-
-function categoryIcon(category) {
-    if (isReminderCategory(category)) {
-        return 'mdi-calendar-clock-outline'
-    }
-
-    if (isScreenshotCategory(category)) {
-        return 'mdi-monitor-screenshot'
-    }
-
-    if (isNoteCategory(category)) {
-        return 'mdi-note-text-outline'
-    }
-
-    return isLinkCategory(category) ? 'mdi-link-variant' : 'mdi-shape-outline'
-}
-
-function createActionIcon(category) {
-    if (isReminderCategory(category)) {
-        return 'mdi-calendar-plus'
-    }
-
-    if (isScreenshotCategory(category)) {
-        return 'mdi-image-plus-outline'
-    }
-
-    if (isNoteCategory(category)) {
-        return 'mdi-note-text-outline'
-    }
-
-    return isLinkCategory(category) ? 'mdi-link-plus' : 'mdi-plus'
-}
-
-function createActionLabel(category, fallback) {
-    if (isReminderCategory(category)) {
-        return 'Termin hinzufügen'
-    }
-
-    if (isScreenshotCategory(category)) {
-        return 'Screenshot hinzufügen'
-    }
-
-    if (isNoteCategory(category)) {
-        return 'Notiz hinzufügen'
-    }
-
-    return isLinkCategory(category) ? 'Link hinzufügen' : fallback
 }
 
 function loadStoredDisplayMode() {
@@ -2839,19 +2501,6 @@ function closePreviewDialog() {
     previewDialog.open = false
 }
 
-function configurePolling(isProcessing) {
-    window.clearInterval(pollingTimer)
-    pollingTimer = null
-
-    if (isProcessing) {
-        pollingTimer = window.setInterval(() => {
-            if (!loading.value) {
-                loadItems()
-            }
-        }, 4000)
-    }
-}
-
 function resetForm() {
     revokeScreenshotPreview()
     resetLinkPreview()
@@ -2920,107 +2569,6 @@ function normalizedKeywords() {
         .slice(0, 20)
 }
 
-function statusMeta(status) {
-    return {
-        pending: { label: 'Wartet', color: 'info', icon: 'mdi-clock-outline' },
-        processing: { label: 'Wird analysiert', color: 'info', icon: 'mdi-progress-clock' },
-        ready: { label: 'Bereit', color: 'success', icon: 'mdi-check-circle-outline' },
-        partial: { label: 'Teilweise gelesen', color: 'warning', icon: 'mdi-alert-circle-outline' },
-        failed: { label: 'Fehlgeschlagen', color: 'error', icon: 'mdi-alert-outline' },
-    }[status] || { label: status || 'Unbekannt', color: 'default', icon: 'mdi-help-circle-outline' }
-}
-
-function keywordStatusMeta(status) {
-    return {
-        pending: { label: 'Wartet auf Analyse', color: 'info' },
-        processing: { label: 'Tags werden ermittelt', color: 'info' },
-        ready: { label: 'Tags erkannt', color: 'success' },
-        empty: { label: 'Keine relevanten Tags', color: 'warning' },
-        skipped: { label: 'Nicht auswertbar', color: 'warning' },
-        failed: { label: 'Tag-Erkennung fehlgeschlagen', color: 'error' },
-    }[status] || { label: status || 'Noch nicht verarbeitet', color: 'default' }
-}
-
-function attachmentIcon(attachment) {
-    const mimeType = String(attachment.mime_type || '').toLowerCase()
-    const name = String(attachment.original_name || '').toLowerCase()
-
-    if (mimeType.includes('pdf') || name.endsWith('.pdf')) return 'mdi-file-pdf-box'
-    if (mimeType.includes('word') || name.endsWith('.docx')) return 'mdi-file-word-outline'
-    if (mimeType.includes('sheet') || name.endsWith('.xlsx')) return 'mdi-file-excel-outline'
-    if (mimeType.includes('presentation') || name.endsWith('.pptx')) return 'mdi-file-powerpoint-outline'
-    if (mimeType.startsWith('image/')) return 'mdi-file-image-outline'
-    return 'mdi-file-document-outline'
-}
-
-function formatFileSize(bytes) {
-    const size = Number(bytes || 0)
-    if (size < 1024) return `${size} B`
-    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function formatDateTime(value) {
-    const date = new Date(value)
-
-    return Number.isNaN(date.getTime())
-        ? ''
-        : new Intl.DateTimeFormat('de-AT', {
-            dateStyle: 'short',
-            timeStyle: 'short',
-        }).format(date)
-}
-
-function formatReminderDate(value) {
-    const date = reminderDate(value)
-
-    return date
-        ? new Intl.DateTimeFormat('de-AT', {
-            weekday: 'short',
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-        }).format(date)
-        : ''
-}
-
-function reminderBadge(value) {
-    const date = reminderDate(value)
-    if (!date) {
-        return null
-    }
-
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const differenceInDays = Math.round((date.getTime() - today.getTime()) / 86400000)
-
-    if (differenceInDays < 0) {
-        return { label: 'Vergangen', color: 'default' }
-    }
-
-    if (differenceInDays === 0) {
-        return { label: 'Heute', color: 'error' }
-    }
-
-    if (differenceInDays === 1) {
-        return { label: 'Morgen', color: 'warning' }
-    }
-
-    return null
-}
-
-function reminderDate(value) {
-    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/u)
-    if (!match) {
-        return null
-    }
-
-    const [, year, month, day] = match
-    const date = new Date(Number(year), Number(month) - 1, Number(day))
-
-    return Number.isNaN(date.getTime()) ? null : date
-}
-
 function apiErrorMessage(error, fallback) {
     return error.response?.data?.message || fallback
 }
@@ -3077,87 +2625,6 @@ function notify(message, type = 'success') {
     bottom: -120px;
     left: -90px;
     background: rgba(47, 191, 145, 0.13);
-}
-
-.materials-v2-header {
-    display: grid;
-    min-height: 64px;
-    padding: 9px 22px;
-    align-items: center;
-    grid-template-columns: minmax(190px, 270px) minmax(260px, 640px);
-    justify-content: space-between;
-    gap: 1.25rem;
-    border-bottom: 1px solid rgba(23, 45, 59, 0.08);
-    background: rgba(255, 255, 255, 0.9);
-    backdrop-filter: blur(18px);
-}
-
-.materials-v2-brand {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 0.65rem;
-}
-
-.materials-v2-school-logo,
-.materials-v2-school-logo-placeholder {
-    width: 36px;
-    height: 36px;
-    flex: 0 0 36px;
-}
-
-.materials-v2-school-logo {
-    object-fit: contain;
-}
-
-.materials-v2-school-logo-placeholder {
-    display: grid;
-    place-items: center;
-    border-radius: 10px;
-    background: rgba(var(--v-theme-primary), 0.08);
-    color: rgb(var(--v-theme-primary));
-}
-
-.materials-v2-brand-copy {
-    min-width: 0;
-}
-
-.materials-v2-title {
-    margin: 0;
-    font-size: 0.95rem;
-    font-weight: 800;
-    letter-spacing: -0.015em;
-    line-height: 1.15;
-}
-
-.materials-v2-school-name {
-    margin: 0.15rem 0 0;
-    overflow: hidden;
-    color: var(--materials-v2-muted);
-    font-size: 0.7rem;
-    line-height: 1.15;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.materials-v2-header-search {
-    width: 100%;
-    max-width: 640px;
-    justify-self: center;
-}
-
-.materials-v2-header-search :deep(.v-field) {
-    min-height: 42px;
-    border: 1px solid rgba(23, 45, 59, 0.12);
-    background: rgba(255, 255, 255, 0.96);
-    box-shadow: none;
-    font-size: 0.88rem;
-    transition: border-color 180ms ease, box-shadow 180ms ease;
-}
-
-.materials-v2-header-search :deep(.v-field--focused) {
-    border-color: var(--materials-v2-accent);
-    box-shadow: 0 0 0 4px rgba(255, 122, 50, 0.1);
 }
 
 .materials-v2-system-navigation {
@@ -3287,206 +2754,6 @@ function notify(message, type = 'success') {
 .materials-v2-display-toggle :deep(.v-btn) {
     min-width: 78px;
     text-transform: none;
-}
-
-.materials-v2-calendar {
-    position: relative;
-    margin-top: 0.5rem;
-    overflow-x: auto;
-    border: 1px solid rgba(23, 45, 59, 0.1);
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 12px 40px rgba(23, 45, 59, 0.06);
-}
-
-.materials-v2-calendar-loading {
-    position: absolute;
-    z-index: 3;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.65rem;
-    border-radius: inherit;
-    background: rgba(255, 255, 255, 0.82);
-    color: var(--materials-v2-ink);
-    font-size: 0.82rem;
-    font-weight: 750;
-    backdrop-filter: blur(2px);
-}
-
-.materials-v2-calendar-loading-spinner {
-    width: 22px;
-    height: 22px;
-    border: 3px solid rgba(255, 122, 50, 0.2);
-    border-top-color: var(--materials-v2-accent);
-    border-radius: 999px;
-    animation: materials-v2-calendar-spin 700ms linear infinite;
-}
-
-@keyframes materials-v2-calendar-spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-.materials-v2-calendar-toolbar {
-    display: flex;
-    min-width: 720px;
-    padding: 0.8rem 1rem;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    border-bottom: 1px solid rgba(23, 45, 59, 0.08);
-}
-
-.materials-v2-calendar-navigation {
-    display: flex;
-    align-items: center;
-    gap: 0.15rem;
-}
-
-.materials-v2-calendar-item-navigation {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-}
-
-.materials-v2-calendar-period {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 800;
-    text-transform: capitalize;
-}
-
-.materials-v2-calendar-weekdays {
-    display: grid;
-    min-width: 720px;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    border-bottom: 1px solid rgba(23, 45, 59, 0.08);
-    background: rgba(247, 249, 252, 0.86);
-}
-
-.materials-v2-calendar-weekdays span {
-    padding: 0.55rem 0.7rem;
-    color: var(--materials-v2-muted);
-    font-size: 0.7rem;
-    font-weight: 800;
-    letter-spacing: 0.05em;
-    text-align: center;
-    text-transform: uppercase;
-}
-
-.materials-v2-calendar-grid {
-    display: grid;
-    min-width: 720px;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-}
-
-.materials-v2-calendar-day {
-    min-width: 0;
-    min-height: 128px;
-    padding: 0.55rem;
-    border-right: 1px solid rgba(23, 45, 59, 0.07);
-    border-bottom: 1px solid rgba(23, 45, 59, 0.07);
-}
-
-.materials-v2-calendar-grid--week .materials-v2-calendar-day {
-    min-height: 420px;
-}
-
-.materials-v2-calendar-day:nth-child(7n) {
-    border-right: 0;
-}
-
-.materials-v2-calendar-day--outside {
-    background: rgba(247, 249, 252, 0.72);
-    color: rgba(97, 116, 130, 0.6);
-}
-
-.materials-v2-calendar-day-heading {
-    display: flex;
-    min-height: 28px;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.35rem;
-    font-size: 0.75rem;
-    font-weight: 800;
-}
-
-.materials-v2-calendar-day-weekday {
-    margin-right: auto;
-    color: var(--materials-v2-muted);
-    text-transform: capitalize;
-}
-
-.materials-v2-calendar-day-heading time {
-    display: grid;
-    width: 28px;
-    height: 28px;
-    place-items: center;
-    border-radius: 999px;
-}
-
-.materials-v2-calendar-day--today .materials-v2-calendar-day-heading time {
-    background: var(--materials-v2-accent);
-    color: #fff;
-}
-
-.materials-v2-calendar-events {
-    display: flex;
-    margin-top: 0.35rem;
-    flex-direction: column;
-    gap: 0.3rem;
-}
-
-.materials-v2-calendar-event {
-    display: flex;
-    width: 100%;
-    padding: 0.38rem 0.45rem;
-    align-items: flex-start;
-    flex-direction: column;
-    overflow: hidden;
-    border: 1px solid rgba(255, 122, 50, 0.18);
-    border-radius: 8px;
-    background: rgba(255, 122, 50, 0.09);
-    color: var(--materials-v2-ink);
-    cursor: pointer;
-    font: inherit;
-    text-align: left;
-}
-
-.materials-v2-calendar-event:hover,
-.materials-v2-calendar-event:focus-visible {
-    border-color: rgba(255, 122, 50, 0.45);
-    background: rgba(255, 122, 50, 0.15);
-    outline: none;
-}
-
-.materials-v2-calendar-event-time {
-    color: var(--materials-v2-accent);
-    font-size: 0.64rem;
-    font-weight: 800;
-}
-
-.materials-v2-calendar-event-title {
-    max-width: 100%;
-    overflow: hidden;
-    font-size: 0.72rem;
-    font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.materials-v2-calendar-day-empty {
-    display: none;
-    color: var(--materials-v2-muted);
-    font-size: 0.72rem;
-}
-
-.materials-v2-calendar-grid--week .materials-v2-calendar-day-empty {
-    display: inline;
-    padding: 0.4rem 0.2rem;
 }
 
 .materials-v2-card {
@@ -4025,28 +3292,12 @@ function notify(message, type = 'success') {
 }
 
 @media (max-width: 900px) {
-    .materials-v2-header {
-        min-height: auto;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 0.65rem 1rem;
-    }
-
-    .materials-v2-header-search {
-        max-width: none;
-        grid-column: 1 / -1;
-        grid-row: 2;
-    }
-
     .materials-v2-workspace {
         grid-template-columns: 220px minmax(0, 1fr);
     }
 }
 
 @media (max-width: 700px) {
-    .materials-v2-header {
-        padding: 10px 12px;
-    }
-
     .materials-v2-system-tabs {
         padding: 0 6px;
     }

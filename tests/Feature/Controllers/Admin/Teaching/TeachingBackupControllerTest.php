@@ -29,6 +29,8 @@ use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\UserGroupMember;
+use App\Services\TeachingBackupArchiveReader;
+use App\Services\TeachingBackupArchiveWriter;
 use App\Services\TeachingBackupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -320,11 +322,15 @@ test('store creates a backup for the active school and schoolyear only', functio
     $backup = TeachingBackup::query()->firstOrFail();
     Storage::disk('local')->assertExists($backup->path);
 
-    $payload = json_decode(Storage::disk('local')->get($backup->path), true, 512, JSON_THROW_ON_ERROR);
+    $payload = app(TeachingBackupArchiveReader::class)->readStorage($backup->disk, $backup->path);
     $courseTitles = collect($payload['tables']['teaching_courses'])->pluck('title');
     $backupTeacher = collect($payload['tables']['users'])->firstWhere('id', $this->teacher->id);
 
-    expect($payload['meta']['scope'])->toBe('active_school_and_active_schoolyear')
+    expect($backup->path)->toEndWith('.zip')
+        ->and($backup->filename)->toEndWith('.zip')
+        ->and($backup->summary['container_format'])->toBe('zip')
+        ->and($payload['meta']['format_version'])->toBe(2)
+        ->and($payload['meta']['scope'])->toBe('active_school_and_active_schoolyear')
         ->and($courseTitles)->toContain('Aktiver Kurs')
         ->and($courseTitles)->not->toContain('Altes Schuljahr')
         ->and($courseTitles)->not->toContain('Andere Schule')
@@ -336,11 +342,97 @@ test('store creates a backup for the active school and schoolyear only', functio
         ->and($backupTeacher['teaching_role_names'])->toContain('teacher')
         ->and($backupTeacher['teaching_role_names'])->not->toContain('teaching_admin')
         ->and($payload['files'][0]['path'])->toBe('teaching/course_date_materials/demo.txt')
-        ->and(base64_decode($payload['files'][0]['base64']))->toBe('Dateiinhalt')
+        ->and($payload['files'][0])->not->toHaveKey('base64')
         ->and($backup->summary['validation']['status'])->toBe('valid')
         ->and($backup->summary['validation']['issues'])->toBe([])
         ->and($backup->summary['total_rows'])->toBeGreaterThan(0)
         ->and($backup->summary['missing_file_count'])->toBe(0);
+
+    app(TeachingBackupArchiveReader::class)->copyFileToStorage(
+        $payload['files'][0],
+        'local',
+        'teaching/restored-from-v2/demo.txt',
+    );
+    expect(Storage::disk('local')->get('teaching/restored-from-v2/demo.txt'))->toBe('Dateiinhalt');
+});
+
+test('imports and reuses a version two teaching backup archive', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $createdResponse = $this->postJson('/api/admin/teaching/backups')->assertCreated();
+    $createdBackup = TeachingBackup::query()->findOrFail($createdResponse->json('data.id'));
+    $archiveContent = Storage::disk('local')->get($createdBackup->path);
+    $createdBackup->delete();
+
+    $firstFile = UploadedFile::fake()->createWithContent('external-teaching-backup.zip', $archiveContent);
+    $secondFile = UploadedFile::fake()->createWithContent('external-teaching-backup.zip', $archiveContent);
+
+    $firstResponse = $this->postJson('/api/admin/teaching/backups/import', [
+        'backup' => $firstFile,
+    ]);
+    $secondResponse = $this->postJson('/api/admin/teaching/backups/import', [
+        'backup' => $secondFile,
+    ]);
+
+    $firstResponse->assertCreated()
+        ->assertJsonPath('data.summary.container_format', 'zip')
+        ->assertJsonPath('meta.imported', true);
+    $secondResponse->assertOk()
+        ->assertJsonPath('meta.imported', false)
+        ->assertJsonPath('meta.duplicate', true)
+        ->assertJsonPath('data.id', $firstResponse->json('data.id'));
+
+    $importedBackup = TeachingBackup::query()->findOrFail($firstResponse->json('data.id'));
+    expect($importedBackup->filename)->toBe('external-teaching-backup.zip')
+        ->and($importedBackup->path)->toEndWith('.zip');
+});
+
+test('rejects teaching backup archives with unsafe entry names', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $temporaryPath = tempnam(sys_get_temp_dir(), 'unsafe-teaching-backup-');
+    expect($temporaryPath)->toBeString();
+
+    $archive = new ZipArchive;
+    expect($archive->open($temporaryPath, ZipArchive::CREATE | ZipArchive::OVERWRITE))->toBeTrue();
+    $archive->addFromString('../outside.txt', 'unsafe');
+    $archive->close();
+
+    try {
+        $file = new UploadedFile($temporaryPath, 'unsafe.zip', 'application/zip', null, true);
+
+        $this->postJson('/api/admin/teaching/backups/import', [
+            'backup' => $file,
+        ])->assertUnprocessable();
+    } finally {
+        @unlink($temporaryPath);
+    }
+
+    expect(TeachingBackup::query()->count())->toBe(0);
+});
+
+test('rejects raw JSON backups that claim version two', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $file = UploadedFile::fake()->createWithContent('fake-version-two.json', json_encode([
+        'meta' => [
+            'format_version' => 2,
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'scope' => 'active_school_and_active_schoolyear',
+        ],
+        'tables' => [],
+        'files' => [],
+    ], JSON_THROW_ON_ERROR));
+
+    $this->postJson('/api/admin/teaching/backups/import', [
+        'backup' => $file,
+    ])->assertUnprocessable();
+
+    expect(TeachingBackup::query()->count())->toBe(0);
 });
 
 test('index and download are scoped to the active school and schoolyear', function () {
@@ -1411,7 +1503,7 @@ test('restore run is marked failed when partial restore throws unexpectedly', fu
         'summary' => ['total_rows' => 0],
     ]);
 
-    $this->app->instance(TeachingBackupService::class, new class extends TeachingBackupService
+    $this->app->instance(TeachingBackupService::class, new class(app(TeachingBackupArchiveWriter::class), app(TeachingBackupArchiveReader::class)) extends TeachingBackupService
     {
         public function restoreSelection(TeachingBackup $backup, User $user, array $selection): array
         {

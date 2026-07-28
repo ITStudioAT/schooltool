@@ -56,6 +56,25 @@ class MaterialShareTarget extends Model
         'permission' => self::PERMISSION_READ_ONLY,
     ];
 
+    protected static function booted(): void
+    {
+        static::saving(function (MaterialShareTarget $target): void {
+            $target->natural_key = $target->naturalKey();
+        });
+    }
+
+    public function naturalKey(): string
+    {
+        $targetIdentity = match ((string) $this->target_type) {
+            self::TARGET_EVERYONE => 'everyone:'.(string) ($this->audience_scope ?? ''),
+            self::TARGET_USER => 'user:'.(int) ($this->user_id ?? 0),
+            self::TARGET_GROUP => 'group:'.(int) ($this->user_group_id ?? 0),
+            default => (string) $this->target_type.':',
+        };
+
+        return (int) $this->material_share_rule_id.':'.$targetIdentity;
+    }
+
     public function rule(): BelongsTo
     {
         return $this->belongsTo(MaterialShareRule::class, 'material_share_rule_id');

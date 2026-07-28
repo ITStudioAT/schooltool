@@ -42,10 +42,12 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import CurriculaOverview from './CurriculaOverview.vue'
-import CurriculumDetail from './CurriculumDetail.vue'
-import CurriculaPrint from './CurriculaPrint.vue'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
+
+const CurriculumDetail = defineAsyncComponent(() => import('./CurriculumDetail.vue'))
+const CurriculaPrint = defineAsyncComponent(() => import('./CurriculaPrint.vue'))
 
 export default {
     name: 'TeachingCurricula',

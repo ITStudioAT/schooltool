@@ -30,9 +30,8 @@
 
                         <template v-if="!is_upload_finished">
                             <FileUpload
-                                path="/api/admin/teachers_list_upload"
+                                :path="teachersListUploadPath"
                                 @fileUploadFinished="fileUploadFinished"
-                                @uploadStart="onUploadStart"
                                 class="mt-2" />
                             <div class="mt-4">
                                 <v-btn color="warning" variant="tonal" rounded="lg" prepend-icon="mdi-close" @click="is_upload = false">
@@ -245,6 +244,7 @@
 </template>
 
 <script>
+import { teachersListApi } from '@/domains/teachersList/api'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -268,14 +268,12 @@ export default {
     components: { FileUpload, SearchField, Pagination },
 
     async beforeMount() {
-        this.adminStore = useAdminStore()
         this.teachersListStore = useTeachersListStore()
         await this.teachersListStore.index()
     },
 
     data() {
         return {
-            adminStore: null,
             teachersListStore: null,
             is_valid: false,
             is_upload: false,
@@ -284,8 +282,11 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['action', 'config', 'main_action', 'pusher_count']),
+        ...mapWritableState(useAdminStore, ['action', 'main_action']),
         ...mapWritableState(useTeachersListStore, ['teachers', 'meta', 'selected_teachers', 'search_string', 'data', 'answer']),
+        teachersListUploadPath() {
+            return teachersListApi.upload()
+        },
         teacherDialogOpen: {
             get() {
                 return ['create_teacher', 'edit_teacher', 'delete_teacher'].includes(this.action)
@@ -312,10 +313,6 @@ export default {
     methods: {
         async refresh() {
             await this.teachersListStore.index()
-        },
-
-        onUploadStart() {
-            if (this.config.is_auth) { this.adminStore.initializeEcho() }
         },
 
         fileUploadFinished() {

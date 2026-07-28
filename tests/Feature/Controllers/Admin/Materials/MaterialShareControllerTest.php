@@ -30,10 +30,13 @@ use App\Models\UserGroup;
 use App\Services\Materials\MaterialInboxImportStatusStore;
 use App\Services\Materials\MaterialKeywordService;
 use App\Services\Materials\MaterialService;
+use App\Services\Materials\MaterialShareService;
 use Carbon\Carbon;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -4282,6 +4285,8 @@ test('can einfächern shared material as link and overview marks it as linked wi
         'url' => 'https://example.org/v2',
     ]);
 
+    app(MaterialService::class)->synchronizeLinkedContentForUserId($recipient->id);
+
     $updatedCards = $this->getJson('/api/admin/materials/cards')
         ->assertStatus(200);
     expect((bool) $updatedCards->json('data.0.is_linked'))->toBeTrue();
@@ -6011,6 +6016,96 @@ test('storing same workspace everyone target updates permission instead of creat
     ]);
 });
 
+test('material share natural keys are database-enforced for rules and targets', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $stored = $this->postJson('/api/admin/materials/shares/targets', workspaceEveryonePayload())
+        ->assertSuccessful();
+
+    $rule = MaterialShareRule::query()->findOrFail((int) $stored->json('rule.id'));
+    $target = MaterialShareTarget::query()->findOrFail((int) $stored->json('target_id'));
+
+    $ruleIndexes = collect(Schema::getIndexes('material_share_rules'));
+    $targetIndexes = collect(Schema::getIndexes('material_share_targets'));
+    $ruleNaturalKeyColumn = collect(Schema::getColumns('material_share_rules'))->firstWhere('name', 'natural_key');
+    $targetNaturalKeyColumn = collect(Schema::getColumns('material_share_targets'))->firstWhere('name', 'natural_key');
+
+    expect($ruleIndexes->firstWhere('name', 'material_share_rules_natural_unique'))
+        ->toMatchArray(['unique' => true])
+        ->and($targetIndexes->firstWhere('name', 'material_share_targets_natural_unique'))
+        ->toMatchArray(['unique' => true])
+        ->and($ruleNaturalKeyColumn)->not->toBeNull()
+        ->and($targetNaturalKeyColumn)->not->toBeNull()
+        ->and($ruleNaturalKeyColumn['default'] ?? null)->toBeNull()
+        ->and($targetNaturalKeyColumn['default'] ?? null)->toBeNull();
+
+    expect(fn () => MaterialShareRule::query()->create([
+        'school_id' => $rule->school_id,
+        'created_by_user_id' => $rule->created_by_user_id,
+        'workspace_id' => $rule->workspace_id,
+        'scope_type' => $rule->scope_type,
+        'scope_id' => $rule->scope_id,
+        'is_active' => true,
+    ]))->toThrow(UniqueConstraintViolationException::class);
+
+    expect(fn () => MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $target->material_share_rule_id,
+        'target_type' => $target->target_type,
+        'audience_scope' => $target->audience_scope,
+        'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
+    ]))->toThrow(UniqueConstraintViolationException::class);
+
+    expect(MaterialShareRule::query()->count())->toBe(1)
+        ->and(MaterialShareTarget::query()->count())->toBe(1);
+});
+
+test('material share service retries a duplicate-key race idempotently', function () {
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $this->materialsAdmin->id,
+        'name' => 'Race workspace',
+        'is_default' => true,
+    ]);
+    $injectedDuplicate = false;
+
+    MaterialShareRule::creating(function (MaterialShareRule $candidate) use (&$injectedDuplicate): void {
+        if ($injectedDuplicate || (string) $candidate->scope_type !== MaterialShareRule::SCOPE_ALL) {
+            return;
+        }
+
+        $injectedDuplicate = true;
+
+        DB::table('material_share_rules')->insert([
+            'school_id' => $candidate->school_id,
+            'created_by_user_id' => $candidate->created_by_user_id,
+            'workspace_id' => $candidate->workspace_id,
+            'scope_type' => $candidate->scope_type,
+            'scope_id' => $candidate->scope_id,
+            'is_active' => true,
+            'natural_key' => $candidate->naturalKey(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    });
+
+    $result = app(MaterialShareService::class)->storeTarget(
+        actor: $this->materialsAdmin,
+        workspaceId: (int) $workspace->id,
+        scopeType: MaterialShareRule::SCOPE_ALL,
+        scopeId: null,
+        targetType: MaterialShareTarget::TARGET_EVERYONE,
+        audienceScope: MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL,
+        userId: null,
+        groupId: null,
+        permission: MaterialShareTarget::PERMISSION_READ_ONLY,
+    );
+
+    expect($injectedDuplicate)->toBeTrue()
+        ->and($result['rule'])->toBeInstanceOf(MaterialShareRule::class)
+        ->and($result['target'])->toBeInstanceOf(MaterialShareTarget::class)
+        ->and(MaterialShareRule::query()->count())->toBe(1)
+        ->and(MaterialShareTarget::query()->count())->toBe(1);
+});
+
 test('same scope by different sharers creates separate share rules', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
@@ -6824,6 +6919,39 @@ test('cannot patch or delete shares from another school', function () {
 
     $this->deleteJson('/api/admin/materials/shares/targets/'.$target->id)
         ->assertStatus(404);
+});
+
+test('cannot patch or delete shares created by another user in the same school', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $store = $this->postJson('/api/admin/materials/shares/targets', workspaceEveryonePayload())
+        ->assertSuccessful();
+
+    $ruleId = (int) $store->json('rule.id');
+    $targetId = (int) $store->json('target_id');
+
+    $this->actingAs($this->materialsModerator, 'sanctum');
+
+    $this->patchJson('/api/admin/materials/shares/'.$ruleId, [
+        'is_active' => false,
+    ])->assertNotFound();
+
+    $this->patchJson('/api/admin/materials/shares/targets/'.$targetId, [
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ])->assertNotFound();
+
+    $this->deleteJson('/api/admin/materials/shares/targets/'.$targetId)
+        ->assertNotFound();
+
+    $this->assertDatabaseHas('material_share_rules', [
+        'id' => $ruleId,
+        'created_by_user_id' => $this->materialsAdmin->id,
+        'is_active' => 1,
+    ]);
+    $this->assertDatabaseHas('material_share_targets', [
+        'id' => $targetId,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
 });
 
 test('can create cross-school user target by school and email', function () {

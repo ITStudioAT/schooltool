@@ -118,7 +118,9 @@
 
                         <div class="mb-4">
                             <label class="rs-field-label">Beschreibung am Bildschirm</label>
-                            <its-rich-text-editor v-model="data.description_on_website" />
+                            <ItsRichTextEditor
+                                v-if="action === 'edit_register' || action === 'create_register'"
+                                v-model="data.description_on_website" />
                         </div>
 
                         <v-text-field
@@ -204,12 +206,14 @@
 </template>
 
 <script>
-import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
+import { defineAsyncComponent } from 'vue'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useRegisterStore } from '@/stores/admin/RegisterStore'
+
+const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
 
 export default {
     setup() {

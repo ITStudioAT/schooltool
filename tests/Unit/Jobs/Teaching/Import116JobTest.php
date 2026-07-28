@@ -34,6 +34,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Role;
 use Spatie\SimpleExcel\SimpleExcelWriter;
 use Tests\TestCase;
@@ -383,7 +384,14 @@ describe('import record handling', function () {
         }
         $writer->close();
 
-        (new Import116Job($this->admin, $relativePath, $this->schoolyear->id, '116.xlsx'))->handle();
+        $job = new class($this->admin, $relativePath, $this->schoolyear->id, '116.xlsx') extends Import116Job
+        {
+            protected function newStagingTableName(): string
+            {
+                return 'import116_stage_contact_cleanup_test';
+            }
+        };
+        $job->handle();
 
         $record = Import116::query()
             ->where('school_id', $this->school->id)
@@ -402,7 +410,47 @@ describe('import record handling', function () {
             ->and($record->mother_email)->toBe('mother@example.test')
             ->and($record->mother_phone_1)->toBe('0664000003')
             ->and($run->counts['processed_rows'])->toBe(3)
-            ->and($run->counts['seen_students'])->toBe(1);
+            ->and($run->counts['seen_students'])->toBe(1)
+            ->and($run->report_summary['inserted'])->toHaveCount(1)
+            ->and($run->report_summary['inserted'][0]['student_code'])->toBe('STU-MERGED-001')
+            ->and(Schema::hasTable('import116_stage_contact_cleanup_test'))->toBeFalse();
+    });
+
+    test('removes the staging table when batched synchronization fails', function () {
+        $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        $writer->addRow([
+            'Klasse' => '5A',
+            'Schülerkennzahl' => 'STU-STAGING-FAILURE',
+            'Familienname' => 'Failure',
+            'Vorname' => 'Staging',
+        ]);
+        $writer->close();
+
+        $job = new class($this->admin, $relativePath, $this->schoolyear->id, '116.xlsx') extends Import116Job
+        {
+            protected function newStagingTableName(): string
+            {
+                return 'import116_stage_failure_cleanup_test';
+            }
+
+            protected function synchronizeImportedRecords(
+                array $students,
+                array $recordsByStudentCode,
+                int $schoolId,
+                ?int $schoolyearId,
+            ): void {
+                throw new RuntimeException('Forced Import116 synchronization failure.');
+            }
+        };
+
+        expect(fn () => $job->handle())
+            ->toThrow(RuntimeException::class, 'Forced Import116 synchronization failure.')
+            ->and(Schema::hasTable('import116_stage_failure_cleanup_test'))->toBeFalse()
+            ->and(Import116::query()
+                ->where('school_id', $this->school->id)
+                ->where('student_code', 'STU-STAGING-FAILURE')
+                ->exists())->toBeFalse();
     });
 
     test('creates inactive placeholder users with distinct low-cost random passwords', function () {
@@ -465,6 +513,65 @@ describe('import record handling', function () {
         Import116::factory()->create([...$attributes, 'schoolyear_id' => $otherSchoolyear->id]);
 
         expect(Import116::query()->where('student_code', 'UNIQUE-001')->count())->toBe(2);
+    });
+
+    test('persists students in bounded batches while preserving omitted contact data', function () {
+        $existing = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'BULK-0000',
+            'mother_email' => 'mother@example.test',
+            'import_user_id' => $this->admin->id,
+        ]);
+        $now = now();
+        $students = [];
+
+        foreach (range(0, 500) as $index) {
+            $studentCode = sprintf('BULK-%04d', $index);
+            $students[$studentCode] = [
+                'school_id' => $this->school->id,
+                'schoolyear_id' => $this->schoolyear->id,
+                'class' => '5A',
+                'school_level' => '5',
+                'attendance_year' => '1',
+                'religion' => null,
+                'student_code' => $studentCode,
+                'last_name' => 'Bulk',
+                'first_name' => (string) $index,
+                'sex' => null,
+                'birth_date' => null,
+                'import_date' => $now,
+                'exists_date' => $now,
+                'import_user_id' => $this->admin->id,
+            ];
+        }
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $job = new Import116Job($this->admin, 'test/path', $this->schoolyear->id);
+        $method = new ReflectionMethod($job, 'persistAggregatedStudents');
+        $method->setAccessible(true);
+        $method->invoke($job, $students, [
+            'BULK-0000' => [
+                'mother_email' => $existing->mother_email,
+            ],
+        ], (int) $this->school->id, (int) $this->schoolyear->id, $now);
+
+        $upsertQueries = collect(DB::getQueryLog())
+            ->pluck('query')
+            ->filter(fn (string $query): bool => str_contains(strtolower($query), 'insert into `import116`')
+                || str_contains(strtolower($query), 'insert into "import116"'))
+            ->count();
+        DB::disableQueryLog();
+
+        expect(Import116::query()
+            ->where('school_id', $this->school->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->where('student_code', 'like', 'BULK-%')
+            ->count())->toBe(501)
+            ->and($existing->fresh()->mother_email)->toBe('mother@example.test')
+            ->and($upsertQueries)->toBe(2);
     });
 
     test('factory creates records with mother contact info', function () {
@@ -924,6 +1031,30 @@ describe('schoolyear_id handling', function () {
         $job = new Import116Job($this->admin, 'test/path');
 
         expect($job->schoolyearId)->toBeNull();
+    });
+
+    test('re-imports a student without a schoolyear without creating duplicates', function () {
+        $this->admin->forceFill(['schoolyear_id' => null])->save();
+        $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        $writer->addRow([
+            'Klasse' => '5A',
+            'Schülerkennzahl' => 'NO-SCHOOLYEAR-001',
+            'Familienname' => 'Ohne',
+            'Vorname' => 'Schuljahr',
+            'Mailadresse' => 'without-schoolyear@example.test',
+            'Adressart' => 'Eigen',
+        ]);
+        $writer->close();
+
+        (new Import116Job($this->admin, $relativePath))->handle();
+        (new Import116Job($this->admin, $relativePath))->handle();
+
+        expect(Import116::query()
+            ->where('school_id', $this->school->id)
+            ->whereNull('schoolyear_id')
+            ->where('student_code', 'NO-SCHOOLYEAR-001')
+            ->count())->toBe(1);
     });
 
     test('Import116 record can store schoolyear_id', function () {

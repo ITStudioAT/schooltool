@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\TimetableImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
@@ -87,6 +88,57 @@ it('stores TT rows as semester-aware timetable entries for the selected schoolye
     ]);
 
     expect(StudentTimetableEntry::where('timetable_import_id', $import->id)->count())->toBe(2);
+});
+
+it('streams timetable rows across database batch boundaries', function () {
+    $filePath = "{$this->storageDirectory}/large-stundenplan.txt";
+    $lines = ['VV	Header'];
+
+    foreach (range(1, 501) as $index) {
+        if ($index % 100 === 0) {
+            $lines[] = '';
+        }
+
+        $lines[] = sprintf(
+            "TT\t%d\t20260216\t1\tMATH\tAB\tR101\t1A\tMATH-%d\tGRP-A",
+            $index,
+            $index,
+        );
+    }
+
+    File::put($filePath, implode(PHP_EOL, $lines));
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $import = $this->service->createImport(
+        $this->user,
+        'large-stundenplan.txt',
+        'large-stundenplan.txt',
+        'app/private/testing/student-timetables/large-stundenplan.txt',
+        $this->schoolyear->id,
+    );
+
+    $upsertQueries = collect(DB::getQueryLog())
+        ->pluck('query')
+        ->filter(fn (string $query): bool => str_contains(
+            strtolower($query),
+            'insert into `student_timetable_entries`',
+        ) || str_contains(
+            strtolower($query),
+            'insert into "student_timetable_entries"',
+        ))
+        ->count();
+    DB::disableQueryLog();
+
+    expect($import->progress_current)->toBe(502)
+        ->and($import->progress_total)->toBe(502)
+        ->and(StudentTimetableEntry::query()
+            ->where('timetable_import_id', $import->id)
+            ->count())->toBe(501)
+        ->and(StudentTimetableEntry::query()
+            ->where('timetable_import_id', $import->id)
+            ->max('line_number'))->toBe(502)
+        ->and($upsertQueries)->toBe(2);
 });
 
 it('counts distinct timetable course labels from Untis TT rows', function () {

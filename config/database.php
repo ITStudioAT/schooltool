@@ -203,11 +203,11 @@ return [
         ],
 
         'integration' => [
-            'url' => env('REDIS_URL'),
-            'host' => env('REDIS_HOST', '127.0.0.1'),
-            'username' => env('REDIS_USERNAME'),
-            'password' => env('REDIS_PASSWORD'),
-            'port' => env('REDIS_PORT', '6379'),
+            'url' => env('REDIS_INTEGRATION_URL'),
+            'host' => env('REDIS_INTEGRATION_HOST', '127.0.0.1'),
+            'username' => env('REDIS_INTEGRATION_USERNAME'),
+            'password' => env('REDIS_INTEGRATION_PASSWORD'),
+            'port' => env('REDIS_INTEGRATION_PORT', '6379'),
             'database' => env('REDIS_INTEGRATION_DB', '15'),
             'max_retries' => env('REDIS_MAX_RETRIES', 3),
             'backoff_algorithm' => env('REDIS_BACKOFF_ALGORITHM', 'decorrelated_jitter'),

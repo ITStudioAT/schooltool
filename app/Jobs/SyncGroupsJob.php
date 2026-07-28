@@ -2,8 +2,8 @@
 
 namespace App\Jobs;
 
-use App\Http\Controllers\Admin\GroupController;
 use App\Models\User;
+use App\Services\Groups\GroupSynchronizationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -48,7 +48,7 @@ class SyncGroupsJob implements ShouldBeUnique, ShouldQueue
         ];
     }
 
-    public function handle(GroupController $groupController): void
+    public function handle(GroupSynchronizationService $groupSynchronizationService): void
     {
         Cache::forget(self::queuedCacheKey($this->schoolId));
         Cache::put(self::runningCacheKey($this->schoolId), true, now()->addSeconds($this->uniqueFor));
@@ -59,7 +59,11 @@ class SyncGroupsJob implements ShouldBeUnique, ShouldQueue
                 ->where('id', $this->actorUserId)
                 ->first();
 
-            $groupController->runHeavySync($actorUser, $this->schoolId, $this->actorUserId);
+            $groupSynchronizationService->runHeavySync(
+                $actorUser,
+                $this->schoolId,
+                $this->actorUserId,
+            );
 
             Cache::put(self::lastSyncedAtCacheKey($this->schoolId), now()->toIso8601String(), now()->addDay());
         } finally {

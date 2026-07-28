@@ -39,7 +39,6 @@ jobs:
 
     env:
       APP_ENV: testing
-      APP_KEY: base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       APP_DEBUG: false
       DB_CONNECTION: mysql
       DB_HOST: 127.0.0.1
@@ -54,6 +53,10 @@ jobs:
       PULSE_ENABLED: false
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6379
+      REDIS_INTEGRATION_HOST: 127.0.0.1
+      REDIS_INTEGRATION_PORT: 6379
+      REDIS_INTEGRATION_DB: 15
+      REDIS_INTEGRATION_PREFIX: 'schooltool-ci-integration:'
 
     steps:
       - name: Check out source
@@ -81,6 +84,10 @@ jobs:
       - name: Install PHP dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
 
+      - name: Generate ephemeral application key
+        shell: bash
+        run: echo "APP_KEY=$(php artisan key:generate --show --no-ansi --no-interaction)" >> "$GITHUB_ENV"
+
       - name: Audit PHP dependencies
         run: composer audit --locked
 
@@ -105,4 +112,38 @@ jobs:
         run: npm run build
 
       - name: Run PHP tests
-        run: php artisan test --compact
+        run: php artisan test --compact --exclude-group=integration
+
+      - name: Run MySQL and Redis integration tests
+        run: composer test:integration
+
+      - name: Verify Horizon starts with the segmented Redis queues
+        env:
+          QUEUE_CONNECTION: redis
+          REDIS_QUEUE_CONNECTION: integration
+          REDIS_DB: 14
+          HORIZON_PREFIX: 'schooltool_ci_horizon:'
+        run: |
+          set -euo pipefail
+
+          php artisan horizon > storage/logs/horizon-ci.log 2>&1 &
+          horizon_pid=$!
+
+          cleanup() {
+            php artisan horizon:terminate >/dev/null 2>&1 || true
+            kill "$horizon_pid" >/dev/null 2>&1 || true
+            wait "$horizon_pid" >/dev/null 2>&1 || true
+          }
+
+          trap cleanup EXIT
+
+          for attempt in {1..20}; do
+            if php artisan horizon:status | grep -qi "running"; then
+              exit 0
+            fi
+
+            sleep 1
+          done
+
+          cat storage/logs/horizon-ci.log
+          exit 1

@@ -194,7 +194,6 @@ export default {
     },
 
     async beforeMount() {
-        this.adminStore = useAdminStore()
         await this.loadRuns()
     },
 
@@ -209,7 +208,6 @@ export default {
 
     data() {
         return {
-            adminStore: null,
             is_upload_finished: false,
             is_upload_error: false,
             refresh_file_pond: false,
@@ -495,7 +493,6 @@ export default {
             this.run_action_error = ''
             this.import_run_baseline_id = Math.max(0, ...(this.runs || []).map((run) => Number(run?.id || 0)))
             this.active_import_run_id = null
-            if (this.config?.is_auth) this.adminStore.initializeEcho()
             this.is_importing = true
         },
         fileUploadFinished() {

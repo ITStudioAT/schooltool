@@ -12,12 +12,16 @@ use App\Models\UserGroupMember;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use PDO;
+use RuntimeException;
 use Spatie\SimpleExcel\SimpleExcelReader;
 
 class Import116Job implements ShouldQueue
@@ -31,7 +35,23 @@ class Import116Job implements ShouldQueue
     /** @var array<string, bool> */
     private array $availableTables = [];
 
+    private const BATCH_SIZE = 500;
+
     private const PLACEHOLDER_PASSWORD_ROUNDS = 4;
+
+    private const OPTIONAL_CONTACT_FIELDS = [
+        'email',
+        'phone_1',
+        'phone_2',
+        'mother_name',
+        'mother_email',
+        'mother_phone_1',
+        'mother_phone_2',
+        'father_name',
+        'father_email',
+        'father_phone_1',
+        'father_phone_2',
+    ];
 
     public function __construct(public $user, public string $path, public ?int $schoolyearId = null, public ?string $originalFilename = null)
     {
@@ -73,111 +93,72 @@ class Import116Job implements ShouldQueue
             return;
         }
 
-        $report = ['counts' => ['inserted' => 0, 'updated' => 0, 'deleted' => 0]];
+        $report = ['counts' => $this->emptyReportCounts()];
+        $stagingTable = $this->newStagingTableName();
+        $stagingTableCreated = false;
+
         try {
-            DB::transaction(function () use ($reader, $headerMapping, $schoolId, $schoolyearId, $run, &$report) {
-                $now = now();
-                $baselineSnapshots = $this->loadSnapshotsByStudentCode($schoolId, $schoolyearId);
-                $aggregatedRows = $this->aggregateStudentRows($reader->getRows(), $headerMapping, $schoolId, $schoolyearId, $now);
-                $seenCodes = array_keys($aggregatedRows['students']);
+            $now = now();
+            $this->createStagingTable($stagingTable);
+            $stagingTableCreated = true;
+            $stagingCounts = $this->stageStudentRows(
+                $reader->getRows(),
+                $headerMapping,
+                $schoolId,
+                $schoolyearId,
+                $now,
+                $stagingTable,
+            );
+            $report['counts']['processed_rows'] = $stagingCounts['processed_rows'];
+            $report['counts']['seen_students'] = $stagingCounts['seen_students'];
+            $initialReportCounts = $report['counts'];
 
-                foreach ($aggregatedRows['students'] as $studentCode => $data) {
-                    $record = Import116::updateOrCreate(
-                        [
-                            'school_id' => $schoolId,
-                            'schoolyear_id' => $schoolyearId,
-                            'student_code' => $studentCode,
-                        ],
-                        $data
-                    );
+            DB::transaction(function () use ($stagingTable, $schoolId, $schoolyearId, $run, $now, $initialReportCounts, &$report): void {
+                $report['counts'] = $initialReportCounts;
 
-                    // A user account persists across school years. Match the school-scoped email
-                    // even when the account still has the previously selected school year.
-                    if ($record->email) {
-                        $matchingUser = User::where('email', $record->email)
-                            ->where('school_id', $schoolId)
-                            ->first();
-
-                        if ($matchingUser) {
-                            $record->user_id = $matchingUser->id;
-                            $record->save();
-
-                            $matchingUser->import116_id = $record->id;
-                            $matchingUser->schoolyear_id = $schoolyearId;
-                            $matchingUser->save();
-                        }
-                    }
-
-                    // If student now has a real email and their linked user has a placeholder email,
-                    // update the user's email to the real one.
-                    if ($record->email && $record->user_id) {
-                        $linkedUser = User::find($record->user_id);
-                        if ($linkedUser && $this->isPlaceholderEmail($linkedUser->email)) {
-                            $emailTaken = User::where('email', $record->email)
-                                ->where('school_id', $schoolId)
-                                ->where('id', '!=', $linkedUser->id)
-                                ->exists();
-                            if (! $emailTaken) {
-                                $linkedUser->email = $record->email;
-                                $linkedUser->save();
-                            }
-                        }
-                    }
-
-                    // If student has no email and no user yet, create a placeholder user so that
-                    // course entries can be recorded for them.
-                    if (! $record->email && ! $record->user_id) {
-                        $placeholderEmail = $this->buildPlaceholderEmail($studentCode, $schoolId);
-                        $placeholderUser = User::where('email', $placeholderEmail)
-                            ->where('school_id', $schoolId)
-                            ->first();
-
-                        if (! $placeholderUser) {
-                            $placeholderUser = new User([
-                                'school_id' => $schoolId,
-                                'schoolyear_id' => $schoolyearId,
-                                'email' => $placeholderEmail,
-                                'first_name' => $data['first_name'] ?? '',
-                                'last_name' => $data['last_name'] ?? '',
-                                'schoolclass' => $data['class'] ?? null,
-                                'sex' => $data['sex'] ?? null,
-                                'password' => Hash::make(str()->random(64), ['rounds' => self::PLACEHOLDER_PASSWORD_ROUNDS]),
-                                'import116_id' => $record->id,
-                            ]);
-                            $placeholderUser->is_active = false;
-                            $placeholderUser->save();
-                        }
-
-                        $record->user_id = $placeholderUser->id;
-                        $record->save();
-
-                        if ($placeholderUser->import116_id !== $record->id) {
-                            $placeholderUser->import116_id = $record->id;
-                            $placeholderUser->save();
-                        }
-                    }
-
-                    $this->syncImport116ReferencesToCurrentRecord($schoolId, $record);
-                    $this->syncLinkedUsersToCurrentRecord($schoolId, $record);
-
-                    $this->syncTeachingCourseStudentsToCurrentRecord($record);
+                if ($run) {
+                    $run->changes()->delete();
                 }
 
-                $this->deleteMissingImport116Rows($schoolId, $schoolyearId, $seenCodes);
+                foreach ($this->aggregatedStagedStudentBatches($stagingTable) as $students) {
+                    $studentCodes = array_keys($students);
+                    $baselineSnapshots = $this->loadSnapshotsByStudentCode($schoolId, $schoolyearId, $studentCodes);
+                    $this->persistAggregatedStudents(
+                        $students,
+                        $baselineSnapshots,
+                        $schoolId,
+                        $schoolyearId,
+                        $now,
+                    );
 
-                $finalSnapshots = $this->loadSnapshotsByStudentCode(
+                    $recordsByStudentCode = $this->loadCurrentRecordsByStudentCode($schoolId, $schoolyearId, $studentCodes);
+                    $this->synchronizeImportedRecords(
+                        $students,
+                        $recordsByStudentCode,
+                        $schoolId,
+                        $schoolyearId,
+                    );
+
+                    $finalSnapshots = $this->loadSnapshotsByStudentCode($schoolId, $schoolyearId, $studentCodes);
+                    $batchReport = $this->buildRunReport($baselineSnapshots, $finalSnapshots, 0, 0);
+                    $this->mergeReportCounts($report['counts'], $batchReport['counts']);
+                    $this->storeRunChanges($run, $batchReport['changes'], $schoolId, $schoolyearId);
+                }
+
+                $this->deleteMissingImport116Rows(
                     $schoolId,
                     $schoolyearId,
-                    array_values(array_unique(array_merge(array_keys($baselineSnapshots), $seenCodes)))
+                    $stagingTable,
+                    $run,
+                    $report['counts'],
                 );
 
-                $report = $this->buildRunReport($baselineSnapshots, $finalSnapshots, $aggregatedRows['processed_rows'], count($seenCodes));
-                $this->storeRunReport($run, $report, $schoolId, $schoolyearId);
+                $this->completeRun($run, $report['counts']);
 
                 $schoolTool = SchoolTool::firstOrCreate(['school_id' => $schoolId]);
                 $schoolTool->import_166_at = $now;
                 $schoolTool->save();
-            });
+            }, attempts: 3);
         } catch (\Throwable $e) {
             $this->markRunFailed($run, 'Import 116 fehlgeschlagen: '.$e->getMessage());
 
@@ -189,6 +170,10 @@ class Import116Job implements ShouldQueue
             ));
 
             throw $e;
+        } finally {
+            if ($stagingTableCreated) {
+                Schema::dropIfExists($stagingTable);
+            }
         }
 
         broadcast(new Import116FinishedEvent(
@@ -208,63 +193,417 @@ class Import116Job implements ShouldQueue
     /**
      * @param  iterable<int, array<string, mixed>>  $rows
      * @param  array<string, string>  $headerMapping
-     * @return array{students: array<string, array<string, mixed>>, processed_rows: int}
+     * @return array{processed_rows: int, seen_students: int}
      */
-    private function aggregateStudentRows(iterable $rows, array $headerMapping, int $schoolId, ?int $schoolyearId, Carbon $now): array
-    {
-        $students = [];
+    private function stageStudentRows(
+        iterable $rows,
+        array $headerMapping,
+        int $schoolId,
+        ?int $schoolyearId,
+        Carbon $now,
+        string $stagingTable,
+    ): array {
+        $batch = [];
         $processedRows = 0;
 
         foreach ($rows as $row) {
-            $mapped = [];
-            foreach ($headerMapping as $originalHeader => $field) {
-                $mapped[$field] = isset($row[$originalHeader]) ? $this->normalizeCell($row[$originalHeader]) : null;
-            }
-
-            $studentCode = $mapped['student_code'] ?? null;
-            if (! $studentCode) {
+            $data = $this->mappedStudentRow($row, $headerMapping, $schoolId, $schoolyearId, $now);
+            if ($data === null) {
                 continue;
             }
 
             $processedRows++;
-            $data = [
-                'school_id' => $schoolId,
-                'schoolyear_id' => $schoolyearId,
-                'class' => $mapped['class'] ?? '',
-                'school_level' => $mapped['school_level'] ?? null,
-                'attendance_year' => $mapped['attendance_year'] ?? null,
-                'religion' => $mapped['religion'] ?? null,
-                'student_code' => $studentCode,
-                'last_name' => $mapped['last_name'] ?? '',
-                'first_name' => $mapped['first_name'] ?? '',
-                'sex' => $mapped['sex'] ?? null,
-                'birth_date' => $this->parseDate($mapped['birth_date'] ?? null),
-                'import_date' => $now,
-                'exists_date' => $now,
-                'import_user_id' => $this->user->id,
+            $batch[] = [
+                'student_code' => $data['student_code'],
+                'row_sequence' => $processedRows,
+                'payload' => json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
             ];
 
-            $addressType = $this->normalizeAddressType($mapped['address_type'] ?? null);
-            if ($this->isStudentAddressType($addressType)) {
-                $this->setIfPresent($data, 'email', $mapped['email'] ?? null);
-                $this->setIfPresent($data, 'phone_1', $mapped['phone_1'] ?? null);
-                $this->setIfPresent($data, 'phone_2', $mapped['phone_2'] ?? null);
-            } elseif (str_starts_with($addressType, 'vater')) {
-                $this->setIfPresent($data, 'father_name', $mapped['address_name'] ?? null);
-                $this->setIfPresent($data, 'father_email', $mapped['email'] ?? null);
-                $this->setIfPresent($data, 'father_phone_1', $mapped['phone_1'] ?? null);
-                $this->setIfPresent($data, 'father_phone_2', $mapped['phone_2'] ?? null);
-            } elseif (str_starts_with($addressType, 'mutter')) {
-                $this->setIfPresent($data, 'mother_name', $mapped['address_name'] ?? null);
-                $this->setIfPresent($data, 'mother_email', $mapped['email'] ?? null);
-                $this->setIfPresent($data, 'mother_phone_1', $mapped['phone_1'] ?? null);
-                $this->setIfPresent($data, 'mother_phone_2', $mapped['phone_2'] ?? null);
+            if (count($batch) >= self::BATCH_SIZE) {
+                DB::table($stagingTable)->insert($batch);
+                $batch = [];
             }
-
-            $students[$studentCode] = array_replace($students[$studentCode] ?? [], $data);
         }
 
-        return ['students' => $students, 'processed_rows' => $processedRows];
+        if ($batch !== []) {
+            DB::table($stagingTable)->insert($batch);
+        }
+
+        return [
+            'processed_rows' => $processedRows,
+            'seen_students' => DB::table($stagingTable)->distinct()->count('student_code'),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, string>  $headerMapping
+     * @return array<string, mixed>|null
+     */
+    private function mappedStudentRow(
+        array $row,
+        array $headerMapping,
+        int $schoolId,
+        ?int $schoolyearId,
+        Carbon $now,
+    ): ?array {
+        $mapped = [];
+        foreach ($headerMapping as $originalHeader => $field) {
+            $mapped[$field] = isset($row[$originalHeader]) ? $this->normalizeCell($row[$originalHeader]) : null;
+        }
+
+        $studentCode = $mapped['student_code'] ?? null;
+        if (! $studentCode) {
+            return null;
+        }
+
+        $data = [
+            'school_id' => $schoolId,
+            'schoolyear_id' => $schoolyearId,
+            'class' => $mapped['class'] ?? '',
+            'school_level' => $mapped['school_level'] ?? null,
+            'attendance_year' => $mapped['attendance_year'] ?? null,
+            'religion' => $mapped['religion'] ?? null,
+            'student_code' => $studentCode,
+            'last_name' => $mapped['last_name'] ?? '',
+            'first_name' => $mapped['first_name'] ?? '',
+            'sex' => $mapped['sex'] ?? null,
+            'birth_date' => $this->parseDate($mapped['birth_date'] ?? null),
+            'import_date' => $now->toDateTimeString(),
+            'exists_date' => $now->toDateTimeString(),
+            'import_user_id' => $this->user->id,
+        ];
+
+        $addressType = $this->normalizeAddressType($mapped['address_type'] ?? null);
+        if ($this->isStudentAddressType($addressType)) {
+            $this->setIfPresent($data, 'email', $mapped['email'] ?? null);
+            $this->setIfPresent($data, 'phone_1', $mapped['phone_1'] ?? null);
+            $this->setIfPresent($data, 'phone_2', $mapped['phone_2'] ?? null);
+        } elseif (str_starts_with($addressType, 'vater')) {
+            $this->setIfPresent($data, 'father_name', $mapped['address_name'] ?? null);
+            $this->setIfPresent($data, 'father_email', $mapped['email'] ?? null);
+            $this->setIfPresent($data, 'father_phone_1', $mapped['phone_1'] ?? null);
+            $this->setIfPresent($data, 'father_phone_2', $mapped['phone_2'] ?? null);
+        } elseif (str_starts_with($addressType, 'mutter')) {
+            $this->setIfPresent($data, 'mother_name', $mapped['address_name'] ?? null);
+            $this->setIfPresent($data, 'mother_email', $mapped['email'] ?? null);
+            $this->setIfPresent($data, 'mother_phone_1', $mapped['phone_1'] ?? null);
+            $this->setIfPresent($data, 'mother_phone_2', $mapped['phone_2'] ?? null);
+        }
+
+        return $data;
+    }
+
+    protected function newStagingTableName(): string
+    {
+        return 'import116_stage_'.Str::lower(Str::random(20));
+    }
+
+    private function createStagingTable(string $stagingTable): void
+    {
+        Schema::create($stagingTable, function (Blueprint $table): void {
+            $table->temporary();
+            $table->id();
+            $table->string('student_code');
+            $table->unsignedBigInteger('row_sequence');
+            $table->longText('payload');
+        });
+    }
+
+    /**
+     * @return \Generator<int, array<string, array<string, mixed>>>
+     */
+    private function aggregatedStagedStudentBatches(string $stagingTable): \Generator
+    {
+        $batch = [];
+        $currentStudentCode = null;
+        $currentStudent = [];
+
+        foreach (DB::table($stagingTable)
+            ->select(['student_code', 'payload'])
+            ->orderBy('student_code')
+            ->orderBy('row_sequence')
+            ->lazy(self::BATCH_SIZE) as $stagedRow) {
+            $studentCode = (string) $stagedRow->student_code;
+            $data = json_decode((string) $stagedRow->payload, true, flags: JSON_THROW_ON_ERROR);
+
+            if ($currentStudentCode !== null && $studentCode !== $currentStudentCode) {
+                $batch[$currentStudentCode] = $currentStudent;
+
+                if (count($batch) >= self::BATCH_SIZE) {
+                    yield $batch;
+                    $batch = [];
+                }
+
+                $currentStudent = [];
+            }
+
+            $currentStudentCode = $studentCode;
+            $currentStudent = array_replace($currentStudent, $data);
+        }
+
+        if ($currentStudentCode !== null) {
+            $batch[$currentStudentCode] = $currentStudent;
+        }
+
+        if ($batch !== []) {
+            yield $batch;
+        }
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $students
+     * @param  array<string, Import116>  $recordsByStudentCode
+     */
+    protected function synchronizeImportedRecords(
+        array $students,
+        array $recordsByStudentCode,
+        int $schoolId,
+        ?int $schoolyearId,
+    ): void {
+        [$usersByEmail, $usersById] = $this->prefetchUsersForRecords($schoolId, $recordsByStudentCode);
+
+        foreach ($students as $studentCode => $data) {
+            $record = $recordsByStudentCode[$studentCode] ?? null;
+            if (! $record) {
+                continue;
+            }
+
+            if ($record->email) {
+                $matchingUser = $usersByEmail[$this->normalizedEmail($record->email)] ?? null;
+
+                if ($matchingUser) {
+                    $record->user_id = $matchingUser->id;
+                    $record->save();
+
+                    $matchingUser->import116_id = $record->id;
+                    $matchingUser->schoolyear_id = $schoolyearId;
+                    $matchingUser->save();
+                    $usersById[(int) $matchingUser->id] = $matchingUser;
+                }
+            }
+
+            if ($record->email && $record->user_id) {
+                $linkedUser = $usersById[(int) $record->user_id] ?? null;
+                if ($linkedUser && $this->isPlaceholderEmail($linkedUser->email)) {
+                    $emailOwner = $usersByEmail[$this->normalizedEmail($record->email)] ?? null;
+                    $emailTaken = $emailOwner && (int) $emailOwner->id !== (int) $linkedUser->id;
+                    if (! $emailTaken) {
+                        unset($usersByEmail[$this->normalizedEmail($linkedUser->email)]);
+                        $linkedUser->email = $record->email;
+                        $linkedUser->save();
+                        $usersByEmail[$this->normalizedEmail($linkedUser->email)] = $linkedUser;
+                    }
+                }
+            }
+
+            if (! $record->email && ! $record->user_id) {
+                $placeholderEmail = $this->buildPlaceholderEmail($studentCode, $schoolId);
+                $placeholderUser = $usersByEmail[$this->normalizedEmail($placeholderEmail)] ?? null;
+
+                if (! $placeholderUser) {
+                    $placeholderUser = new User([
+                        'school_id' => $schoolId,
+                        'schoolyear_id' => $schoolyearId,
+                        'email' => $placeholderEmail,
+                        'first_name' => $data['first_name'] ?? '',
+                        'last_name' => $data['last_name'] ?? '',
+                        'schoolclass' => $data['class'] ?? null,
+                        'sex' => $data['sex'] ?? null,
+                        'password' => Hash::make(str()->random(64), ['rounds' => self::PLACEHOLDER_PASSWORD_ROUNDS]),
+                        'import116_id' => $record->id,
+                    ]);
+                    $placeholderUser->is_active = false;
+                    $placeholderUser->save();
+                    $usersByEmail[$this->normalizedEmail($placeholderUser->email)] = $placeholderUser;
+                    $usersById[(int) $placeholderUser->id] = $placeholderUser;
+                }
+
+                $record->user_id = $placeholderUser->id;
+                $record->save();
+
+                if ($placeholderUser->import116_id !== $record->id) {
+                    $placeholderUser->import116_id = $record->id;
+                    $placeholderUser->save();
+                }
+            }
+
+            $this->syncImport116ReferencesToCurrentRecord($schoolId, $record);
+            $this->syncLinkedUsersToCurrentRecord($schoolId, $record);
+            $this->syncTeachingCourseStudentsToCurrentRecord($record);
+        }
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $students
+     * @param  array<string, array<string, mixed>>  $baselineSnapshots
+     */
+    private function persistAggregatedStudents(
+        array $students,
+        array $baselineSnapshots,
+        int $schoolId,
+        ?int $schoolyearId,
+        Carbon $now,
+    ): void {
+        if ($schoolyearId === null) {
+            foreach ($students as $studentCode => $data) {
+                Import116::query()->updateOrCreate(
+                    [
+                        'school_id' => $schoolId,
+                        'schoolyear_id' => null,
+                        'student_code' => $studentCode,
+                    ],
+                    $data,
+                );
+            }
+
+            return;
+        }
+
+        $updateColumns = [
+            'class',
+            'school_level',
+            'attendance_year',
+            'religion',
+            'last_name',
+            'first_name',
+            'email',
+            'phone_1',
+            'phone_2',
+            'sex',
+            'birth_date',
+            'mother_name',
+            'mother_email',
+            'mother_phone_1',
+            'mother_phone_2',
+            'father_name',
+            'father_email',
+            'father_phone_1',
+            'father_phone_2',
+            'import_date',
+            'exists_date',
+            'import_user_id',
+            'updated_at',
+        ];
+        $rows = [];
+
+        foreach ($students as $studentCode => $data) {
+            $baseline = $baselineSnapshots[$studentCode] ?? [];
+
+            foreach (self::OPTIONAL_CONTACT_FIELDS as $field) {
+                if (! array_key_exists($field, $data)) {
+                    $data[$field] = $baseline[$field] ?? null;
+                }
+            }
+
+            $rows[] = [
+                ...$data,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+
+            if (count($rows) >= self::BATCH_SIZE) {
+                Import116::query()->upsert(
+                    $rows,
+                    ['school_id', 'schoolyear_id', 'student_code'],
+                    $updateColumns,
+                );
+                $rows = [];
+            }
+        }
+
+        if ($rows !== []) {
+            Import116::query()->upsert(
+                $rows,
+                ['school_id', 'schoolyear_id', 'student_code'],
+                $updateColumns,
+            );
+        }
+    }
+
+    /**
+     * @param  array<int, string>  $studentCodes
+     * @return array<string, Import116>
+     */
+    private function loadCurrentRecordsByStudentCode(
+        int $schoolId,
+        ?int $schoolyearId,
+        array $studentCodes,
+    ): array {
+        $records = [];
+
+        foreach (array_chunk($studentCodes, self::BATCH_SIZE) as $chunk) {
+            Import116::query()
+                ->where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId)
+                ->whereIn('student_code', $chunk)
+                ->get()
+                ->each(function (Import116 $record) use (&$records): void {
+                    $records[(string) $record->student_code] = $record;
+                });
+        }
+
+        return $records;
+    }
+
+    /**
+     * @param  array<string, Import116>  $recordsByStudentCode
+     * @return array{0: array<string, User>, 1: array<int, User>}
+     */
+    private function prefetchUsersForRecords(int $schoolId, array $recordsByStudentCode): array
+    {
+        $emails = [];
+        $userIds = [];
+
+        foreach ($recordsByStudentCode as $studentCode => $record) {
+            $email = $record->email ?: $this->buildPlaceholderEmail($studentCode, $schoolId);
+            $emails[$this->normalizedEmail($email)] = $email;
+
+            if ((int) ($record->user_id ?? 0) > 0) {
+                $userIds[] = (int) $record->user_id;
+            }
+        }
+
+        $usersByEmail = [];
+        $usersById = [];
+
+        foreach (array_chunk(array_values($emails), self::BATCH_SIZE) as $emailChunk) {
+            User::query()
+                ->where('school_id', $schoolId)
+                ->whereIn('email', $emailChunk)
+                ->get()
+                ->each(function (User $user) use (&$usersByEmail, &$usersById): void {
+                    $usersByEmail[$this->normalizedEmail($user->email)] = $user;
+                    $usersById[(int) $user->id] = $user;
+                });
+        }
+
+        foreach (array_chunk(array_values(array_unique($userIds)), self::BATCH_SIZE) as $userIdChunk) {
+            $missingUserIds = array_values(array_filter(
+                $userIdChunk,
+                fn (int $userId): bool => ! isset($usersById[$userId]),
+            ));
+
+            if ($missingUserIds === []) {
+                continue;
+            }
+
+            User::query()
+                ->where('school_id', $schoolId)
+                ->whereIn('id', $missingUserIds)
+                ->get()
+                ->each(function (User $user) use (&$usersByEmail, &$usersById): void {
+                    $usersByEmail[$this->normalizedEmail($user->email)] = $user;
+                    $usersById[(int) $user->id] = $user;
+                });
+        }
+
+        return [$usersByEmail, $usersById];
+    }
+
+    private function normalizedEmail(?string $email): string
+    {
+        return mb_strtolower(trim((string) $email));
     }
 
     private function createRun(int $schoolId, ?int $schoolyearId): ?Import116Run
@@ -314,41 +653,162 @@ class Import116Job implements ShouldQueue
         return basename($value);
     }
 
-    private function storeRunReport(?Import116Run $run, array $report, int $schoolId, ?int $schoolyearId): void
+    /**
+     * @param  array<int, array<string, mixed>>  $changes
+     */
+    private function storeRunChanges(
+        ?Import116Run $run,
+        array $changes,
+        int $schoolId,
+        ?int $schoolyearId,
+    ): void {
+        if (! $run || $changes === [] || ! $this->isRunTrackingAvailable()) {
+            return;
+        }
+
+        $rows = [];
+        $timestamp = now();
+        foreach ($changes as $change) {
+            $rows[] = [
+                'import116_run_id' => $run->id,
+                'school_id' => $schoolId,
+                'schoolyear_id' => $schoolyearId,
+                'student_code' => (string) ($change['student_code'] ?? ''),
+                'change_type' => (string) ($change['change_type'] ?? 'updated'),
+                'before_snapshot' => isset($change['before_snapshot']) ? json_encode($change['before_snapshot'], JSON_UNESCAPED_UNICODE) : null,
+                'after_snapshot' => isset($change['after_snapshot']) ? json_encode($change['after_snapshot'], JSON_UNESCAPED_UNICODE) : null,
+                'summary' => isset($change['summary']) ? json_encode($change['summary'], JSON_UNESCAPED_UNICODE) : null,
+                'created_at' => $timestamp,
+                'updated_at' => $timestamp,
+            ];
+        }
+
+        Import116RunChange::query()->insert($rows);
+    }
+
+    /**
+     * @param  array<string, int>  $counts
+     */
+    private function completeRun(?Import116Run $run, array $counts): void
     {
         if (! $run) {
             return;
         }
 
-        if (! empty($report['changes']) && $this->isRunTrackingAvailable()) {
-            $rows = [];
-            $timestamp = now();
-            foreach ($report['changes'] as $change) {
-                $rows[] = [
-                    'import116_run_id' => $run->id,
-                    'school_id' => $schoolId,
-                    'schoolyear_id' => $schoolyearId,
-                    'student_code' => (string) ($change['student_code'] ?? ''),
-                    'change_type' => (string) ($change['change_type'] ?? 'updated'),
-                    'before_snapshot' => isset($change['before_snapshot']) ? json_encode($change['before_snapshot'], JSON_UNESCAPED_UNICODE) : null,
-                    'after_snapshot' => isset($change['after_snapshot']) ? json_encode($change['after_snapshot'], JSON_UNESCAPED_UNICODE) : null,
-                    'summary' => isset($change['summary']) ? json_encode($change['summary'], JSON_UNESCAPED_UNICODE) : null,
-                    'created_at' => $timestamp,
-                    'updated_at' => $timestamp,
-                ];
-            }
-
-            foreach (array_chunk($rows, 500) as $chunk) {
-                Import116RunChange::query()->insert($chunk);
-            }
-        }
-
         $run->status = 'completed';
         $run->finished_at = now();
-        $run->counts = $report['counts'] ?? [];
-        $run->report_summary = $report['summary'] ?? [];
+        $run->counts = $counts;
         $run->error_message = null;
         $run->save();
+
+        $this->streamRunSummaryToDatabase($run);
+    }
+
+    private function streamRunSummaryToDatabase(Import116Run $run): void
+    {
+        $types = ['inserted', 'updated', 'deleted'];
+        $streams = [];
+        $hasEntries = array_fill_keys($types, false);
+        $summaryStream = null;
+
+        try {
+            foreach ($types as $type) {
+                $streams[$type] = tmpfile();
+                if ($streams[$type] === false) {
+                    throw new RuntimeException('Temporäre Import-116-Berichtsdatei konnte nicht erstellt werden.');
+                }
+            }
+
+            foreach ($run->changes()->select(['id', 'student_code', 'change_type', 'summary'])->lazyById(self::BATCH_SIZE) as $change) {
+                $type = (string) $change->change_type;
+                if (! isset($streams[$type])) {
+                    continue;
+                }
+
+                $summary = is_array($change->summary) ? $change->summary : [];
+                $entry = [
+                    'student_code' => (string) $change->student_code,
+                    'class' => $summary['class'] ?? null,
+                    'name' => $summary['name'] ?? null,
+                    'changed_fields' => $summary['changed_fields'] ?? [],
+                ];
+
+                if ($hasEntries[$type]) {
+                    fwrite($streams[$type], ',');
+                }
+
+                fwrite($streams[$type], json_encode($entry, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+                $hasEntries[$type] = true;
+            }
+
+            $summaryStream = tmpfile();
+            if ($summaryStream === false) {
+                throw new RuntimeException('Temporäre Import-116-Zusammenfassung konnte nicht erstellt werden.');
+            }
+
+            fwrite($summaryStream, '{');
+            foreach ($types as $index => $type) {
+                if ($index > 0) {
+                    fwrite($summaryStream, ',');
+                }
+
+                fwrite($summaryStream, json_encode($type, JSON_THROW_ON_ERROR).':[');
+                rewind($streams[$type]);
+                stream_copy_to_stream($streams[$type], $summaryStream);
+                fwrite($summaryStream, ']');
+            }
+            fwrite($summaryStream, '}');
+            rewind($summaryStream);
+
+            $connection = DB::connection();
+            $grammar = $connection->getQueryGrammar();
+            $statement = $connection->getPdo()->prepare(sprintf(
+                'update %s set %s = ? where %s = ?',
+                $grammar->wrapTable('import116_runs'),
+                $grammar->wrap('report_summary'),
+                $grammar->wrap('id'),
+            ));
+            $statement->bindParam(1, $summaryStream, PDO::PARAM_LOB);
+            $statement->bindValue(2, (int) $run->id, PDO::PARAM_INT);
+            $statement->execute();
+        } finally {
+            foreach ($streams as $stream) {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
+
+            if (is_resource($summaryStream)) {
+                fclose($summaryStream);
+            }
+        }
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function emptyReportCounts(): array
+    {
+        return [
+            'processed_rows' => 0,
+            'seen_students' => 0,
+            'inserted' => 0,
+            'updated' => 0,
+            'deleted' => 0,
+            'unchanged' => 0,
+            'changes_total' => 0,
+        ];
+    }
+
+    /**
+     * @param  array<string, int>  $total
+     * @param  array<string, int>  $batch
+     */
+    private function mergeReportCounts(array &$total, array $batch): void
+    {
+        foreach (['inserted', 'updated', 'deleted', 'unchanged', 'changes_total'] as $key) {
+            $total[$key] += (int) ($batch[$key] ?? 0);
+        }
     }
 
     private function isRunTrackingAvailable(): bool
@@ -369,57 +829,62 @@ class Import116Job implements ShouldQueue
         }
     }
 
-    private function loadSnapshotsByStudentCode(int $schoolId, ?int $schoolyearId, ?array $studentCodes = null): array
+    private function loadSnapshotsByStudentCode(int $schoolId, ?int $schoolyearId, array $studentCodes): array
     {
-        $query = Import116::query()
-            ->where('school_id', $schoolId)
-            ->where('schoolyear_id', $schoolyearId);
-
-        if (is_array($studentCodes)) {
-            $studentCodes = array_values(array_filter(array_map(fn ($code) => is_scalar($code) ? trim((string) $code) : '', $studentCodes)));
-            if (empty($studentCodes)) {
-                return [];
-            }
-            $query->whereIn('student_code', $studentCodes);
+        $studentCodes = array_values(array_filter(array_map(fn ($code) => is_scalar($code) ? trim((string) $code) : '', $studentCodes)));
+        if ($studentCodes === []) {
+            return [];
         }
 
-        return $query
+        return Import116::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->whereIn('student_code', $studentCodes)
             ->get()
             ->mapWithKeys(fn (Import116 $record) => [(string) $record->student_code => $this->snapshotImport116($record)])
             ->all();
     }
 
-    private function deleteMissingImport116Rows(int $schoolId, ?int $schoolyearId, array $seenCodes): void
-    {
-        $query = Import116::query()
+    /**
+     * @param  array<string, int>  $counts
+     */
+    private function deleteMissingImport116Rows(
+        int $schoolId,
+        ?int $schoolyearId,
+        string $stagingTable,
+        ?Import116Run $run,
+        array &$counts,
+    ): void {
+        Import116::query()
             ->where('school_id', $schoolId)
-            ->where('schoolyear_id', $schoolyearId);
+            ->where('schoolyear_id', $schoolyearId)
+            ->whereNotExists(function ($query) use ($stagingTable): void {
+                $query
+                    ->selectRaw('1')
+                    ->from($stagingTable)
+                    ->whereColumn($stagingTable.'.student_code', 'import116.student_code');
+            })
+            ->chunkById(self::BATCH_SIZE, function ($records) use ($schoolId, $schoolyearId, $run, &$counts): void {
+                $beforeSnapshots = $records
+                    ->mapWithKeys(fn (Import116 $record): array => [
+                        (string) $record->student_code => $this->snapshotImport116($record),
+                    ])
+                    ->all();
+                $ids = $records
+                    ->pluck('id')
+                    ->map(fn ($id): int => (int) $id)
+                    ->all();
 
-        if (! empty($seenCodes)) {
-            $query->whereNotIn('student_code', $seenCodes);
-        }
+                if ($this->tableExists('users')) {
+                    User::query()->whereIn('import116_id', $ids)->update(['import116_id' => null]);
+                }
 
-        $rowsToDelete = $query->get(['id']);
-        if ($rowsToDelete->isEmpty()) {
-            return;
-        }
+                Import116::query()->whereIn('id', $ids)->delete();
 
-        $ids = $rowsToDelete
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => $id > 0)
-            ->values()
-            ->all();
-
-        if (empty($ids)) {
-            return;
-        }
-
-        if ($this->tableExists('users')) {
-            User::query()->whereIn('import116_id', $ids)->update(['import116_id' => null]);
-        }
-
-        Import116::query()->whereIn('id', $ids)->delete();
+                $batchReport = $this->buildRunReport($beforeSnapshots, [], 0, 0);
+                $this->mergeReportCounts($counts, $batchReport['counts']);
+                $this->storeRunChanges($run, $batchReport['changes'], $schoolId, $schoolyearId);
+            });
     }
 
     private function syncImport116ReferencesToCurrentRecord(int $schoolId, Import116 $record): void

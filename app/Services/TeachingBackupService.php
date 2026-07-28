@@ -10,12 +10,19 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Str;
 use JsonException;
+use Throwable;
 
 class TeachingBackupService
 {
-    private const FORMAT_VERSION = 1;
+    private const LEGACY_FORMAT_VERSION = 1;
+
+    private const SUPPORTED_FORMAT_VERSIONS = [
+        self::LEGACY_FORMAT_VERSION,
+        TeachingBackupArchiveWriter::FORMAT_VERSION,
+    ];
 
     public const ACTIVE_RESTORE_STATUSES = ['pending', 'running'];
 
@@ -23,43 +30,48 @@ class TeachingBackupService
 
     public const PENDING_RESTORE_WARNING_MINUTES = 2;
 
+    public function __construct(
+        private TeachingBackupArchiveWriter $archiveWriter,
+        private TeachingBackupArchiveReader $archiveReader,
+    ) {}
+
     /**
      * @throws JsonException
      */
     public function createForUser(User $user, string $kind = 'manual'): TeachingBackup
     {
         $payload = $this->payloadForUser($user);
-        $summary = $this->summaryForPayload($payload);
-        $summary['backup_kind'] = $kind;
-
         $filename = sprintf(
-            'teaching-backup-school-%d-schoolyear-%d-%s.json',
+            'teaching-backup-school-%d-schoolyear-%d-%s.zip',
             $user->school_id,
             $user->schoolyear_id,
             now()->format('Ymd-His')
         );
         $path = sprintf(
-            'teaching-backups/%d/%d/%s-%s.json',
+            'teaching-backups/%d/%d/%s-%s.zip',
             $user->school_id,
             $user->schoolyear_id,
             pathinfo($filename, PATHINFO_FILENAME),
             Str::lower(Str::random(8))
         );
+        $summary = $this->archiveWriter->write($payload, 'local', $path);
+        $summary['backup_kind'] = $kind;
 
-        Storage::disk('local')->put(
-            $path,
-            json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
-        );
+        try {
+            return TeachingBackup::query()->create([
+                'school_id' => $user->school_id,
+                'schoolyear_id' => $user->schoolyear_id,
+                'user_id' => $user->id,
+                'disk' => 'local',
+                'path' => $path,
+                'filename' => $filename,
+                'summary' => $summary,
+            ]);
+        } catch (Throwable $exception) {
+            Storage::disk('local')->delete($path);
 
-        return TeachingBackup::query()->create([
-            'school_id' => $user->school_id,
-            'schoolyear_id' => $user->schoolyear_id,
-            'user_id' => $user->id,
-            'disk' => 'local',
-            'path' => $path,
-            'filename' => $filename,
-            'summary' => $summary,
-        ]);
+            throw $exception;
+        }
     }
 
     /**
@@ -147,14 +159,9 @@ class TeachingBackupService
      *
      * @throws JsonException
      */
-    public function importForUser(User $user, string $content, string $originalFilename): array
+    public function importForUser(User $user, string $sourcePath, string $originalFilename): array
     {
-        $payload = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
-
-        if (! is_array($payload)) {
-            throw new JsonException('Backup file does not contain a JSON object.');
-        }
-
+        $payload = $this->archiveReader->readPath($sourcePath);
         $this->assertPayloadMatchesUserScope($payload, $user);
 
         if ($duplicateBackup = $this->duplicateBackupForPayload($payload, $user)) {
@@ -167,22 +174,35 @@ class TeachingBackupService
 
         $summary = $this->summaryForPayload($payload);
         $summary['backup_kind'] = 'imported';
-        $filename = $this->importFilename($originalFilename);
+        $isZip = $this->archiveReader->isZipPath($sourcePath);
+        $extension = $isZip ? 'zip' : 'json';
+        $filename = $this->importFilename($originalFilename, $extension);
         $path = sprintf(
-            'teaching-backups/%d/%d/imported-%s-%s.json',
+            'teaching-backups/%d/%d/imported-%s-%s.%s',
             $user->school_id,
             $user->schoolyear_id,
             now()->format('Ymd-His'),
-            Str::lower(Str::random(8))
+            Str::lower(Str::random(8)),
+            $extension
         );
+        $partPath = "{$path}.part-".Str::lower(Str::random(12));
+        $sourceStream = fopen($sourcePath, 'rb');
 
-        Storage::disk('local')->put(
-            $path,
-            json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
-        );
+        if ($sourceStream === false) {
+            throw new JsonException('Backup file could not be read.');
+        }
 
-        return [
-            'backup' => TeachingBackup::query()->create([
+        try {
+            if (! Storage::disk('local')->put($partPath, $sourceStream) || ! Storage::disk('local')->move($partPath, $path)) {
+                throw new JsonException('Backup file could not be stored.');
+            }
+        } finally {
+            fclose($sourceStream);
+            Storage::disk('local')->delete($partPath);
+        }
+
+        try {
+            $backup = TeachingBackup::query()->create([
                 'school_id' => $user->school_id,
                 'schoolyear_id' => $user->schoolyear_id,
                 'user_id' => $user->id,
@@ -190,7 +210,15 @@ class TeachingBackupService
                 'path' => $path,
                 'filename' => $filename,
                 'summary' => $summary,
-            ]),
+            ]);
+        } catch (Throwable $exception) {
+            Storage::disk('local')->delete($path);
+
+            throw $exception;
+        }
+
+        return [
+            'backup' => $backup,
             'imported' => true,
             'duplicate' => false,
         ];
@@ -633,19 +661,7 @@ class TeachingBackupService
      */
     private function readPayload(TeachingBackup $backup): array
     {
-        $content = Storage::disk($backup->disk)->get($backup->path);
-
-        if (! is_string($content) || trim($content) === '') {
-            throw new JsonException('Backup file is empty.');
-        }
-
-        $payload = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
-
-        if (! is_array($payload)) {
-            throw new JsonException('Backup file does not contain a JSON object.');
-        }
-
-        return $payload;
+        return $this->archiveReader->readStorage($backup->disk, $backup->path);
     }
 
     /**
@@ -670,15 +686,12 @@ class TeachingBackupService
         }
     }
 
-    private function importFilename(string $originalFilename): string
+    private function importFilename(string $originalFilename, string $extension): string
     {
-        $filename = trim($originalFilename) !== '' ? basename($originalFilename) : 'imported-teaching-backup.json';
+        $filename = trim($originalFilename) !== '' ? basename($originalFilename) : "imported-teaching-backup.{$extension}";
+        $filename = preg_replace('/\.(json|zip)\z/i', '', $filename) ?? $filename;
 
-        if (! str_ends_with(Str::lower($filename), '.json')) {
-            return "{$filename}.json";
-        }
-
-        return $filename;
+        return "{$filename}.{$extension}";
     }
 
     /**
@@ -2157,7 +2170,7 @@ class TeachingBackupService
             ->where('schoolyear_id', $schoolyearId));
         $courseIds = $this->ids($tables['teaching_courses']);
 
-        $tables['teaching_course_students'] = $this->rowsForIds('teaching_course_students', 'teaching_course_id', $courseIds);
+        $tables['teaching_course_students'] = $this->rowsForIdsLazy('teaching_course_students', 'teaching_course_id', $courseIds);
         $tables['teaching_course_dates'] = $this->rowsForIds('teaching_course_dates', 'teaching_course_id', $courseIds);
         $courseDateIds = $this->ids($tables['teaching_course_dates']);
 
@@ -2165,11 +2178,11 @@ class TeachingBackupService
         $courseDateMaterialIds = $this->ids($tables['teaching_course_date_materials']);
         $tables['teaching_course_date_material_attachments'] = $this->rowsForIds('teaching_course_date_material_attachments', 'teaching_course_date_material_id', $courseDateMaterialIds);
 
-        $tables['teaching_course_works'] = $this->rowsForIds('teaching_course_works', 'teaching_course_id', $courseIds);
-        $tables['teaching_course_work_group_students'] = $this->rowsForIds('teaching_course_work_group_students', 'teaching_course_id', $courseIds);
-        $tables['teaching_course_student_entries'] = $this->rowsForIds('teaching_course_student_entries', 'teaching_course_id', $courseIds);
-        $tables['teaching_course_behaviour_entries'] = $this->rowsForIds('teaching_course_behaviour_entries', 'teaching_course_id', $courseIds);
-        $tables['teaching_course_student_category_evaluations'] = $this->rowsForIds('teaching_course_student_category_evaluations', 'teaching_course_id', $courseIds);
+        $tables['teaching_course_works'] = $this->rowsForIdsLazy('teaching_course_works', 'teaching_course_id', $courseIds);
+        $tables['teaching_course_work_group_students'] = $this->rowsForIdsLazy('teaching_course_work_group_students', 'teaching_course_id', $courseIds);
+        $tables['teaching_course_student_entries'] = $this->rowsForIdsLazy('teaching_course_student_entries', 'teaching_course_id', $courseIds);
+        $tables['teaching_course_behaviour_entries'] = $this->rowsForIdsLazy('teaching_course_behaviour_entries', 'teaching_course_id', $courseIds);
+        $tables['teaching_course_student_category_evaluations'] = $this->rowsForIdsLazy('teaching_course_student_category_evaluations', 'teaching_course_id', $courseIds);
 
         $tables['teaching_curricula'] = $this->rows('teaching_curricula', fn (Builder $query): Builder => $query
             ->where('school_id', $schoolId)
@@ -2177,7 +2190,7 @@ class TeachingBackupService
         $curriculumIds = $this->ids($tables['teaching_curricula']);
         $tables['teaching_curriculum_documents'] = $this->rowsForIds('teaching_curriculum_documents', 'teaching_curriculum_id', $curriculumIds);
 
-        $tables['teaching_imported_curricula'] = $this->rows('teaching_imported_curricula', fn (Builder $query): Builder => $query
+        $tables['teaching_imported_curricula'] = $this->rowsLazy('teaching_imported_curricula', fn (Builder $query): Builder => $query
             ->where('school_id', $schoolId)
             ->where(function (Builder $query) use ($curriculumIds): void {
                 $query->whereNull('adopted_curriculum_id');
@@ -2186,24 +2199,24 @@ class TeachingBackupService
                     $query->orWhereIn('adopted_curriculum_id', $curriculumIds);
                 }
             }));
-        $tables['teaching_schemas'] = $this->rows('teaching_schemas', fn (Builder $query): Builder => $query
+        $tables['teaching_schemas'] = $this->rowsLazy('teaching_schemas', fn (Builder $query): Builder => $query
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId));
-        $tables['teaching_holidays'] = $this->rows('teaching_holidays', fn (Builder $query): Builder => $query
+        $tables['teaching_holidays'] = $this->rowsLazy('teaching_holidays', fn (Builder $query): Builder => $query
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId));
-        $tables['teaching_school_hours'] = $this->rows('teaching_school_hours', fn (Builder $query): Builder => $query
+        $tables['teaching_school_hours'] = $this->rowsLazy('teaching_school_hours', fn (Builder $query): Builder => $query
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId));
 
-        $tables['import116'] = $this->rows('import116', fn (Builder $query): Builder => $query
+        $tables['import116'] = $this->rowsLazy('import116', fn (Builder $query): Builder => $query
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId));
         $tables['import116_runs'] = $this->rows('import116_runs', fn (Builder $query): Builder => $query
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId));
         $importRunIds = $this->ids($tables['import116_runs']);
-        $tables['import116_run_changes'] = $this->rows('import116_run_changes', fn (Builder $query): Builder => $query
+        $tables['import116_run_changes'] = $this->rowsLazy('import116_run_changes', fn (Builder $query): Builder => $query
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
             ->when($importRunIds !== [], fn (Builder $query): Builder => $query->whereIn('import116_run_id', $importRunIds)));
@@ -2212,13 +2225,13 @@ class TeachingBackupService
             ->where('school_id', $schoolId)
             ->whereIn('teaching_course_id', $courseIds ?: [-1]));
         $userGroupIds = $this->ids($tables['user_groups']);
-        $tables['user_group_members'] = $this->rows('user_group_members', fn (Builder $query): Builder => $query
+        $tables['user_group_members'] = $this->rowsLazy('user_group_members', fn (Builder $query): Builder => $query
             ->where('school_id', $schoolId)
             ->whereIn('user_group_id', $userGroupIds ?: [-1]));
 
         return [
             'meta' => [
-                'format_version' => self::FORMAT_VERSION,
+                'format_version' => TeachingBackupArchiveWriter::FORMAT_VERSION,
                 'created_at' => now()->toISOString(),
                 'school_id' => $schoolId,
                 'schoolyear_id' => $schoolyearId,
@@ -2236,11 +2249,19 @@ class TeachingBackupService
      */
     private function rows(string $table, callable $scope): array
     {
+        return $this->rowsLazy($table, $scope)->all();
+    }
+
+    /**
+     * @param  callable(Builder): Builder  $scope
+     * @return LazyCollection<int, array<string, mixed>>
+     */
+    private function rowsLazy(string $table, callable $scope): LazyCollection
+    {
         return $scope(DB::table($table))
             ->orderBy('id')
             ->lazyById()
-            ->map(fn (object $row): array => (array) $row)
-            ->all();
+            ->map(fn (object $row): array => (array) $row);
     }
 
     /**
@@ -2254,6 +2275,19 @@ class TeachingBackupService
         }
 
         return $this->rows($table, fn (Builder $query): Builder => $query->whereIn($column, $ids));
+    }
+
+    /**
+     * @param  array<int, int>  $ids
+     * @return LazyCollection<int, array<string, mixed>>
+     */
+    private function rowsForIdsLazy(string $table, string $column, array $ids): LazyCollection
+    {
+        if ($ids === []) {
+            return LazyCollection::make([]);
+        }
+
+        return $this->rowsLazy($table, fn (Builder $query): Builder => $query->whereIn($column, $ids));
     }
 
     /**
@@ -2425,7 +2459,7 @@ class TeachingBackupService
                     'exists' => true,
                     'mime_type' => mime_content_type($absolutePath) ?: null,
                     'size_bytes' => filesize($absolutePath) ?: 0,
-                    'base64' => base64_encode((string) file_get_contents($absolutePath)),
+                    '_absolute_path' => $absolutePath,
                 ];
             }
         }
@@ -2443,7 +2477,8 @@ class TeachingBackupService
                 'exists' => true,
                 'mime_type' => $disk->mimeType($path) ?: null,
                 'size_bytes' => $disk->size($path) ?: 0,
-                'base64' => base64_encode((string) $disk->get($path)),
+                '_source_disk' => $diskName,
+                '_source_path' => $path,
             ];
         }
 
@@ -2453,7 +2488,6 @@ class TeachingBackupService
             'exists' => false,
             'mime_type' => null,
             'size_bytes' => null,
-            'base64' => null,
         ];
     }
 
@@ -2485,7 +2519,7 @@ class TeachingBackupService
         $validation = $this->validationForPayload($payload);
 
         return [
-            'format_version' => self::FORMAT_VERSION,
+            'format_version' => (int) ($payload['meta']['format_version'] ?? self::LEGACY_FORMAT_VERSION),
             'backup_created_at' => $payload['meta']['created_at'] ?? null,
             'scope' => $payload['meta']['scope'] ?? null,
             'content_hash' => $this->payloadContentHash($payload),
@@ -2496,6 +2530,9 @@ class TeachingBackupService
             'total_rows' => $tables->sum(fn (array $rows): int => count($rows)),
             'file_count' => $files->count(),
             'missing_file_count' => $files->where('exists', false)->count(),
+            'container_format' => ((int) ($payload['meta']['format_version'] ?? 0)) === TeachingBackupArchiveWriter::FORMAT_VERSION
+                ? 'zip'
+                : 'json',
         ];
     }
 
@@ -2504,6 +2541,12 @@ class TeachingBackupService
      */
     private function payloadContentHash(array $payload): string
     {
+        $archiveContentHash = $payload['meta']['content_hash'] ?? null;
+
+        if (is_string($archiveContentHash) && preg_match('/\A[a-f0-9]{64}\z/', $archiveContentHash) === 1) {
+            return $archiveContentHash;
+        }
+
         return hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
     }
 
@@ -2516,7 +2559,7 @@ class TeachingBackupService
         $issues = [];
         $warnings = [];
 
-        if (($payload['meta']['format_version'] ?? null) !== self::FORMAT_VERSION) {
+        if (! in_array($payload['meta']['format_version'] ?? null, self::SUPPORTED_FORMAT_VERSIONS, true)) {
             $issues[] = 'Ungültige Backup-Version.';
         }
 
@@ -3498,8 +3541,20 @@ class TeachingBackupService
         $basename = basename($path);
         $targetPath = trim($targetDirectory, '/').'/'.Str::uuid().'-'.$basename;
 
+        if (is_array($file) && ($file['exists'] ?? false) === true && is_string($file['_archive_entry'] ?? null)) {
+            $this->archiveReader->copyFileToStorage($file, 'local', $targetPath);
+
+            return $targetPath;
+        }
+
         if (is_array($file) && ($file['exists'] ?? false) === true && is_string($file['base64'] ?? null)) {
-            Storage::disk('local')->put($targetPath, base64_decode($file['base64'], true) ?: '');
+            $decoded = base64_decode($file['base64'], true);
+
+            if (! is_string($decoded)) {
+                throw new JsonException('Legacy backup file content is invalid.');
+            }
+
+            Storage::disk('local')->put($targetPath, $decoded);
 
             return $targetPath;
         }

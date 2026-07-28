@@ -2678,8 +2678,6 @@ export default {
             this.import116UploadHasError = false
             this.import116RunActionMessage = ''
             this.import116RunActionError = ''
-            const adminStore = useAdminStore()
-            if (this.config?.is_auth) adminStore.initializeEcho()
             this.import116Importing = true
         },
         import116FileUploadFinished() {

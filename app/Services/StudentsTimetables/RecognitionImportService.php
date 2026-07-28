@@ -13,6 +13,8 @@ use RuntimeException;
 
 class RecognitionImportService
 {
+    private const BATCH_SIZE = 500;
+
     private const IDENTITY_SEPARATOR = "\x1F";
 
     public function createQueuedImport(
@@ -45,12 +47,15 @@ class RecognitionImportService
 
     public function processImport(StudentTimetableRecognitionImport $import): StudentTimetableRecognitionImport
     {
+        $storedPath = storage_path($import->file_path);
+        $backupPath = $this->backupPath($storedPath, (int) $import->id);
+        $temporaryPath = $this->temporaryFilteredPath($storedPath, (int) $import->id);
+        $this->recoverInterruptedReplacement($storedPath, $backupPath, $temporaryPath, (string) $import->import_status);
+
         $import->update([
             'import_status' => 'running',
             'import_message' => 'CSV-Datei wird verarbeitet.',
         ]);
-
-        $storedPath = storage_path($import->file_path);
 
         if (! is_file($storedPath)) {
             $this->markFailed($import, 'Die CSV-Datei konnte nicht gelesen werden.');
@@ -58,68 +63,36 @@ class RecognitionImportService
             return $import->refresh();
         }
 
-        $filterResult = $this->filterStoredCsv($storedPath);
+        $replacementActivated = false;
+        try {
+            $filterResult = $this->prepareFilteredCsv($storedPath, $temporaryPath);
+            $this->activateFilteredCsv($storedPath, $temporaryPath, $backupPath);
+            $replacementActivated = true;
 
-        DB::transaction(function () use ($import, $filterResult, $storedPath): void {
-            $import->rows()->delete();
+            DB::transaction(function () use ($import, $storedPath, $backupPath, $filterResult): void {
+                $import->rows()->delete();
+                $importedRows = $this->persistOriginalCsv($backupPath, $import);
 
-            $rows = collect($filterResult['records'])
-                ->map(fn (array $record): array => [
-                    'school_id' => $import->school_id,
-                    'schoolyear_id' => $import->schoolyear_id,
-                    ...$record,
-                    'identity_hash' => $this->recognitionRowIdentityHash(
-                        (int) $import->school_id,
-                        (int) $import->schoolyear_id,
-                        $record['raw_data'],
-                    ),
-                ])
-                ->keyBy(fn (array $row): string => $row['identity_hash'])
-                ->values();
-
-            if ($rows->isNotEmpty()) {
-                $rows->pluck('identity_hash')->chunk(500)->each(
-                    fn ($hashes) => StudentTimetableRecognitionRow::query()
-                        ->where('school_id', $import->school_id)
-                        ->where('schoolyear_id', $import->schoolyear_id)
-                        ->whereIn('identity_hash', $hashes->all())
-                        ->delete()
-                );
-
-                $now = now();
-
-                $rows
-                    ->map(fn (array $row): array => [
-                        'student_timetable_recognition_import_id' => $import->id,
-                        'school_id' => $row['school_id'],
-                        'schoolyear_id' => $row['schoolyear_id'],
-                        'row_number' => $row['row_number'],
-                        'student_code' => $row['student_code'],
-                        'student' => $row['student'],
-                        'subject' => $row['subject'],
-                        'grade' => $row['grade'],
-                        'note' => $row['note'],
-                        'colloquia' => $row['colloquia'],
-                        'module_repetitions' => $row['module_repetitions'],
-                        'teacher_code' => $row['teacher_code'],
-                        'identity_hash' => $row['identity_hash'],
-                        'raw_data' => json_encode($row['raw_data'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ])
-                    ->chunk(500)
-                    ->each(fn ($chunk) => DB::table('student_timetable_recognition_rows')->insert($chunk->all()));
+                $import->update([
+                    'file_size' => is_file($storedPath) ? (filesize($storedPath) ?: 0) : 0,
+                    'total_rows' => $filterResult['total_rows'],
+                    'imported_rows' => $importedRows,
+                    'skipped_rows' => $filterResult['total_rows'] - $importedRows,
+                    'import_status' => 'completed',
+                    'import_message' => 'Import abgeschlossen.',
+                ]);
+            });
+        } catch (\Throwable $exception) {
+            if ($replacementActivated) {
+                $this->restoreOriginalCsv($storedPath, $backupPath);
             }
 
-            $import->update([
-                'file_size' => is_file($storedPath) ? (filesize($storedPath) ?: 0) : 0,
-                'total_rows' => $filterResult['total_rows'],
-                'imported_rows' => $rows->count(),
-                'skipped_rows' => $filterResult['total_rows'] - $rows->count(),
-                'import_status' => 'completed',
-                'import_message' => 'Import abgeschlossen.',
-            ]);
-        });
+            throw $exception;
+        } finally {
+            @unlink($temporaryPath);
+        }
+
+        @unlink($backupPath);
 
         return $import->refresh();
     }
@@ -169,82 +142,237 @@ class RecognitionImportService
             });
     }
 
-    /**
-     * @return array{
-     *     total_rows: int,
-     *     imported_rows: int,
-     *     skipped_rows: int,
-     *     records: array<int, array{
-     *         row_number: int,
-     *         raw_data: array<string, string>,
-     *         student_code: ?string,
-     *         student: ?string,
-     *         subject: ?string,
-     *         grade: ?string,
-     *         note: ?string,
-     *         colloquia: ?string,
-     *         module_repetitions: ?string,
-     *         teacher_code: ?string,
-     *     }>,
-     * }
-     */
-    private function filterStoredCsv(string $path): array
+    /** @return array{total_rows: int} */
+    private function prepareFilteredCsv(string $path, string $temporaryPath): array
     {
-        $contents = File::get($path);
-        $contents = preg_replace('/^\xEF\xBB\xBF/u', '', $contents) ?? $contents;
-        $lines = preg_split('/\R/u', $contents, -1, PREG_SPLIT_NO_EMPTY);
-
-        if (! $lines) {
-            File::put($path, '');
-
-            return [
-                'total_rows' => 0,
-                'imported_rows' => 0,
-                'skipped_rows' => 0,
-                'records' => [],
-            ];
+        $input = fopen($path, 'rb');
+        if ($input === false) {
+            throw new RuntimeException('Die CSV-Datei konnte nicht gelesen werden.');
         }
 
-        $delimiter = $this->detectDelimiter($lines[0]);
-        $headers = str_getcsv($lines[0], $delimiter);
-        $filteredRows = [$headers];
-        $records = [];
-        $totalRows = 0;
+        @unlink($temporaryPath);
+        $output = fopen($temporaryPath, 'xb');
+        if ($output === false) {
+            fclose($input);
 
-        foreach (array_slice($lines, 1) as $index => $line) {
-            $row = str_getcsv($line, $delimiter);
-            $record = $this->recordFromRow($headers, $row);
-            $totalRows++;
-
-            if (! $this->recognitionRecordShouldBeImported($record)) {
-                continue;
-            }
-
-            $filteredRows[] = $row;
-            $records[] = $this->recognitionRowPayload($record, $index + 2);
-        }
-
-        $handle = fopen('php://temp', 'r+');
-        if ($handle === false) {
             throw new RuntimeException('Die CSV-Datei konnte nicht gefiltert werden.');
         }
 
-        foreach ($filteredRows as $row) {
-            fputcsv($handle, $row, $delimiter);
+        $totalRows = 0;
+
+        try {
+            $headerLine = fgets($input);
+            if ($headerLine === false) {
+                return ['total_rows' => 0];
+            }
+
+            $headerLine = preg_replace('/^\xEF\xBB\xBF/u', '', $headerLine) ?? $headerLine;
+            $delimiter = $this->detectDelimiter($headerLine);
+            rewind($input);
+
+            $headers = fgetcsv($input, null, $delimiter, '"', '') ?: [];
+            if (isset($headers[0])) {
+                $headers[0] = preg_replace('/^\xEF\xBB\xBF/u', '', (string) $headers[0]) ?? $headers[0];
+            }
+
+            fputcsv($output, $headers, $delimiter, '"', '');
+
+            while (($row = fgetcsv($input, null, $delimiter, '"', '')) !== false) {
+                if ($this->isEmptyCsvRow($row)) {
+                    continue;
+                }
+
+                $totalRows++;
+                $record = $this->recordFromRow($headers, $row);
+
+                if ($this->recognitionRecordShouldBeImported($record)) {
+                    fputcsv($output, $row, $delimiter, '"', '');
+                }
+            }
+        } finally {
+            fclose($input);
+            fclose($output);
         }
 
-        rewind($handle);
-        $filteredContents = stream_get_contents($handle);
-        fclose($handle);
+        return ['total_rows' => $totalRows];
+    }
 
-        File::put($path, $filteredContents === false ? '' : $filteredContents);
+    private function persistOriginalCsv(string $path, StudentTimetableRecognitionImport $import): int
+    {
+        $input = fopen($path, 'rb');
+        if ($input === false) {
+            throw new RuntimeException('Die ursprüngliche CSV-Datei konnte nicht gelesen werden.');
+        }
+
+        $batch = [];
+
+        try {
+            $headerLine = fgets($input);
+            if ($headerLine !== false) {
+                $delimiter = $this->detectDelimiter($headerLine);
+                rewind($input);
+                $headers = fgetcsv($input, null, $delimiter, '"', '') ?: [];
+                if (isset($headers[0])) {
+                    $headers[0] = preg_replace('/^\xEF\xBB\xBF/u', '', (string) $headers[0]) ?? $headers[0];
+                }
+                $rowNumber = 1;
+
+                while (($row = fgetcsv($input, null, $delimiter, '"', '')) !== false) {
+                    if ($this->isEmptyCsvRow($row)) {
+                        continue;
+                    }
+
+                    $rowNumber++;
+                    $record = $this->recordFromRow($headers, $row);
+                    if (! $this->recognitionRecordShouldBeImported($record)) {
+                        continue;
+                    }
+
+                    $batch[] = $this->recognitionDatabaseRow($import, $record, $rowNumber);
+
+                    if (count($batch) >= self::BATCH_SIZE) {
+                        $this->upsertRecognitionRows($batch);
+                        $batch = [];
+                    }
+                }
+            }
+
+            if ($batch !== []) {
+                $this->upsertRecognitionRows($batch);
+            }
+        } finally {
+            fclose($input);
+        }
+
+        return StudentTimetableRecognitionRow::query()
+            ->where('student_timetable_recognition_import_id', $import->id)
+            ->count();
+    }
+
+    private function activateFilteredCsv(string $path, string $temporaryPath, string $backupPath): void
+    {
+        @unlink($backupPath);
+
+        if (! @rename($path, $backupPath)) {
+            throw new RuntimeException('Die ursprüngliche CSV-Datei konnte nicht gesichert werden.');
+        }
+
+        if (@rename($temporaryPath, $path)) {
+            return;
+        }
+
+        @rename($backupPath, $path);
+
+        throw new RuntimeException('Die gefilterte CSV-Datei konnte nicht aktiviert werden.');
+    }
+
+    private function restoreOriginalCsv(string $path, string $backupPath): void
+    {
+        if (! is_file($backupPath)) {
+            return;
+        }
+
+        @unlink($path);
+
+        if (! @rename($backupPath, $path)) {
+            throw new RuntimeException('Die ursprüngliche CSV-Datei konnte nicht wiederhergestellt werden.');
+        }
+    }
+
+    private function recoverInterruptedReplacement(
+        string $path,
+        string $backupPath,
+        string $temporaryPath,
+        string $status,
+    ): void {
+        if (is_file($backupPath)) {
+            if ($status === 'completed') {
+                @unlink($backupPath);
+            } else {
+                $this->restoreOriginalCsv($path, $backupPath);
+            }
+        }
+
+        @unlink($temporaryPath);
+    }
+
+    private function backupPath(string $path, int $importId): string
+    {
+        return "{$path}.import-{$importId}.original.bak";
+    }
+
+    private function temporaryFilteredPath(string $path, int $importId): string
+    {
+        return "{$path}.import-{$importId}.filtered.tmp";
+    }
+
+    /**
+     * @param  array<int, string|null>  $row
+     */
+    private function isEmptyCsvRow(array $row): bool
+    {
+        return count($row) === 1 && trim((string) ($row[0] ?? '')) === '';
+    }
+
+    /**
+     * @param  array<string, string>  $record
+     * @return array<string, mixed>
+     */
+    private function recognitionDatabaseRow(
+        StudentTimetableRecognitionImport $import,
+        array $record,
+        int $rowNumber,
+    ): array {
+        $payload = $this->recognitionRowPayload($record, $rowNumber);
+        $now = now();
 
         return [
-            'total_rows' => $totalRows,
-            'imported_rows' => count($records),
-            'skipped_rows' => $totalRows - count($records),
-            'records' => $records,
+            'student_timetable_recognition_import_id' => $import->id,
+            'school_id' => $import->school_id,
+            'schoolyear_id' => $import->schoolyear_id,
+            'row_number' => $payload['row_number'],
+            'student_code' => $payload['student_code'],
+            'student' => $payload['student'],
+            'subject' => $payload['subject'],
+            'grade' => $payload['grade'],
+            'note' => $payload['note'],
+            'colloquia' => $payload['colloquia'],
+            'module_repetitions' => $payload['module_repetitions'],
+            'teacher_code' => $payload['teacher_code'],
+            'identity_hash' => $this->recognitionRowIdentityHash(
+                (int) $import->school_id,
+                (int) $import->schoolyear_id,
+                $payload['raw_data'],
+            ),
+            'raw_data' => json_encode($payload['raw_data'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+            'created_at' => $now,
+            'updated_at' => $now,
         ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     */
+    protected function upsertRecognitionRows(array $rows): void
+    {
+        DB::table('student_timetable_recognition_rows')->upsert(
+            $rows,
+            ['school_id', 'schoolyear_id', 'identity_hash'],
+            [
+                'student_timetable_recognition_import_id',
+                'row_number',
+                'student_code',
+                'student',
+                'subject',
+                'grade',
+                'note',
+                'colloquia',
+                'module_repetitions',
+                'teacher_code',
+                'raw_data',
+                'updated_at',
+            ],
+        );
     }
 
     private function detectDelimiter(string $headerLine): string

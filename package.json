@@ -29,7 +29,7 @@
         "test:ui": "node --disable-warning=ExperimentalWarning --import ./tests/ui/vitest.preload.mjs ./node_modules/vitest/vitest.mjs run --configLoader native --reporter=default",
         "test:ui:smoke": "node --disable-warning=ExperimentalWarning --import ./tests/ui/vitest.preload.mjs ./node_modules/vitest/vitest.mjs run --configLoader native --reporter=default tests/ui/unit/example.test.ts",
         "test:ui:watch": "node --disable-warning=ExperimentalWarning --import ./tests/ui/vitest.preload.mjs ./node_modules/vitest/vitest.mjs --configLoader native",
-        "pretest:e2e": "npm run build && php -r \"if (!file_exists('.env.e2e')) { fwrite(STDERR, '.env.e2e is missing. Copy .env.e2e.example to .env.e2e first.' . PHP_EOL); exit(1); } if (!file_exists('database/e2e.sqlite')) { touch('database/e2e.sqlite'); }\" && php artisan migrate:fresh --env=e2e --seed --seeder=E2eSeeder --force",
+        "pretest:e2e": "php -r \"if (!copy('.env.e2e.example', '.env.e2e')) { fwrite(STDERR, 'Unable to prepare the E2E environment.' . PHP_EOL); exit(1); } if (!file_exists('database/e2e.sqlite')) { touch('database/e2e.sqlite'); }\" && php artisan key:generate --env=e2e --force --no-interaction && npm run build && php artisan migrate:fresh --env=e2e --seed --seeder=E2eSeeder --force",
         "test:e2e": "playwright test --reporter=line",
         "test:all": "npm run test:php && npm run test:ui",
         "mcp": "ruler apply",

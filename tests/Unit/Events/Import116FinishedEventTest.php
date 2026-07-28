@@ -123,17 +123,41 @@ describe('broadcasting', function () {
 // ============================================================================
 
 describe('error scenarios', function () {
-    test('handles file not found error', function () {
+    test('does not broadcast an internal file path', function () {
         $event = new Import116FinishedEvent(
             404,
             1,
             'Import 116 fehlgeschlagen: Datei nicht gefunden.',
-            ['path' => 'app/private/1/excel/116.xlsx']
+            [
+                'path' => 'app/private/1/excel/116.xlsx',
+                'run_id' => 18,
+            ]
         );
 
-        expect($event->status)->toBe(404)
-            ->and($event->message)->toContain('nicht gefunden')
-            ->and($event->data['path'])->toBe('app/private/1/excel/116.xlsx');
+        expect($event->broadcastWith())->toBe([
+            'status' => 404,
+            'message' => 'Import 116 fehlgeschlagen: Datei nicht gefunden.',
+            'data' => [
+                'run_id' => 18,
+            ],
+        ]);
+    });
+
+    test('does not broadcast raw exception details', function () {
+        $event = new Import116FinishedEvent(
+            500,
+            1,
+            'Import 116 fehlgeschlagen.',
+            [
+                'error' => 'SQLSTATE connection details',
+                'run_id' => 19,
+            ]
+        );
+
+        $payload = $event->broadcastWith();
+
+        expect($payload['data'])->toBe(['run_id' => 19])
+            ->and(array_keys($payload))->not->toContain('userId');
     });
 
     test('handles header validation error', function () {
@@ -160,6 +184,34 @@ describe('error scenarios', function () {
             ->and($event->message)->toContain('abgeschlossen')
             ->and($event->data['created'])->toBe(100)
             ->and($event->data['updated'])->toBe(50);
+    });
+
+    test('broadcasts only client-safe import statistics', function () {
+        $event = new Import116FinishedEvent(
+            200,
+            1,
+            'Import 116 wurde abgeschlossen.',
+            [
+                'run_id' => 20,
+                'created' => 100,
+                'updated' => 50,
+                'deleted' => 2,
+                'counts' => ['processed_rows' => 152],
+                'unexpected' => 'private detail',
+            ]
+        );
+
+        expect($event->broadcastWith())->toBe([
+            'status' => 200,
+            'message' => 'Import 116 wurde abgeschlossen.',
+            'data' => [
+                'run_id' => 20,
+                'created' => 100,
+                'updated' => 50,
+                'deleted' => 2,
+                'counts' => ['processed_rows' => 152],
+            ],
+        ]);
     });
 });
 

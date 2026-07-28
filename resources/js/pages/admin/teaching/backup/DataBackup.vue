@@ -12,7 +12,7 @@
                     <input
                         ref="backup_import_input"
                         type="file"
-                        accept="application/json,.json"
+                        accept="application/zip,.zip,application/json,.json"
                         class="d-none"
                         @change="importBackup" />
                     <v-btn color="secondary" variant="tonal" prepend-icon="mdi-upload-outline" :loading="importing" @click="selectImportFile">

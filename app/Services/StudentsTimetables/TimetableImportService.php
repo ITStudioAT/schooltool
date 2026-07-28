@@ -40,8 +40,10 @@ class TimetableImportService
         $ttSkippedInvalid = 0;
         $ttFirstDate = null;
         $ttLastDate = null;
+        $totalLines = 0;
 
         foreach ($lines as $line) {
+            $totalLines++;
             $parts = explode("\t", $line);
             $code = trim($parts[0] ?? '');
             if ($code === '') {
@@ -78,7 +80,7 @@ class TimetableImportService
 
         return [
             'sections' => $sections,
-            'total_lines' => count($lines),
+            'total_lines' => $totalLines,
             'tt_courses' => count($ttCourses),
             'tt_skipped_invalid' => $ttSkippedInvalid,
             'tt_first_date' => $ttFirstDate,
@@ -114,15 +116,21 @@ class TimetableImportService
             return $import->refresh();
         }
 
-        $lines = $this->readNormalizedLines(storage_path($import->file_path));
+        $filePath = storage_path($import->file_path);
+        $totalLines = $this->countNormalizedLines($filePath);
+        if ($totalLines === null) {
+            $this->markFailed($import, 'Die TXT-Datei konnte nicht gelesen werden.');
 
+            return $import->refresh();
+        }
+
+        $lines = $this->readNormalizedLines($filePath);
         if ($lines === null) {
             $this->markFailed($import, 'Die TXT-Datei konnte nicht gelesen werden.');
 
             return $import->refresh();
         }
 
-        $totalLines = count($lines);
         $this->markRunning($import, $totalLines);
 
         $sections = [];
@@ -561,19 +569,44 @@ class TimetableImportService
     }
 
     /**
-     * @return list<string>|null
+     * @return iterable<int, string>|null
      */
-    private function readNormalizedLines(string $filePath): ?array
+    private function readNormalizedLines(string $filePath): ?iterable
     {
-        $lines = file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        if ($lines === false) {
+        $handle = @fopen($filePath, 'rb');
+        if ($handle === false) {
             return null;
         }
 
-        return array_values(array_map(
-            fn (string $line): string => $this->toUtf8($line),
-            $lines,
-        ));
+        return (function () use ($handle): iterable {
+            try {
+                while (($line = fgets($handle)) !== false) {
+                    $line = rtrim($line, "\r\n");
+                    if ($line === '') {
+                        continue;
+                    }
+
+                    yield $this->toUtf8($line);
+                }
+            } finally {
+                fclose($handle);
+            }
+        })();
+    }
+
+    private function countNormalizedLines(string $filePath): ?int
+    {
+        $lines = $this->readNormalizedLines($filePath);
+        if ($lines === null) {
+            return null;
+        }
+
+        $count = 0;
+        foreach ($lines as $line) {
+            $count++;
+        }
+
+        return $count;
     }
 
     private function toUtf8(string $value): string

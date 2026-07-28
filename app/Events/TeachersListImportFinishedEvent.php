@@ -7,6 +7,7 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Arr;
 
 class TeachersListImportFinishedEvent implements ShouldBroadcast
 {
@@ -32,6 +33,19 @@ class TeachersListImportFinishedEvent implements ShouldBroadcast
     {
         return [
             new PrivateChannel('user.'.$this->userId),
+        ];
+    }
+
+    public function broadcastWith(): array
+    {
+        return [
+            'status' => $this->status,
+            'message' => $this->message,
+            'data' => Arr::only($this->data, [
+                'created',
+                'updated',
+                'deleted',
+            ]),
         ];
     }
 }

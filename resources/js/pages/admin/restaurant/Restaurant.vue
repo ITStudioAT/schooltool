@@ -62,20 +62,22 @@
 
 <script>
 import { mapWritableState } from 'pinia'
+import { defineAsyncComponent } from 'vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useFoodStore } from '@/stores/admin/restaurant/FoodStore'
 import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 import Overview from './components/Overview.vue'
-import Foods from './components/Foods.vue'
-import Menus from './components/Menus.vue'
-import MenuPlans from './components/MenuPlans.vue'
-import Reports from './components/Reports.vue'
-import RestaurantSepa from './components/RestaurantSepa.vue'
-import Users from './components/Users.vue'
-import Settings from './components/Settings.vue'
-import CdgymLegacy from './components/CdgymLegacy.vue'
+
+const Foods = defineAsyncComponent(() => import('./components/Foods.vue'))
+const Menus = defineAsyncComponent(() => import('./components/Menus.vue'))
+const MenuPlans = defineAsyncComponent(() => import('./components/MenuPlans.vue'))
+const Reports = defineAsyncComponent(() => import('./components/Reports.vue'))
+const RestaurantSepa = defineAsyncComponent(() => import('./components/RestaurantSepa.vue'))
+const Users = defineAsyncComponent(() => import('./components/Users.vue'))
+const Settings = defineAsyncComponent(() => import('./components/Settings.vue'))
+const CdgymLegacy = defineAsyncComponent(() => import('./components/CdgymLegacy.vue'))
 
 export default {
     components: { AdminSectionHero, Overview, Foods, Menus, MenuPlans, Reports, RestaurantSepa, Users, Settings, CdgymLegacy },

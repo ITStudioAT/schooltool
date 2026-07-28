@@ -16,6 +16,10 @@
             :title="config?.selected_school?.long_name || ''" />
 
         <v-main class="bg-background" v-if="config">
+            <admin-import-completion-listener
+                v-if="config.is_auth && config.user?.id"
+                :key="config.user.id"
+                :user-id="config.user.id" />
             <admin-impersonation-alert
                 :is-impersonating="isImpersonating"
                 :current-impersonated-user-label="currentImpersonatedUserLabel"
@@ -38,6 +42,7 @@
 
 <script>
 import AdminAppBar from '@/pages/admin/components/AdminAppBar.vue'
+import AdminImportCompletionListener from '@/pages/admin/components/AdminImportCompletionListener.vue'
 import AdminImpersonationAlert from '@/pages/admin/components/AdminImpersonationAlert.vue'
 import AdminNavigationDrawer from '@/pages/admin/components/AdminNavigationDrawer.vue'
 import ItsNotification from '@/pages/components/ItsNotification.vue'
@@ -52,6 +57,7 @@ import { mapWritableState } from 'pinia'
 export default {
     components: {
         AdminAppBar,
+        AdminImportCompletionListener,
         AdminImpersonationAlert,
         AdminNavigationDrawer,
         ItsNotification,
