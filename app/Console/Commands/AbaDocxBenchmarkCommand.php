@@ -6,7 +6,7 @@ use App\Models\Aba;
 use App\Models\AbaAnalysisResult;
 use App\Models\AbaAnalysisRun;
 use App\Models\AbaAttachment;
-use App\Services\AbaAnalysisService;
+use App\Services\AbaDocumentExtractionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\File;
@@ -28,7 +28,7 @@ class AbaDocxBenchmarkCommand extends Command
      */
     private array $metricKeys = [];
 
-    public function handle(AbaAnalysisService $analysisService): int
+    public function handle(AbaDocumentExtractionService $extractionService): int
     {
         $documents = config('aba_docx_benchmark.documents', []);
         if (! is_array($documents) || $documents === []) {
@@ -48,12 +48,10 @@ class AbaDocxBenchmarkCommand extends Command
         )));
         if ($this->metricKeys === []) {
             $this->metricKeys = [
-                'analysis_quality_score',
-                'structure_quality_score',
-                'heading_assignment_confidence',
-                'hierarchy_confidence',
-                'frontmatter_boundary_confidence',
-                'body_reentry_confidence',
+                'required_section_coverage',
+                'matched_section_ratio',
+                'confident_match_ratio',
+                'recognized_block_ratio',
             ];
         }
 
@@ -86,7 +84,7 @@ class AbaDocxBenchmarkCommand extends Command
         foreach ($selectedDocuments as $documentDefinition) {
             $documentReports[] = $this->evaluateBenchmarkDocument(
                 documentDefinition: $documentDefinition,
-                analysisService: $analysisService,
+                extractionService: $extractionService,
                 runFreshAnalysis: $runFreshAnalysis,
                 regressionThreshold: $regressionThreshold,
             );
@@ -128,7 +126,7 @@ class AbaDocxBenchmarkCommand extends Command
      * @param  array<string,mixed>  $documentDefinition
      * @return array<string,mixed>
      */
-    private function evaluateBenchmarkDocument(array $documentDefinition, AbaAnalysisService $analysisService, bool $runFreshAnalysis, float $regressionThreshold): array
+    private function evaluateBenchmarkDocument(array $documentDefinition, AbaDocumentExtractionService $extractionService, bool $runFreshAnalysis, float $regressionThreshold): array
     {
         $abaId = (int) ($documentDefinition['aba_id'] ?? 0);
         $attachmentId = (int) ($documentDefinition['attachment_id'] ?? 0);
@@ -166,7 +164,7 @@ class AbaDocxBenchmarkCommand extends Command
             ];
         }
 
-        [$currentRun, $baselineRun] = $this->resolveRuns($aba->id, $attachment->id, $analysisService, $attachment, $aba, $runFreshAnalysis);
+        [$currentRun, $baselineRun] = $this->resolveRuns($aba->id, $attachment->id, $extractionService, $attachment, $aba, $runFreshAnalysis);
 
         if (! $currentRun || $currentRun->status !== AbaAnalysisRun::STATUS_COMPLETED) {
             return [
@@ -215,9 +213,10 @@ class AbaDocxBenchmarkCommand extends Command
     /**
      * @return array{0:AbaAnalysisRun|null,1:AbaAnalysisRun|null}
      */
-    private function resolveRuns(int $abaId, int $attachmentId, AbaAnalysisService $analysisService, AbaAttachment $attachment, Aba $aba, bool $runFreshAnalysis): array
+    private function resolveRuns(int $abaId, int $attachmentId, AbaDocumentExtractionService $extractionService, AbaAttachment $attachment, Aba $aba, bool $runFreshAnalysis): array
     {
         $completedRuns = AbaAnalysisRun::query()
+            ->conventionalExtraction()
             ->where('aba_id', $abaId)
             ->where('aba_attachment_id', $attachmentId)
             ->where('status', AbaAnalysisRun::STATUS_COMPLETED)
@@ -237,14 +236,14 @@ class AbaDocxBenchmarkCommand extends Command
             'aba_attachment_id' => $attachment->id,
             'created_by_user_id' => $this->resolveRunCreatorId($aba, $attachment),
             'status' => AbaAnalysisRun::STATUS_STARTED,
-            'status_message' => 'Benchmark rerun started.',
+            'status_message' => AbaAnalysisRun::EXTRACTION_STATUS_MESSAGE_PREFIX.' benchmark started.',
             'source_original_name' => (string) ($attachment->original_name ?? ''),
             'source_path' => (string) ($attachment->path ?? ''),
             'source_mime_type' => (string) ($attachment->mime_type ?? ''),
             'started_at' => now(),
         ]);
 
-        $analysisService->processRun($newRun->id);
+        $extractionService->processRun($newRun->id);
         $newRun->refresh();
 
         return [$newRun, $latestCompleted];
@@ -256,11 +255,9 @@ class AbaDocxBenchmarkCommand extends Command
     private function collectRunSnapshot(AbaAnalysisRun $run): array
     {
         $summary = is_array($run->summary) ? $run->summary : [];
-        $stats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
-
         $resultRows = AbaAnalysisResult::query()
             ->where('aba_analysis_run_id', $run->id)
-            ->get(['section_type', 'section_title', 'start_line', 'end_line']);
+            ->get(['section_type', 'section_title', 'hierarchy_level', 'start_line', 'end_line', 'metadata']);
 
         $sectionTypeCounts = $resultRows
             ->groupBy('section_type')
@@ -299,19 +296,38 @@ class AbaDocxBenchmarkCommand extends Command
             })
             ->count();
 
+        $foundRequiredSectionKeys = $this->stringList($summary['found_required_section_keys'] ?? []);
+        $missingRequiredSectionKeys = $this->stringList($summary['missing_required_section_keys'] ?? []);
+        $foundOptionalSectionKeys = $this->stringList($summary['found_optional_section_keys'] ?? []);
+        $uncertainMatches = is_array($summary['uncertain_matches'] ?? null) ? array_values($summary['uncertain_matches']) : [];
+        $unmatchedBlocksCount = $this->toInt($summary['unmatched_blocks_count'] ?? null);
+        $matchedRuleKeys = $resultRows
+            ->flatMap(fn ($row): array => $this->stringList(data_get($row->metadata, 'matched_rule_keys', [])))
+            ->unique()
+            ->values();
+        $matchedSectionCount = $resultRows
+            ->filter(fn ($row): bool => $this->stringList(data_get($row->metadata, 'matched_rule_keys', [])) !== [])
+            ->count();
+        $requiredSectionCount = count($foundRequiredSectionKeys) + count($missingRequiredSectionKeys);
+        $resultCount = $resultRows->count();
+
+        $availableMetrics = [
+            'required_section_coverage' => $this->ratio(count($foundRequiredSectionKeys), $requiredSectionCount),
+            'matched_section_ratio' => $this->ratio($matchedSectionCount, $resultCount),
+            'confident_match_ratio' => $matchedRuleKeys->isEmpty()
+                ? null
+                : max(0.0, 1.0 - (count($uncertainMatches) / $matchedRuleKeys->count())),
+            'recognized_block_ratio' => $this->ratio($matchedSectionCount, $matchedSectionCount + $unmatchedBlocksCount),
+        ];
         $metrics = [];
         foreach ($this->metricKeys as $metricKey) {
-            $metrics[$metricKey] = $this->toFloat($stats[$metricKey] ?? null);
+            $metrics[$metricKey] = $this->toFloat($availableMetrics[$metricKey] ?? null);
         }
 
         $errorTaxonomy = [
-            'wrong_parent_attachment' => $this->toInt($stats['hierarchy_wrong_parent_attachment_count'] ?? null),
-            'missing_parent' => $this->toInt($stats['hierarchy_missing_parent_count'] ?? null),
-            'level_too_deep_or_jump' => $this->toInt($stats['hierarchy_impossible_level_jump_count'] ?? null),
-            'flattened_incorrectly' => $this->toInt($stats['hierarchy_flattened_count'] ?? null),
-            'boundary_related_detachment' => $this->toInt($stats['hierarchy_boundary_detachment_count'] ?? null),
-            'numbering_mismatch' => $this->toInt($stats['hierarchy_numbering_mismatch_count'] ?? null),
-            'unnumbered_heading_ambiguity' => $this->toInt($stats['hierarchy_uncertain_parent_count'] ?? null),
+            'missing_required_sections' => count($missingRequiredSectionKeys),
+            'uncertain_matches' => count($uncertainMatches),
+            'unmatched_blocks' => $unmatchedBlocksCount,
         ];
 
         return [
@@ -320,25 +336,22 @@ class AbaDocxBenchmarkCommand extends Command
             'completed_at' => optional($run->completed_at)->toIso8601String(),
             'status' => $run->status,
             'metrics' => $metrics,
-            'analysis_stats' => [
-                'title_page_year' => $stats['title_page_year'] ?? null,
-                'title_page_advisor' => $stats['title_page_advisor'] ?? null,
-                'chapter_count' => $this->toInt($stats['chapter_count'] ?? null),
-                'subchapter_count' => $this->toInt($stats['subchapter_count'] ?? null),
-                'table_of_contents_count' => $this->toInt($stats['table_of_contents_count'] ?? null),
-                'toc_special_entries_count' => $this->toInt($stats['toc_special_entries_count'] ?? null),
-                'unresolved_heading_candidates_count' => $this->toInt($stats['unresolved_heading_candidates_count'] ?? null),
-                'toc_candidates_rejected_count' => $this->toInt($stats['toc_candidates_rejected_count'] ?? null),
-                'context_rejected_candidates_count' => $this->toInt($stats['context_rejected_candidates_count'] ?? null),
+            'extraction_stats' => [
+                'found_required_section_count' => count($foundRequiredSectionKeys),
+                'missing_required_section_count' => count($missingRequiredSectionKeys),
+                'found_optional_section_count' => count($foundOptionalSectionKeys),
+                'matched_section_count' => $matchedSectionCount,
+                'unmatched_blocks_count' => $unmatchedBlocksCount,
+                'uncertain_matches_count' => count($uncertainMatches),
             ],
             'section_type_counts' => $sectionTypeCounts,
             'feature_flags' => [
-                'has_title_page' => (bool) ($stats['title_page_detected'] ?? false),
-                'has_abstract' => (bool) ($stats['abstract_detected'] ?? false),
-                'has_toc' => $this->toInt($stats['table_of_contents_count'] ?? null) > 0,
-                'has_bibliography' => (bool) ($stats['bibliography_detected'] ?? false),
-                'has_figure_index' => (bool) ($stats['figure_index_detected'] ?? false),
-                'has_consent_declaration' => (bool) ($stats['consent_declaration_detected'] ?? false),
+                'has_title_page' => ($sectionTypeCounts['title_page'] ?? 0) > 0,
+                'has_abstract' => ($sectionTypeCounts['abstract'] ?? 0) > 0,
+                'has_toc' => ($sectionTypeCounts['table_of_contents'] ?? 0) > 0,
+                'has_bibliography' => ($sectionTypeCounts['bibliography'] ?? 0) > 0,
+                'has_figure_index' => ($sectionTypeCounts['figure_index'] ?? 0) > 0,
+                'has_consent_declaration' => ($sectionTypeCounts['consent_declaration'] ?? 0) > 0,
                 'has_numbered_subchapters' => $hasNumberedSubchapters,
                 'has_unnumbered_chapters' => $hasUnnumberedChapters,
                 'has_long_subsection_spans' => $longSubsectionsCount > 0,
@@ -485,13 +498,13 @@ class AbaDocxBenchmarkCommand extends Command
                 'aba' => (string) ($report['aba_id'] ?? ''),
                 'status' => $status,
                 'run' => (string) ($currentRun['run_id'] ?? '-'),
-                'heading' => $this->formatMetric($metrics['heading_assignment_confidence'] ?? null),
-                'hierarchy' => $this->formatMetric($metrics['hierarchy_confidence'] ?? null),
+                'required' => $this->formatMetric($metrics['required_section_coverage'] ?? null),
+                'matched' => $this->formatMetric($metrics['matched_section_ratio'] ?? null),
                 'regression' => (bool) ($report['has_regression'] ?? false) ? 'yes' : 'no',
             ];
         }
 
-        $this->table(['key', 'aba', 'status', 'run', 'heading_conf', 'hierarchy_conf', 'regression'], $rows);
+        $this->table(['key', 'aba', 'status', 'run', 'required_coverage', 'matched_ratio', 'regression'], $rows);
 
         $this->info(sprintf(
             'Summary: %d ok, %d failed, %d regressions, %d changed docs.',
@@ -579,6 +592,30 @@ class AbaDocxBenchmarkCommand extends Command
         }
 
         return 0;
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function stringList(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(fn (mixed $item): string => trim((string) $item), $value),
+            fn (string $item): bool => $item !== '',
+        ));
+    }
+
+    private function ratio(int $numerator, int $denominator): ?float
+    {
+        if ($denominator <= 0) {
+            return null;
+        }
+
+        return round($numerator / $denominator, 6);
     }
 
     private function formatMetric(mixed $value): string

@@ -1242,6 +1242,64 @@ it('shows timetables that fulfill all active quality criteria first', function (
         ->and($secondResult['selected_timetable']['metrics']['gap_count'])->toBe(0);
 });
 
+it('ranks the best conflict timetable when more than one hundred candidates exist', function () {
+    $courseGroups = [];
+
+    foreach (range(1, 100) as $number) {
+        $label = sprintf('A1-%03d', $number);
+        $courseGroups[] = robotCourseGroup($label, 'A1', 1, 1);
+        $courseGroups[] = robotCourseGroup($label, 'A1', 1, 2);
+    }
+
+    $courseGroups[] = robotCourseGroup('A1-z', 'A1', 1, 1);
+    $courseGroups[] = robotCourseGroup('A1-z', 'A1', 1, 3);
+    $courseGroups[] = robotCourseGroup('B1-a', 'B1', 1, 1);
+    $courseGroups[] = robotCourseGroup('C1-a', 'C1', 1, 2);
+
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('A1', 2),
+            robotSubjectRow('B1', 1),
+            robotSubjectRow('C1', 1),
+        ],
+        subjectMappings: [],
+        courseGroups: $courseGroups,
+        settings: robotSettings([
+            'constraints' => [
+                'availableTimes' => [1, 2, 3],
+            ],
+        ]),
+        selectedTimetableType: 'conflict',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->conflict_timetable_count->toBe(101)
+        ->and($result['selected_timetable']['metrics']['regular_conflict_count'])->toBe(1)
+        ->and($result['selected_timetable']['slots']['1-3']['sourceLabel'])->toBe('A1-z');
+});
+
+it('counts only additional course keys that match an available course', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-a', 'M1', 1, 1),
+        ],
+        settings: robotSettings([
+            'selected_additional_course_keys' => ['missing|2|common|missing|missing|missing|missing'],
+        ]),
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->selected_additional_course_count->toBe(0)
+        ->full_green_timetable_count->toBe(1);
+});
+
 /**
  * @return array<string, mixed>
  */

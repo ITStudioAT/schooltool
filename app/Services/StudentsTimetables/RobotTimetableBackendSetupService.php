@@ -8,12 +8,13 @@ use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
+use SplPriorityQueue;
 
 class RobotTimetableBackendSetupService
 {
     private const MAX_BACKEND_TIMETABLE_VARIATIONS = 200000;
 
-    private const TIMETABLE_VARIATION_CACHE_VERSION = 4;
+    private const TIMETABLE_VARIATION_CACHE_VERSION = 5;
 
     private const TIMETABLE_VARIATION_CACHE_TTL_MINUTES = 20;
 
@@ -24,6 +25,7 @@ class RobotTimetableBackendSetupService
 
     public function __construct(
         private StudentTimetableRememberedTtEntryService $rememberedTtEntryService,
+        private TimetableDateSlotOverlapService $dateSlotOverlapService,
     ) {}
 
     /**
@@ -79,7 +81,6 @@ class RobotTimetableBackendSetupService
                 'key' => 'backend-v2',
                 'name' => 'Neue Backend-Stundenplanlogik',
                 'status' => 'step-1-counts-ready',
-                'old_logic_reference' => RobotTimetableGeneratorService::class,
                 'school_id' => $authUser->school_id,
                 'schoolyear_id' => $authUser->schoolyear_id,
             ],
@@ -1177,7 +1178,7 @@ class RobotTimetableBackendSetupService
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
-     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
+     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, selected_additional_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
      */
     public function calculateTimetableVariations(
         array $subjectRows,
@@ -1210,7 +1211,7 @@ class RobotTimetableBackendSetupService
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
-     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
+     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, selected_additional_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
      */
     public function calculateCachedTimetableVariationsForUser(
         User $authUser,
@@ -1316,7 +1317,7 @@ class RobotTimetableBackendSetupService
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
-     * @return array{course_options: list<list<array<string, mixed>>>, additional_course_options: list<list<array<string, mixed>>>, counts: array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}, quality_summary: array<string, mixed>, quality_combination_counts: array<string, int>, selected_quality_criterion_keys: list<string>, selected_quality_subset: array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}, all_quality_criteria_count: int, selected_quality_criteria_count: int}
+     * @return array{course_options: list<list<array<string, mixed>>>, additional_course_options: list<list<array<string, mixed>>>, selected_additional_course_count: int, counts: array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}, quality_summary: array<string, mixed>, quality_combination_counts: array<string, int>, selected_quality_criterion_keys: list<string>, selected_quality_subset: array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}, all_quality_criteria_count: int, selected_quality_criteria_count: int}
      */
     private function timetableVariationBase(
         array $subjectRows,
@@ -1367,6 +1368,7 @@ class RobotTimetableBackendSetupService
             'course_options' => $input['course_options'],
             'additional_courses' => $input['additional_courses'],
             'additional_course_options' => $input['additional_course_options'],
+            'selected_additional_course_count' => count($input['additional_courses']),
             'has_missing_options' => $input['has_missing_options'],
             'problem_courses' => $input['problem_courses'],
             'counts' => $counts,
@@ -1401,10 +1403,10 @@ class RobotTimetableBackendSetupService
     }
 
     /**
-     * @param  array{course_options: list<list<array<string, mixed>>>, additional_course_options: list<list<array<string, mixed>>>, counts: array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}, quality_summary: array<string, mixed>, quality_combination_counts: array<string, int>, selected_quality_criterion_keys: list<string>, selected_quality_subset: array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}, all_quality_criteria_count: int, selected_quality_criteria_count: int}  $base
+     * @param  array{course_options: list<list<array<string, mixed>>>, additional_course_options: list<list<array<string, mixed>>>, selected_additional_course_count: int, counts: array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}, quality_summary: array<string, mixed>, quality_combination_counts: array<string, int>, selected_quality_criterion_keys: list<string>, selected_quality_subset: array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}, all_quality_criteria_count: int, selected_quality_criteria_count: int}  $base
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
-     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
+     * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, selected_additional_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
      */
     private function calculateTimetableVariationsFromBase(
         array $base,
@@ -1419,6 +1421,7 @@ class RobotTimetableBackendSetupService
 
         return [
             ...$base['counts'],
+            'selected_additional_course_count' => $base['selected_additional_course_count'],
             'selected_timetable' => $selectedTimetable,
             'problem_courses' => $base['problem_courses'],
             'quality_counters' => $this->qualityCountersFromSummary(
@@ -1435,7 +1438,7 @@ class RobotTimetableBackendSetupService
     }
 
     /**
-     * @param  array{course_options: list<list<array<string, mixed>>>, additional_course_options: list<list<array<string, mixed>>>, counts: array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}, selected_quality_criterion_keys: list<string>, selected_quality_subset: array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}}  $base
+     * @param  array{course_options: list<list<array<string, mixed>>>, additional_course_options: list<list<array<string, mixed>>>, selected_additional_course_count: int, counts: array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}, selected_quality_criterion_keys: list<string>, selected_quality_subset: array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}}  $base
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @return ?array<string, mixed>
@@ -1505,6 +1508,7 @@ class RobotTimetableBackendSetupService
             'selected_timetable_type' => $settings['selected_timetable_type'] ?? 'full_green',
             'selected_timetable_number' => (int) ($settings['selected_timetable_number'] ?? 1),
             'selected_additional_courses_required' => ($settings['selected_additional_courses_required'] ?? false) === true,
+            'selected_conflict_ranking' => $settings['selected_conflict_ranking'] ?? null,
         ]), JSON_THROW_ON_ERROR));
     }
 
@@ -3127,6 +3131,27 @@ class RobotTimetableBackendSetupService
                 );
         }
 
+        if (
+            $selectedType === 'conflict'
+            && ($settings['selected_conflict_ranking'] ?? null) === 'fewest_regular_conflicts'
+        ) {
+            $combination = $this->findSelectedConflictCombinationRanked(
+                $courseOptions,
+                $selectedNumber,
+            );
+
+            return $combination === null
+                ? null
+                : $this->timetableFromOptions(
+                    $combination,
+                    $selectedType,
+                    $selectedNumber,
+                    [],
+                    false,
+                    0,
+                );
+        }
+
         $combination = $this->findSelectedCombination($courseOptions, $selectedType, $remainingNumber);
 
         return $combination === null
@@ -3139,6 +3164,107 @@ class RobotTimetableBackendSetupService
                 false,
                 0,
             );
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @return ?list<array<string, mixed>>
+     */
+    private function findSelectedConflictCombinationRanked(
+        array $courseOptions,
+        int $selectedNumber,
+    ): ?array {
+        $rankedCandidates = new SplPriorityQueue;
+        $enumerationOrder = 0;
+
+        $this->collectRankedConflictCombinations(
+            $courseOptions,
+            max(1, $selectedNumber),
+            $rankedCandidates,
+            $enumerationOrder,
+        );
+
+        $rankedCandidates->setExtractFlags(SplPriorityQueue::EXTR_DATA);
+        $candidates = [];
+        while (! $rankedCandidates->isEmpty()) {
+            $candidates[] = $rankedCandidates->extract();
+        }
+        usort(
+            $candidates,
+            fn (array $first, array $second): int => [$first['conflict_count'], $first['order']]
+                <=> [$second['conflict_count'], $second['order']],
+        );
+
+        return $candidates[min(max(1, $selectedNumber), count($candidates)) - 1]['options'] ?? null;
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
+     * @param  list<array<string, mixed>>  $selectedOptions
+     */
+    private function collectRankedConflictCombinations(
+        array $courseOptions,
+        int $limit,
+        SplPriorityQueue $rankedCandidates,
+        int &$enumerationOrder,
+        int $courseIndex = 0,
+        ?array $usedAllSummary = null,
+        ?array $usedRegularDateSummary = null,
+        ?array $usedRegularWeeklySlotSummary = null,
+        bool $isFullGreenCandidate = true,
+        bool $hasRegularConflict = false,
+        array $selectedOptions = [],
+    ): void {
+        if ($courseIndex >= count($courseOptions)) {
+            if (! $hasRegularConflict) {
+                return;
+            }
+
+            $candidate = [
+                'conflict_count' => (int) ($this->qualityMetricsFromOptions($selectedOptions)['regular_conflict_count'] ?? 0),
+                'order' => $enumerationOrder++,
+                'options' => $selectedOptions,
+            ];
+            $rankedCandidates->insert($candidate, [$candidate['conflict_count'], $candidate['order']]);
+
+            if (count($rankedCandidates) > $limit) {
+                $rankedCandidates->extract();
+            }
+
+            return;
+        }
+
+        $usedAllSummary ??= $this->emptyDateKeySummary();
+        $usedRegularDateSummary ??= $this->emptyDateKeySummary();
+        $usedRegularWeeklySlotSummary ??= $this->emptyDateKeySummary();
+
+        foreach ($courseOptions[$courseIndex] as $option) {
+            $nextState = $this->nextTimetableTypeState(
+                $option,
+                $usedAllSummary,
+                $usedRegularDateSummary,
+                $usedRegularWeeklySlotSummary,
+                $isFullGreenCandidate,
+                $hasRegularConflict,
+            );
+
+            $this->collectRankedConflictCombinations(
+                $courseOptions,
+                $limit,
+                $rankedCandidates,
+                $enumerationOrder,
+                $courseIndex + 1,
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $nextState['is_full_green_candidate'],
+                $nextState['has_regular_conflict'],
+                [...$selectedOptions, $option],
+            );
+        }
     }
 
     /**
@@ -5116,72 +5242,21 @@ class RobotTimetableBackendSetupService
             return $this->runtimeCache['dateKeySummary'][$signature];
         }
 
-        $summary = $this->emptyDateKeySummary();
-
-        foreach ($dateKeys as $dateKey) {
-            $parts = explode('|', $dateKey);
-
-            if (($parts[0] ?? '') === 'weekly') {
-                $slot = ($parts[1] ?? '').'|'.($parts[2] ?? '');
-                $summary['has_overlap'] = $summary['has_overlap'] || isset($summary['weekly'][$slot]);
-                $summary['weekly'][$slot] = true;
-
-                continue;
-            }
-
-            if (($parts[0] ?? '') !== 'date') {
-                if (($parts[0] ?? '') !== 'range') {
-                    continue;
-                }
-
-                $rangeStart = (int) ($parts[1] ?? 0);
-                $rangeEnd = (int) ($parts[2] ?? 0);
-                $weekdaySlot = ($parts[3] ?? '').'|'.($parts[4] ?? '');
-
-                if ($rangeStart <= 0 || $rangeEnd <= 0 || $weekdaySlot === '|') {
-                    continue;
-                }
-
-                foreach ($summary['ranges'][$weekdaySlot] ?? [] as $range) {
-                    $summary['has_overlap'] = $summary['has_overlap']
-                        || max($rangeStart, $range['start']) <= min($rangeEnd, $range['end']);
-                }
-
-                $summary['has_overlap'] = $summary['has_overlap'] || isset($summary['weekly'][$weekdaySlot]);
-                $summary['ranges'][$weekdaySlot][] = [
-                    'start' => $rangeStart,
-                    'end' => $rangeEnd,
-                ];
-
-                continue;
-            }
-
-            $datedSlot = ($parts[1] ?? '').'|'.($parts[2] ?? '').'|'.($parts[3] ?? '');
-            $weekdaySlot = ($parts[2] ?? '').'|'.($parts[3] ?? '');
-            $summary['has_overlap'] = $summary['has_overlap'] || isset($summary['dated'][$datedSlot]);
-            $summary['dated'][$datedSlot] = true;
-            $summary['dated_weekly'][$weekdaySlot] = true;
-        }
-
-        $summary['has_overlap'] = $summary['has_overlap']
-            || $this->stringSetsIntersect($summary['weekly'], $summary['dated_weekly'])
-            || $this->weeklyKeysOverlapRanges($summary['weekly'], $summary['ranges']);
-
-        return $this->runtimeCache['dateKeySummary'][$signature] = $summary;
+        return $this->runtimeCache['dateKeySummary'][$signature] = $this->dateSlotOverlapService->summarize($dateKeys);
     }
 
     /**
-     * @return array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}
+     * @return array{
+     *     weekly: array<string, true>,
+     *     dated: array<string, true>,
+     *     dated_weekly: array<string, true>,
+     *     ranges: array<string, list<array{start: int, end: int}>>,
+     *     has_overlap: bool
+     * }
      */
     private function emptyDateKeySummary(): array
     {
-        return [
-            'weekly' => [],
-            'dated' => [],
-            'dated_weekly' => [],
-            'ranges' => [],
-            'has_overlap' => false,
-        ];
+        return $this->dateSlotOverlapService->emptySummary();
     }
 
     /**
@@ -5190,13 +5265,7 @@ class RobotTimetableBackendSetupService
      */
     private function dateKeySummariesOverlap(array $firstSummary, array $secondSummary): bool
     {
-        return $this->stringSetsIntersect($firstSummary['weekly'], $secondSummary['weekly'])
-            || $this->stringSetsIntersect($firstSummary['dated'], $secondSummary['dated'])
-            || $this->stringSetsIntersect($firstSummary['weekly'], $secondSummary['dated_weekly'])
-            || $this->stringSetsIntersect($firstSummary['dated_weekly'], $secondSummary['weekly'])
-            || $this->weeklyKeysOverlapRanges($firstSummary['weekly'], $secondSummary['ranges'] ?? [])
-            || $this->weeklyKeysOverlapRanges($secondSummary['weekly'], $firstSummary['ranges'] ?? [])
-            || $this->dateRangeSummariesOverlap($firstSummary['ranges'] ?? [], $secondSummary['ranges'] ?? []);
+        return $this->dateSlotOverlapService->overlaps($firstSummary, $secondSummary);
     }
 
     /**
@@ -5206,85 +5275,7 @@ class RobotTimetableBackendSetupService
      */
     private function mergeDateKeySummaries(array $firstSummary, array $secondSummary): array
     {
-        return [
-            'weekly' => $firstSummary['weekly'] + $secondSummary['weekly'],
-            'dated' => $firstSummary['dated'] + $secondSummary['dated'],
-            'dated_weekly' => $firstSummary['dated_weekly'] + $secondSummary['dated_weekly'],
-            'ranges' => $this->mergeDateRangeSummaries($firstSummary['ranges'] ?? [], $secondSummary['ranges'] ?? []),
-            'has_overlap' => $firstSummary['has_overlap']
-                || $secondSummary['has_overlap']
-                || $this->dateKeySummariesOverlap($firstSummary, $secondSummary),
-        ];
-    }
-
-    /**
-     * @param  array<string, true>  $weekly
-     * @param  array<string, list<array{start: int, end: int}>>  $ranges
-     */
-    private function weeklyKeysOverlapRanges(array $weekly, array $ranges): bool
-    {
-        foreach ($weekly as $slot => $_) {
-            if (($ranges[$slot] ?? []) !== []) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * @param  array<string, list<array{start: int, end: int}>>  $firstRanges
-     * @param  array<string, list<array{start: int, end: int}>>  $secondRanges
-     */
-    private function dateRangeSummariesOverlap(array $firstRanges, array $secondRanges): bool
-    {
-        foreach ($firstRanges as $slot => $ranges) {
-            foreach ($ranges as $firstRange) {
-                foreach ($secondRanges[$slot] ?? [] as $secondRange) {
-                    if (max($firstRange['start'], $secondRange['start']) <= min($firstRange['end'], $secondRange['end'])) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * @param  array<string, list<array{start: int, end: int}>>  $firstRanges
-     * @param  array<string, list<array{start: int, end: int}>>  $secondRanges
-     * @return array<string, list<array{start: int, end: int}>>
-     */
-    private function mergeDateRangeSummaries(array $firstRanges, array $secondRanges): array
-    {
-        foreach ($secondRanges as $slot => $ranges) {
-            $firstRanges[$slot] = [
-                ...($firstRanges[$slot] ?? []),
-                ...$ranges,
-            ];
-        }
-
-        return $firstRanges;
-    }
-
-    /**
-     * @param  array<string, true>  $firstValues
-     * @param  array<string, true>  $secondValues
-     */
-    private function stringSetsIntersect(array $firstValues, array $secondValues): bool
-    {
-        if (count($firstValues) > count($secondValues)) {
-            [$firstValues, $secondValues] = [$secondValues, $firstValues];
-        }
-
-        foreach ($firstValues as $value => $_) {
-            if (isset($secondValues[$value])) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->dateSlotOverlapService->merge($firstSummary, $secondSummary);
     }
 
     private function dateMonthDayOrdinal(string $date): ?int

@@ -7,6 +7,7 @@ use App\Models\AbaAttachment;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Services\AbaDocumentExtractionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 
@@ -51,25 +52,23 @@ function createAbaBenchmarkContext(): array
 }
 
 /**
- * @param  array<string,mixed>  $analysisStats
+ * @param  array<string,mixed>  $summary
  */
-function createCompletedBenchmarkRun(Aba $aba, AbaAttachment $attachment, User $user, array $analysisStats): AbaAnalysisRun
+function createCompletedBenchmarkRun(Aba $aba, AbaAttachment $attachment, User $user, array $summary): AbaAnalysisRun
 {
     $run = AbaAnalysisRun::query()->create([
         'aba_id' => $aba->id,
         'aba_attachment_id' => $attachment->id,
         'created_by_user_id' => $user->id,
         'status' => AbaAnalysisRun::STATUS_COMPLETED,
-        'status_message' => 'Benchmark run completed.',
+        'status_message' => AbaAnalysisRun::EXTRACTION_STATUS_MESSAGE_PREFIX.' abgeschlossen.',
         'source_original_name' => $attachment->original_name,
         'source_path' => $attachment->path,
         'source_mime_type' => $attachment->mime_type,
         'started_at' => now()->subMinute(),
         'running_at' => now()->subSeconds(30),
         'completed_at' => now(),
-        'summary' => [
-            'analysis_stats' => $analysisStats,
-        ],
+        'summary' => $summary,
     ]);
 
     AbaAnalysisResult::query()->create([
@@ -83,6 +82,7 @@ function createCompletedBenchmarkRun(Aba $aba, AbaAttachment $attachment, User $
         'hierarchy_level' => 1,
         'start_line' => 1,
         'end_line' => 6,
+        'metadata' => ['matched_rule_keys' => ['title_page']],
     ]);
 
     AbaAnalysisResult::query()->create([
@@ -96,6 +96,7 @@ function createCompletedBenchmarkRun(Aba $aba, AbaAttachment $attachment, User $
         'hierarchy_level' => 1,
         'start_line' => 7,
         'end_line' => 12,
+        'metadata' => ['matched_rule_keys' => ['main_body']],
     ]);
 
     AbaAnalysisResult::query()->create([
@@ -109,6 +110,7 @@ function createCompletedBenchmarkRun(Aba $aba, AbaAttachment $attachment, User $
         'hierarchy_level' => 2,
         'start_line' => 13,
         'end_line' => 20,
+        'metadata' => ['matched_rule_keys' => ['main_body']],
     ]);
 
     return $run;
@@ -117,33 +119,18 @@ function createCompletedBenchmarkRun(Aba $aba, AbaAttachment $attachment, User $
 /**
  * @return array<string,mixed>
  */
-function benchmarkStats(float $analysisQuality, float $structureQuality, float $headingConfidence, float $hierarchyConfidence): array
+function benchmarkSummary(int $foundRequiredCount, int $missingRequiredCount, int $unmatchedBlocksCount = 0, int $uncertainMatchesCount = 0): array
 {
     return [
-        'analysis_quality_score' => $analysisQuality,
-        'structure_quality_score' => $structureQuality,
-        'heading_assignment_confidence' => $headingConfidence,
-        'hierarchy_confidence' => $hierarchyConfidence,
-        'frontmatter_boundary_confidence' => 0.97,
-        'body_reentry_confidence' => 0.95,
-        'title_page_detected' => true,
-        'abstract_detected' => true,
-        'bibliography_detected' => false,
-        'figure_index_detected' => false,
-        'consent_declaration_detected' => false,
-        'chapter_count' => 1,
-        'subchapter_count' => 1,
-        'table_of_contents_count' => 1,
-        'toc_special_entries_count' => 1,
-        'title_page_year' => '2026',
-        'title_page_advisor' => 'Dipl.-Ing. Günther Kron',
-        'hierarchy_wrong_parent_attachment_count' => 0,
-        'hierarchy_missing_parent_count' => 0,
-        'hierarchy_numbering_mismatch_count' => 0,
-        'hierarchy_flattened_count' => 0,
-        'hierarchy_uncertain_parent_count' => 0,
-        'hierarchy_impossible_level_jump_count' => 0,
-        'hierarchy_boundary_detachment_count' => 0,
+        'found_required_section_keys' => $foundRequiredCount > 0
+            ? array_map(fn (int $index): string => 'required_'.$index, range(1, $foundRequiredCount))
+            : [],
+        'missing_required_section_keys' => $missingRequiredCount > 0
+            ? array_map(fn (int $index): string => 'missing_'.$index, range(1, $missingRequiredCount))
+            : [],
+        'found_optional_section_keys' => ['abstract'],
+        'uncertain_matches' => array_fill(0, $uncertainMatchesCount, ['key' => 'main_body']),
+        'unmatched_blocks_count' => $unmatchedBlocksCount,
     ];
 }
 
@@ -165,14 +152,14 @@ it('writes a benchmark report with metric deltas for configured docx cases', fun
         $aba,
         $attachment,
         $user,
-        benchmarkStats(0.80, 0.72, 0.78, 0.70)
+        benchmarkSummary(3, 1)
     );
 
     createCompletedBenchmarkRun(
         $aba,
         $attachment,
         $user,
-        benchmarkStats(0.84, 0.76, 0.82, 0.74)
+        benchmarkSummary(4, 0)
     );
 
     config()->set('aba_docx_benchmark.documents', [[
@@ -205,13 +192,13 @@ it('writes a benchmark report with metric deltas for configured docx cases', fun
         ->and((int) ($report['summary']['ok_document_count'] ?? 0))->toBe(1)
         ->and((int) ($report['summary']['changed_document_count'] ?? 0))->toBe(1)
         ->and((int) ($report['summary']['regression_document_count'] ?? 0))->toBe(0)
-        ->and((float) ($report['documents'][0]['metric_deltas']['hierarchy_confidence'] ?? 0.0))->toBe(0.04)
+        ->and((float) ($report['documents'][0]['metric_deltas']['required_section_coverage'] ?? 0.0))->toBe(0.25)
         ->and((bool) ($report['documents'][0]['has_regression'] ?? true))->toBeFalse()
         ->and($report['coverage']['covered_classes']['title_page_metadata'] ?? [])->toBe(['test_doc'])
         ->and($report['coverage']['missing_classes'] ?? [])->toContain('appendix_section');
 });
 
-it('fails with fail-on-regression when hierarchy confidence drops beyond threshold', function () {
+it('fails with fail-on-regression when required section coverage drops beyond threshold', function () {
     $context = createAbaBenchmarkContext();
     $aba = $context['aba'];
     $attachment = $context['attachment'];
@@ -221,14 +208,14 @@ it('fails with fail-on-regression when hierarchy confidence drops beyond thresho
         $aba,
         $attachment,
         $user,
-        benchmarkStats(0.90, 0.85, 0.88, 0.86)
+        benchmarkSummary(4, 0)
     );
 
     createCompletedBenchmarkRun(
         $aba,
         $attachment,
         $user,
-        benchmarkStats(0.87, 0.82, 0.84, 0.80)
+        benchmarkSummary(3, 1)
     );
 
     config()->set('aba_docx_benchmark.documents', [[
@@ -255,5 +242,65 @@ it('fails with fail-on-regression when hierarchy confidence drops beyond thresho
 
     $report = json_decode((string) file_get_contents($outputPath), true, 512, JSON_THROW_ON_ERROR);
     expect((int) ($report['summary']['regression_document_count'] ?? 0))->toBe(1)
-        ->and($report['documents'][0]['regression_metrics'] ?? [])->toContain('hierarchy_confidence');
+        ->and($report['documents'][0]['regression_metrics'] ?? [])->toContain('required_section_coverage');
+});
+
+it('uses the current document extraction pipeline for fresh benchmark runs', function () {
+    $context = createAbaBenchmarkContext();
+    $aba = $context['aba'];
+    $attachment = $context['attachment'];
+    $user = $context['user'];
+    $baselineRun = createCompletedBenchmarkRun($aba, $attachment, $user, benchmarkSummary(3, 1));
+
+    $this->mock(AbaDocumentExtractionService::class, function ($mock): void {
+        $mock->shouldReceive('processRun')
+            ->once()
+            ->withArgs(fn (int $runId): bool => $runId > 0)
+            ->andReturnUsing(function (int $runId): void {
+                $run = AbaAnalysisRun::query()->findOrFail($runId);
+                $run->forceFill([
+                    'status' => AbaAnalysisRun::STATUS_COMPLETED,
+                    'completed_at' => now(),
+                    'summary' => benchmarkSummary(4, 0),
+                ])->save();
+
+                $run->results()->create([
+                    'aba_id' => $run->aba_id,
+                    'aba_attachment_id' => $run->aba_attachment_id,
+                    'section_type' => 'title_page',
+                    'section_title' => 'Titelseite',
+                    'extracted_text' => 'Titelblatt Inhalte',
+                    'sort_order' => 0,
+                    'hierarchy_level' => 1,
+                    'start_line' => 1,
+                    'end_line' => 6,
+                    'metadata' => ['matched_rule_keys' => ['title_page']],
+                ]);
+            });
+    });
+
+    config()->set('aba_docx_benchmark.documents', [[
+        'key' => 'fresh_pipeline',
+        'label' => 'Fresh Pipeline',
+        'aba_id' => $aba->id,
+        'attachment_id' => $attachment->id,
+        'characteristics' => ['title_page_metadata'],
+    ]]);
+    config()->set('aba_docx_benchmark.taxonomy', [
+        'title_page_metadata' => 'Title page metadata',
+    ]);
+
+    $outputPath = storage_path('app/aba-benchmarks/test-docx-benchmark-fresh.json');
+    File::delete($outputPath);
+
+    $this->artisan('aba:benchmark-docx', [
+        '--run' => true,
+        '--output' => $outputPath,
+    ])->assertSuccessful();
+
+    $report = json_decode((string) file_get_contents($outputPath), true, 512, JSON_THROW_ON_ERROR);
+    expect($report['mode'] ?? null)->toBe('rerun')
+        ->and($report['documents'][0]['baseline_run']['run_id'] ?? null)->toBe($baselineRun->id)
+        ->and($report['documents'][0]['current_run']['run_id'] ?? null)->not->toBe($baselineRun->id)
+        ->and(AbaAnalysisRun::query()->conventionalExtraction()->count())->toBe(2);
 });

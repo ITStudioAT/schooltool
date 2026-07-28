@@ -124,12 +124,10 @@ return [
     |--------------------------------------------------------------------------
     */
     'metric_keys' => [
-        'analysis_quality_score',
-        'structure_quality_score',
-        'heading_assignment_confidence',
-        'hierarchy_confidence',
-        'frontmatter_boundary_confidence',
-        'body_reentry_confidence',
+        'required_section_coverage',
+        'matched_section_ratio',
+        'confident_match_ratio',
+        'recognized_block_ratio',
     ],
     'regression_threshold' => 0.01,
 
@@ -207,12 +205,10 @@ return [
             'php artisan aba:benchmark-docx --run',
         ],
         'compare_metrics' => [
-            'analysis_quality_score',
-            'structure_quality_score',
-            'heading_assignment_confidence',
-            'hierarchy_confidence',
-            'frontmatter_boundary_confidence',
-            'body_reentry_confidence',
+            'required_section_coverage',
+            'matched_section_ratio',
+            'confident_match_ratio',
+            'recognized_block_ratio',
         ],
         'regression_definition' => 'Any metric delta below -0.01 on at least one benchmark document.',
         'acceptable_tradeoff' => 'One metric may drop up to 0.01 only if target metrics improve and no document loses core structure blocks.',
