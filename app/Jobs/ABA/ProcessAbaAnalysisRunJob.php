@@ -18,7 +18,10 @@ class ProcessAbaAnalysisRunJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public int $runId) {}
+    public function __construct(public int $runId)
+    {
+        $this->onQueue('materials');
+    }
 
     public function handle(AbaDocumentExtractionService $extractionService): void
     {

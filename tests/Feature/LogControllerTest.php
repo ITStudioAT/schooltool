@@ -57,11 +57,35 @@ afterEach(function () {
     }
 });
 
-test('get_log allows admin role', function () {
-    $this->actingAs($this->admin, 'sanctum');
+test('log administration endpoints require authentication', function (string $method, string $uri) {
+    $this->json($method, $uri)->assertUnauthorized();
+})->with([
+    'read log' => ['GET', '/api/admin/get_log'],
+    'list logs' => ['GET', '/api/admin/list_logs'],
+    'delete log' => ['POST', '/api/admin/delete_log'],
+    'restart queues' => ['POST', '/api/admin/restart_queues'],
+]);
 
-    $this->getJson('/api/admin/get_log')
-        ->assertStatus(200);
+test('log administration endpoints forbid the admin role', function (string $method, string $uri) {
+    $this->actingAs($this->admin, 'sanctum')
+        ->json($method, $uri)
+        ->assertForbidden();
+})->with([
+    'read log' => ['GET', '/api/admin/get_log'],
+    'list logs' => ['GET', '/api/admin/list_logs'],
+    'delete log' => ['POST', '/api/admin/delete_log'],
+    'restart queues' => ['POST', '/api/admin/restart_queues'],
+]);
+
+test('list_logs allows super administrators to list contained log files', function () {
+    file_put_contents($this->logPath, "example\n");
+
+    $this->actingAs($this->superAdmin, 'sanctum')
+        ->getJson('/api/admin/list_logs')
+        ->assertSuccessful()
+        ->assertJsonFragment([
+            'name' => 'laravel.log',
+        ]);
 });
 
 test('get_log returns 404 when log is missing', function () {
@@ -109,6 +133,36 @@ test('get_log returns content and headers', function () {
     expect($response->getContent())->toBe("line-2\nline-3\n");
 });
 
+test('get_log rejects unsafe or unbounded parameters', function (array $query, string $field) {
+    file_put_contents($this->logPath, "line-1\n");
+
+    $this->actingAs($this->superAdmin, 'sanctum')
+        ->getJson('/api/admin/get_log?'.http_build_query($query))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors($field);
+})->with([
+    'path traversal' => [['filename' => '../laravel.log'], 'filename'],
+    'non-log file' => [['filename' => 'laravel.txt'], 'filename'],
+    'zero lines' => [['lines' => 0], 'lines'],
+    'too many lines' => [['lines' => 1001], 'lines'],
+    'non-integer lines' => [['lines' => 'many'], 'lines'],
+    'unknown mode' => [['mode' => 'all'], 'mode'],
+]);
+
+test('delete_log rejects unsafe filenames without changing the current log', function () {
+    $content = "must remain\n";
+    file_put_contents($this->logPath, $content);
+
+    $this->actingAs($this->superAdmin, 'sanctum')
+        ->postJson('/api/admin/delete_log', [
+            'filename' => '../laravel.log',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('filename');
+
+    expect(file_get_contents($this->logPath))->toBe($content);
+});
+
 test('delete_log clears file and writes backup', function () {
     $content = "first\nsecond\n";
     file_put_contents($this->logPath, $content);
@@ -122,38 +176,23 @@ test('delete_log clears file and writes backup', function () {
     expect(file_get_contents($this->backupPath))->toBe($content);
 });
 
-test('restart_queues restarts queues and runs health recovery command', function () {
-    Artisan::shouldReceive('call')->once()->with('cache:clear')->andReturn(0);
-
+test('restart_queues restarts workers and terminates Horizon without clearing application cache', function () {
     Artisan::shouldReceive('call')->once()->with('queue:restart')->andReturn(0);
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('queue:health-check', ['--restart' => true])
-        ->andReturn(0);
+    Artisan::shouldReceive('call')->once()->with('horizon:terminate')->andReturn(0);
 
     $this->actingAs($this->superAdmin, 'sanctum')
         ->postJson('/api/admin/restart_queues')
         ->assertNoContent();
 });
 
-test('restart_queues still returns success when queue health recovery check fails', function () {
-    Artisan::shouldReceive('call')->once()->with('cache:clear')->andReturn(0);
-
+test('restart_queues still returns success when Horizon termination fails', function () {
     Artisan::shouldReceive('call')->once()->with('queue:restart')->andReturn(0);
     Artisan::shouldReceive('call')
         ->once()
-        ->with('queue:health-check', ['--restart' => true])
-        ->andReturn(1);
+        ->with('horizon:terminate')
+        ->andThrow(new RuntimeException('Horizon unavailable'));
 
     $this->actingAs($this->superAdmin, 'sanctum')
         ->postJson('/api/admin/restart_queues')
         ->assertNoContent();
-});
-
-test('restart_queues is forbidden for admin role', function () {
-    Artisan::shouldReceive('call')->never();
-
-    $this->actingAs($this->admin, 'sanctum')
-        ->postJson('/api/admin/restart_queues')
-        ->assertForbidden();
 });

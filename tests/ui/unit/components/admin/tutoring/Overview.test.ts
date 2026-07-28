@@ -14,7 +14,7 @@ describe('Tutoring overview requests', () => {
         expect(source).toContain('requestCount(item)')
         expect(source).toContain('requestStudentSummary(item)')
         expect(source).toContain('selectedOfferRequests')
-        expect(source).toContain('Anfragen:')
+        expect(source).toContain('requestCountLabel(item)')
         expect(source).toContain('stats.requests_count')
         expect(source).toContain('stats.requesting_students_count')
     })

@@ -14,6 +14,8 @@ use App\Services\TutoringOfferService;
 use App\Services\UserService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\URL;
 
 class OfferRequestController extends Controller
 {
@@ -129,31 +131,59 @@ class OfferRequestController extends Controller
 
     public function requestMailClicked(OfferRequestMailClickedRequest $request)
     {
-        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
-
         $validated = $request->validated();
 
-        $request = TutoringOfferRequest::with(['school', 'offer', 'from_user', 'offer.subject'])
+        $offerRequest = TutoringOfferRequest::with(['school', 'offer', 'from_user', 'offer.subject'])
             ->findOrFail($validated['request_id']);
-        $request->mail_at = now();
-        $request->save();
+        Gate::authorize('markMailClicked', $offerRequest);
+
+        $offerRequest->mail_at = now();
+        $offerRequest->save();
 
         return response()->json(
-            new ReceivedOfferRequestResource($request),
+            new ReceivedOfferRequestResource($offerRequest),
         );
+    }
+
+    public function offerRequestPrompt(OfferRequestRequest $request, TutoringOfferService $service)
+    {
+        $validated = $request->validated();
+        $user = $service->userFromOfferRequest(
+            $validated['email'],
+            $validated['id'],
+            $validated['token'],
+        );
+
+        if (! $user) {
+            abort(403, 'Token ungültig oder abgelaufen.');
+        }
+
+        return response()->view('homepage.restaurant-approval-response', [
+            'title' => 'Nachhilfe-Anfrage öffnen',
+            'subtitle' => 'Als Empfänger anmelden',
+            'text' => 'Bitte bestätigen Sie die Anmeldung ausdrücklich.',
+            'status' => 'BESTÄTIGUNG ERFORDERLICH',
+            'form_url' => URL::temporarySignedRoute(
+                'homepage.tutoring.offer-request.store',
+                now()->addMinutes(15),
+                $validated,
+            ),
+            'button_label' => 'Anmelden und Anfrage öffnen',
+            'back_url' => null,
+        ]);
     }
 
     public function offerRequest(OfferRequestRequest $request, TutoringOfferService $service)
     {
-        // OfferRequestRequest
-
         $validated = $request->validated();
 
         $userService = new UserService;
 
-        $user = $service->getUserFromOfferRequest($validated['email'], $validated['id'], $validated['token']);
+        $user = $service->consumeUserFromOfferRequest(
+            $validated['email'],
+            $validated['id'],
+            $validated['token'],
+        );
 
         if (! $user) {
             return redirect()->to('/homepage/tutoring_response?'.http_build_query([

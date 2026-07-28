@@ -22,6 +22,44 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Spatie\Permission\Models\Role;
 
+function validTeachingXlsxContents(): string
+{
+    static $contents;
+
+    if (is_string($contents)) {
+        return $contents;
+    }
+
+    $path = tempnam(sys_get_temp_dir(), 'schooltool-xlsx-');
+    if (! is_string($path)) {
+        throw new RuntimeException('Could not create the temporary XLSX fixture.');
+    }
+
+    $archive = new ZipArchive;
+    if ($archive->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        throw new RuntimeException('Could not create the XLSX fixture archive.');
+    }
+
+    $archive->addFromString(
+        '[Content_Types].xml',
+        '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+    );
+    $archive->addFromString(
+        'xl/workbook.xml',
+        '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>',
+    );
+    $archive->close();
+
+    $contents = file_get_contents($path);
+    @unlink($path);
+
+    if (! is_string($contents)) {
+        throw new RuntimeException('Could not read the XLSX fixture archive.');
+    }
+
+    return $contents;
+}
+
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
@@ -44,6 +82,7 @@ beforeEach(function () {
         'short_name' => 'UPLOAD',
         'long_name' => 'Upload Test School',
     ]);
+    enableSchoolToolModuleForTests($this->school, 'teaching');
 
     $teachingLicence = Licence::firstOrCreate(
         ['name' => 'Lehrertool'],
@@ -238,7 +277,7 @@ describe('file type validation', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         // First, initiate upload
-        $initResponse = $this->postJson('/api/admin/teaching_upload/116');
+        $initResponse = $this->post('/api/admin/teaching_upload/116');
         $uploadId = $initResponse->getContent();
 
         // Try to continue with non-xlsx file
@@ -318,7 +357,7 @@ describe('import 116 job dispatch', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         // Initiate upload
-        $initResponse = $this->postJson('/api/admin/teaching_upload/116');
+        $initResponse = $this->post('/api/admin/teaching_upload/116');
         $uploadId = $initResponse->getContent();
 
         // Create temp directory
@@ -327,8 +366,7 @@ describe('import 116 job dispatch', function () {
             mkdir($tempDir, 0775, true);
         }
 
-        // Create a minimal valid XLSX content (just some bytes for testing)
-        $content = 'PK'; // ZIP/XLSX magic bytes - minimal content
+        $content = validTeachingXlsxContents();
 
         // Complete the upload with proper headers
         $response = $this->call('PATCH', "/api/admin/teaching_upload/116?patch={$uploadId}", [], [], [], [
@@ -336,6 +374,8 @@ describe('import 116 job dispatch', function () {
             'HTTP_Upload-Length' => strlen($content),
             'CONTENT_TYPE' => 'application/octet-stream',
         ], $content);
+
+        $response->assertOk();
 
         Queue::assertPushed(Import116Job::class, function ($job) {
             return $job->user->id === $this->admin->id;
@@ -346,7 +386,7 @@ describe('import 116 job dispatch', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         // Initiate upload
-        $initResponse = $this->postJson('/api/admin/teaching_upload/166');
+        $initResponse = $this->post('/api/admin/teaching_upload/166');
         $uploadId = $initResponse->getContent();
 
         // Create temp directory
@@ -355,13 +395,15 @@ describe('import 116 job dispatch', function () {
             mkdir($tempDir, 0775, true);
         }
 
-        $content = 'PK';
+        $content = validTeachingXlsxContents();
 
         $response = $this->call('PATCH', "/api/admin/teaching_upload/166?patch={$uploadId}", [], [], [], [
             'HTTP_Upload-Name' => '166.xlsx',
             'HTTP_Upload-Length' => strlen($content),
             'CONTENT_TYPE' => 'application/octet-stream',
         ], $content);
+
+        $response->assertOk();
 
         Queue::assertNotPushed(Import116Job::class);
     });
@@ -376,13 +418,13 @@ describe('import 166 school tool update', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         // Create SchoolTool record
-        $schoolTool = SchoolTool::create([
-            'school_id' => $this->school->id,
-            'import_166_at' => null,
-        ]);
+        $schoolTool = SchoolTool::query()->updateOrCreate(
+            ['school_id' => $this->school->id],
+            ['import_166_at' => null],
+        );
 
         // Initiate upload
-        $initResponse = $this->postJson('/api/admin/teaching_upload/166');
+        $initResponse = $this->post('/api/admin/teaching_upload/166');
         $uploadId = $initResponse->getContent();
 
         // Create temp directory
@@ -391,13 +433,15 @@ describe('import 166 school tool update', function () {
             mkdir($tempDir, 0775, true);
         }
 
-        $content = 'PK';
+        $content = validTeachingXlsxContents();
 
         $response = $this->call('PATCH', "/api/admin/teaching_upload/166?patch={$uploadId}", [], [], [], [
             'HTTP_Upload-Name' => '166.xlsx',
             'HTTP_Upload-Length' => strlen($content),
             'CONTENT_TYPE' => 'application/octet-stream',
         ], $content);
+
+        $response->assertOk();
 
         $schoolTool->refresh();
         expect($schoolTool->import_166_at)->not->toBeNull();
@@ -406,12 +450,12 @@ describe('import 166 school tool update', function () {
     test('creates SchoolTool record if not exists when 166 upload completes', function () {
         $this->actingAs($this->admin, 'sanctum');
 
-        // Ensure no SchoolTool record exists
-        SchoolTool::where('school_id', $this->school->id)->delete();
-
         // Initiate upload
-        $initResponse = $this->postJson('/api/admin/teaching_upload/166');
+        $initResponse = $this->post('/api/admin/teaching_upload/166');
         $uploadId = $initResponse->getContent();
+
+        // The route requires an active module, but completion must recreate a missing row.
+        SchoolTool::where('school_id', $this->school->id)->delete();
 
         // Create temp directory
         $tempDir = storage_path("app/private/temp/{$uploadId}");
@@ -419,13 +463,15 @@ describe('import 166 school tool update', function () {
             mkdir($tempDir, 0775, true);
         }
 
-        $content = 'PK';
+        $content = validTeachingXlsxContents();
 
         $response = $this->call('PATCH', "/api/admin/teaching_upload/166?patch={$uploadId}", [], [], [], [
             'HTTP_Upload-Name' => '166.xlsx',
             'HTTP_Upload-Length' => strlen($content),
             'CONTENT_TYPE' => 'application/octet-stream',
         ], $content);
+
+        $response->assertOk();
 
         $schoolTool = SchoolTool::where('school_id', $this->school->id)->first();
         expect($schoolTool)->not->toBeNull()
@@ -442,7 +488,7 @@ describe('upload flow', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         // Step 1: Initiate upload
-        $initResponse = $this->postJson('/api/admin/teaching_upload/116');
+        $initResponse = $this->post('/api/admin/teaching_upload/116');
         $initResponse->assertStatus(200);
         $uploadId = $initResponse->getContent();
 
@@ -455,13 +501,15 @@ describe('upload flow', function () {
         }
 
         // Step 3: Complete the upload
-        $content = 'PK';
+        $content = validTeachingXlsxContents();
 
         $response = $this->call('PATCH', "/api/admin/teaching_upload/116?patch={$uploadId}", [], [], [], [
             'HTTP_Upload-Name' => '116.xlsx',
             'HTTP_Upload-Length' => strlen($content),
             'CONTENT_TYPE' => 'application/octet-stream',
         ], $content);
+
+        $response->assertOk();
 
         // Verify job was dispatched
         Queue::assertPushed(Import116Job::class);
@@ -471,7 +519,7 @@ describe('upload flow', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         // Initiate upload
-        $initResponse = $this->postJson('/api/admin/teaching_upload/116');
+        $initResponse = $this->post('/api/admin/teaching_upload/116');
         $uploadId = $initResponse->getContent();
 
         // Create temp directory

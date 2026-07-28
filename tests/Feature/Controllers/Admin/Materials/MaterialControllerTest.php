@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\SynchronizeMaterialLinkedContent;
 use App\Models\Licence;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
@@ -20,12 +21,14 @@ use App\Models\SchoolTool;
 use App\Models\SchoolUserLicence;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Services\Materials\MaterialService;
 use App\Support\RemoteUrlGuard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpPresentation\PhpPresentation;
@@ -2282,7 +2285,101 @@ test('linked topic can be unlinked from materials overview endpoint and removes 
     expect((bool) ($matchingInboxEntry['is_imported'] ?? true))->toBeFalse();
 });
 
-test('linked topic name is synchronized from source for overview endpoints', function () {
+test('material reads do not synchronize linked card data or files', function () {
+    if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $this->markTestSkipped('Linked inbox import mode is not available.');
+    }
+
+    Storage::fake('local');
+    Storage::fake('public');
+    Storage::fake('s3');
+
+    $linkedCard = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_READ_ONLY,
+    );
+
+    $linkImport = MaterialInboxImport::query()
+        ->where('target_user_id', (int) $this->teacher->id)
+        ->where('target_material_card_id', (int) $linkedCard->id)
+        ->where('import_mode', MaterialInboxImport::MODE_LINK)
+        ->latest('id')
+        ->firstOrFail();
+    $sourceCard = MaterialCard::query()->findOrFail((int) $linkImport->source_material_id);
+
+    $sourcePath = 'materials/source/source-document.txt';
+    $targetPath = 'materials/target/target-document.txt';
+    Storage::disk('local')->put($sourcePath, 'source');
+    Storage::disk('local')->put($targetPath, 'target');
+
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => (int) $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Source document.txt',
+        'file_path' => $sourcePath,
+        'mime_type' => 'text/plain',
+        'size_bytes' => 6,
+    ]);
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => (int) $linkedCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Target document.txt',
+        'file_path' => $targetPath,
+        'mime_type' => 'text/plain',
+        'size_bytes' => 6,
+    ]);
+    Queue::fake();
+    app(MaterialService::class)->updateCard(
+        $sourceCard,
+        [
+            'title' => 'Updated source title',
+            'source_url' => $sourceCard->source_url,
+            'source_text' => $sourceCard->source_text,
+            'type' => $sourceCard->type,
+            'status' => $sourceCard->status,
+            'notes' => $sourceCard->notes,
+        ],
+        $sourceCard->user()->firstOrFail(),
+    );
+    Queue::assertPushed(
+        SynchronizeMaterialLinkedContent::class,
+        fn (SynchronizeMaterialLinkedContent $job): bool => $job->targetUserId === (int) $this->teacher->id,
+    );
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->getJson('/api/admin/materials/config')->assertSuccessful();
+    $this->getJson('/api/admin/materials/cards')->assertSuccessful();
+    $this->getJson("/api/admin/materials/cards/{$linkedCard->id}")->assertSuccessful();
+
+    expect($linkedCard->fresh()->title)->toBe('Verlinkte Kopie');
+    $this->assertDatabaseHas('material_card_attachments', [
+        'material_card_id' => (int) $linkedCard->id,
+        'file_path' => $targetPath,
+    ]);
+    Storage::disk('local')->assertExists($targetPath);
+
+    (new SynchronizeMaterialLinkedContent((int) $this->teacher->id))
+        ->handle(app(MaterialService::class));
+
+    expect($linkedCard->fresh()->title)->toBe('Updated source title');
+    $this->assertDatabaseMissing('material_card_attachments', [
+        'material_card_id' => (int) $linkedCard->id,
+        'file_path' => $targetPath,
+    ]);
+    Storage::disk('local')->assertMissing($targetPath);
+
+    $synchronizedAttachment = MaterialCardAttachment::query()
+        ->where('material_card_id', (int) $linkedCard->id)
+        ->where('name', 'Source document.txt')
+        ->first();
+    expect($synchronizedAttachment)->not->toBeNull();
+    Storage::disk('local')->assertExists((string) $synchronizedAttachment?->file_path);
+});
+
+test('linked topic name is synchronized by the explicit synchronization job and not by reads', function () {
     if (
         ! Schema::hasTable('material_inbox_imports')
         || ! Schema::hasColumn('material_inbox_imports', 'import_mode')
@@ -2348,42 +2445,34 @@ test('linked topic name is synchronized from source for overview endpoints', fun
         'imported_at' => now(),
     ]);
 
-    $sourceTopic->update(['name' => 'Quelle Thema Neu']);
+    Queue::fake();
+    app(MaterialService::class)->updateTopic(
+        $sourceCard->user()->firstOrFail(),
+        $sourceTopic,
+        'Quelle Thema Neu',
+    );
+    Queue::assertPushed(
+        SynchronizeMaterialLinkedContent::class,
+        fn (SynchronizeMaterialLinkedContent $job): bool => $job->targetUserId === (int) $this->teacher->id,
+    );
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $cardsResponse = $this->getJson('/api/admin/materials/cards')
-        ->assertStatus(200);
-
-    $linkedCardRow = collect($cardsResponse->json('data'))
-        ->first(fn ($row) => (int) ($row['id'] ?? 0) === (int) $linkedCard->id);
-    expect($linkedCardRow)->not->toBeNull();
-    $classificationTopicNames = collect($linkedCardRow['classifications'] ?? [])
-        ->pluck('topic')
-        ->map(fn ($value) => trim((string) $value))
-        ->filter()
-        ->values()
-        ->all();
-    expect($classificationTopicNames)->toContain('Quelle Thema Neu');
-
-    $configResponse = $this->getJson('/api/admin/materials/config')
-        ->assertStatus(200);
-
-    $subjectNode = collect($configResponse->json('classification_tree', []))
-        ->firstWhere('id', (int) $targetSubject->id);
-    expect($subjectNode)->not->toBeNull();
-    $topicNode = collect($subjectNode['topics'] ?? [])
-        ->firstWhere('id', (int) $targetTopic->id);
-    expect($topicNode)->not->toBeNull();
-    expect((string) ($topicNode['name'] ?? ''))->toBe('Quelle Thema Neu');
+    $this->getJson('/api/admin/materials/cards')->assertSuccessful();
+    $this->getJson('/api/admin/materials/config')->assertSuccessful();
 
     $this->assertDatabaseHas('material_topics', [
         'id' => (int) $targetTopic->id,
-        'name' => 'Quelle Thema Neu',
+        'name' => 'Ziel Thema Alt',
     ]);
+
+    (new SynchronizeMaterialLinkedContent((int) $this->teacher->id))
+        ->handle(app(MaterialService::class));
+
+    expect($targetTopic->fresh()->name)->toBe('Quelle Thema Neu');
 });
 
-test('linked unit name is synchronized from source for overview endpoints', function () {
+test('linked unit name is synchronized by the explicit synchronization job and not by reads', function () {
     if (
         ! Schema::hasTable('material_inbox_imports')
         || ! Schema::hasColumn('material_inbox_imports', 'import_mode')
@@ -2457,42 +2546,31 @@ test('linked unit name is synchronized from source for overview endpoints', func
         'imported_at' => now(),
     ]);
 
-    $sourceUnit->update(['name' => 'Quelle Einheit Neu']);
+    Queue::fake();
+    app(MaterialService::class)->updateUnit(
+        $sourceCard->user()->firstOrFail(),
+        $sourceUnit,
+        'Quelle Einheit Neu',
+    );
+    Queue::assertPushed(
+        SynchronizeMaterialLinkedContent::class,
+        fn (SynchronizeMaterialLinkedContent $job): bool => $job->targetUserId === (int) $this->teacher->id,
+    );
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $cardsResponse = $this->getJson('/api/admin/materials/cards')
-        ->assertStatus(200);
-
-    $linkedCardRow = collect($cardsResponse->json('data'))
-        ->first(fn ($row) => (int) ($row['id'] ?? 0) === (int) $linkedCard->id);
-    expect($linkedCardRow)->not->toBeNull();
-    $classificationUnitNames = collect($linkedCardRow['classifications'] ?? [])
-        ->pluck('unit')
-        ->map(fn ($value) => trim((string) $value))
-        ->filter()
-        ->values()
-        ->all();
-    expect($classificationUnitNames)->toContain('Quelle Einheit Neu');
-
-    $configResponse = $this->getJson('/api/admin/materials/config')
-        ->assertStatus(200);
-
-    $subjectNode = collect($configResponse->json('classification_tree', []))
-        ->firstWhere('id', (int) $targetSubject->id);
-    expect($subjectNode)->not->toBeNull();
-    $topicNode = collect($subjectNode['topics'] ?? [])
-        ->firstWhere('id', (int) $targetTopic->id);
-    expect($topicNode)->not->toBeNull();
-    $unitNode = collect($topicNode['units'] ?? [])
-        ->firstWhere('id', (int) $targetUnit->id);
-    expect($unitNode)->not->toBeNull();
-    expect((string) ($unitNode['name'] ?? ''))->toBe('Quelle Einheit Neu');
+    $this->getJson('/api/admin/materials/cards')->assertSuccessful();
+    $this->getJson('/api/admin/materials/config')->assertSuccessful();
 
     $this->assertDatabaseHas('material_units', [
         'id' => (int) $targetUnit->id,
-        'name' => 'Quelle Einheit Neu',
+        'name' => 'Ziel Einheit Alt',
     ]);
+
+    (new SynchronizeMaterialLinkedContent((int) $this->teacher->id))
+        ->handle(app(MaterialService::class));
+
+    expect($targetUnit->fresh()->name)->toBe('Quelle Einheit Neu');
 });
 
 test('linked material with lesen schreiben allows edit and append but blocks delete operations', function () {
@@ -2555,7 +2633,7 @@ test('linked material with lesen schreiben allows edit and append but blocks del
         ->assertStatus(403);
 });
 
-test('linked material with lesen schreiben keeps source attachments visible in destination on equal timestamps', function () {
+test('linked material with lesen schreiben synchronizes source attachments explicitly on equal timestamps', function () {
     if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');
     }
@@ -2588,6 +2666,13 @@ test('linked material with lesen schreiben keeps source attachments visible in d
         ->update(['updated_at' => now()->startOfSecond()]);
 
     $this->actingAs($this->teacher, 'sanctum');
+
+    $this->getJson('/api/admin/materials/cards/'.$card->id)
+        ->assertStatus(200)
+        ->assertJsonCount(0, 'attachments');
+
+    (new SynchronizeMaterialLinkedContent((int) $this->teacher->id))
+        ->handle(app(MaterialService::class));
 
     $this->getJson('/api/admin/materials/cards/'.$card->id)
         ->assertStatus(200)

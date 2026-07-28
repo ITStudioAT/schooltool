@@ -30,9 +30,11 @@ class RegisterUserService
             $count++;
 
             if ($user->roles->count() === 1) {
-                // Nur register_user Rolle => Rolle entfernen + User löschen
                 $user->removeRole('register_user');
-                $user->delete();
+
+                if (! $user->registerDateBookings()->exists()) {
+                    $user->delete();
+                }
             } else {
                 // Weitere Rollen vorhanden => nur register_user Rolle entfernen
                 $user->removeRole('register_user');

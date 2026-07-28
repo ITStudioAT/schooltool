@@ -77,14 +77,14 @@ describe('loadDays', function () {
             'date' => '2024-12-15',
         ]);
 
-        $user = User::factory()->create(['school_id' => $this->school->id]);
-
-        RegisterDateBooking::factory()->count(3)->create([
-            'register_date_id' => $registerDate->id,
-            'register_id' => $this->register->id,
-            'user_id' => $user->id,
-            'school_id' => $this->school->id,
-        ]);
+        foreach (range(1, 3) as $index) {
+            RegisterDateBooking::factory()->create([
+                'register_date_id' => $registerDate->id,
+                'register_id' => $this->register->id,
+                'user_id' => User::factory()->create(['school_id' => $this->school->id])->id,
+                'school_id' => $this->school->id,
+            ]);
+        }
 
         $result = $this->service->loadDays($this->register->id);
 
@@ -92,8 +92,6 @@ describe('loadDays', function () {
     });
 
     it('sums bookings count for same date', function () {
-        $user = User::factory()->create(['school_id' => $this->school->id]);
-
         $registerDate1 = RegisterDate::factory()->create([
             'register_id' => $this->register->id,
             'date' => '2024-12-15',
@@ -108,19 +106,14 @@ describe('loadDays', function () {
             'to' => '15:00',
         ]);
 
-        RegisterDateBooking::factory()->count(2)->create([
-            'register_date_id' => $registerDate1->id,
-            'register_id' => $this->register->id,
-            'user_id' => $user->id,
-            'school_id' => $this->school->id,
-        ]);
-
-        RegisterDateBooking::factory()->count(3)->create([
-            'register_date_id' => $registerDate2->id,
-            'register_id' => $this->register->id,
-            'user_id' => $user->id,
-            'school_id' => $this->school->id,
-        ]);
+        foreach ([$registerDate1, $registerDate1, $registerDate2, $registerDate2, $registerDate2] as $registerDate) {
+            RegisterDateBooking::factory()->create([
+                'register_date_id' => $registerDate->id,
+                'register_id' => $this->register->id,
+                'user_id' => User::factory()->create(['school_id' => $this->school->id])->id,
+                'school_id' => $this->school->id,
+            ]);
+        }
 
         $result = $this->service->loadDays($this->register->id);
 

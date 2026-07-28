@@ -20,8 +20,9 @@ class AbaChunkUploadController extends Controller
     ): Response {
         $authUser = $this->authorizeForAba();
         $this->assertUploadLengthWithinLimit($request, $service, $authUser);
+        $maxBytes = $service->maxUploadSizeKbForUser($authUser) * 1024;
 
-        $id = $fileUploadService->upload();
+        $id = $fileUploadService->upload($request, 'aba', $maxBytes);
 
         return response($id, 200)->header('Content-Type', 'text/plain');
     }
@@ -33,6 +34,7 @@ class AbaChunkUploadController extends Controller
     ) {
         $authUser = $this->authorizeForAba();
         $this->assertUploadLengthWithinLimit($request, $service, $authUser);
+        $maxBytes = $service->maxUploadSizeKbForUser($authUser) * 1024;
 
         $uploadId = trim((string) $request->query('patch'));
         if ($uploadId === '' || ! preg_match('/^[a-f0-9-]{20,64}$/i', $uploadId)) {
@@ -49,7 +51,9 @@ class AbaChunkUploadController extends Controller
         $result = $fileUploadService->uploadNext(
             $request,
             $service->tempUploadStoragePathForUser($authUser),
-            $targetName
+            $targetName,
+            profile: 'aba',
+            maxBytes: $maxBytes,
         );
 
         if ($result instanceof Response) {

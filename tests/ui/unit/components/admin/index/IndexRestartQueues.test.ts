@@ -30,9 +30,9 @@ describe('Index restartQueues', () => {
         vi.useRealTimers()
     })
 
-    it('counts seconds while restart and tests are running', async () => {
+    it('counts seconds while restart and the health refresh are running', async () => {
         const restartRequest = createDeferred<void>()
-        const testsRun = createDeferred<void>()
+        const healthRefresh = createDeferred<void>()
 
         globalThis.axios = {
             post: vi.fn(() => restartRequest.promise),
@@ -42,7 +42,8 @@ describe('Index restartQueues', () => {
         const context: Record<string, any> = {
             restart_queues_loading: false,
             restart_countdown: 0,
-            runTests: vi.fn(() => testsRun.promise),
+            health_loading: false,
+            refreshHealth: vi.fn(() => healthRefresh.promise),
         }
 
         const promise = restartQueues.call(context)
@@ -56,12 +57,12 @@ describe('Index restartQueues', () => {
         restartRequest.resolve()
         await Promise.resolve()
 
-        expect(context.runTests).toHaveBeenCalledTimes(1)
+        expect(context.refreshHealth).toHaveBeenCalledTimes(1)
 
         await vi.advanceTimersByTimeAsync(1500)
         expect(context.restart_countdown).toBe(4)
 
-        testsRun.resolve()
+        healthRefresh.resolve()
         await promise
 
         expect(notifyMock).toHaveBeenCalledWith(
@@ -83,16 +84,17 @@ describe('Index restartQueues', () => {
         const context: Record<string, any> = {
             restart_queues_loading: true,
             restart_countdown: 3,
-            runTests: vi.fn(),
+            health_loading: false,
+            refreshHealth: vi.fn(),
         }
 
         await restartQueues.call(context)
 
         expect(postMock).not.toHaveBeenCalled()
-        expect(context.runTests).not.toHaveBeenCalled()
+        expect(context.refreshHealth).not.toHaveBeenCalled()
     })
 
-    it('does nothing while queue tests are running', async () => {
+    it('does nothing while a health refresh is running', async () => {
         const postMock = vi.fn()
         globalThis.axios = {
             post: postMock,
@@ -102,15 +104,14 @@ describe('Index restartQueues', () => {
         const context: Record<string, any> = {
             restart_queues_loading: false,
             restart_countdown: 0,
-            queue_test_status: 'running',
-            cron_test_status: 'waiting',
-            runTests: vi.fn(),
+            health_loading: true,
+            refreshHealth: vi.fn(),
         }
 
         await restartQueues.call(context)
 
         expect(postMock).not.toHaveBeenCalled()
-        expect(context.runTests).not.toHaveBeenCalled()
+        expect(context.refreshHealth).not.toHaveBeenCalled()
         expect(context.restart_queues_loading).toBe(false)
     })
 })

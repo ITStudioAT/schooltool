@@ -721,7 +721,7 @@ class StudentsTimetablesController extends Controller
             ?: $this->subjectCodeWithoutModule($this->emptyStringToNull($jsonCode));
 
         if ($subjectKey && mb_strtoupper($subjectKey, 'UTF-8') === 'LPT') {
-            return 'Lern- und PrÃ¤sentationstechniken';
+            return 'Lern- und Präsentationstechniken';
         }
 
         return $this->emptyStringToNull($name);

@@ -2,6 +2,11 @@
 
 return [
     'version' => '3.43.5',
+    'environment_versions' => [
+        'composer' => env('APP_COMPOSER_VERSION'),
+        'npm' => env('APP_NPM_VERSION'),
+        'node' => env('APP_NODE_VERSION'),
+    ],
     'copyright' => '(c) 2025 – 2026 ITStudio.at by Günther Kron',
     'logo' => 'schooltool_white.png',
     'pagination' => 30,
@@ -14,6 +19,52 @@ return [
     'email_aliases' => [],
     'licence_renewal_days' => env('LICENCE_RENEWAL_DAYS', 30),
     'licence_free_activation_date' => '2026-07-10',
+    'chunk_uploads' => [
+        'default_max_size_kb' => 102400,
+        'expiry_hours' => 24,
+        'profiles' => [
+            'default' => [
+                'max_size_kb' => 102400,
+                'allowed_extensions' => [],
+            ],
+            'school-logo' => [
+                'max_size_kb' => 5120,
+                'allowed_extensions' => ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+            ],
+            'teachers' => [
+                'max_size_kb' => 102400,
+                'allowed_extensions' => ['xlsx', 'xls'],
+            ],
+            'teaching-import' => [
+                'max_size_kb' => 102400,
+                'allowed_extensions' => ['xlsx', 'xls'],
+            ],
+            'timetable-import' => [
+                'max_size_kb' => 102400,
+                'allowed_extensions' => ['txt'],
+            ],
+            'recognition-import' => [
+                'max_size_kb' => 102400,
+                'allowed_extensions' => ['csv'],
+            ],
+            'subject-import' => [
+                'max_size_kb' => 51200,
+                'allowed_extensions' => ['json'],
+            ],
+            'curriculum-document' => [
+                'max_size_kb' => 102400,
+                'allowed_extensions' => [],
+            ],
+            'materials' => [
+                'max_size_kb' => 20480,
+                'allowed_extensions' => [],
+            ],
+            'aba' => [
+                'max_size_kb' => 30720,
+                'allowed_extensions' => [],
+            ],
+        ],
+    ],
 
     'legacy_restaurant' => [
         'driver' => 'mysql',

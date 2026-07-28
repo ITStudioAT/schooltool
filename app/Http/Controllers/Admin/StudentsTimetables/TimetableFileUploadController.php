@@ -14,8 +14,11 @@ class TimetableFileUploadController extends Controller
 {
     private const ADMIN_ROLES = ['super_admin', 'admin', 'studentstimetables_admin'];
 
-    public function upload(FileUploadService $fileUploadService, TimetableImportService $importService): Response
-    {
+    public function upload(
+        Request $request,
+        FileUploadService $fileUploadService,
+        TimetableImportService $importService,
+    ): Response {
         if (! $authUser = $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
@@ -24,7 +27,7 @@ class TimetableFileUploadController extends Controller
 
         $this->ensureTxt();
         $importService->ensureSemesterTwoStart($authUser, $authUser->schoolyear_id);
-        $id = $fileUploadService->upload();
+        $id = $fileUploadService->upload($request, 'timetable-import');
 
         return response($id, 200)->header('Content-Type', 'text/plain');
     }
@@ -50,7 +53,12 @@ class TimetableFileUploadController extends Controller
         $timestamp = now()->format('Ymd_His');
         $storedName = "{$baseName}_{$timestamp}";
 
-        $result = $fileUploadService->uploadNext($request, $uploadPath, $storedName);
+        $result = $fileUploadService->uploadNext(
+            $request,
+            $uploadPath,
+            $storedName,
+            profile: 'timetable-import',
+        );
 
         if ($result instanceof Response) {
             return $result;

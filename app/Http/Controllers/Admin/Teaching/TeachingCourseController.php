@@ -24,6 +24,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Exists;
@@ -182,7 +183,7 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $this->authorizeTeachingCourseAccess($course, $auth_user);
+        Gate::authorize('view', $course);
 
         if ((int) $course_student->teaching_course_id !== (int) $course->id) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -204,7 +205,7 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $this->authorizeTeachingCourseAccess($course, $auth_user);
+        Gate::authorize('view', $course);
 
         $validated = $request->validate([
             'course_student_id' => ['nullable', 'integer'],
@@ -237,7 +238,7 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $this->authorizeTeachingCourseAccess($course, $auth_user);
+        Gate::authorize('view', $course);
 
         $validated = $request->validate([
             'semesters' => ['required', 'string'],
@@ -405,7 +406,7 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $this->authorizeTeachingCourseAccess($course, $auth_user);
+        Gate::authorize('update', $course);
 
         $classes = Import116::where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $course->schoolyear_id)
@@ -526,7 +527,7 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $this->authorizeTeachingCourseAccess($course, $auth_user);
+        Gate::authorize('delete', $course);
 
         DB::transaction(function () use ($course): void {
             $lockedCourse = TeachingCourse::query()

@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin;
 
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rules\Password;
 
 class SavePasswordRequest extends FormRequest
 {
@@ -24,8 +25,8 @@ class SavePasswordRequest extends FormRequest
     {
 
         return [
-            'password' => 'required|string|min:8|max:255',
-            'password_repeat' => 'required|string||min:8|max:255|same:password',
+            'password' => ['required', 'string', Password::default(), 'max:255'],
+            'password_repeat' => ['required', 'string', 'max:255', 'same:password'],
         ];
     }
 }

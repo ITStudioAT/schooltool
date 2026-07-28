@@ -8,9 +8,12 @@ use App\Models\School;
 use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
+use App\Models\User;
 use App\Notifications\StandardEmail;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 class TutoringOfferService
@@ -92,19 +95,19 @@ class TutoringOfferService
         $offer->save();
 
         $school = $offer->school;
-        $baseParams = http_build_query([
+        $baseParams = [
             'offer_id' => $offer->id,
             'token' => $offer->token,
             'email_mentor' => $offer->email_mentor,
-        ]);
+        ];
 
         $data = [
             'student' => "{$offer->user->last_name} {$offer->user->first_name} ( {$offer->user->schoolclass} )",
             'student_email' => $offer->user->email,
             'subject' => "{$offer->subject->short_name} ({$offer->subject->long_name})",
             'offer' => $offer,
-            'url_confirm' => url("/homepage/tutoring/offer?action=confirm&{$baseParams}"),
-            'url_refuse' => url("/homepage/tutoring/offer?action=refuse&{$baseParams}"),
+            'url_confirm' => $this->offerDecisionUrl($offer, 'confirm', $baseParams),
+            'url_refuse' => $this->offerDecisionUrl($offer, 'refuse', $baseParams),
             'url_login' => url('/admin/login'),
         ];
 
@@ -127,19 +130,19 @@ class TutoringOfferService
         $offer->save();
 
         $school = $offer->school;
-        $baseParams = http_build_query([
+        $baseParams = [
             'offer_id' => $offer->id,
             'token' => $offer->token,
             'email_mentor' => $offer->email_mentor,
-        ]);
+        ];
 
         $data = [
             'student' => "{$offer->user->last_name} {$offer->user->first_name} ( {$offer->user->schoolclass} )",
             'student_email' => $offer->user->email,
             'subject' => "{$offer->subject->short_name} ({$offer->subject->long_name})",
             'offer' => $offer,
-            'url_confirm' => url("/homepage/tutoring/offer?action=confirm&{$baseParams}"),
-            'url_refuse' => url("/homepage/tutoring/offer?action=refuse&{$baseParams}"),
+            'url_confirm' => $this->offerDecisionUrl($offer, 'confirm', $baseParams),
+            'url_refuse' => $this->offerDecisionUrl($offer, 'refuse', $baseParams),
             'url_login' => url('/admin/login'),
             'email_mentor' => $offer->email_mentor,
         ];
@@ -187,23 +190,55 @@ class TutoringOfferService
 
     public function offerConfirmRefuse(array $data): bool
     {
-        $offer = TutoringOffer::findOrFail($data['offer_id']);
+        return DB::transaction(function () use ($data): bool {
+            $offer = TutoringOffer::query()
+                ->whereKey((int) $data['offer_id'])
+                ->where('token', (string) $data['token'])
+                ->where('token_expires_at', '>=', now())
+                ->lockForUpdate()
+                ->first();
 
-        if ($data['email_mentor'] !== $offer->email_mentor) {
-            abort(403, 'E-Mail-Adresse des Tutors ist ungültig.');
-        }
+            if (
+                ! $offer instanceof TutoringOffer
+                || ! hash_equals(
+                    mb_strtolower((string) $offer->email_mentor),
+                    mb_strtolower((string) $data['email_mentor']),
+                )
+            ) {
+                abort(403, 'Token ungültig oder abgelaufen.');
+            }
 
-        $tokenExpired = Carbon::parse($offer->token_expires_at)->lt(now());
-        if ($data['token'] !== $offer->token || $tokenExpired) {
-            abort(403, 'Token ungültig oder abgelaufen.');
-        }
+            if ($data['action'] === 'confirm') {
+                $offer->accepted_at = now();
+            }
 
-        if ($data['action'] === 'confirm') {
-            $offer->accepted_at = now();
+            $offer->token = null;
+            $offer->token_expires_at = null;
             $offer->save();
+
+            return true;
+        });
+    }
+
+    /**
+     * @param  array{offer_id: int, token: string, email_mentor: string}  $data
+     */
+    public function offerForDecision(array $data): ?TutoringOffer
+    {
+        $offer = TutoringOffer::query()
+            ->whereKey((int) $data['offer_id'])
+            ->where('token', (string) $data['token'])
+            ->where('token_expires_at', '>=', now())
+            ->first();
+
+        if (! $offer instanceof TutoringOffer) {
+            return null;
         }
 
-        return true;
+        return hash_equals(
+            mb_strtolower((string) $offer->email_mentor),
+            mb_strtolower((string) $data['email_mentor']),
+        ) ? $offer : null;
     }
 
     public function sendConfirmRefuseEmail(string $action, int $offerId): void
@@ -237,13 +272,13 @@ class TutoringOfferService
         Notification::route('mail', EmailAliasResolver::resolveConfigured($offer->user->email))->notify(new StandardEmail($mail));
     }
 
-    public function sendOfferRequest(int $userId, int $offerId, string $message): array
+    public function sendOfferRequest(User $user, TutoringOffer $offer, string $message): array
     {
-        $offer = TutoringOffer::with(['school', 'subject', 'requests'])->findOrFail($offerId);
+        $offer->loadMissing(['school', 'subject', 'requests']);
 
         $offerRequest = TutoringOfferRequest::where('school_id', $offer->school_id)
             ->where('offer_id', $offer->id)
-            ->where('from_user_id', $userId)
+            ->where('from_user_id', $user->id)
             ->where('to_user_id', $offer->user_id)
             ->first();
 
@@ -251,7 +286,7 @@ class TutoringOfferService
             $offerRequest = TutoringOfferRequest::create([
                 'school_id' => $offer->school_id,
                 'offer_id' => $offer->id,
-                'from_user_id' => $userId,
+                'from_user_id' => $user->id,
                 'to_user_id' => $offer->user_id,
                 'message' => $message,
                 'is_serious' => true,
@@ -292,11 +327,11 @@ class TutoringOfferService
             ? 'Neue Anfrage für Ihr Nachhilfe-Angebot'
             : 'Erinnerung: Anfrage für Ihr Nachhilfe-Angebot';
 
-        $params = http_build_query([
+        $params = [
             'email' => $user->email,
             'id' => $offerRequest->id,
             'token' => $offerRequest->token,
-        ]);
+        ];
 
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
@@ -304,7 +339,13 @@ class TutoringOfferService
             'logo' => asset('/storage/images/logos/'.$school->logo),
             'subject' => $emailSubject,
             'markdown' => 'mails.tutoring.offerRequest',
-            'data' => ['url' => url("/homepage/tutoring/offer_request?{$params}")],
+            'data' => [
+                'url' => URL::temporarySignedRoute(
+                    'homepage.tutoring.offer-request',
+                    $offerRequest->token_expires_at,
+                    $params,
+                ),
+            ],
         ];
 
         Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(new StandardEmail($mail));
@@ -343,23 +384,69 @@ class TutoringOfferService
         Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(new StandardEmail($mail));
     }
 
-    public function getUserFromOfferRequest(string $email, int $offerRequestId, string $token)
+    public function userFromOfferRequest(string $email, int $offerRequestId, string $token): ?User
     {
-        $offerRequest = TutoringOfferRequest::find($offerRequestId);
+        $offerRequest = TutoringOfferRequest::query()
+            ->with('to_user')
+            ->whereKey($offerRequestId)
+            ->where('token', $token)
+            ->where('token_expires_at', '>=', now())
+            ->first();
 
-        if (! $offerRequest) {
-            return null;
-        }
-        if ($offerRequest->token !== $token) {
-            return null;
-        }
-        if ($offerRequest->token_expires_at < now()) {
-            return null;
-        }
-        if ($offerRequest->to_user->email !== $email) {
+        if (
+            ! $offerRequest instanceof TutoringOfferRequest
+            || ! $offerRequest->to_user instanceof User
+            || ! hash_equals(
+                mb_strtolower($offerRequest->to_user->email),
+                mb_strtolower($email),
+            )
+        ) {
             return null;
         }
 
         return $offerRequest->to_user;
+    }
+
+    public function consumeUserFromOfferRequest(string $email, int $offerRequestId, string $token): ?User
+    {
+        return DB::transaction(function () use ($email, $offerRequestId, $token): ?User {
+            $offerRequest = TutoringOfferRequest::query()
+                ->with('to_user')
+                ->whereKey($offerRequestId)
+                ->where('token', $token)
+                ->where('token_expires_at', '>=', now())
+                ->lockForUpdate()
+                ->first();
+
+            if (
+                ! $offerRequest instanceof TutoringOfferRequest
+                || ! $offerRequest->to_user instanceof User
+                || ! hash_equals(
+                    mb_strtolower($offerRequest->to_user->email),
+                    mb_strtolower($email),
+                )
+            ) {
+                return null;
+            }
+
+            $user = $offerRequest->to_user;
+            $offerRequest->token = null;
+            $offerRequest->token_expires_at = null;
+            $offerRequest->save();
+
+            return $user;
+        });
+    }
+
+    /**
+     * @param  array{offer_id: int, token: string, email_mentor: string}  $baseParams
+     */
+    private function offerDecisionUrl(TutoringOffer $offer, string $action, array $baseParams): string
+    {
+        return URL::temporarySignedRoute(
+            'homepage.tutoring.offer',
+            Carbon::parse($offer->token_expires_at),
+            [...$baseParams, 'action' => $action],
+        );
     }
 }

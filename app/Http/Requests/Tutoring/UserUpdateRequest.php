@@ -2,9 +2,9 @@
 
 namespace App\Http\Requests\Tutoring;
 
+use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\Auth;
 
 class UserUpdateRequest extends FormRequest
 {
@@ -13,7 +13,18 @@ class UserUpdateRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return Auth::check();
+        $authenticatedUser = $this->user();
+        $targetUser = $this->route('user');
+
+        if (! $authenticatedUser instanceof User || ! $targetUser instanceof User) {
+            return false;
+        }
+
+        if ($this->has('data.id') && $this->integer('data.id') !== (int) $targetUser->id) {
+            return false;
+        }
+
+        return $authenticatedUser->can('updateTutoringProfile', $targetUser);
     }
 
     /**

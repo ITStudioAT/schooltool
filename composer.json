@@ -13,14 +13,19 @@
         "barryvdh/laravel-dompdf": "^3.1.2",
         "devrabiul/laravel-cookie-consent": "^1.1",
         "doctrine/dbal": "^4.4",
+        "dompdf/dompdf": "^3.1.6",
         "google/cloud-document-ai": "^2.6",
         "intervention/image": "^3.11",
         "lab404/laravel-impersonate": "^1.7.8",
         "laravel/ai": "^0.3.2",
         "laravel/fortify": "^1.37.2",
         "laravel/framework": "^13.0",
+        "laravel/horizon": "^5.48",
+        "laravel/pulse": "^1.7",
         "laravel/sanctum": "^4.3.1",
+        "laravel/scout": "^11.4",
         "laravel/tinker": "^3.0",
+        "laravel/wayfinder": "^0.1.20",
         "league/flysystem-aws-s3-v3": "^3.31",
         "phpoffice/phppresentation": "dev-master",
         "phpoffice/phpspreadsheet": "^5.7",
@@ -98,6 +103,10 @@
         "test:php:safety": [
             "@php artisan config:clear --ansi",
             "@php artisan test --compact tests/Feature/DatabaseSafetyTest.php"
+        ],
+        "test:integration": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --compact tests/Feature/InfrastructureIntegrationTest.php"
         ],
         "test:php:import116": [
             "@php artisan config:clear --ansi",
@@ -194,6 +203,10 @@
         "allow-plugins": {
             "pestphp/pest-plugin": true,
             "php-http/discovery": true
+        },
+        "platform": {
+            "ext-pcntl": "8.4",
+            "ext-posix": "8.4"
         }
     },
     "minimum-stability": "stable",

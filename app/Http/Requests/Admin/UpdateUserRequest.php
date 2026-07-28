@@ -24,7 +24,7 @@ class UpdateUserRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'id' => 'required|exists:users,id',
+            'id' => ['required', 'integer', Rule::in([(int) $this->route('user')->getKey()])],
             'last_name' => 'required|max:255',
             'first_name' => 'nullable|max:255',
             'email' => [
@@ -39,7 +39,7 @@ class UpdateUserRequest extends FormRequest
                     }
 
                     return $query;
-                })->ignore($this->id),
+                })->ignore($this->route('user')),
             ],
             'is_active' => 'boolean',
             'is_confirmed' => 'boolean',

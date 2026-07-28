@@ -18,7 +18,6 @@ use App\Http\Resources\Tutoring\OfferNotLoggedInResource;
 use App\Http\Resources\Tutoring\OfferResource;
 use App\Models\School;
 use App\Models\SchoolTool;
-use Illuminate\Support\Facades\Cache;
 use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
 use App\Models\User;
@@ -26,10 +25,12 @@ use App\Services\AuthService;
 use App\Services\LicenceService;
 use App\Services\TutoringOfferService;
 use App\Services\UserService;
-use Barryvdh\Debugbar\Facades\Debugbar;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\URL;
 
 class OfferController extends Controller
 {
@@ -218,9 +219,7 @@ class OfferController extends Controller
      */
     public function update(OfferUpdateRequest $request, TutoringOffer $offer, TutoringOfferService $service)
     {
-        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        Gate::authorize('update', $offer);
 
         $validated = $request->validated();
 
@@ -283,7 +282,8 @@ class OfferController extends Controller
 
         $validated = $request->validated();
 
-        $offer = TutoringOffer::where('id', $validated['id'])->where('user_id', $auth_user->id)->first();
+        $offer = TutoringOffer::query()->findOrFail($validated['id']);
+        Gate::authorize('update', $offer);
 
         if (! $offer->is_active) {
             // Offer ist im moment nicht aktiv
@@ -432,6 +432,32 @@ class OfferController extends Controller
         return response()->noContent();
     }
 
+    public function offerConfirmRefusePrompt(OfferConfirmRefuseRequest $request, TutoringOfferService $service)
+    {
+        $validated = $request->validated();
+        $offer = $service->offerForDecision($validated);
+
+        if (! $offer instanceof TutoringOffer) {
+            abort(403, 'Token ungültig oder abgelaufen.');
+        }
+
+        $actionLabel = $validated['action'] === 'confirm' ? 'Bestätigen' : 'Ablehnen';
+
+        return response()->view('homepage.restaurant-approval-response', [
+            'title' => "Nachhilfe-Angebot {$actionLabel}",
+            'subtitle' => $offer->title,
+            'text' => 'Bitte bestätigen Sie diese Aktion ausdrücklich.',
+            'status' => 'BESTÄTIGUNG ERFORDERLICH',
+            'form_url' => URL::temporarySignedRoute(
+                'homepage.tutoring.offer.store',
+                now()->addMinutes(15),
+                $validated,
+            ),
+            'button_label' => $actionLabel,
+            'back_url' => null,
+        ]);
+    }
+
     public function offerConfirmRefuse(OfferConfirmRefuseRequest $request, TutoringOfferService $service)
     {
         $validated = $request->validated();
@@ -466,12 +492,9 @@ class OfferController extends Controller
         $offer_id = $validated['offer_id'];
         $message = $validated['request_message'] ?? '';
         $offer = TutoringOffer::findOrFail($offer_id);
+        Gate::authorize('request', $offer);
 
-        if ($offer->user_id == $auth_user->id) {
-            abort(403, 'An sich selbst kann man keine Anfrage stellen');
-        }
-
-        $data = $service->sendOfferRequest($auth_user->id, $offer_id, $message);
+        $data = $service->sendOfferRequest($auth_user, $offer, $message);
 
         $offerRequest = TutoringOfferRequest::findOrFail($data['offer_request']['id']);
         if ($offerRequest->sent_count < 3) {

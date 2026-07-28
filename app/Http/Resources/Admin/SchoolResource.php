@@ -4,7 +4,6 @@ namespace App\Http\Resources\Admin;
 
 use App\Models\SchoolLicence;
 use App\Models\SchoolUserLicence;
-use App\Services\SchoolUserLicenceAssignmentService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
@@ -18,21 +17,12 @@ class SchoolResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $schoolLicenceRows = $this->relationLoaded('licences') && $this->licences->isNotEmpty()
-            ? SchoolLicence::query()
-                ->where('school_id', $this->id)
-                ->whereIn('licence_id', $this->licences->pluck('id'))
-                ->get()
-                ->keyBy('licence_id')
+        $schoolLicenceRows = $this->relationLoaded('schoolLicences')
+            ? $this->schoolLicences->keyBy('licence_id')
             : collect();
 
-        $userLicenceAssignments = $this->relationLoaded('licences') && $this->licences->isNotEmpty()
-            ? SchoolUserLicence::query()
-                ->where('school_id', $this->id)
-                ->whereIn('licence_id', $this->licences->pluck('id'))
-                ->select('licence_id', 'assignment_type', 'user_id', 'valid_until', 'is_active')
-                ->get()
-                ->groupBy('licence_id')
+        $userLicenceAssignments = $this->relationLoaded('schoolUserLicences')
+            ? $this->schoolUserLicences->groupBy('licence_id')
             : collect();
 
         return [
@@ -188,8 +178,8 @@ class SchoolResource extends JsonResource
             ->all();
 
         $roleNames = $this->roleNamesForAssignmentType($licence, $licenceModel, $assignmentType);
-        $payloadAssignments = $schoolLicence
-            ? app(SchoolUserLicenceAssignmentService::class)->assignmentsForSchoolLicence($schoolLicence, $roleNames)
+        $payloadAssignments = is_array($schoolLicence?->user_licence_assignments)
+            ? $schoolLicence->user_licence_assignments
             : [];
 
         if ($roleNames !== []) {

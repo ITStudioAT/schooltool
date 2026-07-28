@@ -40,7 +40,7 @@ class CurriculumDocumentController extends Controller
     {
         $this->authorizeCurriculum($curriculum);
 
-        $id = $fileUploadService->upload();
+        $id = $fileUploadService->upload($request, 'curriculum-document');
 
         return response($id, 200)->header('Content-Type', 'text/plain');
     }
@@ -55,7 +55,12 @@ class CurriculumDocumentController extends Controller
         $safeName = pathinfo($originalName, PATHINFO_FILENAME);
         $safeName = preg_replace('/[^a-zA-Z0-9_\-äöüÄÖÜß ]/', '', $safeName) ?: 'document';
 
-        $result = $fileUploadService->uploadNext($request, $uploadPath, $safeName);
+        $result = $fileUploadService->uploadNext(
+            $request,
+            $uploadPath,
+            $safeName,
+            profile: 'curriculum-document',
+        );
 
         if ($result instanceof Response) {
             return $result;

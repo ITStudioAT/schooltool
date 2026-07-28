@@ -12,6 +12,7 @@ use App\Services\RestaurantHomepagePdfService;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class RestaurantBookingController extends Controller
 {
@@ -67,6 +68,8 @@ class RestaurantBookingController extends Controller
                     'booked_at' => $booking->booked_at->format('d.m.Y H:i'),
                 ],
             ], 201);
+        } catch (ValidationException $exception) {
+            throw $exception;
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.',

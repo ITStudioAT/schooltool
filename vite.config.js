@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import laravel from 'laravel-vite-plugin';
+import { wayfinder } from '@laravel/vite-plugin-wayfinder';
 import vue from '@vitejs/plugin-vue';
 import vuetify from 'vite-plugin-vuetify';
 import path from 'path';
@@ -25,6 +26,7 @@ export default defineConfig({
     },
 
     plugins: [
+        wayfinder(),
         laravel({
             input: [
 

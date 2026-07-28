@@ -38,6 +38,7 @@ beforeEach(function () {
         'short_name' => 'STU',
         'long_name' => 'Student Test School',
     ]);
+    enableSchoolToolModuleForTests($this->school, 'teaching');
 
     $teachingLicence = Licence::firstOrCreate(
         ['name' => 'Lehrertool'],

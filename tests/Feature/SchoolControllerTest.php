@@ -336,7 +336,8 @@ test('store requires super admin role', function () {
 // ============================================================================
 
 test('admin can update school via service', function () {
-    $schoolToUpdate = School::factory()->create([
+    $schoolToUpdate = $this->school;
+    $schoolToUpdate->update([
         'long_name' => 'Updatable School',
         'short_name' => 'UPD',
         'email' => 'upd@example.com',

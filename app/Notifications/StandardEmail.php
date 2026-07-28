@@ -3,11 +3,12 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class StandardEmail extends Notification implements ShouldQueue
+class StandardEmail extends Notification implements ShouldBeEncrypted, ShouldQueue
 {
     use Queueable;
 
@@ -30,6 +31,16 @@ class StandardEmail extends Notification implements ShouldQueue
     }
 
     /**
+     * @return array<string, string>
+     */
+    public function viaQueues(): array
+    {
+        return [
+            'mail' => 'notifications',
+        ];
+    }
+
+    /**
      * Get the mail representation of the notification.
      */
     public function toMail(object $notifiable): MailMessage
@@ -46,11 +57,23 @@ class StandardEmail extends Notification implements ShouldQueue
 
         // ✅ Optional attachments support
         if ($this->attachments) {
-            $attachments = is_array($this->attachments)
-                ? $this->attachments
-                : [$this->attachments];
+            $attachments = is_array($this->attachments) && array_key_exists('data', $this->attachments)
+                ? [$this->attachments]
+                : (array) $this->attachments;
 
-            foreach ($attachments as $file) {
+            foreach ($attachments as $attachment) {
+                if (is_array($attachment) && isset($attachment['data'], $attachment['name'])) {
+                    $mail->attachData(
+                        (string) $attachment['data'],
+                        (string) $attachment['name'],
+                        (array) ($attachment['options'] ?? []),
+                    );
+
+                    continue;
+                }
+
+                $file = (string) $attachment;
+
                 if (file_exists($file)) {
                     $mail->attach($file, [
                         'as' => basename($file),

@@ -18,7 +18,14 @@ function stripUiTestTypesPlugin() {
                 return null
             }
 
-            if (!normalizedPath.includes('/tests/ui/')) {
+            const isUiTest = normalizedPath.includes('/tests/ui/')
+            const isGeneratedWayfinderFile = [
+                '/resources/js/actions/',
+                '/resources/js/routes/',
+                '/resources/js/wayfinder/',
+            ].some((directory) => normalizedPath.includes(directory))
+
+            if (!isUiTest && !isGeneratedWayfinderFile) {
                 return null
             }
 

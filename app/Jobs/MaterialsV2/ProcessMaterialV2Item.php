@@ -29,7 +29,9 @@ class ProcessMaterialV2Item implements ShouldBeUniqueUntilProcessing, ShouldQueu
     public function __construct(
         public int $itemId,
         public bool $force = false,
-    ) {}
+    ) {
+        $this->onQueue('materials');
+    }
 
     public function uniqueId(): string
     {

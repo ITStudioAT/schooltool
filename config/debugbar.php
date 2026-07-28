@@ -204,7 +204,7 @@ return [
         ],
         'messages' => [
             'trace' => env('DEBUGBAR_OPTIONS_MESSAGES_TRACE', true),                  // Trace the origin of the debug message
-            'capture_dumps' => env('DEBUGBAR_OPTIONS_MESSAGES_CAPTURE_DUMPS', false), // Capture laravel `dump();` as message
+            'capture_dumps' => env('DEBUGBAR_OPTIONS_MESSAGES_CAPTURE_DUMPS', false), // Capture dumped values as messages
         ],
         'memory' => [
             'reset_peak' => env('DEBUGBAR_OPTIONS_MEMORY_RESET_PEAK', false),       // run memory_reset_peak_usage before collecting

@@ -11,7 +11,9 @@ use App\Http\Requests\Admin\SetActiveRegisterRequest;
 use App\Http\Resources\Admin\RegisterResource;
 use App\Models\Register;
 use App\Services\RegisterService;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 class RegisterController extends Controller
 {
@@ -88,14 +90,6 @@ class RegisterController extends Controller
         $validated['school_id'] = $auth_user->school_id;
         $validated['schoolyear_id'] = $auth_user->schoolyear_id;
 
-        // HTML sanitizen - nur erlaubte Tags zulassen
-        if (isset($validated['description_on_website'])) {
-            $validated['description_on_website'] = strip_tags(
-                $validated['description_on_website'],
-                '<p><br><strong><b><u><em><i>'
-            );
-        }
-
         $register = Register::create($validated);
 
         return response()->json(new RegisterResource($register), 200);
@@ -117,17 +111,20 @@ class RegisterController extends Controller
         if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        Gate::forUser($auth_user)->authorize('update', $register);
+
         $validated = $request->validated();
 
-        // HTML sanitizen - nur erlaubte Tags zulassen
-        if (isset($validated['description_on_website'])) {
-            $validated['description_on_website'] = strip_tags(
-                $validated['description_on_website'],
-                '<p><br><strong><b><u><em><i>'
-            );
+        if (
+            (int) $validated['id'] !== (int) $register->id
+            || (int) $validated['school_id'] !== (int) $register->school_id
+            || (int) $validated['schoolyear_id'] !== (int) $register->schoolyear_id
+        ) {
+            abort(403, 'Die Mandantenzuordnung des Anmeldesystems darf nicht geändert werden.');
         }
 
-        $register->update($validated);
+        $register->update(Arr::except($validated, ['id', 'school_id', 'schoolyear_id']));
 
         return response()->json(new RegisterResource($register), 200);
     }
@@ -140,6 +137,8 @@ class RegisterController extends Controller
         if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        Gate::forUser($auth_user)->authorize('delete', $register);
 
         if ($register->hasDependencies()) {
             abort(409, 'Das Anmeldesystem hat noch Abhängigkeiten und kann nicht gelöscht werden');
@@ -160,7 +159,11 @@ class RegisterController extends Controller
         }
 
         $validated = $request->validated();
-        $register = $registerService->setToUser($auth_user, $validated['register_id']);
+        $register = Register::query()->findOrFail($validated['register_id']);
+
+        Gate::forUser($auth_user)->authorize('view', $register);
+
+        $register = $registerService->setToUser($auth_user, $register->id);
         $register = Register::withCount([
             'bookings',
             'dates',
@@ -180,7 +183,11 @@ class RegisterController extends Controller
         }
 
         $validated = $request->validated();
-        $register = $registerService->toggle($validated['register_id']);
+        $register = Register::query()->findOrFail($validated['register_id']);
+
+        Gate::forUser($auth_user)->authorize('update', $register);
+
+        $register = $registerService->toggle($register->id);
 
         return response()->json(new RegisterResource($register), 200);
     }

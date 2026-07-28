@@ -2,9 +2,10 @@
 
 namespace App\Http\Requests\Tutoring;
 
+use App\Models\TutoringOfferRequest;
+use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\Auth;
 
 class OfferRequestMailClickedRequest extends FormRequest
 {
@@ -13,7 +14,23 @@ class OfferRequestMailClickedRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return Auth::check();
+        $authenticatedUser = $this->user();
+
+        if (! $authenticatedUser instanceof User || ! $authenticatedUser->hasRole('tutoring_user')) {
+            return false;
+        }
+
+        $offerRequestId = $this->integer('request_id');
+        if ($offerRequestId < 1) {
+            return true;
+        }
+
+        $offerRequest = TutoringOfferRequest::query()->find($offerRequestId);
+        if (! $offerRequest) {
+            return true;
+        }
+
+        return $authenticatedUser->can('markMailClicked', $offerRequest);
     }
 
     /**

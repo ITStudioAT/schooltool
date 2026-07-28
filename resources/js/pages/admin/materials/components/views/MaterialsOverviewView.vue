@@ -1548,6 +1548,7 @@ import { nextTick } from 'vue'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { openAttachmentPreview, UnsupportedAttachmentPreviewError } from '@/pages/admin/materials/attachmentPreview'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import MaterialsCreateInlineForm from '../forms/MaterialsCreateInlineForm.vue'
 import MaterialTypeManagerDialog from '../forms/MaterialTypeManagerDialog.vue'
@@ -7939,27 +7940,9 @@ ${content}
             }
             if (this.isPreviewingAttachment(id)) return
 
-            const previewWindow = window.open('about:blank', '_blank')
-            if (!previewWindow) {
-                const notification = useNotificationStore()
-                notification.notify({
-                    message: 'Pop-up blockiert. Bitte Pop-ups für Vorschau erlauben.',
-                    type: 'warning',
-                    timeout: 3000,
-                })
-                return
-            }
-
             this.markAttachmentPreviewing(id, true)
 
             try {
-                try {
-                    previewWindow.document.title = 'Vorschau wird geladen...'
-                    previewWindow.document.body.innerHTML = '<p style="font-family: sans-serif; padding: 16px;">Vorschau wird geladen...</p>'
-                } catch {
-                    // noop
-                }
-
                 let response = null
                 const previewOnce = async (url) =>
                     axios.get(url, {
@@ -7992,24 +7975,24 @@ ${content}
                               type: contentType || 'application/octet-stream',
                           })
 
-                const objectUrl = URL.createObjectURL(blob)
-                previewWindow.location.replace(objectUrl)
-                window.setTimeout(() => {
-                    URL.revokeObjectURL(objectUrl)
-                }, 120000)
+                openAttachmentPreview({
+                    blob,
+                    responseContentType: contentType,
+                    attachment,
+                })
             } catch (error) {
-                try {
-                    previewWindow.close()
-                } catch {
-                    // noop
-                }
-
                 const notification = useNotificationStore()
                 const status = Number(error?.response?.status || 0)
+                const isUnsupportedPreview = error instanceof UnsupportedAttachmentPreviewError
                 notification.notify({
                     status: status || error.response?.status,
-                    message: status === 404 ? 'Datei ist derzeit nicht verfügbar.' : error.response?.data?.message || 'Vorschau konnte nicht geladen werden.',
-                    type: 'error',
+                    message:
+                        status === 404
+                            ? 'Datei ist derzeit nicht verfügbar.'
+                            : isUnsupportedPreview
+                              ? 'Dieser Dateityp kann nicht sicher angezeigt werden. Bitte die Datei herunterladen.'
+                              : error.response?.data?.message || 'Vorschau konnte nicht geladen werden.',
+                    type: isUnsupportedPreview ? 'warning' : 'error',
                     timeout: 3000,
                 })
             } finally {

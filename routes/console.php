@@ -21,6 +21,16 @@ Schedule::job(new HealthJob)
     ->onOneServer()
     ->withoutOverlapping();
 
+Schedule::command('horizon:snapshot')
+    ->everyFiveMinutes()
+    ->onOneServer()
+    ->withoutOverlapping();
+
+Schedule::command('uploads:cleanup-expired')
+    ->hourlyAt(17)
+    ->onOneServer()
+    ->withoutOverlapping();
+
 Schedule::command('private:prune-orphan-school-folders')
     ->dailyAt('03:00')
     ->onOneServer()

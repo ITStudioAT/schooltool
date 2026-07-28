@@ -46,13 +46,13 @@ describe('getLog', function () {
         $response->assertStatus(401);
     });
 
-    it('returns 200 when user has admin role', function () {
+    it('returns 403 when user has admin role', function () {
         $user = User::factory()->create(['school_id' => $this->school->id]);
         $user->assignRole('admin');
 
         $response = $this->actingAs($user)->getJson('/api/admin/get_log');
 
-        $response->assertStatus(200);
+        $response->assertForbidden();
     });
 
     it('returns 404 when log file does not exist', function () {
@@ -139,7 +139,7 @@ describe('getLog', function () {
         expect($response->getContent())->toBe($expected);
     });
 
-    it('limits max lines to 1000', function () {
+    it('rejects a lines value above 1000', function () {
         $user = User::factory()->create(['school_id' => $this->school->id]);
         $user->assignRole('super_admin');
 
@@ -149,9 +149,8 @@ describe('getLog', function () {
 
         $response = $this->actingAs($user)->getJson('/api/admin/get_log?lines=2000');
 
-        $response->assertStatus(200)
-            ->assertHeader('X-Lines-Count', '1000')
-            ->assertHeader('X-Total-Lines', '1500');
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors('lines');
     });
 
     it('uses default 500 lines when lines parameter not provided', function () {
@@ -230,7 +229,7 @@ describe('getLog', function () {
         expect($response->getContent())->toBe($content);
     });
 
-    it('accepts negative lines parameter and uses minimum', function () {
+    it('rejects negative lines parameter', function () {
         $user = User::factory()->create(['school_id' => $this->school->id]);
         $user->assignRole('super_admin');
 
@@ -238,8 +237,8 @@ describe('getLog', function () {
 
         $response = $this->actingAs($user)->getJson('/api/admin/get_log?lines=-10');
 
-        $response->assertStatus(200)
-            ->assertHeader('X-Lines-Count', '0');
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors('lines');
     });
 
     it('allows super_admin role to access logs', function () {
@@ -451,9 +450,9 @@ describe('integration tests', function () {
         $response1 = $this->actingAs($superAdmin)->getJson('/api/admin/get_log');
         $response1->assertStatus(200);
 
-        // Admin can also access
+        // Admin cannot access global logs
         $response2 = $this->actingAs($regularUser)->getJson('/api/admin/get_log');
-        $response2->assertStatus(200);
+        $response2->assertForbidden();
 
         // Super admin can delete
         $response3 = $this->actingAs($superAdmin)->postJson('/api/admin/delete_log');

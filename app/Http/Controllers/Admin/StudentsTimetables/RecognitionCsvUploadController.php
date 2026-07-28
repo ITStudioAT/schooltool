@@ -74,7 +74,7 @@ class RecognitionCsvUploadController extends Controller
         ]);
     }
 
-    public function upload(FileUploadService $fileUploadService): Response
+    public function upload(Request $request, FileUploadService $fileUploadService): Response
     {
         if (! $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
@@ -82,7 +82,7 @@ class RecognitionCsvUploadController extends Controller
 
         $this->ensureCsv();
 
-        $id = $fileUploadService->upload();
+        $id = $fileUploadService->upload($request, 'recognition-import');
 
         return response($id, 200)->header('Content-Type', 'text/plain');
     }
@@ -103,7 +103,12 @@ class RecognitionCsvUploadController extends Controller
         $uploadPath = "app/private/{$authUser->school_id}/recognition-imports/{$authUser->schoolyear_id}";
         $storedName = $this->storedFilename($request->header('Upload-Name'));
 
-        $result = $fileUploadService->uploadNext($request, $uploadPath, $storedName);
+        $result = $fileUploadService->uploadNext(
+            $request,
+            $uploadPath,
+            $storedName,
+            profile: 'recognition-import',
+        );
 
         if ($result instanceof Response) {
             return $result;
@@ -295,7 +300,7 @@ class RecognitionCsvUploadController extends Controller
     private function countDistinctExpression(Builder $query, string $expression): int
     {
         return (int) $query
-            ->selectRaw("COUNT(DISTINCT {$expression}) as aggregate")
+            ->selectRaw(sprintf('COUNT(DISTINCT %s) as aggregate', $expression))
             ->value('aggregate');
     }
 
@@ -315,9 +320,12 @@ class RecognitionCsvUploadController extends Controller
             : $this->studentNumberIdentifierExpression();
 
         return $query
-            ->selectRaw("{$expression} as student_identifier")
-            ->selectRaw("SUM(CASE WHEN {$this->noteExpression()} IS NOT NULL THEN 1 ELSE 0 END) as graded_rows")
-            ->whereRaw("{$expression} IS NOT NULL")
+            ->selectRaw(sprintf('%s as student_identifier', $expression))
+            ->selectRaw(sprintf(
+                'SUM(CASE WHEN %s IS NOT NULL THEN 1 ELSE 0 END) as graded_rows',
+                $this->noteExpression(),
+            ))
+            ->whereRaw($expression.' IS NOT NULL')
             ->groupBy('student_identifier')
             ->havingRaw('graded_rows = 0')
             ->get()
@@ -328,8 +336,8 @@ class RecognitionCsvUploadController extends Controller
     {
         $identifierExpression = $this->studentNumberIdentifierExpression();
         $identifiers = (clone $query)
-            ->selectRaw("{$identifierExpression} as student_identifier")
-            ->whereRaw("{$identifierExpression} IS NOT NULL")
+            ->selectRaw(sprintf('%s as student_identifier', $identifierExpression))
+            ->whereRaw($identifierExpression.' IS NOT NULL')
             ->distinct()
             ->pluck('student_identifier');
 
@@ -342,11 +350,14 @@ class RecognitionCsvUploadController extends Controller
     {
         $gradeExpression = $this->gradeExpression();
         $counts = $query
-            ->selectRaw("COUNT({$gradeExpression}) as total")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'N' THEN 1 ELSE 0 END) as n")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'B' THEN 1 ELSE 0 END) as b")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} IN ('1', '2', '3', '4') THEN 1 ELSE 0 END) as one_to_four")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = '5' THEN 1 ELSE 0 END) as five")
+            ->selectRaw(sprintf('COUNT(%s) as total', $gradeExpression))
+            ->selectRaw(sprintf("SUM(CASE WHEN %s = 'N' THEN 1 ELSE 0 END) as n", $gradeExpression))
+            ->selectRaw(sprintf("SUM(CASE WHEN %s = 'B' THEN 1 ELSE 0 END) as b", $gradeExpression))
+            ->selectRaw(sprintf(
+                "SUM(CASE WHEN %s IN ('1', '2', '3', '4') THEN 1 ELSE 0 END) as one_to_four",
+                $gradeExpression,
+            ))
+            ->selectRaw(sprintf("SUM(CASE WHEN %s = '5' THEN 1 ELSE 0 END) as five", $gradeExpression))
             ->first();
 
         $total = (int) ($counts?->getAttribute('total') ?? 0);
@@ -356,9 +367,9 @@ class RecognitionCsvUploadController extends Controller
         $five = (int) ($counts?->getAttribute('five') ?? 0);
 
         $otherDetails = (clone $query)
-            ->selectRaw("{$gradeExpression} as note, COUNT(*) as count")
-            ->whereRaw("{$gradeExpression} IS NOT NULL")
-            ->whereRaw("{$gradeExpression} NOT IN ('N', 'B', '5', '1', '2', '3', '4')")
+            ->selectRaw(sprintf('%s as note, COUNT(*) as count', $gradeExpression))
+            ->whereRaw($gradeExpression.' IS NOT NULL')
+            ->whereRaw($gradeExpression." NOT IN ('N', 'B', '5', '1', '2', '3', '4')")
             ->groupBy('note')
             ->orderBy('note')
             ->get()
@@ -386,14 +397,20 @@ class RecognitionCsvUploadController extends Controller
         $subjectExpression = $this->nonEmptyColumnExpression('subject');
 
         return $query
-            ->selectRaw("{$subjectExpression} as subject")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} IN ('1', '2', '3', '4') THEN 1 ELSE 0 END) as one_to_four_count")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'B' THEN 1 ELSE 0 END) as b_count")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = '5' THEN 1 ELSE 0 END) as five_count")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'N' THEN 1 ELSE 0 END) as n_count")
-            ->selectRaw("SUM(CASE WHEN {$this->isOtherGradeSql($gradeExpression)} THEN 1 ELSE 0 END) as other_count")
-            ->selectRaw("COUNT({$gradeExpression}) as total_count")
-            ->whereRaw("{$subjectExpression} IS NOT NULL")
+            ->selectRaw(sprintf('%s as subject', $subjectExpression))
+            ->selectRaw(sprintf(
+                "SUM(CASE WHEN %s IN ('1', '2', '3', '4') THEN 1 ELSE 0 END) as one_to_four_count",
+                $gradeExpression,
+            ))
+            ->selectRaw(sprintf("SUM(CASE WHEN %s = 'B' THEN 1 ELSE 0 END) as b_count", $gradeExpression))
+            ->selectRaw(sprintf("SUM(CASE WHEN %s = '5' THEN 1 ELSE 0 END) as five_count", $gradeExpression))
+            ->selectRaw(sprintf("SUM(CASE WHEN %s = 'N' THEN 1 ELSE 0 END) as n_count", $gradeExpression))
+            ->selectRaw(sprintf(
+                'SUM(CASE WHEN %s THEN 1 ELSE 0 END) as other_count',
+                $this->isOtherGradeSql($gradeExpression),
+            ))
+            ->selectRaw(sprintf('COUNT(%s) as total_count', $gradeExpression))
+            ->whereRaw($subjectExpression.' IS NOT NULL')
             ->groupBy('subject')
             ->orderBy('subject')
             ->get()
@@ -414,18 +431,28 @@ class RecognitionCsvUploadController extends Controller
     {
         $gradeExpression = $this->gradeExpression();
         $teacherExpression = $this->nonEmptyColumnExpression('teacher_code');
+        $subjectExpression = $this->nonEmptyColumnExpression('subject');
 
         return $query
-            ->selectRaw("{$teacherExpression} as teacher_code")
-            ->selectRaw("GROUP_CONCAT(DISTINCT {$this->nonEmptyColumnExpression('subject')} ORDER BY {$this->nonEmptyColumnExpression('subject')} SEPARATOR '\x1F') as subjects")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} IN ('1', '2', '3', '4') THEN 1 ELSE 0 END) as one_to_four_count")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = '5' THEN 1 ELSE 0 END) as five_count")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'N' THEN 1 ELSE 0 END) as n_count")
-            ->selectRaw("SUM(CASE WHEN {$this->isOtherGradeSql($gradeExpression)} THEN 1 ELSE 0 END) as other_count")
-            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'B' THEN 1 ELSE 0 END) as b_count")
-            ->whereRaw("{$gradeExpression} IS NOT NULL")
+            ->selectRaw(sprintf('%s as teacher_code', $teacherExpression))
+            ->selectRaw(sprintf(
+                "GROUP_CONCAT(DISTINCT %1\$s ORDER BY %1\$s SEPARATOR '\x1F') as subjects",
+                $subjectExpression,
+            ))
+            ->selectRaw(sprintf(
+                "SUM(CASE WHEN %s IN ('1', '2', '3', '4') THEN 1 ELSE 0 END) as one_to_four_count",
+                $gradeExpression,
+            ))
+            ->selectRaw(sprintf("SUM(CASE WHEN %s = '5' THEN 1 ELSE 0 END) as five_count", $gradeExpression))
+            ->selectRaw(sprintf("SUM(CASE WHEN %s = 'N' THEN 1 ELSE 0 END) as n_count", $gradeExpression))
+            ->selectRaw(sprintf(
+                'SUM(CASE WHEN %s THEN 1 ELSE 0 END) as other_count',
+                $this->isOtherGradeSql($gradeExpression),
+            ))
+            ->selectRaw(sprintf("SUM(CASE WHEN %s = 'B' THEN 1 ELSE 0 END) as b_count", $gradeExpression))
+            ->whereRaw($gradeExpression.' IS NOT NULL')
             ->groupBy('teacher_code')
-            ->orderByRaw("CASE WHEN {$teacherExpression} IS NULL THEN 1 ELSE 0 END")
+            ->orderByRaw(sprintf('CASE WHEN %s IS NULL THEN 1 ELSE 0 END', $teacherExpression))
             ->orderBy('teacher_code')
             ->get()
             ->map(fn (StudentTimetableRecognitionRow $row): array => [

@@ -28,6 +28,8 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -145,7 +147,7 @@ describe('index', function () {
 
         $response = $this->actingAs($user)->getJson('/api/homepage/tutoring/offers?search_string=test');
 
-        $response->assertStatus(403);
+        $response->assertForbidden();
     });
 
     test('it returns paginated offers for authenticated tutoring user', function () {
@@ -476,7 +478,7 @@ describe('loadOffers', function () {
 
         $response = $this->getJson('/api/homepage/tutoring/load_offers?school_name=TEST');
 
-        $response->assertStatus(403);
+        $response->assertForbidden();
     });
 
     test('it allows access when school licence is expired but not required', function () {
@@ -1047,7 +1049,7 @@ describe('setUserSearchCriteria', function () {
             'only_boys' => true,
         ]);
 
-        $response->assertStatus(403);
+        $response->assertUnauthorized();
     });
 
     test('it saves user search criteria', function () {
@@ -1071,16 +1073,55 @@ describe('setUserSearchCriteria', function () {
 });
 
 describe('offerConfirmRefuse', function () {
-    test('it validates required parameters', function () {
+    test('it rejects unsigned decision links', function () {
         $response = $this->get('/homepage/tutoring/offer');
 
-        $response->assertStatus(302); // Redirects due to validation failure
+        $response->assertForbidden();
     });
 
-    test('it validates action parameter is valid', function () {
-        $response = $this->get('/homepage/tutoring/offer?action=invalid&offer_id=1&token=test&email_mentor=test@example.com');
+    test('it requires an explicit post and consumes the decision token', function () {
+        $token = Str::uuid()->toString();
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->otherUser->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Approval required',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 2,
+            'email_mentor' => 'mentor@example.com',
+        ]);
+        $offer->forceFill([
+            'token' => $token,
+            'token_expires_at' => now()->addHour(),
+        ])->save();
+        $parameters = [
+            'action' => 'confirm',
+            'offer_id' => $offer->id,
+            'token' => $token,
+            'email_mentor' => 'mentor@example.com',
+        ];
 
-        $response->assertStatus(302); // Redirects due to validation failure
+        $this->get(URL::temporarySignedRoute('homepage.tutoring.offer', now()->addMinutes(15), $parameters))
+            ->assertOk()
+            ->assertSee('Bitte bestätigen Sie diese Aktion ausdrücklich.');
+
+        expect($offer->fresh()->accepted_at)->toBeNull()
+            ->and($offer->fresh()->token)->toBe($token);
+
+        $postUrl = URL::temporarySignedRoute(
+            'homepage.tutoring.offer.store',
+            now()->addMinutes(15),
+            $parameters,
+        );
+        $this->post($postUrl)->assertRedirect();
+
+        expect($offer->fresh()->accepted_at)->not->toBeNull()
+            ->and($offer->fresh()->token)->toBeNull()
+            ->and($offer->fresh()->token_expires_at)->toBeNull();
+
+        $this->post($postUrl)->assertForbidden();
     });
 });
 
@@ -1122,8 +1163,7 @@ describe('sendRequest', function () {
             'request_message' => 'Test',
         ]);
 
-        $response->assertStatus(403)
-            ->assertJson(['message' => 'An sich selbst kann man keine Anfrage stellen']);
+        $response->assertForbidden();
     });
 
     test('it creates a request successfully', function () {
@@ -1136,7 +1176,9 @@ describe('sendRequest', function () {
             'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
+            'is_active' => true,
         ]);
+        $offer->forceFill(['accepted_at' => now()])->save();
 
         $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/send_request', [
             'offer_id' => $offer->id,
@@ -1148,5 +1190,90 @@ describe('sendRequest', function () {
                 'status',
                 'offer_request',
             ]);
+    });
+
+    test('it rejects inactive unapproved expired and hidden cross-school offers', function (array $overrides) {
+        $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $this->otherSchool->id]);
+        $owner = User::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+        ]);
+        $owner->assignRole('tutoring_user');
+        $subject = TutoringSubject::create([
+            'school_id' => $this->otherSchool->id,
+            'short_name' => 'X',
+            'long_name' => 'Cross-school subject',
+        ]);
+        $offer = TutoringOffer::create([
+            'school_id' => $this->otherSchool->id,
+            'user_id' => $owner->id,
+            'subject_id' => $subject->id,
+            'title' => 'Unavailable offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 2,
+            'is_active' => true,
+            'visible_for_other_schools' => true,
+        ]);
+        $offer->forceFill([
+            'is_active' => $overrides['is_active'] ?? true,
+            'accepted_at' => array_key_exists('accepted_at', $overrides)
+                ? $overrides['accepted_at']
+                : now(),
+            'active_until' => $overrides['active_until'] ?? null,
+            'visible_for_other_schools' => $overrides['visible_for_other_schools'] ?? true,
+        ])->save();
+
+        $this->actingAs($this->user)
+            ->postJson('/api/homepage/tutoring/send_request', ['offer_id' => $offer->id])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('tutoring_offer_requests', [
+            'offer_id' => $offer->id,
+            'from_user_id' => $this->user->id,
+        ]);
+    })->with([
+        'inactive' => [['is_active' => false]],
+        'unapproved' => [['accepted_at' => null]],
+        'expired' => [['active_until' => now()->subDay()->toDateString()]],
+        'hidden cross-school' => [['visible_for_other_schools' => false]],
+    ]);
+
+    test('it allows requests to visible active cross-school offers', function () {
+        $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $this->otherSchool->id]);
+        $owner = User::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+        ]);
+        $owner->assignRole('tutoring_user');
+        $subject = TutoringSubject::create([
+            'school_id' => $this->otherSchool->id,
+            'short_name' => 'Y',
+            'long_name' => 'Visible cross-school subject',
+        ]);
+        $offer = TutoringOffer::create([
+            'school_id' => $this->otherSchool->id,
+            'user_id' => $owner->id,
+            'subject_id' => $subject->id,
+            'title' => 'Visible offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 2,
+            'is_active' => true,
+            'visible_for_other_schools' => true,
+        ]);
+        $offer->forceFill(['accepted_at' => now()])->save();
+
+        $this->actingAs($this->user)
+            ->postJson('/api/homepage/tutoring/send_request', ['offer_id' => $offer->id])
+            ->assertOk();
+
+        $this->assertDatabaseHas('tutoring_offer_requests', [
+            'offer_id' => $offer->id,
+            'from_user_id' => $this->user->id,
+            'to_user_id' => $owner->id,
+        ]);
     });
 });

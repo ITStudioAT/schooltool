@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\TutoringOfferService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Mockery;
 use Spatie\Permission\Models\Role;
@@ -693,7 +694,7 @@ test('offerRequest requires valid email', function () {
         'token' => $token,
     ]));
 
-    $response->assertStatus(302);
+    $response->assertForbidden();
 });
 
 test('offerRequest requires valid token format', function () {
@@ -703,7 +704,7 @@ test('offerRequest requires valid token format', function () {
         'token' => 'invalid-token',
     ]));
 
-    $response->assertStatus(302);
+    $response->assertForbidden();
 });
 
 test('offerRequest requires id parameter', function () {
@@ -714,30 +715,50 @@ test('offerRequest requires id parameter', function () {
         'token' => $token,
     ]));
 
-    $response->assertStatus(302);
+    $response->assertForbidden();
 });
 
-test('offerRequest logs in the resolved user and redirects to tutoring overview', function () {
+test('offerRequest requires an explicit post before logging in the resolved user', function () {
     $targetUser = User::factory()->create([
         'email' => 'target@example.com',
         'school_id' => $this->school1->id,
         'schoolyear_id' => $this->schoolyear1->id,
     ]);
+    $token = Str::uuid()->toString();
+    $parameters = [
+        'email' => $targetUser->email,
+        'id' => 123,
+        'token' => $token,
+    ];
 
     $service = Mockery::mock(TutoringOfferService::class);
-    $service->shouldReceive('getUserFromOfferRequest')
+    $service->shouldReceive('userFromOfferRequest')
         ->once()
-        ->with($targetUser->email, 123, Mockery::type('string'))
+        ->with($targetUser->email, 123, $token)
+        ->andReturn($targetUser);
+    $service->shouldReceive('consumeUserFromOfferRequest')
+        ->once()
+        ->with($targetUser->email, 123, $token)
         ->andReturn($targetUser);
 
     app()->instance(TutoringOfferService::class, $service);
 
     $this->actingAs($this->student)
-        ->get('/homepage/tutoring/offer_request?'.http_build_query([
-            'email' => $targetUser->email,
-            'id' => 123,
-            'token' => Str::uuid()->toString(),
-        ]))
+        ->get(URL::temporarySignedRoute(
+            'homepage.tutoring.offer-request',
+            now()->addMinutes(15),
+            $parameters,
+        ))
+        ->assertOk()
+        ->assertSee('Bitte bestätigen Sie die Anmeldung ausdrücklich.');
+
+    expect(Auth::id())->toBe($this->student->id);
+
+    $this->post(URL::temporarySignedRoute(
+        'homepage.tutoring.offer-request.store',
+        now()->addMinutes(15),
+        $parameters,
+    ))
         ->assertRedirect('/homepage/tutoring_overview?school=ABG-SB&received_requests=true');
 
     expect(Auth::id())->toBe($targetUser->id);
@@ -745,17 +766,21 @@ test('offerRequest logs in the resolved user and redirects to tutoring overview'
 
 test('offerRequest redirects to error page when user lookup fails', function () {
     $service = Mockery::mock(TutoringOfferService::class);
-    $service->shouldReceive('getUserFromOfferRequest')
+    $service->shouldReceive('consumeUserFromOfferRequest')
         ->once()
         ->andReturn(null);
 
     app()->instance(TutoringOfferService::class, $service);
 
-    $response = $this->get('/homepage/tutoring/offer_request?'.http_build_query([
-        'email' => 'test@example.com',
-        'id' => 1,
-        'token' => Str::uuid()->toString(),
-    ]));
+    $response = $this->post(URL::temporarySignedRoute(
+        'homepage.tutoring.offer-request.store',
+        now()->addMinutes(15),
+        [
+            'email' => 'test@example.com',
+            'id' => 1,
+            'token' => Str::uuid()->toString(),
+        ],
+    ));
 
     $response->assertStatus(302);
 

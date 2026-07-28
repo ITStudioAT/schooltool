@@ -796,22 +796,24 @@ it('combines text search with an exact category filter', function () {
         'user_id' => $this->user->id,
         'title' => 'Arbeitsblatt Zellen',
         'category' => 'Biologie',
+        'link_url' => 'https://materials.example/biology-cells',
     ]);
     MaterialV2Item::factory()->create([
         'school_id' => $this->school->id,
         'user_id' => $this->user->id,
         'title' => 'Arbeitsblatt Brüche',
         'category' => 'Mathematik',
+        'link_url' => 'https://materials.example/mathematics-fractions',
     ]);
 
-    $this->getJson('/api/admin/materials-v2/items?search=Arbeitsblatt&category=Biologie')
+    $this->getJson('/api/admin/materials-v2/items?search=biology-cells&category=Biologie')
         ->assertSuccessful()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.id', $biologyItem->id)
         ->assertJsonPath('meta.total', 1);
 });
 
-it('returns flexible multi-word fuzzy search results in relevance order', function () {
+it('returns Scout database results through the materials API', function () {
     $this->actingAs($this->user, 'sanctum');
 
     $bestMatch = MaterialV2Item::factory()->create([
@@ -819,16 +821,18 @@ it('returns flexible multi-word fuzzy search results in relevance order', functi
         'user_id' => $this->user->id,
         'title' => 'Photosynthese Arbeitsblatt',
         'description' => 'Biologie Übungen',
+        'link_url' => 'https://materials.example/photosynthesis',
         'search_text' => 'chlorophyll lichtreaktion pflanzen arbeitsblatt',
     ]);
     MaterialV2Item::factory()->create([
         'school_id' => $this->school->id,
         'user_id' => $this->user->id,
         'title' => 'Geschichte der Antike',
+        'link_url' => 'https://materials.example/antiquity',
         'search_text' => 'rom griechenland',
     ]);
 
-    $this->getJson('/api/admin/materials-v2/items?search=Photosyntese%20Arbeitsblat')
+    $this->getJson('/api/admin/materials-v2/items?search=photosynthesis')
         ->assertSuccessful()
         ->assertJsonPath('data.0.id', $bestMatch->id)
         ->assertJsonPath('meta.total', 1);

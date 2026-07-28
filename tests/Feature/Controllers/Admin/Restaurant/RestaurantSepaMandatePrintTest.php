@@ -1,7 +1,10 @@
 <?php
 
+use App\Models\Licence;
 use App\Models\RestaurantSepaMandate;
 use App\Models\School;
+use App\Models\SchoolLicence;
+use App\Models\SchoolTool;
 use App\Models\User;
 use App\Services\RestaurantSepaMandatePdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -19,6 +22,20 @@ beforeEach(function (): void {
     });
 
     $this->school = School::factory()->create();
+    $licence = Licence::query()->create([
+        'name' => 'Restaurant',
+        'long_name' => 'Restaurant',
+    ]);
+    SchoolLicence::query()->create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+    SchoolTool::query()->create([
+        'school_id' => $this->school->id,
+        'restaurant_visible_admin' => true,
+    ]);
+
     $this->admin = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => null,

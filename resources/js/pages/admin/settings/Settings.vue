@@ -241,31 +241,33 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import Schools from '@/pages/admin/superAdmin/components/Schools.vue'
-import Schoolyears from '@/pages/admin/superAdmin/components/Schoolyears.vue'
-import Users from '@/pages/admin/superAdmin/components/Users.vue'
-import Licences from '@/pages/admin/superAdmin/components/Licences.vue'
-import LicenceSchools from '@/pages/admin/superAdmin/components/LicenceSchools.vue'
-import Roles from '@/pages/admin/superAdmin/components/Roles.vue'
-import Log from '@/pages/admin/superAdmin/components/Log.vue'
-import RegisterUsers from '@/pages/admin/settings/components/RegisterUsers.vue'
-import ModuleStatusesCard from '@/pages/admin/settings/components/ModuleStatusesCard.vue'
-import Profile from '@/pages/admin/profile/Profile.vue'
-import ActiveSchool from '@/pages/admin/superAdmin/components/ActiveSchool.vue'
-import UserImpersonation from '@/pages/admin/superAdmin/components/UserImpersonation.vue'
-import Teachers from '@/pages/admin/superAdmin/components/Teachers.vue'
-import TeachersList from '@/pages/admin/superAdmin/components/TeachersList.vue'
-import StorageAudit from '@/pages/admin/superAdmin/components/StorageAudit.vue'
-import TutoringSettings from '@/pages/admin/tutoring/components/Settings.vue'
-import TutoringSubjects from '@/pages/admin/tutoring/components/Subjects.vue'
-import TutoringUsers from '@/pages/admin/tutoring/components/Users.vue'
-import TeachingAdmin from '@/pages/admin/teaching/admin/Admin.vue'
-import StudentsTimetablesAdminUsers from '@/pages/admin/studentsTimetables/settings/AdminUsers.vue'
-import MaterialsSettingsView from '@/pages/admin/materials/components/views/MaterialsSettingsView.vue'
-import Groups from '@/pages/admin/groups/Groups.vue'
-import RestaurantSettings from '@/pages/admin/restaurant/components/Settings.vue'
+
+const Schools = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Schools.vue'))
+const Schoolyears = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Schoolyears.vue'))
+const Users = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Users.vue'))
+const Licences = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Licences.vue'))
+const LicenceSchools = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/LicenceSchools.vue'))
+const Roles = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Roles.vue'))
+const Log = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Log.vue'))
+const RegisterUsers = defineAsyncComponent(() => import('@/pages/admin/settings/components/RegisterUsers.vue'))
+const ModuleStatusesCard = defineAsyncComponent(() => import('@/pages/admin/settings/components/ModuleStatusesCard.vue'))
+const Profile = defineAsyncComponent(() => import('@/pages/admin/profile/Profile.vue'))
+const ActiveSchool = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/ActiveSchool.vue'))
+const UserImpersonation = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/UserImpersonation.vue'))
+const Teachers = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/Teachers.vue'))
+const TeachersList = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/TeachersList.vue'))
+const StorageAudit = defineAsyncComponent(() => import('@/pages/admin/superAdmin/components/StorageAudit.vue'))
+const TutoringSettings = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Settings.vue'))
+const TutoringSubjects = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Subjects.vue'))
+const TutoringUsers = defineAsyncComponent(() => import('@/pages/admin/tutoring/components/Users.vue'))
+const TeachingAdmin = defineAsyncComponent(() => import('@/pages/admin/teaching/admin/Admin.vue'))
+const StudentsTimetablesAdminUsers = defineAsyncComponent(() => import('@/pages/admin/studentsTimetables/settings/AdminUsers.vue'))
+const MaterialsSettingsView = defineAsyncComponent(() => import('@/pages/admin/materials/components/views/MaterialsSettingsView.vue'))
+const Groups = defineAsyncComponent(() => import('@/pages/admin/groups/Groups.vue'))
+const RestaurantSettings = defineAsyncComponent(() => import('@/pages/admin/restaurant/components/Settings.vue'))
 
 export default {
     components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, StorageAudit, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, StudentsTimetablesAdminUsers, MaterialsSettingsView, Groups, RestaurantSettings },

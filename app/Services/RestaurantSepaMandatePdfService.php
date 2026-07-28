@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\RestaurantSepaMandate;
 use App\Models\School;
+use App\Support\SafeHtml;
 use Barryvdh\DomPDF\Facade\Pdf as DomPdf;
+use Barryvdh\DomPDF\PDF;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
@@ -19,6 +21,13 @@ class RestaurantSepaMandatePdfService
         $this->renderPdf($this->viewData($mandate), $path);
 
         return $path;
+    }
+
+    public function createPdfContent(RestaurantSepaMandate $mandate): string
+    {
+        $mandate->loadMissing(['user.selectedSchool']);
+
+        return $this->pdf($this->viewData($mandate))->output();
     }
 
     /**
@@ -46,8 +55,8 @@ class RestaurantSepaMandatePdfService
                     'schoolclass' => '1A',
                 ],
             ],
-            'sepa_payee' => trim((string) ($settings['sepa_payee'] ?? '')),
-            'sepa_mandate_text' => trim((string) ($settings['sepa_mandate_text'] ?? '')),
+            'sepa_payee' => app(SafeHtml::class)->sanitize($settings['sepa_payee'] ?? ''),
+            'sepa_mandate_text' => app(SafeHtml::class)->sanitize($settings['sepa_mandate_text'] ?? ''),
             'confirmed_at_label' => now()->format('d.m.Y'),
             'signature_uuid' => 'VORSCHAU',
             'flow_uuid' => 'VORSCHAU',
@@ -87,8 +96,8 @@ class RestaurantSepaMandatePdfService
             'iban' => trim((string) ($mandate->iban ?? '')),
             'bic' => trim((string) ($mandate->bic ?? '')),
             'child_entries' => $children,
-            'sepa_payee' => $mandate->sepa_payee_snapshot ?: '',
-            'sepa_mandate_text' => $mandate->sepa_mandate_text_snapshot ?: '',
+            'sepa_payee' => app(SafeHtml::class)->sanitize($mandate->sepa_payee_snapshot),
+            'sepa_mandate_text' => app(SafeHtml::class)->sanitize($mandate->sepa_mandate_text_snapshot),
             'confirmed_at_label' => $mandate->confirmed_at?->format('d.m.Y') ?? $mandate->accepted_at?->format('d.m.Y') ?? '',
             'signature_uuid' => $mandate->flow_uuid,
             'flow_uuid' => $mandate->flow_uuid,
@@ -100,11 +109,18 @@ class RestaurantSepaMandatePdfService
      */
     private function renderPdf(array $mandate, string $path): void
     {
-        DomPdf::loadView('pdfs.restaurantSepaMandate', [
+        $this->pdf($mandate)->save($path);
+    }
+
+    /**
+     * @param  array<string, mixed>  $mandate
+     */
+    private function pdf(array $mandate): PDF
+    {
+        return DomPdf::loadView('pdfs.restaurantSepaMandate', [
             'mandate' => $mandate,
         ])
-            ->setPaper('a4', 'portrait')
-            ->save($path);
+            ->setPaper('a4', 'portrait');
     }
 
     private function filename(RestaurantSepaMandate $mandate): string

@@ -49,7 +49,7 @@ class CourseWorkController extends Controller
         $course = TeachingCourse::findOrFail($request->input('teaching_course_id'));
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
-        $allowedTypes = $entryService->allowedTypesForCourse(
+        $allowedTypes = $entryService->allowedGradingTypesForCourse(
             $this->teachingCourseActor($auth_user, $course),
             $course
         );
@@ -102,7 +102,7 @@ class CourseWorkController extends Controller
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
-        $allowedTypes = $entryService->allowedTypesForCourse(
+        $allowedTypes = $entryService->allowedGradingTypesForCourse(
             $this->teachingCourseActor($auth_user, $course),
             $course
         );

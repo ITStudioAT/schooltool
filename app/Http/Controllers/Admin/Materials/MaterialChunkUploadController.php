@@ -18,8 +18,9 @@ class MaterialChunkUploadController extends Controller
     {
         $authUser = $this->authorizeForMaterials();
         $this->assertUploadLengthWithinLimit($request, $materialService, $authUser);
+        $maxBytes = $materialService->maxUploadSizeKbForUser($authUser) * 1024;
 
-        $id = $fileUploadService->upload();
+        $id = $fileUploadService->upload($request, 'materials', $maxBytes);
 
         return response($id, 200)->header('Content-Type', 'text/plain');
     }
@@ -28,6 +29,7 @@ class MaterialChunkUploadController extends Controller
     {
         $authUser = $this->authorizeForMaterials();
         $this->assertUploadLengthWithinLimit($request, $materialService, $authUser);
+        $maxBytes = $materialService->maxUploadSizeKbForUser($authUser) * 1024;
 
         $uploadId = trim((string) $request->query('patch'));
         if ($uploadId === '' || ! preg_match('/^[a-f0-9-]{20,64}$/i', $uploadId)) {
@@ -44,7 +46,9 @@ class MaterialChunkUploadController extends Controller
         $result = $fileUploadService->uploadNext(
             $request,
             $materialService->tempUploadStoragePathForUser($authUser),
-            $targetName
+            $targetName,
+            profile: 'materials',
+            maxBytes: $maxBytes,
         );
 
         if ($result instanceof Response) {

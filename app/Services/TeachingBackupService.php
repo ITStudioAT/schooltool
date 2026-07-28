@@ -81,7 +81,7 @@ class TeachingBackupService
         }
 
         $failed = 0;
-        $query->get()->each(function (TeachingBackupRestoreRun $run) use ($message, &$failed): void {
+        $query->lazyById()->each(function (TeachingBackupRestoreRun $run) use ($message, &$failed): void {
             $this->markRestoreRunFailed($run, $message, 'stale_restore_run');
             $failed++;
         });
@@ -2238,7 +2238,7 @@ class TeachingBackupService
     {
         return $scope(DB::table($table))
             ->orderBy('id')
-            ->get()
+            ->lazyById()
             ->map(fn (object $row): array => (array) $row)
             ->all();
     }

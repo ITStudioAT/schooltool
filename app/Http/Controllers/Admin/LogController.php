@@ -3,59 +3,68 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
-use Symfony\Component\Console\Exception\CommandNotFoundException;
 
 class LogController extends Controller
 {
-    public function listLogs(Request $request)
+    public function listLogs(): JsonResponse
     {
-        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
+        if (! $this->userHasRole(['super_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         $logFiles = glob(storage_path('logs/*.log')) ?: [];
 
-        $logs = collect($logFiles)->map(function (string $path): array {
-            return [
-                'name' => basename($path),
-                'size' => $this->formatBytes(filesize($path)),
-                'modified' => date('d.m.Y H:i', filemtime($path)),
-            ];
-        })->sortByDesc('name')->values();
+        $logs = collect($logFiles)
+            ->map(fn (string $path): ?string => $this->resolveContainedLogPath($path))
+            ->filter()
+            ->map(function (string $path): array {
+                return [
+                    'name' => basename($path),
+                    'size' => $this->formatBytes((int) filesize($path)),
+                    'modified' => date('d.m.Y H:i', (int) filemtime($path)),
+                ];
+            })
+            ->sortByDesc('name')
+            ->values();
 
         return response()->json($logs);
     }
 
-    public function getLog(Request $request)
+    public function getLog(Request $request): JsonResponse|Response
     {
-        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
+        if (! $this->userHasRole(['super_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $filename = $request->input('filename');
+        $validated = $request->validate([
+            'filename' => ['sometimes', 'nullable', 'string', 'max:255', 'regex:/\A[A-Za-z0-9][A-Za-z0-9._-]*\.log\z/'],
+            'lines' => ['sometimes', 'integer', 'between:1,1000'],
+            'mode' => ['sometimes', 'string', 'in:first,last'],
+        ]);
+        $logPath = $this->resolveRequestedLogPath($validated['filename'] ?? null);
 
-        if ($filename) {
-            $filename = basename($filename);
-            $logPath = storage_path('logs/'.$filename);
-        } else {
-            $logPath = $this->resolveLogPath();
-        }
-
-        if (! $logPath || ! file_exists($logPath)) {
+        if (! $logPath) {
             return response()->json([
                 'error' => 'Log-Datei nicht gefunden',
             ], 404);
         }
 
-        $maxLines = $request->input('lines', 500);
-        $maxLines = min($maxLines, 1000);
-        $mode = $request->input('mode', 'first'); // 'last' oder 'first'
+        $maxLines = $validated['lines'] ?? 500;
+        $mode = $validated['mode'] ?? 'first';
 
         $allLines = file($logPath);
+
+        if ($allLines === false) {
+            return response()->json([
+                'error' => 'Log-Datei konnte nicht gelesen werden',
+            ], 500);
+        }
+
         $totalLines = count($allLines);
 
         if ($mode === 'first') {
@@ -73,22 +82,18 @@ class LogController extends Controller
             ->header('X-Mode', $mode);
     }
 
-    public function deleteLog(Request $request)
+    public function deleteLog(Request $request): JsonResponse|Response
     {
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $this->userHasRole(['super_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $filename = $request->input('filename');
+        $validated = $request->validate([
+            'filename' => ['sometimes', 'nullable', 'string', 'max:255', 'regex:/\A[A-Za-z0-9][A-Za-z0-9._-]*\.log\z/'],
+        ]);
+        $logPath = $this->resolveRequestedLogPath($validated['filename'] ?? null);
 
-        if ($filename) {
-            $filename = basename($filename);
-            $logPath = storage_path('logs/'.$filename);
-        } else {
-            $logPath = $this->resolveLogPath();
-        }
-
-        if (! $logPath || ! file_exists($logPath)) {
+        if (! $logPath) {
             return response()->json([
                 'error' => 'Log-Datei nicht gefunden',
             ], 404);
@@ -112,14 +117,6 @@ class LogController extends Controller
         }
 
         try {
-            Artisan::call('cache:clear');
-        } catch (\Throwable $exception) {
-            Log::warning('cache:clear failed during queue restart.', [
-                'message' => $exception->getMessage(),
-            ]);
-        }
-
-        try {
             Artisan::call('queue:restart');
         } catch (\Throwable $exception) {
             Log::warning('queue:restart failed during queue restart.', [
@@ -127,40 +124,39 @@ class LogController extends Controller
             ]);
         }
 
-        if (function_exists('exec')) {
-            try {
-                $healthCheckExitCode = Artisan::call('queue:health-check', [
-                    '--restart' => true,
-                ]);
-
-                if ($healthCheckExitCode !== 0) {
-                    Log::warning('Queue restart recovery command returned non-zero exit code.', [
-                        'exit_code' => $healthCheckExitCode,
-                    ]);
-                }
-            } catch (CommandNotFoundException) {
-                // queue:health-check command is not available in this environment.
-            } catch (\Throwable $exception) {
-                Log::warning('queue:health-check failed during queue restart.', [
-                    'message' => $exception->getMessage(),
-                ]);
-            }
-        } else {
-            Log::info('queue:health-check skipped during queue restart because exec() is unavailable.');
+        try {
+            Artisan::call('horizon:terminate');
+        } catch (\Throwable $exception) {
+            Log::warning('horizon:terminate failed during queue restart.', [
+                'message' => $exception->getMessage(),
+            ]);
         }
 
         return response()->noContent();
     }
 
+    private function resolveRequestedLogPath(?string $filename): ?string
+    {
+        if ($filename === null) {
+            return $this->resolveLogPath();
+        }
+
+        return $this->resolveContainedLogPath(storage_path("logs/{$filename}"));
+    }
+
     private function resolveLogPath(): ?string
     {
-        $singleLogPath = storage_path('logs/laravel.log');
+        $singleLogPath = $this->resolveContainedLogPath(storage_path('logs/laravel.log'));
 
-        if (file_exists($singleLogPath)) {
+        if ($singleLogPath !== null) {
             return $singleLogPath;
         }
 
-        $dailyLogs = glob(storage_path('logs/laravel-*.log')) ?: [];
+        $dailyLogs = collect(glob(storage_path('logs/laravel-*.log')) ?: [])
+            ->map(fn (string $path): ?string => $this->resolveContainedLogPath($path))
+            ->filter()
+            ->values()
+            ->all();
 
         if (empty($dailyLogs)) {
             return null;
@@ -177,6 +173,22 @@ class LogController extends Controller
         });
 
         return $dailyLogs[0] ?? null;
+    }
+
+    private function resolveContainedLogPath(string $path): ?string
+    {
+        $logDirectory = realpath(storage_path('logs'));
+        $resolvedPath = realpath($path);
+
+        if ($logDirectory === false || $resolvedPath === false) {
+            return null;
+        }
+
+        if (! is_file($resolvedPath) || dirname($resolvedPath) !== $logDirectory) {
+            return null;
+        }
+
+        return $resolvedPath;
     }
 
     private function formatBytes(int $bytes): string

@@ -85,6 +85,9 @@ $suspiciousSequences = [
     ...suspiciousMojibakeSequences($punctuationCharacters),
     mb_chr(0x00C3, 'UTF-8'),
     mb_chr(0x00C2, 'UTF-8'),
+    mb_chr(0x00E2, 'UTF-8'),
+    mb_chr(0x00F0, 'UTF-8'),
+    mb_chr(0xFFFD, 'UTF-8'),
 ];
 
 $allowedSuspiciousSequences = [];

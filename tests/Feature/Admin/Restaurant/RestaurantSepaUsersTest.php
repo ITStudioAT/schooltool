@@ -17,6 +17,8 @@ beforeEach(function (): void {
     });
 
     $this->school = School::factory()->create();
+    enableSchoolToolModuleForTests($this->school, 'restaurant');
+    grantSchoolToolLicenceForTests($this->school, 'Restaurant');
     $this->otherSchool = School::factory()->create();
 
     $this->admin = User::factory()->create([
@@ -129,10 +131,10 @@ test('restaurant sepa users endpoint returns completed login and register sepa u
 
     expect(collect($response->json('data'))->keyBy('email'))
         ->toHaveCount(2)
-        ->and($response->json('data.0.email'))->toBe('berta.register@example.test')
-        ->and($response->json('data.0.entry_point_label'))->toBe('Registrierung')
-        ->and($response->json('data.0.flow_uuid'))->toBe('flow-register-uuid-002')
-        ->and($response->json('data.1.email'))->toBe('anna.login@example.test')
-        ->and($response->json('data.1.entry_point_label'))->toBe('Login')
-        ->and($response->json('data.1.flow_uuid'))->toBe('flow-login-uuid-001');
+        ->and($response->json('data.0.email'))->toBe('anna.login@example.test')
+        ->and($response->json('data.0.entry_point_label'))->toBe('Login')
+        ->and($response->json('data.0.flow_uuid'))->toBe('flow-login-uuid-001')
+        ->and($response->json('data.1.email'))->toBe('berta.register@example.test')
+        ->and($response->json('data.1.entry_point_label'))->toBe('Registrierung')
+        ->and($response->json('data.1.flow_uuid'))->toBe('flow-register-uuid-002');
 });

@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\RestaurantBookingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -40,6 +41,23 @@ it('stores the selected restaurant eating time from the booking payload', functi
         'id' => $booking->id,
         'restaurant_eating_time_id' => $eatingTime->id,
     ]);
+});
+
+it('rejects a duplicate booking for the same user entry and eating-time slot', function () {
+    $school = School::factory()->create();
+    $user = User::factory()->create(['school_id' => $school->id]);
+    $menu = RestaurantMenu::factory()->forSchool($school)->create();
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $school->id]);
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'restaurant_menu_id' => $menu->id,
+    ]);
+
+    $service = app(RestaurantBookingService::class);
+    $service->createBooking($user, $entry, ['quantity' => 1]);
+
+    expect(fn () => $service->createBooking($user, $entry, ['quantity' => 1]))
+        ->toThrow(ValidationException::class);
 });
 
 it('accepts bookings while the global menu plan ordering window is open', function () {

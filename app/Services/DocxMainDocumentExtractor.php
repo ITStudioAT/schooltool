@@ -12,6 +12,7 @@ class DocxMainDocumentExtractor
         private readonly AbaPandocDocxExtractionService $pandocDocxExtractionService,
         private readonly AbaPandocAstNormalizerService $pandocAstNormalizerService,
         private readonly AbaPandocReviewBuilderService $pandocReviewBuilderService,
+        private readonly AbaTitlePageProcessorService $titlePageProcessorService,
     ) {}
 
     public function supports(AbaAttachment $attachment): bool
@@ -38,7 +39,11 @@ class DocxMainDocumentExtractor
         }
 
         $document = $this->textExtractor->extractDocument($attachment);
-        $titlePageProcessing = $this->extractTitlePageProcessing($attachment, $options);
+        $titlePageProcessing = $this->extractTitlePageProcessing(
+            $attachment,
+            $options,
+            (int) data_get($document, 'metadata.page_image_counts.1', 0),
+        );
         $text = trim((string) ($document['text'] ?? ''));
         if ($text === '') {
             throw new \RuntimeException('Aus dem Hauptdokument konnte kein auswertbarer Text extrahiert werden.');
@@ -82,7 +87,7 @@ class DocxMainDocumentExtractor
      * @param  array<string,mixed>  $options
      * @return array<string,mixed>
      */
-    private function extractTitlePageProcessing(AbaAttachment $attachment, array $options): array
+    private function extractTitlePageProcessing(AbaAttachment $attachment, array $options, int $titlePageImageCount): array
     {
         $prepared = $this->textExtractor->prepareLocalFile($attachment);
         $absolutePath = (string) ($prepared['absolute_path'] ?? '');
@@ -95,12 +100,12 @@ class DocxMainDocumentExtractor
 
             $pandocExtraction = $this->pandocDocxExtractionService->extractFromPath($absolutePath);
             if (($pandocExtraction['ok'] ?? false) !== true || ! is_array($pandocExtraction['ast'] ?? null)) {
-                return [];
+                return $this->extractTitlePageProcessingWithoutPandoc($absolutePath, $options, $titlePageImageCount);
             }
 
             $normalized = $this->pandocAstNormalizerService->normalizeAst($pandocExtraction['ast']);
             if (($normalized['ok'] ?? false) !== true) {
-                return [];
+                return $this->extractTitlePageProcessingWithoutPandoc($absolutePath, $options, $titlePageImageCount);
             }
 
             $review = $this->pandocReviewBuilderService->buildReview(
@@ -116,12 +121,87 @@ class DocxMainDocumentExtractor
                 ? $review['title_page_processing']
                 : [];
         } catch (\Throwable) {
-            return [];
+            return $this->extractTitlePageProcessingWithoutPandoc($absolutePath, $options, $titlePageImageCount);
         } finally {
             if ($isTemp) {
                 @unlink($absolutePath);
             }
         }
+    }
+
+    /**
+     * @param  array<string,mixed>  $options
+     * @return array<string,mixed>
+     */
+    private function extractTitlePageProcessingWithoutPandoc(string $absolutePath, array $options, int $titlePageImageCount): array
+    {
+        if ($titlePageImageCount <= 0 || ! is_file($absolutePath) || ! class_exists(\ZipArchive::class)) {
+            return [];
+        }
+
+        $zip = new \ZipArchive;
+        if ($zip->open($absolutePath) !== true) {
+            return [];
+        }
+
+        try {
+            $mediaTargets = [];
+
+            for ($index = 0; $index < $zip->numFiles; $index++) {
+                $name = str_replace('\\', '/', (string) $zip->getNameIndex($index));
+                if (preg_match('/^word\/media\/[^\/]+\.(?:png|jpe?g|gif|webp|svg|bmp)$/i', $name) === 1) {
+                    $mediaTargets[] = $name;
+                }
+            }
+        } finally {
+            $zip->close();
+        }
+
+        natcasesort($mediaTargets);
+        $mediaTargets = array_slice(array_values($mediaTargets), 0, $titlePageImageCount);
+        if ($mediaTargets === []) {
+            return [];
+        }
+
+        $blocks = array_map(
+            static fn (string $target, int $index): array => [
+                'type' => 'image',
+                'order' => $index + 1,
+                'plain_text' => 'Titelblatt-Bild '.($index + 1),
+                'image' => [
+                    'target' => $target,
+                    'alt_text' => 'Titelblatt-Bild '.($index + 1),
+                ],
+                'document_zone' => ['zone' => 'title_page'],
+            ],
+            $mediaTargets,
+            array_keys($mediaTargets),
+        );
+
+        return $this->titlePageProcessorService->process([], $blocks, [
+            'source_docx_path' => $absolutePath,
+            'logo_asset_disk' => 'local',
+            'logo_asset_base_dir' => $this->titlePageAssetBaseDirFromOptions($options),
+        ]);
+    }
+
+    /**
+     * @param  array<string,mixed>  $options
+     */
+    private function titlePageAssetBaseDirFromOptions(array $options): string
+    {
+        $segments = ['aba', 'titlepage-assets'];
+        $abaId = is_numeric($options['aba_id'] ?? null) ? (int) $options['aba_id'] : 0;
+        $runId = is_numeric($options['run_id'] ?? null) ? (int) $options['run_id'] : 0;
+
+        if ($abaId > 0) {
+            $segments[] = 'aba-'.$abaId;
+        }
+        if ($runId > 0) {
+            $segments[] = 'run-'.$runId;
+        }
+
+        return implode('/', $segments);
     }
 
     /**

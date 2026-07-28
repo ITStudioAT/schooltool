@@ -630,8 +630,9 @@
                                 maxlength="255"
                                 counter
                                 autofocus
-                                :error-messages="formErrors.title"
-                                :disabled="materialDialog.saving" />
+                                :error-messages="materialErrorMessages('title')"
+                                :disabled="materialDialog.saving"
+                                @blur="validateMaterialField('title')" />
                         </v-col>
                         <v-col cols="12" md="5">
                             <v-combobox
@@ -644,10 +645,11 @@
                                 clearable
                                 :items="categoryOptions"
                                 :return-object="false"
-                                :error-messages="formErrors.category"
+                                :error-messages="materialErrorMessages('category')"
                                 :disabled="materialDialog.saving"
                                 hint="Bestehende Kategorie wählen oder eine neue eingeben"
-                                persistent-hint />
+                                persistent-hint
+                                @blur="validateMaterialField('category')" />
                             <v-text-field
                                 v-else
                                 class="materials-v2-fixed-category"
@@ -667,8 +669,9 @@
                                 label="Datum"
                                 variant="outlined"
                                 prepend-inner-icon="mdi-calendar-blank-outline"
-                                :error-messages="formErrors.reminder_date"
-                                :disabled="materialDialog.saving" />
+                                :error-messages="materialErrorMessages('reminder_date')"
+                                :disabled="materialDialog.saving"
+                                @blur="validateMaterialField('reminder_date')" />
                         </v-col>
                         <v-col cols="12" sm="5">
                             <v-text-field
@@ -678,8 +681,9 @@
                                 variant="outlined"
                                 clearable
                                 prepend-inner-icon="mdi-clock-outline"
-                                :error-messages="formErrors.reminder_time"
-                                :disabled="materialDialog.saving" />
+                                :error-messages="materialErrorMessages('reminder_time')"
+                                :disabled="materialDialog.saving"
+                                @blur="validateMaterialField('reminder_time')" />
                         </v-col>
                     </v-row>
                     <section
@@ -712,7 +716,7 @@
                             show-size
                             prepend-icon=""
                             prepend-inner-icon="mdi-image-plus-outline"
-                            :error-messages="formErrors.attachments"
+                            :error-messages="materialErrorMessages('attachments')"
                             :disabled="materialDialog.saving"
                             @update:model-value="setScreenshotFiles" />
                     </section>
@@ -746,10 +750,10 @@
                             variant="outlined"
                             clearable
                             prepend-inner-icon="mdi-link-variant"
-                            :error-messages="formErrors.link_url"
+                            :error-messages="materialErrorMessages('link_url')"
                             :loading="linkPreview.state === 'checking'"
                             :disabled="materialDialog.saving"
-                            @blur="inspectLinkUrl({ force: true })" />
+                            @blur="validateMaterialField('link_url'); inspectLinkUrl({ force: true })" />
                         <v-alert
                             v-if="linkPreview.state !== 'idle'"
                             class="materials-v2-link-status"
@@ -782,8 +786,9 @@
                         rows="3"
                         auto-grow
                         maxlength="10000"
-                        :error-messages="formErrors.description"
-                        :disabled="materialDialog.saving" />
+                        :error-messages="materialErrorMessages('description')"
+                        :disabled="materialDialog.saving"
+                        @blur="validateMaterialField('description')" />
                     <v-text-field
                         v-if="!isDefaultForm"
                         v-model="materialForm.keywords"
@@ -793,8 +798,9 @@
                         persistent-hint
                         variant="outlined"
                         prepend-inner-icon="mdi-tag-multiple-outline"
-                        :error-messages="formErrors.user_keywords"
-                        :disabled="materialDialog.saving" />
+                        :error-messages="materialErrorMessages('user_keywords')"
+                        :disabled="materialDialog.saving"
+                        @blur="validateMaterialField('user_keywords')" />
                     <section
                         v-if="materialDialog.mode === 'edit' && !isReminderForm && !isLinkForm && !isNoteForm"
                         class="materials-v2-edit-attachments">
@@ -1193,6 +1199,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
+import { materialsV2Api } from '@/domains/materialsV2/api'
+import { useMaterialV2Precognition } from '@/domains/materialsV2/useMaterialV2Precognition'
 import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
@@ -1257,6 +1265,10 @@ const formErrors = reactive({
     link_url: [],
     user_keywords: [],
     attachments: [],
+})
+const materialPrecognition = useMaterialV2Precognition({
+    dialog: materialDialog,
+    source: materialForm,
 })
 const linkPreview = reactive({
     state: 'idle',
@@ -1680,7 +1692,7 @@ async function loadItems() {
                 reminder_to: formatCalendarDate(calendarVisibleRange.value.end),
             }
             : {}
-        const response = await axios.get('/api/admin/materials-v2/items', {
+        const response = await axios.get(materialsV2Api.items(), {
             params: {
                 search: search.value.trim() || undefined,
                 category: selectedCategory.value === allCategoriesValue ? undefined : selectedCategory.value,
@@ -1696,7 +1708,7 @@ async function loadItems() {
 
         if (isReminderCalendarView.value) {
             for (let calendarPage = 2; calendarPage <= Number(responseMeta.last_page || 1); calendarPage += 1) {
-                const additionalResponse = await axios.get('/api/admin/materials-v2/items', {
+                const additionalResponse = await axios.get(materialsV2Api.items(), {
                     params: {
                         search: search.value.trim() || undefined,
                         category: reminderCategoryName,
@@ -1739,7 +1751,7 @@ async function loadItems() {
 
 async function loadConfig() {
     try {
-        const response = await axios.get('/api/admin/materials-v2/config')
+        const response = await axios.get(materialsV2Api.config())
         const categories = Array.isArray(response.data?.categories) ? response.data.categories : []
         categoryDetails.value = Array.isArray(response.data?.category_details)
             ? response.data.category_details
@@ -1911,7 +1923,7 @@ async function jumpToAdjacentReminder(direction) {
     const boundaryDate = formatCalendarDate(addCalendarDays(referenceDate, isNext ? 1 : -1))
 
     try {
-        const response = await axios.get('/api/admin/materials-v2/items', {
+        const response = await axios.get(materialsV2Api.items(), {
             params: {
                 category: reminderCategoryName,
                 reminder_from: isNext ? boundaryDate : undefined,
@@ -2088,7 +2100,7 @@ async function deleteCategory() {
 
     try {
         const categoryName = categoryDeleteDialog.name
-        await axios.delete('/api/admin/materials-v2/categories', {
+        await axios.delete(materialsV2Api.destroyCategory(), {
             data: {
                 name: categoryName,
             },
@@ -2122,11 +2134,11 @@ async function saveCategory() {
     try {
         const isEditing = categoryDialog.mode === 'edit'
         const response = isEditing
-            ? await axios.put('/api/admin/materials-v2/categories', {
+            ? await axios.put(materialsV2Api.updateCategory(), {
                 original_name: categoryDialog.originalName,
                 name: categoryName,
             })
-            : await axios.post('/api/admin/materials-v2/categories', {
+            : await axios.post(materialsV2Api.storeCategory(), {
                 name: categoryName,
             })
         const savedCategoryName = response.data?.data?.name || categoryName
@@ -2353,7 +2365,7 @@ async function inspectLinkUrl({ force = false } = {}) {
     linkPreview.checkedUrl = ''
 
     try {
-        const response = await axios.post('/api/admin/materials-v2/link-preview', {
+        const response = await axios.post(materialsV2Api.linkPreview(), {
             url: requestedUrl,
         })
 
@@ -2565,9 +2577,9 @@ async function saveMaterial({ forceNewCategory = false } = {}) {
                 normalizedFiles(materialForm.attachments).forEach((file) => payload.append('attachments[]', file))
             }
 
-            await axios.post('/api/admin/materials-v2/items', payload)
+            await axios.post(materialsV2Api.storeItem(), payload)
         } else {
-            await axios.put(`/api/admin/materials-v2/items/${materialDialog.item.id}`, {
+            await axios.put(materialsV2Api.updateItem(materialDialog.item), {
                 title: materialForm.title.trim(),
                 category: normalizedCategory() || null,
                 force_new_category: forceNewCategory,
@@ -2682,7 +2694,7 @@ async function saveAttachments() {
         const payload = new FormData()
         const attachments = attachmentDialog.files || []
         attachments.forEach((file) => payload.append('attachments[]', file))
-        await axios.post(`/api/admin/materials-v2/items/${attachmentDialog.item.id}/attachments`, payload)
+        await axios.post(materialsV2Api.storeAttachments(attachmentDialog.item), payload)
 
         attachmentDialog.open = false
         await loadItems()
@@ -2699,7 +2711,7 @@ async function saveAttachments() {
 
 async function removeAttachment(item, attachment) {
     try {
-        await axios.delete(`/api/admin/materials-v2/attachments/${attachment.id}`)
+        await axios.delete(materialsV2Api.destroyAttachment(attachment))
         await loadItems()
         notify('Anlage entfernt.')
     } catch (error) {
@@ -2716,7 +2728,7 @@ async function deleteMaterial() {
     deleteDialog.saving = true
 
     try {
-        await axios.delete(`/api/admin/materials-v2/items/${deleteDialog.item.id}`)
+        await axios.delete(materialsV2Api.destroyItem(deleteDialog.item))
         deleteDialog.open = false
         await loadItems()
         notify('Material gelöscht.')
@@ -2729,7 +2741,7 @@ async function deleteMaterial() {
 
 async function retryProcessing(item) {
     try {
-        await axios.post(`/api/admin/materials-v2/items/${item.id}/retry-processing`)
+        await axios.post(materialsV2Api.retryProcessing(item))
         await loadItems()
         notify('Verarbeitung neu gestartet.', 'info')
     } catch (error) {
@@ -2743,7 +2755,7 @@ async function recalculateAutomaticTags(item) {
     tagAction.tagName = ''
 
     try {
-        await axios.post(`/api/admin/materials-v2/items/${item.id}/recalculate-automatic-tags`)
+        await axios.post(materialsV2Api.recalculateAutomaticTags(item))
         item.processing_status = 'pending'
         await loadItems()
         notify('Automatische Tag-Erkennung gestartet.', 'info')
@@ -2760,7 +2772,7 @@ async function removeAutomaticTag(item, suggestion) {
     tagAction.tagName = suggestion.name
 
     try {
-        const response = await axios.delete(`/api/admin/materials-v2/items/${item.id}/automatic-tags`, {
+        const response = await axios.delete(materialsV2Api.destroyAutomaticTag(item), {
             data: {
                 tag_name: suggestion.name,
             },
@@ -2780,7 +2792,7 @@ async function convertAutomaticTag(item, suggestion) {
     tagAction.tagName = suggestion.name
 
     try {
-        const response = await axios.post(`/api/admin/materials-v2/items/${item.id}/automatic-tags/convert`, {
+        const response = await axios.post(materialsV2Api.convertAutomaticTag(item), {
             tag_name: suggestion.name,
         })
         applyUpdatedMaterial(response.data?.data)
@@ -2852,12 +2864,21 @@ function resetForm() {
     materialForm.keywords = ''
     materialForm.attachments = []
     clearFormErrors()
+    materialPrecognition.reset()
 }
 
 function clearFormErrors() {
     Object.keys(formErrors).forEach((key) => {
         formErrors[key] = []
     })
+}
+
+function validateMaterialField(field) {
+    materialPrecognition.validate(field)
+}
+
+function materialErrorMessages(field) {
+    return materialPrecognition.errorMessages(field, formErrors[field])
 }
 
 function applyValidationErrors(error) {

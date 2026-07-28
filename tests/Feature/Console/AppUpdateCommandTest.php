@@ -181,7 +181,7 @@ it('runs the full update workflow end to end', function (): void {
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
-    Artisan::shouldReceive('call')->with('queue:restart', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('horizon:terminate', [])->once()->andReturn(0);
     Artisan::shouldReceive('output')->times(6)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records);
@@ -305,7 +305,7 @@ it('removes existing node modules before npm ci on non windows hosts', function 
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
-    Artisan::shouldReceive('call')->with('queue:restart', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('horizon:terminate', [])->once()->andReturn(0);
     Artisan::shouldReceive('output')->times(6)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records, appUpdateCommandWithNodeModulesCleanup());
@@ -360,7 +360,7 @@ it('stops when the school user licence backfill fails', function (): void {
     expect($result['output'])->toContain('school_user_licences.role_name fehlt.');
 
     Artisan::shouldNotHaveReceived('call', ['optimize:clear', []]);
-    Artisan::shouldNotHaveReceived('call', ['queue:restart', []]);
+    Artisan::shouldNotHaveReceived('call', ['horizon:terminate', []]);
     $install->shouldNotHaveReceived('clearModels');
     $install->shouldNotHaveReceived('createRoles');
     $install->shouldNotHaveReceived('findOrCreateFolders');
@@ -408,7 +408,7 @@ it('retries npm ci when a windows lock error is transient', function (): void {
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
-    Artisan::shouldReceive('call')->with('queue:restart', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('horizon:terminate', [])->once()->andReturn(0);
     Artisan::shouldReceive('output')->times(6)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records);

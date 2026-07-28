@@ -107,7 +107,6 @@ it('stores a new aba with correct school/user/schoolyear assignment', function (
             'data' => [
                 'title' => 'Meine ABA',
                 'student_name' => 'Max Mustermann',
-                'created_on' => '2026-01-15',
                 'evaluated_on' => null,
             ],
         ])
@@ -115,7 +114,7 @@ it('stores a new aba with correct school/user/schoolyear assignment', function (
         ->assertJsonFragment([
             'title' => 'Meine ABA',
             'student_name' => 'Max Mustermann',
-            'created_on' => '2026-01-15',
+            'created_on' => now()->toDateString(),
             'evaluated_on' => null,
         ]);
 
@@ -134,7 +133,6 @@ it('stores a new aba with evaluated_on date', function () {
             'data' => [
                 'title' => 'Abgeschlossene ABA',
                 'student_name' => 'Anna Muster',
-                'created_on' => '2025-09-01',
                 'evaluated_on' => '2026-01-20',
             ],
         ])
@@ -146,7 +144,7 @@ it('validates required fields on store', function () {
     $this->actingAs($this->user, 'sanctum')
         ->postJson('/api/admin/abas', ['data' => []])
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['data.title', 'data.student_name', 'data.created_on']);
+        ->assertJsonValidationErrors(['data.title', 'data.student_name']);
 });
 
 it('allows multiple abas per user in the same schoolyear', function () {

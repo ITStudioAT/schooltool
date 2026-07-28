@@ -13,6 +13,7 @@ function mountMenus(options: {
     categories?: any[]
     userSettings?: Record<string, unknown>
     canManageUserSettings?: boolean
+    formValid?: boolean
 } = {}) {
     const pinia = createTestingPinia({
         stubActions: false,
@@ -55,7 +56,16 @@ function mountMenus(options: {
                 'v-card-title': { template: '<div><slot /></div>' },
                 'v-btn': { template: '<button v-bind="$attrs"><slot /></button>' },
                 'v-dialog': { template: '<div><slot /></div>' },
-                'v-form': { template: '<form><slot /></form>' },
+                'v-form': {
+                    methods: {
+                        validate() {
+                            this.$emit('update:modelValue', options.formValid ?? true)
+
+                            return Promise.resolve({ valid: options.formValid ?? true })
+                        },
+                    },
+                    template: '<form><slot /></form>',
+                },
                 'v-spacer': { template: '<div />' },
                 'v-text-field': { template: '<input />' },
                 'v-pagination': { template: '<div class="v-pagination" v-bind="$attrs"></div>' },
@@ -219,12 +229,6 @@ describe('Restaurant menus component', () => {
             },
         }
 
-        ;(wrapper.vm as any).$refs.menuForm = {
-            validate: vi.fn().mockImplementation(async () => {
-                ;(wrapper.vm as any).isMenuFormValid = true
-            }),
-        }
-
         await (wrapper.vm as any).saveMenu()
 
         expect(menuStore.store).toHaveBeenCalledWith({
@@ -237,7 +241,7 @@ describe('Restaurant menus component', () => {
     })
 
     it('does not save when the menu title is missing', async () => {
-        const { wrapper, menuStore } = mountMenus()
+        const { wrapper, menuStore } = mountMenus({ formValid: false })
 
         menuStore.store = vi.fn()
 
@@ -251,13 +255,8 @@ describe('Restaurant menus component', () => {
             },
         }
 
-        ;(wrapper.vm as any).$refs.menuForm = {
-            validate: vi.fn(),
-        }
-
         await (wrapper.vm as any).saveMenu()
 
-        expect((wrapper.vm as any).$refs.menuForm.validate).toHaveBeenCalled()
         expect(menuStore.store).not.toHaveBeenCalled()
         expect((wrapper.vm as any).isSaving).toBe(false)
     })
@@ -418,20 +417,32 @@ describe('Restaurant menus component', () => {
         expect((wrapper.vm as any).isCompactView).toBe(true)
         expect(wrapper.find('.menu-course-row__image').exists()).toBe(false)
         expect(wrapper.find('.menu-course-row').exists()).toBe(false)
-        expect(wrapper.text()).not.toContain('Tomatensuppe')
-        expect(wrapper.text()).not.toContain('Vorspeise')
+        expect(wrapper.find('.menu-card').text()).not.toContain('Tomatensuppe')
+        expect(wrapper.find('.menu-card').text()).not.toContain('Vorspeise')
     })
 
-    it('renders a search field and scroll container for food chips', () => {
-        const { wrapper } = mountMenus({
+    it('renders a search field and scroll container for food chips', async () => {
+        const { wrapper, foodStore } = mountMenus({
             foods: [
                 { id: 1, title: 'Suppe', category: { id: 1, title: 'Vorspeise' } },
                 { id: 2, title: 'Pasta', category: { id: 2, title: 'Hauptspeise' } },
             ],
         })
 
-        ;(wrapper.vm as any).form.courseDraft.categoryId = 1
+        foodStore.foods = [
+            { id: 1, title: 'Suppe', category: { id: 1, title: 'Vorspeise' } },
+            { id: 2, title: 'Pasta', category: { id: 2, title: 'Hauptspeise' } },
+        ]
+        ;(wrapper.vm as any).form = {
+            ...(wrapper.vm as any).form,
+            courseDraft: {
+                categoryId: 1,
+                foodId: null,
+            },
+        }
         ;(wrapper.vm as any).foodSearch = 'sup'
+        ;(wrapper.vm as any).dialog = true
+        await wrapper.vm.$nextTick()
 
         expect(wrapper.find('.menu-food-chip-scroll').exists()).toBe(true)
     })

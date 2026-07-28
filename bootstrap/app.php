@@ -23,10 +23,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'api-allowed' => ApiAllowed::class,
             'tool-licensed' => ToolLicensed::class,
         ]);
-        $middleware->preventRequestForgery(except: [
-            '/broadcasting/auth',
-            'broadcasting/*',
-        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

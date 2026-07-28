@@ -19,7 +19,7 @@ class FileUploadController extends Controller
 
         $this->ensureAllowedSlug($slug);
         $this->ensureXlsx($request);
-        $id = $fileUploadService->upload();
+        $id = $fileUploadService->upload($request, 'teaching-import');
 
         return response($id, 200)->header('Content-Type', 'text/plain');
     }
@@ -36,7 +36,8 @@ class FileUploadController extends Controller
         $result = $fileUploadService->uploadNext(
             $request,
             "app/private/{$auth_user->school_id}/excel",
-            $slug
+            $slug,
+            profile: 'teaching-import',
         );
 
         if ($result instanceof Response) {

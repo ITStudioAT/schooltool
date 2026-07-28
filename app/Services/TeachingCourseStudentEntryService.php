@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
+use App\Models\TeachingEntryArea;
 use App\Models\User;
 
 class TeachingCourseStudentEntryService
@@ -12,11 +13,7 @@ class TeachingCourseStudentEntryService
     public function allowedTypesForCourse(User $user, TeachingCourse $course): array
     {
         if ($course->teaching_entry_area_id && $this->usesEntryAreasForSchoolyear($course->schoolyear_id)) {
-            $entryArea = $course->teachingEntryArea()
-                ->where('school_id', $course->school_id)
-                ->where('schoolyear_id', $course->schoolyear_id)
-                ->where('user_id', $user->id)
-                ->first();
+            $entryArea = $this->entryAreaForCourse($user, $course);
 
             if ($entryArea) {
                 return $entryArea->entryDefinitions()
@@ -29,6 +26,35 @@ class TeachingCourseStudentEntryService
         }
 
         return $this->allowedTypesForSchema($user, $course->teaching_schema_id, $course->schoolyear_id);
+    }
+
+    /** @return string[] */
+    public function allowedGradingTypesForCourse(User $user, TeachingCourse $course): array
+    {
+        if ($course->teaching_entry_area_id && $this->usesEntryAreasForSchoolyear($course->schoolyear_id)) {
+            $entryArea = $this->entryAreaForCourse($user, $course);
+
+            if ($entryArea) {
+                return $entryArea->entryDefinitions()
+                    ->where('category', 'Benotung')
+                    ->orderBy('short_name')
+                    ->pluck('short_name')
+                    ->filter()
+                    ->values()
+                    ->all();
+            }
+        }
+
+        return $this->allowedTypesForSchema($user, $course->teaching_schema_id, $course->schoolyear_id);
+    }
+
+    private function entryAreaForCourse(User $user, TeachingCourse $course): ?TeachingEntryArea
+    {
+        return $course->teachingEntryArea()
+            ->where('school_id', $course->school_id)
+            ->where('schoolyear_id', $course->schoolyear_id)
+            ->where('user_id', $user->id)
+            ->first();
     }
 
     private function usesEntryAreasForSchoolyear(?int $schoolyearId): bool

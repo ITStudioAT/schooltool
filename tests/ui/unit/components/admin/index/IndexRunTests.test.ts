@@ -23,16 +23,16 @@ describe('Index runTests', () => {
         const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/index/Index.vue')
         const source = readFileSync(componentPath, 'utf8')
 
-        expect(source).toContain('<h3 class="admin-card-title">Meine Lizenzen</h3>')
-        expect(source).toContain('<span v-else class="licence-tag is-expired">abgelaufen</span>')
-        expect(source).not.toContain('<span v-else class="licence-tag is-expired">nicht aktiv</span>')
+        expect(source).toContain('<div class="text-h6 font-weight-bold">Meine Lizenzen</div>')
+        expect(source).toContain('<template v-else>abgelaufen</template>')
+        expect(source).not.toContain('<template v-else>nicht aktiv</template>')
     })
 
     it('uses the shortened admin dashboard hero title', () => {
         const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/index/Index.vue')
         const source = readFileSync(componentPath, 'utf8')
 
-        expect(source).toContain('<h2 class="admin-hero-title">Zentrale Übersicht</h2>')
+        expect(source).toContain('<div class="text-h5 font-weight-bold">SchoolTool</div>')
         expect(source).not.toContain('Zentrale Übersicht für Systemzustand, Team und Lizenzen')
         expect(source).not.toContain('Behalten Sie Admins, Gesundheitschecks und aktive Schul-Lizenzen in einer Oberfläche im Blick.')
     })
@@ -63,28 +63,30 @@ describe('Index runTests', () => {
         const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/index/Index.vue')
         const source = readFileSync(componentPath, 'utf8')
 
-        expect(source).toContain(`v-if="isAllowed(['admin', 'super_admin'])" class="mt-3"`)
+        expect(source).toContain(`v-if="isAllowed(['admin', 'super_admin'])" class="d-flex align-center ga-3"`)
         expect(source).toContain(`v-if="isAllowed(['admin', 'super_admin'])"`)
         expect(source).toContain('Queues neu starten')
-        expect(source).toContain('Tests prüfen')
-        expect(source).not.toContain(`v-if="isAllowed(['super_admin'])" class="mt-3"`)
+        expect(source).toContain('Queue testen')
+        expect(source).not.toContain(`v-if="isAllowed(['super_admin'])" class="d-flex align-center ga-3"`)
     })
 
-    it('loads school infos but skips automatic health checks for lunch_admin on beforeMount', async () => {
+    it('loads dashboard data and health status for an authenticated lunch_admin', async () => {
         globalThis.axios = {
             get: vi.fn().mockResolvedValue({}),
         } as never
 
         const loadSchoolInfos = vi.fn().mockResolvedValue(true)
+        const loadConfig = vi.fn().mockResolvedValue(true)
+        const fetchStatus = vi.fn().mockResolvedValue({})
         vi.mocked(useAdminStore).mockReturnValue({
             is_loading: 0,
+            loadConfig,
         } as never)
-        vi.mocked(useHealthStore).mockReturnValue({} as never)
+        vi.mocked(useHealthStore).mockReturnValue({ fetchStatus } as never)
         vi.mocked(useSchoolStore).mockReturnValue({
             loadSchoolInfos,
         } as never)
 
-        const runTests = vi.fn()
         const context: Record<string, any> = {
             config: {
                 is_auth: true,
@@ -94,14 +96,16 @@ describe('Index runTests', () => {
             isAllowed(roles: string[]) {
                 return this.config.user.roles.some((role: string) => roles.includes(role))
             },
-            runTests,
+            health_loaded: false,
         }
 
         await (IndexPage as any).beforeMount.call(context)
 
         expect(globalThis.axios.get).toHaveBeenCalledWith('/sanctum/csrf-cookie')
+        expect(loadConfig).toHaveBeenCalledWith({ includeSchoolInfos: true, includeEnvironmentVersions: true })
         expect(loadSchoolInfos).toHaveBeenCalledWith(42)
-        expect(runTests).not.toHaveBeenCalled()
+        expect(fetchStatus).toHaveBeenCalled()
+        expect(context.health_loaded).toBe(true)
     })
 
     it('treats a valid role as active even when the legacy activation flag is false', () => {
@@ -112,52 +116,42 @@ describe('Index runTests', () => {
     })
 
     it('aborts queue polling when queue test id is missing', async () => {
-        const checkQueueStatus = vi.fn()
+        const checkQueueTest = vi.fn()
         const context: Record<string, any> = {
             healthStore: {
-                checkCronStatus: vi.fn().mockResolvedValue({}),
                 testQueue: vi.fn().mockResolvedValue(true),
-                checkQueueStatus,
+                checkQueueTest,
             },
-            data: {},
-            cron_status: { is_healthy: 1 },
-            test_step: 0,
-            all_tests_result: 0,
-            queue_test_status: 'waiting',
-            queue_test_result: 0,
-            cron_test_status: 'waiting',
-            cron_test_result: 0,
+            queue_test_running: false,
+            queue_test_visible: false,
         }
 
-        await (IndexPage as any).methods.runTests.call(context)
+        await (IndexPage as any).methods.runQueueTest.call(context)
 
-        expect(checkQueueStatus).not.toHaveBeenCalled()
-        expect(context.queue_test_result).toBe(0)
-        expect(context.queue_test_status).toBe('finished')
+        expect(checkQueueTest).not.toHaveBeenCalled()
+        expect(context.queue_test_running).toBe(false)
+        expect(context.queue_test_visible).toBe(true)
     })
 
     it('stops polling when queue status request fails', async () => {
-        const checkQueueStatus = vi.fn().mockResolvedValue(false)
+        vi.useFakeTimers()
+        const checkQueueTest = vi.fn().mockResolvedValue(false)
         const context: Record<string, any> = {
             healthStore: {
-                checkCronStatus: vi.fn().mockResolvedValue({}),
-                testQueue: vi.fn().mockResolvedValue(true),
-                checkQueueStatus,
+                testQueue: vi.fn().mockResolvedValue({ test_id: 'f8f6808a-8f08-4edb-9501-e357a6a8aa1a' }),
+                checkQueueTest,
             },
-            data: { testId: 'f8f6808a-8f08-4edb-9501-e357a6a8aa1a' },
-            cron_status: { is_healthy: 1 },
-            test_step: 0,
-            all_tests_result: 0,
-            queue_test_status: 'waiting',
-            queue_test_result: 0,
-            cron_test_status: 'waiting',
-            cron_test_result: 0,
+            queue_test_running: false,
+            queue_test_visible: false,
         }
 
-        await (IndexPage as any).methods.runTests.call(context)
+        const queueTestPromise = (IndexPage as any).methods.runQueueTest.call(context)
+        await vi.advanceTimersByTimeAsync(1000)
+        await queueTestPromise
 
-        expect(checkQueueStatus).toHaveBeenCalledTimes(1)
-        expect(context.queue_test_result).toBe(0)
-        expect(context.queue_test_status).toBe('finished')
+        expect(checkQueueTest).toHaveBeenCalledTimes(1)
+        expect(context.queue_test_running).toBe(false)
+        expect(context.queue_test_visible).toBe(true)
+        vi.useRealTimers()
     })
 })

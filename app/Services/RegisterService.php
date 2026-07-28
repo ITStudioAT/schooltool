@@ -14,51 +14,78 @@ use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class RegisterService
 {
-    public function book($user, $data): array
+    public function book(User $user, array $data): array
     {
-        $register = Register::findOrFail($data['register_id']);
-        if (! $register->is_active) {
-            abort(403, 'Die Registrierung ist geschlossen. Die Buchung konnte nicht durchgeführt werden.');
-        }
+        return DB::transaction(function () use ($data, $user): array {
+            $register = Register::query()
+                ->whereKey((int) $data['register_id'])
+                ->where('school_id', $user->school_id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $registerDate = RegisterDate::findOrFail($data['register_date_id']);
-        if ($registerDate->is_locked) {
-            abort(403, 'Der Termin ist gesperrt. Die Buchung konnte nicht durchgeführt werden.');
-        }
+            if ((int) $user->register_id !== (int) $register->id) {
+                abort(403, 'Diese Registrierung ist Ihrem Benutzerkonto nicht zugeordnet.');
+            }
 
-        $bookingsCount = $registerDate->bookings()->count();
+            if (! $register->is_active) {
+                abort(403, 'Die Registrierung ist geschlossen. Die Buchung konnte nicht durchgeführt werden.');
+            }
 
-        if ($registerDate->max_registrations != 0 && $bookingsCount >= $registerDate->max_registrations) {
-            abort(403, 'Der Termin ist bereits ausgebucht. Die Buchung konnte nicht durchgeführt werden.');
-        }
-        if ($register->max_registrations != 0 && $bookingsCount >= $register->max_registrations) {
-            abort(403, 'Die Registrierung ist bereits ausgebucht. Die Buchung konnte nicht durchgeführt werden.');
-        }
+            $registerDate = RegisterDate::query()
+                ->whereKey((int) $data['register_date_id'])
+                ->where('register_id', $register->id)
+                ->where('school_id', $register->school_id)
+                ->where('schoolyear_id', $register->schoolyear_id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $existingBooking = RegisterDateBooking::where('register_date_id', $data['register_date_id'])
-            ->where('user_id', $user->id)
-            ->exists();
+            if ($registerDate->is_locked) {
+                abort(403, 'Der Termin ist gesperrt. Die Buchung konnte nicht durchgeführt werden.');
+            }
 
-        if ($existingBooking) {
-            abort(403, 'Sie haben bereits eine Buchung. Bitte stornieren Sie diese zuerst.');
-        }
+            $dateBookingsCount = RegisterDateBooking::query()
+                ->where('register_date_id', $registerDate->id)
+                ->count();
 
-        $service = new RegisterDateBookingService;
-        $booking = $service->createBooking(
-            $registerDate->school_id,
-            $registerDate->schoolyear_id,
-            $register->id,
-            $user->id,
-            $data
-        );
+            if ($registerDate->max_registrations !== 0 && $dateBookingsCount >= $registerDate->max_registrations) {
+                abort(403, 'Der Termin ist bereits ausgebucht. Die Buchung konnte nicht durchgeführt werden.');
+            }
 
-        $data['booking_id'] = $booking->id;
+            $registerBookingsCount = RegisterDateBooking::query()
+                ->where('register_id', $register->id)
+                ->count();
 
-        return $data;
+            if ($register->max_registrations !== 0 && $registerBookingsCount >= $register->max_registrations) {
+                abort(403, 'Die Registrierung ist bereits ausgebucht. Die Buchung konnte nicht durchgeführt werden.');
+            }
+
+            $existingBooking = RegisterDateBooking::query()
+                ->where('register_date_id', $registerDate->id)
+                ->where('user_id', $user->id)
+                ->exists();
+
+            if ($existingBooking) {
+                abort(403, 'Sie haben bereits eine Buchung. Bitte stornieren Sie diese zuerst.');
+            }
+
+            $booking = app(RegisterDateBookingService::class)->createBooking(
+                $registerDate->school_id,
+                $registerDate->schoolyear_id,
+                $register->id,
+                $user->id,
+                $data,
+            );
+
+            $responseData = $data;
+            $responseData['booking_id'] = $booking->id;
+
+            return $responseData;
+        }, attempts: 3);
     }
 
     public function loadRegisterAndUser($user): array
@@ -134,9 +161,13 @@ class RegisterService
         ];
     }
 
-    public function setToUser($user, int $registerId): Register
+    public function setToUser(User $user, int $registerId): Register
     {
-        $register = Register::findOrFail($registerId);
+        $register = Register::query()
+            ->whereKey($registerId)
+            ->where('school_id', $user->school_id)
+            ->firstOrFail();
+
         $user->register_id = $register->id;
         $user->save();
 

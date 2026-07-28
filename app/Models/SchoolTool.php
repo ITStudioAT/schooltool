@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Support\SafeHtml;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -149,5 +151,28 @@ class SchoolTool extends Model
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class, 'school_id');
+    }
+
+    protected function restaurantUserInformationIntroHtml(): Attribute
+    {
+        return $this->safeHtmlAttribute();
+    }
+
+    protected function restaurantSepaPayee(): Attribute
+    {
+        return $this->safeHtmlAttribute();
+    }
+
+    protected function restaurantSepaMandateText(): Attribute
+    {
+        return $this->safeHtmlAttribute();
+    }
+
+    private function safeHtmlAttribute(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value): string => app(SafeHtml::class)->sanitize($value),
+            set: fn (?string $value): string => app(SafeHtml::class)->sanitize($value),
+        );
     }
 }

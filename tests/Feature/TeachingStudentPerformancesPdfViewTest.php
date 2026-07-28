@@ -4,7 +4,8 @@ it('renders only the simplified performance table with semester as the first col
     $source = file_get_contents(resource_path('views/pdfs/teachingStudentPerformances.blade.php'));
 
     expect($source)->toContain('<th style="width: 4%;">S</th>')
-        ->and($source)->toContain("{{ \$report['course_title'] }} · {{ \$report['student_name'] }} · {{ \$report['school_name'] ?: '-' }} · {{ \$report['schoolyear_name'] ?: '-' }}")
+        ->and($source)->toContain("{{ \$firstReport['course_title'] }} · {{ \$firstReport['school_name'] ?: '-' }} · Schuljahr {{ \$firstReport['schoolyear_name'] ?: '-' }} · {{ \$firstReport['generated_at'] }}")
+        ->and($source)->toContain("{{ \$report['student_name'] }}@if (\$report['student_email'] ?? '')")
         ->and($source)->toContain('border-bottom: 2px solid #0f172a;')
         ->and($source)->toContain('padding-top: 22px;')
         ->and($source)->toContain("font-size: 13px;\n            font-weight: 700;\n            color: #0f172a;")

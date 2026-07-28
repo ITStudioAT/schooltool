@@ -106,6 +106,7 @@ class MaterialService
     public function __construct(
         private readonly MaterialKeywordService $keywordService,
         private readonly MaterialWorkspaceService $workspaceService,
+        private readonly MaterialLinkedContentSynchronizer $linkedContentSynchronizer,
         private readonly LicenceService $licenceService,
         private readonly UserHopperService $hopperService,
         private readonly RemoteUrlGuard $remoteUrlGuard,
@@ -113,8 +114,6 @@ class MaterialService
 
     public function config(User $user): array
     {
-        $this->syncLinkedUnitInboxImportsForUser($user);
-        $this->syncLinkedTopicInboxImportsForUser($user);
         $workspace = $this->activeWorkspaceForUser($user);
 
         return [
@@ -145,9 +144,6 @@ class MaterialService
 
     public function listForUser(User $user, array $filters): LengthAwarePaginator
     {
-        $this->syncLinkedInboxImportsForUser($user);
-        $this->syncLinkedUnitInboxImportsForUser($user);
-        $this->syncLinkedTopicInboxImportsForUser($user);
         $workspaceId = $this->optionalActiveWorkspaceIdForUser($user);
         if ($workspaceId === null) {
             return MaterialCard::query()
@@ -171,10 +167,6 @@ class MaterialService
 
     public function listForCurriculumUse(User $user, array $filters): LengthAwarePaginator
     {
-        $this->syncLinkedInboxImportsForUser($user);
-        $this->syncLinkedUnitInboxImportsForUser($user);
-        $this->syncLinkedTopicInboxImportsForUser($user);
-
         $contexts = $this->curriculumMaterialContextsForUser($user);
         $sharedRules = $this->curriculumSharedMaterialRulesForUser($user);
         $sharedOnly = (bool) ($filters['shared_only'] ?? false);
@@ -357,13 +349,20 @@ class MaterialService
         );
     }
 
-    public function syncLinkedInboxCardForUser(User $user, MaterialCard $card): void
+    public function synchronizeLinkedContentForUserId(int $userId): void
     {
-        if ((int) ($card->user_id ?? 0) !== (int) $user->id) {
+        if ($userId <= 0) {
             return;
         }
 
-        $this->syncLinkedInboxImportsForUser($user, [(int) $card->id]);
+        $user = User::query()->find($userId);
+        if (! $user instanceof User) {
+            return;
+        }
+
+        $this->syncLinkedInboxImportsForUser($user);
+        $this->syncLinkedUnitInboxImportsForUser($user);
+        $this->syncLinkedTopicInboxImportsForUser($user);
     }
 
     public function propagateLinkedWritableCardFromTarget(User $user, MaterialCard $targetCard): void
@@ -440,6 +439,7 @@ class MaterialService
         }
 
         $this->syncLinkedSourceCardFromTarget($sourceCard, $targetFresh);
+        $this->linkedContentSynchronizer->dispatchForSourceCard($sourceCard);
     }
 
     public function createCard(User $user, array $data, ?int $workspaceId = null): MaterialCard
@@ -494,6 +494,7 @@ class MaterialService
         }
 
         $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+        $this->linkedContentSynchronizer->dispatchForSourceCard($card);
 
         return $card->fresh($this->cardRelations());
     }
@@ -1365,6 +1366,7 @@ class MaterialService
         ]);
 
         $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+        $this->linkedContentSynchronizer->dispatchForSourceCard($card);
 
         return $attachment;
     }
@@ -1432,6 +1434,7 @@ class MaterialService
         ]);
 
         $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+        $this->linkedContentSynchronizer->dispatchForSourceCard($card);
 
         return $attachment;
     }
@@ -1471,6 +1474,7 @@ class MaterialService
         ]);
 
         $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+        $this->linkedContentSynchronizer->dispatchForSourceCard($card);
 
         return $attachment;
     }
@@ -1612,6 +1616,7 @@ class MaterialService
             ]);
 
             $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+            $this->linkedContentSynchronizer->dispatchForSourceCard($card);
 
             return $attachment;
         } finally {
@@ -1631,6 +1636,7 @@ class MaterialService
 
         if ($card) {
             $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+            $this->linkedContentSynchronizer->dispatchForSourceCard($card);
         }
     }
 
@@ -1679,6 +1685,7 @@ class MaterialService
         }
 
         $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+        $this->linkedContentSynchronizer->dispatchForSourceCard($card);
 
         return $attachment->fresh();
     }
@@ -1699,6 +1706,7 @@ class MaterialService
         $card = $attachment->materialCard()->first();
         if ($card) {
             $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+            $this->linkedContentSynchronizer->dispatchForSourceCard($card);
         }
 
         return $attachment->fresh();
@@ -1752,6 +1760,7 @@ class MaterialService
         $card = $attachment->materialCard()->first();
         if ($card) {
             $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+            $this->linkedContentSynchronizer->dispatchForSourceCard($card);
         }
 
         return $attachment->fresh();
@@ -2539,6 +2548,10 @@ class MaterialService
         $topic->update([
             'name' => $normalized,
         ]);
+        $this->linkedContentSynchronizer->dispatchForSourceTopic(
+            (int) $user->school_id,
+            (int) $topic->id,
+        );
 
         return $topic->fresh();
     }
@@ -2682,6 +2695,10 @@ class MaterialService
         $unit->update([
             'name' => $normalized,
         ]);
+        $this->linkedContentSynchronizer->dispatchForSourceUnit(
+            (int) $user->school_id,
+            (int) $unit->id,
+        );
 
         return $unit->fresh();
     }

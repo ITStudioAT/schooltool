@@ -2,23 +2,19 @@
 
 use App\Models\User;
 use App\Providers\AppServiceProvider;
-use Illuminate\Foundation\AliasLoader;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
-uses(TestCase::class, RefreshDatabase::class);
+uses(TestCase::class);
 
-test('app service provider registers debugbar alias in local env', function () {
-    config(['app.env' => 'local']);
-
+test('app service provider registration does not depend on debugbar', function () {
     $provider = new AppServiceProvider(app());
     $provider->register();
 
-    $aliases = AliasLoader::getInstance()->getAliases();
-    expect($aliases)->toHaveKey('Debugbar');
+    expect(app()->getProvider(AppServiceProvider::class))->toBeInstanceOf(AppServiceProvider::class)
+        ->and(config('app.aliases'))->not->toHaveKey('Debugbar');
 });
 
 test('app service provider forces https in production', function () {
@@ -50,8 +46,9 @@ test('app service provider registers rate limiters', function () {
     $webLimiter = RateLimiter::limiter('web');
     $globalLimiter = RateLimiter::limiter('global');
     $authenticationLimiter = RateLimiter::limiter('authentication');
+    $sepaFlowLimiter = RateLimiter::limiter('sepa-flow');
 
-    $user = User::factory()->create();
+    $user = User::factory()->make(['id' => 123]);
     $requestWithUser = Request::create('/api/test');
     $requestWithUser->setUserResolver(fn () => $user);
 
@@ -75,6 +72,11 @@ test('app service provider registers rate limiters', function () {
     ]);
     $authenticationRequest->server->set('REMOTE_ADDR', '127.0.0.1');
     $authenticationLimits = $authenticationLimiter($authenticationRequest);
+    $sepaRequest = Request::create('/api/homepage/restaurant/sepa/store', 'POST', [
+        'data' => ['flow_uuid' => 'flow-uuid'],
+    ]);
+    $sepaRequest->server->set('REMOTE_ADDR', '127.0.0.1');
+    $sepaLimits = $sepaFlowLimiter($sepaRequest);
 
     expect($apiIpLimit->key)->toBe('127.0.0.1')
         ->and($globalLimit->maxAttempts)->toBe(1000)
@@ -82,5 +84,8 @@ test('app service provider registers rate limiters', function () {
         ->and($authenticationLimits)->toHaveCount(2)
         ->and($authenticationLimits[0]->maxAttempts)->toBe(10)
         ->and($authenticationLimits[0]->key)->toContain('user@example.test')
-        ->and($authenticationLimits[1]->maxAttempts)->toBe(60);
+        ->and($authenticationLimits[1]->maxAttempts)->toBe(60)
+        ->and($sepaLimits[0]->maxAttempts)->toBe(10)
+        ->and($sepaLimits[0]->key)->toContain('flow-uuid')
+        ->and($sepaLimits[1]->maxAttempts)->toBe(30);
 });

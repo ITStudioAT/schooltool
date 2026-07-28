@@ -425,20 +425,6 @@ export default {
             const today = new Date(this.nowTs)
             return `${today.getFullYear()}-${this.padTwo(today.getMonth() + 1)}-${this.padTwo(today.getDate())}`
         },
-        isCourseDateToday(courseDate, todayKey = null) {
-            const date = (courseDate?.date || '').toString().slice(0, 10)
-            if (!date) return false
-            return date === (todayKey || this.todayDateKey())
-        },
-        isFreeCourseDate(courseDate) {
-            const status = Array.isArray(courseDate?.status) ? courseDate.status : []
-            const statusStr = status.join(' ').toLowerCase()
-            return statusStr.includes('frei')
-                || statusStr.includes('free')
-                || statusStr.includes('entfaellt')
-                || statusStr.includes('entfällt')
-                || statusStr.includes('entfallen')
-        },
     },
 
     watch: {
@@ -451,6 +437,22 @@ export default {
     },
 
     methods: {
+        isCourseDateToday(courseDate, todayKey = null) {
+            const date = (courseDate?.date || '').toString().slice(0, 10)
+            if (!date) return false
+
+            return date === (todayKey || this.todayDateKey)
+        },
+        isFreeCourseDate(courseDate) {
+            const status = Array.isArray(courseDate?.status) ? courseDate.status : []
+            const statusStr = status.join(' ').toLowerCase()
+
+            return statusStr.includes('frei')
+                || statusStr.includes('free')
+                || statusStr.includes('entfaellt')
+                || statusStr.includes('entfällt')
+                || statusStr.includes('entfallen')
+        },
         async loadOpenNotifications() {
             if (!this.myCourseIds.length) {
                 this.openNotifications = []

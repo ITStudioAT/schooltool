@@ -620,6 +620,24 @@ describe('TutoringOffer Model', function () {
 });
 
 describe('TutoringOfferRequest Model', function () {
+    it('only allows known attributes to be mass assigned', function () {
+        $model = new TutoringOfferRequest;
+
+        expect($model->getGuarded())->not->toBe([])
+            ->and($model->getFillable())->toContain(
+                'school_id',
+                'offer_id',
+                'from_user_id',
+                'to_user_id',
+                'message',
+                'is_serious',
+                'token',
+                'token_expires_at',
+                'sent_count',
+            )
+            ->not->toContain('id', 'created_at', 'updated_at');
+    });
+
     it('can be created', function () {
         $school = School::factory()->create();
         $fromUser = User::factory()->create(['school_id' => $school->id]);

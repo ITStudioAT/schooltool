@@ -94,24 +94,30 @@ describe('deleteBookings', function () {
     });
 
     it('deletes multiple bookings', function () {
+        $bookingUsers = User::factory()->count(3)->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'register_id' => $this->register->id,
+        ]);
+
         $booking1 = RegisterDateBooking::factory()->create([
             'register_date_id' => $this->registerDate->id,
             'register_id' => $this->register->id,
-            'user_id' => $this->user->id,
+            'user_id' => $bookingUsers[0]->id,
             'school_id' => $this->school->id,
         ]);
 
         $booking2 = RegisterDateBooking::factory()->create([
             'register_date_id' => $this->registerDate->id,
             'register_id' => $this->register->id,
-            'user_id' => $this->user->id,
+            'user_id' => $bookingUsers[1]->id,
             'school_id' => $this->school->id,
         ]);
 
         $booking3 = RegisterDateBooking::factory()->create([
             'register_date_id' => $this->registerDate->id,
             'register_id' => $this->register->id,
-            'user_id' => $this->user->id,
+            'user_id' => $bookingUsers[2]->id,
             'school_id' => $this->school->id,
         ]);
 
@@ -673,6 +679,12 @@ describe('integration scenarios', function () {
     });
 
     it('handles booking deletion workflow', function () {
+        $secondBookingUser = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'register_id' => $this->register->id,
+        ]);
+
         $booking1 = RegisterDateBooking::factory()->create([
             'register_date_id' => $this->registerDate->id,
             'register_id' => $this->register->id,
@@ -683,7 +695,7 @@ describe('integration scenarios', function () {
         $booking2 = RegisterDateBooking::factory()->create([
             'register_date_id' => $this->registerDate->id,
             'register_id' => $this->register->id,
-            'user_id' => $this->user->id,
+            'user_id' => $secondBookingUser->id,
             'school_id' => $this->school->id,
         ]);
 

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Actions\Fortify\ResetUserPassword;
 use App\Http\Resources\Admin\SchoolResource;
 use App\Models\School;
 use App\Models\SchoolTool;
@@ -206,8 +207,10 @@ class AdminService
             abort(401, 'Token falsch oder abgelaufen');
         }
 
-        $user->password = Hash::make($data['password']);
-        $user->save();
+        app(ResetUserPassword::class)->reset($user, [
+            'password' => $data['password'],
+            'password_confirmation' => $data['password'],
+        ]);
 
         return $data;
     }

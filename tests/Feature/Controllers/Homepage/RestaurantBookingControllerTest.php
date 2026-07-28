@@ -539,6 +539,7 @@ it('returns child options and remembered booking defaults for import116 parents'
 
     $firstChild = Import116::factory()->create([
         'school_id' => $school->id,
+        'class' => '1A',
         'first_name' => 'Anna',
         'last_name' => 'Muster',
         'mother_email' => 'parent@example.test',
@@ -546,6 +547,7 @@ it('returns child options and remembered booking defaults for import116 parents'
 
     $secondChild = Import116::factory()->create([
         'school_id' => $school->id,
+        'class' => '1A',
         'first_name' => 'Ben',
         'last_name' => 'Muster',
         'father_email' => 'parent@example.test',

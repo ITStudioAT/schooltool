@@ -24,7 +24,9 @@ class ProcessRecognitionCsvImportJob implements ShouldQueue
 
     public function __construct(
         public int $recognitionImportId,
-    ) {}
+    ) {
+        $this->onQueue('imports');
+    }
 
     public function handle(RecognitionImportService $service): void
     {

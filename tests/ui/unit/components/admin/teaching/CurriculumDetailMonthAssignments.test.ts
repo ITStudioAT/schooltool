@@ -70,7 +70,7 @@ function mountCurriculumDetail(curriculumOverrides: Record<string, unknown> = {}
     })
 }
 
-describe('CurriculumDetail month assignment summaries', () => {
+describe('CurriculumDetail content-only curriculum editor', () => {
     afterEach(() => {
         loadDocumentsSpy.mockClear()
         openMaterialAttachmentDialogSpy.mockClear()
@@ -81,7 +81,7 @@ describe('CurriculumDetail month assignment summaries', () => {
         openMaterialAttachmentDialogSpy.mockRestore()
     })
 
-    it('shows week-assigned topics and inherited units in the month cards', () => {
+    it('shows topics and their units without the removed calendar assignment UI', () => {
         const wrapper = mountCurriculumDetail({
             topics: [
                 {
@@ -104,14 +104,12 @@ describe('CurriculumDetail month assignment summaries', () => {
             ],
         })
 
-        const septemberMonth = wrapper.findAll('.curriculum-detail__month')[0]
-
-        expect(septemberMonth.find('.curriculum-detail__month-topics').exists()).toBe(true)
-        expect(septemberMonth.find('.curriculum-detail__month-topic-name').text()).toBe('Grammatik:')
-        expect(septemberMonth.find('.curriculum-detail__month-topic-unit').text()).toBe('Satzbau')
+        expect(wrapper.find('.curriculum-detail__topic-list').text()).toContain('Grammatik')
+        expect(wrapper.find('.curriculum-detail__unit-list').text()).toContain('Satzbau')
+        expect(wrapper.find('.curriculum-detail__calendar').exists()).toBe(false)
     })
 
-    it('does not duplicate late September week assignments in the October month card', () => {
+    it('keeps legacy assignment metadata out of the normalized content model', () => {
         const wrapper = mountCurriculumDetail({
             topics: [
                 {
@@ -134,15 +132,23 @@ describe('CurriculumDetail month assignment summaries', () => {
             ],
         })
 
-        const [septemberMonth, octoberMonth] = wrapper.findAll('.curriculum-detail__month')
+        const topic = (wrapper.vm as any).curriculumTopics[0]
 
-        expect(septemberMonth.text()).toContain('Grundlagen')
-        expect(septemberMonth.text()).toContain('Am System anmelden, Kennwörter, Schooltool')
-        expect(octoberMonth.text()).not.toContain('Grundlagen')
-        expect(octoberMonth.text()).not.toContain('Am System anmelden, Kennwörter, Schooltool')
+        expect(topic).toEqual({
+            id: 'topic-1',
+            title: 'Grundlagen',
+            units: [
+                {
+                    id: 'unit-1',
+                    title: 'Am System anmelden, Kennwörter, Schooltool',
+                    is_exam: false,
+                    materials: [],
+                },
+            ],
+        })
     })
 
-    it('shows configured week counts for month assignments', () => {
+    it('preserves content while discarding obsolete month week counts', () => {
         const wrapper = mountCurriculumDetail({
             topics: [
                 {
@@ -171,33 +177,15 @@ describe('CurriculumDetail month assignment summaries', () => {
             ],
         })
 
-        const septemberMonth = wrapper.findAll('.curriculum-detail__month')[0]
-
-        expect(septemberMonth.text()).toContain('Grundlagen (Ganzer Monat)')
-        expect(septemberMonth.text()).toContain('Am System anmelden (1 Woche)')
-    })
-
-    it('defaults selected month assignments to one week', () => {
-        const wrapper = mountCurriculumDetail({
-            topics: [
-                {
-                    id: 'topic-1',
-                    title: 'Grundlagen',
-                    assignment_type: 'month',
-                    month_keys: ['2025-09'],
-                    week_keys: [],
-                    units: [],
-                },
-            ],
-        })
-
         const topic = (wrapper.vm as any).curriculumTopics[0]
 
-        expect((wrapper.vm as any).monthWeekCount(topic, '2025-09')).toBe(1)
-        expect(wrapper.findAll('.curriculum-detail__month')[0].text()).toContain('Grundlagen (1 Woche)')
+        expect(topic.title).toBe('Grundlagen')
+        expect(topic.units[0].title).toBe('Am System anmelden')
+        expect(topic).not.toHaveProperty('month_week_counts')
+        expect(topic.units[0]).not.toHaveProperty('month_week_counts')
     })
 
-    it('keeps week chips in the selected month row', async () => {
+    it('reports the current topic and unit totals', () => {
         const wrapper = mountCurriculumDetail({
             topics: [
                 {
@@ -211,21 +199,38 @@ describe('CurriculumDetail month assignment summaries', () => {
             ],
         })
 
-        await wrapper.setData({
-            activeTopicAssignmentId: 'topic-1',
-            activeTopicAssignmentUnitId: null,
-            activeTopicAssignmentType: 'month',
+        expect((wrapper.vm as any).curriculumTopics).toHaveLength(1)
+        expect((wrapper.vm as any).curriculumUnitCount).toBe(0)
+        expect(wrapper.find('.curriculum-detail__preview-summary').text()).toBe('1 Themen · 0 Einheiten')
+    })
+
+    it('selects and clears a unit from the content hierarchy', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grundlagen',
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Einführung',
+                            is_exam: false,
+                        },
+                    ],
+                },
+            ],
         })
+
+        const unit = wrapper.find('.curriculum-detail__unit-item')
+        await unit.trigger('click')
         await nextTick()
 
-        const selectedMonthRow = wrapper.find('.curriculum-detail__assignment-month-row--selected')
+        expect(unit.classes()).toContain('curriculum-detail__unit-item--selected')
+        expect((wrapper.vm as any).selectedUnitId).toBe('unit-1')
 
-        expect(selectedMonthRow.exists()).toBe(true)
-        expect(selectedMonthRow.text()).toContain('September 2025')
-        expect(selectedMonthRow.text()).toContain('1')
-        expect(selectedMonthRow.text()).toContain('2')
-        expect(selectedMonthRow.text()).toContain('3')
-        expect(selectedMonthRow.text()).toContain('4')
-        expect(selectedMonthRow.text()).toContain('Ganzer Monat')
+        await unit.trigger('click')
+        await nextTick()
+
+        expect((wrapper.vm as any).selectedUnitId).toBeNull()
     })
 })

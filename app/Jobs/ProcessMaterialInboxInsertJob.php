@@ -29,7 +29,9 @@ class ProcessMaterialInboxInsertJob implements ShouldQueue
         public int $authUserId,
         public string $operationId,
         public array $payload,
-    ) {}
+    ) {
+        $this->onQueue('materials');
+    }
 
     /**
      * Execute the job.

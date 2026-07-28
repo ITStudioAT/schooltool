@@ -3,6 +3,9 @@
 use App\Models\User;
 use App\Services\StudentsTimetables\RobotTimetableBackendSetupService;
 use Illuminate\Support\Facades\Cache;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 it('indexes availability candidates by generated key and course code alias', function () {
     $service = app(RobotTimetableBackendSetupService::class);

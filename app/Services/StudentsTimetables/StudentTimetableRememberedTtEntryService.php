@@ -366,7 +366,7 @@ class StudentTimetableRememberedTtEntryService
     private function schoolyearIdForUser(User $authUser): int
     {
         if (! $authUser->school_id || ! $authUser->schoolyear_id) {
-            abort(422, 'Bitte wÃ¤hlen Sie zuerst eine Schule und ein Schuljahr aus.');
+            abort(422, 'Bitte wählen Sie zuerst eine Schule und ein Schuljahr aus.');
         }
 
         return (int) $authUser->schoolyear_id;

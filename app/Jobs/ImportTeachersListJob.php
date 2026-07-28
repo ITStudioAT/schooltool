@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use OpenSpout\Common\Exception\UnsupportedTypeException;
 use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
+use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 use Spatie\SimpleExcel\SimpleExcelReader;
 use Throwable;
 
@@ -20,7 +21,7 @@ class ImportTeachersListJob implements ShouldQueue
      */
     public function __construct(public $user, public string $path)
     {
-        //
+        $this->onQueue('imports');
     }
 
     /**
@@ -45,8 +46,6 @@ class ImportTeachersListJob implements ShouldQueue
 
             $created = 0;
             $updated = 0;
-            $processedTeacherIds = [];
-
             foreach ($rows as $row) {
                 $mappedRow = [];
                 foreach ($headerMapping as $originalHeader => $standardHeader) {
@@ -69,8 +68,6 @@ class ImportTeachersListJob implements ShouldQueue
                         'first_name' => trim((string) ($mappedRow['Vorname'] ?? '')) ?: null,
                     ]
                 );
-
-                $processedTeacherIds[] = $teacher->id;
 
                 if ($teacher->wasRecentlyCreated) {
                     $created++;
@@ -97,14 +94,14 @@ class ImportTeachersListJob implements ShouldQueue
     }
 
     /**
-     * @return array{0: array<int, string>, 1: array<int, array<string, mixed>>}
+     * @return array{0: array<int, string>, 1: iterable<int, array<string, mixed>>}
      */
     private function readRowsWithHeaders(string $fullPath): array
     {
         try {
             $reader = SimpleExcelReader::create($fullPath);
             $headers = $reader->getHeaders();
-            $rows = $reader->getRows()->toArray();
+            $rows = $reader->getRows();
 
             return [$headers, $rows];
         } catch (UnsupportedTypeException $e) {
@@ -118,33 +115,81 @@ class ImportTeachersListJob implements ShouldQueue
     }
 
     /**
-     * @return array{0: array<int, string>, 1: array<int, array<string, mixed>>}
+     * @return array{0: array<int, string>, 1: iterable<int, array<string, mixed>>}
      */
     private function readLegacyXls(string $fullPath): array
     {
-        $spreadsheet = SpreadsheetIOFactory::load($fullPath);
-        $sheet = $spreadsheet->getActiveSheet();
-        $rawRows = $sheet->toArray(null, true, true, false);
-
-        if (empty($rawRows)) {
+        $reader = SpreadsheetIOFactory::createReaderForFile($fullPath);
+        $reader->setReadDataOnly(true);
+        $worksheetInfo = $reader->listWorksheetInfo($fullPath)[0] ?? null;
+        if (! is_array($worksheetInfo) || (int) ($worksheetInfo['totalRows'] ?? 0) < 1) {
             return [[], []];
         }
 
-        $headers = array_map(fn ($value) => trim((string) $value), array_shift($rawRows) ?: []);
+        $lastColumn = (string) ($worksheetInfo['lastColumnLetter'] ?? 'A');
+        $totalRows = (int) ($worksheetInfo['totalRows'] ?? 0);
+        $headerReader = SpreadsheetIOFactory::createReaderForFile($fullPath);
+        $headerReader->setReadDataOnly(true);
+        $headerReader->setReadFilter($this->spreadsheetRowFilter(1, 1));
+        $headerSpreadsheet = $headerReader->load($fullPath);
+        $headerValues = $headerSpreadsheet->getActiveSheet()
+            ->rangeToArray("A1:{$lastColumn}1", null, true, true, false)[0] ?? [];
+        $headerSpreadsheet->disconnectWorksheets();
+        unset($headerSpreadsheet);
 
-        $rows = [];
-        foreach ($rawRows as $rowValues) {
-            $assoc = [];
-            foreach ($headers as $index => $header) {
-                if ($header === '') {
-                    continue;
-                }
-                $assoc[$header] = $rowValues[$index] ?? null;
-            }
-            $rows[] = $assoc;
-        }
+        $headers = array_map(fn ($value) => trim((string) $value), $headerValues);
+        $rows = $this->legacyXlsRows($fullPath, $headers, $lastColumn, $totalRows);
 
         return [$headers, $rows];
+    }
+
+    /**
+     * @param  array<int, string>  $headers
+     * @return iterable<int, array<string, mixed>>
+     */
+    private function legacyXlsRows(string $fullPath, array $headers, string $lastColumn, int $totalRows): iterable
+    {
+        $chunkSize = 500;
+
+        for ($startRow = 2; $startRow <= $totalRows; $startRow += $chunkSize) {
+            $endRow = min($totalRows, $startRow + $chunkSize - 1);
+            $reader = SpreadsheetIOFactory::createReaderForFile($fullPath);
+            $reader->setReadDataOnly(true);
+            $reader->setReadFilter($this->spreadsheetRowFilter($startRow, $endRow));
+            $spreadsheet = $reader->load($fullPath);
+            $rawRows = $spreadsheet->getActiveSheet()
+                ->rangeToArray("A{$startRow}:{$lastColumn}{$endRow}", null, true, true, false);
+
+            foreach ($rawRows as $rowValues) {
+                $row = [];
+                foreach ($headers as $index => $header) {
+                    if ($header !== '') {
+                        $row[$header] = $rowValues[$index] ?? null;
+                    }
+                }
+
+                yield $row;
+            }
+
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet, $rawRows);
+        }
+    }
+
+    private function spreadsheetRowFilter(int $startRow, int $endRow): IReadFilter
+    {
+        return new class($startRow, $endRow) implements IReadFilter
+        {
+            public function __construct(
+                private readonly int $startRow,
+                private readonly int $endRow,
+            ) {}
+
+            public function readCell(string $columnAddress, int $row, string $worksheetName = ''): bool
+            {
+                return $row >= $this->startRow && $row <= $this->endRow;
+            }
+        };
     }
 
     private function broadcastFailed(string $message): void

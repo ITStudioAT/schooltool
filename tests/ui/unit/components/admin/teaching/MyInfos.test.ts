@@ -50,6 +50,7 @@ describe('MyInfos next lesson countdown', () => {
                 },
             ],
             school_hours: [{ hour: 1, from: '08:00:00', until: '08:50:00' }],
+            isFreeCourseDate: methods.isFreeCourseDate,
             lessonStartFromHour: methods.lessonStartFromHour,
             padTwo: methods.padTwo,
         }
@@ -77,6 +78,7 @@ describe('MyInfos next lesson countdown', () => {
                 },
             ],
             school_hours: [{ hour: 1, from: '08:00:00', until: '08:50:00' }],
+            isFreeCourseDate: methods.isFreeCourseDate,
             lessonStartFromHour: methods.lessonStartFromHour,
             padTwo: methods.padTwo,
         }
@@ -104,6 +106,7 @@ describe('MyInfos next lesson countdown', () => {
                 },
             ],
             school_hours: [{ hour: 1, from: '08:00:00', until: '08:50:00' }],
+            isFreeCourseDate: methods.isFreeCourseDate,
             lessonStartFromHour: methods.lessonStartFromHour,
             padTwo: methods.padTwo,
         }
@@ -140,6 +143,7 @@ describe('MyInfos active lesson countdown', () => {
                 },
             ],
             school_hours: [{ hour: 1, from: '08:00:00', until: '08:50:00' }],
+            isFreeCourseDate: methods.isFreeCourseDate,
             lessonStartFromHour: methods.lessonStartFromHour,
             lessonEndFromHour: methods.lessonEndFromHour,
             padTwo: methods.padTwo,
@@ -168,6 +172,7 @@ describe('MyInfos active lesson countdown', () => {
                 },
             ],
             school_hours: [{ hour: 1, from: '08:00:00', until: '08:50:00' }],
+            isFreeCourseDate: methods.isFreeCourseDate,
             lessonStartFromHour: methods.lessonStartFromHour,
             lessonEndFromHour: methods.lessonEndFromHour,
             padTwo: methods.padTwo,
@@ -195,7 +200,7 @@ describe('MyInfos active lesson countdown', () => {
         const indexHeute = source.indexOf('Heute')
         expect(indexEnds).toBeGreaterThan(-1)
         expect(indexHeute).toBeGreaterThan(-1)
-        expect(indexEnds).toBeLessThan(indexHeute)
+        expect(indexEnds).toBeGreaterThan(indexHeute)
     })
 })
 
@@ -247,6 +252,7 @@ describe('MyInfos lesson countdown visibility', () => {
             nowTs: now.getTime(),
             school_hours: [{ hour: 1, from: '08:00:00', until: '08:50:00' }],
             myCourses: [{ course_dates: [{ date: '2026-03-02', hours: [1] }] }],
+            isFreeCourseDate: methods.isFreeCourseDate,
             lessonStartFromHour: methods.lessonStartFromHour,
             lessonEndFromHour: methods.lessonEndFromHour,
         }
@@ -262,6 +268,7 @@ describe('MyInfos lesson countdown visibility', () => {
             nowTs: new Date(2026, 2, 2, 11, 0, 0).getTime(),
             school_hours: [{ hour: 1, from: '08:00:00', until: '08:50:00' }],
             myCourses: [{ course_dates: [{ date: '2026-03-02', hours: [1] }] }],
+            isFreeCourseDate: methods.isFreeCourseDate,
             lessonStartFromHour: methods.lessonStartFromHour,
             lessonEndFromHour: methods.lessonEndFromHour,
         }

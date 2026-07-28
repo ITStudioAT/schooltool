@@ -179,7 +179,7 @@ test('user endpoint returns user only for authenticated students', function () {
         ->assertOk()
         ->assertJsonPath('user', null);
 
-    $this->actingAs($this->student)
+    $this->actingAs($this->student, 'web')
         ->getJson($url)
         ->assertOk()
         ->assertJsonPath('user.id', $this->student->id);
@@ -197,7 +197,7 @@ test('change password updates password for student and blocks other roles', func
     $this->student->refresh();
     expect(Hash::check('new-password-123', $this->student->password))->toBeTrue();
 
-    $this->actingAs($this->teacher)
+    $this->actingAs($this->teacher, 'web')
         ->postJson('/api/homepage/student/change_password', [
             'new_password' => 'another-password-123',
             'confirm_password' => 'another-password-123',
@@ -371,7 +371,7 @@ test('parent verifies its email and selects one of multiple eligible children wi
     $this->postJson('/api/homepage/student/change_password', [
         'new_password' => 'parent-must-not-change-this',
         'confirm_password' => 'parent-must-not-change-this',
-    ])->assertForbidden();
+    ])->assertUnauthorized();
 
     expect($selectedChildUser->fresh()->password)->toBe($originalPassword);
 

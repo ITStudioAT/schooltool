@@ -462,6 +462,50 @@ test('update returns 403 for regular user', function () {
     $response->assertStatus(403);
 });
 
+test('update forbids registers from another school', function () {
+    $otherSchool = School::factory()->create();
+    $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+    $register = Register::factory()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+    ]);
+
+    $response = $this->actingAs($this->adminUser)
+        ->putJson("/api/admin/registers/{$register->id}", [
+            'id' => $register->id,
+            'school_id' => $otherSchool->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'name' => 'Cross-school update',
+            'max_registrations' => 1,
+        ]);
+
+    $response->assertForbidden();
+    expect($register->fresh()->name)->not->toBe('Cross-school update');
+});
+
+test('update forbids route and payload identity mismatches', function () {
+    $register = Register::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $otherRegister = Register::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    $response = $this->actingAs($this->adminUser)
+        ->putJson("/api/admin/registers/{$register->id}", [
+            'id' => $otherRegister->id,
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'name' => 'Mismatched update',
+            'max_registrations' => 1,
+        ]);
+
+    $response->assertForbidden();
+    expect($register->fresh()->name)->not->toBe('Mismatched update');
+});
+
 // Destroy Tests
 test('destroy deletes register without dependencies', function () {
     $register = Register::factory()->create([
@@ -510,6 +554,21 @@ test('destroy returns 403 for regular user', function () {
         ->deleteJson("/api/admin/registers/{$register->id}");
 
     $response->assertStatus(403);
+});
+
+test('destroy forbids registers from another school', function () {
+    $otherSchool = School::factory()->create();
+    $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+    $register = Register::factory()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+    ]);
+
+    $this->actingAs($this->adminUser)
+        ->deleteJson("/api/admin/registers/{$register->id}")
+        ->assertForbidden();
+
+    $this->assertModelExists($register);
 });
 
 // Set Active Register Tests
@@ -563,6 +622,23 @@ test('setActiveRegister returns 403 for regular user', function () {
         ]);
 
     $response->assertStatus(403);
+});
+
+test('setActiveRegister forbids registers from another school', function () {
+    $otherSchool = School::factory()->create();
+    $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+    $register = Register::factory()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+    ]);
+
+    $this->actingAs($this->adminUser)
+        ->postJson('/api/admin/registers/set_active', [
+            'register_id' => $register->id,
+        ])
+        ->assertForbidden();
+
+    expect($this->adminUser->fresh()->register_id)->not->toBe($register->id);
 });
 
 // Toggle Register Tests
@@ -630,4 +706,22 @@ test('toggleRegister returns 403 for regular user', function () {
         ]);
 
     $response->assertStatus(403);
+});
+
+test('toggleRegister forbids registers from another school', function () {
+    $otherSchool = School::factory()->create();
+    $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+    $register = Register::factory()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+        'is_active' => false,
+    ]);
+
+    $this->actingAs($this->adminUser)
+        ->postJson('/api/admin/registers/toggle', [
+            'register_id' => $register->id,
+        ])
+        ->assertForbidden();
+
+    expect($register->fresh()->is_active)->toBeFalse();
 });

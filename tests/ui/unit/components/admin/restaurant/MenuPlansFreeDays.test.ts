@@ -37,6 +37,7 @@ function mountMenuPlansWithFreeDays(freeDays: string[] = []) {
         load: vi.fn(),
         findPlanForDay: vi.fn(() => null),
         planCountForDay: vi.fn(() => 0),
+        bookedMenuCountForDay: vi.fn(() => 0),
     } as never)
 
     vi.mocked(useRestaurantStore).mockReturnValue({

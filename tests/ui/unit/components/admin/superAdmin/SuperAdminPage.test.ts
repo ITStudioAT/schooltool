@@ -34,7 +34,7 @@ describe('Super admin page navigation', () => {
 
         const items = (SuperAdmin as any).computed.visibleNavigationItems.call(ctx)
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'teachers'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview'])
     })
 
     it('omits the migrated schoolyears, users, licences, roles, and log entries from the super admin navigation', () => {
@@ -47,11 +47,7 @@ describe('Super admin page navigation', () => {
 
         const items = (SuperAdmin as any).computed.visibleNavigationItems.call(ctx)
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual([
-            'overview',
-            'teachers',
-            'impersonation',
-        ])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview'])
     })
 
     it('builds header chips with optional impersonation chip', () => {

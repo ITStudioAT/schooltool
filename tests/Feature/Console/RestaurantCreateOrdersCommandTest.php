@@ -26,12 +26,18 @@ it('creates mostly single-recipient restaurant orders and occasional multi-child
         'name' => 'lunch_user',
         'guard_name' => 'web',
     ]);
+    Role::firstOrCreate([
+        'name' => 'super_admin',
+        'guard_name' => 'web',
+    ]);
 
     $menu = RestaurantMenu::factory()->forSchool($school)->create();
     $secondMenu = RestaurantMenu::factory()->forSchool($school)->create();
     $thirdMenu = RestaurantMenu::factory()->forSchool($school)->create();
     $plan = RestaurantMenuPlan::factory()->create([
         'school_id' => $school->id,
+        'start_date' => '2026-03-30',
+        'end_date' => '2026-04-02',
         'is_available' => true,
         'use_individual_schedule_values' => true,
         'visible_start_at' => '2026-04-01 08:00:00',
@@ -80,6 +86,7 @@ it('creates mostly single-recipient restaurant orders and occasional multi-child
     ]);
 
     $singleParent->assignRole('lunch_user');
+    $singleParent->assignRole('super_admin');
     $multiParent->assignRole('lunch_user');
 
     Import116::factory()->forSchool($school)->create([
@@ -115,9 +122,11 @@ it('creates mostly single-recipient restaurant orders and occasional multi-child
     ]);
 
     $this->artisan('restaurant:create-orders', [
+        'kw' => 14,
         'n' => 10,
+        '--year' => 2026,
     ])
-        ->expectsOutputToContain('Created 10 orders.')
+        ->expectsOutputToContain('Created 10 orders for KW 14.')
         ->expectsOutputToContain('Parent orders with more than 1 child:')
         ->expectsOutputToContain('- Order 10: Ben Mehrfach <ben.mehrfach@example.test> [#')
         ->assertExitCode(0);

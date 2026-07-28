@@ -163,7 +163,8 @@ describe('MenuPlans entry availability status', () => {
         })
         await settleAvailabilityEntryPage(wrapper)
 
-        expect(wrapper.find('[data-testid="availability-card"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="availability-card"]').exists()).toBe(true)
+        expect(wrapper.get('[data-testid="availability-toggle"]').attributes('disabled')).toBeDefined()
 
         ;(wrapper.vm as any).entriesByDate = {
             '2026-03-23': [

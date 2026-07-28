@@ -12,6 +12,11 @@ class HealthJob implements ShouldQueue
 {
     use Queueable;
 
+    public function __construct()
+    {
+        $this->onQueue('critical');
+    }
+
     public function handle(): void
     {
         Cache::put('health:worker', now()->toIso8601String(), 300);

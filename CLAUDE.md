@@ -254,8 +254,13 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - laravel/ai (AI) - v0
 - laravel/fortify (FORTIFY) - v1
 - laravel/framework (LARAVEL) - v13
+- laravel/horizon (HORIZON) - v5
 - laravel/prompts (PROMPTS) - v0
+- laravel/pulse (PULSE) - v1
 - laravel/sanctum (SANCTUM) - v4
+- laravel/scout (SCOUT) - v11
+- laravel/wayfinder (WAYFINDER) - v0
+- livewire/livewire (LIVEWIRE) - v4
 - laravel/boost (BOOST) - v2
 - laravel/mcp (MCP) - v0
 - laravel/pail (PAIL) - v1
@@ -395,6 +400,12 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 ## Vite Error
 
 - If you receive an "Illuminate\Foundation\ViteException: Unable to locate file in Vite manifest" error, you can run `npm run build` or ask the user to run `npm run dev` or `composer run dev`.
+
+=== wayfinder/core rules ===
+
+# Laravel Wayfinder
+
+Use Wayfinder to generate TypeScript functions for Laravel routes. Import from `@/actions/` (controllers) or `@/routes/` (named routes).
 
 === pint/core rules ===
 

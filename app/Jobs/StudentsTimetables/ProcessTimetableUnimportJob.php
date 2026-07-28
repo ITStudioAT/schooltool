@@ -24,7 +24,9 @@ class ProcessTimetableUnimportJob implements ShouldQueue
 
     public function __construct(
         public int $timetableImportId,
-    ) {}
+    ) {
+        $this->onQueue('imports');
+    }
 
     public function handle(TimetableImportService $service): void
     {

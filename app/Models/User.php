@@ -2,13 +2,13 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-
 use App\Notifications\StandardEmail;
 use App\Services\AccessScopeService;
 use App\Services\EmailAliasResolver;
 use App\Traits\UserTrait;
 use Database\Factories\UserFactory;
+use Illuminate\Auth\MustVerifyEmail;
+use Illuminate\Contracts\Auth\MustVerifyEmail as MustVerifyEmailContract;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -140,7 +140,7 @@ use Spatie\Permission\Traits\HasRoles;
  *
  * @mixin \Eloquent
  */
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmailContract
 {
     use HasApiTokens;
 
@@ -149,6 +149,7 @@ class User extends Authenticatable
 
     use HasRoles;
     use ImpersonateTrait;
+    use MustVerifyEmail;
     use Notifiable;
     use TwoFactorAuthenticatable;
     use UserTrait;
@@ -352,6 +353,11 @@ class User extends Authenticatable
         Notification::route('mail', EmailAliasResolver::resolveConfigured($this->email))->notify(new StandardEmail($data));
     }
 
+    public function sendEmailVerificationNotification(): void
+    {
+        $this->sendVerificationEmail();
+    }
+
     public function sendConfirmEmail()
     {
         // XXXXXXXXXXXXXXXXXXXXX
@@ -389,7 +395,7 @@ class User extends Authenticatable
 
     public function emailVerified(): bool
     {
-        $this->email_verified_at = now();
+        $this->markEmailAsVerified();
         $this->uuid = null;
         $this->uuid_at = null;
         $this->save();

@@ -37,6 +37,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 uses(RefreshDatabase::class);
 
@@ -394,6 +395,29 @@ test('download uses an ascii filename for imported backup names', function () {
     $this->get("/api/admin/teaching/backups/{$backup->id}/download")
         ->assertOk()
         ->assertDownload('Datensicherung-aou.json');
+});
+
+test('download streams the stored backup without loading it into the controller response', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $content = '{"streamed":true}';
+    Storage::disk('local')->put('teaching-backups/streamed.json', $content);
+    $backup = TeachingBackup::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'disk' => 'local',
+        'path' => 'teaching-backups/streamed.json',
+        'filename' => 'streamed.json',
+        'summary' => ['total_rows' => 1],
+    ]);
+
+    $response = $this->get("/api/admin/teaching/backups/{$backup->id}/download");
+
+    $response->assertOk()->assertDownload('streamed.json');
+    expect($response->baseResponse)->toBeInstanceOf(StreamedResponse::class)
+        ->and($response->streamedContent())->toBe($content);
 });
 
 test('download returns not found when the stored backup file is missing', function () {

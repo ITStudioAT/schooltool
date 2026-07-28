@@ -29,7 +29,9 @@ class SyncActiveSchoolMaterialFilesToLocalJob implements ShouldQueue
         public int $authUserId,
         public string $operationId,
         public int $schoolId,
-    ) {}
+    ) {
+        $this->onQueue('maintenance');
+    }
 
     /**
      * Execute the job.

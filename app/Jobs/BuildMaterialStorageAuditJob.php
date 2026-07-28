@@ -29,7 +29,9 @@ class BuildMaterialStorageAuditJob implements ShouldQueue
         public int $authUserId,
         public string $operationId,
         public ?int $schoolId = null,
-    ) {}
+    ) {
+        $this->onQueue('maintenance');
+    }
 
     /**
      * Execute the job.

@@ -8,8 +8,9 @@ use App\Models\Schoolyear;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use App\Services\RestaurantSepaMandatePdfService;
+use App\Services\RestaurantSepaMandateService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
@@ -67,6 +68,7 @@ test('resends the restaurant sepa confirmation code for an active pending flow',
             ],
         ],
     ]);
+    app(RestaurantSepaMandateService::class)->bootstrapFlow($user);
 
     $submitResponse = $this->postJson('/api/homepage/restaurant/sepa/store', [
         'data' => [
@@ -90,10 +92,19 @@ test('resends the restaurant sepa confirmation code for an active pending flow',
 
     $submitResponse
         ->assertOk()
-        ->assertJsonPath('status', 'CODE_SENT');
+        ->assertJsonPath('status', 'CODE_SENT')
+        ->assertJsonPath('flow.iban', 'AT61************3201');
 
     $mandate->refresh();
-    $firstConfirmationCode = (string) $mandate->confirmation_code;
+    $firstConfirmationCodeHash = (string) $mandate->confirmation_code;
+
+    expect($firstConfirmationCodeHash)->not->toMatch('/^\d{6}$/');
+
+    $storedMandate = DB::table('restaurant_sepa_mandates')->where('id', $mandate->id)->first();
+
+    expect($storedMandate->iban)->not->toBe('AT611904300234573201')
+        ->and($storedMandate->account_holder_name)->not->toBe('Max Muster')
+        ->and($storedMandate->address_line)->not->toBe('Musterstraße 1');
 
     $this->postJson('/api/homepage/restaurant/sepa/resend_code', [
         'data' => [
@@ -106,7 +117,7 @@ test('resends the restaurant sepa confirmation code for an active pending flow',
 
     $mandate->refresh();
 
-    expect($mandate->confirmation_code)->not->toBe($firstConfirmationCode)
+    expect($mandate->confirmation_code)->not->toBe($firstConfirmationCodeHash)
         ->and($mandate->status)->toBe('pending_code')
         ->and($mandate->code_sent_at)->not->toBeNull()
         ->and($mandate->postal_code)->toBe('5020')
@@ -141,20 +152,17 @@ test('emails the confirmed sepa mandate pdf to the customer and restaurant servi
             ],
         ],
     ]);
-
-    $tempPath = storage_path('framework/testing/sepa-mandate-mail.pdf');
-    File::ensureDirectoryExists(dirname($tempPath));
-    File::put($tempPath, 'pdf-test');
+    app(RestaurantSepaMandateService::class)->bootstrapFlow($user);
 
     $pdfService = Mockery::mock(RestaurantSepaMandatePdfService::class);
-    $pdfService->shouldReceive('createPdf')
+    $pdfService->shouldReceive('createPdfContent')
         ->once()
         ->withArgs(function (RestaurantSepaMandate $actual) use ($mandate): bool {
             return (int) $actual->id === (int) $mandate->id
                 && $actual->flow_uuid === $mandate->flow_uuid
                 && (string) $actual->confirmed_at !== '';
         })
-        ->andReturn($tempPath);
+        ->andReturn('pdf-test');
 
     $this->app->instance(RestaurantSepaMandatePdfService::class, $pdfService);
 
@@ -178,9 +186,16 @@ test('emails the confirmed sepa mandate pdf to the customer and restaurant servi
         ],
     ])->assertOk();
 
-    $confirmationCode = (string) $mandate->fresh()->confirmation_code;
+    $confirmationCode = null;
+    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification) use (&$confirmationCode): bool {
+        $confirmationCode = $notification->data['token_2fa'] ?? null;
+
+        return is_string($confirmationCode);
+    });
 
     Notification::fake();
+
+    expect($confirmationCode)->toMatch('/^\d{6}$/');
 
     $this->postJson('/api/homepage/restaurant/sepa/confirm_code', [
         'data' => [
@@ -192,18 +207,52 @@ test('emails the confirmed sepa mandate pdf to the customer and restaurant servi
         ->assertJsonPath('status', 'CONFIRMED');
 
     Notification::assertSentOnDemand(StandardEmail::class, 2);
-    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification, array $channels, object $notifiable) use ($tempPath): bool {
+    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification, array $channels, object $notifiable): bool {
         return ($notifiable->routes['mail'] ?? null) === 'customer@test.local'
             && ($notification->data['subject'] ?? null) === 'SEPA-Lastschriftmandat als PDF'
             && ($notification->data['markdown'] ?? null) === 'spa::mails.homepage.sendSepaMandate'
-            && $notification->attachments === $tempPath;
+            && ($notification->attachments['data'] ?? null) === 'pdf-test'
+            && ($notification->attachments['options']['mime'] ?? null) === 'application/pdf';
     });
-    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification, array $channels, object $notifiable) use ($tempPath): bool {
+    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification, array $channels, object $notifiable): bool {
         return ($notifiable->routes['mail'] ?? null) === 'service@test.local'
             && ($notification->data['subject'] ?? null) === 'SEPA-Lastschriftmandat als PDF'
             && ($notification->data['markdown'] ?? null) === 'spa::mails.homepage.sendSepaMandate'
-            && $notification->attachments === $tempPath;
+            && ($notification->attachments['data'] ?? null) === 'pdf-test'
+            && ($notification->attachments['options']['mime'] ?? null) === 'application/pdf';
     });
 
-    File::delete($tempPath);
+    $this->postJson('/api/homepage/restaurant/sepa/complete', [
+        'data' => [
+            'flow_uuid' => $mandate->flow_uuid,
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('status', 'COMPLETED');
+
+    $this->postJson('/api/homepage/restaurant/sepa/complete', [
+        'data' => [
+            'flow_uuid' => $mandate->flow_uuid,
+        ],
+    ])->assertUnprocessable();
+});
+
+test('rejects a sepa flow UUID that is not bound to the current session', function () {
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $mandate = RestaurantSepaMandate::query()->create([
+        'user_id' => $user->id,
+        'school_id' => $this->school->id,
+        'flow_uuid' => (string) Str::uuid(),
+        'status' => 'pending_code',
+        'entry_point' => 'login',
+    ]);
+
+    $this->postJson('/api/homepage/restaurant/sepa/resend_code', [
+        'data' => [
+            'flow_uuid' => $mandate->flow_uuid,
+        ],
+    ])->assertUnauthorized();
 });

@@ -62,7 +62,7 @@ return [
 
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
-    'allowed_methods' => ['*'],
+    'allowed_methods' => ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 
     'allowed_origins' => $configuredCorsOrigins !== [] ? $configuredCorsOrigins : $defaultCorsOrigins,
 
@@ -71,7 +71,18 @@ return [
         '#^https?://.*\\.test(:\\d+)?$#',
     ],
 
-    'allowed_headers' => ['*'],
+    'allowed_headers' => [
+        'Accept',
+        'Authorization',
+        'Content-Type',
+        'Origin',
+        'Precognition',
+        'Precognition-Validate-Only',
+        'X-CSRF-TOKEN',
+        'X-Requested-With',
+        'X-Socket-ID',
+        'X-XSRF-TOKEN',
+    ],
 
     'exposed_headers' => [],
 

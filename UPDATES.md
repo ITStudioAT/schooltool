@@ -1,6 +1,9 @@
 # UPDATES
 
-## 3.43.5 x
+## 3.44.0 x
+- Major Security Update
+
+## 3.43.5
 
 ### Materialien
 - Kategorien Links, Termine, Screenshot by default vorhanden

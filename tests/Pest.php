@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\Licence;
+use App\Models\School;
+use App\Models\SchoolTool;
 use Tests\TestCase;
 
 /*
@@ -14,8 +17,40 @@ use Tests\TestCase;
 */
 
 pest()->extend(TestCase::class)
- // ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+    // ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Feature');
+
+/**
+ * Enable a licensed module explicitly for feature tests exercising its routes.
+ */
+function enableSchoolToolModuleForTests(School $school, string $module): void
+{
+    SchoolTool::query()->updateOrCreate(
+        ['school_id' => $school->id],
+        [
+            "{$module}_visible_admin" => true,
+            "{$module}_visible_user" => true,
+        ],
+    );
+}
+
+/**
+ * Attach an active legacy school licence for route-level feature tests.
+ */
+function grantSchoolToolLicenceForTests(School $school, string $licenceName): void
+{
+    $licence = Licence::query()->firstOrCreate(
+        ['name' => $licenceName],
+        [
+            'long_name' => $licenceName,
+            'is_selectable' => true,
+        ],
+    );
+
+    $school->licences()->syncWithoutDetaching([
+        $licence->id => ['valid_until' => now()->addYear()->toDateString()],
+    ]);
+}
 
 /*
 |--------------------------------------------------------------------------

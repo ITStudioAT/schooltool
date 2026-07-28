@@ -1,6 +1,5 @@
 <?php
 
-use Barryvdh\Debugbar\Facades\Debugbar;
 use Devrabiul\LaravelCookieConsent\Facades\CookieConsent;
 use Illuminate\Support\Str;
 use Spatie\LaravelPdf\Facades\Pdf;
@@ -131,7 +130,6 @@ return [
     'aliases' => [
         // ...
         // 'Spa' => App\Facades\SpaFacade::class,
-        'Debugbar' => Debugbar::class,
         'Pdf' => Pdf::class,
         'Str' => Str::class,
         'CookieConsent' => CookieConsent::class,

@@ -70,6 +70,7 @@ describe('RestaurantUserStore', () => {
             params: {
                 search_string: 'Anna',
                 only_pending_confirmation: 1,
+                only_without_sepa: 0,
                 page: 2,
             },
         })

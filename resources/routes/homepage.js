@@ -1,26 +1,27 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Index from '@/pages/homepage/index/Index.vue'
-import Impressum from '@/pages/homepage/index/Impressum.vue'
-import Register from '@/pages/homepage/register/Register.vue'
-import Register_Part2 from '@/pages/homepage/register/RegisterPart2.vue'
-import Application_Error from '@/pages/homepage/error/Error.vue'
-import TutoringOverview from '@/pages/homepage/tutoring/TutoringOverview.vue'
-import Tutoring from '@/pages/homepage/tutoring/Tutoring.vue'
-import TutoringResponse from '@/pages/homepage/tutoring/responses/TutoringResponse.vue'
-import Student from '@/pages/homepage/student/Student.vue'
-import StudentOverview from '@/pages/homepage/student/overview/Overview.vue'
-import StudentPassword from '@/pages/homepage/student/password/Password.vue'
-import StudentProfile from '@/pages/homepage/student/profile/Profile.vue'
-import StudentCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
-import StudentTimetables from '@/pages/homepage/studentsTimetables/StudentTimetables.vue'
-import StudentTimetablesOverview from '@/pages/homepage/studentsTimetables/overview/Overview.vue'
-import StudentTimetablesOverviewV2 from '@/pages/homepage/studentsTimetables/overviewV2/OverviewV2.vue'
-import StudentTimetablesPassword from '@/pages/homepage/studentsTimetables/password/Password.vue'
-import StudentTimetablesProfile from '@/pages/homepage/studentsTimetables/profile/Profile.vue'
-import Cashier from '@/pages/homepage/cashier/Cashier.vue'
-import Restaurant from '@/pages/homepage/index/Restaurant.vue'
-import Products from '@/pages/homepage/index/Products.vue'
-import NotesDemo from '@/pages/homepage/NotesDemo.vue'
+
+const Index = () => import('@/pages/homepage/index/Index.vue')
+const Impressum = () => import('@/pages/homepage/index/Impressum.vue')
+const Register = () => import('@/pages/homepage/register/Register.vue')
+const Register_Part2 = () => import('@/pages/homepage/register/RegisterPart2.vue')
+const Application_Error = () => import('@/pages/homepage/error/Error.vue')
+const TutoringOverview = () => import('@/pages/homepage/tutoring/TutoringOverview.vue')
+const Tutoring = () => import('@/pages/homepage/tutoring/Tutoring.vue')
+const TutoringResponse = () => import('@/pages/homepage/tutoring/responses/TutoringResponse.vue')
+const Student = () => import('@/pages/homepage/student/Student.vue')
+const StudentOverview = () => import('@/pages/homepage/student/overview/Overview.vue')
+const StudentPassword = () => import('@/pages/homepage/student/password/Password.vue')
+const StudentProfile = () => import('@/pages/homepage/student/profile/Profile.vue')
+const StudentCourse = () => import('@/pages/homepage/student/overview/myCourse/MyCourse.vue')
+const StudentTimetables = () => import('@/pages/homepage/studentsTimetables/StudentTimetables.vue')
+const StudentTimetablesOverview = () => import('@/pages/homepage/studentsTimetables/overview/Overview.vue')
+const StudentTimetablesOverviewV2 = () => import('@/pages/homepage/studentsTimetables/overviewV2/OverviewV2.vue')
+const StudentTimetablesPassword = () => import('@/pages/homepage/studentsTimetables/password/Password.vue')
+const StudentTimetablesProfile = () => import('@/pages/homepage/studentsTimetables/profile/Profile.vue')
+const Cashier = () => import('@/pages/homepage/cashier/Cashier.vue')
+const Restaurant = () => import('@/pages/homepage/index/Restaurant.vue')
+const Products = () => import('@/pages/homepage/index/Products.vue')
+const NotesDemo = () => import('@/pages/homepage/NotesDemo.vue')
 
 const routes = [
     { path: '/', component: Index },

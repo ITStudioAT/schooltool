@@ -402,6 +402,25 @@
         <v-card v-if="selectedTopicItem" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
         <div class="overview-unit-card__header overview-unit-card__header--subject overview-unit-card__header--workspace-node d-flex align-center ga-2">
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('topic', selectedTopicItem) }}</span>
+            <v-chip
+                v-if="selectedTopicItem.isLinked"
+                size="x-small"
+                variant="outlined"
+                :color="linkedPermissionChipColor(selectedTopicItem.linkedPermission)">
+                {{ linkedPermissionLabel(selectedTopicItem) }}
+            </v-chip>
+            <v-btn
+                v-if="enableRemoveButtons && hasPersistedNodeId(selectedTopicItem.id) && selectedTopicItem.isLinked"
+                size="x-small"
+                color="warning"
+                variant="text"
+                density="comfortable"
+                prepend-icon="mdi-link-off"
+                :disabled="actionBusy"
+                title="Link entfernen (ganzes Thema)"
+                @click="$emit('unlink-linked-topic', selectedTopicItem)">
+                Link entfernen
+            </v-btn>
         </div>
 
         <div v-if="selectedTopicItem.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3 mb-4">
@@ -527,6 +546,25 @@
         <v-card v-if="selectedUnitItem && !isWorkspace2SectionActive" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
         <div class="overview-unit-card__header overview-unit-card__header--subject overview-unit-card__header--workspace-node d-flex align-center ga-2">
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('unit', selectedUnitItem) }}</span>
+            <v-chip
+                v-if="selectedUnitItem.isLinked"
+                size="x-small"
+                variant="outlined"
+                :color="linkedPermissionChipColor(selectedUnitItem.linkedPermission)">
+                {{ linkedPermissionLabel(selectedUnitItem) }}
+            </v-chip>
+            <v-btn
+                v-if="enableRemoveButtons && hasPersistedNodeId(selectedUnitItem.id) && selectedUnitItem.isLinked"
+                size="x-small"
+                color="warning"
+                variant="text"
+                density="comfortable"
+                prepend-icon="mdi-link-off"
+                :disabled="actionBusy"
+                title="Link entfernen (ganze Einheit)"
+                @click="$emit('unlink-linked-unit', selectedUnitItem)">
+                Link entfernen
+            </v-btn>
         </div>
 
         <div v-if="!isWorkspaceStructureButtonsVisible() && (selectedUnitItem.materials.length || canShowUnitMaterialCreateCard)" class="overview-materials-cards d-flex flex-wrap ga-3">
@@ -680,7 +718,7 @@
                         <div v-if="!sharedItemHierarchy(item).length" class="overview-shared-state">
                             Keine Fachstruktur für diese Freigabe vorhanden.
                         </div>
-                        <div v-if="sharedItemHierarchy(item).length" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-12">
+                        <div v-if="sharedItemHierarchy(item).length || sharedItemSupportsSubjectCreate(item)" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-12">
                             <v-btn
                                 v-for="subject in sharedItemHierarchy(item)"
                                 :key="`shared-subject-nav-${item.ruleId}-${subject.id || subject.name}`"
@@ -723,7 +761,7 @@
                                 <v-card v-for="material in selectedSharedSubjectObj(item.ruleId, item).materials" :key="`shared-material-card-subject-${material.id}`" class="overview-material-card" variant="outlined" rounded="lg" @click="openSharedMaterial(item, material)">
                                     <v-card-text class="pa-3">
                                         <div class="d-flex align-center ga-2 mb-2"><v-icon size="20" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || 'primary'" /><span class="overview-material-card__title">{{ material.title }}</span></div>
-                                        <div class="d-flex align-center flex-wrap ga-2"><v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">{{ material.typeLabel }}</v-chip><v-chip size="x-small" variant="tonal" :color="statusColorFn(material.status)">{{ statusLabelFn(material.status) }}</v-chip><v-btn v-if="canShowSharedInsertButton('material')" size="x-small" color="primary" variant="tonal" prepend-icon="mdi-tray-arrow-down" @click.stop="emitSharedMaterialInsertDraft(item, material, { subject: selectedSharedSubjectObj(item.ruleId, item) })">Einordnen</v-btn></div>
+                                        <div class="d-flex align-center flex-wrap ga-2"><v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">{{ material.typeLabel }}</v-chip><v-chip size="x-small" variant="tonal" :color="statusColorFn(material.status)">{{ statusLabelFn(material.status) }}</v-chip><v-btn v-if="material.attachmentsCount > 0" size="x-small" variant="text" prepend-icon="mdi-paperclip" :disabled="actionBusy" @click.stop="openSharedAttachments(item, material)">{{ material.attachmentsCount }}</v-btn><v-btn v-if="canShowSharedInsertButton('material')" size="x-small" color="primary" variant="tonal" prepend-icon="mdi-tray-arrow-down" @click.stop="emitSharedMaterialInsertDraft(item, material, { subject: selectedSharedSubjectObj(item.ruleId, item) })">Einordnen</v-btn></div>
                                     </v-card-text>
                                 </v-card>
                             </div>
@@ -751,7 +789,7 @@
                                     <v-card v-for="material in selectedSharedTopicObj(item.ruleId, item).materials" :key="`shared-material-card-topic-${material.id}`" class="overview-material-card" variant="outlined" rounded="lg" @click="openSharedMaterial(item, material)">
                                         <v-card-text class="pa-3">
                                             <div class="d-flex align-center ga-2 mb-2"><v-icon size="20" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || 'primary'" /><span class="overview-material-card__title">{{ material.title }}</span></div>
-                                            <div class="d-flex align-center flex-wrap ga-2"><v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">{{ material.typeLabel }}</v-chip><v-chip size="x-small" variant="tonal" :color="statusColorFn(material.status)">{{ statusLabelFn(material.status) }}</v-chip><v-btn v-if="canShowSharedInsertButton('material')" size="x-small" color="primary" variant="tonal" prepend-icon="mdi-tray-arrow-down" @click.stop="emitSharedMaterialInsertDraft(item, material, { subject: selectedSharedSubjectObj(item.ruleId, item), topic: selectedSharedTopicObj(item.ruleId, item) })">Einordnen</v-btn></div>
+                                            <div class="d-flex align-center flex-wrap ga-2"><v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">{{ material.typeLabel }}</v-chip><v-chip size="x-small" variant="tonal" :color="statusColorFn(material.status)">{{ statusLabelFn(material.status) }}</v-chip><v-btn v-if="material.attachmentsCount > 0" size="x-small" variant="text" prepend-icon="mdi-paperclip" :disabled="actionBusy" @click.stop="openSharedAttachments(item, material)">{{ material.attachmentsCount }}</v-btn><v-btn v-if="canShowSharedInsertButton('material')" size="x-small" color="primary" variant="tonal" prepend-icon="mdi-tray-arrow-down" @click.stop="emitSharedMaterialInsertDraft(item, material, { subject: selectedSharedSubjectObj(item.ruleId, item), topic: selectedSharedTopicObj(item.ruleId, item) })">Einordnen</v-btn></div>
                                         </v-card-text>
                                     </v-card>
                                 </div>
@@ -779,7 +817,7 @@
                                         <v-card v-for="material in selectedSharedUnitObj(item.ruleId, item).materials" :key="`shared-material-card-unit-${material.id}`" class="overview-material-card" variant="outlined" rounded="lg" @click="openSharedMaterial(item, material)">
                                             <v-card-text class="pa-3">
                                                 <div class="d-flex align-center ga-2 mb-2"><v-icon size="20" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || 'primary'" /><span class="overview-material-card__title">{{ material.title }}</span></div>
-                                                <div class="d-flex align-center flex-wrap ga-2"><v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">{{ material.typeLabel }}</v-chip><v-chip size="x-small" variant="tonal" :color="statusColorFn(material.status)">{{ statusLabelFn(material.status) }}</v-chip><v-btn v-if="canShowSharedInsertButton('material')" size="x-small" color="primary" variant="tonal" prepend-icon="mdi-tray-arrow-down" @click.stop="emitSharedMaterialInsertDraft(item, material, { subject: selectedSharedSubjectObj(item.ruleId, item), topic: selectedSharedTopicObj(item.ruleId, item), unit: selectedSharedUnitObj(item.ruleId, item) })">Einordnen</v-btn></div>
+                                                <div class="d-flex align-center flex-wrap ga-2"><v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">{{ material.typeLabel }}</v-chip><v-chip size="x-small" variant="tonal" :color="statusColorFn(material.status)">{{ statusLabelFn(material.status) }}</v-chip><v-btn v-if="material.attachmentsCount > 0" size="x-small" variant="text" prepend-icon="mdi-paperclip" :disabled="actionBusy" @click.stop="openSharedAttachments(item, material)">{{ material.attachmentsCount }}</v-btn><v-btn v-if="canShowSharedInsertButton('material')" size="x-small" color="primary" variant="tonal" prepend-icon="mdi-tray-arrow-down" @click.stop="emitSharedMaterialInsertDraft(item, material, { subject: selectedSharedSubjectObj(item.ruleId, item), topic: selectedSharedTopicObj(item.ruleId, item), unit: selectedSharedUnitObj(item.ruleId, item) })">Einordnen</v-btn></div>
                                             </v-card-text>
                                         </v-card>
                                     </div>

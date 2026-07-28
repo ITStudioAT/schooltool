@@ -8,15 +8,25 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
 it('removes all restaurant orders from the database', function (): void {
+    Carbon::setTestNow('2026-04-05 12:00:00');
+
     $school = School::factory()->create();
     SchoolTool::factory()->create(['school_id' => $school->id]);
+    Role::firstOrCreate([
+        'name' => 'super_admin',
+        'guard_name' => 'web',
+    ]);
     $menu = RestaurantMenu::factory()->forSchool($school)->create();
     $plan = RestaurantMenuPlan::factory()->create([
         'school_id' => $school->id,
+        'start_date' => '2026-03-30',
+        'end_date' => '2026-04-02',
         'is_available' => true,
         'use_individual_schedule_values' => true,
         'visible_start_at' => now()->subDay(),
@@ -29,10 +39,12 @@ it('removes all restaurant orders from the database', function (): void {
         'restaurant_menu_id' => $menu->id,
     ]);
     $user = User::factory()->create(['school_id' => $school->id]);
+    $secondUser = User::factory()->create(['school_id' => $school->id]);
+    $user->assignRole('super_admin');
 
     RestaurantMenuPlanBooking::create([
         'school_id' => $school->id,
-        'user_id' => $user->id,
+        'user_id' => $secondUser->id,
         'restaurant_menu_plan_entry_id' => $entry->id,
         'restaurant_eating_time_id' => null,
         'price' => 7.50,
@@ -54,9 +66,14 @@ it('removes all restaurant orders from the database', function (): void {
         'booked_at' => now()->addSecond(),
     ]);
 
-    $this->artisan('restaurant:remove-orders')
-        ->expectsOutput('Removed 2 orders.')
+    $this->artisan('restaurant:remove-orders', [
+        'kw' => 14,
+        '--year' => 2026,
+    ])
+        ->expectsOutput('Removed 2 order(s) from KW 14.')
         ->assertExitCode(0);
 
     $this->assertDatabaseCount('restaurant_menu_plan_bookings', 0);
+
+    Carbon::setTestNow();
 });

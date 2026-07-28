@@ -66,7 +66,7 @@ class RestaurantCreateOrdersCommand extends Command
 
         $this->clearExistingOrders(array_merge($pools['normal'], $pools['multi']));
 
-        $entryCursorByEatingTimeId = [];
+        $entryCursorByUserAndEatingTime = [];
         $multiOrderSummaries = [];
         $createdCount = 0;
 
@@ -75,14 +75,17 @@ class RestaurantCreateOrdersCommand extends Command
             $pool = $useMultiOrder
                 ? $pools['multi']
                 : ($pools['normal'] !== [] ? $pools['normal'] : $pools['multi']);
-            $context = $pool[$index % count($pool)];
+            $contextIndex = $index % count($pool);
+            $contextRound = intdiv($index, count($pool));
+            $context = $pool[$contextIndex];
             $parent = $context['parent'];
             $recipients = $context['recipients'];
-            $eatingTimeId = $context['eating_time_ids'][$index % count($context['eating_time_ids'])] ?? null;
+            $eatingTimeId = $context['eating_time_ids'][$contextRound % count($context['eating_time_ids'])] ?? null;
             $entry = $this->nextEntryForEatingTime(
                 $context['entries'],
                 $eatingTimeId,
-                $entryCursorByEatingTimeId
+                (int) $parent->id,
+                $entryCursorByUserAndEatingTime
             );
 
             if (! $entry) {
@@ -282,10 +285,14 @@ class RestaurantCreateOrdersCommand extends Command
     }
 
     /**
-     * @param  array<int, int>  $entryCursorByEatingTimeId
+     * @param  array<string, int>  $entryCursorByUserAndEatingTime
      */
-    private function nextEntryForEatingTime(Collection $entries, ?int $eatingTimeId, array &$entryCursorByEatingTimeId): ?RestaurantMenuPlanEntry
-    {
+    private function nextEntryForEatingTime(
+        Collection $entries,
+        ?int $eatingTimeId,
+        int $userId,
+        array &$entryCursorByUserAndEatingTime,
+    ): ?RestaurantMenuPlanEntry {
         if ($entries->isEmpty()) {
             return null;
         }
@@ -298,11 +305,11 @@ class RestaurantCreateOrdersCommand extends Command
             $availableEntries = $entries;
         }
 
-        $cursorKey = $eatingTimeId ?? 0;
-        $cursor = $entryCursorByEatingTimeId[$cursorKey] ?? 0;
+        $cursorKey = $userId.':'.($eatingTimeId ?? 0);
+        $cursor = $entryCursorByUserAndEatingTime[$cursorKey] ?? 0;
         $entry = $availableEntries->values()->get($cursor % $availableEntries->count());
 
-        $entryCursorByEatingTimeId[$cursorKey] = $cursor + 1;
+        $entryCursorByUserAndEatingTime[$cursorKey] = $cursor + 1;
 
         return $entry instanceof RestaurantMenuPlanEntry ? $entry : null;
     }

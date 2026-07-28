@@ -27,6 +27,7 @@ test('cdgym restaurant admin can load live legacy stats', function (): void {
         'school_id' => $school->id,
         'restaurant_visible_admin' => true,
     ]);
+    grantSchoolToolLicenceForTests($school, 'Restaurant');
 
     $user = User::factory()->create([
         'school_id' => $school->id,
@@ -120,6 +121,7 @@ test('legacy stats are only available for cdgym school', function (): void {
         'school_id' => $school->id,
         'restaurant_visible_admin' => true,
     ]);
+    grantSchoolToolLicenceForTests($school, 'Restaurant');
 
     $user = User::factory()->create([
         'school_id' => $school->id,
@@ -145,6 +147,7 @@ test('cdgym restaurant admin can import selected legacy data', function (): void
         'school_id' => $school->id,
         'restaurant_visible_admin' => true,
     ]);
+    grantSchoolToolLicenceForTests($school, 'Restaurant');
 
     $user = User::factory()->create([
         'school_id' => $school->id,
@@ -190,6 +193,7 @@ test('legacy import validates selected items', function (): void {
         'school_id' => $school->id,
         'restaurant_visible_admin' => true,
     ]);
+    grantSchoolToolLicenceForTests($school, 'Restaurant');
 
     $user = User::factory()->create([
         'school_id' => $school->id,

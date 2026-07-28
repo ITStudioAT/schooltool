@@ -6,7 +6,19 @@ uses(TestCase::class);
 
 it('never combines wildcard origins with credentialed CORS', function () {
     expect(config('cors.supports_credentials'))->toBeTrue()
-        ->and(config('cors.allowed_origins'))->not->toContain('*');
+        ->and(config('cors.allowed_origins'))->not->toContain('*')
+        ->and(config('cors.allowed_methods'))->not->toContain('*')
+        ->and(config('cors.allowed_headers'))->not->toContain('*')
+        ->and(config('cors.allowed_methods'))->toContain('OPTIONS')
+        ->and(config('cors.allowed_headers'))->toContain(
+            'Authorization',
+            'Content-Type',
+            'Precognition',
+            'Precognition-Validate-Only',
+            'X-CSRF-TOKEN',
+            'X-Socket-ID',
+            'X-XSRF-TOKEN',
+        );
 });
 
 it('accepts explicit origins from CORS_ALLOWED_ORIGINS', function () {

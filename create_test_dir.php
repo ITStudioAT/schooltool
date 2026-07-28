@@ -1,9 +1,20 @@
 <?php
 
-// Run AdminNavigationService tests
-chdir(__DIR__);
+use Symfony\Component\Process\Process;
 
 echo "Running AdminNavigationService tests...\n\n";
-passthru('php artisan test --filter=AdminNavigationServiceTest', $return_code);
 
-exit($return_code);
+require __DIR__.'/vendor/autoload.php';
+
+$process = new Process([
+    PHP_BINARY,
+    'artisan',
+    'test',
+    '--filter=AdminNavigationServiceTest',
+], __DIR__);
+$process->setTimeout(null);
+$process->run(static function (string $type, string $output): void {
+    echo $output;
+});
+
+exit($process->getExitCode() ?? 1);

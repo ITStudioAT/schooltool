@@ -8,7 +8,7 @@ describe('Register system light cards', () => {
         const activeSource = readFileSync('resources/js/pages/admin/registerSystem/components/RegisterSystem/ActiveRegisters.vue', 'utf8')
 
         expect(pageSource).toContain('background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);')
-        expect(pageSource).toContain('background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.68));')
+        expect(pageSource).toContain('background: rgba(30, 41, 59, 0.8);')
 
         expect(registersSource).toContain('background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.92)) !important;')
         expect(registersSource).toContain('color: #10263a !important;')

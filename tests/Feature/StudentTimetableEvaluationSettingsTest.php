@@ -55,7 +55,7 @@ it('returns default timetable evaluation settings for the active schoolyear', fu
         ->assertJsonCount(7, 'data.criteria')
         ->assertJsonPath('data.version', 1)
         ->assertJsonPath('data.criteria.0.key', 'saturday_free')
-        ->assertJsonPath('data.criteria.0.enabled', false)
+        ->assertJsonPath('data.criteria.0.enabled', true)
         ->assertJsonPath('data.criteria.0.option', null)
         ->assertJsonPath('data.criteria.0.options', [])
         ->assertJsonPath('data.criteria.1.key', 'prefer_distance_learning')

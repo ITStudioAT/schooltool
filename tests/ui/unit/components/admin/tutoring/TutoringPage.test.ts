@@ -14,7 +14,6 @@ describe('Tutoring page', () => {
         expect(chips).toEqual([
             { key: 'school', text: 'Christian-Doppler-Gymnasium Salzburg', icon: 'mdi-domain' },
             { key: 'schoolyear', text: '2025/26', icon: 'mdi-calendar-month-outline' },
-            { key: 'role', text: 'tutoring_admin / admin', icon: 'mdi-shield-account' },
         ])
     })
 
@@ -28,6 +27,6 @@ describe('Tutoring page', () => {
 
         const items = (Tutoring as any).computed.visibleNavigationItems.call(ctx)
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'settings', 'subjects', 'users'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'requests'])
     })
 })

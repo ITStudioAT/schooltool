@@ -1,9 +1,8 @@
 import { createTestingPinia } from '@pinia/testing'
-import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
+import { render, waitFor } from '@testing-library/vue'
 import { defineComponent, h, inject, provide } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import SuperAdmin from '@/pages/admin/superAdmin/SuperAdmin.vue'
-import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const VBtnToggleStub = defineComponent({
     props: ['modelValue'],
@@ -72,7 +71,9 @@ const vuetifyStubs = {
 }
 
 describe('Super admin page rendered teacher submenu flow', () => {
-    it('switches between Lehrer and Lehrerliste via the teacher submenu', async () => {
+    it('redirects the migrated teacher subsection to teaching settings', async () => {
+        const replace = vi.fn()
+
         render(SuperAdmin, {
             global: {
                 plugins: [
@@ -109,25 +110,22 @@ describe('Super admin page rendered teacher submenu flow', () => {
                     TeachersList: { template: '<div>TeachersList Component</div>' },
                     Log: { template: '<div>Log Component</div>' },
                 },
+                mocks: {
+                    $route: {
+                        path: '/admin/super_admin/teachers',
+                        params: { section: 'teachers' },
+                        query: {},
+                    },
+                    $router: {
+                        push: vi.fn(),
+                        replace,
+                    },
+                },
             },
         })
 
-        const adminStore = useAdminStore()
-        adminStore.main_action = 'teachers'
-
         await waitFor(() => {
-            expect(screen.getByText('Teachers Component')).toBeInTheDocument()
-        })
-
-        const teacherListButton = screen
-            .getAllByRole('button')
-            .find((button) => button.textContent?.trim() === 'Lehrerliste')
-
-        expect(teacherListButton).toBeDefined()
-        await fireEvent.click(teacherListButton!)
-
-        await waitFor(() => {
-            expect(screen.getByText('TeachersList Component')).toBeInTheDocument()
+            expect(replace).toHaveBeenCalledWith('/admin/settings?tab=teaching&panel=teachers')
         })
     })
 })

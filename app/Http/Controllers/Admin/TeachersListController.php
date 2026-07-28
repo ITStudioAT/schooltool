@@ -13,7 +13,7 @@ use App\Services\FileUploadService;
 use App\Services\TeacherListService;
 use App\Traits\PaginationTrait;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Response;
+use Illuminate\Http\Response;
 
 class TeachersListController extends Controller
 {
@@ -96,7 +96,7 @@ class TeachersListController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $id = $fileUploadService->upload();
+        $id = $fileUploadService->upload($request, 'teachers');
 
         return response($id, 200)->header('Content-Type', 'text/plain');
     }
@@ -111,7 +111,8 @@ class TeachersListController extends Controller
         $result = $fileUploadService->uploadNext(
             $request,
             "app/private/{$auth_user->school_id}/excel",              // final target directory
-            'teachers_list'
+            'teachers_list',
+            profile: 'teachers',
         );
 
         // Partial chunk → just forward the 200 "OK" response

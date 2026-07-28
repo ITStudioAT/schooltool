@@ -59,7 +59,25 @@ use Illuminate\Support\Carbon;
  */
 class TutoringOfferRequest extends Model
 {
-    protected $guarded = [];
+    protected $fillable = [
+        'school_id',
+        'offer_id',
+        'from_user_id',
+        'to_user_id',
+        'message',
+        'is_serious',
+        'archived_at',
+        'to_user_archived_at',
+        'token',
+        'token_expires_at',
+        'sent_at',
+        'last_sent_at',
+        'sent_count',
+        'seen_at',
+        'last_seen_at',
+        'seen_count',
+        'mail_at',
+    ];
 
     protected $casts = [
         'is_serious' => 'boolean',

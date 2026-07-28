@@ -131,20 +131,13 @@ test('authenticated config excludes environment versions by default', function (
 });
 
 test('authenticated config can include environment versions', function () {
-    Cache::forget('admin.environment_versions');
-    Cache::forget('admin.environment_versions.v2');
-    Cache::forget('admin.environment_versions.v3');
-    Cache::forget('admin.environment_versions.v4');
-    Cache::forget('admin.environment_versions.v5');
-    Cache::forget('admin.environment_versions.v6');
-    Cache::forget('admin.environment_versions.v7');
-    Cache::forget('admin.environment_versions.v8');
-    Process::fake([
-        '*' => Process::sequence()
-            ->push(Process::result(output: 'Composer version 2.8.12 2025-09-19 13:41:59'))
-            ->push(Process::result(output: '10.9.2'))
-            ->push(Process::result(output: 'v22.16.0')),
+    Cache::forget('admin.environment_versions.v9');
+    config()->set('schooltool.environment_versions', [
+        'composer' => '2.8.12',
+        'npm' => '10.9.2',
+        'node' => 'v22.16.0',
     ]);
+    Process::fake();
 
     $this->actingAs($this->user);
 
@@ -170,76 +163,27 @@ test('authenticated config can include environment versions', function () {
             ],
         ]);
 
-    if (PHP_OS_FAMILY === 'Windows') {
-        Process::assertRan(function ($process): bool {
-            $command = is_array($process->command)
-                ? implode(' ', $process->command)
-                : $process->command;
-
-            return str_contains($command, 'composer --version')
-                && str_contains($process->environment['PATH'] ?? '', 'C:\\ProgramData\\ComposerSetup\\bin');
-        });
-
-        Process::assertRan(function ($process): bool {
-            $command = is_array($process->command)
-                ? implode(' ', $process->command)
-                : $process->command;
-
-            return str_contains($command, 'npm --version')
-                && str_contains($process->environment['PATH'] ?? '', 'C:\\Program Files\\nodejs');
-        });
-    }
-
-    if (PHP_OS_FAMILY !== 'Windows') {
-        Process::assertRan(function ($process): bool {
-            $command = is_array($process->command)
-                ? implode(' ', $process->command)
-                : $process->command;
-
-            return str_contains($command, 'composer --version')
-                && str_contains($process->environment['PATH'] ?? '', '/usr/local/bin');
-        });
-
-        Process::assertRan(function ($process): bool {
-            $command = is_array($process->command)
-                ? implode(' ', $process->command)
-                : $process->command;
-
-            return str_contains($command, 'node --version')
-                && str_contains($process->environment['PATH'] ?? '', '/usr/bin');
-        });
-    }
+    Process::assertDidntRun(fn (): bool => true);
 });
 
-test('authenticated config checks common linux aliases and paths automatically', function () {
-    Cache::forget('admin.environment_versions.v8');
-    Process::fake(function ($process) {
-        $command = is_array($process->command)
-            ? implode(' ', $process->command)
-            : $process->command;
-
-        if (str_contains($command, 'composer2 --version')) {
-            return Process::result(output: 'Composer version 2.8.12 2025-09-19 13:41:59');
-        }
-
-        if (str_contains($command, 'npm --version') || str_contains($command, 'npm.cmd --version') || str_contains($command, '/home/master/bin/npm --version')) {
-            return Process::result(output: '10.9.2');
-        }
-
-        if (str_contains($command, 'nodejs --version')) {
-            return Process::result(output: 'v22.16.0');
-        }
-
-        return Process::result('', 'Command not found', 1);
-    });
+test('authenticated config reports missing build metadata without probing the operating system', function () {
+    Cache::forget('admin.environment_versions.v9');
+    config()->set('schooltool.environment_versions', [
+        'composer' => null,
+        'npm' => null,
+        'node' => null,
+    ]);
+    Process::fake();
 
     $this->actingAs($this->user);
 
     $this->getJson('/api/admin/config?include_environment_versions=1')
         ->assertSuccessful()
-        ->assertJsonPath('environment_versions.composer', '2.8.12')
-        ->assertJsonPath('environment_versions.npm', '10.9.2')
-        ->assertJsonPath('environment_versions.node', 'v22.16.0');
+        ->assertJsonPath('environment_versions.composer', null)
+        ->assertJsonPath('environment_versions.npm', null)
+        ->assertJsonPath('environment_versions.node', null);
+
+    Process::assertDidntRun(fn (): bool => true);
 });
 
 test('config can include selected school infos for admin home screen', function () {

@@ -8,12 +8,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Laravel\Scout\Attributes\SearchUsingFullText;
+use Laravel\Scout\Searchable;
 
 class MaterialV2Item extends Model
 {
     /** @use HasFactory<MaterialV2ItemFactory> */
     use HasFactory;
 
+    use Searchable;
     use SoftDeletes;
 
     public const STATUS_PENDING = 'pending';
@@ -56,6 +59,27 @@ class MaterialV2Item extends Model
             'reminder_date' => 'date:Y-m-d',
             'processing_started_at' => 'datetime',
             'processed_at' => 'datetime',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    #[SearchUsingFullText(['title', 'description', 'search_text'])]
+    public function toSearchableArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'school_id' => $this->school_id,
+            'user_id' => $this->user_id,
+            'title' => $this->title,
+            'category' => $this->category,
+            'description' => $this->description,
+            'reminder_date' => $this->reminder_date?->format('Y-m-d'),
+            'link_url' => $this->link_url,
+            'user_keywords' => $this->user_keywords,
+            'generated_keywords' => $this->generated_keywords,
+            'search_text' => $this->search_text,
         ];
     }
 

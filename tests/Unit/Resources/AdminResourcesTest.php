@@ -30,6 +30,7 @@ use App\Models\TutoringSubject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -241,7 +242,7 @@ test('admin school resource exposes structured licence role names for assignment
         'user_role_names' => ['teacher'],
     ]);
     $school->licences()->attach($licence->id, ['valid_until' => '2030-01-01']);
-    $school->load('licences');
+    $school->load(['licences', 'schoolLicences', 'schoolUserLicences']);
 
     $data = (new AdminSchoolResource($school))->toArray(request());
 
@@ -286,7 +287,7 @@ test('admin school resource counts assigned admin and user licences from school 
         ],
     ]);
 
-    $school->load('licences');
+    $school->load(['licences', 'schoolLicences', 'schoolUserLicences']);
 
     $data = (new AdminSchoolResource($school))->toArray(request());
 
@@ -315,13 +316,33 @@ test('admin school resource exposes admin billing overrides for school licences'
         'admin_extra_storage_unit_price' => 5,
     ]);
 
-    $school->load('licences');
+    $school->load(['licences', 'schoolLicences', 'schoolUserLicences']);
 
     $data = (new AdminSchoolResource($school))->toArray(request());
 
     expect(data_get($data, 'licences.0.charged_admin_price'))->toBe('79.50')
         ->and(data_get($data, 'licences.0.admin_extra_storage_units'))->toBe(2)
         ->and(data_get($data, 'licences.0.admin_extra_storage_unit_price'))->toBe('5.00');
+});
+
+test('admin school resource performs no database queries while serializing loaded relations', function () {
+    $school = School::factory()->create();
+    $licence = Licence::create([
+        'name' => 'Query Safe',
+        'long_name' => 'Query Safe',
+    ]);
+    $school->licences()->attach($licence->id, ['valid_until' => '2030-01-01']);
+    $school->load(['licences', 'schoolLicences', 'schoolUserLicences']);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    (new AdminSchoolResource($school))->toArray(request());
+
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    expect($queries)->toBeEmpty();
 });
 
 test('school tool resource maps tutoring settings', function () {

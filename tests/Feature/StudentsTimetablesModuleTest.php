@@ -2338,6 +2338,7 @@ it('rejects invalid subject overview json uploads', function () {
 
     $this->actingAs($user)
         ->call('PATCH', "/api/admin/students-timetables/subjects-overview-json?patch={$uploadId}", [], [], [], [
+            'HTTP_ACCEPT' => 'application/json',
             'HTTP_UPLOAD_NAME' => 'faecher.json',
             'HTTP_UPLOAD_LENGTH' => strlen($contents),
         ], $contents)

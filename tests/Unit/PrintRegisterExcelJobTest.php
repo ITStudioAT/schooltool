@@ -267,7 +267,7 @@ test('job can be serialized and unserialized', function () {
     $job = new PrintRegisterExcelJob($this->user, $this->data);
 
     $serialized = serialize($job);
-    $unserialized = unserialize($serialized);
+    $unserialized = unserialize($serialized, ['allowed_classes' => true]);
 
     expect($unserialized)->toBeInstanceOf(PrintRegisterExcelJob::class)
         ->and($unserialized->data)->toBe($this->data);

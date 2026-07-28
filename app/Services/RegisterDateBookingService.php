@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Notification;
 
 class RegisterDateBookingService
 {
-    public function deleteBookings($user, $bookings, $notify)
+    public function deleteBookings($user, $bookings, $notify, bool $enforceOwnership = false)
     {
 
         $school_id = $user->school_id;
@@ -30,7 +30,11 @@ class RegisterDateBookingService
 
         // Bookings durchlesen
         foreach ($bookings as $register_date_booking_id) {
-            $booking = RegisterDateBooking::where('school_id', $school_id)->where('register_id', $register_id)->where('id', $register_date_booking_id)->first();
+            $booking = RegisterDateBooking::query()
+                ->where('school_id', $school_id)
+                ->where('register_id', $register_id)
+                ->when($enforceOwnership, fn ($query) => $query->where('user_id', $user->id))
+                ->findOrFail($register_date_booking_id);
 
             if ($notify) {
                 // Wenn gewünscht Abmelde-E-Mail schicken

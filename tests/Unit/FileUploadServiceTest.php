@@ -1,8 +1,10 @@
 <?php
 
 use App\Services\FileUploadService;
+use Illuminate\Auth\GenericUser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
@@ -27,6 +29,11 @@ function cleanupTempDirectory(string $dir): void
             @unlink($path);
         }
     }
+}
+
+function startChunkUpload(FileUploadService $service, string $path = '/uploadLogo'): string
+{
+    return $service->upload(Request::create($path, 'POST'));
 }
 
 beforeEach(function () {
@@ -120,22 +127,19 @@ describe('uploadNext', function () {
         $request = Request::create('/uploadLogo', 'PATCH');
 
         $this->service->uploadNext($request, 'app/test-uploads');
-    })->throws(HttpException::class);
+    })->throws(ValidationException::class);
 
-    it('creates temp directory if it does not exist', function () {
+    it('rejects an upload id that was not initialized', function () {
         $id = Str::uuid()->toString();
         $request = Request::create("/uploadLogo?patch={$id}", 'PATCH', [], [], [], [], 'chunk data');
-        $request->headers->set('Upload-Length', '100'); // Set larger than actual content to prevent completion
+        $request->headers->set('Upload-Length', '100');
 
         $this->service->uploadNext($request, 'app/test-uploads');
-
-        expect(is_dir(storage_path("app/private/temp/{$id}")))->toBeTrue();
-    });
+    })->throws(HttpException::class);
 
     it('appends chunk data to part file', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $chunk1 = 'first chunk';
         $chunk2 = 'second chunk';
@@ -153,7 +157,7 @@ describe('uploadNext', function () {
     });
 
     it('returns 204 NO_CONTENT when request body is empty', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $request = Request::create("/uploadLogo?patch={$id}", 'PATCH', [], [], [], [], '');
 
         $response = $this->service->uploadNext($request, 'app/test-uploads');
@@ -163,9 +167,8 @@ describe('uploadNext', function () {
     });
 
     it('returns OK 200 when upload is not complete', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $request = Request::create("/uploadLogo?patch={$id}", 'PATCH', [], [], [], [], 'partial data');
         $request->headers->set('Upload-Length', '1000');
@@ -177,9 +180,8 @@ describe('uploadNext', function () {
     });
 
     it('moves file to destination when upload is complete', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $content = 'complete file content';
 
@@ -196,9 +198,8 @@ describe('uploadNext', function () {
     });
 
     it('uses original filename when new_name is not provided', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $content = 'test content';
 
@@ -214,9 +215,8 @@ describe('uploadNext', function () {
     });
 
     it('preserves file extension from original upload', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $content = 'test content';
 
@@ -231,9 +231,8 @@ describe('uploadNext', function () {
     });
 
     it('handles files without extension', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $content = 'test content';
 
@@ -248,9 +247,8 @@ describe('uploadNext', function () {
     });
 
     it('creates destination directory if it does not exist', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $content = 'test content';
         $destPath = 'app/nested/test/uploads';
@@ -267,9 +265,8 @@ describe('uploadNext', function () {
     });
 
     it('cleans up temp directory after successful upload', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $content = 'test content';
 
@@ -283,9 +280,8 @@ describe('uploadNext', function () {
     });
 
     it('handles multiple chunks correctly', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $chunk1 = str_repeat('A', 100);
         $chunk2 = str_repeat('B', 100);
@@ -321,9 +317,8 @@ describe('uploadNext', function () {
     });
 
     it('handles upload path with leading and trailing slashes', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $content = 'test content';
 
@@ -340,9 +335,8 @@ describe('uploadNext', function () {
 
 describe('uploadNext with image resize', function () {
     it('resizes image with both width and height', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         // Create a simple test image (1x1 pixel PNG)
         $imageData = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
@@ -364,9 +358,8 @@ describe('uploadNext with image resize', function () {
     });
 
     it('resizes image with width only', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $imageData = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
 
@@ -382,9 +375,8 @@ describe('uploadNext with image resize', function () {
     });
 
     it('resizes image with height only', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $imageData = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
 
@@ -400,9 +392,8 @@ describe('uploadNext with image resize', function () {
     });
 
     it('does not resize when fit parameter is null', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $imageData = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
 
@@ -419,9 +410,8 @@ describe('uploadNext with image resize', function () {
 
 describe('edge cases and error handling', function () {
     it('handles very large file uploads in chunks', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         // Simulate large file with multiple 1KB chunks
         $chunkSize = 1024;
@@ -450,9 +440,8 @@ describe('edge cases and error handling', function () {
     });
 
     it('handles special characters in filenames', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $content = 'test content';
 
@@ -467,9 +456,8 @@ describe('edge cases and error handling', function () {
     });
 
     it('handles empty upload name header gracefully', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $content = 'test content';
 
@@ -484,14 +472,11 @@ describe('edge cases and error handling', function () {
     });
 
     it('handles concurrent uploads with different ids', function () {
-        $id1 = Str::uuid()->toString();
-        $id2 = Str::uuid()->toString();
+        $id1 = startChunkUpload($this->service);
+        $id2 = startChunkUpload($this->service);
 
         $dir1 = storage_path("app/private/temp/{$id1}");
         $dir2 = storage_path("app/private/temp/{$id2}");
-
-        mkdir($dir1, 0775, true);
-        mkdir($dir2, 0775, true);
 
         $content1 = 'file 1 content';
         $content2 = 'file 2 content';
@@ -514,14 +499,11 @@ describe('edge cases and error handling', function () {
     });
 
     it('overwrites existing file with same name', function () {
-        $id1 = Str::uuid()->toString();
-        $id2 = Str::uuid()->toString();
+        $id1 = startChunkUpload($this->service);
+        $id2 = startChunkUpload($this->service);
 
         $dir1 = storage_path("app/private/temp/{$id1}");
         $dir2 = storage_path("app/private/temp/{$id2}");
-
-        mkdir($dir1, 0775, true);
-        mkdir($dir2, 0775, true);
 
         $content1 = 'first version';
         $content2 = 'second version';
@@ -543,9 +525,8 @@ describe('edge cases and error handling', function () {
     });
 
     it('handles zero-byte files', function () {
-        $id = Str::uuid()->toString();
+        $id = startChunkUpload($this->service);
         $dir = storage_path("app/private/temp/{$id}");
-        mkdir($dir, 0775, true);
 
         $content = '';
 
@@ -557,5 +538,177 @@ describe('edge cases and error handling', function () {
 
         // With empty content, it should return NO_CONTENT response
         expect($result->getStatusCode())->toBe(204);
+    });
+});
+
+describe('upload security boundaries', function () {
+    it('rejects traversal and malformed upload identifiers', function (string $uploadId) {
+        $request = Request::create("/uploadLogo?patch={$uploadId}", 'PATCH', [], [], [], [], 'chunk');
+
+        $this->service->uploadNext($request, 'app/test-uploads');
+    })->with([
+        'parent traversal' => '../../outside',
+        'encoded separator' => '00000000-0000-4000-8000-000000000000%2f..',
+        'non canonical uuid' => '00000000000040008000000000000000',
+        'arbitrary token' => 'upload-token',
+    ])->throws(ValidationException::class);
+
+    it('rejects destination paths outside the storage root', function () {
+        $id = startChunkUpload($this->service);
+        $content = 'safe content';
+        $request = Request::create("/uploadLogo?patch={$id}", 'PATCH', [], [], [], [], $content);
+        $request->headers->set('Upload-Length', (string) strlen($content));
+        $request->headers->set('Upload-Name', 'safe.txt');
+
+        $this->service->uploadNext($request, '../outside', 'safe');
+    })->throws(ValidationException::class);
+
+    it('prevents another authenticated user from continuing an upload', function () {
+        $owner = new GenericUser(['id' => 101]);
+        $attacker = new GenericUser(['id' => 202]);
+        $startRequest = Request::create('/secure-upload', 'POST');
+        $startRequest->setUserResolver(fn (): GenericUser => $owner);
+        $id = $this->service->upload($startRequest);
+
+        $patchRequest = Request::create("/secure-upload?patch={$id}", 'PATCH', [], [], [], [], 'chunk');
+        $patchRequest->headers->set('Upload-Length', '10');
+        $patchRequest->setUserResolver(fn (): GenericUser => $attacker);
+
+        try {
+            $this->service->uploadNext($patchRequest, 'app/test-uploads');
+        } catch (HttpException $exception) {
+            expect($exception->getStatusCode())->toBe(403);
+
+            return;
+        }
+
+        $this->fail('A different user was allowed to continue the upload.');
+    });
+
+    it('prevents continuation through a different endpoint', function () {
+        $id = startChunkUpload($this->service, '/first-upload');
+        $request = Request::create("/second-upload?patch={$id}", 'PATCH', [], [], [], [], 'chunk');
+        $request->headers->set('Upload-Length', '10');
+
+        try {
+            $this->service->uploadNext($request, 'app/test-uploads');
+        } catch (HttpException $exception) {
+            expect($exception->getStatusCode())->toBe(403);
+
+            return;
+        }
+
+        $this->fail('A different endpoint was allowed to continue the upload.');
+    });
+
+    it('enforces cumulative size independently of the upload length header', function () {
+        $startRequest = Request::create('/uploadLogo', 'POST');
+        $id = $this->service->upload($startRequest, maxBytes: 10);
+
+        $firstChunk = Request::create("/uploadLogo?patch={$id}", 'PATCH', [], [], [], [], '123456');
+        $response = $this->service->uploadNext(
+            $firstChunk,
+            'app/test-uploads',
+            maxBytes: 10,
+        );
+        expect($response->getStatusCode())->toBe(200);
+
+        $secondChunk = Request::create("/uploadLogo?patch={$id}", 'PATCH', [], [], [], [], '78901');
+        $this->service->uploadNext(
+            $secondChunk,
+            'app/test-uploads',
+            maxBytes: 10,
+        );
+    })->throws(ValidationException::class);
+
+    it('rejects a file whose signature does not match its constrained extension', function () {
+        $startRequest = Request::create('/uploadLogo', 'POST');
+        $startRequest->headers->set('Upload-Name', 'logo.png');
+        $id = $this->service->upload($startRequest, 'school-logo');
+
+        $content = 'not an image';
+        $patchRequest = Request::create("/uploadLogo?patch={$id}", 'PATCH', [], [], [], [], $content);
+        $patchRequest->headers->set('Upload-Length', (string) strlen($content));
+        $patchRequest->headers->set('Upload-Name', 'logo.png');
+
+        $this->service->uploadNext(
+            $patchRequest,
+            'app/test-logos',
+            'logo',
+            profile: 'school-logo',
+        );
+    })->throws(ValidationException::class);
+
+    it('rejects a forged xlsx file that only has a zip prefix', function () {
+        $startRequest = Request::create('/teaching-import', 'POST');
+        $startRequest->headers->set('Upload-Name', '116.xlsx');
+        $id = $this->service->upload($startRequest, 'teaching-import');
+
+        $content = 'PK-not-an-ooxml-archive';
+        $patchRequest = Request::create("/teaching-import?patch={$id}", 'PATCH', [], [], [], [], $content);
+        $patchRequest->headers->set('Upload-Length', (string) strlen($content));
+        $patchRequest->headers->set('Upload-Name', '116.xlsx');
+
+        $this->service->uploadNext(
+            $patchRequest,
+            'app/test-uploads',
+            '116',
+            profile: 'teaching-import',
+        );
+    })->throws(ValidationException::class);
+
+    it('accepts a normal multi-chunk upload within its bound profile and limit', function () {
+        $startRequest = Request::create('/secure-upload', 'POST');
+        $startRequest->headers->set('Upload-Name', 'notes.txt');
+        $startRequest->headers->set('Upload-Length', '11');
+        $id = $this->service->upload($startRequest, 'timetable-import', 20);
+
+        $firstChunk = Request::create("/secure-upload?patch={$id}", 'PATCH', [], [], [], [], 'hello ');
+        $firstChunk->headers->set('Upload-Name', 'notes.txt');
+        $firstChunk->headers->set('Upload-Length', '11');
+        $partialResponse = $this->service->uploadNext(
+            $firstChunk,
+            'app/test-uploads',
+            'notes',
+            profile: 'timetable-import',
+            maxBytes: 20,
+        );
+
+        $secondChunk = Request::create("/secure-upload?patch={$id}", 'PATCH', [], [], [], [], 'world');
+        $secondChunk->headers->set('Upload-Name', 'notes.txt');
+        $secondChunk->headers->set('Upload-Length', '11');
+        $result = $this->service->uploadNext(
+            $secondChunk,
+            'app/test-uploads',
+            'notes',
+            profile: 'timetable-import',
+            maxBytes: 20,
+        );
+
+        expect($partialResponse->getStatusCode())->toBe(200)
+            ->and($result)->toBe('notes.txt')
+            ->and(file_get_contents(storage_path('app/test-uploads/notes.txt')))->toBe('hello world');
+    });
+});
+
+describe('expired upload cleanup', function () {
+    it('removes expired uploads and preserves active uploads', function () {
+        $expiredId = startChunkUpload($this->service);
+        $activeId = startChunkUpload($this->service);
+        $expiredDirectory = storage_path("app/private/temp/{$expiredId}");
+        $activeDirectory = storage_path("app/private/temp/{$activeId}");
+        $metadataPath = "{$expiredDirectory}/upload.json";
+        $metadata = json_decode((string) file_get_contents($metadataPath), true, flags: JSON_THROW_ON_ERROR);
+        $metadata['last_activity_at'] = now()->subHours(25)->toIso8601String();
+        file_put_contents(
+            $metadataPath,
+            json_encode($metadata, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+        );
+
+        $deleted = $this->service->cleanupExpiredUploads(24);
+
+        expect($deleted)->toBe(1)
+            ->and(is_dir($expiredDirectory))->toBeFalse()
+            ->and(is_dir($activeDirectory))->toBeTrue();
     });
 });

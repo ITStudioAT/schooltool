@@ -215,7 +215,7 @@ class RegisterController extends Controller
 
         $validated = $request->validated();
 
-        $service->deleteBookings($auth_user, [$validated['booking_id']], true);
+        $service->deleteBookings($auth_user, [$validated['booking_id']], true, enforceOwnership: true);
     }
 
     // setActiveRegister

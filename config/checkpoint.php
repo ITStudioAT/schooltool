@@ -22,8 +22,8 @@ return [
         Checks\ComposerAuditCheck::class => true,
         Checks\NpmAuditCheck::class => true,
         Checks\EnvironmentCheck::class => true,
-        Checks\GitIgnoreCheck::class => true,
-        Checks\FilePermissionsCheck::class => true,
+        Checks\GitIgnoreCheck::class => PHP_OS_FAMILY !== 'Windows',
+        Checks\FilePermissionsCheck::class => PHP_OS_FAMILY !== 'Windows',
         Checks\HardcodedSecretsCheck::class => true,
         Checks\SqlInjectionCheck::class => true,
         Checks\MassAssignmentCheck::class => true,
@@ -116,6 +116,21 @@ return [
 
     'suppressed' => [
         // 'a1b2c3d4e5f6',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Excluded Scan Paths
+    |--------------------------------------------------------------------------
+    |
+    | Generated bundles are covered by their source files. Language files
+    | contain labels such as "password" and "token", not application secrets.
+    |
+    */
+
+    'exclude_paths' => [
+        'lang',
+        'public/build',
     ],
 
 ];

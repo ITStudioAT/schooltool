@@ -93,6 +93,23 @@ afterEach(function () {
 });
 
 describe('handle - successful imports', function () {
+    it('keeps CSV rows lazy instead of materializing the complete import', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['MUE', 'Mueller', 'Hans', 'hans.mueller@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $method = new ReflectionMethod($job, 'readRowsWithHeaders');
+        [$headers, $rows] = $method->invoke($job, storage_path($filePath));
+
+        expect($headers)->toBe(['Kurz', 'Nachname', 'Vorname', 'Email'])
+            ->and($rows)->toBeInstanceOf(Traversable::class)
+            ->and($rows)->not->toBeArray();
+    });
+
     it('imports teachers from valid Excel file with standard headers', function () {
         $filePath = createTestExcelFile(
             ['Kurz', 'Nachname', 'Vorname', 'Email'],

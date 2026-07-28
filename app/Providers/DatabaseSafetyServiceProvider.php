@@ -61,7 +61,7 @@ class DatabaseSafetyServiceProvider extends ServiceProvider
         $expectedTestingDb = $safety['expected_testing_database'];
         $productionDbs = $safety['production_databases'];
 
-        if ($currentDb !== $expectedTestingDb) {
+        if (! self::matchesExpectedTestingDatabase($currentDb, $expectedTestingDb)) {
             throw new RuntimeException(
                 "SAFETY VIOLATION: Tests must use database '{$expectedTestingDb}', but '{$currentDb}' is configured. ".
                     'This would delete the wrong data. '.
@@ -98,7 +98,8 @@ class DatabaseSafetyServiceProvider extends ServiceProvider
         $expectedTestingDb = (string) config('database-safety.rules.testing_database', 'pest_test');
         $productionDbs = (array) config('database-safety.verification.production_databases', ['schooltool', 'production_db', 'live_db']);
 
-        return $currentDb === $expectedTestingDb && ! in_array($currentDb, $productionDbs, true);
+        return self::matchesExpectedTestingDatabase($currentDb, $expectedTestingDb)
+            && ! in_array($currentDb, $productionDbs, true);
     }
 
     /**
@@ -121,5 +122,17 @@ class DatabaseSafetyServiceProvider extends ServiceProvider
                 : "Safe: Tests are using '{$expectedTestingDb}'.",
             'timestamp' => now()->toDateTimeString(),
         ];
+    }
+
+    private static function matchesExpectedTestingDatabase(string $currentDatabase, string $expectedDatabase): bool
+    {
+        if ($currentDatabase === $expectedDatabase) {
+            return true;
+        }
+
+        return preg_match(
+            '/^'.preg_quote($expectedDatabase, '/').'_test_\d+$/',
+            $currentDatabase,
+        ) === 1;
     }
 }

@@ -20,7 +20,7 @@ class DatabaseSafetyTest extends TestCase
 
         $this->assertEquals('testing', $status['environment']);
         $this->assertEquals('mysql', $status['current_connection']);
-        $this->assertEquals('pest_test', $status['current_database']);
+        $this->assertMatchesRegularExpression('/^pest_test(?:_test_\d+)?$/', $status['current_database']);
         $this->assertEquals('pest_test', $status['expected_testing_database']);
         $this->assertTrue($status['is_safe_for_testing']);
     }

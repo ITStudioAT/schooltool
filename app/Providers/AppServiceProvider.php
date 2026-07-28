@@ -5,14 +5,13 @@ namespace App\Providers;
 use App\Listeners\TwoFactorSecuritySubscriber;
 use App\Models\User;
 use App\Services\EmailAliasResolver;
-use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Foundation\AliasLoader;
 use Illuminate\Http\Request;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Notifications\Events\NotificationSending;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\URL;
@@ -20,6 +19,7 @@ use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Fortify;
+use Laravel\Pulse\Facades\Pulse;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -29,11 +29,6 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         Fortify::ignoreRoutes();
-
-        $loader = AliasLoader::getInstance();
-        if (config('app.env') === 'local') {
-            $loader->alias('Debugbar', Debugbar::class);
-        }
     }
 
     /**
@@ -60,6 +55,15 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('global', function (Request $request) {
             return Limit::perMinute(config('spa.global_throttle', 1000))->by($request->ip());
+        });
+
+        RateLimiter::for('uploads', function (Request $request) {
+            $actor = (string) ($request->user()?->getAuthIdentifier() ?? $request->ip());
+
+            return [
+                Limit::perMinute(180)->by("uploads-minute:{$actor}"),
+                Limit::perHour(2000)->by("uploads-hour:{$actor}"),
+            ];
         });
 
         RateLimiter::for('authentication', function (Request $request) {
@@ -115,7 +119,26 @@ class AppServiceProvider extends ServiceProvider
             ];
         });
 
+        RateLimiter::for('sepa-flow', function (Request $request) {
+            $userId = (string) ($request->user()?->getAuthIdentifier() ?? 'missing');
+            $flowUuid = (string) data_get($request->input('data'), 'flow_uuid', 'missing');
+            $ip = (string) $request->ip();
+
+            return [
+                Limit::perMinute(10)->by("sepa-flow:{$userId}|{$flowUuid}|{$ip}"),
+                Limit::perMinute(30)->by("sepa-flow-ip:{$ip}"),
+            ];
+        });
+
         Event::subscribe(TwoFactorSecuritySubscriber::class);
+
+        Gate::define('viewPulse', fn (User $user): bool => $user->hasRole('super_admin'));
+
+        Pulse::user(fn (User $user): array => [
+            'name' => "User #{$user->getAuthIdentifier()}",
+            'extra' => '',
+            'avatar' => '',
+        ]);
 
         Event::listen(MessageSending::class, function (MessageSending $event): void {
             app(EmailAliasResolver::class)->rewriteMessageRecipients($event->message);

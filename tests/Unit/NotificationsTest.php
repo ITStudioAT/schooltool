@@ -3,6 +3,7 @@
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use App\Notifications\StandardEmailWithAttachment;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Markdown;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -47,6 +48,7 @@ describe('StandardEmail Notification', function () {
         $notification = new StandardEmail($data);
 
         expect($notification)->toBeInstanceOf(StandardEmail::class)
+            ->and($notification)->toBeInstanceOf(ShouldBeEncrypted::class)
             ->and($notification->data)->toBe($data)
             ->and($notification->attachments)->toBeNull();
     });
@@ -63,6 +65,27 @@ describe('StandardEmail Notification', function () {
         $notification = new StandardEmail($data, $attachments);
 
         expect($notification->attachments)->toBe($attachments);
+    });
+
+    it('attaches sensitive in-memory data without writing a file', function () {
+        $notification = new StandardEmail([
+            'from_address' => 'test@example.com',
+            'from_name' => 'Test Sender',
+            'subject' => 'Test Subject',
+            'markdown' => 'mail.test',
+        ], [
+            'data' => 'pdf-content',
+            'name' => 'mandate.pdf',
+            'options' => ['mime' => 'application/pdf'],
+        ]);
+
+        $mailMessage = $notification->toMail(User::factory()->make());
+
+        expect($mailMessage->rawAttachments)->toBe([[
+            'data' => 'pdf-content',
+            'name' => 'mandate.pdf',
+            'options' => ['mime' => 'application/pdf'],
+        ]]);
     });
 
     it('uses mail channel', function () {

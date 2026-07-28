@@ -87,7 +87,8 @@ describe('deleteRegisterUsers', function () {
         $count = $this->service->deleteRegisterUsers($this->school->id, $this->register->id);
 
         expect($count)->toBe(1)
-            ->and(User::find($user->id))->toBeNull();
+            ->and(User::find($user->id))->not->toBeNull()
+            ->and($user->fresh()->hasRole('register_user'))->toBeFalse();
     });
 
     it('does not delete users without register_user role', function () {

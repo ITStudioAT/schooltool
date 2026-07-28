@@ -18,7 +18,10 @@ class ProcessAbaParselExtractionRunJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public int $runId) {}
+    public function __construct(public int $runId)
+    {
+        $this->onQueue('materials');
+    }
 
     public function handle(AbaParselExtractionService $extractionService): void
     {

@@ -2,10 +2,11 @@
 
 namespace App\Http\Requests\Tutoring;
 
+use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
+use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 
 class OfferUpdateRequest extends FormRequest
@@ -15,7 +16,18 @@ class OfferUpdateRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return Auth::check();
+        $authenticatedUser = $this->user();
+        $offer = $this->route('offer');
+
+        if (! $authenticatedUser instanceof User || ! $offer instanceof TutoringOffer) {
+            return false;
+        }
+
+        if ($this->has('id') && $this->integer('id') !== (int) $offer->id) {
+            return false;
+        }
+
+        return $authenticatedUser->can('update', $offer);
     }
 
     /**
@@ -25,7 +37,8 @@ class OfferUpdateRequest extends FormRequest
      */
     public function rules(): array
     {
-        $user = Auth::user();
+        /** @var User $user */
+        $user = $this->user();
         $subjectRequiresAcceptance = false;
 
         if ($this->filled('subject_id')) {

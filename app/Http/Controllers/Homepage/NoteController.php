@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Note;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 
 class NoteController extends Controller
@@ -16,7 +16,8 @@ class NoteController extends Controller
      */
     public function index(): JsonResponse
     {
-        $user = Auth::user();
+        Gate::authorize('viewAny', Note::class);
+        $user = request()->user();
 
         $notes = Note::where('user_id', $user->id)
             ->orderBy('is_pinned', 'desc')
@@ -34,6 +35,8 @@ class NoteController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        Gate::authorize('create', Note::class);
+
         $validator = Validator::make($request->all(), [
             'title' => 'required|string|max:255',
             'content' => 'required|string',
@@ -47,7 +50,7 @@ class NoteController extends Controller
             ], 422);
         }
 
-        $user = Auth::user();
+        $user = $request->user();
 
         $note = Note::create([
             'user_id' => $user->id,
@@ -68,15 +71,7 @@ class NoteController extends Controller
      */
     public function show(Note $note): JsonResponse
     {
-        $user = Auth::user();
-
-        // Authorization check - user can only view their own notes
-        if ($note->user_id !== $user->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized',
-            ], 403);
-        }
+        Gate::authorize('view', $note);
 
         return response()->json([
             'success' => true,
@@ -89,15 +84,7 @@ class NoteController extends Controller
      */
     public function update(Request $request, Note $note): JsonResponse
     {
-        $user = Auth::user();
-
-        // Authorization check - user can only update their own notes
-        if ($note->user_id !== $user->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized',
-            ], 403);
-        }
+        Gate::authorize('update', $note);
 
         $validator = Validator::make($request->all(), [
             'title' => 'sometimes|required|string|max:255',
@@ -126,15 +113,7 @@ class NoteController extends Controller
      */
     public function destroy(Note $note): JsonResponse
     {
-        $user = Auth::user();
-
-        // Authorization check - user can only delete their own notes
-        if ($note->user_id !== $user->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized',
-            ], 403);
-        }
+        Gate::authorize('delete', $note);
 
         $note->delete();
 
@@ -149,15 +128,7 @@ class NoteController extends Controller
      */
     public function togglePin(Note $note): JsonResponse
     {
-        $user = Auth::user();
-
-        // Authorization check - user can only toggle their own notes
-        if ($note->user_id !== $user->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized',
-            ], 403);
-        }
+        Gate::authorize('togglePin', $note);
 
         $note->update([
             'is_pinned' => ! $note->is_pinned,

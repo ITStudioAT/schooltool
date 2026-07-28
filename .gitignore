@@ -1,4 +1,6 @@
 *.log
+*.key
+*.pem
 .DS_Store
 .env
 .env.backup
@@ -17,6 +19,9 @@
 /public/build
 /public/hot
 /public/storage
+/resources/js/actions
+/resources/js/routes
+/resources/js/wayfinder
 /storage/*
 !/storage/app/
 !/storage/app/google/
@@ -25,6 +30,7 @@
 /storage/*.key
 /storage/pail
 /storage/debugbar
+/storage/logs
 /test-results
 /playwright-report
 /docusaurus

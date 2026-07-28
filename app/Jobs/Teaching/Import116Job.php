@@ -35,7 +35,7 @@ class Import116Job implements ShouldQueue
 
     public function __construct(public $user, public string $path, public ?int $schoolyearId = null, public ?string $originalFilename = null)
     {
-        // placeholder for future payload
+        $this->onQueue('imports');
     }
 
     public function handle(): void

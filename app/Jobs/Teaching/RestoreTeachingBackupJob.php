@@ -26,7 +26,9 @@ class RestoreTeachingBackupJob implements ShouldQueue
         public int $restoreRunId,
         public int $schoolId,
         public int $schoolyearId,
-    ) {}
+    ) {
+        $this->onQueue('maintenance');
+    }
 
     /**
      * @return array<int, object>

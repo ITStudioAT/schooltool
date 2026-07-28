@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Actions\Fortify\ResetUserPassword;
 use App\Enums\TwoFaResult;
 use App\Enums\VerificationResult;
 use App\Http\Controllers\Controller;
@@ -31,6 +32,7 @@ use App\Services\UserService;
 use App\Traits\PaginationTrait;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
@@ -230,25 +232,16 @@ class UserController extends Controller
 
     public function show(User $user)
     {
-        if ($this->canAccessOwnAdminProfile($user)) {
-            return response()->json(new UserResource($user), 200);
-        }
-
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teacher'])) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
-
-        $this->ensureUserBelongsToSchool($auth_user, $user);
+        $this->ensureUserBelongsToSchool(request()->user(), $user);
+        Gate::authorize('view', $user);
 
         return response()->json(new UserResource($user->load('roles')), 200);
     }
 
     public function update(UpdateUserRequest $request, User $user)
     {
-        if (! $auth_user = $this->userHasRole(['admin'])) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
-        $this->ensureUserBelongsToSchool($auth_user, $user);
+        $this->ensureUserBelongsToSchool($request->user(), $user);
+        Gate::authorize('update', $user);
         $validated = $request->validated();
 
         $validated = $this->convertConfirmedVerified($validated, $user);
@@ -260,16 +253,8 @@ class UserController extends Controller
 
     public function destroy(User $user)
     {
-
-        if (! $auth_user = $this->userHasRole(['admin'])) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
-
-        $this->ensureUserBelongsToSchool($auth_user, $user);
-
-        if ($user->id == $auth_user->id) {
-            abort(403, 'Man kann sich selbst nicht löschen');
-        }
+        $this->ensureUserBelongsToSchool(request()->user(), $user);
+        Gate::authorize('delete', $user);
 
         $user->shouldDelete();
 
@@ -414,8 +399,11 @@ class UserController extends Controller
         return response()->json($data, 200);
     }
 
-    public function savePasswordWithCode(SavePasswordWithCodeRequest $request, AdminService $adminService)
-    {
+    public function savePasswordWithCode(
+        SavePasswordWithCodeRequest $request,
+        AdminService $adminService,
+        ResetUserPassword $resetUserPassword
+    ) {
         if (! $user = $this->authorizedProfileUser()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -429,9 +417,12 @@ class UserController extends Controller
         $data['school'] = $user->selectedSchool;
 
         $users = User::where('email', $user->email)->get();
-        $ids = $users->pluck('id');
-
-        User::whereIn('id', $ids)->update(['password' => Hash::make($validated['password'])]);
+        $users->each(function (User $passwordUser) use ($resetUserPassword, $validated): void {
+            $resetUserPassword->reset($passwordUser, [
+                'password' => $validated['password'],
+                'password_confirmation' => $validated['password_repeat'],
+            ]);
+        });
 
         $adminService->login($data);
 
@@ -536,7 +527,10 @@ class UserController extends Controller
     {
         $validated = $request->validated();
 
-        $user = User::where('email', $validated['email'])->first();
+        $user = User::query()
+            ->where('email', $validated['email'])
+            ->where('uuid', $validated['uuid'])
+            ->firstOrFail();
 
         if ($user->email_verified_at) {
             $user->emailVerified();

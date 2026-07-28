@@ -555,8 +555,8 @@ class RestaurantMenuPlanController extends Controller
     private function orderedForLabelFromImport(Import116 $import): ?string
     {
         $studentName = trim(implode(' ', array_filter([
-            $this->trimNullableString($import->last_name),
             $this->trimNullableString($import->first_name),
+            $this->trimNullableString($import->last_name),
         ])));
         $class = $this->trimNullableString($import->class);
 
@@ -575,9 +575,7 @@ class RestaurantMenuPlanController extends Controller
             return $importClass !== null ? "{$booking->child_name}, {$importClass}" : $booking->child_name;
         }
 
-        $lastName = trim((string) $booking->user?->last_name);
-        $firstName = trim((string) $booking->user?->first_name);
-        $name = trim(implode(' ', array_filter([$lastName, $firstName])));
+        $name = trim((string) $booking->user?->full_name);
 
         if ($name === '') {
             $name = 'Unbekannt';

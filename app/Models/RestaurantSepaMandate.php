@@ -36,6 +36,25 @@ use Illuminate\Support\Carbon;
  */
 class RestaurantSepaMandate extends Model
 {
+    protected $hidden = [
+        'account_holder_name',
+        'address_line',
+        'postal_code',
+        'city',
+        'country',
+        'iban',
+        'bic',
+        'child_entries',
+        'sepa_payee_snapshot',
+        'sepa_mandate_text_snapshot',
+        'accepted_ip',
+        'confirmation_code',
+        'confirmation_code_expires_at',
+        'code_sent_ip',
+        'confirmed_ip',
+        'completed_ip',
+    ];
+
     protected $fillable = [
         'user_id',
         'school_id',
@@ -67,7 +86,20 @@ class RestaurantSepaMandate extends Model
     protected function casts(): array
     {
         return [
-            'child_entries' => 'array',
+            'account_holder_name' => 'encrypted',
+            'address_line' => 'encrypted',
+            'postal_code' => 'encrypted',
+            'city' => 'encrypted',
+            'country' => 'encrypted',
+            'iban' => 'encrypted',
+            'bic' => 'encrypted',
+            'child_entries' => 'encrypted:array',
+            'sepa_payee_snapshot' => 'encrypted',
+            'sepa_mandate_text_snapshot' => 'encrypted',
+            'accepted_ip' => 'encrypted',
+            'code_sent_ip' => 'encrypted',
+            'confirmed_ip' => 'encrypted',
+            'completed_ip' => 'encrypted',
             'accepted_at' => 'datetime',
             'confirmation_code_expires_at' => 'datetime',
             'code_sent_at' => 'datetime',

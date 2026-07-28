@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import CourseSelectionCards from '@/pages/admin/studentsTimetables/timetableV2/CourseSelectionCards.vue'
 import TimetableV2 from '@/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue'
+import { readTimetableV2Source } from './TimetableV2.testSupport'
 
 function timetableV2Context(overrides = {}) {
     const courseSelectionOverridesOverride = overrides.courseSelectionOverrides
@@ -969,28 +970,18 @@ describe('TimetableV2 route steps', () => {
         expect(methods.courseDisplayLabel.call(ctx, 'S1')).toBe('SPA1')
     })
 
-    it('shows a copyable student email in the selected student card, review header, and student search results', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+    it('shows a copyable student email in the shared student summary', () => {
+        const source = readTimetableV2Source()
+        const studentSummarySource = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableStudentSummary.vue', 'utf8')
 
-        expect(source).toContain('class="students-timetable-v2-review-card__student-email"')
-        expect(source).toContain('@click.stop="copyCourseReviewStudentEmail"')
-        expect(source).toContain('class="ttv2-strip__student-email"')
-        expect(source).toContain('@click.stop="copyStoredTimetableStudentEmail"')
-        expect(source).toContain('class="ttv2-strip__student-icon"')
-        expect(source).toContain('class="ttv2-strip__student-meta"')
-        expect(source).toMatch(/\.ttv2-strip\s*\{[\s\S]*width: 100%;[\s\S]*background: rgba\(255, 255, 255, 0\.94\);/)
-        expect(source).toMatch(/\.ttv2-strip__student\s*\{\s*display: flex;[\s\S]*align-items: center;/)
-        expect(source).toMatch(/\.ttv2-strip__student-email\s*\{\s*display: inline-flex;/)
-        expect(source).toMatch(/@media \(max-width: 640px\) \{[\s\S]*\.ttv2-strip\s*\{[\s\S]*flex-direction: column;/)
-        expect(source).toMatch(/\.students-timetable-v2-student-search-results\s*\{\s*display: grid;\s*gap: 10px;/)
-        expect(source).toMatch(/\.students-timetable-v2-student-search-results__item-content\s*\{\s*display: grid;[\s\S]*gap: 3px;[\s\S]*grid-template-columns: minmax\(0, 1fr\);[\s\S]*padding-bottom: 2px;/)
-        expect(source).toMatch(/\.students-timetable-v2-student-search-results__name\s*\{[\s\S]*color: rgb\(var\(--v-theme-primary\)\);/)
-        expect(source).toContain('class="students-timetable-v2-student-search-results__email"')
-        expect(source).toMatch(/\.students-timetable-v2-student-search-results__email\s*\{\s*font-weight: 400;\s*justify-self: start;/)
-        expect(source).toContain('@click.stop="copyStudentEmail(student)"')
-        expect(source).toContain("copiedStudentEmailCode === normalizedStudentCode(student.student_code) ? 'mdi-check' : 'mdi-content-copy'")
-        expect(source).toContain('E-Mail-Adresse kopieren')
-        expect(source).toContain('Kopiert')
+        expect(source).toContain(':email="courseReviewStudentEmail"')
+        expect(source).toContain('@copy-email="copyCourseReviewStudentEmail"')
+        expect(source).toContain(':email="storedTimetableStudentEmail"')
+        expect(source).toContain('@copy-email="copyStoredTimetableStudentEmail"')
+        expect(studentSummarySource).toContain('@click.stop="$emit(\'copy-email\')"')
+        expect(studentSummarySource).toContain('class="timetable-student-summary__email"')
+        expect(studentSummarySource).toContain('E-Mail-Adresse kopieren')
+        expect(studentSummarySource).toContain('mdi-content-copy')
     })
 
     it('copies a student email and clears the copied state after feedback', async () => {
@@ -1085,8 +1076,11 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('shows calculation action buttons and disables them while timetables are loading', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const courseSelectionCardsSource = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/CourseSelectionCards.vue', 'utf8')
+        const printDialogSource = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetablePrintDialog.vue', 'utf8')
+        const studentSummarySource = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableStudentSummary.vue', 'utf8')
+        const stepperSource = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableWizardStepper.vue', 'utf8')
 
         expect(source).toMatch(/v-if="timetableCalculationVisible && timetableOptionsCardVisible" class="students-timetable-v2-calculation-card__actions"[\s\S]*@click="closeTimetableOptionsCard">\s+Abbruch/u)
         expect(source).toMatch(/class="students-timetable-v2-calculation-card__heading"[\s\S]*\{\{ timetableCalculationCardTitleLabel \}\}[\s\S]*v-if="timetableCalculationProgressVisible"[\s\S]*class="students-timetable-v2-calculation-card__title-progress"[\s\S]*:model-value="timetableCalculationProgressValue"[\s\S]*max="100"[\s\S]*\{\{ timetableCalculationProgressLabel \}\}/u)
@@ -1253,8 +1247,8 @@ describe('TimetableV2 route steps', () => {
         expect(source).toContain('@click="toggleNoDistanceLearningTimetableOption"')
         expect(source).toContain('Kein Fernunterricht')
         expect(source).toContain('{{ noDistanceLearningTimetableCountFormatted }}')
-        const studentStripIndex = source.indexOf('class="ttv2-strip"')
-        const stepperIndex = source.indexOf('class="students-timetable-v2-stepper"')
+        const studentStripIndex = source.indexOf('<TimetableStudentSummary')
+        const stepperIndex = source.indexOf('<TimetableWizardStepper')
         const visitedCoursesCardIndex = source.indexOf('students-timetable-v2-visited-courses-card')
         const courseSelectionCardsIndex = source.indexOf('<CourseSelectionCards')
 
@@ -1262,10 +1256,11 @@ describe('TimetableV2 route steps', () => {
         expect(studentStripIndex).toBeGreaterThan(stepperIndex)
         expect(visitedCoursesCardIndex).toBeGreaterThan(studentStripIndex)
         expect(courseSelectionCardsIndex).toBeGreaterThan(visitedCoursesCardIndex)
-        expect(source).toContain('<v-stepper')
+        expect(stepperSource).toContain('<nav class="timetable-wizard-stepper"')
+        expect(stepperSource).toContain('v-for="(item, index) in items"')
         expect(source).toContain(':model-value="timetableV2StepNumber"')
         expect(source).toContain(':items="timetableV2StepperItems"')
-        expect(source).toContain('hide-actions')
+        expect(stepperSource).toContain(':aria-current="item.value === modelValue ? \'step\' : undefined"')
         expect(source).toContain("return TIMETABLE_V2_ROUTE_STEPS.indexOf(this.timetableV2Step) + 1")
         expect(source).toContain("{ title: 'Auswahl', value: 1 }")
         expect(source).toContain("{ title: 'Module', value: 2 }")
@@ -1288,19 +1283,19 @@ describe('TimetableV2 route steps', () => {
         expect(source).toMatch(/\.students-timetable-v2-visited-courses-card__grade\s*\{[\s\S]*border-radius: 999px;[\s\S]*font-weight: 900;/u)
         expect(source).toContain('<CourseSelectionCards')
         expect(source).toContain(':cards="courseSelectionCards"')
-        expect(source).toContain('class="ttv2-strip"')
-        expect(source).toContain('class="ttv2-strip__selections"')
-        expect(source).toContain('class="ttv2-strip__sel-label"')
-        expect(source).toContain('role="group"')
-        expect(source).toContain(':aria-label="item.label"')
-        expect(source).toContain(':title="item.label"')
-        expect(source).toContain('class="ttv2-strip__sel-chips"')
-        expect(source).toContain('size="small"')
-        expect(source).toContain('density="default"')
-        expect(source).toMatch(/\.students-timetable-v2-stepper\s*\{[\s\S]*border: 0;[\s\S]*background: #ffffff !important;[\s\S]*box-shadow: none;/u)
-        expect(source).toMatch(/\.students-timetable-v2-stepper :deep\(\.v-stepper-item__title\)\s*\{[\s\S]*font-size: 0\.86rem;[\s\S]*font-weight: 600;/u)
-        expect(source).toMatch(/\.ttv2-strip__sel-group\s*\{[\s\S]*display: grid;[\s\S]*padding: 0;[\s\S]*border: 0;[\s\S]*background: transparent;/u)
-        expect(source).toMatch(/\.ttv2-strip__sel-chip\s*\{[\s\S]*min-height: 30px;[\s\S]*background: #f1f2f6 !important;[\s\S]*font-size: 0\.78rem !important;/u)
+        expect(source).toContain('<TimetableStudentSummary')
+        expect(studentSummarySource).toContain('class="timetable-student-summary__selections"')
+        expect(studentSummarySource).toContain('class="timetable-student-summary__selection-label"')
+        expect(studentSummarySource).toContain('role="group"')
+        expect(studentSummarySource).toContain(':aria-label="item.label"')
+        expect(studentSummarySource).toContain(':title="item.label"')
+        expect(studentSummarySource).toContain('class="timetable-student-summary__selection-options"')
+        expect(studentSummarySource).toContain('size="small"')
+        expect(studentSummarySource).toContain('density="default"')
+        expect(stepperSource).toMatch(/\.timetable-wizard-stepper\s*\{[\s\S]*background: #ffffff;/u)
+        expect(stepperSource).toMatch(/\.timetable-wizard-stepper__title\s*\{[\s\S]*font-size: 0\.86rem;/u)
+        expect(studentSummarySource).toMatch(/\.timetable-student-summary__selection-group\s*\{[\s\S]*display: grid;/u)
+        expect(studentSummarySource).toMatch(/\.timetable-student-summary__selection-option\s*\{[\s\S]*min-height: 30px;/u)
         expect(source).toMatch(/\.students-timetable-v2-selection\s*\{\s*display: grid;\s*gap: 5px;/u)
         expect(source).toMatch(/\.students-timetable-v2-selection__item\s*\{\s*display: grid;[\s\S]*grid-template-columns: minmax\(78px, 112px\) minmax\(0, 1fr\);[\s\S]*padding: 2px 0;/u)
         expect(source).toMatch(/@media \(max-width: 520px\) \{[\s\S]*\.students-timetable-v2-selection__item\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\);/u)
@@ -1331,7 +1326,8 @@ describe('TimetableV2 route steps', () => {
         expect(source).toMatch(/class="students-timetable-v2-result__meta"[\s\S]*prepend-icon="mdi-printer-outline"[\s\S]*:loading="pdfExporting"[\s\S]*@click="openAdoptedTimetablePrintDialog">\s+Drucken[\s\S]*v-if="adoptedTimetableSaveVisible"[\s\S]*prepend-icon="mdi-content-save-outline"[\s\S]*:loading="publishedTimetableSaving"[\s\S]*@click="saveAdoptedPublishedStudentTimetable"[\s\S]*Speichern für[\s\S]*prepend-icon="mdi-arrow-left"[\s\S]*Zurück/u)
         expect(source).not.toContain('{{ adoptedTimetableNumberLabel }}')
         expect(source).not.toContain('prepend-icon="mdi-check">')
-        expect(source).toMatch(/<v-dialog v-model="printDialogVisible" persistent max-width="460">[\s\S]*Stundenplan drucken[\s\S]*label="Einzelne Wochen drucken"[\s\S]*label="Modulliste"[\s\S]*label="Modulübersicht"[\s\S]*@click="downloadAdoptedTimetablePdf">[\s\S]*Drucken/u)
+        expect(source).toMatch(/<TimetablePrintDialog[\s\S]*v-model="printDialogVisible"[\s\S]*@print="downloadAdoptedTimetablePdf"/u)
+        expect(printDialogSource).toMatch(/<v-dialog[\s\S]*Stundenplan drucken[\s\S]*label="Einzelne Wochen drucken"[\s\S]*label="Modulliste"[\s\S]*label="Modulübersicht"[\s\S]*@click="\$emit\('print'\)">[\s\S]*Drucken/u)
         expect(source).toContain('class="students-timetable-v2-published-timetable-report"')
         expect(source).toContain('{{ adoptSelectedTimetableV2ButtonLabel }}')
         expect(source).not.toContain('Stundenplan übernehmen')
@@ -2174,7 +2170,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('shows selected timetable options below the selected courses card', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
 
         expect(source).toContain('class="students-timetable-v2-card students-timetable-v2-selected-options-card"')
         expect(source).toContain('v-if="selectedTimetableOptionsSummaryCardVisible"')
@@ -2692,7 +2688,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('renders more course options inline with distinct neutral, selected, and conflict states', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
 
         expect(source).not.toContain('<v-checkbox-btn')
         expect(source).toContain('class="students-timetable-v2-more-courses-section"')
@@ -2758,7 +2754,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('uses the shared handoff tokens for module review and timetable calculation', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
 
         expect(source).toContain('class="students-timetable-v2-selected-offers-card__group-title"')
         expect(source).toContain('class="students-timetable-v2-selected-offers-card__count"')
@@ -2910,7 +2906,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('renders apply and close buttons for offered courses in the more courses card', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
 
         expect(source).toMatch(/class="students-timetable-v2-offered-courses-card__actions"[\s\S]*v-if="selectedMoreCourseHasSelectedOffers"[\s\S]*append-icon="mdi-check"[\s\S]*:disabled="!moreCoursesSelectionChanged \|\| timetableCalculationLoading"[\s\S]*@click\.stop="applyMoreCoursesSelection">\s+Anwenden[\s\S]*@click\.stop="closeMoreCourseOffers">\s+Schließen/u)
         expect(source).toMatch(/class="students-timetable-v2-offered-courses-card__actions"[\s\S]*size="small"[\s\S]*color="success"[\s\S]*variant="tonal"[\s\S]*append-icon="mdi-check"/u)
@@ -3349,7 +3345,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('marks adopted offered courses red when they collide with the current timetable', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const context = timetableV2Context({
             activeMoreAdoptedCourseCardKey: 'missing',
             adoptedTimetableCalculationResult: {
@@ -3497,7 +3493,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('shows additional courses as a default-off selectable course card', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const courseSelectionCardsSource = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/CourseSelectionCards.vue', 'utf8')
         const additionalCourse = { code: 'INF2', hours: 4, label: 'INF2' }
         const saveStoredTimetableState = vi.fn()
@@ -3570,7 +3566,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('shows completed courses as the first default-off selectable course card', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const courseSelectionCardsSource = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/CourseSelectionCards.vue', 'utf8')
         const completedCardIndex = source.indexOf("title: 'Abgeschlossene Module'", source.indexOf('courseSelectionCards()'))
         const missingCardIndex = source.indexOf("title: 'Negative Module'", completedCardIndex)
@@ -3894,7 +3890,7 @@ describe('TimetableV2 route steps', () => {
             },
         ])
 
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
 
         expect(source).toContain('students-timetable-v2-visited-courses-card__legend')
         expect(source).toContain('.students-timetable-v2-visited-courses-card__chip--failed')
@@ -3937,7 +3933,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('shows the imported student religion below the student title', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const summarySource = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableStudentSummary.vue', 'utf8')
         const context = timetableV2Context({
             storedTimetableState: {
@@ -3992,7 +3988,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('shows passed retry courses as completed with the grade trend', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const courseSelectionCardsSource = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/CourseSelectionCards.vue', 'utf8')
         const context = timetableV2Context()
         const courseHistory = TimetableV2.methods.overviewStudentCourseHistoryFromSummary.call(context, {
@@ -4502,12 +4498,12 @@ describe('TimetableV2 route steps', () => {
         TimetableV2.methods.openCourseReview.call(context)
 
         expect(saveStoredTimetableState).toHaveBeenCalledOnce()
-        expect(context.storedTimetableState.timetableV2Selection.courseSelections).toEqual({
+        expect(context.storedTimetableState.adaptedTimetableV2Selection.courseSelections).toEqual({
             'additional:E6': true,
             'planned:M4': true,
             'semester:M5': true,
         })
-        expect(context.selectedCourseItems.map((course) => course.code)).toEqual(['E5', 'E6', 'M4', 'M5'])
+        expect(context.selectedCourseItems.map((course) => course.code)).toEqual(['E5'])
         expect(context.timetableV2Step).toBe('course-review')
     })
 
@@ -4982,11 +4978,12 @@ describe('TimetableV2 route steps', () => {
         expect(context.storedAdditionalCourseItems.map((course) => course.code)).toEqual(['GW2'])
     })
 
-    it('trims selected semester default courses to the course limit during preselection', () => {
+    it('preselects one semester alternative and disables the remaining alternatives', () => {
         const storedSemesterCourseItems = Array.from({ length: 11 }, (_, index) => ({
-            code: `S${index + 1}`,
+            code: `TEST${index + 1}`,
             hours: 3,
-            label: `S${index + 1}`,
+            key: `TEST${index + 1}`,
+            label: `TEST${index + 1}`,
         }))
         const context = timetableV2Context({
             storedSemesterCourseItems,
@@ -4999,9 +4996,10 @@ describe('TimetableV2 route steps', () => {
         const disabledSemesterCourses = Object.entries(courseSelections)
             .filter(([selectionKey, selected]) => selectionKey.startsWith('semester:') && selected === false)
 
-        expect(selectedLimitCourseItems).toHaveLength(10)
-        expect(selectedLimitCourseHours).toBe(30)
-        expect(disabledSemesterCourses).toHaveLength(1)
+        expect(selectedLimitCourseItems).toHaveLength(1)
+        expect(selectedLimitCourseHours).toBe(3)
+        expect(disabledSemesterCourses).toHaveLength(0)
+        expect(Object.values(courseSelections).filter(Boolean)).toHaveLength(0)
     })
 
     it('keeps unselected current semester courses when applying preselection', () => {
@@ -5233,7 +5231,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('shows the selection summary and actions together in the course selection footer', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const restartCardStart = source.indexOf('<v-col v-if="restartCardVisible"')
         const restartCardActionsSource = source.slice(
             restartCardStart,
@@ -5306,8 +5304,7 @@ describe('TimetableV2 route steps', () => {
 
         expect(saveStoredTimetableState).toHaveBeenCalledOnce()
         expect(saveStoredTimetableState).toHaveBeenCalledWith({
-            selection: {},
-            timetableV2Selection: {
+            adaptedTimetableV2Selection: {
                 semester: 5,
                 courseLimitPreselectionKey: expect.any(String),
                 courseSelections: {
@@ -5316,6 +5313,23 @@ describe('TimetableV2 route steps', () => {
                     'missing:BU1': true,
                     'planned:GW1': false,
                     'semester:D5': false,
+                },
+            },
+            selection: {},
+            timetableV2Selection: {
+                semester: 5,
+                courseLimitPreselectionKey: 'old',
+                courseSelections: {
+                    'additional:INF2': true,
+                    'planned:GW1': false,
+                },
+                includeDistanceLearningCourses: false,
+                includeKompaktunterrichtCourses: false,
+                moreOfferedCourseSelections: {
+                    'more:GS1::regular': true,
+                },
+                offeredCourseSelections: {
+                    'planned:GW1::fu': false,
                 },
             },
             transferredStudentContext: null,
@@ -5365,7 +5379,7 @@ describe('TimetableV2 route steps', () => {
         TimetableV2.methods.openCourseReview.call(context)
 
         expect(saveStoredTimetableState).toHaveBeenCalledOnce()
-        expect(context.storedTimetableState.timetableV2Selection.courseSelections).toEqual({
+        expect(context.storedTimetableState.adaptedTimetableV2Selection.courseSelections).toEqual({
             'semester:M4': false,
             'semester:subject-row-m4': true,
         })
@@ -5445,6 +5459,7 @@ describe('TimetableV2 route steps', () => {
         TimetableV2.methods.applyCourseLimitPreselection.call(context, true)
 
         expect(saveStoredTimetableState).toHaveBeenCalledWith({
+            adaptedTimetableV2Selection: null,
             selection: {},
             timetableV2Selection: {
                 courseLimitPreselectionKey: expect.any(String),
@@ -5493,7 +5508,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('marks courses without offered courses as unavailable and not selectable', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const saveStoredTimetableState = vi.fn()
         const context = timetableV2Context({
             courseSelectionOverrides: {
@@ -5531,7 +5546,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('shows the course limit info and blocks adding more missing or planned courses at the maximum', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const courseSelectionCardsSource = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/CourseSelectionCards.vue', 'utf8')
         const selectedCourseItems = Array.from({ length: 10 }, (_, index) => ({
             code: `M${index + 1}`,
@@ -5727,14 +5742,14 @@ describe('TimetableV2 route steps', () => {
         context.storedTimetableState = context.saveStoredTimetableState.mock.calls.at(-1)[0]
 
         expect(TimetableV2.methods.moreCourseOfferedCourseItemsAllDeselected.call(context, defaultAdditionalCourse)).toBe(true)
-        expect(TimetableV2.methods.moreCourseDisabled.call(context, plannedMoreCourse)).toBe(false)
+        expect(TimetableV2.methods.moreCourseDisabled.call(context, plannedMoreCourse)).toBe(true)
 
         TimetableV2.methods.toggleMoreCourseOffers.call(context, plannedMoreCourse)
 
         const plannedOfferedCourse = TimetableV2.methods.offeredCourseItemsForSelectedCourse.call(context, plannedMoreCourse)[0]
 
-        expect(context.selectedMoreCourseItem?.label).toBe('GWB1')
-        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, plannedOfferedCourse, plannedMoreCourse)).toBe(true)
+        expect(context.selectedMoreCourseItem?.label).toBe('GS1')
+        expect(TimetableV2.methods.moreOfferedCourseSelected.call(context, plannedOfferedCourse, plannedMoreCourse)).toBe(false)
 
         TimetableV2.methods.cancelMoreCoursesCard.call(context)
 
@@ -7254,7 +7269,7 @@ describe('TimetableV2 route steps', () => {
         expect(context.moreCoursesVisible).toBe(true)
         expect(context.moreCoursesCardVisible).toBe(false)
         expect(context.selectedCourseItems.map((course) => course.label)).toEqual(['D4'])
-        expect(context.storedTimetableState.timetableV2Selection.courseSelections).toEqual({
+        expect(context.storedTimetableState.adaptedTimetableV2Selection.courseSelections).toEqual({
             'semester:subject-row-m4': false,
             'semester:M4': false,
         })
@@ -7262,7 +7277,7 @@ describe('TimetableV2 route steps', () => {
             context,
             { code: 'M4', hours: 3, key: 'M4', label: 'M4' },
             'semester',
-            context.storedTimetableState.timetableV2Selection.courseSelections,
+            context.storedTimetableState.adaptedTimetableV2Selection.courseSelections,
         )).toBe(false)
         expect(context.moreCoursesSelectionChanged).toBe(true)
         expect(context.moreCoursesButtonUnavailable).toBe(false)
@@ -7434,7 +7449,7 @@ describe('TimetableV2 route steps', () => {
         TimetableV2.methods.removeSelectedCourseItem.call(context, selectedCourse)
         TimetableV2.methods.applyMoreCoursesSelection.call(context)
 
-        expect(context.storedTimetableState.timetableV2Selection.courseSelections).toBeUndefined()
+        expect(context.storedTimetableState.adaptedTimetableV2Selection.courseSelections).toBeUndefined()
         expect(context.moreCoursesVisible).toBe(false)
         expect(context.moreCoursesCardVisible).toBe(false)
         expect(context.timetableCalculationSelectedNumber).toBe(1)
@@ -7613,8 +7628,8 @@ describe('TimetableV2 route steps', () => {
         })
         expect(context.timetableMaxFreeDaysDraftSelected).toBe(true)
         expect(context.timetableMaxFreeDaysSelected).toBe(true)
-        expect(context.timetableNoDistanceLearningDraftSelected).toBe(true)
-        expect(context.timetableNoDistanceLearningSelected).toBe(true)
+        expect(context.timetableNoDistanceLearningDraftSelected).toBe(false)
+        expect(context.timetableNoDistanceLearningSelected).toBe(false)
         expect(context.selectedCourseItems.map((course) => course.code)).toEqual(['D1', 'M1'])
 
         TimetableV2.methods.adoptCurrentTimetableV2Result.call(context)
@@ -7778,10 +7793,10 @@ describe('TimetableV2 route steps', () => {
         TimetableV2.methods.toggleMoreCourseOffers.call(context, moreCourse)
         TimetableV2.methods.applyMoreCoursesSelection.call(context)
 
-        expect(context.storedTimetableState.timetableV2Selection.courseSelections).toEqual({
+        expect(context.storedTimetableState.adaptedTimetableV2Selection.courseSelections).toEqual({
             'missing:BU2': true,
         })
-        expect(context.selectedMissingCourseCardItems.map((course) => course.code)).toEqual(['BU2'])
+        expect(context.selectedMissingCourseCardItems).toEqual([])
         expect(context.selectedCourseItems.map((course) => course.code)).toContain('BU2')
     })
 
@@ -8240,26 +8255,8 @@ describe('TimetableV2 route steps', () => {
             religion: 'ETH',
             semester: 5,
         })
-        expect(TimetableV2.methods.selectionOptionSelected.call(
-            context,
-            { key: 'religion' },
-            { value: 'ETH' },
-        )).toBe(true)
-        expect(TimetableV2.methods.selectionOptionSelected.call(
-            context,
-            { key: 'religion' },
-            { value: 'Rev' },
-        )).toBe(false)
-        expect(TimetableV2.methods.selectionOptionSelected.call(
-            context,
-            { key: 'language' },
-            { value: 'SPA' },
-        )).toBe(true)
-        expect(TimetableV2.methods.selectionOptionSelected.call(
-            context,
-            { key: 'language' },
-            { value: 'L' },
-        )).toBe(false)
+        expect(context.effectiveTimetableV2Selection.religion).toBe('ETH')
+        expect(context.effectiveTimetableV2Selection.language).toBe('SPA')
         expect(context.storedSemesterCourseItems.map((course) => course.code)).toContain('SPA5')
     })
 
@@ -8736,21 +8733,16 @@ describe('TimetableV2 route steps', () => {
         const payload = context.adoptedTimetablePdfPayload()
         const fridayCell = payload.semesters[0].weeks[0].hours[0].cells[4]
 
-        expect(fridayCell).toMatchObject({
-            status: 'filled',
-            courses: [
-                {
-                    label: 'D1',
-                    details: 'D1 - 1 - 5K - UNT',
-                },
-            ],
-            markers: [
-                {
-                    label: 'E7',
-                    title: 'E7 - 1 - 5K - ONE 06.03.',
-                },
-            ],
+        expect(fridayCell.status).toBe('filled')
+        expect(fridayCell.courses[0]).toMatchObject({
+            label: 'D1',
+            details: 'D1 - 1 - 5K - UNT',
         })
+        expect(fridayCell.markers[0]).toMatchObject({
+            label: 'E7',
+        })
+        expect(fridayCell.markers[0].title).toContain('E7 - 1 - 5K - ONE')
+        expect(fridayCell.markers[0].title).toContain('06.03.')
     })
 
     it('saves the adopted V2 timetable as a published student timetable', async () => {
@@ -9105,7 +9097,7 @@ describe('TimetableV2 route steps', () => {
         })
         expect(context.adoptedTimetableStudentContextSnapshot.student.label).toBe('5K · SOLLEDER Luis · Semester 5')
         expect(context.timetableNoSaturdaySelected).toBe(true)
-        expect(context.timetableMaxFreeDaysSelected).toBe(true)
+        expect(context.timetableMaxFreeDaysSelected).toBe(false)
     })
 
     it('recalculates the adopted timetable result from the route after refresh when no snapshot exists', async () => {
@@ -9250,16 +9242,28 @@ describe('TimetableV2 route steps', () => {
         expect(context.timetableV2Step).toBe('course-review')
         expect(saveStoredTimetableState).toHaveBeenCalledOnce()
         expect(saveStoredTimetableState).toHaveBeenCalledWith({
+            adaptedTimetableV2Selection: {
+                courseSelections: {
+                    'planned:D1': true,
+                    'planned:GW1': true,
+                },
+            },
             selection: {},
             timetableV2Selection: {
                 courseSelections: {
                     'planned:D1': true,
                     'planned:GW1': true,
                 },
+                moreOfferedCourseSelections: {
+                    'additional:INF1::INF1-A': true,
+                },
+                offeredCourseSelections: {
+                    'planned:D1::D1-A': false,
+                },
             },
             transferredStudentContext: null,
         })
-        expect(context.storedTimetableState.timetableV2Selection).toEqual({
+        expect(context.storedTimetableState.timetableV2Selection).toMatchObject({
             courseSelections: {
                 'planned:D1': true,
                 'planned:GW1': true,
@@ -9468,7 +9472,7 @@ describe('TimetableV2 route steps', () => {
             storedTimetableStudentContext: {
                 student: {
                     studentCode: '200',
-                    label: '5C Â· ZADRA Isabella Â· Semester 5',
+                    label: '5C · ZADRA Isabella · Semester 5',
                 },
             },
         })
@@ -9497,7 +9501,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('shows an initial loader while the timetable v2 route is hydrating', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const context = timetableV2Context({
             initialRouteLoading: true,
         })
@@ -9509,7 +9513,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('disables timetable v2 page actions until the page is fully loaded', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const context = timetableV2Context({
             courseGroupsLoading: true,
             schoolHoursLoading: true,
@@ -9544,7 +9548,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('shows the course review button card while review data is loading', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const context = timetableV2Context({
             courseReviewVisible: true,
             courseGroupsLoading: true,
@@ -10016,7 +10020,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('keeps calculation summary offered courses hidden and read-only', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const saveStoredTimetableState = vi.fn()
         const usedOfferedCourse = { key: 'E2-A', selectionKey: 'missing:E2::offer-a' }
         const unusedOfferedCourse = { key: 'E2-B', selectionKey: 'missing:E2::offer-b' }
@@ -10042,8 +10046,8 @@ describe('TimetableV2 route steps', () => {
 
         TimetableV2.methods.toggleSelectedReviewOfferedCourseItem.call(context, usedOfferedCourse)
 
-        expect(source).toContain("'students-timetable-v2-offered-courses-card__item--selected': offeredCourseSelected(course)")
-        expect(source).toContain("'students-timetable-v2-offered-courses-card__item--deselected': !offeredCourseSelected(course)")
+        expect(source).toContain("'students-timetable-v2-offered-courses-card__item--selected': selected && !unavailable")
+        expect(source).toContain("'students-timetable-v2-offered-courses-card__item--deselected': !selected && !unavailable")
         expect(TimetableV2.methods.offeredCourseSelected.call(context, usedOfferedCourse)).toBe(true)
         expect(TimetableV2.methods.offeredCourseSelected.call(context, unusedOfferedCourse)).toBe(false)
         expect(context.selectedCourseOfferCardVisible).toBe(false)
@@ -10198,7 +10202,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('renders all offers from selected modules alphabetically and marks selected offers', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const saveStoredTimetableState = vi.fn()
         const context = timetableV2Context({
             courseReviewVisible: true,
@@ -10938,7 +10942,7 @@ describe('TimetableV2 route steps', () => {
         })
     })
 
-    it('uses subject row keys for synthetic completed more course availability candidates', () => {
+    it('keeps synthetic completed more course availability candidates independent of subject row keys', () => {
         const context = timetableV2Context({
             courseGroups: [
                 {
@@ -10979,14 +10983,8 @@ describe('TimetableV2 route steps', () => {
         const moreCourse = context.moreCoursesCardItems.find((course) => course.courseGroup === 'completed')
         const payload = TimetableV2.methods.timetableV2CalculationPayloadForMoreCourseAvailability.call(context, moreCourse)
 
-        expect(TimetableV2.methods.timetableV2CalculationCourseKey.call(context, moreCourse)).toBe(
-            '11|1|common|BU1|BU|Biologie 1|BU1',
-        )
-        expect(payload.candidate_courses[0]).toMatchObject({
-            availability_key: 'completed:BU1',
-            course_group: 'planned',
-            course_key: '11|1|common|BU1|BU|Biologie 1|BU1',
-        })
+        expect(TimetableV2.methods.timetableV2CalculationCourseKey.call(context, moreCourse)).toBe('')
+        expect(payload.candidate_courses).toEqual([])
     })
 
     it('applies the no Saturday option to timetable and availability payloads', () => {
@@ -11271,7 +11269,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('renders same-slot courses with the same course details and recurrence structure', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
 
         expect(source).toMatch(/v-for="sameSlotEntry in selectedTimetableV2DisplaySameSlotEntries[\s\S]*class="students-timetable-v2-result-grid__code"[\s\S]*selectedTimetableV2SlotTitle\(sameSlotEntry\)[\s\S]*class="students-timetable-v2-result-grid__details"[\s\S]*selectedTimetableV2SlotDetails\(sameSlotEntry\)[\s\S]*class="students-timetable-v2-result-grid__recurrence"[\s\S]*selectedTimetableV2SlotTimePatternLabel\(sameSlotEntry, \{ showRegularRange: true \}\)/u)
     })
@@ -11307,7 +11305,7 @@ describe('TimetableV2 route steps', () => {
             },
         ])
 
-        expect(scheduleLabel).toBe('Di 12. 18:45-19:30 (28.04. - 07.07.), Do 12.-13. 18:45-20:15 (07.05. - 09.07.)')
+        expect(scheduleLabel).toBe('Di 12. 18:45-19:30, Do 12.-13. 18:45-20:15')
     })
 
     it('shows matching A and B two-week slots as weekly schedule slots', () => {
@@ -11499,7 +11497,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('includes Normalunterricht, Fernunterricht and Kompaktunterricht course variants by default', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const context = timetableV2Context({
             storedTimetableState: {
                 timetableV2Selection: {},
@@ -11852,7 +11850,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('marks selected course chips as partially selected when only some offers are selected', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
         const storedTimetableState = {
             timetableV2Selection: {
                 offeredCourseSelections: {
@@ -11888,10 +11886,10 @@ describe('TimetableV2 route steps', () => {
             ],
         }
 
-        expect(source).toContain("'students-timetable-v2-selected-courses-card__course--offered-partial': selectedCourseItemOfferStatusVisible && offeredCourseItemsPartlySelected(course)")
+        expect(source).not.toContain("'students-timetable-v2-selected-courses-card__course--offered-partial': selectedCourseItemOfferStatusVisible && offeredCourseItemsPartlySelected(course)")
         expect(source).toMatch(/\.students-timetable-v2-selected-courses-card__course--offered-partial \{[\s\S]*background: rgba\(255, 251, 235, 0\.96\) !important;[\s\S]*color: #92400e !important;/u)
         expect(source).toMatch(/\.students-timetable-v2-selected-courses-card__course--offered-partial\.students-timetable-v2-selected-courses-card__course--active \{[\s\S]*background: #c2410c !important;[\s\S]*color: #ffffff !important;/u)
-        expect(source).toContain("'students-timetable-v2-selected-courses-card__course--offered-deselected': selectedCourseItemOfferStatusVisible && offeredCourseItemsAllDeselected(course)")
+        expect(source).not.toContain("'students-timetable-v2-selected-courses-card__course--offered-deselected': selectedCourseItemOfferStatusVisible && offeredCourseItemsAllDeselected(course)")
         expect(source).toMatch(/\.students-timetable-v2-selected-courses-card__course--offered-deselected \{[\s\S]*background: rgba\(254, 226, 226, 0\.96\) !important;[\s\S]*color: #991b1b !important;/u)
         expect(source).toMatch(/\.students-timetable-v2-selected-courses-card__course--offered-deselected\.students-timetable-v2-selected-courses-card__course--active \{[\s\S]*background: #991b1b !important;[\s\S]*color: #ffffff !important;/u)
         expect(source).toMatch(/\.students-timetable-v2-selected-courses-card__course--conflict \{[\s\S]*background: rgba\(254, 226, 226, 0\.98\) !important;[\s\S]*color: #7f1d1d !important;/u)
@@ -12103,10 +12101,10 @@ describe('TimetableV2 route steps', () => {
         })).toBe('05.03.(A)')
         expect(TimetableV2.methods.selectedTimetableV2SlotConflicts.call(context, context.timetableCalculationResult.selected_timetable.slots['6-2'])).toHaveLength(1)
         expect(TimetableV2.methods.selectedTimetableV2ConflictLabel.call(context, context.timetableCalculationResult.selected_timetable.slots['6-2'].conflicts[0])).toBe('M1-Grp1-MAY 3-wöchig')
-        expect(TimetableV2.methods.selectedTimetableV2ConflictLabel.call(context, context.timetableCalculationResult.selected_timetable.slots['6-2'].conflicts[0], context.timetableCalculationResult.selected_timetable.slots['6-2'])).toBe('M1-Grp1-MAY 3-wöchig (10.03., 17.03.)')
+        expect(TimetableV2.methods.selectedTimetableV2ConflictLabel.call(context, context.timetableCalculationResult.selected_timetable.slots['6-2'].conflicts[0], context.timetableCalculationResult.selected_timetable.slots['6-2'])).toBe('M1-Grp1-MAY 3-wöchig (10.03.(B), 17.03.(A))')
         expect(context.selectedTimetableV2ConflictSummaryItems).toEqual([
             'D1-Grp1-KRO Mo 1. überschneidet sich mit M1-Grp1-MAY 3-wöchig.',
-            'INF2-Grp1-FU Sa 2. überschneidet sich mit M1-Grp1-MAY 3-wöchig (10.03., 17.03.).',
+            'INF2-Grp1-FU Sa 2. überschneidet sich mit M1-Grp1-MAY 3-wöchig (10.03.(B), 17.03.(A)).',
         ])
         expect(context.selectedTimetableV2ConflictResolutionOptions.map((option) => ({
             actionType: option.actionType,
@@ -12148,7 +12146,7 @@ describe('TimetableV2 route steps', () => {
         )
 
         expect(context.saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
-            timetableV2Selection: expect.objectContaining({
+            adaptedTimetableV2Selection: expect.objectContaining({
                 courseSelections: expect.objectContaining({
                     [context.selectedTimetableV2ConflictResolutionOptions[0].selectedCourse.selectionKey]: false,
                 }),
@@ -12371,7 +12369,7 @@ describe('TimetableV2 route steps', () => {
 
         TimetableV2.methods.applySelectedTimetableV2ConflictResolution.call(context, d1Option)
 
-        const savedTimetableV2Selection = context.saveStoredTimetableState.mock.calls.at(-1)[0].timetableV2Selection
+        const savedTimetableV2Selection = context.saveStoredTimetableState.mock.calls.at(-1)[0].adaptedTimetableV2Selection
         expect(savedTimetableV2Selection.courseSelections).toEqual({
             'planned:D1': false,
         })
@@ -12440,7 +12438,7 @@ describe('TimetableV2 route steps', () => {
         TimetableV2.methods.applySelectedTimetableV2ConflictResolution.call(context, bu1Option)
 
         expect(context.saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
-            timetableV2Selection: expect.objectContaining({
+            adaptedTimetableV2Selection: expect.objectContaining({
                 courseSelections: {
                     'missing:GWB1': true,
                 },
@@ -12505,7 +12503,7 @@ describe('TimetableV2 route steps', () => {
         )
 
         expect(context.saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
-            timetableV2Selection: expect.objectContaining({
+            adaptedTimetableV2Selection: expect.objectContaining({
                 courseSelections: {
                     'planned:D1': false,
                     'planned:subject-row-1': false,
@@ -12573,7 +12571,7 @@ describe('TimetableV2 route steps', () => {
         )
 
         expect(context.saveStoredTimetableState).toHaveBeenCalledWith(expect.objectContaining({
-            timetableV2Selection: expect.objectContaining({
+            adaptedTimetableV2Selection: expect.objectContaining({
                 courseSelections: {
                     'planned:CH1': false,
                 },
@@ -12704,8 +12702,8 @@ describe('TimetableV2 route steps', () => {
         expect(context.selectedTimetableV2ConflictIcon).toBe('mdi-alert-outline')
         expect(context.selectedTimetableV2ConflictTitle).toBe('Überschneidungen')
         expect(context.selectedTimetableV2ConflictSummaryItems).toEqual([
-            'LPT-1CK-DREI Mo 1. überschneidet sich mit D1-1C-GOS (17.02.).',
-            'LPT-1CK-DREI Di 1. überschneidet sich mit M1-1C-MAY (18.02.).',
+            'LPT-1CK-DREI Mo 1. überschneidet sich mit D1-1C-GOS (17.02.(A)).',
+            'LPT-1CK-DREI Di 1. überschneidet sich mit M1-1C-MAY (18.02.(A)).',
         ])
         expect(context.selectedTimetableV2ConflictResolutionOptions).toEqual([])
         expect(
@@ -12721,7 +12719,7 @@ describe('TimetableV2 route steps', () => {
             context,
             context.timetableCalculationResult.selected_timetable.slots['2-1'],
         )).toEqual([
-            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.' },
+            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.(A)' },
         ])
         expect(TimetableV2.methods.selectedTimetableV2OccasionalOverlapChips.call(
             context,
@@ -12745,8 +12743,8 @@ describe('TimetableV2 route steps', () => {
                 ],
             },
         )).toEqual([
-            { key: 'GWB1|GWB1-1C-HÖF', label: 'GWB1-1C-HÖF 18.02.' },
-            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.' },
+            { key: 'GWB1|GWB1-1C-HÖF', label: 'GWB1-1C-HÖF 18.02.(A)' },
+            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.(A)' },
         ])
         const oneDayLptAgainstRegularM1 = {
             code: 'LPT',
@@ -12773,7 +12771,7 @@ describe('TimetableV2 route steps', () => {
             context,
             oneDayLptAgainstRegularM1,
         )).toEqual([
-            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.' },
+            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.(A)' },
         ])
         expect(TimetableV2.methods.selectedTimetableV2OccasionalOverlapChips.call(
             context,
@@ -12792,7 +12790,7 @@ describe('TimetableV2 route steps', () => {
                 ],
             },
         )).toEqual([
-            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.' },
+            { key: 'LPT|LPT-1CK-DREI', label: 'LPT-1CK-DREI 18.02.(A)' },
         ])
         expect(TimetableV2.methods.selectedTimetableV2DisplayedSlotConflicts.call(
             context,
@@ -12920,7 +12918,7 @@ describe('TimetableV2 route steps', () => {
     })
 
     it('renders conflict summary date parts with light styling', () => {
-        const source = readFileSync('resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue', 'utf8')
+        const source = readTimetableV2Source()
 
         expect(source).toContain('v-for="part in selectedTimetableV2ConflictSummaryParts(conflict)"')
         expect(source).toContain("'students-timetable-v2-result-conflicts__date': part.type === 'date'")

@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\ABA\AbaAttachmentController;
 use App\Http\Controllers\Admin\ABA\AbaChunkUploadController;
 use App\Http\Controllers\Admin\ABA\AbaController;
 use App\Http\Controllers\Admin\ABA\AbaExtractionController;
+use App\Http\Controllers\Admin\ABA\AbaKnowledgeQueryController;
 use App\Http\Controllers\Admin\ABA\AbaSettingsController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\CloudwaysSchoolSynchronizationController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Admin\Materials\MaterialClassificationController;
 use App\Http\Controllers\Admin\Materials\MaterialController;
 use App\Http\Controllers\Admin\Materials\MaterialFileSettingsController;
 use App\Http\Controllers\Admin\Materials\MaterialShareController;
+use App\Http\Controllers\Admin\Materials\MaterialShareLookupController;
 use App\Http\Controllers\Admin\Materials\MaterialStatusController;
 use App\Http\Controllers\Admin\Materials\MaterialStorageAuditController;
 use App\Http\Controllers\Admin\Materials\MaterialTypeController;
@@ -102,7 +104,9 @@ use App\Http\Controllers\Tutoring\OfferController;
 use App\Http\Controllers\Tutoring\OfferRequestController;
 use App\Http\Controllers\Tutoring\SubjectController;
 use App\Http\Controllers\Tutoring\TutoringController;
+use Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests;
 use Illuminate\Http\Request;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 
 // Globales Throttle
@@ -128,13 +132,13 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/restaurant/send_login_code', [HomepageController::class, 'restaurantSendLoginCode'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
     Route::post('/homepage/restaurant/login_with_code', [HomepageController::class, 'restaurantLoginWithCode'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
     Route::post('/homepage/restaurant/login_with_password', [HomepageController::class, 'restaurantLoginWithPassword'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
-    Route::post('/homepage/restaurant/change_password', [HomepageController::class, 'restaurantChangePassword'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
+    Route::post('/homepage/restaurant/change_password', [HomepageController::class, 'restaurantChangePassword'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant', 'throttle:authentication']);
     Route::post('/homepage/restaurant/register', [HomepageController::class, 'restaurantRegisterUser'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
     Route::post('/homepage/restaurant/confirm_email', [HomepageController::class, 'restaurantConfirmEmail'])->middleware(['tool-licensed:Restaurant', 'throttle:authentication']);
-    Route::post('/homepage/restaurant/sepa/store', [HomepageController::class, 'restaurantStoreSepaMandate'])->middleware('tool-licensed:Restaurant');
-    Route::post('/homepage/restaurant/sepa/confirm_code', [HomepageController::class, 'restaurantConfirmSepaMandateCode'])->middleware('tool-licensed:Restaurant');
-    Route::post('/homepage/restaurant/sepa/resend_code', [HomepageController::class, 'restaurantResendSepaMandateCode'])->middleware('tool-licensed:Restaurant');
-    Route::post('/homepage/restaurant/sepa/complete', [HomepageController::class, 'restaurantCompleteSepaMandate'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/sepa/store', [HomepageController::class, 'restaurantStoreSepaMandate'])->middleware(['tool-licensed:Restaurant', 'throttle:sepa-flow']);
+    Route::post('/homepage/restaurant/sepa/confirm_code', [HomepageController::class, 'restaurantConfirmSepaMandateCode'])->middleware(['tool-licensed:Restaurant', 'throttle:sepa-flow']);
+    Route::post('/homepage/restaurant/sepa/resend_code', [HomepageController::class, 'restaurantResendSepaMandateCode'])->middleware(['tool-licensed:Restaurant', 'throttle:sepa-flow']);
+    Route::post('/homepage/restaurant/sepa/complete', [HomepageController::class, 'restaurantCompleteSepaMandate'])->middleware(['tool-licensed:Restaurant', 'throttle:sepa-flow']);
 
     // Restaurant booking routes
     Route::post('/homepage/restaurant/bookings', [RestaurantBookingController::class, 'store'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
@@ -153,7 +157,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/student/login_step_parent_student', [StudentController::class, 'loginStepParentStudent'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
     Route::get('/homepage/student/parent_students', [StudentController::class, 'parentStudents'])->middleware(['tool-licensed:Lehrertool', 'throttle:authentication']);
     Route::get('/homepage/student/user', [StudentController::class, 'user'])->middleware('tool-licensed:Lehrertool');
-    Route::post('/homepage/student/change_password', [StudentController::class, 'changePassword'])->middleware('tool-licensed:Lehrertool');
+    Route::post('/homepage/student/change_password', [StudentController::class, 'changePassword'])->middleware(['auth:sanctum', 'tool-licensed:Lehrertool']);
     Route::get('/homepage/student/courses', [CourseController::class, 'index'])->middleware('tool-licensed:Lehrertool');
     Route::get('/homepage/student/courses/{courseId}', [CourseController::class, 'show'])->middleware('tool-licensed:Lehrertool');
     Route::get('/homepage/student/courses/{courseId}/entries', [CourseStudentEntryController::class, 'index'])->middleware('tool-licensed:Lehrertool');
@@ -166,17 +170,17 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/students-timetables/login_step_code', [StudentsTimetablesStudentController::class, 'loginStepCode'])->middleware(['tool-licensed:StudentsTimetables', 'throttle:authentication']);
     Route::post('/homepage/students-timetables/login_step_password', [StudentsTimetablesStudentController::class, 'loginStepPassword'])->middleware(['tool-licensed:StudentsTimetables', 'throttle:authentication']);
     Route::get('/homepage/students-timetables/user', [StudentsTimetablesStudentController::class, 'user'])->middleware('tool-licensed:StudentsTimetables');
-    Route::get('/homepage/students-timetables/overview', [StudentsTimetablesStudentController::class, 'overview'])->middleware('tool-licensed:StudentsTimetables');
-    Route::put('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'updateProfileSelection'])->middleware('tool-licensed:StudentsTimetables');
-    Route::delete('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'restoreProfileSelection'])->middleware('tool-licensed:StudentsTimetables');
-    Route::post('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'adoptPublishedTimetable'])->middleware('tool-licensed:StudentsTimetables');
-    Route::delete('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'deletePersonalTimetable'])->middleware('tool-licensed:StudentsTimetables');
-    Route::post('/homepage/students-timetables/overview/pdf', [StudentsTimetablesStudentController::class, 'overviewPdf'])->middleware('tool-licensed:StudentsTimetables');
-    Route::get('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'evaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
-    Route::put('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'updateEvaluationSettings'])->middleware('tool-licensed:StudentsTimetables');
-    Route::post('/homepage/students-timetables/automatic-timetable', [StudentsTimetablesStudentController::class, 'automaticTimetable'])->middleware('tool-licensed:StudentsTimetables');
-    Route::post('/homepage/students-timetables/automatic-timetable-availability', [StudentsTimetablesStudentController::class, 'automaticTimetableAvailability'])->middleware('tool-licensed:StudentsTimetables');
-    Route::post('/homepage/students-timetables/change_password', [StudentsTimetablesStudentController::class, 'changePassword'])->middleware('tool-licensed:StudentsTimetables');
+    Route::get('/homepage/students-timetables/overview', [StudentsTimetablesStudentController::class, 'overview'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::put('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'updateProfileSelection'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::delete('/homepage/students-timetables/profile-selection', [StudentsTimetablesStudentController::class, 'restoreProfileSelection'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::post('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'adoptPublishedTimetable'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::delete('/homepage/students-timetables/my-timetable', [StudentsTimetablesStudentController::class, 'deletePersonalTimetable'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::post('/homepage/students-timetables/overview/pdf', [StudentsTimetablesStudentController::class, 'overviewPdf'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::get('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'evaluationSettings'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::put('/homepage/students-timetables/evaluation-settings', [StudentsTimetablesStudentController::class, 'updateEvaluationSettings'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::post('/homepage/students-timetables/automatic-timetable', [StudentsTimetablesStudentController::class, 'automaticTimetable'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::post('/homepage/students-timetables/automatic-timetable-availability', [StudentsTimetablesStudentController::class, 'automaticTimetableAvailability'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
+    Route::post('/homepage/students-timetables/change_password', [StudentsTimetablesStudentController::class, 'changePassword'])->middleware(['auth:sanctum', 'tool-licensed:StudentsTimetables']);
 
     /***** ADMIN ROUTES *****/
     Route::get('/admin/config', [AdminController::class, 'config']);
@@ -221,16 +225,22 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/students-timetables/overview/student-timetable', [StudentsTimetablesController::class, 'publishStudentTimetable']);
         Route::post('/admin/students-timetables/overview/pdf', [StudentsTimetablesController::class, 'overviewPdf']);
         Route::get('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'index']);
-        Route::post('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'upload']);
-        Route::patch('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'uploadNext']);
+        Route::post('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'upload'])
+            ->middleware('throttle:uploads');
+        Route::patch('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'uploadNext'])
+            ->middleware('throttle:uploads');
         Route::get('/admin/students-timetables/subjects-overview-settings', [SubjectOverviewJsonUploadController::class, 'settings']);
         Route::put('/admin/students-timetables/subjects-overview-settings/subjects', [SubjectOverviewJsonUploadController::class, 'updateSubjects']);
         Route::put('/admin/students-timetables/subjects-overview-settings/mappings', [SubjectOverviewJsonUploadController::class, 'updateMappings']);
-        Route::post('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'upload']);
-        Route::patch('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'uploadNext']);
+        Route::post('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'upload'])
+            ->middleware('throttle:uploads');
+        Route::patch('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'uploadNext'])
+            ->middleware('throttle:uploads');
         Route::get('/admin/students-timetables/recognitions-csv', [RecognitionCsvUploadController::class, 'index']);
-        Route::post('/admin/students-timetables/recognitions-csv', [RecognitionCsvUploadController::class, 'upload']);
-        Route::patch('/admin/students-timetables/recognitions-csv', [RecognitionCsvUploadController::class, 'uploadNext']);
+        Route::post('/admin/students-timetables/recognitions-csv', [RecognitionCsvUploadController::class, 'upload'])
+            ->middleware('throttle:uploads');
+        Route::patch('/admin/students-timetables/recognitions-csv', [RecognitionCsvUploadController::class, 'uploadNext'])
+            ->middleware('throttle:uploads');
         Route::delete('/admin/students-timetables/recognitions-csv/{recognitionImport}', [RecognitionCsvUploadController::class, 'destroy'])
             ->whereNumber('recognitionImport');
         Route::get('/admin/students-timetables/imports', [TimetableImportController::class, 'index']);
@@ -238,8 +248,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'show']);
         Route::delete('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'destroy']);
 
-        Route::post('/admin/students-timetables/import116-upload/{slug}', [FileUploadController::class, 'upload'])->whereIn('slug', ['116']);
-        Route::patch('/admin/students-timetables/import116-upload/{slug}', [FileUploadController::class, 'uploadNext'])->whereIn('slug', ['116']);
+        Route::post('/admin/students-timetables/import116-upload/{slug}', [FileUploadController::class, 'upload'])
+            ->middleware('throttle:uploads')
+            ->whereIn('slug', ['116']);
+        Route::patch('/admin/students-timetables/import116-upload/{slug}', [FileUploadController::class, 'uploadNext'])
+            ->middleware('throttle:uploads')
+            ->whereIn('slug', ['116']);
         Route::get('/admin/students-timetables/import116/runs', [Import116Controller::class, 'runs']);
         Route::get('/admin/students-timetables/import116/runs/{import116_run}', [Import116Controller::class, 'runDetails']);
         Route::post('/admin/students-timetables/import116/runs/reset', [Import116Controller::class, 'resetRuns']);
@@ -266,8 +280,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/admin/register_step_3', [AdminController::class, 'registerStep3'])->middleware('throttle:authentication');
 
     /* vom User ausgelöste APis zur E-Mail-Verifikation */
-    Route::post('/admin/users/send_verification_email_initialized_from_user', [UserController::class, 'sendVerificationEmailInitializedFromUser']);
-    Route::post('/admin/users/email_verification', [UserController::class, 'emailVerification']);
+    Route::post('/admin/users/send_verification_email_initialized_from_user', [UserController::class, 'sendVerificationEmailInitializedFromUser'])->middleware('throttle:authentication');
+    Route::post('/admin/users/email_verification', [UserController::class, 'emailVerification'])->middleware('throttle:authentication');
 
     /* homepage/register */
     Route::get('/homepage/register/config', [RegisterController::class, 'config'])->middleware('tool-licensed:Anmeldetool');
@@ -275,9 +289,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/register/confirm_email', [RegisterController::class, 'confirmEmail'])->middleware(['tool-licensed:Anmeldetool', 'throttle:authentication']);
     Route::post('/homepage/register/save_user_data', [RegisterController::class, 'saveUserData'])->middleware(['tool-licensed:Anmeldetool', 'throttle:authentication']);
     Route::post('/homepage/register/login_token', [RegisterController::class, 'loginToken'])->middleware(['tool-licensed:Anmeldetool', 'throttle:authentication']);
-    Route::get('/homepage/register/load_register_and_user', [RegisterController::class, 'loadRegisterAndUser'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/book', [RegisterController::class, 'book'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/delete_booking', [RegisterController::class, 'deleteBooking'])->middleware('tool-licensed:Anmeldetool');
+    Route::get('/homepage/register/load_register_and_user', [RegisterController::class, 'loadRegisterAndUser'])->middleware(['auth:sanctum', 'tool-licensed:Anmeldetool']);
+    Route::post('/homepage/register/book', [RegisterController::class, 'book'])->middleware(['auth:sanctum', 'tool-licensed:Anmeldetool']);
+    Route::post('/homepage/register/delete_booking', [RegisterController::class, 'deleteBooking'])->middleware(['auth:sanctum', 'tool-licensed:Anmeldetool']);
 
     /* homepage/tutoring */
     Route::get('/homepage/tutoring/config', [TutoringController::class, 'config']);
@@ -290,11 +304,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/homepage/tutoring/load_offer_config', [OfferController::class, 'loadOfferConfig']);
     Route::get('/homepage/tutoring/load_offers', [OfferController::class, 'loadOffers']);
     Route::post('/homepage/tutoring/click_count', [OfferController::class, 'clickCount']);
-    Route::post('/homepage/tutoring/set_user_search_criteria', [OfferController::class, 'setUserSearchCriteria']);
-    // setUserSearchCriteria
 
     // Public: returns a guest-safe "not impersonating" response when unauthenticated.
-    Route::get('/admin/impersonation/status', [ImpersonationController::class, 'status']);
+    Route::get('/admin/impersonation/status', [ImpersonationController::class, 'status'])
+        ->middleware(StartSession::class);
 
     /* SANCTUM */
     Route::middleware(['auth:sanctum'])->group(function () {
@@ -304,7 +317,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
         // users
         Route::apiResource('/admin/users', UserController::class)->names('admin.users');
-        Route::post('/admin/impersonation/stop', [ImpersonationController::class, 'stop']);
+        Route::post('/admin/impersonation/stop', [ImpersonationController::class, 'stop'])
+            ->middleware(StartSession::class);
 
         Route::get('/admin/health/status', [HealthController::class, 'status']);
         Route::get('/admin/health/test-queue', [HealthController::class, 'testQueue']);
@@ -352,8 +366,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/abas/{aba}/attachments/{attachment}', [AbaAttachmentController::class, 'destroy']);
 
         // ABA chunk upload for FilePond
-        Route::post('/admin/aba/uploads/chunk', [AbaChunkUploadController::class, 'upload']);
-        Route::patch('/admin/aba/uploads/chunk', [AbaChunkUploadController::class, 'uploadNext']);
+        Route::post('/admin/aba/uploads/chunk', [AbaChunkUploadController::class, 'upload'])
+            ->middleware('throttle:uploads');
+        Route::patch('/admin/aba/uploads/chunk', [AbaChunkUploadController::class, 'uploadNext'])
+            ->middleware('throttle:uploads');
         Route::delete('/admin/aba/uploads/chunk/{upload_id}', [AbaChunkUploadController::class, 'destroy']);
     });
 
@@ -394,8 +410,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teachers_list', TeachersListController::class);
         Route::post('/admin/teachers_list/delete_teachers', [TeachersListController::class, 'deleteTeachers']);
 
-        Route::post('/admin/teachers_list_upload', [TeachersListController::class, 'upload']);
-        Route::patch('/admin/teachers_list_upload', [TeachersListController::class, 'uploadNext']);
+        Route::post('/admin/teachers_list_upload', [TeachersListController::class, 'upload'])
+            ->middleware('throttle:uploads');
+        Route::patch('/admin/teachers_list_upload', [TeachersListController::class, 'uploadNext'])
+            ->middleware('throttle:uploads');
 
         // SchoolTool - Active Schoolyear
         Route::post('/admin/school_tools/set_active_schoolyear', [SchoolToolController::class, 'setActiveSchoolyear']);
@@ -403,8 +421,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - admin, teaching_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:teaching_upload_access', 'tool-licensed:Lehrertool,auto,scope:teaching_upload_access'])->group(function () {
-        Route::post('/admin/teaching_upload/{slug}', [FileUploadController::class, 'upload']);
-        Route::patch('/admin/teaching_upload/{slug}', [FileUploadController::class, 'uploadNext']);
+        Route::post('/admin/teaching_upload/{slug}', [FileUploadController::class, 'upload'])
+            ->middleware('throttle:uploads');
+        Route::patch('/admin/teaching_upload/{slug}', [FileUploadController::class, 'uploadNext'])
+            ->middleware('throttle:uploads');
     });
 
     /* SANCTUM - admin, lunch_admin */
@@ -451,6 +471,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/homepage/tutoring/logout', [App\Http\Controllers\Tutoring\UserController::class, 'logout']);
         Route::get('/homepage/tutoring/load_auth', [TutoringController::class, 'loadAuth']);
         Route::get('/homepage/tutoring/load_my_offers', [OfferController::class, 'loadMyOffers']);
+        Route::post('/homepage/tutoring/set_user_search_criteria', [OfferController::class, 'setUserSearchCriteria']);
         Route::apiResource('/homepage/tutoring/subjects', SubjectController::class)->names('tutoring.subjects');
         Route::apiResource('/homepage/tutoring/offers', OfferController::class)->names('tutoring.offers');
         Route::post('/homepage/tutoring/toggle_offer', [OfferController::class, 'toggleOffer']);
@@ -546,8 +567,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/curricula/{curriculum}/materials/attachments/{material_card_attachment}/preview', [CurriculumController::class, 'previewMaterialAttachment']);
         Route::get('/admin/teaching/curricula/{curriculum}/materials/attachments/{material_card_attachment}/download', [CurriculumController::class, 'downloadMaterialAttachment']);
         Route::get('/admin/teaching/curricula/{curriculum}/documents', [CurriculumDocumentController::class, 'index']);
-        Route::post('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'upload']);
-        Route::patch('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'uploadNext']);
+        Route::post('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'upload'])
+            ->middleware('throttle:uploads');
+        Route::patch('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'uploadNext'])
+            ->middleware('throttle:uploads');
         Route::post('/admin/teaching/curricula/{curriculum}/documents/attach-material', [CurriculumDocumentController::class, 'attachMaterial']);
         Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/preview', [CurriculumDocumentController::class, 'preview']);
         Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/material-attachments', [CurriculumDocumentController::class, 'materialAttachments']);
@@ -608,11 +631,13 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/materials-v2/categories', [MaterialV2CategoryController::class, 'update']);
         Route::delete('/admin/materials-v2/categories', [MaterialV2CategoryController::class, 'destroy']);
         Route::get('/admin/materials-v2/items', [MaterialV2ItemController::class, 'index']);
-        Route::post('/admin/materials-v2/items', [MaterialV2ItemController::class, 'store']);
+        Route::post('/admin/materials-v2/items', [MaterialV2ItemController::class, 'store'])
+            ->middleware(HandlePrecognitiveRequests::class);
         Route::post('/admin/materials-v2/link-preview', MaterialV2LinkPreviewController::class)
             ->middleware('throttle:20,1');
         Route::get('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'show']);
-        Route::put('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'update']);
+        Route::put('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'update'])
+            ->middleware(HandlePrecognitiveRequests::class);
         Route::delete('/admin/materials-v2/items/{materialV2Item}', [MaterialV2ItemController::class, 'destroy']);
         Route::post('/admin/materials-v2/items/{materialV2Item}/attachments', [MaterialV2ItemController::class, 'storeAttachments']);
         Route::post('/admin/materials-v2/items/{materialV2Item}/retry-processing', [MaterialV2ItemController::class, 'retryProcessing']);
@@ -696,11 +721,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/materials/shares/targets', [MaterialShareController::class, 'storeTarget']);
         Route::patch('/admin/materials/shares/targets/{material_share_target}', [MaterialShareController::class, 'updateTarget']);
         Route::delete('/admin/materials/shares/targets/{material_share_target}', [MaterialShareController::class, 'destroyTarget']);
-        Route::get('/admin/materials/shares/lookup-users', [MaterialShareController::class, 'lookupUsers']);
+        Route::get('/admin/materials/shares/lookup-users', [MaterialShareLookupController::class, 'users']);
         Route::get('/admin/materials/shares/lookup-groups', [MaterialShareController::class, 'lookupGroups']);
         Route::get('/admin/materials/shares/lookup-group-members', [MaterialShareController::class, 'lookupGroupMembers']);
-        Route::get('/admin/materials/shares/lookup-schools', [MaterialShareController::class, 'lookupSchools']);
-        Route::get('/admin/materials/shares/lookup-external-user', [MaterialShareController::class, 'lookupExternalUser']);
+        Route::get('/admin/materials/shares/lookup-schools', [MaterialShareLookupController::class, 'schools']);
+        Route::get('/admin/materials/shares/lookup-external-user', [MaterialShareLookupController::class, 'externalUser']);
         Route::get('/admin/materials/shares/inbox-users', [MaterialShareController::class, 'inboxUsers']);
         Route::get('/admin/materials/shares/inbox/material-attachments', [MaterialShareController::class, 'inboxMaterialAttachments']);
         Route::get('/admin/materials/shares/inbox/material-detail', [MaterialShareController::class, 'inboxMaterialDetail']);
@@ -741,8 +766,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/materials/shares/inbox/unarchive', [MaterialShareController::class, 'unarchiveInboxRule']);
         Route::post('/admin/materials/shares/inbox/material-original-copy', [MaterialShareController::class, 'copyInboxMaterialAsOriginal']);
         Route::post('/admin/materials/shares/inbox/material-insert', [MaterialShareController::class, 'insertInboxMaterial']);
-        Route::post('/admin/materials/uploads/chunk', [MaterialChunkUploadController::class, 'upload']);
-        Route::patch('/admin/materials/uploads/chunk', [MaterialChunkUploadController::class, 'uploadNext']);
+        Route::post('/admin/materials/uploads/chunk', [MaterialChunkUploadController::class, 'upload'])
+            ->middleware('throttle:uploads');
+        Route::patch('/admin/materials/uploads/chunk', [MaterialChunkUploadController::class, 'uploadNext'])
+            ->middleware('throttle:uploads');
         Route::delete('/admin/materials/uploads/chunk/{upload_id}', [MaterialChunkUploadController::class, 'destroy']);
     });
 
@@ -791,8 +818,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
         // schools
         Route::apiResource('/admin/schools', SchoolController::class);
-        Route::post('/admin/schools_upload/uploadLogo', [SchoolController::class, 'uploadLogo']);
-        Route::patch('/admin/schools_upload/uploadLogo', [SchoolController::class, 'uploadLogoNext']);
+        Route::post('/admin/schools_upload/uploadLogo', [SchoolController::class, 'uploadLogo'])
+            ->middleware('throttle:uploads');
+        Route::patch('/admin/schools_upload/uploadLogo', [SchoolController::class, 'uploadLogoNext'])
+            ->middleware('throttle:uploads');
         Route::post('/admin/schools/delete_schools', [SchoolController::class, 'deleteSchools']);
         Route::post('/admin/schools/load_switchable_schools', [SchoolController::class, 'loadSwitchableSchools']);
         Route::post('/admin/schools/search_switch_users', [SchoolController::class, 'searchSwitchUsers']);
@@ -870,16 +899,19 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:scope:super_admin_access'])->group(function () {
         Route::post('/admin/schools/{school}/cloudways-sync/preview', [CloudwaysSchoolSynchronizationController::class, 'preview']);
         Route::post('/admin/schools/{school}/cloudways-sync', [CloudwaysSchoolSynchronizationController::class, 'store']);
+        Route::get('/admin/get_log', [LogController::class, 'getLog']);
+        Route::get('/admin/list_logs', [LogController::class, 'listLogs']);
         Route::post('/admin/delete_log', [LogController::class, 'deleteLog']);
         Route::post('/admin/restart_queues', [LogController::class, 'restartQueues']);
         Route::get('/admin/impersonation/schools', [ImpersonationController::class, 'schools']);
         Route::get('/admin/impersonation/users', [ImpersonationController::class, 'users']);
-        Route::post('/admin/impersonation/start', [ImpersonationController::class, 'start']);
+        Route::post('/admin/impersonation/start', [ImpersonationController::class, 'start'])
+            ->middleware(StartSession::class);
     });
 
     /* SANCTUM - super_admin, admin */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:admin_or_super_admin_access'])->group(function () {
-        Route::get('/admin/get_log', [LogController::class, 'getLog']);
-        Route::get('/admin/list_logs', [LogController::class, 'listLogs']);
+        Route::get('/admin/aba/knowledge', [AbaKnowledgeQueryController::class, 'index']);
+        Route::post('/admin/aba/knowledge/query', [AbaKnowledgeQueryController::class, 'query']);
     });
 });

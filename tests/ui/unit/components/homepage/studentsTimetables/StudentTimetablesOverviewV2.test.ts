@@ -12,7 +12,7 @@ describe('Student timetables overview V2 preparation', () => {
     it('registers the user-side overview V2 route', () => {
         const source = readFileSync(homepageRoutesPath, 'utf8')
 
-        expect(source).toContain("import StudentTimetablesOverviewV2 from '@/pages/homepage/studentsTimetables/overviewV2/OverviewV2.vue'")
+        expect(source).toContain("const StudentTimetablesOverviewV2 = () => import('@/pages/homepage/studentsTimetables/overviewV2/OverviewV2.vue')")
         expect(source).toContain("{ path: '/students-timetables/overview-v2', component: StudentTimetablesOverviewV2 }")
     })
 

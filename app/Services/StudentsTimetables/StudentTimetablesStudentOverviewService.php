@@ -1518,18 +1518,38 @@ class StudentTimetablesStudentOverviewService
     private function plannedCoursesForProgression(Collection $subjectCourses, array $completedCourseCodes, array $visitedCourseCodes, array $missingCourses): array
     {
         $missingCourseCodes = $this->studentPlannedCourseCodes($missingCourses);
-
-        return $subjectCourses
+        $candidates = $subjectCourses
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $completedCourseCodes))
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $missingCourseCodes))
-            ->filter(fn (array $course): bool => $this->coursePossibleAsStudentMissing($course, $completedCourseCodes, $visitedCourseCodes))
-            ->unique(fn (array $course): string => $this->studentPlanningCourseUniqueKey($course))
+            ->reject(fn (array $course): bool => $this->isArtsSelectionCourse($course))
+            ->unique(fn (array $course): string => $this->studentPlanningCourseUniqueKey($course));
+        $firstAvailableCourseKeys = $candidates
+            ->groupBy(fn (array $course): string => $this->studentProgressionCourseGroupKey($course))
+            ->map(fn (Collection $courses): ?array => $this->firstStudentProgressionCourse($courses))
+            ->filter()
+            ->map(fn (array $course): string => $this->studentPlanningCourseUniqueKey($course))
+            ->values()
+            ->all();
+
+        return $candidates
+            ->filter(fn (array $course): bool => in_array($this->studentPlanningCourseUniqueKey($course), $firstAvailableCourseKeys, true)
+                || $this->coursePossibleAsStudentMissing($course, $completedCourseCodes, $visitedCourseCodes))
             ->groupBy(fn (array $course): string => $this->studentProgressionCourseGroupKey($course))
             ->map(fn (Collection $courses): ?array => $this->firstStudentProgressionCourse($courses))
             ->filter()
             ->sort(fn (array $firstCourse, array $secondCourse): int => $this->studentProgressionCourseSort($firstCourse, $secondCourse))
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string,mixed>  $course
+     */
+    private function isArtsSelectionCourse(array $course): bool
+    {
+        return collect($this->courseCodeAliases($course))
+            ->map(fn (string $courseCode): string => (string) ($this->courseCodeModuleParts($courseCode)['base'] ?? ''))
+            ->contains(fn (string $base): bool => in_array($base, ['BE', 'ME', 'MU'], true));
     }
 
     /**

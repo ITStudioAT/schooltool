@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Support\SafeHtml;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -155,5 +157,13 @@ class Register extends Model
     public function hasDependencies(): bool
     {
         return $this->dates->count() != 0;
+    }
+
+    protected function descriptionOnWebsite(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value): string => app(SafeHtml::class)->sanitize($value),
+            set: fn (?string $value): string => app(SafeHtml::class)->sanitize($value),
+        );
     }
 }

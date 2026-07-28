@@ -46,6 +46,7 @@ beforeEach(function () {
         'short_name' => 'TEACH',
         'long_name' => 'Teaching Test School',
     ]);
+    enableSchoolToolModuleForTests($this->school, 'teaching');
 
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,

@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Services\TeachingCourseService;
+use App\Support\SafeHtml;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -194,6 +196,14 @@ class TeachingCourse extends Model
     public function teachingCourseStudentsWithTrashed(): HasMany
     {
         return $this->hasMany(TeachingCourseStudent::class)->withTrashed();
+    }
+
+    protected function description(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value): string => app(SafeHtml::class)->sanitize($value),
+            set: fn (?string $value): string => app(SafeHtml::class)->sanitize($value),
+        );
     }
 
     private function normalizeLegacyStudentPayload(mixed $value): array

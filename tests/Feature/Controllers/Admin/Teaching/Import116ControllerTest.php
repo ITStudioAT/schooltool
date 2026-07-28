@@ -44,6 +44,7 @@ beforeEach(function () {
         'short_name' => 'IMP',
         'long_name' => 'Import Test School',
     ]);
+    enableSchoolToolModuleForTests($this->school, 'teaching');
 
     $teachingLicence = Licence::firstOrCreate(
         ['name' => 'Lehrertool'],
@@ -785,6 +786,9 @@ describe('import run history integration', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         Schema::shouldReceive('hasTable')
+            ->with('school_tools')
+            ->andReturn(true);
+        Schema::shouldReceive('hasTable')
             ->once()
             ->with('import116_runs')
             ->andReturn(false);
@@ -1291,6 +1295,9 @@ describe('run details and destroy run auth-isolation', function () {
         ]);
 
         Schema::shouldReceive('hasTable')
+            ->with('school_tools')
+            ->andReturn(true);
+        Schema::shouldReceive('hasTable')
             ->once()
             ->with('import116_runs')
             ->andReturn(false);
@@ -1304,6 +1311,9 @@ describe('run details and destroy run auth-isolation', function () {
     test('reset_runs returns 409 when run tracking tables are unavailable', function () {
         $this->actingAs($this->admin, 'sanctum');
 
+        Schema::shouldReceive('hasTable')
+            ->with('school_tools')
+            ->andReturn(true);
         Schema::shouldReceive('hasTable')
             ->once()
             ->with('import116_runs')
@@ -1329,6 +1339,9 @@ describe('run details and destroy run auth-isolation', function () {
             'finished_at' => now(),
         ]);
 
+        Schema::shouldReceive('hasTable')
+            ->with('school_tools')
+            ->andReturn(true);
         Schema::shouldReceive('hasTable')
             ->once()
             ->with('import116_runs')

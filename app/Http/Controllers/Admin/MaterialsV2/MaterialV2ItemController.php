@@ -16,7 +16,7 @@ use App\Models\User;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\MaterialsV2\MaterialV2CategoryService;
 use App\Services\MaterialsV2\MaterialV2KeywordService;
-use App\Services\MaterialsV2\MaterialV2SearchService;
+use App\Services\MaterialsV2\MaterialV2ScoutSearchService;
 use App\Services\MaterialsV2\MaterialV2StorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -53,7 +53,7 @@ class MaterialV2ItemController extends Controller
 
     public function index(
         MaterialV2IndexRequest $request,
-        MaterialV2SearchService $searchService,
+        MaterialV2ScoutSearchService $searchService,
     ): AnonymousResourceCollection {
         /** @var User $user */
         $user = $request->user();

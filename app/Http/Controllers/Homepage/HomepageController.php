@@ -472,8 +472,11 @@ class HomepageController extends Controller
         RestaurantSepaStoreRequest $request,
         RestaurantSepaMandateService $restaurantSepaMandateService
     ) {
+        $data = $request->validated()['data'];
+        $user = $restaurantSepaMandateService->actorForFlow($request->user(), (string) $data['flow_uuid']);
+
         return response()->json(
-            $restaurantSepaMandateService->submitMandate($request->validated()['data'], (string) $request->ip())
+            $restaurantSepaMandateService->submitMandate($user, $data, (string) $request->ip())
         );
     }
 
@@ -481,8 +484,11 @@ class HomepageController extends Controller
         RestaurantSepaConfirmCodeRequest $request,
         RestaurantSepaMandateService $restaurantSepaMandateService
     ) {
+        $data = $request->validated()['data'];
+        $user = $restaurantSepaMandateService->actorForFlow($request->user(), (string) $data['flow_uuid']);
+
         return response()->json(
-            $restaurantSepaMandateService->confirmCode($request->validated()['data'], (string) $request->ip())
+            $restaurantSepaMandateService->confirmCode($user, $data, (string) $request->ip())
         );
     }
 
@@ -490,8 +496,11 @@ class HomepageController extends Controller
         RestaurantSepaResendCodeRequest $request,
         RestaurantSepaMandateService $restaurantSepaMandateService
     ) {
+        $data = $request->validated()['data'];
+        $user = $restaurantSepaMandateService->actorForFlow($request->user(), (string) $data['flow_uuid']);
+
         return response()->json(
-            $restaurantSepaMandateService->resendCode($request->validated()['data'], (string) $request->ip())
+            $restaurantSepaMandateService->resendCode($user, $data, (string) $request->ip())
         );
     }
 
@@ -499,8 +508,11 @@ class HomepageController extends Controller
         RestaurantSepaCompleteRequest $request,
         RestaurantSepaMandateService $restaurantSepaMandateService
     ) {
+        $data = $request->validated()['data'];
+        $user = $restaurantSepaMandateService->actorForFlow($request->user(), (string) $data['flow_uuid']);
+
         return response()->json(
-            $restaurantSepaMandateService->completeFlow($request->validated()['data'], (string) $request->ip())
+            $restaurantSepaMandateService->completeFlow($user, $data, (string) $request->ip())
         );
     }
 

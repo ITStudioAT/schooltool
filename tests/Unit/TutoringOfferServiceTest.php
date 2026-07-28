@@ -4,12 +4,14 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TutoringOffer;
+use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
 use App\Models\User;
 use App\Services\TutoringOfferService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -349,5 +351,58 @@ describe('update', function () {
         ]);
 
         expect($offer->visible_for_other_schools)->toBeFalse();
+    });
+});
+
+describe('offer request login tokens', function () {
+    it('does not consume a token while showing the prompt and consumes it atomically on login', function () {
+        $sender = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Token test',
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'is_active' => true,
+            'accepted_at' => now(),
+        ]);
+        $token = Str::uuid()->toString();
+        $offerRequest = TutoringOfferRequest::create([
+            'school_id' => $this->school->id,
+            'offer_id' => $offer->id,
+            'from_user_id' => $sender->id,
+            'to_user_id' => $this->user->id,
+            'message' => 'Please help',
+            'token' => $token,
+            'token_expires_at' => now()->addHour(),
+        ]);
+
+        $promptUser = $this->service->userFromOfferRequest(
+            $this->user->email,
+            $offerRequest->id,
+            $token,
+        );
+
+        expect($promptUser?->is($this->user))->toBeTrue()
+            ->and($offerRequest->fresh()->token)->toBe($token);
+
+        $loginUser = $this->service->consumeUserFromOfferRequest(
+            $this->user->email,
+            $offerRequest->id,
+            $token,
+        );
+
+        expect($loginUser?->is($this->user))->toBeTrue()
+            ->and($offerRequest->fresh()->token)->toBeNull()
+            ->and($offerRequest->fresh()->token_expires_at)->toBeNull()
+            ->and($this->service->consumeUserFromOfferRequest(
+                $this->user->email,
+                $offerRequest->id,
+                $token,
+            ))->toBeNull();
     });
 });

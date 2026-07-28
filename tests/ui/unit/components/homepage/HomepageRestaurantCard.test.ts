@@ -8,7 +8,7 @@ describe('homepage restaurant entry', () => {
         const source = readFileSync(componentPath, 'utf8')
 
         expect(source).toContain('class="tool-card card-lunch"')
-        expect(source).toContain('@click="openRestaurant()"')
+        expect(source).toContain('@click="openToolForSchool(\'Restaurant\')"')
         expect(source).toContain('<h3 class="card-title">Restaurant</h3>')
         expect(source).toContain('<span class="action-text">Zum Restaurant</span>')
         expect(source).toContain('canShowRestaurant() {')
@@ -21,7 +21,7 @@ describe('homepage restaurant entry', () => {
         const routerPath = resolve(process.cwd(), 'resources/routes/homepage.js')
         const source = readFileSync(routerPath, 'utf8')
 
-        expect(source).toContain("import Restaurant from '@/pages/homepage/index/Restaurant.vue'")
+        expect(source).toContain("const Restaurant = () => import('@/pages/homepage/index/Restaurant.vue')")
         expect(source).toContain("{ path: '/homepage/restaurant', component: Restaurant }")
     })
 

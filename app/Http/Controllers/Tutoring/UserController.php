@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\UserService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 
 class UserController extends Controller
 {
@@ -41,12 +42,12 @@ class UserController extends Controller
      */
     public function update(UserUpdateRequest $request, User $user, UserService $service)
     {
-        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        Gate::authorize('updateTutoringProfile', $user);
 
         $validated = $request->validated();
         $data = $validated['data'];
+        /** @var User $authenticatedUser */
+        $authenticatedUser = $request->user();
 
         if (($data['status'] ?? null) == 'CONFIRM_EMAIL' || ($data['status'] ?? null) == 'RE_CONFIRM_EMAIL') {
             // E-Mail-Confirmation wird gerade durchgeführt
@@ -57,7 +58,7 @@ class UserController extends Controller
                 abort(409, 'Die E-Mail-Adresse ist nicht verfügbar.');
             }
 
-            if ($service->checkEmailVerification($auth_user, $data['token_2fa'])) {
+            if ($service->checkEmailVerification($authenticatedUser, $data['token_2fa'])) {
                 // E-Mail_verifikation hat funktioniert
                 // User updaten und E-Mail-Verifikationsdatum setzen
                 $user->update($data);

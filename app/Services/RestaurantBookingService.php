@@ -8,8 +8,11 @@ use App\Models\RestaurantMenuPlanBooking;
 use App\Models\RestaurantMenuPlanEntry;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class RestaurantBookingService
 {
@@ -22,37 +25,60 @@ class RestaurantBookingService
      */
     public function createBooking(User $user, RestaurantMenuPlanEntry $entry, array $data): RestaurantMenuPlanBooking
     {
-        $recipients = $this->normalizeRecipients($data, $user);
-        $primaryRecipient = $recipients[0] ?? $this->defaultSelfRecipient($user);
+        try {
+            return DB::transaction(function () use ($data, $entry, $user): RestaurantMenuPlanBooking {
+                $lockedUser = User::query()
+                    ->whereKey($user->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $lockedEntry = RestaurantMenuPlanEntry::query()
+                    ->whereKey($entry->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $eatingTimeId = isset($data['restaurant_eating_time_id'])
+                    ? (int) $data['restaurant_eating_time_id']
+                    : null;
 
-        $bookingData = [
-            'school_id' => $user->school_id,
-            'user_id' => $user->id,
-            'restaurant_menu_plan_entry_id' => $entry->id,
-            'restaurant_eating_time_id' => $data['restaurant_eating_time_id'] ?? null,
-            'price' => $entry->price,
-            'quantity' => $data['quantity'] ?? 1,
-            'child_name' => $primaryRecipient['name'] ?? null,
-            'child_type' => $primaryRecipient['type'] ?? null,
-            'import116_id' => $primaryRecipient['import116_id'] ?? null,
-            'notes' => $data['notes'] ?? null,
-            'metadata' => array_merge($data['metadata'] ?? [], [
-                'recipients' => $recipients,
-            ]),
-            'booked_at' => isset($data['booked_at']) ? Carbon::parse($data['booked_at']) : Carbon::now(),
-        ];
+                if ($this->hasUserBookedEntry($lockedUser, $lockedEntry, $eatingTimeId)) {
+                    $this->throwDuplicateBooking();
+                }
 
-        $booking = RestaurantMenuPlanBooking::create($bookingData);
+                $recipients = $this->normalizeRecipients($data, $lockedUser);
+                $primaryRecipient = $recipients[0] ?? $this->defaultSelfRecipient($lockedUser);
+                $booking = RestaurantMenuPlanBooking::query()->create([
+                    'school_id' => $lockedUser->school_id,
+                    'user_id' => $lockedUser->id,
+                    'restaurant_menu_plan_entry_id' => $lockedEntry->id,
+                    'restaurant_eating_time_id' => $eatingTimeId,
+                    'price' => $lockedEntry->price,
+                    'quantity' => $data['quantity'] ?? 1,
+                    'child_name' => $primaryRecipient['name'] ?? null,
+                    'child_type' => $primaryRecipient['type'] ?? null,
+                    'import116_id' => $primaryRecipient['import116_id'] ?? null,
+                    'notes' => $data['notes'] ?? null,
+                    'metadata' => array_merge($data['metadata'] ?? [], [
+                        'recipients' => $recipients,
+                    ]),
+                    'booked_at' => isset($data['booked_at']) ? Carbon::parse($data['booked_at']) : Carbon::now(),
+                ]);
 
-        if (($data['remember_defaults'] ?? true) !== false) {
-            $this->rememberBookingDefaults(
-                $user,
-                $recipients,
-                (bool) ($data['single_recipient_customized'] ?? false),
-            );
+                if (($data['remember_defaults'] ?? true) !== false) {
+                    $this->rememberBookingDefaults(
+                        $lockedUser,
+                        $recipients,
+                        (bool) ($data['single_recipient_customized'] ?? false),
+                    );
+                }
+
+                return $booking;
+            }, attempts: 3);
+        } catch (QueryException $exception) {
+            if ((int) ($exception->errorInfo[1] ?? 0) === 1062) {
+                $this->throwDuplicateBooking();
+            }
+
+            throw $exception;
         }
-
-        return $booking;
     }
 
     /**
@@ -99,8 +125,10 @@ class RestaurantBookingService
         $query = RestaurantMenuPlanBooking::where('user_id', $user->id)
             ->where('restaurant_menu_plan_entry_id', $entry->id);
 
-        if ($eatingTimeId) {
+        if ($eatingTimeId !== null) {
             $query->where('restaurant_eating_time_id', $eatingTimeId);
+        } else {
+            $query->whereNull('restaurant_eating_time_id');
         }
 
         return $query->exists();
@@ -400,5 +428,12 @@ class RestaurantBookingService
         ];
 
         $user->save();
+    }
+
+    private function throwDuplicateBooking(): never
+    {
+        throw ValidationException::withMessages([
+            'data.restaurant_menu_plan_entry_id' => 'Sie haben dieses Menü bereits für diese Speisezeit gebucht.',
+        ]);
     }
 }

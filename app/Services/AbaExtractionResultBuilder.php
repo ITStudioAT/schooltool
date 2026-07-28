@@ -270,6 +270,7 @@ class AbaExtractionResultBuilder
             is_array($uiModel['preview_notes'] ?? null) ? array_values($uiModel['preview_notes']) : [],
             $foundImagesCount,
             $pageNumber,
+            count(array_filter($images, static fn (array $image): bool => (bool) ($image['ui_displayable'] ?? false))),
         );
         $resolvedTitle = $this->resolvePreferredTitlePageTitle(
             $this->sanitizeTitlePageHeadingValue($uiModel['preview_title'] ?? null, $sourceDetails),
@@ -377,7 +378,7 @@ class AbaExtractionResultBuilder
      * @param  array<int, mixed>  $previewNotes
      * @return array<int, string>
      */
-    private function normalizeTitlePagePreviewNotes(array $previewNotes, int $foundImagesCount, ?int $pageNumber): array
+    private function normalizeTitlePagePreviewNotes(array $previewNotes, int $foundImagesCount, ?int $pageNumber, int $displayableImageCount = 0): array
     {
         $normalizedPreviewNotes = array_values(array_filter(array_map(
             fn (mixed $note): ?string => $this->normalizeOptionalString($note),
@@ -390,7 +391,10 @@ class AbaExtractionResultBuilder
 
         $normalizedPreviewNotes = array_values(array_filter(
             $normalizedPreviewNotes,
-            static fn (string $note): bool => $note !== 'Keine Titelblatt-Bilder erkannt.'
+            static fn (string $note): bool => ! in_array($note, [
+                'Keine Titelblatt-Bilder erkannt.',
+                'Titelblatt-Bilder erkannt, aber ohne renderbares Asset.',
+            ], true)
         ));
 
         $imageLabel = $foundImagesCount === 1 ? '1 Bild' : $foundImagesCount.' Bilder';
@@ -400,6 +404,11 @@ class AbaExtractionResultBuilder
         $detectedImageNote = 'DOCX-Seitenanalyse: '.$imageLabel.' '.$locationLabel.' erkannt.';
 
         array_unshift($normalizedPreviewNotes, $detectedImageNote);
+        if ($displayableImageCount > 0) {
+            $normalizedPreviewNotes[] = 'Vorschau enthält '.$displayableImageCount.' renderbares Titelblatt-Bild/Logo.';
+        } else {
+            $normalizedPreviewNotes[] = 'Titelblatt-Bilder erkannt, aber ohne renderbares Asset.';
+        }
 
         return array_values(array_unique($normalizedPreviewNotes));
     }

@@ -31,8 +31,9 @@ use App\Services\SchoolService;
 use App\Services\SchoolUserLicenceAssignmentService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Gate;
 
 class SchoolController extends Controller
 {
@@ -48,12 +49,13 @@ class SchoolController extends Controller
         $validated = $request->validated();
         $search_string = $validated['search_string'] ?? null;
         $expiredOnly = (bool) ($validated['expired_only'] ?? false);
-        $assignedOnly = array_key_exists('assigned_only', $validated) ? (bool) $validated['assigned_only'] : true;
 
         $schools = School::query()
-            ->with(['licences' => function ($query) {
-                $query->orderBy('name');
-            }])
+            ->with([
+                'licences' => fn ($query) => $query->orderBy('name'),
+                'schoolLicences',
+                'schoolUserLicences',
+            ])
             ->when($expiredOnly, function ($query) {
                 $query->whereHas('licences', function ($licenceQuery) {
                     $licenceQuery->where(function ($requiredQuery) {
@@ -121,9 +123,7 @@ class SchoolController extends Controller
      */
     public function update(SchoolUpdateRequest $request, School $school, SchoolService $service)
     {
-        if (! $auth_user = $this->userHasRole(['admin'])) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        Gate::authorize('update', $school);
         $validated = $request->validated();
 
         $school = $service->update($school, $validated);
@@ -162,7 +162,7 @@ class SchoolController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $id = $fileUploadService->upload();
+        $id = $fileUploadService->upload($request, 'school-logo');
 
         return response($id, 200)->header('Content-Type', 'text/plain');
     }
@@ -179,7 +179,8 @@ class SchoolController extends Controller
             $request,
             'app/public/temp',              // final target directory
             "logo_{$auth_user->id}",                   // required filename base
-            ['width' => 200, 'height' => 100]
+            ['width' => 200, 'height' => 100],
+            profile: 'school-logo',
         );
 
         // Partial chunk → just forward the 200 "OK" response

@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AdminApp from '@/pages/admin/App.vue'
+import AdminNavigationDrawer from '@/pages/admin/components/AdminNavigationDrawer.vue'
+import { useAdminRouteNavigation } from '@/composables/useAdminRouteNavigation'
 
 describe('Admin app navigation', () => {
     afterEach(() => {
@@ -9,7 +11,7 @@ describe('Admin app navigation', () => {
     })
 
     it('renders hopper accounts through a Vuetify menu instead of an inline list group', () => {
-        const source = readFileSync(join(process.cwd(), 'resources/js/pages/admin/App.vue'), 'utf8')
+        const source = readFileSync(join(process.cwd(), 'resources/js/pages/admin/components/AdminNavigationDrawer.vue'), 'utf8')
 
         expect(source).toContain('<v-menu')
         expect(source).not.toContain('<v-list-group')
@@ -59,10 +61,10 @@ describe('Admin app navigation', () => {
             },
         }
 
-        expect((AdminApp as any).methods.isMenuItemActive.call(activeCtx, item)).toBe(true)
-        expect((AdminApp as any).methods.isMenuItemActive.call(inactiveCtx, item)).toBe(true)
+        expect((AdminNavigationDrawer as any).methods.isMenuItemActive.call(activeCtx, item)).toBe(true)
+        expect((AdminNavigationDrawer as any).methods.isMenuItemActive.call(inactiveCtx, item)).toBe(true)
         expect(
-            (AdminApp as any).methods.isMenuItemActive.call(
+            (AdminNavigationDrawer as any).methods.isMenuItemActive.call(
                 {
                 $route: {
                     path: '/admin/materials',
@@ -84,7 +86,7 @@ describe('Admin app navigation', () => {
         }
 
         expect(
-            (AdminApp as any).methods.isMenuItemActive.call(
+            (AdminNavigationDrawer as any).methods.isMenuItemActive.call(
                 {
                     $route: {
                         path: '/admin/teaching/curricula',
@@ -98,7 +100,7 @@ describe('Admin app navigation', () => {
         ).toBe(true)
 
         expect(
-            (AdminApp as any).methods.isMenuItemActive.call(
+            (AdminNavigationDrawer as any).methods.isMenuItemActive.call(
                 {
                     $route: {
                         path: '/admin/teaching',
@@ -136,94 +138,119 @@ describe('Admin app navigation', () => {
         vi.useFakeTimers()
 
         const push = vi.fn().mockResolvedValue(undefined)
-        const ctx = {
-            isMenuInteractionDisabled: false,
-            is_route_navigation_pending: false,
-            routeNavigationLockFallbackTimer: null,
-            $route: { fullPath: '/admin/restaurant' },
-            $router: {
+        const routeNavigation = useAdminRouteNavigation({
+            getCurrentRoute: () => ({ fullPath: '/admin/restaurant' }),
+            router: {
                 resolve: vi.fn().mockReturnValue({ fullPath: '/admin/teaching' }),
                 push,
             },
-            startNavigationLock: (AdminApp as any).methods.startNavigationLock,
-            clearNavigationLock: (AdminApp as any).methods.clearNavigationLock,
-            clearNavigationLockTimers: (AdminApp as any).methods.clearNavigationLockTimers,
-        }
+            adminStore: { is_loading: 0 },
+        })
 
-        const navigation = (AdminApp as any).methods.navigateMenuRoute.call(ctx, '/admin/teaching')
+        const navigation = routeNavigation.navigateMenuRoute('/admin/teaching', false)
 
-        expect(ctx.is_route_navigation_pending).toBe(true)
+        expect(routeNavigation.state.isRouteNavigationPending).toBe(true)
         await navigation
 
         expect(push).toHaveBeenCalledWith('/admin/teaching')
-        expect(ctx.is_route_navigation_pending).toBe(false)
+        expect(routeNavigation.state.isRouteNavigationPending).toBe(false)
     })
 
     it('clears a pending route navigation lock with its fallback timer', () => {
         vi.useFakeTimers()
 
-        const ctx = {
-            is_route_navigation_pending: false,
-            routeNavigationLockFallbackTimer: null,
-            clearNavigationLock: (AdminApp as any).methods.clearNavigationLock,
-            clearNavigationLockTimers: (AdminApp as any).methods.clearNavigationLockTimers,
-        }
+        const routeNavigation = useAdminRouteNavigation({
+            getCurrentRoute: () => ({ fullPath: '/admin/restaurant' }),
+            router: {
+                resolve: vi.fn().mockReturnValue({ fullPath: '/admin/teaching' }),
+                push: vi.fn(() => new Promise(() => {})),
+            },
+            adminStore: { is_loading: 0 },
+        })
 
-        ;(AdminApp as any).methods.startNavigationLock.call(ctx)
-
-        expect(ctx.is_route_navigation_pending).toBe(true)
+        void routeNavigation.navigateMenuRoute('/admin/teaching', false)
+        expect(routeNavigation.state.isRouteNavigationPending).toBe(true)
 
         vi.advanceTimersByTime(8000)
 
-        expect(ctx.is_route_navigation_pending).toBe(false)
+        expect(routeNavigation.state.isRouteNavigationPending).toBe(false)
     })
 
-    it('balances route loading only for navigations that actually started', () => {
+    it('balances route loading only for navigations that actually started', async () => {
         vi.useFakeTimers()
 
-        const ctx = {
-            adminStore: { is_loading: 2 },
-            routeLoadingCount: 0,
-            routeLoadingFallbackTimer: null,
-            clearRouteLoadingFallbackTimer: (AdminApp as any).methods.clearRouteLoadingFallbackTimer,
-        }
+        let beforeEachHook: any
+        let afterEachHook: any
+        const adminStore = { is_loading: 2 }
+        const routeNavigation = useAdminRouteNavigation({
+            getCurrentRoute: () => ({ fullPath: '/admin' }),
+            adminStore,
+            router: {
+                beforeEach: vi.fn((hook) => {
+                    beforeEachHook = hook
+                    return vi.fn()
+                }),
+                afterEach: vi.fn((hook) => {
+                    afterEachHook = hook
+                    return vi.fn()
+                }),
+                onError: vi.fn(() => vi.fn()),
+            },
+        })
+        routeNavigation.registerRouteNavigationHooks()
 
-        ;(AdminApp as any).methods.beginRouteLoading.call(ctx)
-        expect(ctx.adminStore.is_loading).toBe(3)
-        expect(ctx.routeLoadingCount).toBe(1)
+        beforeEachHook(
+            { fullPath: '/admin/teaching' },
+            { fullPath: '/admin' },
+            vi.fn(),
+        )
+        expect(adminStore.is_loading).toBe(3)
+        expect(routeNavigation.state.routeLoadingCount).toBe(1)
 
-        ;(AdminApp as any).methods.finishRouteLoading.call(ctx)
-        expect(ctx.adminStore.is_loading).toBe(2)
-        expect(ctx.routeLoadingCount).toBe(0)
+        afterEachHook()
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(adminStore.is_loading).toBe(2)
+        expect(routeNavigation.state.routeLoadingCount).toBe(0)
 
-        ;(AdminApp as any).methods.finishRouteLoading.call(ctx)
-        expect(ctx.adminStore.is_loading).toBe(2)
-        expect(ctx.routeLoadingCount).toBe(0)
+        afterEachHook()
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(adminStore.is_loading).toBe(2)
+        expect(routeNavigation.state.routeLoadingCount).toBe(0)
     })
 
     it('clears route loading with a fallback when navigation never finishes', () => {
         vi.useFakeTimers()
 
-        const ctx = {
-            adminStore: { is_loading: 4 },
-            routeLoadingCount: 0,
-            routeLoadingFallbackTimer: null,
-            is_route_navigation_pending: true,
-            routeNavigationLockFallbackTimer: null,
-            clearNavigationLock: (AdminApp as any).methods.clearNavigationLock,
-            clearNavigationLockTimers: (AdminApp as any).methods.clearNavigationLockTimers,
-            clearRouteLoadingFallbackTimer: (AdminApp as any).methods.clearRouteLoadingFallbackTimer,
-            finishAllRouteLoading: (AdminApp as any).methods.finishAllRouteLoading,
-        }
+        let beforeEachHook: any
+        const adminStore = { is_loading: 4 }
+        const routeNavigation = useAdminRouteNavigation({
+            getCurrentRoute: () => ({ fullPath: '/admin' }),
+            adminStore,
+            router: {
+                beforeEach: vi.fn((hook) => {
+                    beforeEachHook = hook
+                    return vi.fn()
+                }),
+                afterEach: vi.fn(() => vi.fn()),
+                onError: vi.fn(() => vi.fn()),
+            },
+        })
+        routeNavigation.registerRouteNavigationHooks()
 
-        ;(AdminApp as any).methods.beginRouteLoading.call(ctx)
-        expect(ctx.adminStore.is_loading).toBe(5)
+        beforeEachHook(
+            { fullPath: '/admin/teaching' },
+            { fullPath: '/admin' },
+            vi.fn(),
+        )
+        expect(adminStore.is_loading).toBe(5)
 
         vi.advanceTimersByTime(15000)
 
-        expect(ctx.adminStore.is_loading).toBe(4)
-        expect(ctx.routeLoadingCount).toBe(0)
-        expect(ctx.is_route_navigation_pending).toBe(false)
+        expect(adminStore.is_loading).toBe(4)
+        expect(routeNavigation.state.routeLoadingCount).toBe(0)
+        expect(routeNavigation.state.isRouteNavigationPending).toBe(false)
     })
 
     it('switches to a hopper account from the dashboard menu', async () => {

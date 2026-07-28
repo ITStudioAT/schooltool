@@ -35,6 +35,7 @@ use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -246,8 +247,7 @@ class MaterialController extends Controller
     public function show(MaterialCard $material_card, MaterialService $service)
     {
         $authUser = $this->authorizeForMaterials();
-        $this->assertIsOwner($authUser->id, $material_card->user_id);
-        $service->syncLinkedInboxCardForUser($authUser, $material_card);
+        Gate::authorize('view', $material_card);
         $card = $this->loadCardForResponse($material_card);
         $service->hydrateLinkedPermissionMetadata($authUser, collect([$card]));
 
@@ -257,7 +257,7 @@ class MaterialController extends Controller
     public function update(MaterialCardUpdateRequest $request, MaterialCard $material_card, MaterialService $service)
     {
         $authUser = $this->authorizeForMaterials();
-        $this->assertIsOwner($authUser->id, $material_card->user_id);
+        Gate::authorize('update', $material_card);
         $this->assertLinkedCardAllowsEdit($service, $authUser, $material_card);
         $validated = $request->validated()['data'];
 
@@ -270,7 +270,7 @@ class MaterialController extends Controller
     public function destroy(MaterialCard $material_card, MaterialService $service)
     {
         $authUser = $this->authorizeForMaterials();
-        $this->assertIsOwner($authUser->id, $material_card->user_id);
+        Gate::authorize('delete', $material_card);
         $this->assertLinkedCardAllowsMaterialDelete($service, $authUser, $material_card);
 
         $service->deleteCard($material_card);

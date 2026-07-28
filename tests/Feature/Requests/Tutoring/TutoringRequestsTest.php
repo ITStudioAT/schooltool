@@ -301,10 +301,9 @@ describe('OfferUpdateRequest', function () {
         expect($request->authorize())->toBeFalse();
     });
 
-    it('authorizes authenticated users', function () {
-        Auth::shouldReceive('check')->andReturn(true);
+    it('requires an authorized route-bound offer', function () {
         $request = new OfferUpdateRequest;
-        expect($request->authorize())->toBeTrue();
+        expect($request->authorize())->toBeFalse();
     });
 });
 
@@ -465,10 +464,9 @@ describe('OfferRequestMailClickedRequest', function () {
         expect($request->authorize())->toBeFalse();
     });
 
-    it('authorizes authenticated users', function () {
-        Auth::shouldReceive('check')->andReturn(true);
+    it('requires an authorized request recipient', function () {
         $request = new OfferRequestMailClickedRequest;
-        expect($request->authorize())->toBeTrue();
+        expect($request->authorize())->toBeFalse();
     });
 });
 
@@ -747,10 +745,9 @@ describe('UserUpdateRequest', function () {
         expect($request->authorize())->toBeFalse();
     });
 
-    it('authorizes authenticated users', function () {
-        Auth::shouldReceive('check')->andReturn(true);
+    it('requires an authorized route-bound user', function () {
         $request = new UserUpdateRequest;
-        expect($request->authorize())->toBeTrue();
+        expect($request->authorize())->toBeFalse();
     });
 
     it('passes with valid data', function () {

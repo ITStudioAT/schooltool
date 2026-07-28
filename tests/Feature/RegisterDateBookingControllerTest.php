@@ -576,12 +576,16 @@ test('deleteBookings deletes bookings for admin', function () {
         'student_last_name' => 'Student1',
     ]);
 
+    $secondRegisterUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
     $booking2 = RegisterDateBooking::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
         'register_date_id' => $registerDate->id,
-        'user_id' => $this->registerUser->id,
+        'user_id' => $secondRegisterUser->id,
         'student_last_name' => 'Student2',
     ]);
 

@@ -19,6 +19,7 @@ use Illuminate\Http\Response;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class RestaurantUserController extends Controller
@@ -204,6 +205,8 @@ class RestaurantUserController extends Controller
         $mandate = $this->completedSepaMandatesQuery($authUser->school_id)
             ->where('flow_uuid', $flowUuid)
             ->firstOrFail();
+
+        Gate::authorize('viewSensitive', $mandate);
 
         $path = $pdfService->createPdf($mandate);
 

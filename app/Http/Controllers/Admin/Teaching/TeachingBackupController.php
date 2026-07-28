@@ -10,11 +10,10 @@ use App\Models\User;
 use App\Services\TeachingBackupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use JsonException;
-use Symfony\Component\HttpFoundation\HeaderUtils;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class TeachingBackupController extends Controller
@@ -121,7 +120,7 @@ class TeachingBackupController extends Controller
         ], $result['imported'] ? 201 : 200);
     }
 
-    public function download(TeachingBackup $backup): Response
+    public function download(TeachingBackup $backup): StreamedResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'teaching_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -144,19 +143,9 @@ class TeachingBackupController extends Controller
             abort(404, 'Datensicherung nicht gefunden');
         }
 
-        try {
-            $content = $disk->get($backup->path);
-        } catch (Throwable $exception) {
-            report($exception);
-
-            abort(404, 'Datensicherung nicht gefunden');
-        }
-
         $filename = $this->downloadFilename($backup);
 
-        return response($content, 200, [
-            'Content-Disposition' => HeaderUtils::makeDisposition(HeaderUtils::DISPOSITION_ATTACHMENT, $filename),
-            'Content-Length' => (string) strlen($content),
+        return $disk->download($backup->path, $filename, [
             'Content-Type' => 'application/json',
         ]);
     }

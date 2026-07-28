@@ -135,9 +135,9 @@ class AppUpdateCommand extends Command
         if (! $this->runArtisanCommand('optimize:clear', [], 'optimize:clear')) {
             return self::FAILURE;
         }
-        $this->info('▶ RESTARTING QUEUES');
-        $this->waitingLine('Giving queue workers a polite tap on the shoulder.');
-        if (! $this->runArtisanCommand('queue:restart', [], 'queue:restart')) {
+        $this->info('▶ RESTARTING HORIZON');
+        $this->waitingLine('Giving Horizon a polite tap on the shoulder.');
+        if (! $this->runArtisanCommand('horizon:terminate', [], 'horizon:terminate')) {
             return self::FAILURE;
         }
         $this->info('✅ Caches cleared');

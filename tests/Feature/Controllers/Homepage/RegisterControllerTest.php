@@ -162,7 +162,7 @@ describe('config', function () {
 
         $response = $this->getJson("/api/homepage/register/config?school={$this->school->short_name}");
 
-        $response->assertStatus(403);
+        $response->assertForbidden();
     });
 });
 
@@ -480,10 +480,10 @@ describe('loginToken', function () {
 });
 
 describe('loadRegisterAndUser', function () {
-    it('returns 403 when user is not authenticated', function () {
+    it('returns 401 when user is not authenticated', function () {
         $response = $this->getJson('/api/homepage/register/load_register_and_user');
 
-        $response->assertStatus(403);
+        $response->assertUnauthorized();
     });
 
     it('returns 403 when user does not have register_user role', function () {
@@ -493,7 +493,7 @@ describe('loadRegisterAndUser', function () {
 
         $response = $this->actingAs($userWithoutRole)->getJson('/api/homepage/register/load_register_and_user');
 
-        $response->assertStatus(403);
+        $response->assertForbidden();
     });
 
     it('loads register and user data for authenticated register user', function () {
@@ -504,7 +504,7 @@ describe('loadRegisterAndUser', function () {
 });
 
 describe('book', function () {
-    it('returns 403 when user is not authenticated', function () {
+    it('returns 401 when user is not authenticated', function () {
         $data = [
             'data' => [
                 'register_id' => $this->register->id,
@@ -516,7 +516,7 @@ describe('book', function () {
 
         $response = $this->postJson('/api/homepage/register/book', $data);
 
-        $response->assertStatus(403);
+        $response->assertUnauthorized();
     });
 
     it('returns 403 when user does not have register_user role', function () {
@@ -534,7 +534,7 @@ describe('book', function () {
 
         $response = $this->actingAs($userWithoutRole)->postJson('/api/homepage/register/book', $data);
 
-        $response->assertStatus(403);
+        $response->assertForbidden();
     });
 
     it('creates booking for authenticated register user', function () {
@@ -621,7 +621,7 @@ describe('book', function () {
 });
 
 describe('deleteBooking', function () {
-    it('returns 403 when user is not authenticated', function () {
+    it('returns 401 when user is not authenticated', function () {
         $booking = RegisterDateBooking::create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
@@ -636,7 +636,7 @@ describe('deleteBooking', function () {
             'booking_id' => $booking->id,
         ]);
 
-        $response->assertStatus(403);
+        $response->assertUnauthorized();
     });
 
     it('returns 403 when user does not have register_user role', function () {
@@ -680,6 +680,34 @@ describe('deleteBooking', function () {
 
         $this->assertDatabaseMissing('register_date_bookings', [
             'id' => $booking->id,
+        ]);
+    });
+
+    it('does not delete another users booking', function () {
+        $otherUser = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'register_id' => $this->register->id,
+        ]);
+        $booking = RegisterDateBooking::create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'register_id' => $this->register->id,
+            'register_date_id' => $this->registerDate->id,
+            'user_id' => $otherUser->id,
+            'student_last_name' => 'Other',
+            'student_first_name' => 'Student',
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson('/api/homepage/register/delete_booking', [
+                'booking_id' => $booking->id,
+            ])
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('register_date_bookings', [
+            'id' => $booking->id,
+            'user_id' => $otherUser->id,
         ]);
     });
 

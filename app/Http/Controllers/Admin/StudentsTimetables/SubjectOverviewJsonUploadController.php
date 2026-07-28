@@ -191,7 +191,7 @@ class SubjectOverviewJsonUploadController extends Controller
         ]);
     }
 
-    public function upload(FileUploadService $fileUploadService): Response
+    public function upload(Request $request, FileUploadService $fileUploadService): Response
     {
         if (! $this->userHasRole(self::ADMIN_ROLES)) {
             abort(403, 'Sie haben keine Berechtigung.');
@@ -199,7 +199,7 @@ class SubjectOverviewJsonUploadController extends Controller
 
         $this->ensureJson();
 
-        $id = $fileUploadService->upload();
+        $id = $fileUploadService->upload($request, 'subject-import');
 
         return response($id, 200)->header('Content-Type', 'text/plain');
     }
@@ -217,7 +217,12 @@ class SubjectOverviewJsonUploadController extends Controller
         $uploadPath = $this->storageDirectory($authUser->school_id, $authUser->schoolyear_id);
         $storedName = $this->storedFilename($request->header('Upload-Name'));
 
-        $result = $fileUploadService->uploadNext($request, $uploadPath, $storedName);
+        $result = $fileUploadService->uploadNext(
+            $request,
+            $uploadPath,
+            $storedName,
+            profile: 'subject-import',
+        );
 
         if ($result instanceof Response) {
             return $result;

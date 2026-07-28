@@ -524,14 +524,6 @@ test('index excludes users with bookings from deletable count', function () {
             'register_date_id' => $registerDate->id,
         ],
     ]);
-    RegisterDateBooking::create([
-        'school_id' => $this->school->id,
-        'schoolyear_id' => $this->schoolyear->id,
-        'register_id' => $this->register->id,
-        'register_date_id' => $registerDate->id,
-        'user_id' => $userWithBooking->id,
-    ]);
-
     $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
     ]));

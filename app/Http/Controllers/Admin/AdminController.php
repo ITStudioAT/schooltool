@@ -36,34 +36,13 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Process;
 use Lab404\Impersonate\Services\ImpersonateManager;
-use Throwable;
 
 class AdminController extends Controller
 {
     use HasRoleTrait;
 
-    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v8';
-
-    private const int VERSION_COMMAND_TIMEOUT_SECONDS = 1;
-
-    private const array WINDOWS_PROCESS_PATH_DIRECTORIES = [
-        'C:\\ProgramData\\ComposerSetup\\bin',
-        'C:\\Program Files\\nodejs',
-        'C:\\laragon\\bin\\composer',
-        'C:\\laragon\\bin\\nodejs',
-    ];
-
-    private const array UNIX_PROCESS_PATH_DIRECTORIES = [
-        '/usr/local/bin',
-        '/usr/local/sbin',
-        '/usr/bin',
-        '/usr/sbin',
-        '/bin',
-        '/sbin',
-        '/home/master/bin',
-    ];
+    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v9';
 
     private const array STUDENTS_TIMETABLES_ROLES = [
         'super_admin',
@@ -186,147 +165,13 @@ class AdminController extends Controller
             'app' => config('schooltool.version', 'x.x.x'),
             'laravel' => app()->version(),
             'php' => PHP_VERSION,
-            'composer' => $this->composerVersion(),
-            'npm' => $this->nodeToolVersion('npm', ['C:\\Program Files\\nodejs\\npm.cmd']),
-            'node' => $this->nodeToolVersion('node', ['C:\\Program Files\\nodejs\\node.exe'], ['nodejs']),
+            'composer' => config('schooltool.environment_versions.composer'),
+            'npm' => config('schooltool.environment_versions.npm'),
+            'node' => config('schooltool.environment_versions.node'),
             'vue' => $this->packageLockVersion('vue'),
             'vuetify' => $this->packageLockVersion('vuetify'),
             'vite' => $this->packageLockVersion('vite'),
         ]);
-    }
-
-    private function composerVersion(): ?string
-    {
-        $pattern = '/Composer(?: version)?\s+(?<version>\d+(?:\.\d+)+)/';
-
-        return $this->firstCommandVersion([
-            ...$this->binaryCommandCandidates(['composer', 'composer2'], ['--version', '--no-ansi'], [
-                'C:\\ProgramData\\ComposerSetup\\bin\\composer.bat',
-            ]),
-        ], $pattern);
-    }
-
-    /**
-     * @param  array<int, string>  $windowsBinaries
-     * @param  array<int, string>  $aliases
-     */
-    private function nodeToolVersion(string $binary, array $windowsBinaries, array $aliases = []): ?string
-    {
-        return $this->firstCommandVersion($this->binaryCommandCandidates([$binary, ...$aliases], ['--version'], $windowsBinaries));
-    }
-
-    /**
-     * @param  array<int, string>  $binaryNames
-     * @param  array<int, string>  $arguments
-     * @param  array<int, string>  $windowsBinaries
-     * @return array<int, array<int, string>|string>
-     */
-    private function binaryCommandCandidates(array $binaryNames, array $arguments, array $windowsBinaries = []): array
-    {
-        $commands = [];
-
-        foreach ($binaryNames as $binaryName) {
-            $commands[] = [$binaryName, ...$arguments];
-
-            if (PHP_OS_FAMILY === 'Windows') {
-                $commands[] = $this->windowsShellCommand($binaryName, $arguments);
-                $commands[] = ["{$binaryName}.cmd", ...$arguments];
-                $commands[] = $this->windowsShellCommand("{$binaryName}.cmd", $arguments);
-            }
-        }
-
-        if (PHP_OS_FAMILY !== 'Windows') {
-            foreach ($binaryNames as $binaryName) {
-                foreach ($this->processPathDirectories() as $directory) {
-                    $path = rtrim($directory, '/').'/'.$binaryName;
-                    if (is_file($path) && is_executable($path)) {
-                        $commands[] = [$path, ...$arguments];
-                    }
-                }
-            }
-        }
-
-        foreach ($windowsBinaries as $windowsBinary) {
-            array_push($commands, ...$this->windowsCommandCandidates($windowsBinary, $arguments));
-        }
-
-        return collect($commands)
-            ->unique(fn (array|string $command): string => is_array($command) ? implode("\0", $command) : $command)
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @param  array<int, array<int, string>|string>  $commands
-     */
-    private function firstCommandVersion(array $commands, ?string $pattern = null): ?string
-    {
-        foreach ($commands as $command) {
-            $version = $this->commandVersion($command, $pattern);
-
-            if ($version !== null) {
-                return $version;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param  array<int, string>|string  $command
-     */
-    private function commandVersion(array|string $command, ?string $pattern = null): ?string
-    {
-        try {
-            $result = Process::timeout(self::VERSION_COMMAND_TIMEOUT_SECONDS)
-                ->path(base_path())
-                ->env($this->processEnvironment())
-                ->run($command);
-
-            if (! $result->successful()) {
-                return null;
-            }
-
-            $output = trim($result->output() ?: $result->errorOutput());
-            if ($output === '') {
-                return null;
-            }
-
-            $firstLine = trim(strtok($output, "\r\n") ?: $output);
-            if ($pattern && preg_match($pattern, $firstLine, $matches)) {
-                return $matches['version'] ?? $matches[1] ?? $firstLine;
-            }
-
-            return $firstLine;
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
-    /**
-     * @param  array<int, string>  $arguments
-     * @return array<int, array<int, string>|string>
-     */
-    private function windowsCommandCandidates(string $binary, array $arguments): array
-    {
-        if (PHP_OS_FAMILY !== 'Windows') {
-            return [];
-        }
-
-        return [
-            [$binary, ...$arguments],
-            $this->windowsShellCommand($binary, $arguments),
-        ];
-    }
-
-    /**
-     * @param  array<int, string>  $arguments
-     */
-    private function windowsShellCommand(string $binary, array $arguments): string
-    {
-        return collect([$binary, ...$arguments])
-            ->map(fn (string $argument): string => str_contains($argument, ' ') ? "\"{$argument}\"" : $argument)
-            ->implode(' ');
     }
 
     private function packageLockVersion(string $package): ?string
@@ -351,100 +196,6 @@ class AdminController extends Controller
         return is_array($packageData) && isset($packageData['version'])
             ? (string) $packageData['version']
             : null;
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function processEnvironment(): array
-    {
-        $path = collect([
-            getenv('PATH') ?: '',
-            getenv('Path') ?: '',
-            ...$this->processPathDirectories(),
-        ])
-            ->flatMap(fn (string $path): array => explode(PATH_SEPARATOR, $path))
-            ->map(fn (string $path): string => trim($path))
-            ->filter()
-            ->unique(fn (string $path): string => strtolower($path))
-            ->implode(PATH_SEPARATOR);
-
-        if ($path === '') {
-            return [];
-        }
-
-        return [
-            'PATH' => $path,
-            'Path' => $path,
-        ];
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function processPathDirectories(): array
-    {
-        if (PHP_OS_FAMILY === 'Windows') {
-            return $this->windowsProcessPathDirectories();
-        }
-
-        $home = trim((string) (getenv('HOME') ?: ($_SERVER['HOME'] ?? '')));
-        $homeDirectories = $home !== '' ? [
-            "{$home}/bin",
-            "{$home}/.local/bin",
-            "{$home}/.composer/vendor/bin",
-            "{$home}/.config/composer/vendor/bin",
-            "{$home}/.nvm/current/bin",
-        ] : [];
-
-        return collect([
-            ...self::UNIX_PROCESS_PATH_DIRECTORIES,
-            ...$homeDirectories,
-            ...$this->nvmVersionDirectories($home),
-        ])
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function windowsProcessPathDirectories(): array
-    {
-        $appData = trim((string) (getenv('APPDATA') ?: ($_SERVER['APPDATA'] ?? '')));
-        $localAppData = trim((string) (getenv('LOCALAPPDATA') ?: ($_SERVER['LOCALAPPDATA'] ?? '')));
-
-        $userDirectories = [
-            $appData !== '' ? "{$appData}\\npm" : null,
-            $localAppData !== '' ? "{$localAppData}\\Programs\\nodejs" : null,
-            $localAppData !== '' ? "{$localAppData}\\nvm" : null,
-            $localAppData !== '' ? "{$localAppData}\\fnm_multishells" : null,
-        ];
-
-        return collect([
-            ...self::WINDOWS_PROCESS_PATH_DIRECTORIES,
-            ...$userDirectories,
-        ])
-            ->filter()
-            ->unique(fn (string $path): string => strtolower($path))
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function nvmVersionDirectories(string $home): array
-    {
-        if ($home === '') {
-            return [];
-        }
-
-        $directories = glob("{$home}/.nvm/versions/node/*/bin");
-
-        return is_array($directories) ? $directories : [];
     }
 
     private function canLoadSchoolInfos(User $user): bool

@@ -9,8 +9,10 @@ use App\Models\SchoolTool;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use App\Rules\Iban;
+use App\Support\SafeHtml;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -18,7 +20,8 @@ use Illuminate\Validation\ValidationException;
 class RestaurantSepaMandateService
 {
     public function __construct(
-        private RestaurantSepaMandatePdfService $pdfService
+        private RestaurantSepaMandatePdfService $pdfService,
+        private SafeHtml $safeHtml,
     ) {}
 
     /**
@@ -26,18 +29,50 @@ class RestaurantSepaMandateService
      */
     public function bootstrapFlow(User $user, string $entryPoint = 'login'): ?array
     {
-        if (! $this->requiresMandate($user)) {
-            return null;
+        $flow = DB::transaction(function () use ($entryPoint, $user): ?array {
+            $lockedUser = User::query()
+                ->whereKey($user->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (! $this->requiresMandate($lockedUser)) {
+                return null;
+            }
+
+            $mandate = $this->activeMandateForUser($lockedUser)
+                ?? $this->createDraftMandate($lockedUser, $entryPoint);
+
+            if (! $mandate->entry_point) {
+                $mandate->entry_point = $entryPoint;
+                $mandate->save();
+            }
+
+            return $this->serializeMandate($mandate);
+        }, attempts: 3);
+
+        if ($flow !== null) {
+            session()->put(
+                'restaurant.sepa_flow_bindings.'.(string) $flow['flow_uuid'],
+                (int) $user->id,
+            );
         }
 
-        $mandate = $this->activeMandateForUser($user) ?? $this->createDraftMandate($user, $entryPoint);
+        return $flow;
+    }
 
-        if (! $mandate->entry_point) {
-            $mandate->entry_point = $entryPoint;
-            $mandate->save();
+    public function actorForFlow(?User $authenticatedUser, string $flowUuid): User
+    {
+        if ($authenticatedUser instanceof User) {
+            return $authenticatedUser;
         }
 
-        return $this->serializeMandate($mandate);
+        $boundUserId = session()->get('restaurant.sepa_flow_bindings.'.$flowUuid);
+
+        if (! is_numeric($boundUserId)) {
+            abort(401);
+        }
+
+        return User::query()->findOrFail((int) $boundUserId);
     }
 
     public function requiresMandate(User $user): bool
@@ -67,21 +102,13 @@ class RestaurantSepaMandateService
      * }  $data
      * @return array<string, mixed>
      */
-    public function submitMandate(array $data, string $ipAddress): array
+    public function submitMandate(User $actor, array $data, string $ipAddress): array
     {
-        $mandate = $this->mandateByFlowUuid((string) $data['flow_uuid']);
-
-        if ($mandate->completed_at) {
-            return $this->serializeMandate($mandate);
-        }
-
         $children = collect($data['child_entries'])
-            ->map(function (array $entry): array {
-                return [
-                    'name' => trim((string) ($entry['name'] ?? '')),
-                    'schoolclass' => trim((string) ($entry['schoolclass'] ?? '')),
-                ];
-            })
+            ->map(fn (array $entry): array => [
+                'name' => trim((string) ($entry['name'] ?? '')),
+                'schoolclass' => trim((string) ($entry['schoolclass'] ?? '')),
+            ])
             ->filter(fn (array $entry): bool => $entry['name'] !== '' || $entry['schoolclass'] !== '')
             ->values()
             ->all();
@@ -92,31 +119,45 @@ class RestaurantSepaMandateService
             ]);
         }
 
-        $schoolSettings = $this->schoolSettingsForUser($mandate->user);
+        [$mandate, $confirmationCode] = DB::transaction(function () use ($actor, $children, $data, $ipAddress): array {
+            $this->lockActor($actor);
+            $mandate = $this->mandateByFlowUuid($actor, (string) $data['flow_uuid'], lockForUpdate: true);
 
-        $mandate->fill([
-            'status' => 'pending_code',
-            'account_holder_name' => trim((string) $data['account_holder_name']),
-            'address_line' => trim((string) $data['address_line']),
-            'postal_code' => trim((string) $data['postal_code']),
-            'city' => trim((string) $data['city']),
-            'country' => trim((string) $data['country']),
-            'iban' => $this->normalizeIban((string) $data['iban']),
-            'bic' => $this->normalizeNullableString($data['bic'] ?? null),
-            'child_entries' => $children,
-            'sepa_payee_snapshot' => $schoolSettings['sepa_payee'],
-            'sepa_mandate_text_snapshot' => $schoolSettings['sepa_mandate_text'],
-            'accepted_at' => now(),
-            'accepted_ip' => $ipAddress,
-        ]);
-        $mandate->save();
+            $this->requireState($mandate, 'draft', 'Das SEPA-Lastschriftmandat wurde bereits übermittelt.');
 
-        $this->issueConfirmationCode($mandate, $ipAddress);
+            $schoolSettings = $this->schoolSettingsForUser($mandate->user);
+            $confirmationCode = $this->generateConfirmationCode();
+
+            $mandate->fill([
+                'status' => 'pending_code',
+                'account_holder_name' => trim((string) $data['account_holder_name']),
+                'address_line' => trim((string) $data['address_line']),
+                'postal_code' => trim((string) $data['postal_code']),
+                'city' => trim((string) $data['city']),
+                'country' => trim((string) $data['country']),
+                'iban' => $this->normalizeIban((string) $data['iban']),
+                'bic' => $this->normalizeNullableString($data['bic'] ?? null),
+                'child_entries' => $children,
+                'sepa_payee_snapshot' => $schoolSettings['sepa_payee'],
+                'sepa_mandate_text_snapshot' => $schoolSettings['sepa_mandate_text'],
+                'accepted_at' => now(),
+                'accepted_ip' => $ipAddress,
+                'confirmation_code' => Hash::make($confirmationCode),
+                'confirmation_code_expires_at' => now()->addMinutes($this->confirmationTtlMinutes()),
+                'code_sent_at' => now(),
+                'code_sent_ip' => $ipAddress,
+            ]);
+            $mandate->save();
+
+            return [$mandate->fresh(['user.selectedSchool']), $confirmationCode];
+        }, attempts: 3);
+
+        $this->sendConfirmationCode($mandate, $confirmationCode);
 
         return [
             'status' => 'CODE_SENT',
             'message' => 'Wir haben einen 6-stelligen Bestätigungscode an Ihre E-Mail-Adresse gesendet.',
-            'flow' => $this->serializeMandate($mandate->fresh()),
+            'flow' => $this->serializeMandate($mandate),
         ];
     }
 
@@ -124,34 +165,25 @@ class RestaurantSepaMandateService
      * @param  array{flow_uuid:string, code:string}  $data
      * @return array<string, mixed>
      */
-    public function confirmCode(array $data, string $ipAddress): array
+    public function confirmCode(User $actor, array $data, string $ipAddress): array
     {
-        $mandate = $this->mandateByFlowUuid((string) $data['flow_uuid']);
+        $mandate = DB::transaction(function () use ($actor, $data, $ipAddress): RestaurantSepaMandate {
+            $lockedUser = $this->lockActor($actor);
+            $mandate = $this->mandateByFlowUuid($actor, (string) $data['flow_uuid'], lockForUpdate: true);
 
-        if ($mandate->confirmed_at) {
-            return [
-                'status' => 'CONFIRMED',
-                'message' => 'Das SEPA-Lastschriftmandat wurde bereits bestätigt.',
-                'flow' => $this->serializeMandate($mandate),
-            ];
-        }
+            $this->requireState($mandate, 'pending_code', 'Der Bestätigungsschritt ist nicht mehr aktiv.');
 
-        $expectedCode = trim((string) ($mandate->confirmation_code ?? ''));
-        $providedCode = trim((string) $data['code']);
+            $expectedCodeHash = trim((string) ($mandate->confirmation_code ?? ''));
+            $providedCode = trim((string) $data['code']);
 
-        if ($expectedCode === '' || $providedCode !== $expectedCode) {
-            throw ValidationException::withMessages([
-                'data.code' => 'Der Code ist falsch oder abgelaufen.',
-            ]);
-        }
+            if ($expectedCodeHash === '' || ! Hash::check($providedCode, $expectedCodeHash)) {
+                $this->throwInvalidConfirmationCode();
+            }
 
-        if (! $mandate->confirmation_code_expires_at || now()->greaterThan($mandate->confirmation_code_expires_at)) {
-            throw ValidationException::withMessages([
-                'data.code' => 'Der Code ist falsch oder abgelaufen.',
-            ]);
-        }
+            if (! $mandate->confirmation_code_expires_at || now()->greaterThan($mandate->confirmation_code_expires_at)) {
+                $this->throwInvalidConfirmationCode();
+            }
 
-        DB::transaction(function () use ($mandate, $ipAddress): void {
             $mandate->status = 'confirmed';
             $mandate->confirmed_at = now();
             $mandate->confirmed_ip = $ipAddress;
@@ -159,17 +191,18 @@ class RestaurantSepaMandateService
             $mandate->confirmation_code_expires_at = null;
             $mandate->save();
 
-            $user = $mandate->user()->lockForUpdate()->firstOrFail();
-            $user->sepa_at = $user->sepa_at ?? now();
-            $user->save();
-        });
+            $lockedUser->sepa_at = $lockedUser->sepa_at ?? now();
+            $lockedUser->save();
 
-        $this->sendConfirmedMandatePdf($mandate->fresh(['user.selectedSchool']));
+            return $mandate->fresh(['user.selectedSchool']);
+        }, attempts: 3);
+
+        $this->sendConfirmedMandatePdf($mandate);
 
         return [
             'status' => 'CONFIRMED',
             'message' => 'Das SEPA-Lastschriftmandat wurde online bestätigt.',
-            'flow' => $this->serializeMandate($mandate->fresh()),
+            'flow' => $this->serializeMandate($mandate),
         ];
     }
 
@@ -177,38 +210,36 @@ class RestaurantSepaMandateService
      * @param  array{flow_uuid:string}  $data
      * @return array<string, mixed>
      */
-    public function resendCode(array $data, string $ipAddress): array
+    public function resendCode(User $actor, array $data, string $ipAddress): array
     {
-        $mandate = $this->mandateByFlowUuid((string) $data['flow_uuid']);
+        [$mandate, $confirmationCode] = DB::transaction(function () use ($actor, $data, $ipAddress): array {
+            $this->lockActor($actor);
+            $mandate = $this->mandateByFlowUuid($actor, (string) $data['flow_uuid'], lockForUpdate: true);
 
-        if ($mandate->completed_at) {
-            return [
-                'status' => 'COMPLETED',
-                'message' => 'Das SEPA-Lastschriftmandat wurde bereits gespeichert.',
-                'flow' => $this->serializeMandate($mandate),
-            ];
-        }
+            $this->requireState(
+                $mandate,
+                'pending_code',
+                'Der Bestätigungscode kann nur im Bestätigungsschritt erneut gesendet werden.',
+            );
 
-        if ($mandate->confirmed_at) {
-            return [
-                'status' => 'CONFIRMED',
-                'message' => 'Das SEPA-Lastschriftmandat wurde bereits bestätigt.',
-                'flow' => $this->serializeMandate($mandate),
-            ];
-        }
-
-        if ($mandate->status !== 'pending_code') {
-            throw ValidationException::withMessages([
-                'data.flow_uuid' => 'Der Bestätigungscode kann nur im Bestätigungsschritt erneut gesendet werden.',
+            $confirmationCode = $this->generateConfirmationCode();
+            $mandate->fill([
+                'confirmation_code' => Hash::make($confirmationCode),
+                'confirmation_code_expires_at' => now()->addMinutes($this->confirmationTtlMinutes()),
+                'code_sent_at' => now(),
+                'code_sent_ip' => $ipAddress,
             ]);
-        }
+            $mandate->save();
 
-        $this->issueConfirmationCode($mandate, $ipAddress);
+            return [$mandate->fresh(['user.selectedSchool']), $confirmationCode];
+        }, attempts: 3);
+
+        $this->sendConfirmationCode($mandate, $confirmationCode);
 
         return [
             'status' => 'CODE_SENT',
             'message' => 'Wir haben einen neuen 6-stelligen Bestätigungscode an Ihre E-Mail-Adresse gesendet.',
-            'flow' => $this->serializeMandate($mandate->fresh()),
+            'flow' => $this->serializeMandate($mandate),
         ];
     }
 
@@ -216,23 +247,32 @@ class RestaurantSepaMandateService
      * @param  array{flow_uuid:string}  $data
      * @return array<string, mixed>
      */
-    public function completeFlow(array $data, string $ipAddress): array
+    public function completeFlow(User $actor, array $data, string $ipAddress): array
     {
-        $mandate = $this->mandateByFlowUuid((string) $data['flow_uuid']);
+        $mandate = DB::transaction(function () use ($actor, $data, $ipAddress): RestaurantSepaMandate {
+            $this->lockActor($actor);
+            $mandate = $this->mandateByFlowUuid($actor, (string) $data['flow_uuid'], lockForUpdate: true);
 
-        if (! $mandate->confirmed_at) {
-            throw ValidationException::withMessages([
-                'data.flow_uuid' => 'Das SEPA-Lastschriftmandat muss zuerst bestätigt werden.',
-            ]);
-        }
+            $this->requireState($mandate, 'confirmed', 'Das SEPA-Lastschriftmandat ist nicht abschließbar.');
 
-        $mandate->status = 'completed';
-        $mandate->completed_at = $mandate->completed_at ?? now();
-        $mandate->completed_ip = $mandate->completed_ip ?? $ipAddress;
-        $mandate->save();
+            if (! $mandate->confirmed_at) {
+                throw ValidationException::withMessages([
+                    'data.flow_uuid' => 'Das SEPA-Lastschriftmandat muss zuerst bestätigt werden.',
+                ]);
+            }
 
-        $user = $mandate->user()->firstOrFail();
+            $mandate->status = 'completed';
+            $mandate->completed_at = now();
+            $mandate->completed_ip = $ipAddress;
+            $mandate->save();
+
+            return $mandate->fresh(['user.selectedSchool', 'user.roles']);
+        }, attempts: 3);
+
+        $user = $mandate->user;
         $loggedIn = false;
+
+        session()->forget('restaurant.sepa_flow_bindings.'.$mandate->flow_uuid);
 
         if ($user->hasRole('lunch_user')) {
             $user->rememberLogin();
@@ -248,7 +288,7 @@ class RestaurantSepaMandateService
             'message' => $loggedIn
                 ? 'Das SEPA-Lastschriftmandat wurde gespeichert. Sie sind jetzt angemeldet.'
                 : 'Das SEPA-Lastschriftmandat wurde gespeichert. Die Freischaltung für das Restaurant ist noch ausständig.',
-            'flow' => $this->serializeMandate($mandate->fresh()),
+            'flow' => $this->serializeMandate($mandate),
         ];
     }
 
@@ -261,8 +301,8 @@ class RestaurantSepaMandateService
 
         return [
             'sepa_online_enabled' => (bool) ($schoolTool?->restaurant_sepa_online_enabled ?? false),
-            'sepa_payee' => trim((string) ($schoolTool?->restaurant_sepa_payee ?? '')),
-            'sepa_mandate_text' => trim((string) ($schoolTool?->restaurant_sepa_mandate_text ?? '')),
+            'sepa_payee' => $this->safeHtml->sanitize((string) ($schoolTool?->restaurant_sepa_payee ?? '')),
+            'sepa_mandate_text' => $this->safeHtml->sanitize((string) ($schoolTool?->restaurant_sepa_mandate_text ?? '')),
         ];
     }
 
@@ -279,6 +319,7 @@ class RestaurantSepaMandateService
             ->where('user_id', $user->id)
             ->whereNull('completed_at')
             ->latest('id')
+            ->lockForUpdate()
             ->first();
     }
 
@@ -315,15 +356,13 @@ class RestaurantSepaMandateService
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->get(['first_name', 'last_name', 'class'])
-            ->map(function (Import116 $child): array {
-                return [
-                    'name' => trim(implode(' ', array_filter([
-                        trim((string) $child->first_name),
-                        trim((string) $child->last_name),
-                    ]))),
-                    'schoolclass' => trim((string) ($child->class ?? '')),
-                ];
-            })
+            ->map(fn (Import116 $child): array => [
+                'name' => trim(implode(' ', array_filter([
+                    trim((string) $child->first_name),
+                    trim((string) $child->last_name),
+                ]))),
+                'schoolclass' => trim((string) ($child->class ?? '')),
+            ])
             ->filter(fn (array $entry): bool => $entry['name'] !== '' || $entry['schoolclass'] !== '')
             ->values()
             ->all();
@@ -353,8 +392,8 @@ class RestaurantSepaMandateService
             ->first();
 
         return [
-            'sepa_payee' => trim((string) ($schoolTool?->restaurant_sepa_payee ?? '')),
-            'sepa_mandate_text' => trim((string) ($schoolTool?->restaurant_sepa_mandate_text ?? '')),
+            'sepa_payee' => $this->safeHtml->sanitize((string) ($schoolTool?->restaurant_sepa_payee ?? '')),
+            'sepa_mandate_text' => $this->safeHtml->sanitize((string) ($schoolTool?->restaurant_sepa_mandate_text ?? '')),
         ];
     }
 
@@ -386,11 +425,15 @@ class RestaurantSepaMandateService
             'postal_code' => trim((string) ($mandate->postal_code ?? '')),
             'city' => trim((string) ($mandate->city ?? '')),
             'country' => trim((string) ($mandate->country ?? 'Österreich')) ?: 'Österreich',
-            'iban' => trim((string) ($mandate->iban ?? '')),
-            'bic' => trim((string) ($mandate->bic ?? '')),
+            'iban' => $this->redactIban((string) ($mandate->iban ?? '')),
+            'bic' => $this->redactBic((string) ($mandate->bic ?? '')),
             'child_entries' => $children,
-            'sepa_payee' => $mandate->sepa_payee_snapshot ?: $settings['sepa_payee'],
-            'sepa_mandate_text' => $mandate->sepa_mandate_text_snapshot ?: $settings['sepa_mandate_text'],
+            'sepa_payee' => $this->safeHtml->sanitize(
+                (string) ($mandate->sepa_payee_snapshot ?: $settings['sepa_payee']),
+            ),
+            'sepa_mandate_text' => $this->safeHtml->sanitize(
+                (string) ($mandate->sepa_mandate_text_snapshot ?: $settings['sepa_mandate_text']),
+            ),
             'accepted_at' => $mandate->accepted_at?->toIso8601String(),
             'confirmed_at' => $mandate->confirmed_at?->toIso8601String(),
             'completed_at' => $mandate->completed_at?->toIso8601String(),
@@ -398,35 +441,52 @@ class RestaurantSepaMandateService
         ];
     }
 
-    private function mandateByFlowUuid(string $flowUuid): RestaurantSepaMandate
-    {
-        return RestaurantSepaMandate::query()
+    private function mandateByFlowUuid(
+        User $actor,
+        string $flowUuid,
+        bool $lockForUpdate = false,
+    ): RestaurantSepaMandate {
+        $query = RestaurantSepaMandate::query()
             ->with('user.selectedSchool')
-            ->where('flow_uuid', $flowUuid)
+            ->where('user_id', $actor->id)
+            ->where('flow_uuid', $flowUuid);
+
+        if ($lockForUpdate) {
+            $query->lockForUpdate();
+        }
+
+        return $query->firstOrFail();
+    }
+
+    private function lockActor(User $actor): User
+    {
+        return User::query()
+            ->whereKey($actor->id)
+            ->lockForUpdate()
             ->firstOrFail();
+    }
+
+    private function requireState(RestaurantSepaMandate $mandate, string $expectedState, string $message): void
+    {
+        if ($mandate->status === $expectedState) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'data.flow_uuid' => $message,
+        ]);
+    }
+
+    private function throwInvalidConfirmationCode(): never
+    {
+        throw ValidationException::withMessages([
+            'data.code' => 'Der Code ist falsch oder abgelaufen.',
+        ]);
     }
 
     private function generateConfirmationCode(): string
     {
         return (string) random_int(100000, 999999);
-    }
-
-    private function issueConfirmationCode(RestaurantSepaMandate $mandate, string $ipAddress): string
-    {
-        $confirmationCode = $this->generateConfirmationCode();
-
-        $mandate->fill([
-            'status' => 'pending_code',
-            'confirmation_code' => $confirmationCode,
-            'confirmation_code_expires_at' => now()->addMinutes($this->confirmationTtlMinutes()),
-            'code_sent_at' => now(),
-            'code_sent_ip' => $ipAddress,
-        ]);
-        $mandate->save();
-
-        $this->sendConfirmationCode($mandate, $confirmationCode);
-
-        return $confirmationCode;
     }
 
     private function confirmationTtlMinutes(): int
@@ -439,15 +499,16 @@ class RestaurantSepaMandateService
         $user = $mandate->user;
         $school = $user->selectedSchool ?: School::query()->find($user->school_id);
 
-        Notification::route('mail', EmailAliasResolver::resolveConfigured((string) $user->email))->notify(new StandardEmail([
-            'from_address' => config('schooltool.noreply_email'),
-            'from_name' => $school?->long_name ?: config('app.name'),
-            'logo' => $school?->logo ? asset('/storage/images/'.$school->logo) : null,
-            'subject' => 'Code zur SEPA-Bestätigung',
-            'markdown' => 'mails.homepage.sendCode',
-            'token_2fa' => $confirmationCode,
-            'token-expire-time' => $this->confirmationTtlMinutes(),
-        ]));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured((string) $user->email))
+            ->notify(new StandardEmail([
+                'from_address' => config('schooltool.noreply_email'),
+                'from_name' => $school?->long_name ?: config('app.name'),
+                'logo' => $school?->logo ? asset('/storage/images/'.$school->logo) : null,
+                'subject' => 'Code zur SEPA-Bestätigung',
+                'markdown' => 'mails.homepage.sendCode',
+                'token_2fa' => $confirmationCode,
+                'token-expire-time' => $this->confirmationTtlMinutes(),
+            ]));
     }
 
     private function sendConfirmedMandatePdf(RestaurantSepaMandate $mandate): void
@@ -466,11 +527,16 @@ class RestaurantSepaMandateService
             return;
         }
 
-        $pdfPath = $this->pdfService->createPdf($mandate);
+        $attachment = [
+            'data' => $this->pdfService->createPdfContent($mandate),
+            'name' => "sepa_lastschriftmandat_{$mandate->flow_uuid}.pdf",
+            'options' => ['mime' => 'application/pdf'],
+        ];
         $mailData = $this->confirmedSepaMandateMailData($mandate);
 
-        $recipientEmails->each(function (string $email) use ($mailData, $pdfPath): void {
-            Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail($mailData, $pdfPath));
+        $recipientEmails->each(function (string $email) use ($attachment, $mailData): void {
+            Notification::route('mail', EmailAliasResolver::resolveConfigured($email))
+                ->notify(new StandardEmail($mailData, $attachment));
         });
     }
 
@@ -507,5 +573,27 @@ class RestaurantSepaMandateService
         $normalized = trim((string) ($value ?? ''));
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    private function redactIban(string $iban): string
+    {
+        $normalized = $this->normalizeNullableString($iban);
+
+        if ($normalized === null) {
+            return '';
+        }
+
+        return Str::mask($normalized, '*', 4, max(0, strlen($normalized) - 8));
+    }
+
+    private function redactBic(string $bic): string
+    {
+        $normalized = $this->normalizeNullableString($bic);
+
+        if ($normalized === null) {
+            return '';
+        }
+
+        return Str::mask($normalized, '*', 0, max(0, strlen($normalized) - 4));
     }
 }

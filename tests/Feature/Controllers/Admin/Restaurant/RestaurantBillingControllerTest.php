@@ -21,6 +21,8 @@ beforeEach(function () {
     });
 
     $this->school = School::factory()->create();
+    enableSchoolToolModuleForTests($this->school, 'restaurant');
+    grantSchoolToolLicenceForTests($this->school, 'Restaurant');
     $this->otherSchool = School::factory()->create();
 
     $this->admin = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => null]);

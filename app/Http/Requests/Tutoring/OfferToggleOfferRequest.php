@@ -2,9 +2,10 @@
 
 namespace App\Http\Requests\Tutoring;
 
+use App\Models\TutoringOffer;
+use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\Auth;
 
 class OfferToggleOfferRequest extends FormRequest
 {
@@ -13,7 +14,12 @@ class OfferToggleOfferRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return Auth::check();
+        $user = $this->user();
+        $offer = TutoringOffer::query()->find($this->integer('id'));
+
+        return $user instanceof User
+            && $offer instanceof TutoringOffer
+            && $user->can('update', $offer);
     }
 
     /**

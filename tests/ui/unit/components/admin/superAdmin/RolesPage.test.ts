@@ -38,12 +38,12 @@ const vuetifyStubs = {
     'v-switch': {
         props: ['modelValue', 'label'],
         emits: ['update:modelValue'],
-        template: '<label><button type="button" @click="$emit(\'update:modelValue\', !modelValue)">{{ label }}</button></label>',
+        template: '<label><button type="button" aria-label="Dashboard-Zugriff umschalten" @click="$emit(\'update:modelValue\', !modelValue)">{{ label }}</button></label>',
     },
     VSwitch: {
         props: ['modelValue', 'label'],
         emits: ['update:modelValue'],
-        template: '<label><button type="button" @click="$emit(\'update:modelValue\', !modelValue)">{{ label }}</button></label>',
+        template: '<label><button type="button" aria-label="Dashboard-Zugriff umschalten" @click="$emit(\'update:modelValue\', !modelValue)">{{ label }}</button></label>',
     },
 }
 
@@ -150,7 +150,7 @@ describe('Roles admin access flag UI', () => {
 
         const roleStore = useSuperAdminRoleStore()
 
-        await fireEvent.click(screen.getByText('Dashboard'))
+        await fireEvent.click(screen.getByRole('button', { name: 'Dashboard-Zugriff umschalten' }))
 
         expect(roleStore.update).toHaveBeenCalledWith({
             id: 1,

@@ -71,6 +71,7 @@ function buildContext() {
 
     ctx.normalizeTreeName = methods.normalizeTreeName.bind(ctx)
     ctx.normalizeLinkedPermission = methods.normalizeLinkedPermission.bind(ctx)
+    ctx.linkedPermissionAllowsFieldEditing = methods.linkedPermissionAllowsFieldEditing.bind(ctx)
     ctx.findUnitNodeById = methods.findUnitNodeById.bind(ctx)
     ctx.isUnitReadOnlyLinked = methods.isUnitReadOnlyLinked.bind(ctx)
     ctx.canEditUnitNode = methods.canEditUnitNode.bind(ctx)

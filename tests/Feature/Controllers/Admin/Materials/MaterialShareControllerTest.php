@@ -87,6 +87,7 @@ beforeEach(function () {
     ]));
 
     $this->school = School::factory()->create();
+    enableSchoolToolModuleForTests($this->school, 'materials');
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
     ]);
@@ -224,7 +225,6 @@ test('shares index denies regular user role', function () {
 
 test('inbox users aggregates creators who shared with current user', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
-    Auth::login($this->materialsAdmin);
 
     $creatorA = User::factory()->create([
         'school_id' => $this->school->id,
@@ -419,7 +419,6 @@ test('inbox users aggregates creators who shared with current user', function ()
 
 test('inbox users payload includes scope id for shared items', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
-    Auth::login($this->materialsAdmin);
 
     $creator = User::factory()->create([
         'school_id' => $this->school->id,
@@ -480,6 +479,11 @@ test('inbox users includes cross-school direct user shares', function () {
         'email' => 'guenther.kron@bildung.gv.at',
     ]);
     $recipient->assignRole('materials_admin');
+    MaterialWorkspace::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Mein Workspace',
+        'is_default' => true,
+    ]);
 
     $creator = User::factory()->create([
         'school_id' => $this->school->id,
@@ -2812,6 +2816,11 @@ test('can copy shared material as original into own workspace with taxonomy type
         'email' => 'guenther.kron@bildung.gv.at',
     ]);
     $recipient->assignRole('materials_admin');
+    MaterialWorkspace::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Mein Workspace',
+        'is_default' => true,
+    ]);
 
     $creator = User::factory()->create([
         'school_id' => $this->school->id,
@@ -5812,6 +5821,11 @@ test('copy as original keeps existing target type and status definitions', funct
         'email' => 'target@test.local',
     ]);
     $recipient->assignRole('materials_admin');
+    MaterialWorkspace::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Ziel',
+        'is_default' => true,
+    ]);
 
     $creator = User::factory()->create([
         'school_id' => $this->school->id,

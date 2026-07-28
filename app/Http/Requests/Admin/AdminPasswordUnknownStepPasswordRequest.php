@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin;
 
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rules\Password;
 
 class AdminPasswordUnknownStepPasswordRequest extends FormRequest
 {
@@ -28,7 +29,7 @@ class AdminPasswordUnknownStepPasswordRequest extends FormRequest
             'data.school_id' => 'required|integer|exists:schools,id',
             'data.token_2fa' => 'required|string|size:6',
             'data.token_2fa_2' => 'nullable|string|size:6',
-            'data.password' => 'required|string|min:8',
+            'data.password' => ['required', 'string', Password::default(), 'max:255'],
         ];
     }
 }

@@ -131,8 +131,18 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         Route::post('refuse-user', [TutoringController::class, 'refuseUser'])
             ->middleware('signed')
             ->name('homepage.tutoring.refuse-user.store');
-        Route::get('offer', [OfferController::class, 'offerConfirmRefuse']);
-        Route::get('offer_request', [OfferRequestController::class, 'offerRequest']);
+        Route::get('offer', [OfferController::class, 'offerConfirmRefusePrompt'])
+            ->middleware('signed')
+            ->name('homepage.tutoring.offer');
+        Route::post('offer', [OfferController::class, 'offerConfirmRefuse'])
+            ->middleware('signed')
+            ->name('homepage.tutoring.offer.store');
+        Route::get('offer_request', [OfferRequestController::class, 'offerRequestPrompt'])
+            ->middleware('signed')
+            ->name('homepage.tutoring.offer-request');
+        Route::post('offer_request', [OfferRequestController::class, 'offerRequest'])
+            ->middleware('signed')
+            ->name('homepage.tutoring.offer-request.store');
     });
 
     Route::prefix('homepage/restaurant')->group(function () {
