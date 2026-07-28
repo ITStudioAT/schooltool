@@ -1,4 +1,11 @@
 import { defineStore } from 'pinia'
+import {
+    destroy as destroyCourse,
+    index as coursesIndex,
+    show as showCourse,
+    store as storeCourse,
+    update as updateCourse,
+} from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingCourseController'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
@@ -36,6 +43,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             infos_show_grade_year: false,
             timetable_view_mode: 'table',
             courses_request_promise: null,
+            course_detail_request_promises: {},
         }
     },
 
@@ -137,7 +145,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
                 adminStore.is_loading++
                 try {
                     const selectedId = this.selected_course?.id
-                    const response = await axios.get(`/api/admin/teaching/courses`, {})
+                    const response = await axios.get(coursesIndex.url(), {})
                     this.courses = Array.isArray(response.data.data) ? response.data.data : []
                     this.courses.forEach((course) => this.ensureCourseStudentCollections(course))
                     this.classes = response.data.classes
@@ -171,6 +179,76 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             }
         },
 
+        async loadCourseDetails(courseId, { force = false } = {}) {
+            const normalizedCourseId = Number(courseId)
+            if (!Number.isInteger(normalizedCourseId) || normalizedCourseId <= 0) {
+                return null
+            }
+
+            const existingCourse = this.courses.find((course) => Number(course?.id) === normalizedCourseId) || null
+            if (!force && existingCourse?.details_loaded) {
+                return existingCourse
+            }
+
+            const requestKey = String(normalizedCourseId)
+            if (this.course_detail_request_promises[requestKey]) {
+                return this.course_detail_request_promises[requestKey]
+            }
+
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const requestPromise = (async () => {
+                adminStore.is_loading++
+                try {
+                    const response = await axios.get(showCourse.url(normalizedCourseId))
+                    const detailedCourse = response.data?.data || response.data
+                    if (!detailedCourse?.id) {
+                        return null
+                    }
+
+                    this.ensureCourseStudentCollections(detailedCourse)
+
+                    const courseIndex = this.courses.findIndex(
+                        (course) => Number(course?.id) === normalizedCourseId,
+                    )
+                    const mergedCourse = courseIndex >= 0
+                        ? { ...this.courses[courseIndex], ...detailedCourse }
+                        : detailedCourse
+
+                    if (courseIndex >= 0) {
+                        this.courses.splice(courseIndex, 1, mergedCourse)
+                    } else {
+                        this.courses.push(mergedCourse)
+                    }
+
+                    if (Number(this.selected_course?.id) === normalizedCourseId) {
+                        this.selected_course = mergedCourse
+                        this.selected_course_id = mergedCourse.id
+                    }
+
+                    return mergedCourse
+                } catch (error) {
+                    notification.notify({
+                        status: error.response?.status || 500,
+                        message: error.response?.data?.message || 'Fehler passiert.',
+                        type: 'error',
+                        timeout: 3000,
+                    })
+                    return null
+                } finally {
+                    adminStore.is_loading--
+                }
+            })()
+
+            this.course_detail_request_promises[requestKey] = requestPromise
+
+            try {
+                return await requestPromise
+            } finally {
+                delete this.course_detail_request_promises[requestKey]
+            }
+        },
+
         async refreshCourseById(courseId) {
             if (!courseId) {
                 this.selected_course = null
@@ -183,7 +261,14 @@ export const useCourseStore = defineStore('AdminCourseStore', {
                 return null
             }
 
-            const course = this.courses.find((c) => c.id === courseId) || null
+            const courseSummary = this.courses.find((course) => Number(course?.id) === Number(courseId)) || null
+            if (!courseSummary) {
+                this.selected_course = null
+                this.selected_course_id = null
+                return null
+            }
+
+            const course = await this.loadCourseDetails(courseId, { force: true })
             this.ensureCourseStudentCollections(course)
             this.selected_course = course
             this.selected_course_id = course?.id || null
@@ -207,7 +292,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             adminStore.is_loading++
             try {
                 this.ensureCourseStudentCollections(data)
-                const response = await axios.put(`/api/admin/teaching/courses/${data.id}`, data)
+                const response = await axios.put(updateCourse.url(data.id), data)
                 return response.data
             } catch (error) {
                 notification.notify({
@@ -240,7 +325,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             adminStore.is_loading++
             try {
                 this.ensureCourseStudentCollections(data)
-                const response = await axios.post(`/api/admin/teaching/courses`, data)
+                const response = await axios.post(storeCourse.url(), data)
                 this.saved_offer = response.data
                 return response.data
             } catch (error) {
@@ -262,7 +347,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                await axios.delete(`/api/admin/teaching/courses/${id}`)
+                await axios.delete(destroyCourse.url(id))
                 return true
             } catch (error) {
                 notification.notify({

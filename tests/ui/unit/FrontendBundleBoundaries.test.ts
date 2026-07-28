@@ -69,4 +69,46 @@ describe('frontend bundle boundaries', () => {
         expect(source).not.toContain("import CurriculumDetail from './CurriculumDetail.vue'")
         expect(source).not.toContain("import CurriculaPrint from './CurriculaPrint.vue'")
     })
+
+    it('lazy loads inactive materials screens and heavy dialogs', () => {
+        const pageSource = readSource('resources/js/pages/admin/materials/Materials.vue')
+        const overviewSource = readSource(
+            'resources/js/pages/admin/materials/components/views/MaterialsOverviewView.vue',
+        )
+
+        for (const view of [
+            'MaterialsFreigabeView',
+            'MaterialsOverviewView',
+            'MaterialsNewView',
+            'MaterialsPermissionsView',
+        ]) {
+            expect(pageSource).toContain(`const ${view} = defineAsyncComponent(() => import(`)
+        }
+
+        expect(overviewSource).not.toContain("import vueFilePond from 'vue-filepond/dist/vue-filepond.js'")
+        expect(overviewSource).toContain(
+            "const MaterialsCreateInlineForm = defineAsyncComponent(() => import('../forms/MaterialsCreateInlineForm.vue'))",
+        )
+        expect(overviewSource).toContain(
+            "const MaterialDetailDialog = defineAsyncComponent(() => import('../overview/dialogs/MaterialDetailDialog.vue'))",
+        )
+        expect(overviewSource).toContain('<MaterialDetailDialog\n        v-if="detailDialogOpen"')
+    })
+
+    it('lazy loads timetable route branches and print UI', () => {
+        const legacySource = readSource(
+            'resources/js/pages/admin/studentsTimetables/timetable/Timetable.vue',
+        )
+        const v2Source = readSource(
+            'resources/js/pages/admin/studentsTimetables/timetableV2/TimetableV2.vue',
+        )
+
+        expect(legacySource).toContain(
+            "const Overview = defineAsyncComponent(() => import('../overview/Overview.vue'))",
+        )
+        expect(v2Source).toContain(
+            "const TimetablePrintDialog = defineAsyncComponent(() => import('./TimetablePrintDialog.vue'))",
+        )
+        expect(v2Source).toContain('<TimetablePrintDialog\n            v-if="printDialogVisible"')
+    })
 })

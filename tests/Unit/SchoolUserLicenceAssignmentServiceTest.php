@@ -8,6 +8,7 @@ use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\SchoolUserLicenceAssignmentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -42,6 +43,42 @@ beforeEach(function () {
         'schoolyear_id' => $this->schoolyear->id,
     ]);
     $this->user->assignRole('teacher');
+});
+
+test('assignment service is shared within the application container', function () {
+    $first = app(SchoolUserLicenceAssignmentService::class);
+    $second = app(SchoolUserLicenceAssignmentService::class);
+
+    expect($second)->toBe($first);
+});
+
+test('preloaded role assignments avoid per-licence database queries', function () {
+    $row = SchoolUserLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $this->licence->id,
+        'user_id' => $this->user->id,
+        'assignment_type' => 'user',
+        'role_name' => 'teacher',
+        'valid_until' => '2027-07-31',
+        'is_active' => true,
+    ]);
+
+    $schoolLicence = $this->schoolLicence->fresh();
+    $service = app(SchoolUserLicenceAssignmentService::class);
+    $service->supportsRoleAssignments();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $assignments = $service->assignmentsForSchoolLicence(
+        $schoolLicence,
+        ['teacher'],
+        [$this->user->id],
+        collect([$row]),
+    );
+
+    expect(DB::getQueryLog())->toBeEmpty()
+        ->and(data_get($assignments, "{$this->user->id}.teacher.valid_until"))->toBe('2027-07-31');
 });
 
 test('role-level assignments override legacy json assignments without deleting json', function () {

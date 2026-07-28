@@ -13,6 +13,7 @@ class MaterialCardResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            'details_loaded' => true,
             'id' => $this->id,
             'school_id' => $this->school_id,
             'user_id' => $this->user_id,

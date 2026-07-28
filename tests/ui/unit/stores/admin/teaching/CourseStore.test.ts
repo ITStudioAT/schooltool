@@ -48,17 +48,28 @@ describe('Admin Teaching CourseStore', () => {
     })
 
     it('refreshCourseById reloads courses and updates selected course with normalized student collections', async () => {
-        axiosMock.get.mockResolvedValue({
+        axiosMock.get.mockResolvedValueOnce({
             data: {
                 data: [
                     {
                         id: 5,
                         title: 'Biologie',
-                        students: [{ id: 10, first_name: 'Anna' }],
+                        students: [10],
                         students_deleted: [],
+                        details_loaded: false,
                     },
                 ],
                 classes: ['1A'],
+            },
+        }).mockResolvedValueOnce({
+            data: {
+                data: {
+                    id: 5,
+                    title: 'Biologie',
+                    students: [{ id: 10, first_name: 'Anna' }],
+                    students_deleted: [],
+                    details_loaded: true,
+                },
             },
         })
 
@@ -70,6 +81,54 @@ describe('Admin Teaching CourseStore', () => {
         expect(store.selected_course_id).toBe(5)
         expect(store.selected_course?.students).toEqual([10])
         expect(store.selected_course?.students_info).toEqual([{ id: 10, first_name: 'Anna' }])
+        expect(store.selected_course?.details_loaded).toBe(true)
+        expect(axiosMock.get).toHaveBeenNthCalledWith(1, '/api/admin/teaching/courses', {})
+        expect(axiosMock.get).toHaveBeenNthCalledWith(2, '/api/admin/teaching/courses/5')
+    })
+
+    it('loads and merges course details only once for concurrent callers', async () => {
+        let resolveRequest: ((value: unknown) => void) | null = null
+        axiosMock.get.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveRequest = resolve
+            }),
+        )
+
+        const store = useCourseStore()
+        store.courses = [{
+            id: 8,
+            title: 'Summary',
+            students: [20],
+            students_deleted: [],
+            details_loaded: false,
+        }]
+        store.selected_course = store.courses[0]
+        store.selected_course_id = 8
+
+        const firstRequest = store.loadCourseDetails(8)
+        const secondRequest = store.loadCourseDetails(8)
+
+        expect(axiosMock.get).toHaveBeenCalledTimes(1)
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/teaching/courses/8')
+
+        resolveRequest?.({
+            data: {
+                data: {
+                    id: 8,
+                    title: 'Detailed',
+                    description: 'Loaded on demand',
+                    students: [{ id: 20, first_name: 'Mira' }],
+                    students_deleted: [],
+                    details_loaded: true,
+                },
+            },
+        })
+
+        await expect(firstRequest).resolves.toMatchObject({ id: 8, title: 'Detailed', details_loaded: true })
+        await expect(secondRequest).resolves.toMatchObject({ id: 8, title: 'Detailed', details_loaded: true })
+        expect(store.courses[0].description).toBe('Loaded on demand')
+        expect(store.selected_course?.students_info).toEqual([{ id: 20, first_name: 'Mira' }])
+        expect(store.course_detail_request_promises).toEqual({})
     })
 
     it('normalizes student collections for courses loaded before URL selection', async () => {

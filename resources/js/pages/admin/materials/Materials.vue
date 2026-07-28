@@ -76,13 +76,15 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 import MaterialsMenu from './components/navigation/MaterialsMenu.vue'
-import MaterialsFreigabeView from './components/views/MaterialsFreigabeView.vue'
-import MaterialsOverviewView from './components/views/MaterialsOverviewView.vue'
-import MaterialsNewView from './components/views/MaterialsNewView.vue'
-import MaterialsPermissionsView from './components/views/MaterialsPermissionsView.vue'
+
+const MaterialsFreigabeView = defineAsyncComponent(() => import('./components/views/MaterialsFreigabeView.vue'))
+const MaterialsOverviewView = defineAsyncComponent(() => import('./components/views/MaterialsOverviewView.vue'))
+const MaterialsNewView = defineAsyncComponent(() => import('./components/views/MaterialsNewView.vue'))
+const MaterialsPermissionsView = defineAsyncComponent(() => import('./components/views/MaterialsPermissionsView.vue'))
 
 export default {
     name: 'Materials',

@@ -15,6 +15,7 @@ use App\Http\Requests\Admin\Materials\MaterialCardTempAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardUpdateRequest;
 use App\Http\Resources\Admin\Materials\MaterialCardAttachmentResource;
 use App\Http\Resources\Admin\Materials\MaterialCardResource;
+use App\Http\Resources\Admin\Materials\MaterialCardSummaryResource;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
@@ -65,7 +66,7 @@ class MaterialController extends Controller
         $cards = $service->listForUser($authUser, $validated);
 
         return response()->json([
-            'data' => MaterialCardResource::collection($cards),
+            'data' => MaterialCardSummaryResource::collection($cards),
             'meta' => new PaginateResource($cards),
         ], 200);
     }

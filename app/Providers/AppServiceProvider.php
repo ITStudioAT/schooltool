@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Listeners\TwoFactorSecuritySubscriber;
 use App\Models\User;
 use App\Services\EmailAliasResolver;
+use App\Services\SchoolUserLicenceAssignmentService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Mail\Events\MessageSending;
@@ -29,6 +30,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         Fortify::ignoreRoutes();
+        $this->app->singleton(SchoolUserLicenceAssignmentService::class);
     }
 
     /**

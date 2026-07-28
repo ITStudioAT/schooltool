@@ -455,11 +455,16 @@ export default {
     watch: {
         selected_course: {
             immediate: true,
-            handler(newCourse, oldCourse) {
+            async handler(newCourse, oldCourse) {
             if (!newCourse) {
                 this._lastCourseId = null
                 this.curriculumSelectionId = null
                 this.curriculumEditMode = false
+                return
+            }
+            if (!newCourse.details_loaded) {
+                const courseStore = this.courseStore || useCourseStore()
+                await courseStore.loadCourseDetails(newCourse.id)
                 return
             }
             this.curriculumSelectionId = this.selectedCourseCurriculumId

@@ -2420,6 +2420,51 @@ describe('MaterialsOverviewView', () => {
         expect(vm.editForm.linked_permission).toBe('read_write')
     })
 
+    it('loads complete card details before editing a compact list item', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const selectedCard = {
+            id: 556,
+            details_loaded: true,
+            title: 'Vollständiges Detail',
+            source_text: 'Vollständiger Text',
+            notes: 'Vollständige Notiz',
+            attachments: [],
+            classifications: [{ subject: 'Deutsch', topic: 'Text', unit: 'U1' }],
+        }
+        const show = vi.fn(async () => true)
+        const vm = {
+            ...methods,
+            materialCardStore: {
+                show,
+                selected_card: selectedCard,
+            },
+            defaultStatusValue: 'inbox',
+            attachmentRows: [],
+            attachmentDeleteArmedIds: [],
+            attachmentNameEditingIds: [],
+            editDeleteStep: 0,
+            editDeleteConfirmDialogOpen: false,
+            editDeleteConfirmDialogLoading: false,
+            editDeleteConfirmMaterialTitle: '',
+            editDeleteConfirmAttachmentRows: [],
+            editClassificationEditorVisible: false,
+            editDialogOpen: false,
+            toAttachmentRows: methods.toAttachmentRows,
+        }
+
+        await methods.openEditDialog.call(vm, {
+            id: 556,
+            details_loaded: false,
+            title: 'Gekürzte Liste',
+            source_text: 'Kurz',
+        })
+
+        expect(show).toHaveBeenCalledWith(556)
+        expect(vm.editDialogOpen).toBe(true)
+        expect(vm.editForm.title).toBe('Vollständiges Detail')
+        expect(vm.editForm.description).toBe('Vollständiger Text')
+    })
+
     it('preserves shared create context when opening the create dialog from the shared tree', () => {
         const methods = MaterialsOverviewView?.methods || {}
         const vm = {

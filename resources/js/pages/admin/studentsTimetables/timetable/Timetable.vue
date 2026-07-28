@@ -1317,13 +1317,15 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useValidationRulesSetup } from '@/helpers/rules'
-import FileUpload from '@/pages/components/FileUpload.vue'
-import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
-import Overview from '../overview/Overview.vue'
+
+const FileUpload = defineAsyncComponent(() => import('@/pages/components/FileUpload.vue'))
+const LoadingAnimation = defineAsyncComponent(() => import('@/pages/components/LoadingAnimation.vue'))
+const Overview = defineAsyncComponent(() => import('../overview/Overview.vue'))
 
 const SECTION_LABELS = {
     VV: 'Kopfdaten / Version',

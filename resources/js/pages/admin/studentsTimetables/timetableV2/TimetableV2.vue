@@ -1574,6 +1574,7 @@
         </v-row>
 
         <TimetablePrintDialog
+            v-if="printDialogVisible"
             v-model="printDialogVisible"
             v-model:single-weeks="printOptions.singleWeeks"
             v-model:course-list="printOptions.courseList"
@@ -1647,12 +1648,14 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import CourseSelectionCards from './CourseSelectionCards.vue'
-import TimetablePrintDialog from './TimetablePrintDialog.vue'
-import TimetableStudentSummary from './TimetableStudentSummary.vue'
-import TimetableWizardStepper from './TimetableWizardStepper.vue'
+
+const CourseSelectionCards = defineAsyncComponent(() => import('./CourseSelectionCards.vue'))
+const TimetablePrintDialog = defineAsyncComponent(() => import('./TimetablePrintDialog.vue'))
+const TimetableStudentSummary = defineAsyncComponent(() => import('./TimetableStudentSummary.vue'))
+const TimetableWizardStepper = defineAsyncComponent(() => import('./TimetableWizardStepper.vue'))
 
 const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'
 const TIMETABLE_V2_SELECTION_BOOTSTRAP_ENDPOINT = '/api/admin/students-timetables/timetable-v2-selection-bootstrap'

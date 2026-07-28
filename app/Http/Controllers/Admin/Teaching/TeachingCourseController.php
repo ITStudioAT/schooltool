@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Teaching\CourseResource;
+use App\Http\Resources\Admin\Teaching\CourseSummaryResource;
 use App\Http\Resources\Admin\Teaching\StudentResource;
 use App\Models\Import116;
 use App\Models\Schoolyear;
@@ -20,6 +21,7 @@ use App\Services\TeachingService;
 use App\Services\TeachingStudentPerformancePdfService;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -34,24 +36,48 @@ class TeachingCourseController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index(Request $request, TeachingCourseService $service, TeachingClassHeadEmailService $classHeadEmailService)
+    public function index(TeachingClassHeadEmailService $classHeadEmailService): JsonResponse
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         $coursesQuery = TeachingCourse::with([
-            'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour,teaching_student_grade_columns_by_schoolyear',
-            'teachingCurriculum:id,school_id,schoolyear_id,user_id,title,description,semester_count',
             'teachingEntryArea:id,name',
-            'teachingEntryArea.entryDefinitions' => fn ($query) => $query
-                ->orderBy('category')
-                ->orderBy('short_name'),
-            'teachingCourseDates' => fn ($q) => $q->orderBy('date')->orderByRaw('JSON_EXTRACT(hours, "$[0]")'),
-            'teachingCourseDates.materials.attachments',
-            'teachingCourseStudents',
-            'teachingCourseStudentsWithTrashed',
+            'teachingCourseDates' => fn ($query) => $query
+                ->select([
+                    'id',
+                    'teaching_course_id',
+                    'date',
+                    'hours',
+                    'content',
+                    'status',
+                    'attendance_checked',
+                ])
+                ->orderBy('date')
+                ->orderByRaw('JSON_EXTRACT(hours, "$[0]")'),
+            'teachingCourseStudents' => fn ($query) => $query->select([
+                'id',
+                'teaching_course_id',
+                'user_id',
+                'import116_id',
+                'canceled_at',
+            ]),
+            'teachingCourseStudents.import116:id,school_id,schoolyear_id,user_id',
         ])
+            ->select([
+                'id',
+                'school_id',
+                'schoolyear_id',
+                'user_id',
+                'title',
+                'classes',
+                'teaching_schema_id',
+                'teaching_entry_area_id',
+                'teaching_curriculum_id',
+                'teaching_show_student_age',
+                'teaching_show_student_last_login',
+            ])
             ->where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $auth_user->schoolyear_id);
 
@@ -63,101 +89,7 @@ class TeachingCourseController extends Controller
             ->orderBy('title')
             ->get();
 
-        $courses->each(function (TeachingCourse $course): void {
-            $course->teachingCourseDates->each(
-                fn (TeachingCourseDate $courseDate) => $courseDate->setRelation('teachingCourse', $course)
-            );
-        });
-
-        $allCourseStudents = $courses->flatMap(
-            fn (TeachingCourse $course) => $course->teachingCourseStudentsWithTrashed
-        );
-
-        $userIds = $allCourseStudents
-            ->pluck('user_id')
-            ->filter()
-            ->unique()
-            ->values();
-        $importIds = $allCourseStudents
-            ->pluck('import116_id')
-            ->filter()
-            ->unique()
-            ->values();
-
-        $studentsById = $userIds->isEmpty()
-            ? collect()
-            : User::whereIn('id', $userIds)->get()->keyBy('id');
-        $importsById = $importIds->isEmpty()
-            ? collect()
-            : Import116::query()
-                ->where('school_id', $auth_user->school_id)
-                ->where('schoolyear_id', $auth_user->schoolyear_id)
-                ->whereIn('id', $importIds)
-                ->get()
-                ->keyBy('id');
-
-        $teachingService = new TeachingService;
-        $schemaCache = [];
         $authEntryAreas = $this->teachingEntryAreasForUser($auth_user, $auth_user->schoolyear_id, $auth_user->school_id);
-        $entryAreaCache = [
-            implode(':', [
-                (string) $auth_user->id,
-                (string) $auth_user->school_id,
-                (string) $auth_user->schoolyear_id,
-            ]) => $authEntryAreas,
-        ];
-        $removalReasonsByCourseId = $service->removalReasonsForCourses($courses);
-
-        $courses->each(function (TeachingCourse $course) use ($auth_user, $studentsById, $importsById, $request, $teachingService, &$schemaCache, &$entryAreaCache, $removalReasonsByCourseId) {
-            $removalReasons = $removalReasonsByCourseId[(int) $course->id] ?? [];
-            $courseActor = $this->teachingCourseActor($auth_user, $course);
-            $courseSchema = $this->teachingSchemaForCourse($courseActor, $course, $teachingService, $schemaCache);
-
-            $activeStudents = [];
-            foreach ($course->teachingCourseStudents as $courseStudent) {
-                $payload = $this->serializeCourseStudent(
-                    $courseStudent,
-                    $studentsById,
-                    $importsById,
-                    $request,
-                    $removalReasons,
-                    (bool) $course->teaching_show_student_age,
-                    (bool) $course->teaching_show_student_last_login,
-                );
-                if ($payload) {
-                    $activeStudents[] = $payload;
-                }
-            }
-
-            $deletedStudents = [];
-            foreach ($course->teachingCourseStudentsWithTrashed as $courseStudent) {
-                if (! $courseStudent->trashed()) {
-                    continue;
-                }
-
-                $payload = $this->serializeCourseStudent(
-                    $courseStudent,
-                    $studentsById,
-                    $importsById,
-                    $request,
-                    $removalReasons,
-                    (bool) $course->teaching_show_student_age,
-                    (bool) $course->teaching_show_student_last_login,
-                );
-                if ($payload) {
-                    $deletedStudents[] = $payload;
-                }
-            }
-
-            $course->setAttribute('students', $activeStudents);
-            $course->setAttribute('students_deleted', $deletedStudents);
-            $course->setAttribute('teacher_teaching_schema', $courseSchema);
-            $course->setAttribute('teacher_teaching_entry_areas', $this->teachingEntryAreasForCourse($courseActor, $course, $entryAreaCache));
-            $course->setAttribute('teacher_teaching_behaviour', $this->teachingBehaviourForSchoolyear($courseActor, $course->schoolyear_id));
-            $course->setAttribute('teacher_teaching_notifications', $this->teachingNotificationsForSchoolyear($courseActor, $course->schoolyear_id));
-            $course->setAttribute('teacher_teaching_show_behaviour', (bool) ($courseActor->teaching_show_behaviour ?? true));
-            $course->setAttribute('teaching_student_grade_columns', $this->teachingStudentGradeColumnsForCourse($course, $courseActor));
-        });
 
         $classes = Import116::where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $auth_user->schoolyear_id)
@@ -166,7 +98,7 @@ class TeachingCourseController extends Controller
             ->pluck('class');
 
         return response()->json([
-            'data' => CourseResource::collection($courses),
+            'data' => CourseSummaryResource::collection($courses),
             'classes' => $classes,
             'class_head_emails' => $classHeadEmailService->listForUser($auth_user),
             'entry_areas' => $authEntryAreas,
@@ -387,9 +319,133 @@ class TeachingCourseController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(TeachingCourse $course)
-    {
-        //
+    public function show(
+        Request $request,
+        TeachingCourse $course,
+        TeachingCourseService $service
+    ): CourseResource {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        Gate::authorize('view', $course);
+
+        $course->load([
+            'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour,teaching_student_grade_columns_by_schoolyear',
+            'teachingCurriculum:id,school_id,schoolyear_id,user_id,title,description,semester_count',
+            'teachingEntryArea:id,name',
+            'teachingEntryArea.entryDefinitions' => fn ($query) => $query
+                ->orderBy('category')
+                ->orderBy('short_name'),
+            'teachingCourseDates' => fn ($query) => $query
+                ->orderBy('date')
+                ->orderByRaw('JSON_EXTRACT(hours, "$[0]")'),
+            'teachingCourseDates.materials.attachments',
+            'teachingCourseStudents',
+            'teachingCourseStudentsWithTrashed',
+        ]);
+
+        $course->teachingCourseDates->each(
+            fn (TeachingCourseDate $courseDate) => $courseDate->setRelation('teachingCourse', $course)
+        );
+
+        $courseStudents = $course->teachingCourseStudentsWithTrashed;
+        $userIds = $courseStudents
+            ->pluck('user_id')
+            ->filter()
+            ->unique()
+            ->values();
+        $importIds = $courseStudents
+            ->pluck('import116_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $studentsById = $userIds->isEmpty()
+            ? collect()
+            : User::whereIn('id', $userIds)->get()->keyBy('id');
+        $importsById = $importIds->isEmpty()
+            ? collect()
+            : Import116::query()
+                ->where('school_id', $auth_user->school_id)
+                ->where('schoolyear_id', $auth_user->schoolyear_id)
+                ->whereIn('id', $importIds)
+                ->get()
+                ->keyBy('id');
+
+        $removalReasons = $service->removalReasonsForCourses(collect([$course]))[(int) $course->id] ?? [];
+        $courseActor = $this->teachingCourseActor($auth_user, $course);
+        $teachingService = new TeachingService;
+        $schemaCache = [];
+        $entryAreaCache = [];
+
+        $activeStudents = [];
+        foreach ($course->teachingCourseStudents as $courseStudent) {
+            $payload = $this->serializeCourseStudent(
+                $courseStudent,
+                $studentsById,
+                $importsById,
+                $request,
+                $removalReasons,
+                (bool) $course->teaching_show_student_age,
+                (bool) $course->teaching_show_student_last_login,
+            );
+
+            if ($payload) {
+                $activeStudents[] = $payload;
+            }
+        }
+
+        $deletedStudents = [];
+        foreach ($course->teachingCourseStudentsWithTrashed as $courseStudent) {
+            if (! $courseStudent->trashed()) {
+                continue;
+            }
+
+            $payload = $this->serializeCourseStudent(
+                $courseStudent,
+                $studentsById,
+                $importsById,
+                $request,
+                $removalReasons,
+                (bool) $course->teaching_show_student_age,
+                (bool) $course->teaching_show_student_last_login,
+            );
+
+            if ($payload) {
+                $deletedStudents[] = $payload;
+            }
+        }
+
+        $course->setAttribute('students', $activeStudents);
+        $course->setAttribute('students_deleted', $deletedStudents);
+        $course->setAttribute(
+            'teacher_teaching_schema',
+            $this->teachingSchemaForCourse($courseActor, $course, $teachingService, $schemaCache)
+        );
+        $course->setAttribute(
+            'teacher_teaching_entry_areas',
+            $this->teachingEntryAreasForCourse($courseActor, $course, $entryAreaCache)
+        );
+        $course->setAttribute(
+            'teacher_teaching_behaviour',
+            $this->teachingBehaviourForSchoolyear($courseActor, $course->schoolyear_id)
+        );
+        $course->setAttribute(
+            'teacher_teaching_notifications',
+            $this->teachingNotificationsForSchoolyear($courseActor, $course->schoolyear_id)
+        );
+        $course->setAttribute(
+            'teacher_teaching_show_behaviour',
+            (bool) ($courseActor->teaching_show_behaviour ?? true)
+        );
+        $course->setAttribute(
+            'teaching_student_grade_columns',
+            $this->teachingStudentGradeColumnsForCourse($course, $courseActor)
+        );
+        $course->setAttribute('details_loaded', true);
+
+        return new CourseResource($course);
     }
 
     /**

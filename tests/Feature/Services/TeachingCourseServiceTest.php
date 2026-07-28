@@ -21,6 +21,7 @@ use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use App\Services\TeachingCourseService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -694,6 +695,60 @@ describe('findOrCreateUserIdFromImport', function () {
             ->and($user->schoolclass)->toBe('6B')
             ->and($user->sex)->toBe('f')
             ->and($user->phone)->toBe('123456');
+    });
+});
+
+// ============================================================================
+// removalReasonsForCourses Tests
+// ============================================================================
+
+describe('removalReasonsForCourses', function () {
+    test('loads linked import user ids in one query', function () {
+        $teacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $teacher->id,
+        ]);
+
+        foreach (range(1, 6) as $index) {
+            $student = User::factory()->create([
+                'school_id' => $this->school->id,
+                'schoolyear_id' => $this->schoolyear->id,
+            ]);
+            $import = Import116::factory()->create([
+                'school_id' => $this->school->id,
+                'schoolyear_id' => $this->schoolyear->id,
+                'import_user_id' => $teacher->id,
+                'user_id' => $student->id,
+                'student_code' => "BATCH-{$index}",
+            ]);
+
+            TeachingCourseStudent::query()->create([
+                'teaching_course_id' => $course->id,
+                'import116_id' => $import->id,
+            ]);
+        }
+
+        $course->load('teachingCourseStudents');
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $removalReasons = $this->service->removalReasonsForCourses(collect([$course]));
+
+        $importQueries = collect(DB::getQueryLog())
+            ->pluck('query')
+            ->filter(fn (string $query): bool => str_contains($query, 'from `import116`')
+                || str_contains($query, 'from "import116"'));
+
+        DB::disableQueryLog();
+
+        expect($removalReasons)->toBe([])
+            ->and($importQueries)->toHaveCount(1);
     });
 });
 

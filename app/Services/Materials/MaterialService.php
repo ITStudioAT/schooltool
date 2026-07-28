@@ -152,6 +152,23 @@ class MaterialService
         }
 
         $query = MaterialCard::query()
+            ->select([
+                'id',
+                'school_id',
+                'user_id',
+                'workspace_id',
+                'title',
+                'source_url',
+                DB::raw('LEFT(source_text, 320) as source_text'),
+                'subject',
+                'area',
+                'unit',
+                'type',
+                'status',
+                DB::raw('LEFT(notes, 320) as notes'),
+                'created_at',
+                'updated_at',
+            ])
             ->where('user_id', $user->id)
             ->where('workspace_id', $workspaceId)
             ->with($this->cardRelations())

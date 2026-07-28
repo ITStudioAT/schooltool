@@ -903,6 +903,7 @@
     </v-dialog>
 
     <MaterialDetailDialog
+        v-if="detailDialogOpen"
         v-model="detailDialogOpen"
         :loading="detailDialogLoading"
         :card="detailDialogCard"
@@ -943,6 +944,7 @@
 
     <v-dialog v-model="createDialogOpen" max-width="640" persistent>
         <MaterialsCreateInlineForm
+            v-if="createDialogOpen"
             :title="createForm.title"
             :description="createForm.description"
             :material-type="createForm.type"
@@ -980,6 +982,7 @@
 
     <v-dialog v-model="editDialogOpen" max-width="640" persistent>
         <MaterialsCreateInlineForm
+            v-if="editDialogOpen"
             :title="editForm.title"
             :description="editForm.description"
             :material-type="editForm.type"
@@ -1275,7 +1278,7 @@
                         class="mb-3"
                         :disabled="textAttachmentEditorSaving" />
 
-                    <ItsRichTextEditor v-model="textAttachmentEditorBodyHtml" />
+                    <ItsRichTextEditor v-if="textAttachmentEditorOpen" v-model="textAttachmentEditorBodyHtml" />
 
                     <v-alert v-if="textAttachmentEditorError" type="warning" variant="tonal" density="compact" class="mt-3">
                         {{ textAttachmentEditorError }}
@@ -1526,9 +1529,14 @@
         </v-card>
     </v-dialog>
 
-    <MaterialShareDraftDialog v-model="shareDummyDialogOpen" :target="shareTarget" @shares-changed="loadShareIndicators" />
+    <MaterialShareDraftDialog
+        v-if="shareDummyDialogOpen"
+        v-model="shareDummyDialogOpen"
+        :target="shareTarget"
+        @shares-changed="loadShareIndicators" />
 
     <MaterialShareDialog
+        v-if="shareDialogOpen"
         v-model="shareDialogOpen"
         :target="shareTarget"
         :assignments="shareAssignments"
@@ -1537,21 +1545,15 @@
         @reload-assignments="loadShareAssignments"
         @shares-changed="loadShareIndicators" />
 
-    <MaterialTypeManagerDialog v-model="typeManagerDialogOpen" />
+    <MaterialTypeManagerDialog v-if="typeManagerDialogOpen" v-model="typeManagerDialogOpen" />
 </template>
 
 <script>
-import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
-import 'filepond/dist/filepond.min.css'
-import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
-import { nextTick } from 'vue'
+import { defineAsyncComponent, nextTick } from 'vue'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { openAttachmentPreview, UnsupportedAttachmentPreviewError } from '@/pages/admin/materials/attachmentPreview'
-import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
-import MaterialsCreateInlineForm from '../forms/MaterialsCreateInlineForm.vue'
-import MaterialTypeManagerDialog from '../forms/MaterialTypeManagerDialog.vue'
 import MaterialsOverviewAlphaList from '../overview/MaterialsOverviewAlphaList.vue'
 import MaterialsOverviewFilters from '../overview/MaterialsOverviewFilters.vue'
 import MaterialsOverviewGrid from '../overview/MaterialsOverviewGrid.vue'
@@ -1560,11 +1562,13 @@ import MaterialsOverviewList from '../overview/MaterialsOverviewList.vue'
 import MaterialsOverviewPagination from '../overview/MaterialsOverviewPagination.vue'
 import MaterialsOverviewSortBar from '../overview/MaterialsOverviewSortBar.vue'
 import MaterialsSubjectsContentsTree from '../overview/MaterialsSubjectsContentsTree.vue'
-import MaterialDetailDialog from '../overview/dialogs/MaterialDetailDialog.vue'
-import MaterialShareDraftDialog from '../overview/dialogs/MaterialShareDraftDialog.vue'
-import MaterialShareDialog from '../overview/dialogs/MaterialShareDialog.vue'
 
-const FilePond = vueFilePond(FilePondPluginFileValidateType)
+const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
+const MaterialsCreateInlineForm = defineAsyncComponent(() => import('../forms/MaterialsCreateInlineForm.vue'))
+const MaterialTypeManagerDialog = defineAsyncComponent(() => import('../forms/MaterialTypeManagerDialog.vue'))
+const MaterialDetailDialog = defineAsyncComponent(() => import('../overview/dialogs/MaterialDetailDialog.vue'))
+const MaterialShareDraftDialog = defineAsyncComponent(() => import('../overview/dialogs/MaterialShareDraftDialog.vue'))
+const MaterialShareDialog = defineAsyncComponent(() => import('../overview/dialogs/MaterialShareDialog.vue'))
 
 const createDefaultEditForm = () => ({
     id: null,
@@ -1614,7 +1618,6 @@ export default {
         },
     },
     components: {
-        FilePond,
         ItsRichTextEditor,
         MaterialsCreateInlineForm,
         MaterialTypeManagerDialog,
@@ -6107,34 +6110,45 @@ export default {
                 this.isUnlinkingTopicId = null
             }
         },
-        openEditDialog(card) {
+        async openEditDialog(card) {
+            let selectedCard = card
+            if (card?.details_loaded === false) {
+                const cardId = Number(card?.id)
+                if (!Number.isFinite(cardId) || cardId <= 0) return
+
+                const loaded = await this.materialCardStore.show(cardId)
+                if (!loaded || Number(this.materialCardStore.selected_card?.id) !== cardId) return
+
+                selectedCard = this.materialCardStore.selected_card
+            }
+
             this.editForm = {
-                id: card?.id ?? null,
-                title: card?.title || '',
-                description: card?.source_text || card?.notes || '',
+                id: selectedCard?.id ?? null,
+                title: selectedCard?.title || '',
+                description: selectedCard?.source_text || selectedCard?.notes || '',
                 classifications:
-                    Array.isArray(card?.classifications) && card.classifications.length > 0
-                        ? card.classifications.map((row) => ({
+                    Array.isArray(selectedCard?.classifications) && selectedCard.classifications.length > 0
+                        ? selectedCard.classifications.map((row) => ({
                               subject: String(row?.subject || '').trim(),
                               topic: String(row?.topic || '').trim(),
                               unit: String(row?.unit || '').trim(),
                           }))
                         : [{ subject: '', topic: '', unit: '' }],
                 pendingAttachments: [],
-                source_url: card?.source_url || '',
-                area: card?.area || '',
-                unit: card?.unit || '',
-                type: card?.type || '',
-                status: card?.status || this.defaultStatusValue,
-                notes: card?.notes || '',
-                is_linked: card?.is_linked === true,
-                linked_permission: this.normalizeLinkedPermission(card?.linked_permission),
-                linked_permission_label: String(card?.linked_permission_label || '').trim(),
-                shared_rule_id: Number(card?.shared_rule_id || 0) || null,
-                shared_material_id: Number(card?.shared_material_id || card?.id || 0) || null,
+                source_url: selectedCard?.source_url || '',
+                area: selectedCard?.area || '',
+                unit: selectedCard?.unit || '',
+                type: selectedCard?.type || '',
+                status: selectedCard?.status || this.defaultStatusValue,
+                notes: selectedCard?.notes || '',
+                is_linked: selectedCard?.is_linked === true,
+                linked_permission: this.normalizeLinkedPermission(selectedCard?.linked_permission),
+                linked_permission_label: String(selectedCard?.linked_permission_label || '').trim(),
+                shared_rule_id: Number(selectedCard?.shared_rule_id || 0) || null,
+                shared_material_id: Number(selectedCard?.shared_material_id || selectedCard?.id || 0) || null,
             }
-            this.attachmentDialogCardId = Number(card?.id) || null
-            this.attachmentRows = this.toAttachmentRows(card?.attachments)
+            this.attachmentDialogCardId = Number(selectedCard?.id) || null
+            this.attachmentRows = this.toAttachmentRows(selectedCard?.attachments)
             this.attachmentDeleteArmedIds = []
             this.attachmentNameEditingIds = []
             this.editDeleteStep = 0

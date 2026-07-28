@@ -16,8 +16,12 @@ class SchoolUserLicenceAssignmentService
     /**
      * @return array<string, array<string, array<string, mixed>>>
      */
-    public function assignmentsForSchoolLicence(SchoolLicence $schoolLicence, array $roleNames = [], array $userIds = []): array
-    {
+    public function assignmentsForSchoolLicence(
+        SchoolLicence $schoolLicence,
+        array $roleNames = [],
+        array $userIds = [],
+        ?Collection $preloadedRows = null
+    ): array {
         $assignments = is_array($schoolLicence->user_licence_assignments)
             ? $schoolLicence->user_licence_assignments
             : [];
@@ -26,7 +30,7 @@ class SchoolUserLicenceAssignmentService
             return $assignments;
         }
 
-        $rows = $this->roleAssignmentRows($schoolLicence, $roleNames, $userIds);
+        $rows = $this->roleAssignmentRows($schoolLicence, $roleNames, $userIds, $preloadedRows);
 
         foreach ($rows as $row) {
             if (! $row instanceof SchoolUserLicence) {
@@ -174,14 +178,46 @@ class SchoolUserLicenceAssignmentService
      * @param  array<int, int>  $userIds
      * @return Collection<int, SchoolUserLicence>
      */
-    private function roleAssignmentRows(SchoolLicence $schoolLicence, array $roleNames, array $userIds): Collection
-    {
+    private function roleAssignmentRows(
+        SchoolLicence $schoolLicence,
+        array $roleNames,
+        array $userIds,
+        ?Collection $preloadedRows = null
+    ): Collection {
+        $normalizedRoleNames = $this->normalizeRoleNames($roleNames);
+        $normalizedUserIds = collect($userIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($preloadedRows !== null) {
+            return $preloadedRows
+                ->filter(fn (mixed $row): bool => $row instanceof SchoolUserLicence)
+                ->filter(fn (SchoolUserLicence $row): bool => (int) $row->school_id === (int) $schoolLicence->school_id)
+                ->filter(fn (SchoolUserLicence $row): bool => (int) $row->licence_id === (int) $schoolLicence->licence_id)
+                ->filter(fn (SchoolUserLicence $row): bool => trim((string) $row->role_name) !== '')
+                ->when(
+                    $normalizedRoleNames !== [],
+                    fn (Collection $rows): Collection => $rows->filter(
+                        fn (SchoolUserLicence $row): bool => in_array((string) $row->role_name, $normalizedRoleNames, true)
+                    )
+                )
+                ->when(
+                    $normalizedUserIds !== [],
+                    fn (Collection $rows): Collection => $rows->filter(
+                        fn (SchoolUserLicence $row): bool => in_array((int) $row->user_id, $normalizedUserIds, true)
+                    )
+                )
+                ->values();
+        }
+
         return SchoolUserLicence::query()
             ->where('school_id', $schoolLicence->school_id)
             ->where('licence_id', $schoolLicence->licence_id)
             ->where('role_name', '<>', '')
-            ->when($roleNames !== [], fn ($query) => $query->whereIn('role_name', $this->normalizeRoleNames($roleNames)))
-            ->when($userIds !== [], fn ($query) => $query->whereIn('user_id', collect($userIds)->map(fn ($id) => (int) $id)->filter()->values()->all()))
+            ->when($normalizedRoleNames !== [], fn ($query) => $query->whereIn('role_name', $normalizedRoleNames))
+            ->when($normalizedUserIds !== [], fn ($query) => $query->whereIn('user_id', $normalizedUserIds))
             ->get();
     }
 

@@ -1863,6 +1863,48 @@ test('index returns only own cards', function () {
         ->and($titles)->not->toContain('Fremde Karte');
 });
 
+test('index returns compact card summaries while show returns complete details', function () {
+    $sourceText = str_repeat('Materialtext ', 50);
+    $notes = str_repeat('Notiz ', 80);
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Kompakte Payload',
+        'source_text' => $sourceText,
+        'notes' => $notes,
+        'keywords' => ['vollständig', 'nur-im-detail'],
+    ]);
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'intern.pdf',
+        'file_path' => 'materials/cards/private/intern.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 1234,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $index = $this->getJson('/api/admin/materials/cards?search=Kompakte%20Payload')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.id', $card->id)
+        ->assertJsonPath('data.0.details_loaded', false)
+        ->assertJsonMissingPath('data.0.keywords')
+        ->assertJsonMissingPath('data.0.attachments.0.file_path')
+        ->assertJsonPath('data.0.attachments.0.download_url', "/api/admin/materials/attachments/{$attachment->id}/download");
+
+    expect(mb_strlen((string) $index->json('data.0.source_text')))->toBe(320)
+        ->and(mb_strlen((string) $index->json('data.0.notes')))->toBe(320);
+
+    $this->getJson("/api/admin/materials/cards/{$card->id}")
+        ->assertSuccessful()
+        ->assertJsonPath('details_loaded', true)
+        ->assertJsonPath('source_text', $sourceText)
+        ->assertJsonPath('notes', $notes)
+        ->assertJsonPath('keywords.1', 'nur-im-detail')
+        ->assertJsonPath('attachments.0.file_path', 'materials/cards/private/intern.pdf');
+});
+
 test('index can filter by subject topic and unit', function () {
     $this->actingAs($this->teacher, 'sanctum');
 

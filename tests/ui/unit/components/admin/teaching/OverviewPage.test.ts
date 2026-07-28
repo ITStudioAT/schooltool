@@ -40,6 +40,22 @@ describe('Teaching overview controls', () => {
         await refreshPromise
     })
 
+    it('loads full course details when a summary is selected', async () => {
+        const loadCourseDetails = vi.fn().mockResolvedValue({ id: 22, details_loaded: true })
+        const ctx = {
+            courseStore: { loadCourseDetails },
+        }
+
+        await (Overview as any).watch.selected_course.handler.call(ctx, {
+            id: 22,
+            title: 'Physik',
+            details_loaded: false,
+        })
+
+        expect(loadCourseDetails).toHaveBeenCalledOnce()
+        expect(loadCourseDetails).toHaveBeenCalledWith(22)
+    })
+
     it('resets to students panel defaults when selected course changes', () => {
         const ctx = {
             show_students: false,
@@ -55,7 +71,11 @@ describe('Teaching overview controls', () => {
             _lastCourseId: 11,
         }
 
-        ;(Overview as any).watch.selected_course.handler.call(ctx, { id: 22, title: 'Physik' })
+        ;(Overview as any).watch.selected_course.handler.call(ctx, {
+            id: 22,
+            title: 'Physik',
+            details_loaded: true,
+        })
 
         expect(ctx.show_students).toBe(true)
         expect(ctx.show_infos).toBe(false)
@@ -92,7 +112,11 @@ describe('Teaching overview controls', () => {
             $router: { replace: routerReplace },
         }
 
-        ;(Overview as any).watch.selected_course.handler.call(ctx, { id: 16, title: 'Deutsch' })
+        ;(Overview as any).watch.selected_course.handler.call(ctx, {
+            id: 16,
+            title: 'Deutsch',
+            details_loaded: true,
+        })
 
         expect(ctx.show_students).toBe(false)
         expect(ctx.show_table).toBe(false)
@@ -222,7 +246,11 @@ describe('Teaching overview controls', () => {
             $router: { replace: routerReplace },
         }
 
-        ;(Overview as any).watch.selected_course.handler.call(ctx, { id: 18, title: 'Deutsch' })
+        ;(Overview as any).watch.selected_course.handler.call(ctx, {
+            id: 18,
+            title: 'Deutsch',
+            details_loaded: true,
+        })
 
         expect(ctx.show_students).toBe(true)
         expect(ctx.show_infos).toBe(false)

@@ -287,7 +287,20 @@ class SchoolService
         $userLicenceAssignments = SchoolUserLicence::query()
             ->where('school_id', $school_id)
             ->whereIn('licence_id', $licenceIds)
-            ->select('licence_id', 'assignment_type', 'user_id', 'valid_until', 'is_active')
+            ->select([
+                'id',
+                'school_id',
+                'licence_id',
+                'assignment_type',
+                'user_id',
+                'role_name',
+                'valid_until',
+                'charged_price',
+                'is_active',
+                'plan_id',
+                'extra_storage_units',
+                'extra_storage_unit_price',
+            ])
             ->get()
             ->groupBy('licence_id');
 
@@ -317,7 +330,14 @@ class SchoolService
 
                 $structuredLicenceConfiguration = $this->dashboardStructuredLicenceConfiguration($schoolLicence, $licence, $licenceService);
 
-                $row = $this->attachCurrentUserLicenceSummary($row, $authUser, $authUserRoleNames, $schoolLicence, $structuredLicenceConfiguration);
+                $row = $this->attachCurrentUserLicenceSummary(
+                    $row,
+                    $authUser,
+                    $authUserRoleNames,
+                    $schoolLicence,
+                    $structuredLicenceConfiguration,
+                    $stored,
+                );
 
                 $row = $this->classifyMyLicences($row, $structuredLicenceConfiguration);
 
@@ -332,14 +352,20 @@ class SchoolService
 
         $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin'];
         $users = User::where('school_id', $school_id)
-            ->role($roles)
+            ->whereHas('roles', fn ($query) => $query
+                ->whereIn('name', $roles)
+                ->where('guard_name', 'web'))
             ->with('roles')
             ->orderBy('last_name')
             ->get();
 
         $data['admins'] = UserResource::collection($users);
 
-        $data['teachers']['count_active'] = User::where('school_id', $school_id)->role('teacher')->count();
+        $data['teachers']['count_active'] = User::where('school_id', $school_id)
+            ->whereHas('roles', fn ($query) => $query
+                ->where('name', 'teacher')
+                ->where('guard_name', 'web'))
+            ->count();
         $data['teachers']['count'] = Teacher::where('school_id', $school_id)->count();
 
         return $data;
@@ -535,7 +561,8 @@ class SchoolService
         ?User $authUser,
         array $authUserRoleNames,
         ?SchoolLicence $schoolLicence,
-        array $structuredLicenceConfiguration
+        array $structuredLicenceConfiguration,
+        Collection $preloadedAssignments,
     ): array {
         $schoolLicenceRequired = (bool) ($licence['school_licence_required'] ?? true);
         $schoolLicenceValidUntil = isset($licence['valid_until']) ? (string) $licence['valid_until'] : null;
@@ -558,7 +585,8 @@ class SchoolService
             ? app(SchoolUserLicenceAssignmentService::class)->assignmentsForSchoolLicence(
                 $schoolLicence,
                 $requiredRoles,
-                $authUser ? [(int) $authUser->id] : []
+                $authUser ? [(int) $authUser->id] : [],
+                $preloadedAssignments,
             )
             : [];
         $userAssignments = [];

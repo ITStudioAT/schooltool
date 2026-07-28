@@ -309,6 +309,8 @@ class TeachingCourseService
     {
         $candidatesByCourse = [];
         $candidateUserIdsByCourse = [];
+        $courseStudentsByCourse = [];
+        $importIds = [];
 
         foreach ($courses as $course) {
             $courseId = (int) $course->id;
@@ -316,6 +318,22 @@ class TeachingCourseService
                 ? $course->teachingCourseStudents
                 : $course->teachingCourseStudents()->get();
 
+            $courseStudentsByCourse[$courseId] = $rows;
+
+            foreach ($rows as $courseStudent) {
+                if ($courseStudent->trashed()) {
+                    continue;
+                }
+
+                if ($courseStudent->import116_id) {
+                    $importIds[] = (int) $courseStudent->import116_id;
+                }
+            }
+        }
+
+        $this->preloadImportUserIds($importIds);
+
+        foreach ($courseStudentsByCourse as $courseId => $rows) {
             foreach ($rows as $courseStudent) {
                 if ($courseStudent->trashed()) {
                     continue;
@@ -926,6 +944,32 @@ class TeachingCourseService
     private function normalizedStudentReferenceValue(mixed $value): string
     {
         return Str::lower(trim((string) $value));
+    }
+
+    /**
+     * @param  array<int, int>  $importIds
+     */
+    private function preloadImportUserIds(array $importIds): void
+    {
+        $uncachedImportIds = collect($importIds)
+            ->filter(fn (int $importId): bool => $importId > 0)
+            ->unique()
+            ->reject(fn (int $importId): bool => array_key_exists($importId, $this->importUserIdCache))
+            ->values();
+
+        if ($uncachedImportIds->isEmpty()) {
+            return;
+        }
+
+        $userIdsByImportId = Import116::query()
+            ->whereIn('id', $uncachedImportIds)
+            ->pluck('user_id', 'id');
+
+        foreach ($uncachedImportIds as $importId) {
+            $userId = $userIdsByImportId->get($importId);
+
+            $this->importUserIdCache[$importId] = $userId ? (int) $userId : null;
+        }
     }
 
     private function userIdForImport(int $importId): ?int

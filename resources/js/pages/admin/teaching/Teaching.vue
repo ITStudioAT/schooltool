@@ -634,6 +634,14 @@ export default {
                 }
             },
         },
+        selected_course(course) {
+            if (!course?.details_loaded || !this.selected_courseDate?.id) {
+                return
+            }
+
+            this.selected_courseDate = (course.course_dates || [])
+                .find((courseDate) => courseDate.id === this.selected_courseDate.id) || null
+        },
     },
 
     methods: {

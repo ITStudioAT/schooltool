@@ -171,7 +171,7 @@ describe('index', function () {
             ->assertJsonPath('uses_entry_areas_for_grading_schema', false);
     });
 
-    test('courses index does not query per course date for attendance metadata', function () {
+    test('courses index returns lightweight timetable summaries', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         $course = TeachingCourse::factory()->create([
@@ -212,12 +212,20 @@ describe('index', function () {
         $this->getJson('/api/admin/teaching/courses')
             ->assertOk()
             ->assertJsonCount(1, 'data')
-            ->assertJsonCount(20, 'data.0.course_dates');
+            ->assertJsonCount(20, 'data.0.course_dates')
+            ->assertJsonPath('data.0.details_loaded', false)
+            ->assertJsonCount(2, 'data.0.students')
+            ->assertJsonMissingPath('data.0.students.0.first_name')
+            ->assertJsonMissingPath('data.0.students_info')
+            ->assertJsonMissingPath('data.0.students_deleted_info')
+            ->assertJsonMissingPath('data.0.course_dates.0.attendance')
+            ->assertJsonMissingPath('data.0.course_dates.0.adopted_materials')
+            ->assertJsonMissingPath('data.0.teacher_teaching_schema');
 
         $queryCount = count(DB::getQueryLog());
         DB::disableQueryLog();
 
-        expect($queryCount)->toBeLessThan(80);
+        expect($queryCount)->toBeLessThan(30);
     });
 
     test('teaching_admin can access courses index', function () {
@@ -236,6 +244,31 @@ describe('index', function () {
         $response->assertStatus(200);
     });
 
+    test('admin cannot view course details from another school', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+        ]);
+
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertForbidden();
+    });
+
+    test('teacher cannot view another teachers course details', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+        ]);
+
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertForbidden();
+    });
+
     test('returns courses for current school and schoolyear only', function () {
         $this->actingAs($this->admin, 'sanctum');
 
@@ -249,7 +282,7 @@ describe('index', function () {
         ]);
 
         // Create course for other school
-        TeachingCourse::factory()->create([
+        $course = TeachingCourse::factory()->create([
             'school_id' => $this->otherSchool->id,
             'schoolyear_id' => $this->otherSchoolyear->id,
             'title' => 'Physik',
@@ -304,15 +337,15 @@ describe('index', function () {
             'sem_1_grade' => 'NB',
         ]);
 
-        $this->getJson('/api/admin/teaching/courses')
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
             ->assertOk()
-            ->assertJsonPath('data.0.students.0.id', $import->id)
-            ->assertJsonPath('data.0.students.0.user_id', null)
-            ->assertJsonPath('data.0.students.0.import116_id', $import->id)
-            ->assertJsonPath('data.0.students.0.first_name', 'Alina')
-            ->assertJsonPath('data.0.students.0.last_name', 'Husic')
-            ->assertJsonPath('data.0.students.0.schoolclass', '5A')
-            ->assertJsonPath('data.0.students.0.sem_1_grade', 'NB');
+            ->assertJsonPath('data.students.0.id', $import->id)
+            ->assertJsonPath('data.students.0.user_id', null)
+            ->assertJsonPath('data.students.0.import116_id', $import->id)
+            ->assertJsonPath('data.students.0.first_name', 'Alina')
+            ->assertJsonPath('data.students.0.last_name', 'Husic')
+            ->assertJsonPath('data.students.0.schoolclass', '5A')
+            ->assertJsonPath('data.students.0.sem_1_grade', 'NB');
     });
 
     test('uses an explicitly linked user when import and user emails differ', function () {
@@ -353,13 +386,13 @@ describe('index', function () {
             'import116_id' => $import->id,
         ]);
 
-        $this->getJson('/api/admin/teaching/courses')
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
             ->assertOk()
-            ->assertJsonPath('data.0.students.0.id', $student->id)
-            ->assertJsonPath('data.0.students.0.user_id', $student->id)
-            ->assertJsonPath('data.0.students.0.import116_id', $import->id)
-            ->assertJsonPath('data.0.students.0.first_name', 'Paul')
-            ->assertJsonPath('data.0.students.0.last_name', 'Ahlgrimm');
+            ->assertJsonPath('data.students.0.id', $student->id)
+            ->assertJsonPath('data.students.0.user_id', $student->id)
+            ->assertJsonPath('data.students.0.import116_id', $import->id)
+            ->assertJsonPath('data.students.0.first_name', 'Paul')
+            ->assertJsonPath('data.students.0.last_name', 'Ahlgrimm');
     });
 
     test('does not return course students linked to an import from another schoolyear', function () {
@@ -396,6 +429,10 @@ describe('index', function () {
         $this->getJson('/api/admin/teaching/courses')
             ->assertOk()
             ->assertJsonCount(0, 'data.0.students');
+
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertOk()
+            ->assertJsonCount(0, 'data.students');
     });
 
     test('includes the course owners schoolyear scoped teaching definitions in the course payload', function () {
@@ -430,7 +467,7 @@ describe('index', function () {
             'teaching_show_behaviour' => false,
         ])->save();
 
-        TeachingCourse::factory()->create([
+        $course = TeachingCourse::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
             'user_id' => $this->teacher->id,
@@ -439,15 +476,16 @@ describe('index', function () {
             'teaching_schema_id' => $teacherSchemaId,
         ]);
 
-        $this->getJson('/api/admin/teaching/courses')
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
             ->assertOk()
-            ->assertJsonPath('data.0.teacher_teaching_schema.id', $teacherSchemaId)
-            ->assertJsonPath('data.0.teacher_teaching_schema.name', 'Lehrkraft-Schema')
-            ->assertJsonPath('data.0.teacher_teaching_schema.works.0.short_name', 'MA')
-            ->assertJsonPath('data.0.teacher_teaching_schema.grading.semester_count', 2)
-            ->assertJsonPath('data.0.teacher_teaching_behaviour.0.short_name', 'BZ')
-            ->assertJsonPath('data.0.teacher_teaching_notifications.0.short_name', 'INF')
-            ->assertJsonPath('data.0.teacher_teaching_show_behaviour', false);
+            ->assertJsonPath('data.teacher_teaching_schema.id', $teacherSchemaId)
+            ->assertJsonPath('data.teacher_teaching_schema.name', 'Lehrkraft-Schema')
+            ->assertJsonPath('data.teacher_teaching_schema.works.0.short_name', 'MA')
+            ->assertJsonPath('data.teacher_teaching_schema.grading.semester_count', 2)
+            ->assertJsonPath('data.teacher_teaching_behaviour.0.short_name', 'BZ')
+            ->assertJsonPath('data.teacher_teaching_notifications.0.short_name', 'INF')
+            ->assertJsonPath('data.teacher_teaching_show_behaviour', false)
+            ->assertJsonPath('data.details_loaded', true);
     });
 
     test('returns available classes from Import116', function () {
@@ -550,10 +588,10 @@ describe('index', function () {
             'teaching_curriculum_id' => $curriculum->id,
         ]);
 
-        $response = $this->getJson('/api/admin/teaching/courses');
+        $response = $this->getJson("/api/admin/teaching/courses/{$course->id}");
         $response->assertOk();
 
-        $courseData = collect($response->json('data'))->firstWhere('id', $course->id);
+        $courseData = $response->json('data');
 
         expect($courseData)->not->toBeNull()
             ->and(data_get($courseData, 'teaching_curriculum.id'))->toBe($curriculum->id)
@@ -589,10 +627,10 @@ describe('index', function () {
             'canceled_at' => now()->subDay(),
         ]);
 
-        $response = $this->getJson('/api/admin/teaching/courses');
+        $response = $this->getJson("/api/admin/teaching/courses/{$course->id}");
         $response->assertStatus(200);
 
-        $courseData = collect($response->json('data'))->firstWhere('id', $course->id);
+        $courseData = $response->json('data');
         expect($courseData)->not->toBeNull();
 
         $students = collect($courseData['students'] ?? []);
@@ -632,11 +670,11 @@ describe('index', function () {
             'user_id' => $student->id,
         ]);
 
-        $response = $this->getJson('/api/admin/teaching/courses');
+        $response = $this->getJson("/api/admin/teaching/courses/{$course->id}");
 
         $response->assertSuccessful();
 
-        $courseData = collect($response->json('data'))->firstWhere('id', $course->id);
+        $courseData = $response->json('data');
         expect($courseData)->not->toBeNull();
 
         $studentPayload = collect($courseData['students'] ?? [])->firstWhere('id', $student->id);
@@ -684,8 +722,8 @@ describe('index', function () {
             'import116_id' => $import->id,
         ]);
 
-        $response = $this->getJson('/api/admin/teaching/courses')->assertSuccessful();
-        $courseData = collect($response->json('data'))->firstWhere('id', $course->id);
+        $response = $this->getJson("/api/admin/teaching/courses/{$course->id}")->assertSuccessful();
+        $courseData = $response->json('data');
         $studentPayload = collect($courseData['students'] ?? [])->firstWhere('id', $student->id);
 
         expect($studentPayload)->not->toBeNull()
@@ -722,14 +760,14 @@ describe('index', function () {
             'import116_id' => $import->id,
         ]);
 
-        $response = $this->getJson('/api/admin/teaching/courses')->assertSuccessful();
-        $courseData = collect($response->json('data'))->firstWhere('id', $course->id);
+        $response = $this->getJson("/api/admin/teaching/courses/{$course->id}")->assertSuccessful();
+        $courseData = $response->json('data');
         $studentPayload = collect($courseData['students'] ?? [])->firstWhere('id', $student->id);
 
         expect($studentPayload)->not->toHaveKeys(['age', 'birth_date', 'login_at']);
     });
 
-    test('courses index batches curriculum assignment dependency checks', function () {
+    test('course detail batches curriculum assignment dependency checks', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         $schemaIds = ['batch-schema-one', 'batch-schema-two', 'batch-schema-three'];
@@ -795,7 +833,8 @@ describe('index', function () {
         DB::flushQueryLog();
         DB::enableQueryLog();
 
-        $response = $this->getJson('/api/admin/teaching/courses');
+        [$firstCourse, $firstStudents] = $courses->first();
+        $response = $this->getJson("/api/admin/teaching/courses/{$firstCourse->id}");
 
         $queries = collect(DB::getQueryLog())->pluck('query');
         DB::disableQueryLog();
@@ -810,8 +849,7 @@ describe('index', function () {
 
         $response->assertOk();
 
-        [$firstCourse, $firstStudents] = $courses->first();
-        $firstCoursePayload = collect($response->json('data'))->firstWhere('id', $firstCourse->id);
+        $firstCoursePayload = $response->json('data');
         $entryBlockedStudent = collect($firstCoursePayload['students'] ?? [])->firstWhere('id', $firstStudents[1]->id);
         $attendanceBlockedStudent = collect($firstCoursePayload['students'] ?? [])->firstWhere('id', $firstStudents[2]->id);
 
@@ -1332,7 +1370,7 @@ test('course index returns the assigned entry area and owner-scoped options', fu
         'name' => 'Ermahnung',
         'category' => 'Verhalten',
     ]);
-    TeachingCourse::factory()->create([
+    $course = TeachingCourse::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'user_id' => $this->teacher->id,
@@ -1342,18 +1380,21 @@ test('course index returns the assigned entry area and owner-scoped options', fu
         'teaching_entry_area_id' => $teacherEntryArea->id,
     ]);
 
-    $this->getJson('/api/admin/teaching/courses')
+    $this->getJson("/api/admin/teaching/courses/{$course->id}")
         ->assertOk()
-        ->assertJsonPath('data.0.teaching_entry_area.id', $teacherEntryArea->id)
-        ->assertJsonPath('data.0.teaching_entry_area.name', 'DGB')
-        ->assertJsonPath('data.0.teaching_entry_area.entry_definitions.0.id', $gradingEntry->id)
-        ->assertJsonPath('data.0.teaching_entry_area.entry_definitions.0.has_table_marking', true)
-        ->assertJsonPath('data.0.teaching_entry_area.entry_definitions.0.table_marking_color', 'green')
-        ->assertJsonPath('data.0.teaching_entry_area.entry_definitions.1.id', $behaviourEntry->id)
-        ->assertJsonPath('data.0.teacher_teaching_entry_areas', [[
+        ->assertJsonPath('data.teaching_entry_area.id', $teacherEntryArea->id)
+        ->assertJsonPath('data.teaching_entry_area.name', 'DGB')
+        ->assertJsonPath('data.teaching_entry_area.entry_definitions.0.id', $gradingEntry->id)
+        ->assertJsonPath('data.teaching_entry_area.entry_definitions.0.has_table_marking', true)
+        ->assertJsonPath('data.teaching_entry_area.entry_definitions.0.table_marking_color', 'green')
+        ->assertJsonPath('data.teaching_entry_area.entry_definitions.1.id', $behaviourEntry->id)
+        ->assertJsonPath('data.teacher_teaching_entry_areas', [[
             'id' => $teacherEntryArea->id,
             'name' => 'DGB',
-        ]])
+        ]]);
+
+    $this->getJson('/api/admin/teaching/courses')
+        ->assertOk()
         ->assertJsonPath('entry_areas', [[
             'id' => $adminEntryArea->id,
             'name' => 'Admin-Bereich',

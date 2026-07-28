@@ -9,7 +9,9 @@ describe('Students timetable timetable page', () => {
             'utf8',
         )
 
-        expect(componentSource).toContain("import Overview from '../overview/Overview.vue'")
+        expect(componentSource).toContain(
+            "const Overview = defineAsyncComponent(() => import('../overview/Overview.vue'))",
+        )
         expect(componentSource).toContain('<Overview v-if="subAction === \'overview\'" />')
         expect(componentSource).not.toContain("import RobotTimetable from '../robot/RobotTimetable.vue'")
         expect(componentSource).not.toContain('<RobotTimetable v-else-if="subAction === \'robot\'" />')
