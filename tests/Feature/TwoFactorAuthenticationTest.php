@@ -75,6 +75,16 @@ test('current password confirmation is required and stored in the session', func
     $this->assertTrue(session()->has('auth.password_confirmed_at'));
 });
 
+test('two factor management explicitly starts a session for API requests', function () {
+    $this->withHeader('Origin', 'https://stateless.example')
+        ->actingAs($this->user, 'web')
+        ->postJson('/api/admin/confirm-password', ['password' => 'password'])
+        ->assertOk()
+        ->assertJson(['confirmed' => true]);
+
+    $this->assertTrue(session()->has('auth.password_confirmed_at'));
+});
+
 test('a user can start setup but two factor remains inactive until confirmation', function () {
     fakeTwoFactorProvider();
 
