@@ -1,314 +1,324 @@
 <template>
     <div v-if="config && config.is_auth" class="admin-dashboard-page">
-        <v-container fluid class="admin-dashboard-page__content pa-4 pa-md-6">
-            <!-- Header -->
-            <v-card flat rounded="xl" class="mb-6">
-                <v-card-text class="d-flex align-center justify-space-between flex-wrap ga-4 py-3">
-                    <div class="d-flex align-center ga-3">
-                        <v-avatar color="primary" rounded="lg" size="42">
-                            <v-icon color="white" size="22">mdi-school</v-icon>
-                        </v-avatar>
-                        <div>
-                            <div class="text-overline text-medium-emphasis mb-n1" style="line-height: 1.4">Admin Dashboard</div>
-                            <div class="text-h5 font-weight-bold">SchoolTool</div>
-                        </div>
+        <v-container fluid class="admin-dashboard-page__content">
+            <header class="admin-dashboard-page__onebar">
+                <div class="admin-dashboard-page__brand">
+                    <div class="admin-dashboard-page__brand-mark">
+                        <v-icon icon="mdi-school-outline" size="21" />
                     </div>
-                    <div class="d-flex align-center ga-2 flex-wrap">
-                        <v-chip variant="tonal" size="small" prepend-icon="mdi-tag-outline">
-                            v{{ config?.version }}
-                        </v-chip>
-                        <v-chip
-                            v-if="config?.selected_school?.long_name || config?.selected_school?.name"
-                            variant="tonal" size="small" prepend-icon="mdi-domain">
-                            {{ config?.selected_school?.long_name || config?.selected_school?.name }}
-                        </v-chip>
+                    <div>
+                        <div class="admin-dashboard-page__brand-name">SchoolTool</div>
+                        <div class="admin-dashboard-page__eyebrow">Admin Dashboard</div>
                     </div>
-                </v-card-text>
-            </v-card>
+                </div>
 
-            <v-card rounded="xl" variant="flat" class="mb-4">
-                <v-card-text class="pa-5">
-                    <div class="d-flex align-start justify-space-between flex-wrap ga-3">
-                        <div>
-                            <div class="text-overline text-medium-emphasis mb-n1" style="line-height: 1.4">Versionen</div>
-                            <div class="admin-dashboard-page__app-version">
-                                v{{ appVersion }}
-                            </div>
-                        </div>
-                        <v-icon icon="mdi-source-branch" size="28" color="primary" />
-                    </div>
-
-                    <v-row dense class="mt-4">
-                        <v-col v-for="item in versionItems" :key="item.key" cols="6" sm="4" md="3">
-                            <v-sheet rounded="lg" border class="pa-3">
-                                <div class="text-caption text-medium-emphasis">{{ item.label }}</div>
-                                <div class="text-body-2 font-weight-bold text-truncate" :title="item.value">
-                                    {{ item.value }}
-                                </div>
-                            </v-sheet>
-                        </v-col>
-                    </v-row>
-                </v-card-text>
-            </v-card>
-
-            <!-- KPI Card -->
-            <v-card rounded="xl" variant="flat" class="mb-4">
-                <v-card-text class="pa-5 d-flex align-center justify-space-between flex-wrap ga-4">
-                    <div class="d-flex align-center ga-3">
+                <div class="admin-dashboard-page__health">
+                    <div
+                        class="admin-dashboard-page__health-icon"
+                        :class="{
+                            'admin-dashboard-page__health-icon--healthy': health_loaded && healthStore.is_healthy,
+                            'admin-dashboard-page__health-icon--error': health_loaded && !healthStore.is_healthy,
+                        }">
                         <v-icon
-                            size="28"
-                            :icon="health_loaded ? (healthStore.is_healthy ? 'mdi-checkbox-marked-circle' : 'mdi-alert-circle') : 'mdi-progress-clock'"
-                            :color="health_loaded ? (healthStore.is_healthy ? 'success' : 'error') : 'warning'" />
-                        <div>
-                            <div class="text-overline text-medium-emphasis mb-n1" style="line-height: 1.4">System-Health</div>
-                            <span class="text-h5 font-weight-bold">
-                                {{ health_loaded ? (healthStore.is_healthy ? 'OK' : 'Fehler') : 'Laden...' }}
-                            </span>
+                            :icon="health_loaded ? (healthStore.is_healthy ? 'mdi-check' : 'mdi-alert-outline') : 'mdi-progress-clock'"
+                            size="18" />
+                    </div>
+                    <div>
+                        <div class="admin-dashboard-page__health-title">
+                            {{ !health_loaded ? 'Status wird geprüft' : healthStore.is_healthy ? 'Alles in Ordnung' : 'Prüfung erforderlich' }}
+                        </div>
+                        <div class="admin-dashboard-page__health-detail">
+                            {{ !health_loaded ? 'Scheduler und Worker werden geprüft' : healthStore.is_healthy ? 'Scheduler und Worker laufen' : 'Mindestens ein Dienst antwortet nicht' }}
                         </div>
                     </div>
-                    <div v-if="isAllowed(['admin', 'super_admin'])" class="d-flex align-center ga-3">
-                        <div v-if="restart_queues_loading" class="d-flex align-center ga-2">
-                            <v-progress-circular indeterminate size="16" width="2" color="warning" />
-                            <span class="text-caption text-medium-emphasis">
-                                Neustart + Tests laufen... {{ restart_countdown }}s
-                            </span>
+                </div>
+
+                <div
+                    v-if="config?.selected_school?.long_name || config?.selected_school?.name"
+                    class="admin-dashboard-page__metadata">
+                    <span class="admin-dashboard-page__meta-chip">
+                        {{ config?.selected_school?.long_name || config?.selected_school?.name }}
+                    </span>
+                </div>
+
+                <v-btn
+                    v-if="health_loaded && healthStore.is_healthy === false && isAllowed(['admin', 'super_admin'])"
+                    class="admin-dashboard-page__diagnosis-trigger"
+                    size="small"
+                    variant="tonal"
+                    color="error"
+                    prepend-icon="mdi-stethoscope"
+                    :aria-expanded="diagnostics_visible"
+                    aria-controls="system-diagnostics"
+                    @click="diagnostics_visible = true">
+                    Diagnose starten
+                </v-btn>
+            </header>
+
+            <main class="admin-dashboard-page__main">
+                <section
+                    v-if="diagnostics_visible && health_loaded && healthStore.is_healthy === false && isAllowed(['admin', 'super_admin'])"
+                    id="system-diagnostics"
+                    class="admin-dashboard-page__diagnostics"
+                    aria-labelledby="system-diagnostics-heading">
+                    <div class="admin-dashboard-page__diagnostics-heading">
+                        <div>
+                            <h2 id="system-diagnostics-heading">Systemdiagnose</h2>
+                            <p>Scheduler und Queue gezielt prüfen.</p>
                         </div>
                         <v-btn
-                            size="small" variant="tonal" color="warning"
+                            icon="mdi-close"
+                            size="small"
+                            variant="text"
+                            aria-label="Systemdiagnose schließen"
+                            @click="diagnostics_visible = false" />
+                    </div>
+
+                    <div class="admin-dashboard-page__diagnostics-statuses">
+                        <div>
+                            <span>Scheduler</span>
+                            <strong :class="{ 'admin-dashboard-page__diagnostics-error': !healthStore.scheduler?.is_healthy }">
+                                {{ healthStore.scheduler?.is_healthy ? 'Läuft' : 'Fehler' }}
+                            </strong>
+                            <small>Heartbeat: {{ formatHeartbeat(healthStore.scheduler?.last_heartbeat) }}</small>
+                        </div>
+                        <div>
+                            <span>Queue-Worker</span>
+                            <strong :class="{ 'admin-dashboard-page__diagnostics-error': !healthStore.worker?.is_healthy }">
+                                {{ healthStore.worker?.is_healthy ? 'Läuft' : 'Fehler' }}
+                            </strong>
+                            <small>Heartbeat: {{ formatHeartbeat(healthStore.worker?.last_heartbeat) }}</small>
+                        </div>
+                    </div>
+
+                    <div
+                        v-if="queue_test_visible"
+                        class="admin-dashboard-page__queue-result"
+                        :class="{ 'admin-dashboard-page__queue-result--success': healthStore.queue_test?.is_completed }"
+                        role="status">
+                        <v-icon
+                            :icon="queue_test_running ? 'mdi-progress-clock' : healthStore.queue_test?.is_completed ? 'mdi-check-circle-outline' : 'mdi-alert-circle-outline'"
+                            size="18" />
+                        <span v-if="queue_test_running">Queue-Test läuft …</span>
+                        <span v-else-if="healthStore.queue_test?.is_completed">
+                            Queue arbeitet
+                            <template v-if="healthStore.queue_test?.duration_seconds != null">
+                                ({{ healthStore.queue_test.duration_seconds }} s)
+                            </template>
+                        </span>
+                        <span v-else>Queue-Test konnte nicht abgeschlossen werden.</span>
+                    </div>
+
+                    <div class="admin-dashboard-page__diagnostics-actions">
+                        <v-btn
+                            size="small"
+                            variant="tonal"
+                            color="primary"
+                            prepend-icon="mdi-play-circle-outline"
+                            :loading="queue_test_running"
+                            :disabled="queue_test_running || restart_queues_loading"
+                            @click="runQueueTest">
+                            Queue testen
+                        </v-btn>
+                        <v-btn
+                            size="small"
+                            variant="outlined"
+                            color="warning"
                             prepend-icon="mdi-restart"
                             :loading="restart_queues_loading"
-                            :disabled="restart_queues_loading || health_loading"
+                            :disabled="restart_queues_loading || queue_test_running"
                             @click="restartQueues">
                             Queues neu starten
                         </v-btn>
                     </div>
-                </v-card-text>
-            </v-card>
+                </section>
 
-            <!-- System Health + User -->
-            <v-row>
-                <v-col cols="12" md="6">
-                    <v-card rounded="xl" class="fill-height">
-                        <v-card-text class="pa-5">
-                            <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-4">
+                <div class="admin-dashboard-page__overview-grid">
+                    <v-card flat border rounded="xl" class="admin-dashboard-page__panel admin-dashboard-page__version-panel">
+                        <v-card-text class="pa-0">
+                            <div class="admin-dashboard-page__version-heading">
                                 <div>
-                                    <div class="text-overline text-medium-emphasis">Monitoring</div>
-                                    <div class="text-h6 font-weight-bold">System-Health</div>
+                                    <h1 class="admin-dashboard-page__section-title">Aktuelle Version</h1>
+                                    <div class="admin-dashboard-page__app-version" data-testid="app-version">
+                                        v{{ appVersion }}
+                                    </div>
                                 </div>
-                                <div class="d-flex ga-2" v-if="isAllowed(['admin', 'super_admin'])">
-                                    <v-btn
-                                        size="small" variant="tonal" color="primary" rounded="lg"
-                                        prepend-icon="mdi-refresh"
-                                        :loading="health_loading" :disabled="health_loading"
-                                        @click="refreshHealth">
-                                        Status prüfen
-                                    </v-btn>
-                                    <v-btn
-                                        size="small" variant="outlined" rounded="lg"
-                                        prepend-icon="mdi-play-circle-outline"
-                                        :loading="queue_test_running"
-                                        :disabled="queue_test_running || health_loading"
-                                        @click="runQueueTest">
-                                        Queue testen
-                                    </v-btn>
-                                </div>
+                                <v-btn
+                                    size="small"
+                                    variant="text"
+                                    color="primary"
+                                    :append-icon="version_details_visible ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                                    :aria-expanded="version_details_visible"
+                                    aria-controls="version-details"
+                                    @click="version_details_visible = !version_details_visible">
+                                    {{ version_details_visible ? 'Weniger anzeigen' : 'Mehr anzeigen' }}
+                                </v-btn>
                             </div>
 
-                            <v-list density="compact" rounded="lg" class="pa-0">
-                                <v-list-item rounded="lg" class="mb-1 px-3">
-                                    <template #prepend>
-                                        <v-icon size="20" class="mr-3"
-                                            :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'"
-                                            :color="!health_loaded ? 'warning' : healthStore.is_healthy ? 'success' : 'error'" />
-                                    </template>
-                                    <v-list-item-title class="font-weight-medium text-body-2">Gesamtstatus</v-list-item-title>
-                                    <v-list-item-subtitle class="text-caption">
-                                        <template v-if="!health_loaded">Wird geladen...</template>
-                                        <template v-else-if="healthStore.is_healthy">Scheduler und Worker laufen</template>
-                                        <template v-else>Mindestens ein Dienst antwortet nicht</template>
-                                    </v-list-item-subtitle>
-                                    <template #append>
-                                        <v-chip size="x-small" variant="tonal"
-                                            :color="!health_loaded ? 'warning' : healthStore.is_healthy ? 'success' : 'error'">
-                                            {{ !health_loaded ? 'Laden...' : healthStore.is_healthy ? 'OK' : 'Fehler' }}
-                                        </v-chip>
-                                    </template>
-                                </v-list-item>
+                            <div
+                                v-show="version_details_visible"
+                                id="version-details"
+                                class="admin-dashboard-page__version-details">
+                                <div class="admin-dashboard-page__tech-grid">
+                                    <div v-for="item in versionItems" :key="item.key" class="admin-dashboard-page__tech-item">
+                                        <span>{{ item.label }}</span>
+                                        <strong :title="item.value">
+                                            {{ item.value }}
+                                        </strong>
+                                    </div>
+                                </div>
 
-                                <v-list-item rounded="lg" class="mb-1 px-3">
-                                    <template #prepend>
-                                        <v-icon size="20" class="mr-3"
-                                            :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.scheduler?.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'"
-                                            :color="!health_loaded ? 'warning' : healthStore.scheduler?.is_healthy ? 'success' : 'error'" />
-                                    </template>
-                                    <v-list-item-title class="font-weight-medium text-body-2">Scheduler</v-list-item-title>
-                                    <v-list-item-subtitle class="text-caption">
-                                        <template v-if="!health_loaded">Wird geladen...</template>
-                                        <template v-else-if="healthStore.scheduler?.is_healthy">Letzter Heartbeat: {{ formatHeartbeat(healthStore.scheduler.last_heartbeat) }}</template>
-                                        <template v-else-if="healthStore.scheduler?.last_heartbeat">Letzter Heartbeat: {{ formatHeartbeat(healthStore.scheduler.last_heartbeat) }} (veraltet)</template>
-                                        <template v-else>Kein Heartbeat empfangen</template>
-                                    </v-list-item-subtitle>
-                                    <template #append>
-                                        <v-chip size="x-small" variant="tonal"
-                                            :color="!health_loaded ? 'warning' : healthStore.scheduler?.is_healthy ? 'success' : 'error'">
-                                            {{ !health_loaded ? 'Laden...' : healthStore.scheduler?.is_healthy ? 'OK' : 'Fehler' }}
-                                        </v-chip>
-                                    </template>
-                                </v-list-item>
-
-                                <v-list-item rounded="lg" class="mb-1 px-3">
-                                    <template #prepend>
-                                        <v-icon size="20" class="mr-3"
-                                            :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.worker?.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'"
-                                            :color="!health_loaded ? 'warning' : healthStore.worker?.is_healthy ? 'success' : 'error'" />
-                                    </template>
-                                    <v-list-item-title class="font-weight-medium text-body-2">Worker</v-list-item-title>
-                                    <v-list-item-subtitle class="text-caption">
-                                        <template v-if="!health_loaded">Wird geladen...</template>
-                                        <template v-else-if="healthStore.worker?.is_healthy">Letzter Heartbeat: {{ formatHeartbeat(healthStore.worker.last_heartbeat) }}</template>
-                                        <template v-else-if="healthStore.worker?.last_heartbeat">Letzter Heartbeat: {{ formatHeartbeat(healthStore.worker.last_heartbeat) }} (veraltet)</template>
-                                        <template v-else>Kein Heartbeat empfangen</template>
-                                    </v-list-item-subtitle>
-                                    <template #append>
-                                        <v-chip size="x-small" variant="tonal"
-                                            :color="!health_loaded ? 'warning' : healthStore.worker?.is_healthy ? 'success' : 'error'">
-                                            {{ !health_loaded ? 'Laden...' : healthStore.worker?.is_healthy ? 'OK' : 'Fehler' }}
-                                        </v-chip>
-                                    </template>
-                                </v-list-item>
-
-                                <v-list-item v-if="queue_test_visible" rounded="lg" class="px-3">
-                                    <template #prepend>
-                                        <v-icon size="20" class="mr-3"
-                                            :class="{ 'mdi-spin': queue_test_running }"
-                                            :icon="queue_test_running ? 'mdi-loading' : healthStore.queue_test?.is_completed ? 'mdi-check-circle' : 'mdi-alert-circle'"
-                                            :color="queue_test_running ? 'info' : healthStore.queue_test?.is_completed ? 'success' : 'error'" />
-                                    </template>
-                                    <v-list-item-title class="font-weight-medium text-body-2">Queue-Test</v-list-item-title>
-                                    <v-list-item-subtitle class="text-caption">
-                                        <template v-if="queue_test_running">Job wird verarbeitet...</template>
-                                        <template v-else-if="healthStore.queue_test?.is_completed">Verarbeitet in {{ healthStore.queue_test.duration_seconds }}s</template>
-                                        <template v-else-if="healthStore.queue_test?.status === 'dispatched'">Job wartend in Warteschlange</template>
-                                        <template v-else>Test fehlgeschlagen</template>
-                                    </v-list-item-subtitle>
-                                    <template #append>
-                                        <v-chip size="x-small" variant="tonal"
-                                            :color="queue_test_running ? 'info' : healthStore.queue_test?.is_completed ? 'success' : 'error'">
-                                            {{ queue_test_running ? 'Läuft...' : healthStore.queue_test?.is_completed ? 'OK' : 'Fehler' }}
-                                        </v-chip>
-                                    </template>
-                                </v-list-item>
-                            </v-list>
+                                <div class="admin-dashboard-page__about-grid">
+                                    <section
+                                        v-for="section in aboutSections"
+                                        :key="section.key"
+                                        class="admin-dashboard-page__about-section">
+                                        <h2>{{ section.label }}</h2>
+                                        <dl>
+                                            <div v-for="item in section.items" :key="item.key">
+                                                <dt>{{ item.label }}</dt>
+                                                <dd :class="item.tone ? `admin-dashboard-page__about-value--${item.tone}` : null">
+                                                    {{ item.value }}
+                                                </dd>
+                                            </div>
+                                        </dl>
+                                    </section>
+                                </div>
+                            </div>
                         </v-card-text>
                     </v-card>
-                </v-col>
 
-                <v-col cols="12" md="6">
-                    <v-card rounded="xl" class="fill-height">
-                        <v-card-text class="pa-5">
-                            <div class="mb-4">
-                                <div class="text-overline text-medium-emphasis">Account</div>
-                                <div class="text-h6 font-weight-bold">Angemeldeter Benutzer</div>
+                    <v-card flat border rounded="xl" class="admin-dashboard-page__panel admin-dashboard-page__account-panel">
+                        <div class="admin-dashboard-page__account-heading">
+                            <h2 class="admin-dashboard-page__section-title">Angemeldeter Benutzer</h2>
+                            <v-btn
+                                size="small"
+                                variant="text"
+                                color="primary"
+                                :append-icon="account_details_visible ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                                :aria-expanded="account_details_visible"
+                                aria-controls="account-details"
+                                @click="account_details_visible = !account_details_visible">
+                                {{ account_details_visible ? 'Weniger anzeigen' : 'Mehr anzeigen' }}
+                            </v-btn>
+                        </div>
+
+                        <div class="admin-dashboard-page__account">
+                            <div class="admin-dashboard-page__account-copy">
+                                <strong class="admin-dashboard-page__account-name">
+                                    {{ config?.user?.last_name }} {{ config?.user?.first_name }}
+                                </strong>
+                                <span>{{ config?.user?.email }}</span>
                             </div>
+                        </div>
 
-                            <v-sheet rounded="lg" color="grey-lighten-5" class="pa-4 d-flex align-center ga-3">
-                                <v-avatar color="primary" rounded="lg" size="44" :title="userBadgeText(config?.user)">
-                                    <span class="text-body-2 font-weight-bold text-white">{{ userBadgeText(config?.user) }}</span>
-                                </v-avatar>
-                                <div class="overflow-hidden">
-                                    <div class="text-body-1 font-weight-bold text-truncate">
-                                        {{ config?.user?.last_name }} {{ config?.user?.first_name }}
-                                    </div>
-                                    <div class="text-body-2 text-medium-emphasis text-truncate">{{ config?.user?.email }}</div>
-                                </div>
-                            </v-sheet>
-
-                            <div class="d-flex flex-wrap ga-2 mt-4">
-                                <v-chip
-                                    v-for="role in config?.user?.roles || []" :key="role"
-                                    variant="tonal" size="small" prepend-icon="mdi-shield-account">
+                        <div v-show="account_details_visible" id="account-details" class="admin-dashboard-page__account-details">
+                            <div class="admin-dashboard-page__eyebrow">Rollen</div>
+                            <div class="admin-dashboard-page__roles">
+                                <span
+                                    v-for="role in config?.user?.roles || []"
+                                    :key="role"
+                                    class="admin-dashboard-page__role">
                                     {{ role }}
-                                </v-chip>
+                                </span>
                             </div>
-                        </v-card-text>
+                        </div>
                     </v-card>
-                </v-col>
-            </v-row>
+                </div>
 
-            <!-- Licence Cards -->
-            <v-row class="mt-1">
-                <v-col cols="12" md="6">
-                    <v-card rounded="xl" class="fill-height">
-                        <v-card-text class="pa-5">
-                            <div class="mb-4">
-                                <div class="text-overline text-medium-emphasis">Lizenzen</div>
-                                <div class="text-h6 font-weight-bold">Schullizenzen</div>
+                <section class="admin-dashboard-page__licences" aria-labelledby="licences-heading">
+                <div class="admin-dashboard-page__licence-heading">
+                    <div>
+                        <h2 id="licences-heading" class="admin-dashboard-page__licence-title">Lizenzen</h2>
+                        <p>Verfügbare Tools für die Schule und deinen Account.</p>
+                    </div>
+                    <div class="admin-dashboard-page__licence-summary">
+                        <span>{{ activeLicenceCount }} aktiv</span>
+                        <span v-if="expiredLicenceCount > 0" class="admin-dashboard-page__summary-expired">
+                            {{ expiredLicenceCount }} abgelaufen
+                        </span>
+                    </div>
+                </div>
+
+                <div class="admin-dashboard-page__licence-grid">
+                    <v-card flat border rounded="xl" class="admin-dashboard-page__panel admin-dashboard-page__licence-panel">
+                        <div class="admin-dashboard-page__licence-panel-heading">
+                            <div>
+                                <div class="admin-dashboard-page__eyebrow">Schule</div>
+                                <h3>Schullizenzen</h3>
                             </div>
+                            <span>{{ schoolLicencesWithSchoolLicence.length }}</span>
+                        </div>
 
-                            <template v-if="schoolLicencesWithSchoolLicence.length > 0">
-                                <v-sheet
-                                    v-for="licence in schoolLicencesWithSchoolLicence" :key="licence.id"
-                                    rounded="lg" border class="pa-3 mb-2">
-                                    <div class="font-weight-bold text-body-2">{{ licence.name }}</div>
-                                    <div v-if="licence.long_name" class="text-caption text-medium-emphasis mt-1">
-                                        {{ licence.long_name }}
-                                    </div>
-                                    <div class="mt-2">
-                                        <v-chip size="x-small" variant="tonal"
-                                            :color="isLicenceActive(licence) ? 'success' : 'error'">
-                                            <template v-if="isLicenceActive(licence) && licence.valid_until">
-                                                gültig bis {{ formatDateDisplay(licence.valid_until) }}
-                                            </template>
-                                            <template v-else-if="isLicenceActive(licence)">unbegrenzt</template>
-                                            <template v-else>abgelaufen</template>
-                                        </v-chip>
-                                    </div>
-                                </v-sheet>
-                            </template>
-
-                            <v-sheet v-else rounded="lg" class="pa-6 text-center" color="grey-lighten-5">
-                                <v-icon size="36" color="grey-lighten-1" class="mb-2">mdi-certificate-outline</v-icon>
-                                <div class="text-body-2 text-medium-emphasis">Keine Schullizenzen vorhanden.</div>
-                            </v-sheet>
-                        </v-card-text>
-                    </v-card>
-                </v-col>
-
-                <v-col cols="12" md="6">
-                    <v-card rounded="xl" class="fill-height">
-                        <v-card-text class="pa-5">
-                            <div class="mb-4">
-                                <div class="text-overline text-medium-emphasis">Lizenzen</div>
-                                <div class="text-h6 font-weight-bold">Meine Lizenzen</div>
+                        <div v-if="schoolLicencesWithSchoolLicence.length > 0" class="admin-dashboard-page__licence-list">
+                            <div
+                                v-for="licence in schoolLicencesWithSchoolLicence"
+                                :key="licence.id"
+                                class="admin-dashboard-page__licence-row">
+                                <div class="admin-dashboard-page__licence-symbol" aria-hidden="true">
+                                    <v-icon icon="mdi-certificate-outline" size="18" />
+                                </div>
+                                <div class="admin-dashboard-page__licence-copy">
+                                    <strong>{{ licence.name }}</strong>
+                                    <span v-if="licence.long_name">{{ licence.long_name }}</span>
+                                </div>
+                                <span
+                                    class="admin-dashboard-page__licence-status"
+                                    :class="{ 'admin-dashboard-page__licence-status--expired': !isLicenceActive(licence) }">
+                                    <template v-if="isLicenceActive(licence) && licence.valid_until">
+                                        bis {{ formatDateDisplay(licence.valid_until) }}
+                                    </template>
+                                    <template v-else-if="isLicenceActive(licence)">unbegrenzt</template>
+                                    <template v-else>abgelaufen</template>
+                                </span>
                             </div>
+                        </div>
 
-                            <template v-if="myLicenceEntries.length > 0">
-                                <v-sheet
-                                    v-for="entry in myLicenceEntries" :key="entry.key"
-                                    rounded="lg" border class="pa-3 mb-2">
-                                    <div class="font-weight-bold text-body-2">{{ entry.licence_name }}</div>
-                                    <div class="d-flex align-center ga-2 mt-2 flex-wrap">
-                                        <v-chip size="x-small" variant="tonal">{{ entry.type_label }}</v-chip>
-                                        <v-chip size="x-small" variant="tonal"
-                                            :color="entry.is_active ? 'success' : 'error'">
-                                            <template v-if="entry.is_active && entry.valid_until">
-                                                gültig bis {{ formatDateDisplay(entry.valid_until) }}
-                                            </template>
-                                            <template v-else-if="entry.is_active">unbegrenzt</template>
-                                            <template v-else>abgelaufen</template>
-                                        </v-chip>
-                                    </div>
-                                </v-sheet>
-                            </template>
-
-                            <v-sheet v-else rounded="lg" class="pa-6 text-center" color="grey-lighten-5">
-                                <v-icon size="36" color="grey-lighten-1" class="mb-2">mdi-account-key-outline</v-icon>
-                                <div class="text-body-2 text-medium-emphasis">Keine persönlichen Lizenzen vorhanden.</div>
-                            </v-sheet>
-                        </v-card-text>
+                        <div v-else class="admin-dashboard-page__empty">
+                            <v-icon icon="mdi-certificate-outline" size="30" />
+                            <span>Keine Schullizenzen vorhanden.</span>
+                        </div>
                     </v-card>
-                </v-col>
-            </v-row>
+
+                    <v-card flat border rounded="xl" class="admin-dashboard-page__panel admin-dashboard-page__licence-panel">
+                        <div class="admin-dashboard-page__licence-panel-heading">
+                            <div>
+                                <div class="admin-dashboard-page__eyebrow">Persönlich</div>
+                                <h3>Meine Lizenzen</h3>
+                            </div>
+                            <span>{{ myLicenceEntries.length }}</span>
+                        </div>
+
+                        <div v-if="myLicenceEntries.length > 0" class="admin-dashboard-page__licence-list">
+                            <div v-for="entry in myLicenceEntries" :key="entry.key" class="admin-dashboard-page__licence-row">
+                                <div class="admin-dashboard-page__licence-symbol" aria-hidden="true">
+                                    <v-icon icon="mdi-account-key-outline" size="18" />
+                                </div>
+                                <div class="admin-dashboard-page__licence-copy">
+                                    <strong>{{ entry.licence_name }}</strong>
+                                    <span>{{ entry.type_label }}</span>
+                                </div>
+                                <span
+                                    class="admin-dashboard-page__licence-status"
+                                    :class="{ 'admin-dashboard-page__licence-status--expired': !entry.is_active }">
+                                    <template v-if="entry.is_active && entry.valid_until">
+                                        bis {{ formatDateDisplay(entry.valid_until) }}
+                                    </template>
+                                    <template v-else-if="entry.is_active">unbegrenzt</template>
+                                    <template v-else>abgelaufen</template>
+                                </span>
+                            </div>
+                        </div>
+
+                        <div v-else class="admin-dashboard-page__empty">
+                            <v-icon icon="mdi-account-key-outline" size="30" />
+                            <strong>Noch keine persönlichen Lizenzen</strong>
+                            <span>Für diesen Account sind aktuell keine eigenen Tools freigeschaltet.</span>
+                        </div>
+                    </v-card>
+                </div>
+                </section>
+            </main>
         </v-container>
 
         <v-dialog v-model="activation_dialog_open" max-width="560">
@@ -505,6 +515,9 @@ export default {
             health_loading: false,
             queue_test_running: false,
             queue_test_visible: false,
+            diagnostics_visible: false,
+            version_details_visible: false,
+            account_details_visible: false,
             activation_dialog_open: false,
             activation_dialog_loading: false,
             activation_dialog_licence: null,
@@ -538,6 +551,7 @@ export default {
         },
         versionItems() {
             const versions = this.config?.environment_versions || {}
+            const packages = versions.about?.packages || {}
 
             return [
                 { key: 'laravel', label: 'Laravel', value: versions.laravel },
@@ -548,10 +562,80 @@ export default {
                 { key: 'vue', label: 'Vue', value: versions.vue },
                 { key: 'vuetify', label: 'Vuetify', value: versions.vuetify },
                 { key: 'vite', label: 'Vite', value: versions.vite },
+                { key: 'pulse', label: 'Pulse', value: packages.pulse },
+                { key: 'livewire', label: 'Livewire', value: packages.livewire },
+                { key: 'permissions', label: 'Berechtigungen', value: packages.permissions },
             ].map((item) => ({
                 ...item,
                 value: item.value || 'nicht verfügbar',
             }))
+        },
+        aboutSections() {
+            const about = this.config?.environment_versions?.about || {}
+            const environment = about.environment || {}
+            const cache = about.cache || {}
+            const drivers = about.drivers || {}
+            const status = (value, activeLabel, inactiveLabel) => {
+                if (typeof value !== 'boolean') {
+                    return { value: 'nicht verfügbar', tone: null }
+                }
+
+                return {
+                    value: value ? activeLabel : inactiveLabel,
+                    tone: value ? 'warning' : 'success',
+                }
+            }
+            const cacheStatus = (value) => {
+                if (typeof value !== 'boolean') {
+                    return { value: 'nicht verfügbar', tone: null }
+                }
+
+                return {
+                    value: value ? 'gecached' : 'nicht gecached',
+                    tone: value ? 'success' : null,
+                }
+            }
+            const debugStatus = status(environment.debug_mode, 'aktiv', 'aus')
+            const maintenanceStatus = status(environment.maintenance_mode, 'aktiv', 'aus')
+
+            return [
+                {
+                    key: 'environment',
+                    label: 'Laufzeit',
+                    items: [
+                        { key: 'environment', label: 'Umgebung', value: environment.environment || 'nicht verfügbar' },
+                        { key: 'debug', label: 'Debug-Modus', ...debugStatus },
+                        { key: 'maintenance', label: 'Wartungsmodus', ...maintenanceStatus },
+                        { key: 'url', label: 'Host', value: environment.url || 'nicht verfügbar' },
+                        { key: 'timezone', label: 'Zeitzone', value: environment.timezone || 'nicht verfügbar' },
+                        { key: 'locale', label: 'Sprache', value: environment.locale || 'nicht verfügbar' },
+                    ],
+                },
+                {
+                    key: 'cache',
+                    label: 'Cache',
+                    items: [
+                        { key: 'config', label: 'Konfiguration', ...cacheStatus(cache.config) },
+                        { key: 'events', label: 'Events', ...cacheStatus(cache.events) },
+                        { key: 'routes', label: 'Routen', ...cacheStatus(cache.routes) },
+                        { key: 'views', label: 'Views', ...cacheStatus(cache.views) },
+                    ],
+                },
+                {
+                    key: 'drivers',
+                    label: 'Treiber',
+                    items: [
+                        { key: 'broadcasting', label: 'Broadcasting', value: drivers.broadcasting || 'nicht verfügbar' },
+                        { key: 'cache', label: 'Cache', value: drivers.cache || 'nicht verfügbar' },
+                        { key: 'database', label: 'Datenbank', value: drivers.database || 'nicht verfügbar' },
+                        { key: 'logs', label: 'Logs', value: drivers.logs || 'nicht verfügbar' },
+                        { key: 'mail', label: 'Mail', value: drivers.mail || 'nicht verfügbar' },
+                        { key: 'queue', label: 'Queue', value: drivers.queue || 'nicht verfügbar' },
+                        { key: 'scout', label: 'Scout', value: drivers.scout || 'nicht verfügbar' },
+                        { key: 'session', label: 'Session', value: drivers.session || 'nicht verfügbar' },
+                    ],
+                },
+            ]
         },
         activeLicenceCount() {
             const activeSchoolLicences = this.schoolLicencesWithSchoolLicence.filter((licence) => this.isLicenceActive(licence)).length
@@ -679,15 +763,6 @@ export default {
 
         user(id) {
             return this.school_admins.find((a) => a.id === id)
-        },
-        userBadgeShortName(user) {
-            const shortName = String(user?.short ?? user?.short_name ?? '').trim()
-            return shortName || ''
-        },
-        userBadgeText(user) {
-            const shortName = this.userBadgeShortName(user)
-            if (shortName) return shortName
-            return ((user?.first_name || '').slice(0, 1) + (user?.last_name || '').slice(0, 1)).toUpperCase()
         },
         localDateKey(date = new Date()) {
             const year = date.getFullYear()
@@ -1118,18 +1193,653 @@ export default {
 <style scoped>
 .admin-dashboard-page {
     min-height: 100vh;
-    background: rgb(var(--v-theme-surface-variant), 0.08);
+    background: #f7f8fa;
+    color: #25332c;
 }
 
 .admin-dashboard-page__content {
-    max-width: 1200px;
+    max-width: 1224px;
+    margin-inline: auto;
+    padding: 0;
+}
+
+.admin-dashboard-page__onebar {
+    min-height: 76px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 10px 26px;
+    background: #ffffff;
+    box-shadow: 0 4px 18px rgb(24 34 48 / 4%);
+}
+
+.admin-dashboard-page__brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 0 0 auto;
+}
+
+.admin-dashboard-page__brand-mark {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: rgb(var(--v-theme-primary));
+    color: #ffffff;
+    box-shadow: 0 6px 15px rgba(var(--v-theme-primary), 0.2);
+}
+
+.admin-dashboard-page__brand-name {
+    font-size: 0.95rem;
+    font-weight: 750;
+    line-height: 1.15;
+}
+
+.admin-dashboard-page__eyebrow {
+    color: #7a8580;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.3;
+    text-transform: uppercase;
+}
+
+.admin-dashboard-page__health {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding-left: 20px;
+    border-left: 1px solid #edf0ee;
+}
+
+.admin-dashboard-page__health-icon {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    flex: 0 0 30px;
+    place-items: center;
+    border-radius: 9px;
+    background: #f7eedc;
+    color: #9a6a2f;
+}
+
+.admin-dashboard-page__health-icon--healthy {
+    background: #dff7f2;
+    color: #078b7a;
+}
+
+.admin-dashboard-page__health-icon--error {
+    background: #f7e7e8;
+    color: #a34e52;
+}
+
+.admin-dashboard-page__health-title {
+    font-size: 0.78rem;
+    font-weight: 750;
+    line-height: 1.2;
+}
+
+.admin-dashboard-page__health-detail {
+    margin-top: 2px;
+    color: #7a8580;
+    font-size: 0.65rem;
+    line-height: 1.2;
+}
+
+.admin-dashboard-page__metadata {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.admin-dashboard-page__meta-chip,
+.admin-dashboard-page__role,
+.admin-dashboard-page__licence-summary span {
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: #f2f4f7;
+    color: #59655f;
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.admin-dashboard-page__diagnosis-trigger {
+    margin-left: auto;
+}
+
+.admin-dashboard-page__metadata + .admin-dashboard-page__diagnosis-trigger {
     margin-left: 0;
-    margin-right: auto;
+}
+
+.admin-dashboard-page__diagnosis-trigger,
+.admin-dashboard-page__diagnostics :deep(.v-btn) {
+    border-radius: 9px;
+    font-size: 0.68rem;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.admin-dashboard-page__main {
+    padding: 28px 34px 40px;
+}
+
+.admin-dashboard-page__diagnostics {
+    margin-bottom: 12px;
+    padding: 18px 20px;
+    border: 1px solid #efc9cb;
+    border-radius: 14px;
+    background: #fffafa;
+}
+
+.admin-dashboard-page__diagnostics-heading,
+.admin-dashboard-page__diagnostics-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.admin-dashboard-page__diagnostics-heading h2 {
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.2;
+}
+
+.admin-dashboard-page__diagnostics-heading p {
+    margin: 3px 0 0;
+    color: #7a8580;
+    font-size: 0.68rem;
+}
+
+.admin-dashboard-page__diagnostics-statuses {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.admin-dashboard-page__diagnostics-statuses > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 12px;
+    padding: 11px 13px;
+    border-radius: 10px;
+    background: #ffffff;
+}
+
+.admin-dashboard-page__diagnostics-statuses span,
+.admin-dashboard-page__diagnostics-statuses strong {
+    font-size: 0.72rem;
+}
+
+.admin-dashboard-page__diagnostics-statuses strong {
+    color: #367356;
+}
+
+.admin-dashboard-page__diagnostics-statuses small {
+    grid-column: 1 / -1;
+    color: #7a8580;
+    font-size: 0.64rem;
+}
+
+.admin-dashboard-page__diagnostics-statuses .admin-dashboard-page__diagnostics-error {
+    color: #a34e52;
+}
+
+.admin-dashboard-page__queue-result {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 9px 12px;
+    border-radius: 9px;
+    background: #f7e7e8;
+    color: #8e4448;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.admin-dashboard-page__queue-result--success {
+    background: #dff4f1;
+    color: #087e70;
+}
+
+.admin-dashboard-page__diagnostics-actions {
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+.admin-dashboard-page__overview-grid,
+.admin-dashboard-page__licence-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.625fr) minmax(320px, 1fr);
+    gap: 12px;
+}
+
+.admin-dashboard-page__panel {
+    min-width: 0;
+    padding: 20px;
+    border-color: #e4e7ec;
+    background: #ffffff;
+}
+
+.admin-dashboard-page__overview-grid > .admin-dashboard-page__panel {
+    min-height: 0;
+}
+
+.admin-dashboard-page__version-heading,
+.admin-dashboard-page__account-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.admin-dashboard-page__version-heading :deep(.v-btn),
+.admin-dashboard-page__account-heading :deep(.v-btn) {
+    margin-top: 1px;
+    border-radius: 9px;
+    font-size: 0.68rem;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.admin-dashboard-page__section-title {
+    margin: 3px 0 0;
+    color: #25332c;
+    font-size: 1.08rem;
+    font-weight: 750;
+    line-height: 1.25;
 }
 
 .admin-dashboard-page__app-version {
-    font-size: 1.85rem;
+    margin-top: 8px;
+    color: rgb(var(--v-theme-primary));
+    font-size: 1.65rem;
+    font-weight: 750;
+    line-height: 1.1;
+}
+
+.admin-dashboard-page__version-details {
+    margin-top: 18px;
+}
+
+.admin-dashboard-page__tech-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.admin-dashboard-page__tech-item {
+    min-width: 0;
+    padding: 11px 13px;
+    border-radius: 10px;
+    background: #f7f8fa;
+}
+
+.admin-dashboard-page__tech-item span,
+.admin-dashboard-page__tech-item strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-dashboard-page__tech-item span {
+    color: #7a8580;
+    font-size: 0.65rem;
+}
+
+.admin-dashboard-page__tech-item strong {
+    margin-top: 3px;
+    font-size: 0.78rem;
+}
+
+.admin-dashboard-page__about-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.admin-dashboard-page__about-section {
+    min-width: 0;
+    padding: 13px;
+    border: 1px solid #edf0ee;
+    border-radius: 10px;
+}
+
+.admin-dashboard-page__about-section h2 {
+    margin: 0 0 8px;
+    color: #55615b;
+    font-size: 0.68rem;
+    font-weight: 750;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.admin-dashboard-page__about-section dl {
+    margin: 0;
+}
+
+.admin-dashboard-page__about-section dl > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 0;
+    border-top: 1px solid #f1f3f2;
+}
+
+.admin-dashboard-page__about-section dt,
+.admin-dashboard-page__about-section dd {
+    overflow: hidden;
+    margin: 0;
+    font-size: 0.68rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-dashboard-page__about-section dt {
+    color: #7a8580;
+}
+
+.admin-dashboard-page__about-section dd {
+    color: #34423b;
     font-weight: 700;
-    line-height: 1.15;
+    text-align: right;
+}
+
+.admin-dashboard-page__about-value--success {
+    color: #367356 !important;
+}
+
+.admin-dashboard-page__about-value--warning {
+    color: #9b6321 !important;
+}
+
+.admin-dashboard-page__account {
+    margin-top: 8px;
+}
+
+.admin-dashboard-page__account-copy {
+    min-width: 0;
+}
+
+.admin-dashboard-page__account-copy strong,
+.admin-dashboard-page__account-copy span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-dashboard-page__account-copy .admin-dashboard-page__account-name {
+    color: rgb(var(--v-theme-primary));
+    font-size: 1.65rem;
+    font-weight: 750;
+    line-height: 1.1;
+}
+
+.admin-dashboard-page__account-copy span {
+    margin-top: 8px;
+    color: #7a8580;
+    font-size: 0.72rem;
+}
+
+.admin-dashboard-page__account-details {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #edf0ee;
+}
+
+.admin-dashboard-page__roles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 14px;
+}
+
+.admin-dashboard-page__role {
+    background: #edf8f6;
+    color: #087e70;
+}
+
+.admin-dashboard-page__licences {
+    margin-top: 0;
+}
+
+.admin-dashboard-page__licence-heading {
+    min-height: 120px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 30px 2px 14px;
+}
+
+.admin-dashboard-page__licence-title {
+    margin: 3px 0 0;
+    font-size: 1.35rem;
+    font-weight: 750;
+    line-height: 1.2;
+}
+
+.admin-dashboard-page__licence-heading p {
+    margin: 4px 0 0;
+    color: #7a8580;
+    font-size: 0.76rem;
+}
+
+.admin-dashboard-page__licence-summary {
+    display: flex;
+    gap: 6px;
+    padding-bottom: 2px;
+}
+
+.admin-dashboard-page__licence-summary span {
+    background: #dff4f1;
+    color: #087e70;
+}
+
+.admin-dashboard-page__licence-summary .admin-dashboard-page__summary-expired {
+    background: #f7e7e8;
+    color: #a34e52;
+}
+
+.admin-dashboard-page__licence-panel {
+    min-height: 260px;
+}
+
+.admin-dashboard-page__licence-panel-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.admin-dashboard-page__licence-panel-heading h3 {
+    margin: 3px 0 0;
+    font-size: 0.98rem;
+}
+
+.admin-dashboard-page__licence-panel-heading > span {
+    min-width: 24px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    background: #f2f4f7;
+    color: #66716b;
+    font-size: 0.68rem;
+    font-weight: 750;
+    text-align: center;
+}
+
+.admin-dashboard-page__licence-list {
+    display: grid;
+    gap: 8px;
+}
+
+.admin-dashboard-page__licence-row {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 11px;
+    padding: 11px 12px;
+    border: 1px solid #eaecf0;
+    border-radius: 11px;
+}
+
+.admin-dashboard-page__licence-symbol {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    background: #edf8f6;
+    color: #087e70;
+}
+
+.admin-dashboard-page__licence-copy {
+    min-width: 0;
+}
+
+.admin-dashboard-page__licence-copy strong,
+.admin-dashboard-page__licence-copy span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-dashboard-page__licence-copy strong {
+    font-size: 0.78rem;
+}
+
+.admin-dashboard-page__licence-copy span {
+    margin-top: 2px;
+    color: #7a8580;
+    font-size: 0.66rem;
+}
+
+.admin-dashboard-page__licence-status {
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: #dff4f1;
+    color: #087e70;
+    font-size: 0.62rem;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.admin-dashboard-page__licence-status--expired {
+    background: #f7e7e8;
+    color: #a34e52;
+}
+
+.admin-dashboard-page__empty {
+    min-height: 158px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 22px;
+    border-radius: 12px;
+    background: #f8f9fa;
+    color: #7a8580;
+    text-align: center;
+}
+
+.admin-dashboard-page__empty strong {
+    color: #4f5c55;
+    font-size: 0.8rem;
+}
+
+.admin-dashboard-page__empty span {
+    max-width: 280px;
+    font-size: 0.7rem;
+    line-height: 1.4;
+}
+
+@media (max-width: 1099px) {
+    .admin-dashboard-page__onebar {
+        flex-wrap: wrap;
+    }
+
+    .admin-dashboard-page__metadata {
+        display: none;
+    }
+
+    .admin-dashboard-page__overview-grid,
+    .admin-dashboard-page__licence-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 699px) {
+    .admin-dashboard-page__onebar {
+        gap: 10px;
+        padding: 10px 16px;
+    }
+
+    .admin-dashboard-page__health {
+        display: none;
+    }
+
+    .admin-dashboard-page__main {
+        padding: 18px 16px 30px;
+    }
+
+    .admin-dashboard-page__panel {
+        padding: 16px;
+    }
+
+    .admin-dashboard-page__diagnostics-statuses {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-dashboard-page__diagnostics-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .admin-dashboard-page__diagnostics-actions :deep(.v-btn) {
+        width: 100%;
+    }
+
+    .admin-dashboard-page__tech-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .admin-dashboard-page__about-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-dashboard-page__version-heading,
+    .admin-dashboard-page__account-heading {
+        align-items: flex-end;
+    }
+
+    .admin-dashboard-page__licence-heading {
+        min-height: auto;
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 28px 2px 14px;
+    }
+
+    .admin-dashboard-page__licence-row {
+        grid-template-columns: 34px minmax(0, 1fr);
+    }
+
+    .admin-dashboard-page__licence-status {
+        grid-column: 2;
+        justify-self: start;
+    }
 }
 </style>

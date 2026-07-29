@@ -131,7 +131,7 @@ test('authenticated config excludes environment versions by default', function (
 });
 
 test('authenticated config can include environment versions', function () {
-    Cache::forget('admin.environment_versions.v9');
+    Cache::forget('admin.environment_versions.v12');
     config()->set('schooltool.environment_versions', [
         'composer' => '2.8.12',
         'npm' => '10.9.2',
@@ -149,6 +149,14 @@ test('authenticated config can include environment versions', function () {
         ->assertJsonPath('environment_versions.composer', '2.8.12')
         ->assertJsonPath('environment_versions.npm', '10.9.2')
         ->assertJsonPath('environment_versions.node', 'v22.16.0')
+        ->assertJsonPath('environment_versions.about.environment.environment', app()->environment())
+        ->assertJsonPath('environment_versions.about.environment.debug_mode', (bool) config('app.debug'))
+        ->assertJsonPath('environment_versions.about.environment.maintenance_mode', false)
+        ->assertJsonPath('environment_versions.about.environment.timezone', config('app.timezone'))
+        ->assertJsonPath('environment_versions.about.environment.locale', config('app.locale'))
+        ->assertJsonPath('environment_versions.about.drivers.database', config('database.default'))
+        ->assertJsonPath('environment_versions.about.drivers.queue', config('queue.default'))
+        ->assertJsonMissingPath('environment_versions.about.storage')
         ->assertJsonStructure([
             'environment_versions' => [
                 'app',
@@ -160,30 +168,67 @@ test('authenticated config can include environment versions', function () {
                 'vue',
                 'vuetify',
                 'vite',
+                'about' => [
+                    'packages' => [
+                        'pulse',
+                        'livewire',
+                        'permissions',
+                    ],
+                    'environment' => [
+                        'environment',
+                        'debug_mode',
+                        'url',
+                        'maintenance_mode',
+                        'timezone',
+                        'locale',
+                    ],
+                    'cache' => [
+                        'config',
+                        'events',
+                        'routes',
+                        'views',
+                    ],
+                    'drivers' => [
+                        'broadcasting',
+                        'cache',
+                        'database',
+                        'logs',
+                        'mail',
+                        'queue',
+                        'scout',
+                        'session',
+                    ],
+                ],
             ],
         ]);
 
     Process::assertDidntRun(fn (): bool => true);
 });
 
-test('authenticated config reports missing build metadata without probing the operating system', function () {
-    Cache::forget('admin.environment_versions.v9');
+test('authenticated config detects missing environment versions from the runtime', function () {
+    Cache::forget('admin.environment_versions.v12');
     config()->set('schooltool.environment_versions', [
         'composer' => null,
         'npm' => null,
         'node' => null,
     ]);
-    Process::fake();
+    Process::fake([
+        'composer --version --no-ansi' => Process::result(output: 'Composer version 2.10.0 2026-05-28 11:22:08'),
+        'npm --version' => Process::result(output: '11.14.1'),
+        'node --version' => Process::result(output: 'v22.22.2'),
+    ]);
 
     $this->actingAs($this->user);
 
     $this->getJson('/api/admin/config?include_environment_versions=1')
         ->assertSuccessful()
-        ->assertJsonPath('environment_versions.composer', null)
-        ->assertJsonPath('environment_versions.npm', null)
-        ->assertJsonPath('environment_versions.node', null);
+        ->assertJsonPath('environment_versions.composer', '2.10.0')
+        ->assertJsonPath('environment_versions.npm', '11.14.1')
+        ->assertJsonPath('environment_versions.node', 'v22.22.2');
 
-    Process::assertDidntRun(fn (): bool => true);
+    Process::assertRan('composer --version --no-ansi');
+    Process::assertRan('npm --version');
+    Process::assertRan('node --version');
 });
 
 test('config can include selected school infos for admin home screen', function () {

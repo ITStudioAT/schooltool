@@ -23,16 +23,21 @@ describe('Index runTests', () => {
         const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/index/Index.vue')
         const source = readFileSync(componentPath, 'utf8')
 
-        expect(source).toContain('<div class="text-h6 font-weight-bold">Meine Lizenzen</div>')
+        expect(source).toContain('<h3>Meine Lizenzen</h3>')
         expect(source).toContain('<template v-else>abgelaufen</template>')
         expect(source).not.toContain('<template v-else>nicht aktiv</template>')
     })
 
-    it('uses the shortened admin dashboard hero title', () => {
+    it('uses the compact Calm Focus dashboard header', () => {
         const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/index/Index.vue')
         const source = readFileSync(componentPath, 'utf8')
 
-        expect(source).toContain('<div class="text-h5 font-weight-bold">SchoolTool</div>')
+        expect(source).toContain('class="admin-dashboard-page__onebar"')
+        expect(source).toContain('<div class="admin-dashboard-page__brand-name">SchoolTool</div>')
+        expect(source).not.toContain('<span class="admin-dashboard-page__meta-chip">v{{ appVersion }}</span>')
+        expect(source).toContain('class="admin-dashboard-page__overview-grid"')
+        expect(source).toContain('class="admin-dashboard-page__licence-grid"')
+        expect(source).not.toContain('<div class="admin-dashboard-page__eyebrow">Berechtigungen</div>')
         expect(source).not.toContain('Zentrale Übersicht für Systemzustand, Team und Lizenzen')
         expect(source).not.toContain('Behalten Sie Admins, Gesundheitschecks und aktive Schul-Lizenzen in einer Oberfläche im Blick.')
     })
@@ -59,15 +64,40 @@ describe('Index runTests', () => {
         expect(expiredLicenceCount.call(context)).toBe(2)
     })
 
-    it('shows queue and test action buttons only for admin and super_admin', () => {
+    it('shows diagnostics only after an unhealthy status was detected', () => {
         const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/index/Index.vue')
         const source = readFileSync(componentPath, 'utf8')
 
-        expect(source).toContain(`v-if="isAllowed(['admin', 'super_admin'])" class="d-flex align-center ga-3"`)
-        expect(source).toContain(`v-if="isAllowed(['admin', 'super_admin'])"`)
+        expect(source).toContain(`v-if="health_loaded && healthStore.is_healthy === false && isAllowed(['admin', 'super_admin'])"`)
+        expect(source).toContain('Diagnose starten')
+        expect(source).toContain('diagnostics_visible: false')
+        expect(source).toContain('id="system-diagnostics"')
         expect(source).toContain('Queues neu starten')
         expect(source).toContain('Queue testen')
-        expect(source).not.toContain(`v-if="isAllowed(['super_admin'])" class="d-flex align-center ga-3"`)
+        expect(source).not.toContain('Status prüfen')
+        expect(source.indexOf('id="system-diagnostics"')).toBeLessThan(source.indexOf('Queue testen'))
+    })
+
+    it('uses neutral icons instead of invented licence abbreviations', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/index/Index.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<v-icon icon="mdi-certificate-outline" size="18" />')
+        expect(source).not.toContain('licenceBadgeText')
+    })
+
+    it('hides account roles behind the account details button by default', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/index/Index.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('account_details_visible: false')
+        expect(source).toContain('class="admin-dashboard-page__account-name"')
+        expect(source).toContain('font-size: 1.65rem')
+        expect(source).not.toContain('<v-avatar')
+        expect(source).not.toContain('userBadgeText')
+        expect(source).toContain('v-show="account_details_visible"')
+        expect(source).toContain('aria-controls="account-details"')
+        expect(source).toContain(`{{ account_details_visible ? 'Weniger anzeigen' : 'Mehr anzeigen' }}`)
     })
 
     it('loads dashboard data and health status for an authenticated lunch_admin', async () => {

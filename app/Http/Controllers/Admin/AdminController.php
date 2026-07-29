@@ -31,18 +31,21 @@ use App\Services\SchoolService;
 use App\Services\SchoolyearService;
 use App\Services\TeacherListService;
 use App\Traits\HasRoleTrait;
+use Composer\InstalledVersions;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
 use Lab404\Impersonate\Services\ImpersonateManager;
+use Throwable;
 
 class AdminController extends Controller
 {
     use HasRoleTrait;
 
-    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v9';
+    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v12';
 
     private const array STUDENTS_TIMETABLES_ROLES = [
         'super_admin',
@@ -157,21 +160,135 @@ class AdminController extends Controller
     }
 
     /**
-     * @return array<string, string|null>
+     * @return array<string, mixed>
      */
     private function environmentVersions(): array
     {
-        return Cache::remember(self::ENVIRONMENT_VERSIONS_CACHE_KEY, now()->addMinutes(10), fn (): array => [
+        $cachedVersions = Cache::get(self::ENVIRONMENT_VERSIONS_CACHE_KEY);
+        if (is_array($cachedVersions)) {
+            return $cachedVersions;
+        }
+
+        $versions = [
             'app' => config('schooltool.version', 'x.x.x'),
             'laravel' => app()->version(),
             'php' => PHP_VERSION,
-            'composer' => config('schooltool.environment_versions.composer'),
-            'npm' => config('schooltool.environment_versions.npm'),
-            'node' => config('schooltool.environment_versions.node'),
+            'composer' => $this->runtimeVersion(
+                'composer',
+                'composer --version --no-ansi',
+                '/Composer version\s+([0-9]+(?:\.[0-9]+){1,3})/i',
+            ),
+            'npm' => $this->runtimeVersion(
+                'npm',
+                'npm --version',
+                '/v?([0-9]+(?:\.[0-9]+){1,3})/',
+            ),
+            'node' => $this->runtimeVersion(
+                'node',
+                'node --version',
+                '/v?([0-9]+(?:\.[0-9]+){1,3})/',
+                'v',
+            ),
             'vue' => $this->packageLockVersion('vue'),
             'vuetify' => $this->packageLockVersion('vuetify'),
             'vite' => $this->packageLockVersion('vite'),
-        ]);
+            'about' => [
+                'packages' => [
+                    'pulse' => $this->composerPackageVersion('laravel/pulse'),
+                    'livewire' => $this->composerPackageVersion('livewire/livewire'),
+                    'permissions' => $this->composerPackageVersion('spatie/laravel-permission'),
+                ],
+                'environment' => [
+                    'environment' => app()->environment(),
+                    'debug_mode' => (bool) config('app.debug'),
+                    'url' => $this->applicationHost(),
+                    'maintenance_mode' => app()->isDownForMaintenance(),
+                    'timezone' => config('app.timezone'),
+                    'locale' => config('app.locale'),
+                ],
+                'cache' => [
+                    'config' => app()->configurationIsCached(),
+                    'events' => app()->eventsAreCached(),
+                    'routes' => app()->routesAreCached(),
+                    'views' => $this->viewsAreCached(),
+                ],
+                'drivers' => [
+                    'broadcasting' => config('broadcasting.default'),
+                    'cache' => config('cache.default'),
+                    'database' => config('database.default'),
+                    'logs' => config('logging.default'),
+                    'mail' => config('mail.default'),
+                    'queue' => config('queue.default'),
+                    'scout' => config('scout.driver'),
+                    'session' => config('session.driver'),
+                ],
+            ],
+        ];
+
+        $cacheDuration = $this->hasAllRuntimeVersions($versions)
+            ? now()->addMinutes(10)
+            : now()->addSeconds(30);
+
+        Cache::put(self::ENVIRONMENT_VERSIONS_CACHE_KEY, $versions, $cacheDuration);
+
+        return $versions;
+    }
+
+    /**
+     * @param  array<string, mixed>  $versions
+     */
+    private function hasAllRuntimeVersions(array $versions): bool
+    {
+        foreach (['composer', 'npm', 'node'] as $versionKey) {
+            if (! filled($versions[$versionKey] ?? null)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function runtimeVersion(string $configKey, string $command, string $pattern, string $prefix = ''): ?string
+    {
+        $configuredVersion = config("schooltool.environment_versions.{$configKey}");
+        if (filled($configuredVersion)) {
+            return trim((string) $configuredVersion);
+        }
+
+        foreach ($this->runtimeVersionCommands($command) as $runtimeCommand) {
+            try {
+                $result = Process::timeout(2)->run($runtimeCommand);
+            } catch (Throwable) {
+                continue;
+            }
+
+            if ($result->failed()) {
+                continue;
+            }
+
+            if (preg_match($pattern, trim($result->output()), $matches) !== 1) {
+                continue;
+            }
+
+            return "{$prefix}{$matches[1]}";
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function runtimeVersionCommands(string $command): array
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            return [$command];
+        }
+
+        return [
+            $command,
+            'bash -lc '.escapeshellarg($command),
+        ];
     }
 
     private function packageLockVersion(string $package): ?string
@@ -196,6 +313,40 @@ class AdminController extends Controller
         return is_array($packageData) && isset($packageData['version'])
             ? (string) $packageData['version']
             : null;
+    }
+
+    private function composerPackageVersion(string $package): ?string
+    {
+        if (! InstalledVersions::isInstalled($package)) {
+            return null;
+        }
+
+        return InstalledVersions::getPrettyVersion($package);
+    }
+
+    private function applicationHost(): ?string
+    {
+        $url = config('app.url');
+        if (! is_string($url) || blank($url)) {
+            return null;
+        }
+
+        $parts = parse_url($url);
+        if ($parts === false || ! isset($parts['host'])) {
+            return null;
+        }
+
+        return $parts['host'].(isset($parts['port']) ? ":{$parts['port']}" : '');
+    }
+
+    private function viewsAreCached(): bool
+    {
+        $compiledViewPath = config('view.compiled');
+        if (! is_string($compiledViewPath) || ! is_dir($compiledViewPath)) {
+            return false;
+        }
+
+        return count(glob($compiledViewPath.'/*.php') ?: []) > 0;
     }
 
     private function canLoadSchoolInfos(User $user): bool
