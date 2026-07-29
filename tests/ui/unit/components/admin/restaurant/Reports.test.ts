@@ -123,7 +123,7 @@ describe('Restaurant reports component', () => {
 
     it('uses the current online settings for report orderability instead of stale plan schedule values', async () => {
         vi.useFakeTimers()
-        vi.setSystemTime(new Date('2026-04-30T17:30:00+02:00'))
+        vi.setSystemTime(new Date(2026, 4, 1, 12))
 
         const wrapper = mountReports([
             {
