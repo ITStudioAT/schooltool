@@ -86,7 +86,9 @@ class AppServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('two-factor-challenge', function (Request $request) {
-            $userId = (string) $request->session()->get('login.id', 'missing');
+            $userId = $request->hasSession()
+                ? (string) $request->session()->get('login.id', 'missing')
+                : 'missing:'.$request->ip();
 
             return [
                 Limit::perMinute(5)->by("two-factor-challenge-user:{$userId}"),

@@ -541,18 +541,14 @@ describe('edge cases', function () {
     });
 
     it('handles missing environment password', function () {
-        $originalPw = env('SA_PW');
-        putenv('SA_PW=');
+        Config::set('schooltool.sa_pw');
 
         $this->service->initRecords();
 
         $user = User::where('email', 'kron@naturwelt.at')->first();
 
-        expect($user)->not->toBeNull();
-
-        if ($originalPw) {
-            putenv("SA_PW={$originalPw}");
-        }
+        expect($user)->not->toBeNull()
+            ->and($user->password)->not->toBeEmpty();
     });
 
     it('preserves existing school attributes', function () {

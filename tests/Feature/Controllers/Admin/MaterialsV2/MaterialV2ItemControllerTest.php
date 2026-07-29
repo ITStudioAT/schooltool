@@ -896,7 +896,7 @@ it('sanitizes unsafe html attachment previews in the browser', function () {
         ->assertHeader('x-content-type-options', 'nosniff')
         ->assertHeader(
             'content-security-policy',
-            "default-src 'none'; img-src data: blob:; media-src data: blob:; style-src 'unsafe-inline'; font-src data:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
+            "sandbox; default-src 'none'; img-src data: blob:; media-src data: blob:; style-src 'unsafe-inline'; font-src data:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
         )
         ->assertDontSee('<script>', false)
         ->assertDontSee('alert("unsafe")', false);

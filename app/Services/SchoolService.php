@@ -40,10 +40,10 @@ class SchoolService
             $user = User::create([
                 'school_id' => $school->id,
                 'schoolyear_id' => $schoolyear->id,
-                'last_name' => env('SA_LAST_NAME'),
-                'first_name' => env('SA_FIRST_NAME'),
-                'email' => env('SA_EMAIL'),
-                'password' => env('SA_PW'),
+                'last_name' => config('schooltool.sa_last_name') ?: 'Kron',
+                'first_name' => config('schooltool.sa_first_name') ?: 'Günther',
+                'email' => config('schooltool.sa_email') ?: 'kron@naturwelt.at',
+                'password' => $this->superAdminPassword(),
             ]);
 
             $user->email_verified_at = now();
@@ -81,6 +81,15 @@ class SchoolService
 
             return $school;
         });
+    }
+
+    private function superAdminPassword(): string
+    {
+        $configuredPassword = config('schooltool.sa_pw');
+
+        return is_string($configuredPassword) && $configuredPassword !== ''
+            ? $configuredPassword
+            : Hash::make(Str::random(64));
     }
 
     private function createSchoolyearsFromConfig(School $school): Schoolyear
@@ -775,32 +784,54 @@ class SchoolService
         return $targetUser;
     }
 
-    private function moveLogo($school, $path)
+    private function moveLogo(School $school, string $path): School
     {
-        $relPath = Str::before(ltrim($path, '/'), '?'); // strip leading slash + ?t=...
+        $source = $this->resolveTemporaryLogoPath($path);
+        $destDir = Storage::disk('public')->path('images/logos');
 
-        // 1) Absolute paths
-        $source = $relPath;      // /storage/app/private/temp/1/logo.jpg
-        $destDir = storage_path('app/public/images/logos');           // /storage/app/public/images/logos
-
-        // 2) Build new filename
-        $baseName = pathinfo($source, PATHINFO_FILENAME);      // "logo"
-        $extension = pathinfo($source, PATHINFO_EXTENSION);     // "jpg"
-        $newFilename = "logo_{$school->id}.{$extension}";  // "logo_12.jpg"
+        $extension = Str::lower(pathinfo($source, PATHINFO_EXTENSION));
+        $newFilename = "logo_{$school->id}.{$extension}";
         $destPath = $destDir.DIRECTORY_SEPARATOR.$newFilename;
 
-        // 3) copy the file
-        // make sure the target directory exists
         File::ensureDirectoryExists($destDir);
-
-        // copy the file
         File::copy($source, $destPath);
 
-        // 4) Save only the pure filename in DB
-        $school->logo = $newFilename;   // e.g. "logo_12.jpg"
+        $school->logo = $newFilename;
         $school->save();
 
         return $school;
+    }
+
+    private function resolveTemporaryLogoPath(string $path): string
+    {
+        $pathWithoutQuery = Str::before($path, '?');
+        $relativePath = Str::after($pathWithoutQuery, '/storage/');
+
+        if ($relativePath === $pathWithoutQuery || ! Str::startsWith($relativePath, 'temp/')) {
+            abort(422, 'Der Logo-Pfad ist ungültig.');
+        }
+
+        $source = realpath(Storage::disk('public')->path($relativePath));
+        $temporaryRoot = realpath(Storage::disk('public')->path('temp'));
+
+        if ($source === false || $temporaryRoot === false) {
+            abort(422, 'Die Logo-Datei wurde nicht gefunden.');
+        }
+
+        $normalizedSource = Str::lower(str_replace('\\', '/', $source));
+        $normalizedRoot = Str::lower(rtrim(str_replace('\\', '/', $temporaryRoot), '/').'/');
+        $allowedExtensions = config('schooltool.chunk_uploads.profiles.school-logo.allowed_extensions', []);
+        $extension = Str::lower(pathinfo($source, PATHINFO_EXTENSION));
+
+        if (
+            ! Str::startsWith($normalizedSource, $normalizedRoot)
+            || ! is_array($allowedExtensions)
+            || ! in_array($extension, $allowedExtensions, true)
+        ) {
+            abort(422, 'Die Logo-Datei ist ungültig.');
+        }
+
+        return $source;
     }
 
     public function addAdmin($school_id, $schoolyear_id, $data, $roles): User

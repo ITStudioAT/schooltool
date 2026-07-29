@@ -379,9 +379,13 @@ class CurriculumController extends Controller
         }
 
         foreach ($this->attachmentStorageDiskCandidates() as $diskName) {
-            $disk = Storage::disk($diskName);
-            if ($disk->exists($path)) {
-                return $disk;
+            try {
+                $disk = Storage::disk($diskName);
+                if ($disk->exists($path)) {
+                    return $disk;
+                }
+            } catch (\Throwable) {
+                continue;
             }
         }
 

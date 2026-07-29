@@ -109,6 +109,8 @@ describe('SchoolyearUpdateRequest', function () {
     });
 
     it('passes with valid name', function () {
+        $this->actingAs($this->user);
+
         $validator = validateSchoolyearRequest(SchoolyearUpdateRequest::class, [
             'id' => $this->schoolyear->id,
             'name' => '2026/2027',
@@ -143,6 +145,8 @@ describe('SetActiveSchoolyearRequest', function () {
     });
 
     it('passes with valid schoolyear_id', function () {
+        $this->actingAs($this->user);
+
         $validator = validateSchoolyearRequest(SetActiveSchoolyearRequest::class, [
             'schoolyear_id' => $this->schoolyear->id,
         ]);

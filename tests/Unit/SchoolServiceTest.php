@@ -34,12 +34,12 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
 
-    // Set environment variables for super admin creation
-    config(['app.env' => [
-        'SA_LAST_NAME' => 'Admin',
-        'SA_FIRST_NAME' => 'Super',
-        'SA_EMAIL' => 'superadmin@example.com',
-        'SA_PW' => Hash::make('password123'),
+    config(['schooltool' => [
+        ...config('schooltool'),
+        'sa_last_name' => 'Admin',
+        'sa_first_name' => 'Super',
+        'sa_email' => 'superadmin@example.com',
+        'sa_pw' => Hash::make('password123'),
     ]]);
 
     // Fake storage
@@ -118,9 +118,9 @@ describe('create', function () {
         $activeSchoolyear = Schoolyear::where('school_id', $school->id)->where('is_active', true)->first();
 
         expect($user)->not->toBeNull()
-            ->and($user->email)->toBe(env('SA_EMAIL'))
-            ->and($user->last_name)->toBe(env('SA_LAST_NAME'))
-            ->and($user->first_name)->toBe(env('SA_FIRST_NAME'))
+            ->and($user->email)->toBe(config('schooltool.sa_email'))
+            ->and($user->last_name)->toBe(config('schooltool.sa_last_name'))
+            ->and($user->first_name)->toBe(config('schooltool.sa_first_name'))
             ->and($user->schoolyear_id)->toBe($activeSchoolyear?->id)
             ->and($user->email_verified_at)->not->toBeNull()
             ->and($user->confirmed_at)->not->toBeNull()
@@ -156,15 +156,14 @@ describe('create', function () {
     });
 
     it('handles logo upload when upload_file is provided', function () {
-        // Create a temporary test file
-        $tempPath = storage_path('app/private/temp/1/logo.jpg');
+        $tempPath = Storage::disk('public')->path('temp/logo.jpg');
         File::ensureDirectoryExists(dirname($tempPath));
         File::put($tempPath, 'test logo content');
 
         $data = [
             'long_name' => 'Test School',
             'short_name' => 'TS',
-            'upload_file' => $tempPath,
+            'upload_file' => '/storage/temp/logo.jpg',
         ];
 
         $school = $this->service->create($data);
@@ -177,22 +176,32 @@ describe('create', function () {
     });
 
     it('stores uploaded logo in public logos directory', function () {
-        $tempPath = storage_path('app/private/temp/1/logo-path-check.jpg');
+        $tempPath = Storage::disk('public')->path('temp/logo-path-check.jpg');
         File::ensureDirectoryExists(dirname($tempPath));
         File::put($tempPath, 'logo payload');
 
         $school = $this->service->create([
             'long_name' => 'Path Check School',
             'short_name' => 'PCS',
-            'upload_file' => $tempPath,
+            'upload_file' => '/storage/temp/logo-path-check.jpg',
         ]);
 
-        $storedLogoPath = storage_path('app/public/images/logos/'.$school->logo);
+        $storedLogoPath = Storage::disk('public')->path('images/logos/'.$school->logo);
 
         expect(File::exists($storedLogoPath))->toBeTrue();
 
         File::delete($tempPath);
         File::delete($storedLogoPath);
+    });
+
+    it('rejects logo paths outside the upload temp directory', function () {
+        Storage::disk('public')->put('images/not-an-upload.jpg', 'logo payload');
+
+        expect(fn () => $this->service->create([
+            'long_name' => 'Invalid Logo School',
+            'short_name' => 'ILS',
+            'upload_file' => '/storage/images/not-an-upload.jpg',
+        ]))->toThrow(HttpException::class, 'Der Logo-Pfad ist ungültig.');
     });
 });
 
@@ -219,14 +228,13 @@ describe('update', function () {
     it('handles logo upload when updating', function () {
         $school = School::factory()->create();
 
-        // Create a temporary test file
-        $tempPath = storage_path('app/private/temp/1/newlogo.png');
+        $tempPath = Storage::disk('public')->path('temp/newlogo.png');
         File::ensureDirectoryExists(dirname($tempPath));
         File::put($tempPath, 'new logo content');
 
         $data = [
             'long_name' => 'Updated School',
-            'upload_file' => $tempPath,
+            'upload_file' => '/storage/temp/newlogo.png',
         ];
 
         $updated = $this->service->update($school, $data);

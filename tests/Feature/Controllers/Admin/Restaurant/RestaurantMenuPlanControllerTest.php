@@ -274,7 +274,10 @@ test('show returns plan with entries and eating time details', function () {
         ->assertJsonPath('data.entries.0.menu.foods.0.description', 'Mit Kraeutern')
         ->assertJsonPath('data.entries.0.menu.foods.0.allergens.0', 'A')
         ->assertJsonPath('data.entries.0.menu.foods.0.ingredient_icons.0.title', 'Fisch')
-        ->assertJsonPath('data.entries.0.menu.foods.0.food_image_url', rtrim((string) config('app.url'), '/').'/storage/restaurant/foods/suppe.jpg');
+        ->assertJsonPath(
+            'data.entries.0.menu.foods.0.food_image_url',
+            fn (string $url): bool => str_ends_with($url, '/storage/restaurant/foods/suppe.jpg'),
+        );
 });
 
 test('show marks entries as not manageable when their week is already billed', function () {

@@ -6,7 +6,9 @@ use App\Models\QueueTest;
 use App\Models\School;
 use App\Models\User;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
 class InstallUpdateService
@@ -91,16 +93,24 @@ class InstallUpdateService
             })->count();
             if ($users === 0) {
                 // Create one super-admin for this school
-                $pw = env('SA_PW');
                 $user = $school->users()->create([
                     'last_name' => 'Kron',
                     'first_name' => 'Günther',
                     'email' => 'kron@naturwelt.at',
-                    'password' => $pw,
+                    'password' => $this->superAdminPassword(),
                 ]);
                 $user->assignRole('super_admin');
             }
         }
+    }
+
+    private function superAdminPassword(): string
+    {
+        $configuredPassword = config('schooltool.sa_pw');
+
+        return is_string($configuredPassword) && $configuredPassword !== ''
+            ? $configuredPassword
+            : Hash::make(Str::random(64));
     }
 
     public function findOrCreateFolders()

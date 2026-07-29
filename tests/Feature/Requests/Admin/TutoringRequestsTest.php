@@ -58,6 +58,8 @@ describe('SchoolToolSaveTutoringSettingsRequest', function () {
     });
 
     it('passes with valid settings', function () {
+        $this->actingAs($this->user);
+
         $schoolTool = SchoolTool::factory()->create([
             'school_id' => $this->school->id,
         ]);
@@ -118,6 +120,8 @@ describe('Admin\Tutoring\SubjectUpdateSubjectRequest', function () {
     });
 
     it('passes with valid data', function () {
+        $this->actingAs($this->user);
+
         $subject = TutoringSubject::create([
             'school_id' => $this->school->id,
             'short_name' => 'M',
@@ -199,6 +203,8 @@ describe('Admin\Tutoring\UserConfirmUsersRequest', function () {
     });
 
     it('passes with valid user ids', function () {
+        $this->actingAs($this->user);
+
         $validator = validateAdminTutoringRequest(UserConfirmUsersRequest::class, [
             'data' => [$this->user->id],
         ]);
@@ -247,6 +253,8 @@ describe('Admin\Tutoring\UserDeleteUsersRequest', function () {
     });
 
     it('passes with valid user ids', function () {
+        $this->actingAs($this->user);
+
         $validator = validateAdminTutoringRequest(UserDeleteUsersRequest::class, [
             'data' => [$this->user->id],
         ]);

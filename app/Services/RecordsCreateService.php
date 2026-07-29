@@ -7,6 +7,8 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
 class RecordsCreateService
@@ -317,7 +319,7 @@ class RecordsCreateService
                 'school_id' => $school->id,
                 'schoolyear_id' => $schoolyear?->id,
                 'email' => $email,
-                'password' => env('SA_PW'),
+                'password' => $this->superAdminPassword(),
                 'first_name' => 'Günther',
                 'last_name' => 'Kron',
             ]);
@@ -331,6 +333,15 @@ class RecordsCreateService
         $user->assignRole($role);
 
         return $user;
+    }
+
+    private function superAdminPassword(): string
+    {
+        $configuredPassword = config('schooltool.sa_pw');
+
+        return is_string($configuredPassword) && $configuredPassword !== ''
+            ? $configuredPassword
+            : Hash::make(Str::random(64));
     }
 
     public function checkOrCreateSchoolTool(School $school): SchoolTool

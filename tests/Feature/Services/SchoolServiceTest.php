@@ -19,6 +19,13 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     $this->service = new SchoolService;
 
+    config([
+        'schooltool.sa_last_name' => 'Admin',
+        'schooltool.sa_first_name' => 'Super',
+        'schooltool.sa_email' => 'superadmin@example.com',
+        'schooltool.sa_pw' => bcrypt('password123'),
+    ]);
+
     // Create roles
     Role::firstOrCreate(['name' => 'super_admin']);
     Role::firstOrCreate(['name' => 'admin']);
@@ -64,9 +71,9 @@ describe('create', function () {
         // Verify super admin was created
         $user = $school->users()->first();
         expect($user)->not->toBeNull()
-            ->last_name->toBe(env('SA_LAST_NAME'))
-            ->first_name->toBe(env('SA_FIRST_NAME'))
-            ->email->toBe(env('SA_EMAIL'))
+            ->last_name->toBe(config('schooltool.sa_last_name'))
+            ->first_name->toBe(config('schooltool.sa_first_name'))
+            ->email->toBe(config('schooltool.sa_email'))
             ->email_verified_at->not->toBeNull()
             ->confirmed_at->not->toBeNull();
 

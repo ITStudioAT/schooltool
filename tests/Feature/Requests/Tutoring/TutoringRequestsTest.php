@@ -30,6 +30,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -236,8 +237,19 @@ describe('OfferToggleOfferRequest', function () {
     });
 
     it('authorizes authenticated users', function () {
-        Auth::shouldReceive('check')->andReturn(true);
-        $request = new OfferToggleOfferRequest;
+        Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
+        $this->user->assignRole('tutoring_user');
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Math Tutoring',
+            'is_active' => true,
+            'price_per_hour' => 15,
+        ]);
+        $request = OfferToggleOfferRequest::create('/', 'POST', ['id' => $offer->id]);
+        $request->setUserResolver(fn () => $this->user);
+
         expect($request->authorize())->toBeTrue();
     });
 
@@ -318,8 +330,24 @@ describe('OfferSendRequestRequest', function () {
     });
 
     it('authorizes authenticated users', function () {
-        Auth::shouldReceive('check')->andReturn(true);
-        $request = new OfferSendRequestRequest;
+        Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
+        $this->user->assignRole('tutoring_user');
+        $owner = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $owner->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Math Tutoring',
+            'is_active' => true,
+            'price_per_hour' => 15,
+        ]);
+        $offer->forceFill(['accepted_at' => now()])->save();
+        $request = OfferSendRequestRequest::create('/', 'POST', ['offer_id' => $offer->id]);
+        $request->setUserResolver(fn () => $this->user);
+
         expect($request->authorize())->toBeTrue();
     });
 

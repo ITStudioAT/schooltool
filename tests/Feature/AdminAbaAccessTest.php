@@ -211,7 +211,8 @@ it('rejects switching to a schoolyear from a different school', function () {
 
     $this->postJson('/api/admin/aba/schoolyears/set_active', [
         'schoolyear_id' => $this->otherSchoolyear->id,
-    ])->assertForbidden();
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors('schoolyear_id');
 });
 
 it('denies aba schoolyear endpoints without aba access', function () {
