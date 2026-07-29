@@ -7,7 +7,6 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Queue;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -116,12 +115,21 @@ test('health status requires authentication', function () {
     $response->assertStatus(401);
 });
 
+test('health status rejects users without an admin shell role', function () {
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
+    $this->user->syncRoles(['user']);
+
+    $this->actingAs($this->user)
+        ->getJson('/api/admin/health/status')
+        ->assertForbidden();
+});
+
 // Queue Test Tests
 
 test('test queue creates queue test record', function () {
     $this->actingAs($this->user);
 
-    $response = $this->getJson('/api/admin/health/test-queue');
+    $response = $this->postJson('/api/admin/health/test-queue');
 
     $response->assertStatus(200)
         ->assertJsonStructure([
@@ -142,7 +150,7 @@ test('test queue creates queue test record', function () {
 test('test queue returns valid uuid test id', function () {
     $this->actingAs($this->user);
 
-    $response = $this->getJson('/api/admin/health/test-queue');
+    $response = $this->postJson('/api/admin/health/test-queue');
 
     $testId = $response->json('test_id');
 
@@ -152,9 +160,33 @@ test('test queue returns valid uuid test id', function () {
 });
 
 test('test queue requires authentication', function () {
-    $response = $this->getJson('/api/admin/health/test-queue');
+    $response = $this->postJson('/api/admin/health/test-queue');
 
     $response->assertStatus(401);
+});
+
+test('test queue rejects get requests', function () {
+    $this->actingAs($this->user)
+        ->getJson('/api/admin/health/test-queue')
+        ->assertMethodNotAllowed();
+});
+
+test('test queue is restricted to administrators', function () {
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+    $this->user->syncRoles(['teacher']);
+
+    $this->actingAs($this->user)
+        ->postJson('/api/admin/health/test-queue')
+        ->assertForbidden();
+});
+
+test('test queue is rate limited per administrator', function () {
+    $this->actingAs($this->user);
+
+    $this->postJson('/api/admin/health/test-queue')->assertSuccessful();
+    $this->postJson('/api/admin/health/test-queue')->assertSuccessful();
+    $this->postJson('/api/admin/health/test-queue')->assertSuccessful();
+    $this->postJson('/api/admin/health/test-queue')->assertTooManyRequests();
 });
 
 // Check Queue Test Status
@@ -301,7 +333,7 @@ test('check queue test treats undefined as missing id', function () {
 test('full queue test workflow works end to end', function () {
     $this->actingAs($this->user);
 
-    $initiateResponse = $this->getJson('/api/admin/health/test-queue');
+    $initiateResponse = $this->postJson('/api/admin/health/test-queue');
     $initiateResponse->assertStatus(200);
     $testId = $initiateResponse->json('test_id');
 

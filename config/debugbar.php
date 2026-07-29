@@ -19,6 +19,7 @@ return [
     'except' => [
         'telescope*',
         '_boost/browser-logs',
+        'api/admin/health/status',
     ],
 
     /*

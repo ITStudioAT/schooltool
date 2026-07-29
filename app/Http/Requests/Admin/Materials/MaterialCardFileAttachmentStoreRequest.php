@@ -5,7 +5,6 @@ namespace App\Http\Requests\Admin\Materials;
 use App\Models\SchoolTool;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Schema;
 
 class MaterialCardFileAttachmentStoreRequest extends FormRequest
 {
@@ -29,7 +28,7 @@ class MaterialCardFileAttachmentStoreRequest extends FormRequest
         $default = 20480;
         $schoolId = (int) (Auth::user()?->school_id ?? 0);
 
-        if ($schoolId <= 0 || ! Schema::hasTable('school_tools') || ! Schema::hasColumn('school_tools', 'material_max_file_upload_size')) {
+        if ($schoolId <= 0) {
             return $default;
         }
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\HealthJob;
+use App\Models\QueueTest;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -33,6 +34,13 @@ Schedule::command('uploads:cleanup-expired')
 
 Schedule::command('private:prune-orphan-school-folders')
     ->dailyAt('03:00')
+    ->onOneServer()
+    ->withoutOverlapping();
+
+Schedule::command('model:prune', [
+    '--model' => [QueueTest::class],
+])
+    ->dailyAt('03:10')
     ->onOneServer()
     ->withoutOverlapping();
 

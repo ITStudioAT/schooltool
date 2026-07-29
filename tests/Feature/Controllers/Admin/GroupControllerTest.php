@@ -16,6 +16,7 @@ use App\Models\UserGroupMember;
 use App\Services\Groups\GroupSynchronizationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Spatie\Permission\Models\Role;
 
@@ -159,6 +160,24 @@ test('groups index dispatches heavy sync as unique background job and exposes sy
         return $job->schoolId === (int) $this->school->id
             && $job->actorUserId === (int) $this->materialsAdmin->id;
     });
+});
+
+test('groups index does not inspect database metadata on the request path', function () {
+    Queue::fake();
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $this->getJson('/api/admin/groups')->assertSuccessful();
+
+    $metadataQueries = collect(DB::getQueryLog())
+        ->pluck('query')
+        ->filter(fn (string $query): bool => str_contains(strtolower($query), 'information_schema'));
+
+    DB::disableQueryLog();
+
+    expect($metadataQueries)->toBeEmpty();
 });
 
 test('groups sync job delegates to the synchronization service and records completion', function () {

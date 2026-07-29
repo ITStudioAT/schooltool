@@ -9,7 +9,6 @@ use App\Models\StudentTimetableEntry;
 use App\Models\TimetableImport;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class TimetableImportService
@@ -527,12 +526,6 @@ class TimetableImportService
      */
     private function importCreationPayload(array $payload): array
     {
-        if ($this->hasSkippedInvalidColumn()) {
-            return $payload;
-        }
-
-        unset($payload['tt_skipped_invalid']);
-
         return $payload;
     }
 
@@ -542,18 +535,7 @@ class TimetableImportService
      */
     private function importCompletionPayload(array $payload): array
     {
-        if ($this->hasSkippedInvalidColumn()) {
-            return $payload;
-        }
-
-        unset($payload['tt_skipped_invalid']);
-
         return $payload;
-    }
-
-    private function hasSkippedInvalidColumn(): bool
-    {
-        return Schema::hasColumn('timetable_imports', 'tt_skipped_invalid');
     }
 
     private function semesterForDate(string $date, string $semesterTwoStart): int

@@ -4,7 +4,6 @@ namespace App\Http\Requests\Admin\Materials;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Schema;
 
 class MaterialUnitStoreRequest extends FormRequest
 {
@@ -25,12 +24,6 @@ class MaterialUnitStoreRequest extends FormRequest
 
     private function topicIdRules(): array
     {
-        $rules = ['required', 'integer'];
-
-        if (Schema::hasTable('material_topics')) {
-            $rules[] = 'exists:material_topics,id';
-        }
-
-        return $rules;
+        return ['required', 'integer', 'exists:material_topics,id'];
     }
 }

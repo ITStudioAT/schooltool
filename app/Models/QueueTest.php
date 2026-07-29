@@ -2,7 +2,10 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
@@ -32,6 +35,8 @@ use Illuminate\Support\Str;
  */
 class QueueTest extends Model
 {
+    use MassPrunable;
+
     protected $keyType = 'string';
 
     public $incrementing = false;
@@ -49,18 +54,23 @@ class QueueTest extends Model
         'processed_at' => 'datetime',
     ];
 
-    protected static function boot()
+    public function prunable(): Builder
+    {
+        return static::query()->where('created_at', '<=', now()->subDay());
+    }
+
+    protected static function boot(): void
     {
         parent::boot();
 
-        static::creating(function ($model) {
+        static::creating(function (QueueTest $model): void {
             if (empty($model->id)) {
                 $model->id = (string) Str::uuid();
             }
         });
     }
 
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }

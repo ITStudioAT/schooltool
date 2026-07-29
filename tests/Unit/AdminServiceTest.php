@@ -1402,7 +1402,11 @@ describe('sendRegisterToken', function () {
 
         $this->service->sendRegisterToken($user, 'test@example.com', 1);
 
-        Notification::assertSentOnDemand(StandardEmail::class);
+        Notification::assertSentOnDemand(
+            StandardEmail::class,
+            fn (StandardEmail $notification): bool => $notification->data['from_address'] === 'from@test.com'
+                && $notification->data['from_name'] === 'Test App'
+        );
     });
 
     it('sets token on user model', function () {

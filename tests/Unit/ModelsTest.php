@@ -836,6 +836,27 @@ describe('QueueTest Model', function () {
         expect($queueTest->user())->toBeInstanceOf(BelongsTo::class)
             ->and($queueTest->user->id)->toBe($user->id);
     });
+
+    it('prunes queue diagnostics older than one day', function () {
+        $user = User::factory()->create();
+        $expiredQueueTest = QueueTest::create([
+            'user_id' => $user->id,
+            'status' => 'completed',
+            'dispatched_at' => now()->subDays(2),
+        ]);
+        $expiredQueueTest->forceFill(['created_at' => now()->subDays(2)])->save();
+
+        $recentQueueTest = QueueTest::create([
+            'user_id' => $user->id,
+            'status' => 'completed',
+            'dispatched_at' => now(),
+        ]);
+
+        $prunableIds = (new QueueTest)->prunable()->pluck('id');
+
+        expect($prunableIds)->toContain($expiredQueueTest->id)
+            ->and($prunableIds)->not->toContain($recentQueueTest->id);
+    });
 });
 
 describe('Role Model', function () {

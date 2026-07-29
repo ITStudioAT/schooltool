@@ -342,8 +342,8 @@ class User extends Authenticatable implements MustVerifyEmailContract
         $uuid = $this->generateUuid();
 
         $data = [
-            'from_address' => env('MAIL_FROM_ADDRESS'),
-            'from_name' => env('MAIL_FROM_NAME'),
+            'from_address' => config('mail.from.address'),
+            'from_name' => config('mail.from.name'),
             'subject' => 'E-Mail-Verifikation',
             'markdown' => 'spa::mails.admin.sendEmailVerification',
             'url' => $data['url'] = config('app.url').'/admin/email_verification?email='.$this->email.'&uuid='.$uuid,
@@ -364,8 +364,8 @@ class User extends Authenticatable implements MustVerifyEmailContract
         $uuid = $this->generateUuid();
 
         $data = [
-            'from_address' => env('MAIL_FROM_ADDRESS'),
-            'from_name' => env('MAIL_FROM_NAME'),
+            'from_address' => config('mail.from.address'),
+            'from_name' => config('mail.from.name'),
             'subject' => 'E-Mail-Verifikation',
             'markdown' => 'spa::mails.admin.sendEmailVerification',
             'url' => $data['url'] = config('app.url').'/admin/email_verification?email='.$this->email.'&uuid='.$uuid,

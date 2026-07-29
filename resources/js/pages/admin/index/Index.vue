@@ -488,7 +488,10 @@ export default {
         this.adminStore.is_loading++
         try {
             if (this.config?.is_auth && !this.config?.environment_versions) {
-                await this.adminStore.loadConfig({ includeSchoolInfos: true, includeEnvironmentVersions: true })
+                await this.adminStore.loadConfig({
+                    includeSchoolInfos: true,
+                    includeEnvironmentVersions: this.isAllowed(['admin', 'super_admin']),
+                })
             }
             if (this.config?.is_auth) {
                 if (this.config?.school_infos) {

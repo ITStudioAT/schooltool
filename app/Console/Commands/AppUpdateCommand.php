@@ -200,6 +200,12 @@ class AppUpdateCommand extends Command
             return false;
         }
 
+        $this->info('▶ CLEARING ROUTE CACHE');
+        $this->waitingLine('Refreshing Laravel routes before Wayfinder generates frontend actions.');
+        if (! $this->runArtisanCommand('route:clear', [], 'route:clear')) {
+            return false;
+        }
+
         $this->info('▶ BUILDING FRONTEND');
         $this->waitingLine('Vite is baking the frontend. Please enjoy the smell of compiled assets.');
         if (! $this->runProcess(['npm', 'run', 'build'], 'npm run build', 900, $this->frontendEnvironment(), $this->viteBuildHeartbeatMessages())) {

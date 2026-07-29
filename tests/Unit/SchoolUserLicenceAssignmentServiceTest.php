@@ -65,7 +65,6 @@ test('preloaded role assignments avoid per-licence database queries', function (
 
     $schoolLicence = $this->schoolLicence->fresh();
     $service = app(SchoolUserLicenceAssignmentService::class);
-    $service->supportsRoleAssignments();
 
     DB::flushQueryLog();
     DB::enableQueryLog();

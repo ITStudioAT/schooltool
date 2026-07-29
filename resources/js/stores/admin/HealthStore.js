@@ -1,4 +1,9 @@
 import { defineStore } from 'pinia'
+import {
+    checkQueueTest as checkQueueTestRoute,
+    status as healthStatusRoute,
+    testQueue as testQueueRoute,
+} from '@/actions/App/Http/Controllers/Admin/HealthController'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 export const useHealthStore = defineStore('AdminHealthStore', {
@@ -12,7 +17,7 @@ export const useHealthStore = defineStore('AdminHealthStore', {
     actions: {
         async fetchStatus({ notifyOnError = true } = {}) {
             try {
-                const response = await axios.get('/api/admin/health/status')
+                const response = await axios.get(healthStatusRoute.url())
                 this.scheduler = response.data.scheduler
                 this.worker = response.data.worker
                 this.is_healthy = response.data.is_healthy
@@ -32,7 +37,7 @@ export const useHealthStore = defineStore('AdminHealthStore', {
 
         async testQueue() {
             try {
-                const response = await axios.get('/api/admin/health/test-queue')
+                const response = await axios.post(testQueueRoute.url())
                 this.queue_test = {
                     test_id: response.data.test_id,
                     status: 'dispatched',
@@ -54,8 +59,8 @@ export const useHealthStore = defineStore('AdminHealthStore', {
 
         async checkQueueTest(testId) {
             try {
-                const params = testId ? { test_id: testId } : {}
-                const response = await axios.get('/api/admin/health/test-queue/check', { params })
+                const query = testId ? { test_id: testId } : {}
+                const response = await axios.get(checkQueueTestRoute.url({ query }))
                 this.queue_test = response.data
                 return response.data
             } catch (error) {

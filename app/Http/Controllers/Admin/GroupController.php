@@ -17,7 +17,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class GroupController extends Controller
 {
@@ -939,39 +938,37 @@ class GroupController extends Controller
         $importRows = collect();
         $usersByImportId = collect();
 
-        if (Schema::hasTable('import116')) {
-            $importRows = $this->import116QueryForActiveSchoolyear($schoolId)
-                ->orderByRaw('LOWER(class)')
-                ->orderBy('last_name')
-                ->orderBy('first_name')
-                ->orderBy('email')
-                ->get([
-                    'id',
-                    'class',
-                    'user_id',
-                    'last_name',
-                    'first_name',
-                    'email',
-                    'mother_name',
-                    'mother_email',
-                    'mother_phone_1',
-                    'mother_phone_2',
-                    'father_name',
-                    'father_email',
-                    'father_phone_1',
-                    'father_phone_2',
-                ]);
+        $importRows = $this->import116QueryForActiveSchoolyear($schoolId)
+            ->orderByRaw('LOWER(class)')
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('email')
+            ->get([
+                'id',
+                'class',
+                'user_id',
+                'last_name',
+                'first_name',
+                'email',
+                'mother_name',
+                'mother_email',
+                'mother_phone_1',
+                'mother_phone_2',
+                'father_name',
+                'father_email',
+                'father_phone_1',
+                'father_phone_2',
+            ]);
 
-            $importIds = $importRows->pluck('id')->map(fn ($id) => (int) $id)->values();
+        $importIds = $importRows->pluck('id')->map(fn ($id) => (int) $id)->values();
 
-            if ($importIds->isNotEmpty()) {
-                $usersByImportId = User::query()
-                    ->where('school_id', $schoolId)
-                    ->whereNotNull('import116_id')
-                    ->whereIn('import116_id', $importIds->all())
-                    ->get(['id', 'import116_id', 'last_name', 'first_name', 'email', 'schoolclass'])
-                    ->keyBy(fn (User $user) => (int) $user->import116_id);
-            }
+        if ($importIds->isNotEmpty()) {
+            $usersByImportId = User::query()
+                ->where('school_id', $schoolId)
+                ->whereNotNull('import116_id')
+                ->whereIn('import116_id', $importIds->all())
+                ->get(['id', 'import116_id', 'last_name', 'first_name', 'email', 'schoolclass'])
+                ->keyBy(fn (User $user) => (int) $user->import116_id);
         }
 
         $registeredStudents = $this->allSchoolStudentEntries($importRows, $usersByImportId, true);
@@ -1009,10 +1006,6 @@ class GroupController extends Controller
 
     private function activeImportSchoolyearId(int $schoolId): ?int
     {
-        if (! Schema::hasTable('school_tools')) {
-            return null;
-        }
-
         $schoolyearId = SchoolTool::query()
             ->where('school_id', $schoolId)
             ->value('active_schoolyear_id');
@@ -1041,10 +1034,6 @@ class GroupController extends Controller
             'registered' => [],
             'all' => [],
         ];
-
-        if (! Schema::hasTable('import116')) {
-            return $result;
-        }
 
         $classGroups = $this->buildImportClassGroupMappings($schoolId);
         $allMappings = collect($classGroups['by_class'])
@@ -1899,28 +1888,26 @@ class GroupController extends Controller
     private function resolveTeacherSchoolGroupUserIds(int $schoolId): Collection
     {
         $idsByTeacherList = collect();
-        if (Schema::hasTable('teachers')) {
-            $teacherEmails = Teacher::query()
+        $teacherEmails = Teacher::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('email')
+            ->select('email')
+            ->distinct()
+            ->pluck('email')
+            ->map(fn ($email) => mb_strtolower(trim((string) $email)))
+            ->filter(fn (string $email) => $email !== '')
+            ->values();
+
+        if ($teacherEmails->isNotEmpty()) {
+            $idsByTeacherList = User::query()
                 ->where('school_id', $schoolId)
                 ->whereNotNull('email')
-                ->select('email')
-                ->distinct()
-                ->pluck('email')
-                ->map(fn ($email) => mb_strtolower(trim((string) $email)))
-                ->filter(fn (string $email) => $email !== '')
+                ->whereRaw('TRIM(email) <> ?', [''])
+                ->whereIn(DB::raw('LOWER(TRIM(email))'), $teacherEmails->all())
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->unique()
                 ->values();
-
-            if ($teacherEmails->isNotEmpty()) {
-                $idsByTeacherList = User::query()
-                    ->where('school_id', $schoolId)
-                    ->whereNotNull('email')
-                    ->whereRaw('TRIM(email) <> ?', [''])
-                    ->whereIn(DB::raw('LOWER(TRIM(email))'), $teacherEmails->all())
-                    ->pluck('id')
-                    ->map(fn ($id) => (int) $id)
-                    ->unique()
-                    ->values();
-            }
         }
 
         return $idsByTeacherList
@@ -1942,22 +1929,19 @@ class GroupController extends Controller
     {
         $existingMembers = $group ? $this->existingStoredGroupMembers($group) : collect();
 
-        $teacherRowsByEmail = collect();
-        if (Schema::hasTable('teachers')) {
-            $teacherRowsByEmail = Teacher::query()
-                ->where('school_id', $schoolId)
-                ->whereNotNull('email')
-                ->whereRaw('TRIM(email) <> ?', [''])
-                ->orderBy('last_name')
-                ->orderBy('first_name')
-                ->orderBy('email')
-                ->get(['id', 'last_name', 'first_name', 'email', 'short'])
-                ->mapWithKeys(function (Teacher $teacher) {
-                    $normalizedEmail = mb_strtolower(trim((string) ($teacher->email ?? '')));
+        $teacherRowsByEmail = Teacher::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('email')
+            ->whereRaw('TRIM(email) <> ?', [''])
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('email')
+            ->get(['id', 'last_name', 'first_name', 'email', 'short'])
+            ->mapWithKeys(function (Teacher $teacher) {
+                $normalizedEmail = mb_strtolower(trim((string) ($teacher->email ?? '')));
 
-                    return $normalizedEmail !== '' ? [$normalizedEmail => $teacher] : [];
-                });
-        }
+                return $normalizedEmail !== '' ? [$normalizedEmail => $teacher] : [];
+            });
 
         $matchedUsersByEmail = $teacherRowsByEmail->isEmpty()
             ? collect()
@@ -2080,10 +2064,6 @@ class GroupController extends Controller
             'by_class' => [],
             'by_family' => [],
         ];
-
-        if (! Schema::hasTable('import116')) {
-            return $result;
-        }
 
         $importRows = $this->import116QueryForActiveSchoolyear($schoolId)
             ->whereNotNull('class')
@@ -3109,10 +3089,6 @@ class GroupController extends Controller
      */
     private function parentContactPayloadForSchoolyearAndKey(int $schoolId, int $schoolyearId, string $contactKey): ?array
     {
-        if (! Schema::hasTable('import116')) {
-            return null;
-        }
-
         $rows = Import116::query()
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)

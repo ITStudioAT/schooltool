@@ -23,7 +23,6 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Process;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -120,14 +119,10 @@ test('config returns user data when authenticated', function () {
 });
 
 test('authenticated config excludes environment versions by default', function () {
-    Process::fake();
-
     $this->actingAs($this->user)
         ->getJson('/api/admin/config')
         ->assertSuccessful()
         ->assertJsonMissingPath('environment_versions');
-
-    Process::assertDidntRun(fn (): bool => true);
 });
 
 test('authenticated config can include environment versions', function () {
@@ -137,8 +132,6 @@ test('authenticated config can include environment versions', function () {
         'npm' => '10.9.2',
         'node' => 'v22.16.0',
     ]);
-    Process::fake();
-
     $this->actingAs($this->user);
 
     $this->getJson('/api/admin/config?include_environment_versions=1')
@@ -201,37 +194,38 @@ test('authenticated config can include environment versions', function () {
                 ],
             ],
         ]);
-
-    Process::assertDidntRun(fn (): bool => true);
 });
 
-test('authenticated config detects missing environment versions from the runtime', function () {
+test('authenticated config does not execute processes for missing environment versions', function () {
     Cache::forget('admin.environment_versions.v12');
     config()->set('schooltool.environment_versions', [
         'composer' => null,
         'npm' => null,
         'node' => null,
     ]);
-    Process::fake([
-        'composer --version --no-ansi' => Process::result(output: 'Composer version 2.10.0 2026-05-28 11:22:08'),
-        'npm --version' => Process::result(output: '11.14.1'),
-        'node --version' => Process::result(output: 'v22.22.2'),
-    ]);
 
     $this->actingAs($this->user);
 
     $this->getJson('/api/admin/config?include_environment_versions=1')
         ->assertSuccessful()
-        ->assertJsonPath('environment_versions.composer', '2.10.0')
-        ->assertJsonPath('environment_versions.npm', '11.14.1')
-        ->assertJsonPath('environment_versions.node', 'v22.22.2');
+        ->assertJsonPath('environment_versions.composer', null)
+        ->assertJsonPath('environment_versions.npm', null)
+        ->assertJsonPath('environment_versions.node', null);
+});
 
-    Process::assertRan('composer --version --no-ansi');
-    Process::assertRan('npm --version');
-    Process::assertRan('node --version');
+test('non-admin config cannot include environment diagnostics', function () {
+    $this->user->syncRoles(['teacher']);
+
+    $this->actingAs($this->user)
+        ->getJson('/api/admin/config?include_environment_versions=1')
+        ->assertSuccessful()
+        ->assertJsonMissingPath('environment_versions');
 });
 
 test('config can include selected school infos for admin home screen', function () {
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
     $this->actingAs($this->user)
         ->getJson('/api/admin/config?include_school_infos=1')
         ->assertSuccessful()
@@ -243,6 +237,21 @@ test('config can include selected school infos for admin home screen', function 
                 'teachers',
             ],
         ]);
+
+    $selectedSchoolLookups = collect(DB::getQueryLog())
+        ->pluck('query')
+        ->map(fn (string $query): string => strtolower($query))
+        ->filter(fn (string $query): bool => (str_contains($query, 'from "schools"') || str_contains($query, 'from `schools`'))
+            && str_contains($query, 'limit 1'));
+
+    $emptyLicenceAssignmentLookups = collect(DB::getQueryLog())
+        ->pluck('query')
+        ->map(fn (string $query): string => strtolower($query))
+        ->filter(fn (string $query): bool => str_contains($query, 'from "school_user_licences"')
+            || str_contains($query, 'from `school_user_licences`'));
+
+    expect($selectedSchoolLookups)->toHaveCount(0)
+        ->and($emptyLicenceAssignmentLookups)->toHaveCount(0);
 });
 
 test('authenticated config resolves dashboard licences with a bulk query', function () {

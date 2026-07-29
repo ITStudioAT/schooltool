@@ -16,6 +16,7 @@ describe('Health store', () => {
         notify.mockReset()
         globalThis.axios = {
             get: vi.fn(),
+            post: vi.fn(),
         } as never
     })
 
@@ -59,5 +60,19 @@ describe('Health store', () => {
             type: 'error',
             timeout: 3000,
         })
+    })
+
+    it('starts queue tests with a post request', async () => {
+        const payload = {
+            test_id: 'f8f6808a-8f08-4edb-9501-e357a6a8aa1a',
+            dispatched_at: '2026-07-29T12:00:00+03:00',
+        }
+        vi.mocked(globalThis.axios.post).mockResolvedValueOnce({ data: payload } as never)
+
+        const store = useHealthStore()
+
+        await expect(store.testQueue()).resolves.toEqual(payload)
+        expect(globalThis.axios.post).toHaveBeenCalledWith('/api/admin/health/test-queue')
+        expect(globalThis.axios.get).not.toHaveBeenCalled()
     })
 })

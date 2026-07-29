@@ -12,7 +12,6 @@ use App\Models\UserGroupMember;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class GroupSynchronizationService
 {
@@ -35,12 +34,10 @@ class GroupSynchronizationService
     {
         $importRows = collect();
         $usersByImportId = collect();
-        if (Schema::hasTable('import116')) {
-            $importRows = $this->import116QueryForActiveSchoolyear($schoolId)->orderByRaw('LOWER(class)')->orderBy('last_name')->orderBy('first_name')->orderBy('email')->get(['id', 'class', 'user_id', 'last_name', 'first_name', 'email', 'mother_name', 'mother_email', 'mother_phone_1', 'mother_phone_2', 'father_name', 'father_email', 'father_phone_1', 'father_phone_2']);
-            $importIds = $importRows->pluck('id')->map(fn ($id) => (int) $id)->values();
-            if ($importIds->isNotEmpty()) {
-                $usersByImportId = User::query()->where('school_id', $schoolId)->whereNotNull('import116_id')->whereIn('import116_id', $importIds->all())->get(['id', 'import116_id', 'last_name', 'first_name', 'email', 'schoolclass'])->keyBy(fn (User $user) => (int) $user->import116_id);
-            }
+        $importRows = $this->import116QueryForActiveSchoolyear($schoolId)->orderByRaw('LOWER(class)')->orderBy('last_name')->orderBy('first_name')->orderBy('email')->get(['id', 'class', 'user_id', 'last_name', 'first_name', 'email', 'mother_name', 'mother_email', 'mother_phone_1', 'mother_phone_2', 'father_name', 'father_email', 'father_phone_1', 'father_phone_2']);
+        $importIds = $importRows->pluck('id')->map(fn ($id) => (int) $id)->values();
+        if ($importIds->isNotEmpty()) {
+            $usersByImportId = User::query()->where('school_id', $schoolId)->whereNotNull('import116_id')->whereIn('import116_id', $importIds->all())->get(['id', 'import116_id', 'last_name', 'first_name', 'email', 'schoolclass'])->keyBy(fn (User $user) => (int) $user->import116_id);
         }
         $registeredStudents = $this->allSchoolStudentEntries($importRows, $usersByImportId, true);
         $allStudents = $this->allSchoolStudentEntries($importRows, $usersByImportId, false);
@@ -55,9 +52,6 @@ class GroupSynchronizationService
 
     private function activeImportSchoolyearId(int $schoolId): ?int
     {
-        if (! Schema::hasTable('school_tools')) {
-            return null;
-        }
         $schoolyearId = SchoolTool::query()->where('school_id', $schoolId)->value('active_schoolyear_id');
 
         return $schoolyearId ? (int) $schoolyearId : null;
@@ -80,9 +74,6 @@ class GroupSynchronizationService
     private function parentContactsForSchoolGroups(int $schoolId): array
     {
         $result = ['registered' => [], 'all' => []];
-        if (! Schema::hasTable('import116')) {
-            return $result;
-        }
         $classGroups = $this->buildImportClassGroupMappings($schoolId);
         $allMappings = collect($classGroups['by_class'])->merge($classGroups['by_family']);
         if ($allMappings->isEmpty()) {
@@ -244,9 +235,6 @@ class GroupSynchronizationService
 
     private function syncClassSchoolGroupMembers(int $schoolId, int $actorUserId): void
     {
-        if (! Schema::hasTable('import116')) {
-            return;
-        }
         $classGroupMappings = $this->buildImportClassGroupMappings($schoolId);
         if (empty($classGroupMappings['by_class'])) {
             return;
@@ -337,9 +325,6 @@ class GroupSynchronizationService
 
     private function syncOwnTeachingCourseGroups($authUser, int $schoolId, int $actorUserId): void
     {
-        if (! Schema::hasTable('teaching_courses') || ! Schema::hasTable('teaching_course_students')) {
-            return;
-        }
         $schoolyearId = $authUser->schoolyear_id ? (int) $authUser->schoolyear_id : null;
         $coursesQuery = TeachingCourse::query()->where('school_id', $schoolId)->where('user_id', (int) $authUser->id)->with(['teachingCourseStudents:id,teaching_course_id,user_id,import116_id', 'teachingCourseStudents.user:id,school_id,schoolyear_id,import116_id,last_name,first_name,email,phone,schoolclass', 'teachingCourseStudents.import116:id,school_id,schoolyear_id,class,user_id,last_name,first_name,email,phone_1,phone_2,mother_name,mother_email,mother_phone_1,mother_phone_2,father_name,father_email,father_phone_1,father_phone_2'])->orderByRaw('LOWER(title)')->orderBy('id');
         if ($schoolyearId) {
@@ -394,9 +379,6 @@ class GroupSynchronizationService
 
     private function repairMissingImportUserLinksByEmail(int $schoolId): void
     {
-        if (! Schema::hasTable('import116') || ! Schema::hasTable('users')) {
-            return;
-        }
         $importRows = $this->import116QueryForActiveSchoolyear($schoolId)->whereNotNull('email')->whereRaw('TRIM(email) <> ?', [''])->orderByDesc('id')->get(['id', 'schoolyear_id', 'class', 'email', 'user_id']);
         if ($importRows->isEmpty()) {
             return;
@@ -623,14 +605,11 @@ class GroupSynchronizationService
     private function teacherSourceMembers(int $schoolId, ?UserGroup $group = null): Collection
     {
         $existingMembers = $group ? $this->existingStoredGroupMembers($group) : collect();
-        $teacherRowsByEmail = collect();
-        if (Schema::hasTable('teachers')) {
-            $teacherRowsByEmail = Teacher::query()->where('school_id', $schoolId)->whereNotNull('email')->whereRaw('TRIM(email) <> ?', [''])->orderBy('last_name')->orderBy('first_name')->orderBy('email')->get(['id', 'last_name', 'first_name', 'email', 'short'])->mapWithKeys(function (Teacher $teacher) {
-                $normalizedEmail = mb_strtolower(trim((string) ($teacher->email ?? '')));
+        $teacherRowsByEmail = Teacher::query()->where('school_id', $schoolId)->whereNotNull('email')->whereRaw('TRIM(email) <> ?', [''])->orderBy('last_name')->orderBy('first_name')->orderBy('email')->get(['id', 'last_name', 'first_name', 'email', 'short'])->mapWithKeys(function (Teacher $teacher) {
+            $normalizedEmail = mb_strtolower(trim((string) ($teacher->email ?? '')));
 
-                return $normalizedEmail !== '' ? [$normalizedEmail => $teacher] : [];
-            });
-        }
+            return $normalizedEmail !== '' ? [$normalizedEmail => $teacher] : [];
+        });
         $matchedUsersByEmail = $teacherRowsByEmail->isEmpty() ? collect() : User::query()->where('school_id', $schoolId)->whereNotNull('email')->whereRaw('TRIM(email) <> ?', [''])->whereIn(DB::raw('LOWER(TRIM(email))'), $teacherRowsByEmail->keys()->all())->get(['id', 'last_name', 'first_name', 'email', 'schoolclass'])->keyBy(fn (User $user) => mb_strtolower(trim((string) ($user->email ?? ''))));
         $entries = collect($teacherRowsByEmail->all())->map(function (Teacher $teacher, string $normalizedEmail) use ($matchedUsersByEmail, $existingMembers) {
             $user = $matchedUsersByEmail->get($normalizedEmail);
@@ -665,9 +644,6 @@ class GroupSynchronizationService
     private function buildImportClassGroupMappings(int $schoolId): array
     {
         $result = ['by_class' => [], 'by_family' => []];
-        if (! Schema::hasTable('import116')) {
-            return $result;
-        }
         $importRows = $this->import116QueryForActiveSchoolyear($schoolId)->whereNotNull('class')->orderByRaw('LOWER(class)')->orderBy('id')->get(['id', 'class']);
         if ($importRows->isEmpty()) {
             return $result;

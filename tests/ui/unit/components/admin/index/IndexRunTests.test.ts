@@ -132,7 +132,7 @@ describe('Index runTests', () => {
         await (IndexPage as any).beforeMount.call(context)
 
         expect(globalThis.axios.get).toHaveBeenCalledWith('/sanctum/csrf-cookie')
-        expect(loadConfig).toHaveBeenCalledWith({ includeSchoolInfos: true, includeEnvironmentVersions: true })
+        expect(loadConfig).toHaveBeenCalledWith({ includeSchoolInfos: true, includeEnvironmentVersions: false })
         expect(loadSchoolInfos).toHaveBeenCalledWith(42)
         expect(fetchStatus).toHaveBeenCalled()
         expect(context.health_loaded).toBe(true)
