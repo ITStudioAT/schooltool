@@ -1,8 +1,8 @@
 <?php
 
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
-use Carbon\Carbon;
 
 it('writes scheduler heartbeat to cache', function () {
     Cache::forget('health:scheduler');
