@@ -33,6 +33,8 @@ it('reports Horizon as inactive without starting or killing processes', function
 
     $this->artisan('queue:health-check')
         ->expectsOutputToContain('Horizon ist inaktiv.')
+        ->expectsOutputToContain('Erwartete Queues: critical, notifications, default, imports, materials, maintenance')
+        ->expectsOutputToContain('Produktionsprozess: php artisan horizon')
         ->assertExitCode(2);
 
     $source = file_get_contents(app_path('Console/Commands/QueueHealthCheck.php'));

@@ -131,6 +131,17 @@ it('ships a production process monitor for Horizon', function (): void {
         ->toBeGreaterThan((int) $horizonTimeout);
 });
 
+it('blocks Cloudways deployments when Horizon is unavailable', function (): void {
+    $deploymentScript = file_get_contents(base_path('scripts/deploy_cloudways.sh'));
+
+    expect($deploymentScript)
+        ->toContain('verify_queue_runtime')
+        ->toContain('wait_for_queue_runtime')
+        ->toContain('php artisan queue:health-check')
+        ->toMatch('/verify_queue_runtime\s+php artisan down/s')
+        ->toMatch('/php artisan app:update --no-interaction\s+wait_for_queue_runtime/s');
+});
+
 it('runs isolated infrastructure and Horizon smoke coverage in CI', function (): void {
     $workflow = file_get_contents(base_path('.github/workflows/ci.yml'));
     $composer = json_decode(

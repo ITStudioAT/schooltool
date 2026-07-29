@@ -2,9 +2,11 @@
 
 use App\Jobs\HealthJob;
 use Carbon\Carbon;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Queue\Attributes\UniqueFor;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -78,6 +80,18 @@ describe('handle', function () {
 });
 
 describe('job configuration', function () {
+    it('limits heartbeat backlog growth while the queue is unserved', function () {
+        $job = new HealthJob;
+        $uniqueForAttributes = (new ReflectionClass($job))->getAttributes(UniqueFor::class);
+
+        expect($job)
+            ->toBeInstanceOf(ShouldBeUnique::class)
+            ->and($uniqueForAttributes)
+            ->toHaveCount(1)
+            ->and($uniqueForAttributes[0]->newInstance()->uniqueFor)
+            ->toBe(86400);
+    });
+
     it('implements ShouldQueue interface', function () {
         $job = new HealthJob;
         expect($job)->toBeInstanceOf(ShouldQueue::class);
@@ -94,5 +108,14 @@ describe('job configuration', function () {
         HealthJob::dispatch();
 
         Queue::assertPushed(HealthJob::class);
+    });
+
+    it('suppresses duplicate heartbeat jobs while one is pending', function () {
+        Queue::fake();
+
+        HealthJob::dispatch();
+        HealthJob::dispatch();
+
+        Queue::assertPushed(HealthJob::class, 1);
     });
 });

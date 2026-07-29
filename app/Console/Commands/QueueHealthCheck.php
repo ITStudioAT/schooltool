@@ -17,6 +17,8 @@ class QueueHealthCheck extends Command
 
         if ($masters->isEmpty()) {
             $this->error('Horizon ist inaktiv.');
+            $this->line('Erwartete Queues: '.implode(', ', $this->expectedQueueNames()));
+            $this->line('Produktionsprozess: php artisan horizon');
 
             return 2;
         }
@@ -30,5 +32,18 @@ class QueueHealthCheck extends Command
         $this->info('Horizon laeuft.');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function expectedQueueNames(): array
+    {
+        return collect(config('horizon.defaults', []))
+            ->flatMap(fn (array $supervisor): array => $supervisor['queue'] ?? [])
+            ->filter(fn (mixed $queue): bool => is_string($queue) && $queue !== '')
+            ->unique()
+            ->values()
+            ->all();
     }
 }
