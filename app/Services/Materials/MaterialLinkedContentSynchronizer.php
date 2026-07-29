@@ -8,7 +8,6 @@ use App\Models\MaterialInboxImport;
 use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialUnitInboxImport;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Schema;
 
 class MaterialLinkedContentSynchronizer
 {
@@ -20,8 +19,6 @@ class MaterialLinkedContentSynchronizer
         if (
             $schoolId <= 0
             || $cardId <= 0
-            || ! Schema::hasTable('material_inbox_imports')
-            || ! Schema::hasColumn('material_inbox_imports', 'import_mode')
         ) {
             return;
         }
@@ -36,7 +33,7 @@ class MaterialLinkedContentSynchronizer
 
     public function dispatchForSourceTopic(int $schoolId, int $topicId): void
     {
-        if ($schoolId <= 0 || $topicId <= 0 || ! Schema::hasTable('material_topic_inbox_imports')) {
+        if ($schoolId <= 0 || $topicId <= 0) {
             return;
         }
 
@@ -49,7 +46,7 @@ class MaterialLinkedContentSynchronizer
 
     public function dispatchForSourceUnit(int $schoolId, int $unitId): void
     {
-        if ($schoolId <= 0 || $unitId <= 0 || ! Schema::hasTable('material_unit_inbox_imports')) {
+        if ($schoolId <= 0 || $unitId <= 0) {
             return;
         }
 

@@ -7,12 +7,9 @@ use App\Models\SchoolLicence;
 use App\Models\SchoolUserLicence;
 use App\Models\User;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Schema;
 
 class SchoolUserLicenceAssignmentService
 {
-    private ?bool $supportsRoleAssignmentsCache = null;
-
     /**
      * @return array<string, array<string, array<string, mixed>>>
      */
@@ -129,11 +126,7 @@ class SchoolUserLicenceAssignmentService
 
     public function supportsRoleAssignments(): bool
     {
-        if ($this->supportsRoleAssignmentsCache !== null) {
-            return $this->supportsRoleAssignmentsCache;
-        }
-
-        return $this->supportsRoleAssignmentsCache = Schema::hasColumn('school_user_licences', 'role_name');
+        return true;
     }
 
     /**

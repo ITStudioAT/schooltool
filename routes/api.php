@@ -321,9 +321,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/impersonation/stop', [ImpersonationController::class, 'stop'])
             ->middleware(StartSession::class);
 
-        Route::get('/admin/health/status', [HealthController::class, 'status']);
-        Route::get('/admin/health/test-queue', [HealthController::class, 'testQueue']);
-        Route::get('/admin/health/test-queue/check', [HealthController::class, 'checkQueueTest']);
+        Route::get('/admin/health/status', [HealthController::class, 'status'])
+            ->middleware('api-allowed:scope:admin_shell_access');
+        Route::post('/admin/health/test-queue', [HealthController::class, 'testQueue'])
+            ->middleware(['api-allowed:scope:admin_or_super_admin_access', 'throttle:health-queue-tests']);
+        Route::get('/admin/health/test-queue/check', [HealthController::class, 'checkQueueTest'])
+            ->middleware('api-allowed:scope:admin_or_super_admin_access');
 
         // Notes API - Accessible to all authenticated users
         Route::apiResource('/homepage/notes', NoteController::class);

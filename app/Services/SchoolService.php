@@ -270,9 +270,16 @@ class SchoolService
         File::deleteDirectory(storage_path("app/private/materials/temp/{$schoolId}"));
     }
 
-    public function schoolInfos($school_id)
+    public function schoolInfos(int|School $school): array
     {
-        $licences = School::find($school_id)->licences->sortBy('name')->values();
+        if (is_int($school)) {
+            $school = School::query()->findOrFail($school);
+        }
+
+        $school->loadMissing('licences');
+
+        $schoolId = (int) $school->id;
+        $licences = $school->licences->sortBy('name')->values();
         $authUser = Auth::user();
         if ($authUser) {
             $authUser->loadMissing('roles');
@@ -287,31 +294,43 @@ class SchoolService
             : [];
 
         $licenceService = app(LicenceService::class);
-        $schoolLicencesById = SchoolLicence::query()
-            ->where('school_id', $school_id)
-            ->get()
-            ->keyBy(fn (SchoolLicence $schoolLicence) => (string) $schoolLicence->id);
-
         $licenceIds = $licences->pluck('id')->all();
-        $userLicenceAssignments = SchoolUserLicence::query()
-            ->where('school_id', $school_id)
-            ->whereIn('licence_id', $licenceIds)
-            ->select([
-                'id',
-                'school_id',
-                'licence_id',
-                'assignment_type',
-                'user_id',
-                'role_name',
-                'valid_until',
-                'charged_price',
-                'is_active',
-                'plan_id',
-                'extra_storage_units',
-                'extra_storage_unit_price',
-            ])
-            ->get()
-            ->groupBy('licence_id');
+        $schoolLicencesById = $licenceIds === []
+            ? collect()
+            : SchoolLicence::query()
+                ->where('school_id', $schoolId)
+                ->select([
+                    'id',
+                    'school_id',
+                    'licence_id',
+                    'valid_until',
+                    'licence_model',
+                    'user_licence_assignments',
+                ])
+                ->get()
+                ->keyBy(fn (SchoolLicence $schoolLicence) => (string) $schoolLicence->id);
+
+        $userLicenceAssignments = $licenceIds === []
+            ? collect()
+            : SchoolUserLicence::query()
+                ->where('school_id', $schoolId)
+                ->whereIn('licence_id', $licenceIds)
+                ->select([
+                    'id',
+                    'school_id',
+                    'licence_id',
+                    'assignment_type',
+                    'user_id',
+                    'role_name',
+                    'valid_until',
+                    'charged_price',
+                    'is_active',
+                    'plan_id',
+                    'extra_storage_units',
+                    'extra_storage_unit_price',
+                ])
+                ->get()
+                ->groupBy('licence_id');
 
         $licenceRows = $licences
             ->map(function ($licence) use ($authUser, $authUserRoleNames, $licenceService, $schoolLicencesById, $userLicenceAssignments) {
@@ -360,7 +379,7 @@ class SchoolService
         ];
 
         $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin'];
-        $users = User::where('school_id', $school_id)
+        $users = User::where('school_id', $schoolId)
             ->whereHas('roles', fn ($query) => $query
                 ->whereIn('name', $roles)
                 ->where('guard_name', 'web'))
@@ -370,12 +389,12 @@ class SchoolService
 
         $data['admins'] = UserResource::collection($users);
 
-        $data['teachers']['count_active'] = User::where('school_id', $school_id)
+        $data['teachers']['count_active'] = User::where('school_id', $schoolId)
             ->whereHas('roles', fn ($query) => $query
                 ->where('name', 'teacher')
                 ->where('guard_name', 'web'))
             ->count();
-        $data['teachers']['count'] = Teacher::where('school_id', $school_id)->count();
+        $data['teachers']['count'] = Teacher::where('school_id', $schoolId)->count();
 
         return $data;
     }

@@ -37,9 +37,7 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Process;
 use Lab404\Impersonate\Services\ImpersonateManager;
-use Throwable;
 
 class AdminController extends Controller
 {
@@ -148,12 +146,12 @@ class AdminController extends Controller
 
         $data['health']['queue_working'] = true;
 
-        if ($user && $includeEnvironmentVersions) {
+        if ($user && $includeEnvironmentVersions && $this->canLoadEnvironmentVersions($user)) {
             $data['environment_versions'] = $this->environmentVersions();
         }
 
         if ($includeSchoolInfos && $user?->selectedSchool && $this->canLoadSchoolInfos($user)) {
-            $data['school_infos'] = app(SchoolService::class)->schoolInfos($user->selectedSchool->id);
+            $data['school_infos'] = app(SchoolService::class)->schoolInfos($user->selectedSchool);
         }
 
         return $data;
@@ -173,22 +171,9 @@ class AdminController extends Controller
             'app' => config('schooltool.version', 'x.x.x'),
             'laravel' => app()->version(),
             'php' => PHP_VERSION,
-            'composer' => $this->runtimeVersion(
-                'composer',
-                'composer --version --no-ansi',
-                '/Composer version\s+([0-9]+(?:\.[0-9]+){1,3})/i',
-            ),
-            'npm' => $this->runtimeVersion(
-                'npm',
-                'npm --version',
-                '/v?([0-9]+(?:\.[0-9]+){1,3})/',
-            ),
-            'node' => $this->runtimeVersion(
-                'node',
-                'node --version',
-                '/v?([0-9]+(?:\.[0-9]+){1,3})/',
-                'v',
-            ),
+            'composer' => $this->configuredRuntimeVersion('composer'),
+            'npm' => $this->configuredRuntimeVersion('npm'),
+            'node' => $this->configuredRuntimeVersion('node'),
             'vue' => $this->packageLockVersion('vue'),
             'vuetify' => $this->packageLockVersion('vuetify'),
             'vite' => $this->packageLockVersion('vite'),
@@ -225,70 +210,19 @@ class AdminController extends Controller
             ],
         ];
 
-        $cacheDuration = $this->hasAllRuntimeVersions($versions)
-            ? now()->addMinutes(10)
-            : now()->addSeconds(30);
-
-        Cache::put(self::ENVIRONMENT_VERSIONS_CACHE_KEY, $versions, $cacheDuration);
+        Cache::put(self::ENVIRONMENT_VERSIONS_CACHE_KEY, $versions, now()->addMinutes(10));
 
         return $versions;
     }
 
-    /**
-     * @param  array<string, mixed>  $versions
-     */
-    private function hasAllRuntimeVersions(array $versions): bool
-    {
-        foreach (['composer', 'npm', 'node'] as $versionKey) {
-            if (! filled($versions[$versionKey] ?? null)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private function runtimeVersion(string $configKey, string $command, string $pattern, string $prefix = ''): ?string
+    private function configuredRuntimeVersion(string $configKey): ?string
     {
         $configuredVersion = config("schooltool.environment_versions.{$configKey}");
-        if (filled($configuredVersion)) {
-            return trim((string) $configuredVersion);
+        if (! is_string($configuredVersion) || blank($configuredVersion)) {
+            return null;
         }
 
-        foreach ($this->runtimeVersionCommands($command) as $runtimeCommand) {
-            try {
-                $result = Process::timeout(2)->run($runtimeCommand);
-            } catch (Throwable) {
-                continue;
-            }
-
-            if ($result->failed()) {
-                continue;
-            }
-
-            if (preg_match($pattern, trim($result->output()), $matches) !== 1) {
-                continue;
-            }
-
-            return "{$prefix}{$matches[1]}";
-        }
-
-        return null;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function runtimeVersionCommands(string $command): array
-    {
-        if (PHP_OS_FAMILY === 'Windows') {
-            return [$command];
-        }
-
-        return [
-            $command,
-            'bash -lc '.escapeshellarg($command),
-        ];
+        return trim($configuredVersion);
     }
 
     private function packageLockVersion(string $package): ?string
@@ -364,6 +298,11 @@ class AdminController extends Controller
             'studentstimetables_admin',
             'studentstimetables_moderator',
         ]);
+    }
+
+    private function canLoadEnvironmentVersions(User $user): bool
+    {
+        return $user->hasAnyRole(['admin', 'super_admin']);
     }
 
     public function registerStep1(RegisterStep1Request $request)

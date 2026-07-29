@@ -1352,7 +1352,13 @@ test('config keeps taxonomy payload query count bounded', function () {
     $response = $this->getJson('/api/admin/materials/config')
         ->assertSuccessful();
 
-    $queryCount = count(DB::getQueryLog());
+    $queries = collect(DB::getQueryLog());
+    $queryCount = $queries->count();
+    $schemaQueries = $queries
+        ->pluck('query')
+        ->filter(fn (string $query): bool => str_contains(strtolower($query), 'information_schema'))
+        ->values()
+        ->all();
     DB::disableQueryLog();
 
     $tree = collect($response->json('classification_tree', []));
@@ -1363,7 +1369,8 @@ test('config keeps taxonomy payload query count bounded', function () {
     expect($subjectNode['name'] ?? null)->toBe('Biologie')
         ->and($topicNode['name'] ?? null)->toBe('Zellen')
         ->and($unitNode['name'] ?? null)->toBe('Mikroskopie')
-        ->and($queryCount)->toBeLessThan(70);
+        ->and($queryCount)->toBeLessThan(70)
+        ->and($schemaQueries)->toBe([]);
 });
 
 test('teacher can create material card and gets keywords', function () {

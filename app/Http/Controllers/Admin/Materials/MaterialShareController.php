@@ -62,12 +62,6 @@ class MaterialShareController extends Controller
     /** @var array<int,array<string,array{label:string,color:string}>> */
     private array $materialStatusMetaCache = [];
 
-    private ?bool $hasMaterialAttachmentsTableCache = null;
-
-    private ?bool $hasMaterialTypesTableCache = null;
-
-    private ?bool $hasMaterialStatusesTableCache = null;
-
     private ?bool $hasMaterialInboxImportsTableCache = null;
 
     private ?bool $materialInboxImportsHasImportModeColumnCache = null;
@@ -77,14 +71,6 @@ class MaterialShareController extends Controller
     private ?bool $hasMaterialTopicInboxImportsTableCache = null;
 
     private ?bool $hasMaterialShareRuleArchivesTableCache = null;
-
-    private ?bool $materialTypesUserScopedCache = null;
-
-    private ?bool $materialTypesHasIconColumnCache = null;
-
-    private ?bool $materialTypesHasColorColumnCache = null;
-
-    private ?bool $materialStatusesHasColorColumnCache = null;
 
     public function __construct(
         private readonly MaterialWorkspaceService $workspaceService,
@@ -2506,10 +2492,6 @@ class MaterialShareController extends Controller
 
     private function syncCardClassificationToResolvedTarget(MaterialCard $card, array $targetClassification): void
     {
-        if (! Schema::hasTable('material_card_classifications')) {
-            return;
-        }
-
         $subjectId = (int) ($targetClassification['subject_id'] ?? 0);
         if ($subjectId <= 0) {
             return;
@@ -3157,20 +3139,12 @@ class MaterialShareController extends Controller
         $base = ['nullable', 'string', 'max:255'];
         $schoolId = (int) ($sourceOwner->school_id ?? 0);
 
-        if ($schoolId <= 0 || ! Schema::hasTable('material_types')) {
-            return $base;
-        }
-
-        if (Schema::hasColumn('material_types', 'user_id')) {
-            $base[] = Rule::exists('material_types', 'name')->where(
-                fn ($query) => $query->where('user_id', (int) $sourceOwner->id)
-            );
-
+        if ($schoolId <= 0) {
             return $base;
         }
 
         $base[] = Rule::exists('material_types', 'name')->where(
-            fn ($query) => $query->where('school_id', $schoolId)
+            fn ($query) => $query->where('user_id', (int) $sourceOwner->id)
         );
 
         return $base;
@@ -3181,7 +3155,7 @@ class MaterialShareController extends Controller
         $base = ['nullable', 'string', 'max:255'];
         $schoolId = (int) ($sourceOwner->school_id ?? 0);
 
-        if ($schoolId <= 0 || ! Schema::hasTable('material_statuses')) {
+        if ($schoolId <= 0) {
             $base[] = Rule::in(MaterialCard::statusValues());
 
             return $base;
@@ -4839,29 +4813,17 @@ class MaterialShareController extends Controller
 
     private function hasMaterialAttachmentsTable(): bool
     {
-        if ($this->hasMaterialAttachmentsTableCache === null) {
-            $this->hasMaterialAttachmentsTableCache = Schema::hasTable('material_card_attachments');
-        }
-
-        return $this->hasMaterialAttachmentsTableCache;
+        return true;
     }
 
     private function hasMaterialTypesTable(): bool
     {
-        if ($this->hasMaterialTypesTableCache === null) {
-            $this->hasMaterialTypesTableCache = Schema::hasTable('material_types');
-        }
-
-        return $this->hasMaterialTypesTableCache;
+        return true;
     }
 
     private function hasMaterialStatusesTable(): bool
     {
-        if ($this->hasMaterialStatusesTableCache === null) {
-            $this->hasMaterialStatusesTableCache = Schema::hasTable('material_statuses');
-        }
-
-        return $this->hasMaterialStatusesTableCache;
+        return true;
     }
 
     private function hasMaterialInboxImportsTable(): bool
@@ -4915,38 +4877,22 @@ class MaterialShareController extends Controller
 
     private function materialTypesAreUserScoped(): bool
     {
-        if ($this->materialTypesUserScopedCache === null) {
-            $this->materialTypesUserScopedCache = $this->hasMaterialTypesTable() && Schema::hasColumn('material_types', 'user_id');
-        }
-
-        return $this->materialTypesUserScopedCache;
+        return true;
     }
 
     private function materialTypesHasIconColumn(): bool
     {
-        if ($this->materialTypesHasIconColumnCache === null) {
-            $this->materialTypesHasIconColumnCache = $this->hasMaterialTypesTable() && Schema::hasColumn('material_types', 'icon');
-        }
-
-        return $this->materialTypesHasIconColumnCache;
+        return true;
     }
 
     private function materialTypesHasColorColumn(): bool
     {
-        if ($this->materialTypesHasColorColumnCache === null) {
-            $this->materialTypesHasColorColumnCache = $this->hasMaterialTypesTable() && Schema::hasColumn('material_types', 'color');
-        }
-
-        return $this->materialTypesHasColorColumnCache;
+        return true;
     }
 
     private function materialStatusesHasColorColumn(): bool
     {
-        if ($this->materialStatusesHasColorColumnCache === null) {
-            $this->materialStatusesHasColorColumnCache = $this->hasMaterialStatusesTable() && Schema::hasColumn('material_statuses', 'color');
-        }
-
-        return $this->materialStatusesHasColorColumnCache;
+        return true;
     }
 
     private function resolveRulePermissionForUser(

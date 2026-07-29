@@ -284,10 +284,6 @@ class MaterialController extends Controller
         $authUser = $this->authorizeForMaterials();
         $this->assertIsOwner($authUser->id, $material_card->user_id);
 
-        if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
-            abort(409, 'Link-Funktion ist erst nach aktueller Migration verfügbar.');
-        }
-
         $removed = MaterialInboxImport::query()
             ->where('target_user_id', (int) $authUser->id)
             ->where('target_material_card_id', (int) $material_card->id)
@@ -319,14 +315,6 @@ class MaterialController extends Controller
     {
         $authUser = $this->authorizeForMaterials();
         $this->assertUnitBelongsToOwner($authUser->id, $material_unit);
-
-        if (! Schema::hasTable('material_unit_inbox_imports')) {
-            abort(409, 'Link-Funktion für Einheiten ist erst nach aktueller Migration verfügbar.');
-        }
-
-        if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
-            abort(409, 'Link-Funktion ist erst nach aktueller Migration verfügbar.');
-        }
 
         $linkedUnitImportExists = MaterialUnitInboxImport::query()
             ->where('target_user_id', (int) $authUser->id)
@@ -427,14 +415,6 @@ class MaterialController extends Controller
         $authUser = $this->authorizeForMaterials();
         $this->assertTopicBelongsToOwner($authUser->id, $material_topic);
 
-        if (! Schema::hasTable('material_topic_inbox_imports')) {
-            abort(409, 'Link-Funktion für Themen ist erst nach aktueller Migration verfügbar.');
-        }
-
-        if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
-            abort(409, 'Link-Funktion ist erst nach aktueller Migration verfügbar.');
-        }
-
         $linkedTopicImportExists = MaterialTopicInboxImport::query()
             ->where('target_user_id', (int) $authUser->id)
             ->where('target_topic_id', (int) $material_topic->id)
@@ -498,20 +478,18 @@ class MaterialController extends Controller
                 }
             }
 
-            if (Schema::hasTable('material_unit_inbox_imports')) {
-                $topicUnitIds = MaterialUnit::query()
-                    ->where('topic_id', $topicId)
-                    ->pluck('id')
-                    ->map(fn ($id) => (int) $id)
-                    ->filter(fn (int $id) => $id > 0)
-                    ->values();
+            $topicUnitIds = MaterialUnit::query()
+                ->where('topic_id', $topicId)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn (int $id) => $id > 0)
+                ->values();
 
-                if ($topicUnitIds->isNotEmpty()) {
-                    MaterialUnitInboxImport::query()
-                        ->where('target_user_id', $ownerId)
-                        ->whereIn('target_unit_id', $topicUnitIds->all())
-                        ->delete();
-                }
+            if ($topicUnitIds->isNotEmpty()) {
+                MaterialUnitInboxImport::query()
+                    ->where('target_user_id', $ownerId)
+                    ->whereIn('target_unit_id', $topicUnitIds->all())
+                    ->delete();
             }
 
             MaterialTopicInboxImport::query()
@@ -1083,14 +1061,11 @@ class MaterialController extends Controller
 
         $authUserId = (int) $authUser->id;
         $authSchoolId = (int) $authUser->school_id;
-        $memberGroupIds = collect();
-        if (Schema::hasTable('user_groups') && Schema::hasTable('user_group_user')) {
-            $memberGroupIds = UserGroup::query()
-                ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
-                ->pluck('id')
-                ->map(fn ($id) => (int) $id)
-                ->values();
-        }
+        $memberGroupIds = UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
 
         $rule = MaterialShareRule::query()
             ->whereKey($ruleId)
@@ -1225,26 +1200,13 @@ class MaterialController extends Controller
 
     private function loadCardForResponse(MaterialCard $card): MaterialCard
     {
-        if (Schema::hasTable('material_card_classifications')) {
-            $relations = [
-                'attachments',
-                'classifications.subject',
-                'classifications.topic',
-                'classifications.unit',
-            ];
-            if (Schema::hasTable('material_inbox_imports')) {
-                $relations[] = 'inboxImports';
-            }
-
-            return $card->loadMissing(...$relations);
-        }
-
-        $relations = ['attachments'];
-        if (Schema::hasTable('material_inbox_imports')) {
-            $relations[] = 'inboxImports';
-        }
-
-        return $card->loadMissing(...$relations);
+        return $card->loadMissing(
+            'attachments',
+            'classifications.subject',
+            'classifications.topic',
+            'classifications.unit',
+            'inboxImports',
+        );
     }
 
     private function isHtmlAttachment(MaterialCardAttachment $attachment): bool

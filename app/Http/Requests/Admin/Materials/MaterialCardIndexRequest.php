@@ -6,7 +6,6 @@ use App\Models\MaterialCard;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class MaterialCardIndexRequest extends FormRequest
@@ -37,7 +36,7 @@ class MaterialCardIndexRequest extends FormRequest
         $base = ['nullable', 'string', 'max:255'];
         $schoolId = Auth::user()?->school_id;
 
-        if (! $schoolId || ! Schema::hasTable('material_statuses')) {
+        if (! $schoolId) {
             $base[] = Rule::in(MaterialCard::statusValues());
 
             return $base;

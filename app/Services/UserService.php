@@ -309,8 +309,8 @@ class UserService
         $token2fa = $user->setToken2Fa(config('spa.token_expire_time'), 1);
 
         $mail = [
-            'from_address' => env('MAIL_FROM_ADDRESS'),
-            'from_name' => env('MAIL_FROM_NAME'),
+            'from_address' => config('mail.from.address'),
+            'from_name' => config('mail.from.name'),
             'logo' => asset('/storage/images/'.config('schooltool.logo')),
             'subject' => 'Code zum Bestätigen der E-Mail',
             'markdown' => 'mails.admin.sendCode',

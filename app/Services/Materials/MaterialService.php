@@ -35,7 +35,6 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -55,50 +54,6 @@ class MaterialService
     private const DELETED_ITEM_TYPE_TOPIC = 'topic';
 
     private const DELETED_ITEM_TYPE_UNIT = 'unit';
-
-    private ?bool $hasMaterialInboxImportsTableCache = null;
-
-    private ?bool $materialInboxImportsHasImportModeColumnCache = null;
-
-    private ?bool $hasMaterialUnitInboxImportsTableCache = null;
-
-    private ?bool $hasMaterialTopicInboxImportsTableCache = null;
-
-    private ?bool $hasMaterialTypesTableCache = null;
-
-    private ?bool $hasMaterialStatusesTableCache = null;
-
-    private ?bool $hasMaterialCardsTableCache = null;
-
-    private ?bool $hasMaterialSubjectsTableCache = null;
-
-    private ?bool $hasMaterialTopicsTableCache = null;
-
-    private ?bool $hasMaterialUnitsTableCache = null;
-
-    private ?bool $hasMaterialCardClassificationsTableCache = null;
-
-    private ?bool $hasMaterialCardDeletedClassificationsTableCache = null;
-
-    private ?bool $hasSchoolToolsTableCache = null;
-
-    private ?bool $hasUsersTableCache = null;
-
-    private ?bool $materialTypesHasUserIdColumnCache = null;
-
-    private ?bool $materialTypesHasIconColumnCache = null;
-
-    private ?bool $materialTypesHasColorColumnCache = null;
-
-    private ?bool $materialStatusesHasColorColumnCache = null;
-
-    private ?bool $schoolToolsHasMaterialMaxFileUploadSizeColumnCache = null;
-
-    private ?bool $usersHasMaterialsPaginationNumberColumnCache = null;
-
-    private ?bool $supportsClassificationTablesCache = null;
-
-    private ?bool $supportsClassificationSortOrderCache = null;
 
     /** @var array<int,MaterialWorkspace|null> */
     private array $activeWorkspaceByUserId = [];
@@ -1845,12 +1800,6 @@ class MaterialService
 
     public function createType(User $user, string $name, ?string $icon = null, ?string $color = null): MaterialType
     {
-        if (! Schema::hasTable('material_types')) {
-            throw ValidationException::withMessages([
-                'data.name' => 'Materialtypen sind noch nicht verfügbar.',
-            ]);
-        }
-
         $normalized = $this->normalizeName($name);
         if ($normalized === '') {
             throw ValidationException::withMessages([
@@ -1979,12 +1928,6 @@ class MaterialService
 
     public function createStatus(User $user, string $label, ?string $color = null): MaterialStatus
     {
-        if (! Schema::hasTable('material_statuses')) {
-            throw ValidationException::withMessages([
-                'data.label' => 'Statuswerte sind noch nicht verfügbar.',
-            ]);
-        }
-
         $normalizedLabel = $this->normalizeName($label);
         if ($normalizedLabel === '') {
             throw ValidationException::withMessages([
@@ -4268,42 +4211,22 @@ class MaterialService
 
     private function isUserScopedMaterialTypes(): bool
     {
-        if ($this->materialTypesHasUserIdColumnCache === null) {
-            $this->materialTypesHasUserIdColumnCache = $this->supportsMaterialTypes()
-                && Schema::hasColumn('material_types', 'user_id');
-        }
-
-        return $this->materialTypesHasUserIdColumnCache;
+        return true;
     }
 
     private function hasTypeIconColumn(): bool
     {
-        if ($this->materialTypesHasIconColumnCache === null) {
-            $this->materialTypesHasIconColumnCache = $this->supportsMaterialTypes()
-                && Schema::hasColumn('material_types', 'icon');
-        }
-
-        return $this->materialTypesHasIconColumnCache;
+        return true;
     }
 
     private function hasTypeColorColumn(): bool
     {
-        if ($this->materialTypesHasColorColumnCache === null) {
-            $this->materialTypesHasColorColumnCache = $this->supportsMaterialTypes()
-                && Schema::hasColumn('material_types', 'color');
-        }
-
-        return $this->materialTypesHasColorColumnCache;
+        return true;
     }
 
     private function hasStatusColorColumn(): bool
     {
-        if ($this->materialStatusesHasColorColumnCache === null) {
-            $this->materialStatusesHasColorColumnCache = $this->supportsMaterialStatuses()
-                && Schema::hasColumn('material_statuses', 'color');
-        }
-
-        return $this->materialStatusesHasColorColumnCache;
+        return true;
     }
 
     private function defaultStatusValues(): array
@@ -4380,22 +4303,12 @@ class MaterialService
 
     private function supportsSchoolFileSettings(): bool
     {
-        if ($this->schoolToolsHasMaterialMaxFileUploadSizeColumnCache === null) {
-            $this->schoolToolsHasMaterialMaxFileUploadSizeColumnCache = $this->supportsSchoolTools()
-                && Schema::hasColumn('school_tools', 'material_max_file_upload_size');
-        }
-
-        return $this->schoolToolsHasMaterialMaxFileUploadSizeColumnCache;
+        return true;
     }
 
     private function supportsUserMaterialsPaginationSettings(): bool
     {
-        if ($this->usersHasMaterialsPaginationNumberColumnCache === null) {
-            $this->usersHasMaterialsPaginationNumberColumnCache = $this->supportsUsers()
-                && Schema::hasColumn('users', 'materials_pagination_number');
-        }
-
-        return $this->usersHasMaterialsPaginationNumberColumnCache;
+        return true;
     }
 
     private function materialsPaginationNumberForUser(User $user): int
@@ -4774,10 +4687,6 @@ class MaterialService
      */
     private function curriculumSharedMaterialRulesForUser(User $user): Collection
     {
-        if (! Schema::hasTable('material_share_rules') || ! Schema::hasTable('material_share_targets')) {
-            return collect();
-        }
-
         $authUserId = (int) $user->id;
         $authSchoolId = (int) $user->school_id;
         $memberGroupIds = array_keys($this->memberGroupSetForUser($user));
@@ -5640,87 +5549,47 @@ class MaterialService
 
     private function supportsMaterialInboxImports(): bool
     {
-        if ($this->hasMaterialInboxImportsTableCache === null) {
-            $this->hasMaterialInboxImportsTableCache = Schema::hasTable('material_inbox_imports');
-        }
-
-        return $this->hasMaterialInboxImportsTableCache;
+        return true;
     }
 
     private function supportsMaterialUnitInboxImports(): bool
     {
-        if ($this->hasMaterialUnitInboxImportsTableCache === null) {
-            $this->hasMaterialUnitInboxImportsTableCache = Schema::hasTable('material_unit_inbox_imports');
-        }
-
-        return $this->hasMaterialUnitInboxImportsTableCache;
+        return true;
     }
 
     private function supportsMaterialTopicInboxImports(): bool
     {
-        if ($this->hasMaterialTopicInboxImportsTableCache === null) {
-            $this->hasMaterialTopicInboxImportsTableCache = Schema::hasTable('material_topic_inbox_imports');
-        }
-
-        return $this->hasMaterialTopicInboxImportsTableCache;
+        return true;
     }
 
     private function supportsLinkedInboxImports(): bool
     {
-        if (! $this->supportsMaterialInboxImports()) {
-            return false;
-        }
-
-        if ($this->materialInboxImportsHasImportModeColumnCache === null) {
-            $this->materialInboxImportsHasImportModeColumnCache = Schema::hasColumn('material_inbox_imports', 'import_mode');
-        }
-
-        return $this->materialInboxImportsHasImportModeColumnCache;
+        return true;
     }
 
     private function supportsMaterialTypes(): bool
     {
-        if ($this->hasMaterialTypesTableCache === null) {
-            $this->hasMaterialTypesTableCache = Schema::hasTable('material_types');
-        }
-
-        return $this->hasMaterialTypesTableCache;
+        return true;
     }
 
     private function supportsMaterialStatuses(): bool
     {
-        if ($this->hasMaterialStatusesTableCache === null) {
-            $this->hasMaterialStatusesTableCache = Schema::hasTable('material_statuses');
-        }
-
-        return $this->hasMaterialStatusesTableCache;
+        return true;
     }
 
     private function supportsMaterialCards(): bool
     {
-        if ($this->hasMaterialCardsTableCache === null) {
-            $this->hasMaterialCardsTableCache = Schema::hasTable('material_cards');
-        }
-
-        return $this->hasMaterialCardsTableCache;
+        return true;
     }
 
     private function supportsSchoolTools(): bool
     {
-        if ($this->hasSchoolToolsTableCache === null) {
-            $this->hasSchoolToolsTableCache = Schema::hasTable('school_tools');
-        }
-
-        return $this->hasSchoolToolsTableCache;
+        return true;
     }
 
     private function supportsUsers(): bool
     {
-        if ($this->hasUsersTableCache === null) {
-            $this->hasUsersTableCache = Schema::hasTable('users');
-        }
-
-        return $this->hasUsersTableCache;
+        return true;
     }
 
     private function forceDeleteDeletedCard(MaterialCard $deletedCard): void
@@ -6129,55 +5998,17 @@ class MaterialService
 
     private function supportsClassificationTables(): bool
     {
-        if ($this->supportsClassificationTablesCache === null) {
-            if ($this->hasMaterialSubjectsTableCache === null) {
-                $this->hasMaterialSubjectsTableCache = Schema::hasTable('material_subjects');
-            }
-
-            if ($this->hasMaterialTopicsTableCache === null) {
-                $this->hasMaterialTopicsTableCache = Schema::hasTable('material_topics');
-            }
-
-            if ($this->hasMaterialUnitsTableCache === null) {
-                $this->hasMaterialUnitsTableCache = Schema::hasTable('material_units');
-            }
-
-            if ($this->hasMaterialCardClassificationsTableCache === null) {
-                $this->hasMaterialCardClassificationsTableCache = Schema::hasTable('material_card_classifications');
-            }
-
-            $this->supportsClassificationTablesCache = $this->hasMaterialSubjectsTableCache
-                && $this->hasMaterialTopicsTableCache
-                && $this->hasMaterialUnitsTableCache
-                && $this->hasMaterialCardClassificationsTableCache;
-        }
-
-        return $this->supportsClassificationTablesCache;
+        return true;
     }
 
     private function supportsDeletedClassificationSnapshots(): bool
     {
-        if (! $this->supportsClassificationTables()) {
-            return false;
-        }
-
-        if ($this->hasMaterialCardDeletedClassificationsTableCache === null) {
-            $this->hasMaterialCardDeletedClassificationsTableCache = Schema::hasTable('material_card_deleted_classifications');
-        }
-
-        return $this->hasMaterialCardDeletedClassificationsTableCache;
+        return true;
     }
 
     private function supportsClassificationSortOrder(): bool
     {
-        if ($this->supportsClassificationSortOrderCache === null) {
-            $this->supportsClassificationSortOrderCache = $this->supportsClassificationTables()
-                && Schema::hasColumn('material_subjects', 'sort_order')
-                && Schema::hasColumn('material_topics', 'sort_order')
-                && Schema::hasColumn('material_units', 'sort_order');
-        }
-
-        return $this->supportsClassificationSortOrderCache;
+        return true;
     }
 
     private function materialAttachmentDirectory(MaterialCard $card): string

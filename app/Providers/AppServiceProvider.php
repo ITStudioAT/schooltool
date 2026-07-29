@@ -68,6 +68,15 @@ class AppServiceProvider extends ServiceProvider
             ];
         });
 
+        RateLimiter::for('health-queue-tests', function (Request $request) {
+            $userId = (string) ($request->user()?->getAuthIdentifier() ?? 'missing');
+
+            return [
+                Limit::perMinute(3)->by("health-queue-tests-user:{$userId}"),
+                Limit::perMinute(10)->by('health-queue-tests-ip:'.$request->ip()),
+            ];
+        });
+
         RateLimiter::for('authentication', function (Request $request) {
             $identity = data_get($request->all(), 'data.email')
                 ?? $request->input('email')

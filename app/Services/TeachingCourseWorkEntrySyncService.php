@@ -8,13 +8,10 @@ use App\Models\TeachingCourseWork;
 use App\Models\TeachingCourseWorkGroupStudent;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class TeachingCourseWorkEntrySyncService
 {
     public const SOURCE_COURSE_WORK = 'course_work';
-
-    private static ?bool $supportsGroupStudentIndexCache = null;
 
     public function __construct(private TeachingCourseService $courseService) {}
 
@@ -274,7 +271,7 @@ class TeachingCourseWorkEntrySyncService
 
     public function supportsGroupStudentIndex(): bool
     {
-        return self::$supportsGroupStudentIndexCache ??= Schema::hasTable('teaching_course_work_group_students');
+        return true;
     }
 
     /**

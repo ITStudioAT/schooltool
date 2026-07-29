@@ -380,8 +380,8 @@ class AdminService
         $token2fa = $user->setToken2Fa(config('spa.token_expire_time'), $select);
 
         $mail = [
-            'from_address' => env('MAIL_FROM_ADDRESS'),
-            'from_name' => env('MAIL_FROM_NAME'),
+            'from_address' => config('mail.from.address'),
+            'from_name' => config('mail.from.name'),
             'subject' => 'Code zum Registrieren',
             'markdown' => 'spa::mails.admin.sendCode',
             'token_2fa' => $token2fa,
