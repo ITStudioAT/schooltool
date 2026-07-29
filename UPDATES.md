@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.44.0 x
+## 3.44.0
 - Major Security Update
 
 ## 3.43.5
