@@ -84,7 +84,15 @@ jobs:
         if: github.event_name != 'schedule'
         env:
           SECRET_SCAN_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: php scripts/check-secret-history.php --base="$SECRET_SCAN_BASE_SHA"
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          base_sha="$SECRET_SCAN_BASE_SHA"
+
+          if [[ "$base_sha" =~ ^0+$ ]]; then
+            base_sha="$(git merge-base HEAD "origin/$DEFAULT_BRANCH")"
+          fi
+
+          php scripts/check-secret-history.php --base="$base_sha"
 
       - name: Validate Composer metadata
         run: composer validate --strict
@@ -129,7 +137,15 @@ jobs:
         if: github.event_name != 'schedule'
         env:
           COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: php scripts/check-changed-code-coverage.php --base="$COVERAGE_BASE_SHA" --coverage=storage/logs/clover.xml --min=80
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          base_sha="$COVERAGE_BASE_SHA"
+
+          if [[ "$base_sha" =~ ^0+$ ]]; then
+            base_sha="$(git merge-base HEAD "origin/$DEFAULT_BRANCH")"
+          fi
+
+          php scripts/check-changed-code-coverage.php --base="$base_sha" --coverage=storage/logs/clover.xml --min=80
 
       - name: Run MySQL and Redis integration tests
         run: composer test:integration
