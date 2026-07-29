@@ -1732,12 +1732,14 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { mapState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import FileUpload from '@/pages/components/FileUpload.vue'
-import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
-import CurriculumUnitFilesDialog from '@/pages/admin/teaching/curricula/CurriculumUnitFilesDialog.vue'
+
+const CurriculumPdfPreview = defineAsyncComponent(() => import('@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'))
+const CurriculumUnitFilesDialog = defineAsyncComponent(() => import('@/pages/admin/teaching/curricula/CurriculumUnitFilesDialog.vue'))
 
 const DAY_NAMES_SHORT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 const CURRICULUM_CARD_WIDTH_STORAGE_PREFIX = 'schooltool.admin.teaching.curriculum-card-width.user'

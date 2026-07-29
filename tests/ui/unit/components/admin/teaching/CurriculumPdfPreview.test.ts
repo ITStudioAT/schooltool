@@ -109,7 +109,8 @@ describe('CurriculumPdfPreview', () => {
     it('loads PDF.js lazily and uses its matching worker bundle', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'), 'utf8')
 
-        expect(source).toContain("import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'")
+        expect(source).toContain("import('pdfjs-dist/build/pdf.worker.min.mjs?url')")
+        expect(source).not.toContain("import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'")
         expect(source).toContain("const pdfjs = await import('pdfjs-dist')")
         expect(source).toContain('pdfjs.GlobalWorkerOptions.workerSrc = await resolvePdfWorkerUrl()')
         expect(source).toContain('disableFontFace: true')

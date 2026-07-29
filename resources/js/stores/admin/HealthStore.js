@@ -10,7 +10,7 @@ export const useHealthStore = defineStore('AdminHealthStore', {
     }),
 
     actions: {
-        async fetchStatus() {
+        async fetchStatus({ notifyOnError = true } = {}) {
             try {
                 const response = await axios.get('/api/admin/health/status')
                 this.scheduler = response.data.scheduler
@@ -18,12 +18,14 @@ export const useHealthStore = defineStore('AdminHealthStore', {
                 this.is_healthy = response.data.is_healthy
                 return response.data
             } catch (error) {
-                useNotificationStore().notify({
-                    status: error.response?.status,
-                    message: error.response?.data?.message || 'Health-Status konnte nicht abgerufen werden.',
-                    type: 'error',
-                    timeout: 3000,
-                })
+                if (notifyOnError) {
+                    useNotificationStore().notify({
+                        status: error.response?.status,
+                        message: error.response?.data?.message || 'Health-Status konnte nicht abgerufen werden.',
+                        type: 'error',
+                        timeout: 3000,
+                    })
+                }
                 return null
             }
         },

@@ -504,7 +504,22 @@ export default {
         }
     },
 
-    unmounted() {},
+    mounted() {
+        this.health_poll_interval = window.setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                this.refreshHealth(false)
+            }
+        }, 30_000)
+        window.addEventListener('focus', this.handleHealthFocus)
+    },
+
+    unmounted() {
+        if (this.health_poll_interval !== null) {
+            window.clearInterval(this.health_poll_interval)
+            this.health_poll_interval = null
+        }
+        window.removeEventListener('focus', this.handleHealthFocus)
+    },
 
     data() {
         return {
@@ -513,6 +528,7 @@ export default {
             schoolStore: null,
             health_loaded: false,
             health_loading: false,
+            health_poll_interval: null,
             queue_test_running: false,
             queue_test_visible: false,
             diagnostics_visible: false,
@@ -710,12 +726,18 @@ export default {
                 this.restart_countdown = 0
             }
         },
-        async refreshHealth() {
-            if (!this.healthStore) return
+        handleHealthFocus() {
+            this.refreshHealth(false)
+        },
+        async refreshHealth(notifyOnError = true) {
+            if (!this.healthStore || this.health_loading) return
             this.health_loading = true
             try {
-                await this.healthStore.fetchStatus()
+                const status = await this.healthStore.fetchStatus({ notifyOnError })
                 this.health_loaded = true
+                if (status?.is_healthy === true) {
+                    this.diagnostics_visible = false
+                }
             } finally {
                 this.health_loading = false
             }

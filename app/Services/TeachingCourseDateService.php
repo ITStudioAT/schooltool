@@ -11,14 +11,11 @@ use Carbon\Carbon;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class TeachingCourseDateService
 {
-    private static ?bool $supportsAttendanceColumnsCache = null;
-
     public function createDates(int $course_id, string $from, ?string $until, array $hours, int $interval): array
     {
         $course = TeachingCourse::select(['id', 'school_id', 'schoolyear_id', 'user_id'])->find($course_id);
@@ -174,10 +171,7 @@ class TeachingCourseDateService
 
     public function supportsAttendanceColumns(): bool
     {
-        return self::$supportsAttendanceColumnsCache ??= Schema::hasColumns('teaching_course_dates', [
-            'attendance',
-            'attendance_checked',
-        ]);
+        return true;
     }
 
     public function normalizePublicStatus($status): array

@@ -200,6 +200,7 @@
     </ItsGridBox>
 </template>
 <script>
+import { defineAsyncComponent } from 'vue'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { parseLocalDate } from '@/helpers/date'
 import { computeStudentGrades, formatGrade, gradeClass } from '@/helpers/gradeCalculation'
@@ -213,7 +214,8 @@ import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
-import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
+
+const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
 
 export default {
     setup() {

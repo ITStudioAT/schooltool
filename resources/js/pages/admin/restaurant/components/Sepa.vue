@@ -99,10 +99,12 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { mapState } from 'pinia'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
-import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
+
+const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
 
 export default {
     components: { ItsGridBox, ItsRichTextEditor },

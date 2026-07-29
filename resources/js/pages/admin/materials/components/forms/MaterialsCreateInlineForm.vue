@@ -574,13 +574,14 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
 import 'filepond/dist/filepond.min.css'
 import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
-import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
+const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
 
 export default {
     name: 'MaterialsCreateInlineForm',

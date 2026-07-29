@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
-use Illuminate\Support\Facades\Schema;
 
 class SchoolToolModuleStatusService
 {
@@ -63,11 +62,6 @@ class SchoolToolModuleStatusService
 
     private ?SchoolTool $globalSchoolToolCache = null;
 
-    /**
-     * @var array<int, string>|null
-     */
-    private ?array $schoolToolColumnCache = null;
-
     public static function moduleEnabledByDefault(string $moduleKey): bool
     {
         return self::MODULE_DEFAULT_VISIBILITY[$moduleKey] ?? false;
@@ -124,10 +118,10 @@ class SchoolToolModuleStatusService
      */
     public function existingSchoolToolAttributes(array $attributes): array
     {
-        $columns = $this->schoolToolColumns();
+        $fillableAttributes = (new SchoolTool)->getFillable();
 
         return collect($attributes)
-            ->filter(fn (mixed $value, string $key): bool => in_array($key, $columns, true))
+            ->filter(fn (mixed $value, string $key): bool => in_array($key, $fillableAttributes, true))
             ->all();
     }
 
@@ -146,10 +140,6 @@ class SchoolToolModuleStatusService
      */
     public function configurableModuleRows(): array
     {
-        if (! Schema::hasTable('licences')) {
-            return [];
-        }
-
         return Licence::query()
             ->select(['id', 'name', 'long_name'])
             ->orderByRaw('COALESCE(long_name, name)')
@@ -263,16 +253,6 @@ class SchoolToolModuleStatusService
         $userTestModeField = $this->userTestModeField($moduleKey);
         $userComingSoonField = $this->userComingSoonField($moduleKey);
 
-        $columns = $this->schoolToolColumns();
-        if (
-            ! in_array($adminVisibleField, $columns, true)
-            || ! in_array($userVisibleField, $columns, true)
-            || ! in_array($userTestModeField, $columns, true)
-            || ! in_array($userComingSoonField, $columns, true)
-        ) {
-            return null;
-        }
-
         $label = trim((string) ($licence->long_name ?: $licence->name));
         $licenceName = trim((string) ($licence->name ?? ''));
         $meta = $licenceName !== '' && $licenceName !== $label
@@ -355,27 +335,7 @@ class SchoolToolModuleStatusService
             return $this->globalSchoolToolCache;
         }
 
-        if (! Schema::hasTable('school_tools')) {
-            return null;
-        }
-
         return $this->globalSchoolToolCache = SchoolTool::query()->orderBy('id')->first();
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function schoolToolColumns(): array
-    {
-        if ($this->schoolToolColumnCache !== null) {
-            return $this->schoolToolColumnCache;
-        }
-
-        if (! Schema::hasTable('school_tools')) {
-            return $this->schoolToolColumnCache = [];
-        }
-
-        return $this->schoolToolColumnCache = Schema::getColumnListing('school_tools');
     }
 
     /**

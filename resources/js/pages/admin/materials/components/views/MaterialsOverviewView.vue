@@ -1554,18 +1554,18 @@ import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { openAttachmentPreview, UnsupportedAttachmentPreviewError } from '@/pages/admin/materials/attachmentPreview'
-import MaterialsOverviewAlphaList from '../overview/MaterialsOverviewAlphaList.vue'
 import MaterialsOverviewFilters from '../overview/MaterialsOverviewFilters.vue'
-import MaterialsOverviewGrid from '../overview/MaterialsOverviewGrid.vue'
 import MaterialsOverviewHeader from '../overview/MaterialsOverviewHeader.vue'
-import MaterialsOverviewList from '../overview/MaterialsOverviewList.vue'
 import MaterialsOverviewPagination from '../overview/MaterialsOverviewPagination.vue'
 import MaterialsOverviewSortBar from '../overview/MaterialsOverviewSortBar.vue'
-import MaterialsSubjectsContentsTree from '../overview/MaterialsSubjectsContentsTree.vue'
 
 const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
 const MaterialsCreateInlineForm = defineAsyncComponent(() => import('../forms/MaterialsCreateInlineForm.vue'))
 const MaterialTypeManagerDialog = defineAsyncComponent(() => import('../forms/MaterialTypeManagerDialog.vue'))
+const MaterialsOverviewAlphaList = defineAsyncComponent(() => import('../overview/MaterialsOverviewAlphaList.vue'))
+const MaterialsOverviewGrid = defineAsyncComponent(() => import('../overview/MaterialsOverviewGrid.vue'))
+const MaterialsOverviewList = defineAsyncComponent(() => import('../overview/MaterialsOverviewList.vue'))
+const MaterialsSubjectsContentsTree = defineAsyncComponent(() => import('../overview/MaterialsSubjectsContentsTree.vue'))
 const MaterialDetailDialog = defineAsyncComponent(() => import('../overview/dialogs/MaterialDetailDialog.vue'))
 const MaterialShareDraftDialog = defineAsyncComponent(() => import('../overview/dialogs/MaterialShareDraftDialog.vue'))
 const MaterialShareDialog = defineAsyncComponent(() => import('../overview/dialogs/MaterialShareDialog.vue'))

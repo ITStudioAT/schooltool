@@ -735,6 +735,7 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
@@ -745,9 +746,9 @@ import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import axios from 'axios'
-import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
+const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
 
 export default {
     setup() {

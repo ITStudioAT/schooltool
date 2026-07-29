@@ -14,13 +14,10 @@ use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class TeachingCourseService
 {
-    private static ?bool $supportsCourseWorkGroupStudentIndexCache = null;
-
     /**
      * @var array<int, int|null>
      */
@@ -1285,23 +1282,21 @@ class TeachingCourseService
             return [];
         }
 
-        if ($this->supportsCourseWorkGroupStudentIndex()) {
-            $indexedUserIds = TeachingCourseWorkGroupStudent::query()
-                ->where('teaching_course_id', $courseId)
-                ->whereIn('user_id', $candidateUserIds)
-                ->pluck('user_id')
-                ->map(fn ($userId): int => (int) $userId)
-                ->unique()
-                ->values()
-                ->all();
+        $indexedUserIds = TeachingCourseWorkGroupStudent::query()
+            ->where('teaching_course_id', $courseId)
+            ->whereIn('user_id', $candidateUserIds)
+            ->pluck('user_id')
+            ->map(fn ($userId): int => (int) $userId)
+            ->unique()
+            ->values()
+            ->all();
 
-            if (! empty($indexedUserIds)) {
-                return $indexedUserIds;
-            }
+        if (! empty($indexedUserIds)) {
+            return $indexedUserIds;
+        }
 
-            if (TeachingCourseWorkGroupStudent::query()->where('teaching_course_id', $courseId)->exists()) {
-                return [];
-            }
+        if (TeachingCourseWorkGroupStudent::query()->where('teaching_course_id', $courseId)->exists()) {
+            return [];
         }
 
         $candidateSet = array_fill_keys($candidateUserIds, true);
@@ -1378,25 +1373,23 @@ class TeachingCourseService
         $dependent = [];
         $fallbackCandidateUserIdsByCourse = $candidateUserIdsByCourse;
 
-        if ($this->supportsCourseWorkGroupStudentIndex()) {
-            $indexedRows = TeachingCourseWorkGroupStudent::query()
-                ->whereIn('teaching_course_id', $courseIds)
-                ->whereIn('user_id', $allUserIds)
-                ->get(['teaching_course_id', 'user_id']);
-            foreach ($indexedRows as $row) {
-                $dependent[(int) $row->teaching_course_id][(int) $row->user_id] = true;
-            }
+        $indexedRows = TeachingCourseWorkGroupStudent::query()
+            ->whereIn('teaching_course_id', $courseIds)
+            ->whereIn('user_id', $allUserIds)
+            ->get(['teaching_course_id', 'user_id']);
+        foreach ($indexedRows as $row) {
+            $dependent[(int) $row->teaching_course_id][(int) $row->user_id] = true;
+        }
 
-            $coursesWithIndexRows = TeachingCourseWorkGroupStudent::query()
-                ->whereIn('teaching_course_id', $courseIds)
-                ->distinct()
-                ->pluck('teaching_course_id')
-                ->map(fn ($courseId): int => (int) $courseId)
-                ->all();
+        $coursesWithIndexRows = TeachingCourseWorkGroupStudent::query()
+            ->whereIn('teaching_course_id', $courseIds)
+            ->distinct()
+            ->pluck('teaching_course_id')
+            ->map(fn ($courseId): int => (int) $courseId)
+            ->all();
 
-            foreach ($coursesWithIndexRows as $courseId) {
-                unset($fallbackCandidateUserIdsByCourse[$courseId]);
-            }
+        foreach ($coursesWithIndexRows as $courseId) {
+            unset($fallbackCandidateUserIdsByCourse[$courseId]);
         }
 
         if (empty($fallbackCandidateUserIdsByCourse)) {
@@ -1483,11 +1476,6 @@ class TeachingCourseService
         }
 
         return array_values(array_map('intval', array_keys($dependent)));
-    }
-
-    private function supportsCourseWorkGroupStudentIndex(): bool
-    {
-        return self::$supportsCourseWorkGroupStudentIndexCache ??= Schema::hasTable('teaching_course_work_group_students');
     }
 
     private function normalizeAttendanceStudentId(mixed $value): ?int

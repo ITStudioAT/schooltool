@@ -1703,10 +1703,10 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import axios from 'axios'
 import { mapWritableState } from 'pinia'
 import { parseLocalDate } from '@/helpers/date'
-import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
@@ -1716,6 +1716,7 @@ import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
+const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
 const courseContentAllowedTags = new Set([
     'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'h1', 'h2', 'h3', 'hr', 'i', 'li', 'ol', 'p', 'pre',
     's', 'strike', 'strong', 'sub', 'sup', 'u', 'ul',

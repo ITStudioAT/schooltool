@@ -886,6 +886,7 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { parseLocalDate } from '@/helpers/date'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -896,9 +897,9 @@ import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStuden
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
-import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 
 const entryTypeBackgroundClassCount = 8
+const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
 
 export default {
     components: { ItsGridBox, ItsRichTextEditor },

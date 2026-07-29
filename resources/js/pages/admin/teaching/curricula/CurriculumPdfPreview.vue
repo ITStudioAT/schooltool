@@ -51,13 +51,18 @@
 </template>
 
 <script>
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-
 let sameOriginPdfWorkerUrlPromise = null
+let pdfWorkerUrlPromise = null
 
-export async function resolvePdfWorkerUrl(baseUrl = window.location.href, sourceUrl = pdfWorkerUrl) {
+async function loadPdfWorkerUrl() {
+    pdfWorkerUrlPromise ??= import('pdfjs-dist/build/pdf.worker.min.mjs?url').then((module) => module.default)
+
+    return pdfWorkerUrlPromise
+}
+
+export async function resolvePdfWorkerUrl(baseUrl = window.location.href, sourceUrl = null) {
     const applicationUrl = new URL(baseUrl)
-    const workerUrl = new URL(sourceUrl, applicationUrl)
+    const workerUrl = new URL(sourceUrl || (await loadPdfWorkerUrl()), applicationUrl)
 
     if (workerUrl.origin === applicationUrl.origin) return workerUrl.href
 

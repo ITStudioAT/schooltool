@@ -514,11 +514,11 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { mapState } from 'pinia'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import EatingTimes from '@/pages/admin/restaurant/components/EatingTimes.vue'
 import FreeDays from '@/pages/admin/restaurant/components/FreeDays.vue'
-import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import OnlineSettings from '@/pages/admin/restaurant/components/OnlineSettings.vue'
 import Sepa from '@/pages/admin/restaurant/components/Sepa.vue'
@@ -531,6 +531,7 @@ import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
 import FilePondPluginImagePreview from 'filepond-plugin-image-preview'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType, FilePondPluginImagePreview)
+const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
 
 function emptyCategoryForm() {
     return {

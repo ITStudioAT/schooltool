@@ -93,6 +93,68 @@ describe('frontend bundle boundaries', () => {
             "const MaterialDetailDialog = defineAsyncComponent(() => import('../overview/dialogs/MaterialDetailDialog.vue'))",
         )
         expect(overviewSource).toContain('<MaterialDetailDialog\n        v-if="detailDialogOpen"')
+
+        for (const component of [
+            'MaterialsOverviewAlphaList',
+            'MaterialsOverviewGrid',
+            'MaterialsOverviewList',
+            'MaterialsSubjectsContentsTree',
+        ]) {
+            expect(overviewSource).toContain(
+                `const ${component} = defineAsyncComponent(() => import('../overview/${component}.vue'))`,
+            )
+            expect(overviewSource).not.toContain(
+                `import ${component} from '../overview/${component}.vue'`,
+            )
+        }
+    })
+
+    it('loads curriculum PDF features and the PDF worker on demand', () => {
+        const detailSource = readSource(
+            'resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue',
+        )
+        const previewSource = readSource(
+            'resources/js/pages/admin/teaching/curricula/CurriculumPdfPreview.vue',
+        )
+
+        expect(detailSource).toContain(
+            "const CurriculumPdfPreview = defineAsyncComponent(() => import('@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'))",
+        )
+        expect(detailSource).toContain(
+            "const CurriculumUnitFilesDialog = defineAsyncComponent(() => import('@/pages/admin/teaching/curricula/CurriculumUnitFilesDialog.vue'))",
+        )
+        expect(detailSource).not.toContain(
+            "import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'",
+        )
+        expect(previewSource).toContain(
+            "import('pdfjs-dist/build/pdf.worker.min.mjs?url')",
+        )
+        expect(previewSource).not.toContain(
+            "import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'",
+        )
+    })
+
+    it('loads the rich text editor separately from feature bundles', () => {
+        const editorConsumers = [
+            'resources/js/pages/admin/materials/components/forms/MaterialsCreateInlineForm.vue',
+            'resources/js/pages/admin/restaurant/components/Settings.vue',
+            'resources/js/pages/admin/restaurant/components/Sepa.vue',
+            'resources/js/pages/admin/teaching/overview/components/CourseDates.vue',
+            'resources/js/pages/admin/teaching/overview/components/CourseInfos.vue',
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+            'resources/js/pages/admin/teaching/overview/components/CourseTable.vue',
+        ]
+
+        for (const path of editorConsumers) {
+            const source = readSource(path)
+
+            expect(source).toContain(
+                "const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))",
+            )
+            expect(source).not.toContain(
+                "import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'",
+            )
+        }
     })
 
     it('lazy loads timetable route branches and print UI', () => {

@@ -138,6 +138,48 @@ describe('Index runTests', () => {
         expect(context.health_loaded).toBe(true)
     })
 
+    it('refreshes health silently while visible and when the window regains focus', async () => {
+        vi.useFakeTimers()
+        const refreshHealth = vi.fn().mockResolvedValue(undefined)
+        const context: Record<string, any> = {
+            health_poll_interval: null,
+            refreshHealth,
+        }
+        context.handleHealthFocus = (IndexPage as any).methods.handleHealthFocus.bind(context)
+
+        ;(IndexPage as any).mounted.call(context)
+        await vi.advanceTimersByTimeAsync(30_000)
+
+        expect(refreshHealth).toHaveBeenCalledWith(false)
+
+        window.dispatchEvent(new Event('focus'))
+        expect(refreshHealth).toHaveBeenCalledTimes(2)
+
+        ;(IndexPage as any).unmounted.call(context)
+        window.dispatchEvent(new Event('focus'))
+        await vi.advanceTimersByTimeAsync(30_000)
+
+        expect(refreshHealth).toHaveBeenCalledTimes(2)
+        vi.useRealTimers()
+    })
+
+    it('closes diagnostics after a silent health refresh reports recovery', async () => {
+        const fetchStatus = vi.fn().mockResolvedValue({ is_healthy: true })
+        const context: Record<string, any> = {
+            healthStore: { fetchStatus },
+            health_loading: false,
+            health_loaded: false,
+            diagnostics_visible: true,
+        }
+
+        await (IndexPage as any).methods.refreshHealth.call(context, false)
+
+        expect(fetchStatus).toHaveBeenCalledWith({ notifyOnError: false })
+        expect(context.health_loaded).toBe(true)
+        expect(context.diagnostics_visible).toBe(false)
+        expect(context.health_loading).toBe(false)
+    })
+
     it('treats a valid role as active even when the legacy activation flag is false', () => {
         const isUserLicenceRoleActive = (IndexPage as any).methods.isUserLicenceRoleActive
 
