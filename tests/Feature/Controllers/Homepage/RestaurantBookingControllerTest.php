@@ -501,8 +501,14 @@ it('rejects an eating time that is not attached to the selected menu entry', fun
         'restaurant_menu_plan_id' => $plan->id,
         'restaurant_menu_id' => $menu->id,
     ]);
-    $allowedEatingTime = RestaurantEatingTime::factory()->create(['school_id' => $school->id]);
-    $otherEatingTime = RestaurantEatingTime::factory()->create(['school_id' => $school->id]);
+    $allowedEatingTime = RestaurantEatingTime::factory()->create([
+        'school_id' => $school->id,
+        'eating_time' => '12:00:00',
+    ]);
+    $otherEatingTime = RestaurantEatingTime::factory()->create([
+        'school_id' => $school->id,
+        'eating_time' => '12:30:00',
+    ]);
     $entry->eatingTimes()->attach($allowedEatingTime->id);
 
     $this->withoutMiddleware(ToolLicensed::class);
