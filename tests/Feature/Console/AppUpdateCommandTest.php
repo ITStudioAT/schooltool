@@ -176,13 +176,14 @@ it('runs the full update workflow end to end', function (): void {
     app()->instance(InstallUpdateService::class, $install);
     app()->instance(RecordsCreateService::class, $records);
 
+    Artisan::shouldReceive('call')->with('route:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('horizon:terminate', [])->once()->andReturn(0);
-    Artisan::shouldReceive('output')->times(6)->andReturn('');
+    Artisan::shouldReceive('output')->times(7)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records);
 
@@ -193,6 +194,8 @@ it('runs the full update workflow end to end', function (): void {
     expect($result['output'])->toContain('▶ INSTALLING FRONTEND DEPENDENCIES');
     expect($result['output'])->toContain('npm is arranging a very large drawer of tiny packages.');
     expect($result['output'])->toContain('Still installing dependencies. npm is sorting versions, scripts, and small opinions.');
+    expect($result['output'])->toContain('▶ CLEARING ROUTE CACHE');
+    expect($result['output'])->toContain('Refreshing Laravel routes before Wayfinder generates frontend actions.');
     expect($result['output'])->toContain('▶ BUILDING FRONTEND');
     expect($result['output'])->toContain('Vite is baking the frontend. Please enjoy the smell of compiled assets.');
     expect($result['output'])->toContain('Still building. Vite is transforming modules and keeping count.');
@@ -274,6 +277,27 @@ it('stops before backend work when npm ci fails', function (): void {
     $records->shouldNotHaveReceived('initRecords');
 });
 
+it('stops before the frontend build when the stale route cache cannot be cleared', function (): void {
+    fakeAppUpdateFiles();
+    fakeAppUpdateProcesses();
+
+    $install = Mockery::spy(InstallUpdateService::class);
+    $records = Mockery::spy(RecordsCreateService::class);
+
+    Artisan::shouldReceive('call')->with('route:clear', [])->once()->andReturn(1);
+    Artisan::shouldReceive('output')->once()->andReturn('Unable to clear the route cache.');
+
+    $result = runAppUpdateCommand($install, $records);
+
+    expect($result['exit_code'])->toBe(1);
+    expect($result['output'])->toContain('route:clear failed — aborting update.');
+    expect($result['output'])->toContain('Unable to clear the route cache.');
+
+    Process::assertNotRan(fn ($process) => str_contains(implode(' ', $process->command), 'npm run build'));
+    $install->shouldNotHaveReceived('clearModels');
+    $records->shouldNotHaveReceived('initRecords');
+});
+
 it('removes existing node modules before npm ci on non windows hosts', function (): void {
     fakeAppUpdateFiles(nodeModulesExists: true);
     fakeAppUpdateProcesses();
@@ -300,13 +324,14 @@ it('removes existing node modules before npm ci on non windows hosts', function 
     app()->instance(InstallUpdateService::class, $install);
     app()->instance(RecordsCreateService::class, $records);
 
+    Artisan::shouldReceive('call')->with('route:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('horizon:terminate', [])->once()->andReturn(0);
-    Artisan::shouldReceive('output')->times(6)->andReturn('');
+    Artisan::shouldReceive('output')->times(7)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records, appUpdateCommandWithNodeModulesCleanup());
 
@@ -347,10 +372,11 @@ it('stops when the school user licence backfill fails', function (): void {
     app()->instance(InstallUpdateService::class, $install);
     app()->instance(RecordsCreateService::class, $records);
 
+    Artisan::shouldReceive('call')->with('route:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(1);
-    Artisan::shouldReceive('output')->times(3)->andReturn('', '', 'school_user_licences.role_name fehlt.');
+    Artisan::shouldReceive('output')->times(4)->andReturn('', '', '', 'school_user_licences.role_name fehlt.');
 
     $result = runAppUpdateCommand($install, $records);
 
@@ -403,13 +429,14 @@ it('retries npm ci when a windows lock error is transient', function (): void {
     app()->instance(InstallUpdateService::class, $install);
     app()->instance(RecordsCreateService::class, $records);
 
+    Artisan::shouldReceive('call')->with('route:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('horizon:terminate', [])->once()->andReturn(0);
-    Artisan::shouldReceive('output')->times(6)->andReturn('');
+    Artisan::shouldReceive('output')->times(7)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records);
 
