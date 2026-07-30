@@ -229,6 +229,7 @@ describe('store', function () {
             'description' => 'Lernzielkontrolle',
             'is_group_work' => true,
             'date_for_all_groups' => '2026-03-10',
+            'finish_until_date' => '2026-03-17',
             'groups' => [[
                 'student_ids' => [$this->student->id],
                 'grade' => '2',
@@ -239,13 +240,16 @@ describe('store', function () {
 
         $response = $this->postJson('/api/admin/teaching/course_works', $payload);
 
-        $response->assertCreated()->assertJsonPath('data.type', 'MA');
+        $response->assertCreated()
+            ->assertJsonPath('data.type', 'MA')
+            ->assertJsonPath('data.finish_until_date', '2026-03-17');
 
         $workId = $response->json('data.id');
         $this->assertDatabaseHas('teaching_course_works', [
             'id' => $workId,
             'teaching_course_id' => $this->course->id,
             'type' => 'MA',
+            'finish_until_date' => '2026-03-17',
         ]);
 
         $this->assertDatabaseHas('teaching_course_student_entries', [
@@ -272,6 +276,37 @@ describe('store', function () {
             'type' => 'INVALID',
             'groups' => [],
         ])->assertStatus(422)->assertJsonValidationErrors(['type']);
+    });
+
+    test('validates finish until date', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->postJson('/api/admin/teaching/course_works', [
+            'teaching_course_id' => $this->course->id,
+            'type' => 'MA',
+            'finish_until_date' => 'not-a-date',
+            'groups' => [],
+        ])->assertUnprocessable()->assertJsonValidationErrors('finish_until_date');
+    });
+
+    test('defaults finish until date to the work date', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/course_works', [
+            'teaching_course_id' => $this->course->id,
+            'type' => 'MA',
+            'date_for_all_groups' => '2026-03-10',
+            'groups' => [],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.finish_until_date', '2026-03-10');
+
+        $this->assertDatabaseHas('teaching_course_works', [
+            'id' => $response->json('data.id'),
+            'date_for_all_groups' => '2026-03-10',
+            'finish_until_date' => '2026-03-10',
+        ]);
     });
 
     test('limits random group size to the number of active course students', function () {
@@ -430,6 +465,7 @@ describe('show update destroy', function () {
             'type' => 'MA',
             'title' => 'Sync me updated',
             'is_group_work' => true,
+            'finish_until_date' => '2026-03-09',
             'groups' => [[
                 'student_ids' => [$this->student->id],
                 'grade' => '1',
@@ -439,7 +475,8 @@ describe('show update destroy', function () {
         ])->assertOk();
 
         $work->refresh();
-        expect($work->title)->toBe('Sync me updated');
+        expect($work->title)->toBe('Sync me updated')
+            ->and($work->finish_until_date?->toDateString())->toBe('2026-03-09');
 
         $entry = TeachingCourseStudentEntry::query()
             ->where('teaching_course_work_id', $work->id)

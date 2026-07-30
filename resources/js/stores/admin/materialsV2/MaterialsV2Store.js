@@ -6,6 +6,8 @@ export const useMaterialsV2Store = defineStore('AdminMaterialsV2Store', {
     state: () => ({
         items: [],
         categoryDetails: [],
+        clusterDetails: [],
+        maxUploadSizeKb: 20480,
         loading: false,
         loadError: '',
         meta: {
@@ -23,6 +25,8 @@ export const useMaterialsV2Store = defineStore('AdminMaterialsV2Store', {
             this.configRequestGeneration += 1
             this.items = []
             this.categoryDetails = []
+            this.clusterDetails = []
+            this.maxUploadSizeKb = 20480
             this.loading = false
             this.loadError = ''
             this.meta = {
@@ -35,6 +39,7 @@ export const useMaterialsV2Store = defineStore('AdminMaterialsV2Store', {
         async loadItems({
             search = '',
             category,
+            clusterId,
             page = 1,
             calendarRange = null,
             reminderCategory,
@@ -58,6 +63,7 @@ export const useMaterialsV2Store = defineStore('AdminMaterialsV2Store', {
                     params: {
                         search: search.trim() || undefined,
                         category,
+                        ...(clusterId ? { cluster_id: clusterId } : {}),
                         ...rangeParams,
                         page: requestPage,
                         per_page: perPage,
@@ -76,6 +82,7 @@ export const useMaterialsV2Store = defineStore('AdminMaterialsV2Store', {
                             params: {
                                 search: search.trim() || undefined,
                                 category: reminderCategory,
+                                ...(clusterId ? { cluster_id: clusterId } : {}),
                                 ...rangeParams,
                                 page: calendarPage,
                                 per_page: perPage,
@@ -139,6 +146,12 @@ export const useMaterialsV2Store = defineStore('AdminMaterialsV2Store', {
                 this.categoryDetails = Array.isArray(response.data?.category_details)
                     ? response.data.category_details
                     : categories.map((name) => ({ name, items_count: null }))
+                this.clusterDetails = Array.isArray(response.data?.cluster_details)
+                    ? response.data.cluster_details
+                    : []
+                this.maxUploadSizeKb = Number(response.data?.max_file_upload_size_kb) > 0
+                    ? Number(response.data.max_file_upload_size_kb)
+                    : 20480
 
                 return true
             } catch {
@@ -147,8 +160,22 @@ export const useMaterialsV2Store = defineStore('AdminMaterialsV2Store', {
                 }
 
                 this.categoryDetails = []
+                this.clusterDetails = []
+                this.maxUploadSizeKb = 20480
 
                 return false
+            }
+        },
+
+        clearItems() {
+            this.itemsRequestGeneration += 1
+            this.items = []
+            this.loading = false
+            this.loadError = ''
+            this.meta = {
+                total: 0,
+                current_page: 1,
+                last_page: 1,
             }
         },
     },

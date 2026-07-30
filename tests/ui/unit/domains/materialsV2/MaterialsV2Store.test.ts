@@ -55,6 +55,40 @@ describe('MaterialsV2Store', () => {
         expect(store.loadError).toBe('')
     })
 
+    it('loads cluster summaries and forwards a cluster filter', async () => {
+        vi.mocked(axios.get)
+            .mockResolvedValueOnce({
+                data: {
+                    categories: ['Notizen'],
+                    category_details: [{ name: 'Notizen', items_count: 1 }],
+                    cluster_details: [{ id: 9, name: 'Planung', items_count: 1 }],
+                    max_file_upload_size_kb: 10240,
+                },
+            })
+            .mockResolvedValueOnce({
+                data: {
+                    data: [{ id: 17, title: 'Notiz' }],
+                    meta: { total: 1, current_page: 1, last_page: 1 },
+                },
+            })
+        const store = useMaterialsV2Store()
+
+        await store.loadConfig()
+        await store.loadItems({ clusterId: 9 })
+
+        expect(store.clusterDetails).toEqual([{ id: 9, name: 'Planung', items_count: 1 }])
+        expect(store.maxUploadSizeKb).toBe(10240)
+        expect(axios.get).toHaveBeenLastCalledWith('/api/admin/materials-v2/items', {
+            params: {
+                search: undefined,
+                category: undefined,
+                cluster_id: 9,
+                page: 1,
+                per_page: 18,
+            },
+        })
+    })
+
     it('loads all calendar pages into one visible range', async () => {
         vi.mocked(axios.get)
             .mockResolvedValueOnce({
@@ -147,6 +181,7 @@ describe('MaterialsV2Store', () => {
         vi.mocked(axios.get).mockReturnValueOnce(pendingResponse.promise)
         const store = useMaterialsV2Store()
         store.items = [{ id: 1, title: 'Vorheriges Ergebnis' }]
+        store.maxUploadSizeKb = 10240
 
         const pendingRequest = store.loadItems()
         store.resetPage()
@@ -160,6 +195,8 @@ describe('MaterialsV2Store', () => {
 
         expect(store.items).toEqual([])
         expect(store.categoryDetails).toEqual([])
+        expect(store.clusterDetails).toEqual([])
+        expect(store.maxUploadSizeKb).toBe(20480)
         expect(store.meta).toEqual({ total: 0, current_page: 1, last_page: 1 })
         expect(store.loading).toBe(false)
         expect(store.loadError).toBe('')

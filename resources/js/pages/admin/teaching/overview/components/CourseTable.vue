@@ -27,6 +27,19 @@
             variant="tonal">
             <v-card-text class="d-flex align-center flex-wrap ga-3 px-3 py-2">
                 <span class="text-caption text-medium-emphasis font-weight-medium">Zeitraum:</span>
+                <v-btn
+                    color="error"
+                    data-testid="course-table-overview-pdf-button"
+                    density="comfortable"
+                    prepend-icon="mdi-file-pdf-box"
+                    size="small"
+                    title="Kursübersicht als PDF herunterladen"
+                    variant="flat"
+                    :disabled="!sortedCourseDates.length || courseOverviewPdfDownloading"
+                    :loading="courseOverviewPdfDownloading"
+                    @click="downloadCourseOverviewPdf">
+                    PDF
+                </v-btn>
                 <v-btn-toggle v-model="selectedSemester" mandatory density="compact" color="primary" variant="tonal">
                     <v-btn :value="1" size="small">1. Sem</v-btn>
                     <v-btn :value="2" size="small">2. Sem</v-btn>
@@ -109,10 +122,35 @@
                                     role="button"
                                     tabindex="0"
                                     :aria-label="`${compactCourseDateTitle(courseDate)}: Arbeiten öffnen`"
+                                    @blur="clearHoveredCourseWorkTimelines"
                                     @click="openWorkDialog(courseDate)"
+                                    @focus="activateCourseWorkTimelinesForDate(courseDate)"
                                     @keydown.enter.prevent="openWorkDialog(courseDate)"
-                                    @keydown.space.prevent="openWorkDialog(courseDate)">
-                                    <div class="course-table-work-list">
+                                    @keydown.space.prevent="openWorkDialog(courseDate)"
+                                    @mouseenter="activateCourseWorkTimelinesForDate(courseDate)"
+                                    @mouseleave="clearHoveredCourseWorkTimelines">
+                                    <div
+                                        class="course-table-work-list"
+                                        :class="{ 'course-table-work-list--has-work': courseWorksForDate(courseDate).length > 0 }">
+                                        <div
+                                            v-if="courseWorkTimelinesForDate(courseDate).length"
+                                            class="course-table-work-timelines"
+                                            aria-hidden="true">
+                                            <div
+                                                v-for="timeline in courseWorkTimelinesForDate(courseDate)"
+                                                :key="timeline.key"
+                                                class="course-table-work-timeline"
+                                                :class="{
+                                                    'course-table-work-timeline--start': timeline.isStart,
+                                                    'course-table-work-timeline--middle': timeline.isMiddle,
+                                                    'course-table-work-timeline--arrow': timeline.isArrow,
+                                                    'course-table-work-timeline--visible': isCourseWorkTimelineVisible(timeline),
+                                                }">
+                                                <span class="course-table-work-timeline-line" />
+                                                <span v-if="timeline.isStart" class="course-table-work-timeline-dot" />
+                                                <span v-if="timeline.isArrow" class="course-table-work-timeline-arrow" />
+                                            </div>
+                                        </div>
                                         <v-icon
                                             class="course-table-work-empty-icon"
                                             color="primary"
@@ -671,6 +709,42 @@
                             {{ workDialogDateTitle }}
                         </v-chip>
                     </template>
+                    <v-chip
+                        v-if="workDialogDurationLabel && !workDialogDateEditing && !workDialogFinishDateEditing"
+                        color="secondary"
+                        data-testid="course-table-date-work-duration"
+                        prepend-icon="mdi-timer-sand"
+                        size="x-small"
+                        variant="outlined">
+                        {{ workDialogDurationLabel }}
+                    </v-chip>
+                    <v-date-input
+                        v-if="workDialogFormOpen && workDialogFinishDateEditing"
+                        v-model="workDialogForm.finish_until_date"
+                        clearable
+                        class="course-table-date-work-date-input"
+                        data-testid="course-table-date-work-finish-until-input"
+                        density="compact"
+                        hide-details
+                        label="Fertig bis"
+                        variant="outlined"
+                        :disabled="workSaving"
+                        @update:model-value="applyWorkDialogFinishDate" />
+                    <v-chip
+                        v-else-if="workDialogFormOpen"
+                        data-testid="course-table-date-edit-work-finish-until"
+                        color="warning"
+                        prepend-icon="mdi-calendar-check"
+                        size="x-small"
+                        variant="tonal"
+                        :class="{ 'cursor-pointer': !workSaving }"
+                        role="button"
+                        :tabindex="workSaving ? undefined : 0"
+                        @click="beginWorkDialogFinishDateEditing"
+                        @keydown.enter.prevent="beginWorkDialogFinishDateEditing"
+                        @keydown.space.prevent="beginWorkDialogFinishDateEditing">
+                        Fertig bis {{ workDialogFinishDateTitle }}
+                    </v-chip>
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="d-flex flex-column ga-4">
@@ -701,6 +775,23 @@
                                         <v-chip size="x-small" color="secondary" variant="outlined">
                                             {{ assignment.scope }}
                                         </v-chip>
+                                        <v-chip
+                                            v-if="assignment.work.finish_until_date"
+                                            size="x-small"
+                                            color="warning"
+                                            variant="tonal">
+                                            Fertig bis
+                                            {{ compactCourseDateTitle({ date: assignment.work.finish_until_date }) }}
+                                        </v-chip>
+                                        <v-chip
+                                            v-if="courseWorkDurationLabel(assignment.work)"
+                                            color="secondary"
+                                            :data-testid="`course-table-date-work-duration-${assignment.work.id}`"
+                                            prepend-icon="mdi-timer-sand"
+                                            size="x-small"
+                                            variant="outlined">
+                                            {{ courseWorkDurationLabel(assignment.work) }}
+                                        </v-chip>
                                     </div>
                                     <div v-if="assignment.work.description" class="text-caption mt-1">
                                         {{ assignment.work.description }}
@@ -724,20 +815,8 @@
                         </v-alert>
                     </section>
 
-                    <v-divider />
-
-                    <section>
-                        <v-btn
-                            v-if="!workDialogFormOpen"
-                            data-testid="course-table-date-create-work"
-                            color="primary"
-                            prepend-icon="mdi-plus"
-                            variant="tonal"
-                            @click="startCreatingDateWork">
-                            Neue Arbeit
-                        </v-btn>
-
-                        <div v-if="workDialogFormOpen" class="course-table-date-work-form">
+                    <section v-if="workDialogFormOpen">
+                        <div class="course-table-date-work-form">
                             <v-tabs
                                 v-model="workDialogTab"
                                 color="primary"
@@ -1706,6 +1785,7 @@
 import { defineAsyncComponent } from 'vue'
 import axios from 'axios'
 import { mapWritableState } from 'pinia'
+import { courseOverviewPdf } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingCourseController'
 import { parseLocalDate } from '@/helpers/date'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
@@ -1714,6 +1794,7 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
 const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
@@ -1769,6 +1850,7 @@ export default {
             curriculumStore: null,
             curriculumUnitActionKey: null,
             courseEntriesRequestPromise: null,
+            courseOverviewPdfDownloading: false,
             courseTableDataCourseId: null,
             courseTableDataRequestCourseId: null,
             courseTableDataRequestPromise: null,
@@ -1816,15 +1898,18 @@ export default {
             },
             savingAttendanceCells: {},
             tableView: 'entries',
+            hoveredCourseWorkTimelineKeys: [],
             workDeleting: false,
             workDialog: {
                 courseDate: null,
                 open: false,
             },
             workDialogDateEditing: false,
+            workDialogFinishDateEditing: false,
             workDialogForm: {
                 date_for_all_groups: '',
                 description: '',
+                finish_until_date: '',
                 groups: [],
                 group_size: null,
                 id: null,
@@ -2158,6 +2243,26 @@ export default {
                 : this.normalizeDateKey(this.workDialog.courseDate?.date)
 
             return date ? this.compactCourseDateTitle({ date }) : 'Ohne Datum'
+        },
+        workDialogFinishDateTitle() {
+            const date = this.normalizeDateKey(this.workDialogForm.finish_until_date)
+
+            return date ? this.compactCourseDateTitle({ date }) : 'Ohne Frist'
+        },
+        workDialogDurationDays() {
+            if (!this.workDialogFormOpen) return null
+
+            return this.calendarDaysBetween(
+                this.workDialogForm.date_for_all_groups,
+                this.workDialogForm.finish_until_date,
+            )
+        },
+        workDialogDurationLabel() {
+            if (!Number.isInteger(this.workDialogDurationDays)) return ''
+
+            return this.workDialogDurationDays === 1
+                ? '1 Tag'
+                : `${this.workDialogDurationDays} Tage`
         },
         canSaveDateWork() {
             const hasAvailableType = this.availableWorkTypes.some((item) => item.value === this.workDialogForm.type)
@@ -2610,8 +2715,87 @@ export default {
             if (!date) return []
 
             return (this.courseWorks || [])
-                .map((work) => this.courseWorkAssignmentForDate(work, date))
+                .map((work) => {
+                    const timeline = this.courseWorkTimeline(work)
+                    if (!timeline) {
+                        return this.courseWorkAssignmentForDate(work, date)
+                    }
+
+                    return timeline.finishDate === date
+                        ? this.courseWorkCompletionAssignment(work)
+                        : null
+                })
                 .filter(Boolean)
+        },
+        courseWorkTimeline(work) {
+            const startDate = this.normalizeDateKey(work?.date_for_all_groups)
+            const finishDate = this.normalizeDateKey(work?.finish_until_date)
+            if (!work?.id || !startDate || !finishDate || finishDate <= startDate) return null
+
+            const visibleDateKeys = (this.sortedCourseDates || [])
+                .map((courseDate) => this.normalizeDateKey(courseDate?.date))
+                .filter(Boolean)
+
+            if (!visibleDateKeys.includes(startDate) || !visibleDateKeys.includes(finishDate)) return null
+            const finishDateIndex = visibleDateKeys.indexOf(finishDate)
+
+            return {
+                arrowDate: visibleDateKeys[finishDateIndex - 1],
+                finishDate,
+                key: `work-timeline-${work.id}`,
+                startDate,
+                work,
+            }
+        },
+        courseWorkTimelinesForDate(courseDate) {
+            const date = this.normalizeDateKey(courseDate?.date)
+            if (!date) return []
+
+            return (this.courseWorks || [])
+                .map((work) => this.courseWorkTimeline(work))
+                .filter((timeline) => (
+                    timeline
+                    && timeline.startDate <= date
+                    && timeline.finishDate > date
+                ))
+                .map((timeline) => ({
+                    ...timeline,
+                    isArrow: timeline.arrowDate === date,
+                    isMiddle: timeline.startDate < date && timeline.arrowDate !== date,
+                    isStart: timeline.startDate === date,
+                }))
+        },
+        activateCourseWorkTimelinesForDate(courseDate) {
+            const date = this.normalizeDateKey(courseDate?.date)
+            if (!date) {
+                this.clearHoveredCourseWorkTimelines()
+                return
+            }
+
+            this.hoveredCourseWorkTimelineKeys = (this.courseWorks || [])
+                .map((work) => this.courseWorkTimeline(work))
+                .filter((timeline) => (
+                    timeline
+                    && (timeline.startDate === date || timeline.finishDate === date)
+                ))
+                .map((timeline) => timeline.key)
+        },
+        clearHoveredCourseWorkTimelines() {
+            this.hoveredCourseWorkTimelineKeys = []
+        },
+        isCourseWorkTimelineVisible(timeline) {
+            return this.hoveredCourseWorkTimelineKeys.includes(timeline?.key)
+        },
+        courseWorkCompletionAssignment(work) {
+            const groups = Array.isArray(work?.groups) ? work.groups : []
+            const isGroupWork = Boolean(work?.is_group_work)
+
+            return this.courseWorkAssignmentPayload(
+                work,
+                isGroupWork ? 'Gruppenarbeit' : 'Einzelarbeit',
+                isGroupWork,
+                this.courseWorkAffectedStudentCount(groups, !isGroupWork && groups.length === 0)
+            )
         },
         courseWorkAssignmentForDate(work, date) {
             if (!work?.id || !date) return null
@@ -2866,9 +3050,12 @@ export default {
             return this.courseDateScrollKey(this.workDialog.courseDate) === this.courseDateScrollKey(courseDate)
         },
         emptyDateWorkForm() {
+            const workDate = this.normalizeDateKey(this.workDialog.courseDate?.date)
+
             return {
-                date_for_all_groups: this.normalizeDateKey(this.workDialog.courseDate?.date),
+                date_for_all_groups: workDate,
                 description: '',
+                finish_until_date: workDate,
                 groups: [],
                 group_size: null,
                 id: null,
@@ -2883,6 +3070,7 @@ export default {
         startCreatingDateWork() {
             this.workDialogForm = this.emptyDateWorkForm()
             this.workDialogDateEditing = false
+            this.workDialogFinishDateEditing = false
             this.workDialogModeDraft = false
             this.workDialogModeEditing = false
             this.workDialogTab = 'work'
@@ -2900,6 +3088,7 @@ export default {
                 ...work,
                 date_for_all_groups: this.normalizeDateKey(work.date_for_all_groups),
                 description: String(work.description || ''),
+                finish_until_date: this.normalizeDateKey(work.finish_until_date),
                 groups: work.is_group_work && this.isGeneratedEmptyIndividualWorkGroups(groups) ? [] : groups,
                 is_group_work: !!work.is_group_work,
                 status: Array.isArray(work.status) ? work.status : [],
@@ -2907,6 +3096,7 @@ export default {
                 type: String(work.type || ''),
             }
             this.workDialogDateEditing = false
+            this.workDialogFinishDateEditing = false
             this.workDialogModeDraft = false
             this.workDialogModeEditing = false
             this.workDialogTab = 'work'
@@ -2981,6 +3171,7 @@ export default {
         beginWorkDialogDateEditing() {
             if (!this.workDialogFormOpen || this.workSaving) return
 
+            this.workDialogFinishDateEditing = false
             this.workDialogDateEditing = true
         },
         applyWorkDialogDate(value) {
@@ -2999,6 +3190,16 @@ export default {
                 courseDate,
             }
             this.workDialogDateEditing = false
+        },
+        beginWorkDialogFinishDateEditing() {
+            if (!this.workDialogFormOpen || this.workSaving) return
+
+            this.workDialogDateEditing = false
+            this.workDialogFinishDateEditing = true
+        },
+        applyWorkDialogFinishDate(value) {
+            this.workDialogForm.finish_until_date = this.normalizeDateKey(value)
+            this.workDialogFinishDateEditing = false
         },
         beginWorkDialogGroupDateEditing(groupIndex) {
             if (this.workSaving || !this.workDialogGroups[groupIndex]) return
@@ -3097,6 +3298,7 @@ export default {
             this.closeRandomGroupsDialog()
             this.workDialogForm = this.emptyDateWorkForm()
             this.workDialogDateEditing = false
+            this.workDialogFinishDateEditing = false
             this.workDialogGroupDetails = {
                 groupIndex: null,
                 open: false,
@@ -3122,6 +3324,7 @@ export default {
                         || this.normalizeDateKey(this.workDialog.courseDate?.date)
                         || null,
                     description: String(this.workDialogForm.description || '').trim() || null,
+                    finish_until_date: this.normalizeDateKey(this.workDialogForm.finish_until_date) || null,
                     groups: this.courseWorkGroupsForGradeInputMode(this.workDialogForm.groups, gradeInputMode),
                     teaching_course_id: this.selected_course?.id || this.workDialogForm.teaching_course_id,
                     title: String(this.workDialogForm.title || '').trim() || null,
@@ -4477,6 +4680,61 @@ export default {
                 )
             })
         },
+        courseOverviewPdfUrl() {
+            if (!this.selected_course?.id) return ''
+
+            return courseOverviewPdf.url(this.selected_course.id, {
+                query: {
+                    semester: Number(this.selectedSemester),
+                },
+            })
+        },
+        courseOverviewPdfDownloadName(response) {
+            const disposition = String(response?.headers?.['content-disposition'] || '')
+            const filenameMatch = disposition.match(/filename\s*=\s*"?([^";]+)"?/i)
+
+            return filenameMatch?.[1]?.trim() || 'kursuebersicht.pdf'
+        },
+        async downloadCourseOverviewPdf() {
+            if (this.courseOverviewPdfDownloading) return
+
+            const url = this.courseOverviewPdfUrl()
+            if (!url) return
+
+            this.courseOverviewPdfDownloading = true
+
+            try {
+                const response = await axios.get(url, {
+                    responseType: 'blob',
+                })
+                const responseContentType = String(
+                    response?.headers?.['content-type'] || response?.data?.type || '',
+                ).toLowerCase()
+                if (!responseContentType.includes('application/pdf')) {
+                    throw new Error('The course overview response is not a PDF.')
+                }
+                const blob = response.data instanceof Blob
+                    ? response.data
+                    : new Blob([response.data], { type: 'application/pdf' })
+                const objectUrl = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+
+                link.href = objectUrl
+                link.download = this.courseOverviewPdfDownloadName(response)
+                document.body.appendChild(link)
+                link.click()
+                link.remove()
+                URL.revokeObjectURL(objectUrl)
+            } catch (error) {
+                useNotificationStore().notify({
+                    status: error?.response?.status,
+                    message: 'Die PDF-Übersicht konnte nicht erstellt werden.',
+                    type: 'error',
+                })
+            } finally {
+                this.courseOverviewPdfDownloading = false
+            }
+        },
         courseDateScrollKey(courseDate) {
             return `course-date-${courseDate?.id || this.normalizeDateKey(courseDate?.date) || 'unknown'}`
         },
@@ -4603,6 +4861,31 @@ export default {
             if (isNaN(parsedDate.getTime())) return ''
 
             return this.dateKey(parsedDate)
+        },
+        calendarDaysBetween(startDate, finishDate) {
+            const startDateKey = this.normalizeDateKey(startDate)
+            const finishDateKey = this.normalizeDateKey(finishDate)
+            if (!startDateKey || !finishDateKey) return null
+
+            const utcTimestamp = (dateKey) => {
+                const [year, month, day] = dateKey.split('-').map(Number)
+
+                return Date.UTC(year, month - 1, day)
+            }
+            const millisecondsPerDay = 24 * 60 * 60 * 1000
+
+            return Math.round(
+                (utcTimestamp(finishDateKey) - utcTimestamp(startDateKey)) / millisecondsPerDay,
+            )
+        },
+        courseWorkDurationLabel(work) {
+            const durationDays = this.calendarDaysBetween(
+                work?.date_for_all_groups,
+                work?.finish_until_date,
+            )
+            if (!Number.isInteger(durationDays)) return ''
+
+            return durationDays === 1 ? '1 Tag' : `${durationDays} Tage`
         },
         dateKey(date) {
             const parsedDate = parseLocalDate(date)
@@ -4760,6 +5043,7 @@ export default {
 .course-table-work-cell {
     cursor: pointer;
     outline: none;
+    position: relative;
     transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -5166,11 +5450,93 @@ export default {
     justify-content: center;
     max-width: 118px;
     min-height: 40px;
+    width: 100%;
+}
+
+.course-table-work-timelines {
+    bottom: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    left: 0;
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+    z-index: 1;
+}
+
+.course-table-work-timeline {
+    height: 12px;
+    position: relative;
+    width: 100%;
+}
+
+.course-table-work-timeline-line {
+    background: linear-gradient(90deg, #2563eb, #60a5fa);
+    box-shadow: 0 0 4px rgba(37, 99, 235, 0.48);
+    height: 2px;
+    left: -1px;
+    opacity: 0;
+    position: absolute;
+    top: 5px;
+    transition: opacity 0.15s ease;
+}
+
+.course-table-work-timeline--start .course-table-work-timeline-line {
+    left: 50%;
+    right: -1px;
+}
+
+.course-table-work-timeline--middle .course-table-work-timeline-line {
+    left: -1px;
+    right: -1px;
+}
+
+.course-table-work-timeline--arrow .course-table-work-timeline-line {
+    right: 8px;
+}
+
+.course-table-work-timeline-dot {
+    background: #1d4ed8;
+    border: 2px solid #dbeafe;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px #1d4ed8, 0 0 8px rgba(37, 99, 235, 0.75);
+    height: 9px;
+    left: calc(50% - 4px);
+    position: absolute;
+    top: 2px;
+    width: 9px;
+}
+
+.course-table-work-timeline-arrow {
+    border-bottom: 6px solid transparent;
+    border-left: 9px solid #2563eb;
+    border-top: 6px solid transparent;
+    filter: drop-shadow(0 0 3px rgba(37, 99, 235, 0.65));
+    opacity: 0;
+    position: absolute;
+    right: -1px;
+    top: 0;
+    transition: opacity 0.15s ease;
+}
+
+.course-table-work-timeline--visible .course-table-work-timeline-line,
+.course-table-work-timeline--visible .course-table-work-timeline-arrow {
+    opacity: 1;
 }
 
 .course-table-work-empty-icon {
+    left: 50%;
     opacity: 0.45;
+    position: absolute;
+    top: 5px;
     transition: opacity 0.15s ease, scale 0.15s ease;
+    translate: -50% 0;
+    z-index: 2;
+}
+
+.course-table-work-list--has-work {
+    padding-top: 30px;
 }
 
 .course-table-work-cell:hover .course-table-work-empty-icon,
@@ -5189,7 +5555,9 @@ export default {
     max-width: 112px;
     min-width: 112px;
     padding: 5px 6px;
+    position: relative;
     text-align: left;
+    z-index: 2;
 }
 
 .course-table-work-summary--group {
@@ -5798,4 +6166,5 @@ export default {
         padding: 8px 6px;
     }
 }
+
 </style>

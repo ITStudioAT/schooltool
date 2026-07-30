@@ -85,14 +85,18 @@ describe('MaterialsV2', () => {
             if (url === '/api/admin/materials-v2/config') {
                 return {
                     data: {
-                        categories: ['Termine', 'Screenshots', 'Links', 'Notizen', 'Biologie', 'Mathematik'],
+                        categories: ['Termine', 'Screenshots', 'Links', 'Dateien', 'Notizen', 'Biologie', 'Mathematik'],
                         category_details: [
                             { name: 'Termine', items_count: 0 },
                             { name: 'Screenshots', items_count: 0 },
                             { name: 'Links', items_count: 0 },
+                            { name: 'Dateien', items_count: 0 },
                             { name: 'Notizen', items_count: 0 },
                             { name: 'Biologie', items_count: 1 },
                             { name: 'Mathematik', items_count: 0 },
+                        ],
+                        cluster_details: [
+                            { id: 3, name: 'Wochenplanung', items_count: 1 },
                         ],
                     },
                 }
@@ -105,6 +109,10 @@ describe('MaterialsV2', () => {
                             id: 1,
                             title: 'Photosynthese',
                             category: 'Biologie',
+                            cluster: {
+                                id: 3,
+                                name: 'Wochenplanung',
+                            },
                             description: 'Arbeitsblatt',
                             user_keywords: ['Biologie'],
                             generated_keywords: ['welche'],
@@ -340,11 +348,108 @@ describe('MaterialsV2', () => {
         expect(thumbnail.exists()).toBe(true)
         expect(thumbnail.attributes('src')).toBe('/api/admin/materials-v2/attachments/42/preview')
         expect(thumbnail.attributes('alt')).toBe('Screenshot: Tafelbild')
+        expect(wrapper.find('.materials-v2-card--screenshot').exists()).toBe(true)
+        expect(wrapper.find('.materials-v2-screenshot-frame-bar').text()).toContain('Screenshot')
 
         await wrapper.find('.materials-v2-screenshot-thumbnail-button').trigger('click')
 
         expect(component.previewDialog.attachment.id).toBe(42)
         expect(component.previewDialog.open).toBe(true)
+    })
+
+    it('gives each system material a recognizable overview treatment', async () => {
+        const wrapper = shallowMount(MaterialsV2, {
+            global: {
+                renderStubDefaultSlot: true,
+                stubs: {
+                    'v-alert': true,
+                    'v-btn': true,
+                    'v-btn-toggle': true,
+                    'v-card': true,
+                    'v-card-actions': true,
+                    'v-card-text': true,
+                    'v-card-title': true,
+                    'v-chip': true,
+                    'v-col': true,
+                    'v-combobox': true,
+                    'v-container': true,
+                    'v-dialog': true,
+                    'v-divider': true,
+                    'v-file-input': true,
+                    'v-icon': true,
+                    'v-list': true,
+                    'v-list-item': true,
+                    'v-list-item-title': true,
+                    'v-menu': true,
+                    'v-pagination': true,
+                    'v-row': true,
+                    'v-sheet': true,
+                    'v-skeleton-loader': true,
+                    'v-spacer': true,
+                    'v-text-field': true,
+                    'v-textarea': true,
+                },
+            },
+        })
+        await flushPromises()
+
+        const component = wrapper.vm as any
+        component.items = [
+            {
+                id: 11,
+                title: 'Elternbrief',
+                category: 'Dateien',
+                processing_status: 'ready',
+                user_keywords: [],
+                automatic_tag_suggestions: [],
+                attachments: [{
+                    id: 111,
+                    original_name: 'elternbrief.pdf',
+                    mime_type: 'application/pdf',
+                    size_bytes: 2048,
+                    preview_url: '/preview/111',
+                    download_url: '/download/111',
+                }],
+            },
+            {
+                id: 12,
+                title: 'Konferenz',
+                category: 'Termine',
+                reminder_date: '2026-09-15',
+                reminder_time: '14:30',
+                attachments: [],
+            },
+            {
+                id: 13,
+                title: 'Schulwebsite',
+                category: 'Links',
+                link_url: 'https://schooltool.at/hilfe',
+                attachments: [],
+            },
+            {
+                id: 14,
+                title: 'Idee',
+                category: 'Notizen',
+                description: 'Arbeitsauftrag vereinfachen',
+                attachments: [],
+            },
+        ]
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('.materials-v2-card--file').exists()).toBe(true)
+        expect(wrapper.find('.materials-v2-file-browser').exists()).toBe(true)
+        expect(wrapper.find('.materials-v2-file-kind').text()).toBe('PDF')
+
+        expect(wrapper.find('.materials-v2-card--reminder').exists()).toBe(true)
+        expect(wrapper.find('.materials-v2-reminder-calendar-sheet').text()).toContain('SEP')
+        expect(wrapper.find('.materials-v2-reminder-calendar-sheet').text()).toContain('15')
+
+        expect(wrapper.find('.materials-v2-card--link').exists()).toBe(true)
+        expect(wrapper.find('.materials-v2-link-copy').text()).toContain('Web-Link')
+        expect(wrapper.find('.materials-v2-link-copy').text()).toContain('schooltool.at/hilfe')
+
+        expect(wrapper.find('.materials-v2-card--note').exists()).toBe(true)
+        expect(wrapper.find('.materials-v2-note-sheet').text()).toContain('Arbeitsauftrag vereinfachen')
     })
 
     it('restores category selections from the URL and writes every selection back to it', async () => {
@@ -404,6 +509,7 @@ describe('MaterialsV2', () => {
             Termine: { category: 'Termine', view: 'standard' },
             Screenshots: { category: 'Screenshots' },
             Links: { category: 'Links' },
+            Dateien: { category: 'Dateien' },
             Notizen: { category: 'Notizen' },
             Mathematik: { category: 'Mathematik', view: 'compact' },
         }
@@ -752,11 +858,12 @@ describe('MaterialsV2', () => {
         const createButtons = wrapper.findAll('.materials-v2-system-tab-create-button')
         const component = wrapper.vm as any
 
-        expect(createButtons).toHaveLength(4)
+        expect(createButtons).toHaveLength(5)
         expect(createButtons.map((button) => button.attributes('title'))).toEqual([
             'Termin hinzufügen',
             'Screenshot hinzufügen',
             'Link hinzufügen',
+            'Dateien hinzufügen',
             'Notiz hinzufügen',
         ])
 
@@ -778,9 +885,99 @@ describe('MaterialsV2', () => {
 
         component.materialDialog.open = false
         await createButtons[3].trigger('click')
+        expect(component.materialForm.category).toBe('Dateien')
+        expect(component.materialForm.title).toBe('Dateien')
+        expect(component.materialDialog.open).toBe(true)
+
+        component.materialDialog.open = false
+        await createButtons[4].trigger('click')
         expect(component.materialForm.category).toBe('Notizen')
         expect(component.materialForm.title).toBe('Notiz')
         expect(component.materialDialog.open).toBe(true)
+    })
+
+    it('uploads multiple files through the dedicated Dateien form', async () => {
+        const wrapper = shallowMount(MaterialsV2, {
+            global: {
+                renderStubDefaultSlot: true,
+                stubs: {
+                    'v-alert': true,
+                    'v-btn': true,
+                    'v-btn-toggle': true,
+                    'v-card': true,
+                    'v-card-actions': true,
+                    'v-card-text': true,
+                    'v-card-title': true,
+                    'v-chip': true,
+                    'v-col': true,
+                    'v-combobox': true,
+                    'v-container': true,
+                    'v-dialog': true,
+                    'v-divider': true,
+                    'v-file-input': true,
+                    'v-icon': true,
+                    'v-list': true,
+                    'v-list-item': true,
+                    'v-list-item-title': true,
+                    'v-menu': true,
+                    'v-pagination': true,
+                    'v-row': true,
+                    'v-sheet': true,
+                    'v-skeleton-loader': true,
+                    'v-spacer': true,
+                    'v-text-field': true,
+                    'v-textarea': true,
+                },
+            },
+        })
+        await flushPromises()
+
+        const component = wrapper.vm as any
+        component.openFileDialog()
+        await wrapper.vm.$nextTick()
+
+        expect(component.materialForm.category).toBe('Dateien')
+        expect(component.materialForm.title).toBe('Dateien')
+        expect(component.isFileForm).toBe(true)
+        expect(component.materialDialogTitle).toBe('Dateien hinzufügen')
+        expect(wrapper.find('.materials-v2-fixed-category').exists()).toBe(true)
+        expect(wrapper.find('.materials-v2-cluster-chooser').exists()).toBe(true)
+        expect(wrapper.find('.materials-v2-cluster-chooser').attributes()).toHaveProperty('always-filter')
+        expect(component.clusterSearchFilter('Wochenplanung', 'Wochenplannung')).toBe(true)
+        expect(component.clusterSearchFilter('Wochenplanung', 'Medien')).toBe(false)
+        expect(wrapper.find('.materials-v2-file-input').attributes('label')).toBe('Dateien auswählen')
+        expect(wrapper.find('.materials-v2-keywords-field').exists()).toBe(true)
+
+        const worksheet = new File(['Bruchrechnen'], 'arbeitsblatt.txt', { type: 'text/plain' })
+        const notes = new File(['# Planung'], 'planung.md', { type: 'text/markdown' })
+        component.materialForm.attachments = [worksheet, notes]
+        component.materialForm.clusterName = 'Wochenplanung'
+        component.materialForm.keywords = 'Mathematik, Planung'
+        vi.mocked(axios.post).mockResolvedValueOnce({
+            data: {
+                data: {
+                    id: 11,
+                    title: 'Dateien',
+                    category: 'Dateien',
+                },
+            },
+        })
+
+        await component.saveMaterial()
+        await flushPromises()
+
+        const payload = vi.mocked(axios.post).mock.calls[0][1] as FormData
+
+        expect(payload.get('category')).toBe('Dateien')
+        expect(payload.get('cluster_name')).toBe('Wochenplanung')
+        expect(payload.getAll('attachments[]')).toEqual([worksheet, notes])
+        expect(payload.getAll('user_keywords[]')).toEqual(['Mathematik', 'Planung'])
+        expect(component.selectedCategory).toBe('Dateien')
+        expect(notify).toHaveBeenCalledWith({
+            message: 'Dateien gespeichert.',
+            type: 'success',
+            timeout: 3200,
+        })
     })
 
     it('creates a simple dated reminder without tag or attachment fields', async () => {
@@ -1219,6 +1416,7 @@ describe('MaterialsV2', () => {
         expect(component.isNoteForm).toBe(true)
         expect(wrapper.find('.materials-v2-category-chooser').exists()).toBe(false)
         expect(wrapper.find('.materials-v2-fixed-category').exists()).toBe(true)
+        expect(wrapper.find('.materials-v2-cluster-chooser').exists()).toBe(true)
         expect(wrapper.find('.materials-v2-note-body').attributes('label')).toBe('Notiz')
         expect(wrapper.find('.materials-v2-reminder-fields').exists()).toBe(false)
         expect(wrapper.find('.materials-v2-screenshot-input').exists()).toBe(false)
@@ -1226,6 +1424,7 @@ describe('MaterialsV2', () => {
         expect(wrapper.find('.materials-v2-keywords-field').exists()).toBe(false)
         expect(wrapper.find('.materials-v2-edit-attachments').exists()).toBe(false)
 
+        component.materialForm.clusterName = 'Wochenplanung'
         component.materialForm.description = 'Arbeitsblätter für Montag kopieren.'
         vi.mocked(axios.post).mockResolvedValueOnce({
             data: {
@@ -1245,6 +1444,7 @@ describe('MaterialsV2', () => {
 
         expect(payload.get('title')).toBe('Notiz')
         expect(payload.get('category')).toBe('Notizen')
+        expect(payload.get('cluster_name')).toBe('Wochenplanung')
         expect(payload.get('description')).toBe('Arbeitsblätter für Montag kopieren.')
         expect(payload.getAll('user_keywords[]')).toEqual([])
         expect(payload.getAll('attachments[]')).toEqual([])
@@ -1298,6 +1498,9 @@ describe('MaterialsV2', () => {
         expect(component.displayMode).toBe('compact')
         expect(component.materialColumnProps).toEqual({ cols: 12, sm: 6, md: 4, lg: 3, xl: 2 })
         expect(wrapper.find('.materials-v2-card--compact').exists()).toBe(true)
+        expect(wrapper.find('.materials-v2-card').attributes('role')).toBe('button')
+        expect(wrapper.find('.materials-v2-card').attributes('tabindex')).toBe('0')
+        expect(wrapper.find('.materials-v2-card').attributes('aria-label')).toBe('Details zu Photosynthese öffnen')
         expect(wrapper.text()).toContain('Groß')
         expect(wrapper.text()).toContain('Standard')
         expect(wrapper.text()).toContain('Kompakt')
@@ -1331,6 +1534,12 @@ describe('MaterialsV2', () => {
         expect(wrapper.find('.materials-v2-description').exists()).toBe(false)
         expect(wrapper.find('.materials-v2-attachment-row').exists()).toBe(false)
         expect(window.localStorage.getItem('materials-v2-display-mode')).toBe('compact')
+
+        await wrapper.find('.materials-v2-card').trigger('click')
+
+        expect(component.materialDialog.open).toBe(true)
+        expect(component.materialDialog.mode).toBe('edit')
+        expect(component.materialDialog.item.id).toBe(1)
 
         wrapper.unmount()
 
@@ -1412,12 +1621,14 @@ describe('MaterialsV2', () => {
 
         const systemTabs = wrapper.findAll('.materials-v2-system-tab')
         const categoryItems = wrapper.findAll('.materials-v2-category-item')
-        expect(systemTabs).toHaveLength(5)
+        expect(systemTabs).toHaveLength(7)
         expect(systemTabs[0].text()).toContain('Alle Materialien')
         expect(systemTabs[1].text()).toContain('Termine')
         expect(systemTabs[2].text()).toContain('Screenshots')
         expect(systemTabs[3].text()).toContain('Links')
-        expect(systemTabs[4].text()).toContain('Notizen')
+        expect(systemTabs[4].text()).toContain('Dateien')
+        expect(systemTabs[5].text()).toContain('Notizen')
+        expect(systemTabs[6].text()).toContain('Clusters')
         expect(categoryItems).toHaveLength(2)
         expect(categoryItems[0].text()).toContain('Biologie')
         expect(categoryItems[1].text()).toContain('Mathematik')
@@ -1435,6 +1646,72 @@ describe('MaterialsV2', () => {
                 category: 'Biologie',
                 page: 1,
                 per_page: 18,
+            },
+        })
+    })
+
+    it('shows clusters after notes and loads the selected clusters assigned items', async () => {
+        const wrapper = shallowMount(MaterialsV2, {
+            global: {
+                renderStubDefaultSlot: true,
+                stubs: {
+                    'v-alert': true,
+                    'v-btn': true,
+                    'v-btn-toggle': true,
+                    'v-card': true,
+                    'v-card-actions': true,
+                    'v-card-text': true,
+                    'v-card-title': true,
+                    'v-chip': true,
+                    'v-col': true,
+                    'v-combobox': true,
+                    'v-container': true,
+                    'v-dialog': true,
+                    'v-divider': true,
+                    'v-file-input': true,
+                    'v-icon': true,
+                    'v-list': true,
+                    'v-list-item': true,
+                    'v-list-item-title': true,
+                    'v-menu': true,
+                    'v-pagination': true,
+                    'v-row': true,
+                    'v-sheet': true,
+                    'v-skeleton-loader': true,
+                    'v-spacer': true,
+                    'v-text-field': true,
+                    'v-textarea': true,
+                },
+            },
+        })
+        await flushPromises()
+
+        const component = wrapper.vm as any
+        const systemTabs = wrapper.findAll('.materials-v2-system-tab')
+
+        expect(systemTabs[5].text()).toContain('Notizen')
+        expect(systemTabs[6].text()).toContain('Clusters')
+
+        vi.mocked(axios.get).mockClear()
+        component.selectCategory('__clusters__')
+        await flushPromises()
+
+        expect(component.isClusterView).toBe(true)
+        expect(component.selectedClusterId).toBe(3)
+        expect(component.selectedCluster.name).toBe('Wochenplanung')
+        expect(axios.get).toHaveBeenCalledWith('/api/admin/materials-v2/items', {
+            params: {
+                search: undefined,
+                category: undefined,
+                cluster_id: 3,
+                page: 1,
+                per_page: 18,
+            },
+        })
+        expect(routerReplace).toHaveBeenCalledWith({
+            query: {
+                section: 'clusters',
+                cluster: '3',
             },
         })
     })
@@ -1693,7 +1970,7 @@ describe('MaterialsV2', () => {
         const screenshotCreateButtons = wrapper.findAll('.materials-v2-screenshot-create-button')
         const linkCreateButtons = wrapper.findAll('.materials-v2-link-create-button')
 
-        expect(systemCounters.map((counter) => counter.text())).toEqual(['1', '0', '0', '0', '0'])
+        expect(systemCounters.map((counter) => counter.text())).toEqual(['1', '0', '0', '0', '0', '0', '1'])
         expect(counters.map((counter) => counter.text())).toEqual(['1', '0'])
         expect(deleteButtons).toHaveLength(1)
         expect(reminderCreateButtons).toHaveLength(0)
@@ -1771,6 +2048,85 @@ describe('MaterialsV2', () => {
         expect(previewFrame.exists()).toBe(true)
         expect(previewFrame.attributes('src')).toBe('/api/admin/materials-v2/attachments/41/preview')
         expect(previewFrame.attributes('title')).toBe('Vorschau: arbeitsblatt.docx')
+    })
+
+    it('asks whether to reuse a similar cluster before saving', async () => {
+        const wrapper = shallowMount(MaterialsV2, {
+            global: {
+                renderStubDefaultSlot: true,
+                stubs: {
+                    'v-alert': true,
+                    'v-btn': true,
+                    'v-btn-toggle': true,
+                    'v-card': true,
+                    'v-card-actions': true,
+                    'v-card-text': true,
+                    'v-card-title': true,
+                    'v-chip': true,
+                    'v-col': true,
+                    'v-combobox': true,
+                    'v-container': true,
+                    'v-dialog': true,
+                    'v-divider': true,
+                    'v-file-input': true,
+                    'v-icon': true,
+                    'v-list': true,
+                    'v-list-item': true,
+                    'v-list-item-title': true,
+                    'v-menu': true,
+                    'v-pagination': true,
+                    'v-row': true,
+                    'v-sheet': true,
+                    'v-skeleton-loader': true,
+                    'v-spacer': true,
+                    'v-text-field': true,
+                    'v-textarea': true,
+                },
+            },
+        })
+        await flushPromises()
+
+        const component = wrapper.vm as any
+        component.openNoteDialog()
+        component.materialForm.description = 'Montag vorbereiten'
+        component.materialForm.clusterName = 'Wochenplannung'
+        vi.mocked(axios.post).mockRejectedValueOnce({
+            response: {
+                status: 409,
+                data: {
+                    cluster_suggestion: {
+                        entered: 'Wochenplannung',
+                        existing: 'Wochenplanung',
+                    },
+                },
+            },
+        })
+
+        await component.saveMaterial()
+
+        expect(component.clusterSuggestionDialog.open).toBe(true)
+        expect(wrapper.text()).toContain('Neuen Cluster anlegen')
+        expect(wrapper.text()).toContain('Bestehenden übernehmen')
+
+        vi.mocked(axios.post).mockResolvedValueOnce({
+            data: {
+                data: {
+                    id: 11,
+                    title: 'Notiz',
+                    category: 'Notizen',
+                    cluster: {
+                        id: 3,
+                        name: 'Wochenplanung',
+                    },
+                },
+            },
+        })
+
+        await component.useSuggestedCluster()
+
+        const savedPayload = vi.mocked(axios.post).mock.calls[1][1] as FormData
+        expect(savedPayload.get('cluster_name')).toBe('Wochenplanung')
+        expect(savedPayload.get('force_new_cluster')).toBeNull()
     })
 
     it('asks whether to reuse a similar category before saving', async () => {
@@ -1980,7 +2336,7 @@ describe('MaterialsV2', () => {
         })
     })
 
-    it('shows ranked local tags instead of legacy generated words and supports review actions', async () => {
+    it('hides ranked local tags from the overview and supports review actions', async () => {
         routeQuery.category = 'Biologie'
         window.localStorage.setItem('materials-v2-display-mode', 'large')
 
@@ -2035,7 +2391,8 @@ describe('MaterialsV2', () => {
         })
         await flushPromises()
 
-        expect(wrapper.text()).toContain('Chlorophyll')
+        expect(wrapper.text()).not.toContain('Aus dem Inhalt erkannt')
+        expect(wrapper.text()).not.toContain('Chlorophyll')
         expect(wrapper.text()).not.toContain('welche')
 
         const component = wrapper.vm as any

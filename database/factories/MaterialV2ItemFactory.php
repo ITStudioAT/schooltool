@@ -24,6 +24,7 @@ class MaterialV2ItemFactory extends Factory
         return [
             'school_id' => School::factory(),
             'user_id' => User::factory(),
+            'material_v2_cluster_id' => null,
             'title' => fake()->sentence(4),
             'category' => fake()->optional()->word(),
             'description' => fake()->optional()->sentence(10),

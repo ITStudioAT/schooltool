@@ -18,6 +18,7 @@ class MaterialV2SearchService
         int $page,
         int $perPage,
         string $category = '',
+        int $clusterId = 0,
         string $reminderFrom = '',
         string $reminderTo = '',
         string $reminderOrder = '',
@@ -25,11 +26,15 @@ class MaterialV2SearchService
         $query = MaterialV2Item::query()
             ->whereBelongsTo($user)
             ->where('school_id', $user->school_id)
-            ->with(['attachments', 'automaticTagSuggestions']);
+            ->with(['attachments', 'automaticTagSuggestions', 'cluster']);
 
         $normalizedCategory = Str::squish($category);
         if ($normalizedCategory !== '') {
             $query->where('category', $normalizedCategory);
+        }
+
+        if ($clusterId > 0) {
+            $query->where('material_v2_cluster_id', $clusterId);
         }
 
         if ($reminderFrom !== '') {

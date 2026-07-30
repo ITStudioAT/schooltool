@@ -18,6 +18,17 @@ class MaterialV2ItemResource extends JsonResource
             'id' => (int) $this->id,
             'title' => $this->title,
             'category' => $this->category,
+            'cluster' => $this->whenLoaded(
+                'cluster',
+                fn (): ?array => $this->cluster === null
+                    || (int) $this->cluster->user_id !== (int) $request->user()?->id
+                    || (int) $this->cluster->school_id !== (int) $request->user()?->school_id
+                    ? null
+                    : [
+                        'id' => (int) $this->cluster->id,
+                        'name' => $this->cluster->name,
+                    ],
+            ),
             'description' => $this->description,
             'reminder_date' => $this->reminder_date?->format('Y-m-d'),
             'reminder_time' => $this->reminder_time

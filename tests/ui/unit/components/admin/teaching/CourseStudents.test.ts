@@ -136,6 +136,39 @@ describe('CourseStudents sorting', () => {
         expect(source.indexOf('class="student-stars-chip"')).toBeLessThan(source.indexOf('studentEmailText(student)'))
     })
 
+    it('opens student details from the complete student card outside bulk mode', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
+        )
+        const methods = (CourseStudents as any).methods
+        const openStudent = vi.fn()
+        const context = {
+            openStudent,
+            show_bulk_entry: false,
+        }
+
+        methods.openStudentFromCard.call(context, { id: 11 })
+
+        expect(openStudent).toHaveBeenCalledWith({ id: 11 })
+        expect(source).toContain(':link="!show_bulk_entry"')
+        expect(source).toContain(':class="{ \'student-list-item--clickable\': !show_bulk_entry }"')
+        expect(source).toContain('@click="openStudentFromCard(student)"')
+        expect(source).toContain('@click="openStudent(item.student)"')
+        expect(source).toContain('.student-list-item--clickable:focus-visible .student-row')
+    })
+
+    it('does not open student details when bulk selection is active', () => {
+        const methods = (CourseStudents as any).methods
+        const openStudent = vi.fn()
+
+        methods.openStudentFromCard.call({
+            openStudent,
+            show_bulk_entry: true,
+        }, { id: 11 })
+
+        expect(openStudent).not.toHaveBeenCalled()
+    })
+
     it('shows the bulk entry button loading state before saving entries', async () => {
         const methods = (CourseStudents as any).methods
         let continueNextTick: (() => void) | null = null

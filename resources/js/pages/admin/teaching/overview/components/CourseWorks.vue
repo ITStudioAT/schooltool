@@ -66,6 +66,9 @@
                                         {{ formatDate(workListDate(work)) }}
                                     </v-chip>
                                     <v-chip v-else size="x-small" variant="outlined" class="work-date-chip">ohne Datum</v-chip>
+                                    <v-chip v-if="work.finish_until_date" size="x-small" variant="tonal" color="warning">
+                                        Fertig bis {{ formatDate(work.finish_until_date) }}
+                                    </v-chip>
                                 </div>
                             </div>
                             <div class="text-body-2 work-title-second-line" :class="workHasAllGrades(work) ? 'text-success' : ''">
@@ -189,6 +192,7 @@
                                     {{ formatDateWithWeekday(date.date) }}
                                 </v-chip>
                             </div>
+                            <v-date-input v-model="work_form.finish_until_date" clearable label="Fertig bis" class="mt-4" />
                             <v-textarea v-model="work_form.description" label="Beschreibung" rows="3" class="mt-4" />
                         </template>
 
@@ -204,6 +208,13 @@
                                 <div class="details-readonly__value d-flex align-center ga-2">
                                     <v-icon size="18" color="primary">mdi-calendar</v-icon>
                                     <span>{{ work_form.date_for_all_groups ? formatDateWithWeekday(work_form.date_for_all_groups) : '—' }}</span>
+                                </div>
+                            </div>
+                            <div class="details-readonly__row">
+                                <div class="details-readonly__label">Fertig bis</div>
+                                <div class="details-readonly__value d-flex align-center ga-2">
+                                    <v-icon size="18" color="warning">mdi-calendar-check</v-icon>
+                                    <span>{{ work_form.finish_until_date ? formatDateWithWeekday(work_form.finish_until_date) : '—' }}</span>
                                 </div>
                             </div>
                             <div class="details-readonly__row details-readonly__row--block">
@@ -1088,11 +1099,20 @@ export default {
             }
             // Don't update group dates during form initialization (e.g., when loading for edit)
             if (this.is_initializing_form) return
+            const normalizedDate = this.normalizeDateString(val)
+            if (normalizedDate && !this.normalizeDateString(this.work_form.finish_until_date)) {
+                this.work_form.finish_until_date = normalizedDate
+            }
             // Update all group dates when the main date changes
             if (val && this.work_form.groups?.length) {
                 this.work_form.groups.forEach((group) => {
                     group.date = val
                 })
+            }
+        },
+        'work_form.finish_until_date'(val) {
+            if (val && val instanceof Date) {
+                this.work_form.finish_until_date = this.toDateString(val)
             }
         },
         'work_form.is_group_work'(val, oldVal) {
@@ -1128,6 +1148,7 @@ export default {
             this.details_snapshot = {
                 title: this.work_form.title,
                 date_for_all_groups: this.work_form.date_for_all_groups,
+                finish_until_date: this.work_form.finish_until_date,
                 description: this.work_form.description,
             }
             this.details_editable = true
@@ -1136,6 +1157,7 @@ export default {
             if (this.details_snapshot) {
                 this.work_form.title = this.details_snapshot.title
                 this.work_form.date_for_all_groups = this.details_snapshot.date_for_all_groups
+                this.work_form.finish_until_date = this.details_snapshot.finish_until_date
                 this.work_form.description = this.details_snapshot.description
             }
             this.details_snapshot = null
@@ -1465,6 +1487,7 @@ export default {
                 group_size: null,
                 is_random_groups: false,
                 date_for_all_groups: '',
+                finish_until_date: '',
                 groups: [],
                 status: [],
             }
@@ -1525,6 +1548,7 @@ export default {
             }
             // Normalize the main date (server may return ISO format)
             this.work_form.date_for_all_groups = this.normalizeDateString(this.work_form.date_for_all_groups)
+            this.work_form.finish_until_date = this.normalizeDateString(this.work_form.finish_until_date)
             this.work_form.groups = (this.work_form.groups || []).map((group) => {
                 const gradesArray = Array.isArray(group.grades) ? group.grades : []
                 const grades = gradesArray.reduce((acc, item) => {
@@ -1719,11 +1743,13 @@ export default {
 
                 // Convert date_for_all_groups to YYYY-MM-DD string format
                 const dateForAllGroups = this.normalizeDateString(this.work_form.date_for_all_groups)
+                const finishUntilDate = this.normalizeDateString(this.work_form.finish_until_date)
 
                 const payload = {
                     ...this.work_form,
                     type: this.work_form.type || null,
                     date_for_all_groups: dateForAllGroups || null,
+                    finish_until_date: finishUntilDate || null,
                     teaching_course_id: this.selected_course?.id || this.work_form.teaching_course_id,
                 }
 

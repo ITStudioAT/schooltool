@@ -30,6 +30,7 @@ describe('useMaterialV2Precognition', () => {
         const source = {
             title: '  Bruchrechnen  ',
             category: ' Mathematik ',
+            clusterName: ' Wochenplan ',
             description: '',
             reminderDate: '',
             reminderTime: '',
@@ -44,6 +45,7 @@ describe('useMaterialV2Precognition', () => {
         expect(form.setData).toHaveBeenCalledWith({
             title: 'Bruchrechnen',
             category: 'Mathematik',
+            cluster_name: 'Wochenplan',
             description: null,
             reminder_date: null,
             reminder_time: null,

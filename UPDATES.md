@@ -1,6 +1,14 @@
 # UPDATES
 
-## 3.44.0
+## 3.44.3
+
+### Unterricht
+- Finish-Datum für Arbeiten
+- Curricula-Zuordnungen scheinen besser auf
+- Arbeiten können ein End-Datum haben und werden angezeigt
+
+
+## 3.44.0-3.44.2
 - Major Security Update
 
 ## 3.43.5

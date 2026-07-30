@@ -16,12 +16,15 @@ class MaterialV2CategoryService
 
     public const LINK_CATEGORY = 'Links';
 
+    public const FILE_CATEGORY = 'Dateien';
+
     public const NOTE_CATEGORY = 'Notizen';
 
     private const DEFAULT_CATEGORIES = [
         self::REMINDER_CATEGORY,
         self::SCREENSHOT_CATEGORY,
         self::LINK_CATEGORY,
+        self::FILE_CATEGORY,
         self::NOTE_CATEGORY,
     ];
 
@@ -287,6 +290,12 @@ class MaterialV2CategoryService
             === $this->normalize(self::LINK_CATEGORY);
     }
 
+    public function isFileCategory(?string $category): bool
+    {
+        return $this->normalize(Str::squish((string) $category))
+            === $this->normalize(self::FILE_CATEGORY);
+    }
+
     public function isNoteCategory(?string $category): bool
     {
         return $this->normalize(Str::squish((string) $category))
@@ -296,6 +305,15 @@ class MaterialV2CategoryService
     public function isDefaultCategory(?string $category): bool
     {
         return $this->defaultCategoryPosition($category) < count(self::DEFAULT_CATEGORIES);
+    }
+
+    public function isClusterableCategory(?string $category): bool
+    {
+        return $this->isReminderCategory($category)
+            || $this->isScreenshotCategory($category)
+            || $this->isLinkCategory($category)
+            || $this->isFileCategory($category)
+            || $this->isNoteCategory($category);
     }
 
     /**

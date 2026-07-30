@@ -47,8 +47,9 @@
             <div class="materials-v2-workspace">
                 <aside class="materials-v2-category-panel">
                     <div class="materials-v2-category-panel-heading">
-                        <span>Eigene Kategorien</span>
+                        <span>{{ isClusterView ? 'Clusters' : 'Eigene Kategorien' }}</span>
                         <v-btn
+                            v-if="!isClusterView"
                             class="materials-v2-category-create-button"
                             color="primary"
                             icon="mdi-plus"
@@ -60,6 +61,41 @@
                     </div>
 
                     <v-list
+                        v-if="isClusterView"
+                        bg-color="transparent"
+                        density="compact"
+                        class="materials-v2-category-list py-0"
+                        aria-label="Materialien nach Cluster filtern">
+                        <v-list-item
+                            v-for="cluster in clusterDetails"
+                            :key="cluster.id"
+                            class="materials-v2-category-item mb-1 px-2"
+                            min-height="42"
+                            rounded="lg"
+                            :active="selectedClusterId === cluster.id"
+                            color="primary"
+                            @click="selectCluster(cluster.id)">
+                            <template #prepend>
+                                <v-icon size="18" class="mr-2">mdi-folder-outline</v-icon>
+                            </template>
+                            <v-list-item-title class="text-body-2">
+                                {{ cluster.name }}
+                            </v-list-item-title>
+                            <template #append>
+                                <span
+                                    class="materials-v2-category-item-count"
+                                    :title="`${cluster.items_count} Items`">
+                                    {{ cluster.items_count }}
+                                </span>
+                            </template>
+                        </v-list-item>
+                        <p v-if="!clusterDetails.length" class="materials-v2-cluster-list-empty">
+                            Noch keine Cluster vorhanden.
+                        </p>
+                    </v-list>
+
+                    <v-list
+                        v-else
                         bg-color="transparent"
                         density="compact"
                         class="materials-v2-category-list py-0"
@@ -119,7 +155,7 @@
 
                         <div class="materials-v2-toolbar-actions">
                             <v-btn
-                                v-if="!isReminderCategory(selectedCategory)"
+                                v-if="!isReminderCategory(selectedCategory) && !isClusterView"
                                 class="materials-v2-material-create-button"
                                 color="primary"
                                 size="small"
@@ -212,11 +248,20 @@
                             'materials-v2-card',
                             `materials-v2-card--${activeCardDisplayMode}`,
                             { 'materials-v2-card--reminder': isReminderCategory(item.category) },
+                            { 'materials-v2-card--screenshot': isScreenshotCategory(item.category) },
                             { 'materials-v2-card--link': isLinkCategory(item.category) },
+                            { 'materials-v2-card--file': isFileCategory(item.category) },
+                            { 'materials-v2-card--note': isNoteCategory(item.category) },
                             'h-100',
                         ]"
                         :rounded="activeCardDisplayMode === 'large' ? 'xl' : 'lg'"
-                        elevation="0">
+                        elevation="0"
+                        role="button"
+                        tabindex="0"
+                        :aria-label="`Details zu ${item.title} öffnen`"
+                        @click="openMaterialCard(item, $event)"
+                        @keydown.enter="openMaterialCard(item, $event)"
+                        @keydown.space.prevent="openMaterialCard(item, $event)">
                         <v-card-text :class="materialCardPaddingClass">
                             <div class="d-flex align-start justify-space-between ga-3">
                                 <div class="min-width-0">
@@ -229,7 +274,7 @@
                                             {{ Math.round(item.search_score) }} Punkte
                                         </v-chip>
                                         <v-chip
-                                            v-if="!isDefaultCategory(item.category)"
+                                            v-if="supportsDocumentProcessing(item.category)"
                                             size="x-small"
                                             :color="statusMeta(item.processing_status).color"
                                             variant="tonal"
@@ -248,39 +293,55 @@
                                             :prepend-icon="categoryIcon(item.category)">
                                             {{ item.category }}
                                         </v-chip>
+                                        <v-chip
+                                            v-if="item.cluster"
+                                            size="x-small"
+                                            color="primary"
+                                            variant="tonal"
+                                            prepend-icon="mdi-folder-outline">
+                                            {{ item.cluster.name }}
+                                        </v-chip>
                                     </div>
                                 </div>
 
                                 <v-menu>
                                     <template #activator="{ props }">
-                                        <v-btn v-bind="props" icon="mdi-dots-horizontal" size="small" variant="text" />
+                                        <v-btn
+                                            v-bind="props"
+                                            icon="mdi-dots-horizontal"
+                                            size="small"
+                                            variant="text"
+                                            @click.stop />
                                     </template>
                                     <v-list density="compact">
-                                        <v-list-item prepend-icon="mdi-pencil-outline" title="Bearbeiten" @click="openEditDialog(item)" />
                                         <v-list-item
-                                            v-if="!isDefaultCategory(item.category)"
+                                            prepend-icon="mdi-pencil-outline"
+                                            title="Bearbeiten"
+                                            @click.stop="openEditDialog(item)" />
+                                        <v-list-item
+                                            v-if="supportsDocumentProcessing(item.category)"
                                             prepend-icon="mdi-paperclip-plus"
                                             title="Anlagen hinzufügen"
-                                            @click="openAttachmentDialog(item)" />
+                                            @click.stop="openAttachmentDialog(item)" />
                                         <v-list-item
-                                            v-if="!isDefaultCategory(item.category)"
+                                            v-if="supportsDocumentProcessing(item.category)"
                                             prepend-icon="mdi-refresh"
                                             title="Automatische Tags neu berechnen"
-                                            @click="recalculateAutomaticTags(item)" />
+                                            @click.stop="recalculateAutomaticTags(item)" />
                                         <v-list-item
                                             v-if="
-                                                !isDefaultCategory(item.category)
+                                                supportsDocumentProcessing(item.category)
                                                 && ['failed', 'partial'].includes(item.processing_status)
                                             "
                                             prepend-icon="mdi-file-refresh-outline"
                                             title="Dateiverarbeitung wiederholen"
-                                            @click="retryProcessing(item)" />
+                                            @click.stop="retryProcessing(item)" />
                                         <v-divider />
                                         <v-list-item
                                             prepend-icon="mdi-delete-outline"
                                             title="Löschen"
                                             base-color="error"
-                                            @click="openDeleteDialog(item)" />
+                                            @click.stop="openDeleteDialog(item)" />
                                     </v-list>
                                 </v-menu>
                             </div>
@@ -291,6 +352,12 @@
                                 class="materials-v2-screenshot-thumbnail-button"
                                 :aria-label="`${item.title} in der Vorschau öffnen`"
                                 @click="previewAttachment(item.attachments[0])">
+                                <span class="materials-v2-screenshot-frame-bar" aria-hidden="true">
+                                    <i />
+                                    <i />
+                                    <i />
+                                    <span>Screenshot</span>
+                                </span>
                                 <img
                                     class="materials-v2-screenshot-thumbnail"
                                     :src="item.attachments[0].preview_url"
@@ -301,8 +368,9 @@
                             <div
                                 v-if="isReminderCategory(item.category) && item.reminder_date"
                                 class="materials-v2-reminder-date">
-                                <div class="materials-v2-reminder-date-icon">
-                                    <v-icon size="24">mdi-calendar-blank-outline</v-icon>
+                                <div class="materials-v2-reminder-calendar-sheet" aria-hidden="true">
+                                    <span>{{ reminderMonthLabel(item.reminder_date) }}</span>
+                                    <strong>{{ reminderDayLabel(item.reminder_date) }}</strong>
                                 </div>
                                 <div class="materials-v2-reminder-date-copy">
                                     <strong>{{ formatReminderDate(item.reminder_date) }}</strong>
@@ -325,11 +393,28 @@
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 :title="item.link_url">
-                                <v-icon size="20">mdi-open-in-new</v-icon>
-                                <span>{{ linkDisplay(item.link_url) }}</span>
+                                <span class="materials-v2-link-icon" aria-hidden="true">
+                                    <v-icon size="22">mdi-web</v-icon>
+                                </span>
+                                <span class="materials-v2-link-copy">
+                                    <small>Web-Link</small>
+                                    <strong>{{ linkDisplay(item.link_url) }}</strong>
+                                </span>
+                                <v-icon class="materials-v2-link-open-icon" size="18">mdi-arrow-top-right</v-icon>
                             </a>
 
-                            <p v-if="activeCardDisplayMode !== 'compact' && item.description" class="materials-v2-description">
+                            <div
+                                v-if="isNoteCategory(item.category) && activeCardDisplayMode !== 'compact'"
+                                class="materials-v2-note-sheet">
+                                <div class="materials-v2-note-sheet-label">
+                                    <v-icon size="16">mdi-note-text-outline</v-icon>
+                                    Notiz
+                                </div>
+                                <p>{{ item.description || 'Leere Notiz' }}</p>
+                            </div>
+                            <p
+                                v-else-if="activeCardDisplayMode !== 'compact' && item.description"
+                                class="materials-v2-description">
                                 {{ item.description }}
                             </p>
                             <p
@@ -339,7 +424,7 @@
                             </p>
 
                             <v-alert
-                                v-if="!isDefaultCategory(item.category) && item.processing_error"
+                                v-if="supportsDocumentProcessing(item.category) && item.processing_error"
                                 class="mb-4"
                                 density="compact"
                                 type="warning"
@@ -349,7 +434,7 @@
 
                             <div
                                 v-if="
-                                    !isDefaultCategory(item.category)
+                                    supportsDocumentProcessing(item.category)
                                     && activeCardDisplayMode !== 'compact'
                                     && item.user_keywords?.length
                                 "
@@ -375,52 +460,45 @@
 
                             <div
                                 v-if="
-                                    !isDefaultCategory(item.category)
-                                    && activeCardDisplayMode === 'large'
-                                    && item.automatic_tag_suggestions?.length
-                                "
-                                class="materials-v2-keyword-block">
-                                <div class="materials-v2-keyword-label">
-                                    <v-icon size="15" class="mr-1">mdi-sparkles</v-icon>
-                                    Aus dem Inhalt erkannt
-                                </div>
-                                <div class="d-flex flex-wrap ga-1">
-                                    <v-chip
-                                        v-for="suggestion in item.automatic_tag_suggestions.slice(0, 8)"
-                                        :key="`generated-${item.id}-${suggestion.name}`"
-                                        size="small"
-                                        color="primary"
-                                        variant="tonal"
-                                        :title="`Rang ${suggestion.rank} · ${suggestion.score} Punkte`">
-                                        {{ suggestion.name }}
-                                    </v-chip>
-                                </div>
-                            </div>
-
-                            <div
-                                v-if="
                                     !isReminderCategory(item.category)
                                     && !isLinkCategory(item.category)
                                     && !isNoteCategory(item.category)
                                 "
-                                class="materials-v2-attachments">
+                                :class="[
+                                    'materials-v2-attachments',
+                                    { 'materials-v2-file-browser': isFileCategory(item.category) },
+                                ]">
                                 <div class="materials-v2-attachment-heading">
-                                    <v-icon size="18">mdi-paperclip</v-icon>
+                                    <v-icon size="18">
+                                        {{ isFileCategory(item.category) ? 'mdi-folder-open-outline' : 'mdi-paperclip' }}
+                                    </v-icon>
                                     {{ item.attachments?.length || 0 }}
-                                    {{ item.attachments?.length === 1 ? 'Anlage' : 'Anlagen' }}
+                                    {{
+                                        isFileCategory(item.category)
+                                            ? item.attachments?.length === 1 ? 'Datei' : 'Dateien'
+                                            : item.attachments?.length === 1 ? 'Anlage' : 'Anlagen'
+                                    }}
                                 </div>
 
                                 <div
-                                    v-if="activeCardDisplayMode === 'large' && item.attachments?.length"
+                                    v-if="
+                                        (activeCardDisplayMode === 'large' || isFileCategory(item.category))
+                                        && item.attachments?.length
+                                    "
                                     class="d-flex flex-column ga-2 mt-2">
                                     <div
                                         v-for="attachment in item.attachments"
                                         :key="attachment.id"
                                         class="materials-v2-attachment-row">
-                                        <v-icon size="20" color="primary">{{ attachmentIcon(attachment) }}</v-icon>
+                                        <span class="materials-v2-attachment-icon" aria-hidden="true">
+                                            <v-icon size="22" color="primary">{{ attachmentIcon(attachment) }}</v-icon>
+                                        </span>
                                         <button type="button" class="materials-v2-attachment-name" @click="previewAttachment(attachment)">
                                             {{ attachment.original_name }}
                                         </button>
+                                        <span v-if="isFileCategory(item.category)" class="materials-v2-file-kind">
+                                            {{ fileExtension(attachment.original_name) }}
+                                        </span>
                                         <span class="materials-v2-file-size">{{ formatFileSize(attachment.size_bytes) }}</span>
                                         <v-btn
                                             icon="mdi-eye-outline"
@@ -453,18 +531,38 @@
 
             <v-card v-else class="materials-v2-empty" rounded="xl" elevation="0">
                 <v-icon size="54" color="primary">
-                    {{ hasActiveFilters ? 'mdi-file-search-outline' : 'mdi-folder-plus-outline' }}
+                    {{
+                        isClusterView
+                            ? 'mdi-folder-open-outline'
+                            : hasActiveFilters
+                              ? 'mdi-file-search-outline'
+                              : 'mdi-folder-plus-outline'
+                    }}
                 </v-icon>
-                <h2>{{ hasActiveFilters ? 'Noch kein passender Treffer' : 'Deine neue Materialsammlung ist leer' }}</h2>
+                <h2>
+                    {{
+                        isClusterView
+                            ? (selectedCluster ? 'Dieser Cluster enthält noch keine Items' : 'Noch keine Cluster vorhanden')
+                            : hasActiveFilters
+                              ? 'Noch kein passender Treffer'
+                              : 'Deine neue Materialsammlung ist leer'
+                    }}
+                </h2>
                 <p>
                     {{
-                        hasActiveFilters
-                            ? 'Versuche andere Begriffe oder nur einen Wortteil.'
-                            : 'Erstelle dein erstes Material – mit oder ohne Kategorie.'
+                        isClusterView
+                            ? (
+                                selectedCluster
+                                    ? 'Weise einem Termin, Screenshot, Link oder einer Notiz diesen Cluster zu.'
+                                    : 'Cluster entstehen, sobald du sie einem Termin, Screenshot, Link oder einer Notiz zuweist.'
+                            )
+                            : hasActiveFilters
+                              ? 'Versuche andere Begriffe oder nur einen Wortteil.'
+                              : 'Erstelle dein erstes Material – mit oder ohne Kategorie.'
                     }}
                 </p>
                 <v-btn
-                    v-if="!hasActiveFilters || isDefaultCategory(selectedCategory)"
+                    v-if="!isClusterView && (!hasActiveFilters || isDefaultCategory(selectedCategory))"
                     color="primary"
                     rounded="xl"
                     :prepend-icon="createActionIcon(selectedCategory)"
@@ -545,6 +643,26 @@
                                 hide-details />
                         </v-col>
                     </v-row>
+                    <v-combobox
+                        v-if="isClusterableForm"
+                        v-model="materialForm.clusterName"
+                        class="materials-v2-cluster-chooser mb-3"
+                        label="Cluster (optional)"
+                        variant="outlined"
+                        maxlength="255"
+                        clearable
+                        always-filter
+                        :items="clusterOptions"
+                        :return-object="false"
+                        :custom-filter="clusterSearchFilter"
+                        :error-messages="materialErrorMessages('cluster_name')"
+                        :disabled="materialDialog.saving"
+                        prepend-inner-icon="mdi-folder-search-outline"
+                        no-data-text="Kein ähnlicher Cluster gefunden"
+                        :hide-no-data="false"
+                        hint="Tippen, um Cluster auch über Wortteile oder kleine Tippfehler zu finden"
+                        persistent-hint
+                        @blur="validateMaterialField('cluster_name')" />
                     <v-row v-if="isReminderForm" dense class="materials-v2-reminder-fields">
                         <v-col cols="12" sm="7">
                             <v-text-field
@@ -656,6 +774,23 @@
                             <v-icon size="16">mdi-open-in-new</v-icon>
                         </a>
                     </section>
+                    <v-file-input
+                        v-if="isFileForm && materialDialog.mode === 'create'"
+                        v-model="materialForm.attachments"
+                        class="materials-v2-file-input mt-3"
+                        label="Dateien auswählen"
+                        variant="outlined"
+                        multiple
+                        chips
+                        :show-size="1024"
+                        counter
+                        prepend-icon=""
+                        prepend-inner-icon="mdi-file-multiple-outline"
+                        :accept="fileInputAccept"
+                        :hint="`Bis zu 10 Dateien · maximal ${maxUploadSizeLabel} je Datei`"
+                        persistent-hint
+                        :error-messages="materialErrorMessages('attachments')"
+                        :disabled="materialDialog.saving" />
                     <v-textarea
                         v-model="materialForm.description"
                         :class="['mt-2', { 'materials-v2-note-body': isNoteForm }]"
@@ -674,7 +809,7 @@
                         :disabled="materialDialog.saving"
                         @blur="validateMaterialField('description')" />
                     <v-text-field
-                        v-if="!isDefaultForm"
+                        v-if="!isDefaultForm || isFileForm"
                         v-model="materialForm.keywords"
                         class="materials-v2-keywords-field mt-2"
                         label="Eigene Suchwörter (optional)"
@@ -745,7 +880,7 @@
                         <p v-else class="materials-v2-edit-attachments-empty">Keine Anlagen vorhanden.</p>
                     </section>
                     <section
-                        v-if="materialDialog.mode === 'edit' && !isDefaultForm"
+                        v-if="materialDialog.mode === 'edit' && (!isDefaultForm || isFileForm)"
                         class="materials-v2-automatic-tag-review mt-3">
                         <div class="materials-v2-automatic-tag-heading">
                             <div class="materials-v2-automatic-tag-summary">
@@ -874,6 +1009,7 @@
                             !materialForm.title.trim()
                             || (isReminderForm && !materialForm.reminderDate)
                             || (isScreenshotForm && materialDialog.mode === 'create' && !screenshotFile)
+                            || (isFileForm && materialDialog.mode === 'create' && !materialFiles.length)
                             || (isLinkForm && !materialForm.linkUrl.trim())
                             || (isLinkForm && linkPreview.state === 'checking')
                             || (isNoteForm && !materialForm.description.trim())
@@ -980,6 +1116,31 @@
                     </v-btn>
                     <v-btn color="primary" @click="useSuggestedCategory">
                         Bestehende übernehmen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="clusterSuggestionDialog.open" persistent max-width="560">
+            <v-card rounded="xl">
+                <v-card-title class="materials-v2-dialog-title">
+                    <v-icon color="warning" class="mr-2">mdi-folder-search-outline</v-icon>
+                    Ähnlicher Cluster gefunden
+                </v-card-title>
+                <v-card-text class="px-6 pb-2">
+                    Du hast <strong>„{{ clusterSuggestionDialog.entered }}“</strong> eingegeben.
+                    Es gibt bereits den ähnlichen Cluster
+                    <strong>„{{ clusterSuggestionDialog.existing }}“</strong>.
+                    Welchen möchtest du verwenden?
+                </v-card-text>
+                <v-card-actions class="px-6 pb-5 flex-wrap ga-2">
+                    <v-btn variant="text" @click="clusterSuggestionDialog.open = false">Abbrechen</v-btn>
+                    <v-spacer />
+                    <v-btn variant="tonal" color="secondary" @click="keepNewCluster">
+                        Neuen Cluster anlegen
+                    </v-btn>
+                    <v-btn color="primary" @click="useSuggestedCluster">
+                        Bestehenden übernehmen
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -1104,7 +1265,10 @@ import {
     formatDateTime,
     formatFileSize,
     formatReminderDate,
+    fuzzyTextMatch,
+    fileCategoryName,
     isDefaultCategory,
+    isFileCategory,
     isLinkCategory,
     isNoteCategory,
     isReminderCategory,
@@ -1114,8 +1278,10 @@ import {
     noteCategoryName,
     reminderBadge,
     reminderCategoryName,
+    reminderDate,
     screenshotCategoryName,
     statusMeta,
+    supportsDocumentProcessing,
 } from '@/domains/materialsV2/presentation'
 import { useMaterialV2Precognition } from '@/domains/materialsV2/useMaterialV2Precognition'
 import { useMaterialsV2Polling } from '@/domains/materialsV2/useMaterialsV2Polling'
@@ -1134,19 +1300,24 @@ const router = useRouter()
 const {
     items,
     categoryDetails,
+    clusterDetails,
+    maxUploadSizeKb,
     loading,
     loadError,
     meta,
 } = storeToRefs(materialsStore)
 
 const screenshotMimeTypes = ['image/gif', 'image/jpeg', 'image/png', 'image/webp']
+const fileInputAccept = '.csv,.doc,.docx,.gif,.htm,.html,.jpeg,.jpg,.md,.odp,.ods,.odt,.pdf,.png,.ppt,.pptx,.rtf,.txt,.webp,.xls,.xlsx'
 const displayModeStorageKey = 'materials-v2-display-mode'
 const displayModeOptions = ['large', 'standard', 'compact']
 const reminderDisplayModeOptions = ['standard', 'calendar']
 const calendarDisplayModeOptions = ['month', 'week']
 const calendarWeekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+const clustersViewValue = '__clusters__'
 const search = ref('')
-const selectedCategory = ref(categoryFromQuery(route.query.category))
+const selectedCategory = ref(categoryFromRoute(route.query.category, route.query.section))
+const selectedClusterId = ref(clusterIdFromQuery(route.query.cluster))
 const displayMode = ref(displayModeFromQuery(route.query.view) || loadStoredDisplayMode())
 const reminderDisplayMode = ref(reminderDisplayModeFromQuery(route.query.view))
 const calendarDisplayMode = ref(calendarDisplayModeFromQuery(route.query.calendar))
@@ -1164,6 +1335,7 @@ const materialDialog = reactive({
 const materialForm = reactive({
     title: '',
     category: '',
+    clusterName: '',
     description: '',
     reminderDate: '',
     reminderTime: '',
@@ -1174,6 +1346,7 @@ const materialForm = reactive({
 const formErrors = reactive({
     title: [],
     category: [],
+    cluster_name: [],
     description: [],
     reminder_date: [],
     reminder_time: [],
@@ -1207,6 +1380,12 @@ const categorySuggestionDialog = reactive({
     entered: '',
     existing: '',
 })
+const clusterSuggestionDialog = reactive({
+    open: false,
+    entered: '',
+    existing: '',
+    forceNewCategory: false,
+})
 const categoryDialog = reactive({
     open: false,
     mode: 'create',
@@ -1236,6 +1415,7 @@ let searchTimer = null
 let linkPreviewTimer = null
 let linkPreviewRequestId = 0
 let isResettingFiltersAfterCreate = false
+let isInitialLoad = true
 const { configurePolling } = useMaterialsV2Polling(() => {
     if (!loading.value) {
         loadItems()
@@ -1246,6 +1426,7 @@ const hasProcessingItems = computed(() =>
     items.value.some((item) => ['pending', 'processing'].includes(item.processing_status)),
 )
 const categoryOptions = computed(() => categoryDetails.value.map((category) => category.name))
+const clusterOptions = computed(() => clusterDetails.value.map((cluster) => cluster.name))
 const customCategoryDetails = computed(() =>
     categoryDetails.value.filter((category) => !isDefaultCategory(category.name)),
 )
@@ -1275,17 +1456,40 @@ const systemCategoryDetails = computed(() => [
         items_count: categoryItemCount(linkCategoryName),
     },
     {
+        name: fileCategoryName,
+        label: fileCategoryName,
+        icon: categoryIcon(fileCategoryName),
+        items_count: categoryItemCount(fileCategoryName),
+    },
+    {
         name: noteCategoryName,
         label: noteCategoryName,
         icon: categoryIcon(noteCategoryName),
         items_count: categoryItemCount(noteCategoryName),
     },
+    {
+        name: clustersViewValue,
+        label: 'Clusters',
+        icon: 'mdi-folder-multiple-outline',
+        items_count: clusterDetails.value.length,
+    },
 ])
-const selectedCategoryLabel = computed(() =>
-    selectedCategory.value === allCategoriesValue ? 'Alle Materialien' : selectedCategory.value,
+const isClusterView = computed(() => selectedCategory.value === clustersViewValue)
+const selectedCluster = computed(() =>
+    clusterDetails.value.find((cluster) => cluster.id === selectedClusterId.value) || null,
 )
+const selectedCategoryLabel = computed(() => {
+    if (isClusterView.value) {
+        return selectedCluster.value ? `Clusters · ${selectedCluster.value.name}` : 'Clusters'
+    }
+
+    return selectedCategory.value === allCategoriesValue ? 'Alle Materialien' : selectedCategory.value
+})
 const isCustomCategorySelected = computed(
-    () => selectedCategory.value !== allCategoriesValue && !isDefaultCategory(selectedCategory.value),
+    () =>
+        selectedCategory.value !== allCategoriesValue
+        && !isDefaultCategory(selectedCategory.value)
+        && !isClusterView.value,
 )
 const isReminderCategorySelected = computed(() => isReminderCategory(selectedCategory.value))
 const isReminderCalendarView = computed(
@@ -1347,11 +1551,27 @@ const schoolLogoSrc = computed(() =>
 const isReminderForm = computed(() => isReminderCategory(materialForm.category))
 const isScreenshotForm = computed(() => isScreenshotCategory(materialForm.category))
 const isLinkForm = computed(() => isLinkCategory(materialForm.category))
+const isFileForm = computed(() => isFileCategory(materialForm.category))
 const isNoteForm = computed(() => isNoteCategory(materialForm.category))
 const isDefaultForm = computed(
-    () => isReminderForm.value || isScreenshotForm.value || isLinkForm.value || isNoteForm.value,
+    () =>
+        isReminderForm.value
+        || isScreenshotForm.value
+        || isLinkForm.value
+        || isFileForm.value
+        || isNoteForm.value,
+)
+const isClusterableForm = computed(
+    () =>
+        isReminderForm.value
+        || isScreenshotForm.value
+        || isLinkForm.value
+        || isFileForm.value
+        || isNoteForm.value,
 )
 const screenshotFile = computed(() => normalizedFiles(materialForm.attachments)[0] || null)
+const materialFiles = computed(() => normalizedFiles(materialForm.attachments))
+const maxUploadSizeLabel = computed(() => formatFileSize(maxUploadSizeKb.value * 1024))
 const linkPreviewAlertType = computed(() => ({
     checking: 'info',
     success: 'success',
@@ -1375,6 +1595,10 @@ const materialDialogIcon = computed(() => {
         return materialDialog.mode === 'create' ? 'mdi-link-plus' : 'mdi-link-variant'
     }
 
+    if (isFileForm.value) {
+        return materialDialog.mode === 'create' ? 'mdi-file-plus-outline' : 'mdi-file-edit-outline'
+    }
+
     if (isNoteForm.value) {
         return 'mdi-note-text-outline'
     }
@@ -1394,6 +1618,10 @@ const materialDialogTitle = computed(() => {
         return materialDialog.mode === 'create' ? 'Link hinzufügen' : 'Link bearbeiten'
     }
 
+    if (isFileForm.value) {
+        return materialDialog.mode === 'create' ? 'Dateien hinzufügen' : 'Dateien bearbeiten'
+    }
+
     if (isNoteForm.value) {
         return materialDialog.mode === 'create' ? 'Notiz hinzufügen' : 'Notiz bearbeiten'
     }
@@ -1401,7 +1629,12 @@ const materialDialogTitle = computed(() => {
     return materialDialog.mode === 'create' ? 'Material erstellen' : 'Material bearbeiten'
 })
 const hasActiveFilters = computed(
-    () => search.value.trim() !== '' || selectedCategory.value !== allCategoriesValue,
+    () =>
+        search.value.trim() !== ''
+        || (
+            selectedCategory.value !== allCategoriesValue
+            && !isClusterView.value
+        ),
 )
 const materialColumnProps = computed(() => ({
     large: { cols: 12, md: 6, xl: 4 },
@@ -1416,6 +1649,10 @@ const materialCardPaddingClass = computed(() => ({
 const automaticTagNames = computed(() =>
     (materialDialog.item?.automatic_tag_suggestions || []).map(({ name }) => name).join(', '),
 )
+
+function clusterSearchFilter(value, query) {
+    return fuzzyTextMatch(value, query)
+}
 
 watch(search, () => {
     window.clearTimeout(searchTimer)
@@ -1442,6 +1679,20 @@ watch(
 )
 
 watch(selectedCategory, (category) => {
+    if (category === clustersViewValue) {
+        const selectedClusterChanged = ensureSelectedCluster()
+        syncRouteQuery(category)
+
+        if (isResettingFiltersAfterCreate || selectedClusterChanged) {
+            return
+        }
+
+        page.value = 1
+        loadItems()
+
+        return
+    }
+
     syncRouteQuery(category)
 
     if (isResettingFiltersAfterCreate) {
@@ -1453,15 +1704,36 @@ watch(selectedCategory, (category) => {
 })
 
 watch(
-    () => route.query.category,
-    (category) => {
-        const routeCategory = categoryFromQuery(category)
+    [() => route.query.category, () => route.query.section],
+    ([category, section]) => {
+        const routeCategory = categoryFromRoute(category, section)
 
         if (routeCategory !== selectedCategory.value) {
             selectedCategory.value = routeCategory
         }
     },
 )
+
+watch(
+    () => route.query.cluster,
+    (cluster) => {
+        const routeClusterId = clusterIdFromQuery(cluster)
+
+        if (routeClusterId !== selectedClusterId.value) {
+            selectedClusterId.value = routeClusterId
+        }
+    },
+)
+
+watch(selectedClusterId, () => {
+    if (!isClusterView.value || isResettingFiltersAfterCreate || isInitialLoad) {
+        return
+    }
+
+    page.value = 1
+    syncRouteQuery(clustersViewValue)
+    loadItems()
+})
 
 watch(displayMode, (mode) => {
     persistDisplayMode(mode)
@@ -1531,7 +1803,10 @@ watch(hasProcessingItems, (isProcessing) => {
 })
 
 onMounted(async () => {
-    await Promise.all([loadConfig(), loadItems()])
+    await loadConfig()
+    ensureSelectedCluster()
+    await loadItems()
+    isInitialLoad = false
 })
 
 onBeforeUnmount(() => {
@@ -1543,6 +1818,12 @@ onBeforeUnmount(() => {
 })
 
 async function loadItems() {
+    if (isClusterView.value && !selectedClusterId.value) {
+        materialsStore.clearItems()
+
+        return
+    }
+
     const range = isReminderCalendarView.value
         ? {
             start: formatCalendarDate(calendarVisibleRange.value.start),
@@ -1552,7 +1833,11 @@ async function loadItems() {
 
     await materialsStore.loadItems({
         search: search.value,
-        category: selectedCategory.value === allCategoriesValue ? undefined : selectedCategory.value,
+        category:
+            selectedCategory.value === allCategoriesValue || isClusterView.value
+                ? undefined
+                : selectedCategory.value,
+        clusterId: isClusterView.value ? selectedClusterId.value : undefined,
         page: page.value,
         calendarRange: range,
         reminderCategory: reminderCategoryName,
@@ -1568,6 +1853,7 @@ async function loadItems() {
 
 async function loadConfig() {
     await materialsStore.loadConfig()
+    ensureSelectedCluster()
 }
 
 function clearSearch() {
@@ -1580,24 +1866,73 @@ function selectCategory(category) {
     selectedCategory.value = category
 }
 
+function selectCluster(clusterId) {
+    selectedClusterId.value = clusterId
+}
+
+function ensureSelectedCluster() {
+    if (!isClusterView.value) {
+        return false
+    }
+
+    const hasSelectedCluster = clusterDetails.value.some(
+        (cluster) => cluster.id === selectedClusterId.value,
+    )
+    const nextClusterId = hasSelectedCluster ? selectedClusterId.value : clusterDetails.value[0]?.id || null
+
+    if (nextClusterId === selectedClusterId.value) {
+        return false
+    }
+
+    selectedClusterId.value = nextClusterId
+
+    return true
+}
+
 function categoryFromQuery(category) {
     const normalizedCategory = queryString(category)
 
     return normalizedCategory || allCategoriesValue
 }
 
+function categoryFromRoute(category, section) {
+    return queryString(section) === 'clusters' ? clustersViewValue : categoryFromQuery(category)
+}
+
+function clusterIdFromQuery(cluster) {
+    const clusterId = Number.parseInt(queryString(cluster), 10)
+
+    return Number.isInteger(clusterId) && clusterId > 0 ? clusterId : null
+}
+
 function syncRouteQuery(category) {
     const query = { ...route.query }
-    if (category === allCategoriesValue) {
+
+    if (category === clustersViewValue) {
         delete query.category
+        query.section = 'clusters'
+
+        if (selectedClusterId.value) {
+            query.cluster = String(selectedClusterId.value)
+        } else {
+            delete query.cluster
+        }
+    } else if (category === allCategoriesValue) {
+        delete query.category
+        delete query.section
+        delete query.cluster
     } else {
         query.category = category
+        delete query.section
+        delete query.cluster
     }
 
     delete query.calendar
     delete query.date
 
-    if (category !== allCategoriesValue && !isDefaultCategory(category)) {
+    if (category === clustersViewValue) {
+        delete query.view
+    } else if (category !== allCategoriesValue && !isDefaultCategory(category)) {
         query.view = displayMode.value
     } else if (isReminderCategory(category)) {
         query.view = reminderDisplayMode.value
@@ -1841,6 +2176,9 @@ function openCreateDialog() {
     if (isLinkCategory(materialForm.category)) {
         materialForm.title = 'Link'
     }
+    if (isFileCategory(materialForm.category)) {
+        materialForm.title = 'Dateien'
+    }
     if (isNoteCategory(materialForm.category)) {
         materialForm.title = 'Notiz'
     }
@@ -1875,6 +2213,12 @@ function openSystemCategoryCreateDialog(category) {
         return
     }
 
+    if (isFileCategory(category)) {
+        openFileDialog()
+
+        return
+    }
+
     if (isNoteCategory(category)) {
         openNoteDialog()
     }
@@ -1897,6 +2241,16 @@ function openLinkDialog() {
     materialDialog.item = null
     materialForm.title = 'Link'
     materialForm.category = linkCategoryName
+    materialDialog.open = true
+}
+
+function openFileDialog() {
+    resetForm()
+    isAutomaticTagEditing.value = false
+    materialDialog.mode = 'create'
+    materialDialog.item = null
+    materialForm.title = 'Dateien'
+    materialForm.category = fileCategoryName
     materialDialog.open = true
 }
 
@@ -2124,6 +2478,31 @@ function linkDisplay(value) {
     return `${hostname}${path}`
 }
 
+function reminderDayLabel(value) {
+    const date = reminderDate(value)
+
+    return date
+        ? new Intl.DateTimeFormat('de-AT', { day: '2-digit' }).format(date)
+        : ''
+}
+
+function reminderMonthLabel(value) {
+    const date = reminderDate(value)
+
+    return date
+        ? new Intl.DateTimeFormat('de-AT', { month: 'short' })
+            .format(date)
+            .replace('.', '')
+            .toLocaleUpperCase('de-AT')
+        : ''
+}
+
+function fileExtension(value) {
+    const match = String(value || '').trim().match(/\.([^.]+)$/u)
+
+    return match ? match[1].slice(0, 5).toLocaleUpperCase('de-AT') : 'DATEI'
+}
+
 function setScreenshotFiles(files) {
     const file = normalizedFiles(files)[0] || null
     revokeScreenshotPreview()
@@ -2175,12 +2554,25 @@ function openEditDialog(item) {
     materialDialog.item = item
     materialForm.title = item.title || ''
     materialForm.category = item.category || ''
+    materialForm.clusterName = item.cluster?.name || ''
     materialForm.description = item.description || ''
     materialForm.reminderDate = item.reminder_date || ''
     materialForm.reminderTime = item.reminder_time || ''
     materialForm.linkUrl = item.link_url || ''
     materialForm.keywords = (item.user_keywords || []).join(', ')
     materialDialog.open = true
+}
+
+function openMaterialCard(item, event) {
+    const interactiveTarget = event.target?.closest?.(
+        'a, button, input, select, textarea, [contenteditable="true"], [role="link"], [role="button"], .v-list-item',
+    )
+
+    if (interactiveTarget && interactiveTarget !== event.currentTarget) {
+        return
+    }
+
+    openEditDialog(item)
 }
 
 function closeMaterialDialog() {
@@ -2192,13 +2584,14 @@ function closeMaterialDialog() {
     }
 }
 
-async function saveMaterial({ forceNewCategory = false } = {}) {
+async function saveMaterial({ forceNewCategory = false, forceNewCluster = false } = {}) {
     clearFormErrors()
     materialDialog.saving = true
     const isCreating = materialDialog.mode === 'create'
     const isSavingReminder = isReminderForm.value
     const isSavingScreenshot = isScreenshotForm.value
     const isSavingLink = isLinkForm.value
+    const isSavingFile = isFileForm.value
     const isSavingNote = isNoteForm.value
 
     try {
@@ -2219,6 +2612,14 @@ async function saveMaterial({ forceNewCategory = false } = {}) {
 
             if (forceNewCategory) {
                 payload.append('force_new_category', '1')
+            }
+
+            if (normalizedClusterName()) {
+                payload.append('cluster_name', normalizedClusterName())
+            }
+
+            if (forceNewCluster) {
+                payload.append('force_new_cluster', '1')
             }
 
             if (materialForm.description.trim()) {
@@ -2245,11 +2646,13 @@ async function saveMaterial({ forceNewCategory = false } = {}) {
                 title: materialForm.title.trim(),
                 category: normalizedCategory() || null,
                 force_new_category: forceNewCategory,
+                cluster_name: normalizedClusterName() || null,
+                force_new_cluster: forceNewCluster,
                 description: materialForm.description.trim() || null,
                 reminder_date: isSavingReminder ? materialForm.reminderDate : null,
                 reminder_time: isSavingReminder ? materialForm.reminderTime || null : null,
                 link_url: isSavingLink ? linkUrl : null,
-                user_keywords: isDefaultForm.value ? [] : normalizedKeywords(),
+                user_keywords: isDefaultForm.value && !isSavingFile ? [] : normalizedKeywords(),
             })
         }
 
@@ -2264,6 +2667,8 @@ async function saveMaterial({ forceNewCategory = false } = {}) {
                       ? screenshotCategoryName
                       : isSavingLink
                         ? linkCategoryName
+                        : isSavingFile
+                          ? fileCategoryName
                         : isSavingNote
                           ? noteCategoryName
                         : null,
@@ -2280,12 +2685,18 @@ async function saveMaterial({ forceNewCategory = false } = {}) {
                   ? 'Screenshot gespeichert.'
                   : isSavingLink
                     ? 'Link gespeichert.'
+                    : isSavingFile
+                      ? 'Dateien gespeichert.'
                     : isSavingNote
                       ? 'Notiz gespeichert.'
                     : 'Material gespeichert.',
         )
     } catch (error) {
         if (showCategorySuggestion(error)) {
+            return
+        }
+
+        if (showClusterSuggestion(error, { forceNewCategory })) {
             return
         }
 
@@ -2333,6 +2744,37 @@ async function keepNewCategory() {
     materialForm.category = categorySuggestionDialog.entered
     categorySuggestionDialog.open = false
     await saveMaterial({ forceNewCategory: true })
+}
+
+function showClusterSuggestion(error, { forceNewCategory = false } = {}) {
+    const suggestion = error.response?.data?.cluster_suggestion
+    if (error.response?.status !== 409 || !suggestion?.entered || !suggestion?.existing) {
+        return false
+    }
+
+    clusterSuggestionDialog.entered = String(suggestion.entered)
+    clusterSuggestionDialog.existing = String(suggestion.existing)
+    clusterSuggestionDialog.forceNewCategory = forceNewCategory
+    clusterSuggestionDialog.open = true
+
+    return true
+}
+
+async function useSuggestedCluster() {
+    materialForm.clusterName = clusterSuggestionDialog.existing
+    clusterSuggestionDialog.open = false
+    await saveMaterial({
+        forceNewCategory: clusterSuggestionDialog.forceNewCategory,
+    })
+}
+
+async function keepNewCluster() {
+    materialForm.clusterName = clusterSuggestionDialog.entered
+    clusterSuggestionDialog.open = false
+    await saveMaterial({
+        forceNewCategory: clusterSuggestionDialog.forceNewCategory,
+        forceNewCluster: true,
+    })
 }
 
 function openAttachmentDialog(item) {
@@ -2506,6 +2948,7 @@ function resetForm() {
     resetLinkPreview()
     materialForm.title = ''
     materialForm.category = ''
+    materialForm.clusterName = ''
     materialForm.description = ''
     materialForm.reminderDate = ''
     materialForm.reminderTime = ''
@@ -2533,6 +2976,7 @@ function materialErrorMessages(field) {
 function applyValidationErrors(error) {
     formErrors.title = validationMessages(error, 'title')
     formErrors.category = validationMessages(error, 'category')
+    formErrors.cluster_name = validationMessages(error, 'cluster_name')
     formErrors.description = validationMessages(error, 'description')
     formErrors.reminder_date = validationMessages(error, 'reminder_date')
     formErrors.reminder_time = validationMessages(error, 'reminder_time')
@@ -2546,6 +2990,10 @@ function applyValidationErrors(error) {
 
 function normalizedCategory() {
     return String(materialForm.category || '').trim()
+}
+
+function normalizedClusterName() {
+    return String(materialForm.clusterName || '').trim()
 }
 
 function normalizedFiles(files) {
@@ -2720,6 +3168,13 @@ function notify(message, type = 'success') {
     font-variant-numeric: tabular-nums;
 }
 
+.materials-v2-cluster-list-empty {
+    margin: 0.75rem 0.35rem;
+    color: var(--materials-v2-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
 .materials-v2-main {
     min-width: 0;
     padding: 0.85rem 1.8rem 2rem;
@@ -2757,10 +3212,19 @@ function notify(message, type = 'success') {
 }
 
 .materials-v2-card {
+    position: relative;
+    overflow: hidden;
     border: 1px solid rgba(23, 45, 59, 0.08);
+    border-top: 3px solid rgba(97, 116, 130, 0.3);
     background: rgba(255, 255, 255, 0.92);
     box-shadow: 0 12px 40px rgba(23, 45, 59, 0.07);
+    cursor: pointer;
     transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.materials-v2-card:focus-visible {
+    outline: 3px solid rgba(255, 122, 50, 0.55);
+    outline-offset: 3px;
 }
 
 .materials-v2-card:hover {
@@ -2783,24 +3247,45 @@ function notify(message, type = 'success') {
 
 .materials-v2-card--reminder {
     border-color: rgba(255, 122, 50, 0.22);
+    border-top-color: #ff7a32;
     background: linear-gradient(145deg, rgba(255, 248, 242, 0.96), rgba(255, 255, 255, 0.96));
+}
+
+.materials-v2-card--screenshot {
+    border-color: rgba(115, 90, 171, 0.22);
+    border-top-color: #735aab;
+    background: linear-gradient(145deg, rgba(248, 246, 253, 0.98), rgba(255, 255, 255, 0.96));
 }
 
 .materials-v2-card--link {
     border-color: rgba(0, 137, 123, 0.2);
+    border-top-color: #00897b;
     background: linear-gradient(145deg, rgba(241, 253, 251, 0.96), rgba(255, 255, 255, 0.96));
 }
 
+.materials-v2-card--file {
+    border-color: rgba(49, 105, 171, 0.2);
+    border-top-color: #3169ab;
+    background: linear-gradient(145deg, rgba(244, 249, 255, 0.98), rgba(255, 255, 255, 0.96));
+}
+
+.materials-v2-card--note {
+    border-color: rgba(206, 155, 30, 0.24);
+    border-top-color: #ce9b1e;
+    background: linear-gradient(145deg, rgba(255, 251, 235, 0.98), rgba(255, 255, 255, 0.96));
+}
+
 .materials-v2-screenshot-thumbnail-button {
-    display: block;
+    display: flex;
     width: 100%;
-    height: 150px;
+    height: 176px;
     margin-top: 0.9rem;
     padding: 0;
+    flex-direction: column;
     overflow: hidden;
-    border: 1px solid rgba(23, 45, 59, 0.1);
+    border: 1px solid rgba(73, 57, 110, 0.2);
     border-radius: 12px;
-    background: #f4f6f7;
+    background: #eef0f3;
     cursor: zoom-in;
 }
 
@@ -2810,10 +3295,40 @@ function notify(message, type = 'success') {
     outline-offset: 2px;
 }
 
+.materials-v2-screenshot-frame-bar {
+    display: flex;
+    width: 100%;
+    height: 28px;
+    padding: 0 0.65rem;
+    align-items: center;
+    flex: 0 0 28px;
+    gap: 0.3rem;
+    border-bottom: 1px solid rgba(73, 57, 110, 0.14);
+    background: rgba(73, 57, 110, 0.08);
+}
+
+.materials-v2-screenshot-frame-bar i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(73, 57, 110, 0.38);
+}
+
+.materials-v2-screenshot-frame-bar span {
+    margin-left: auto;
+    color: rgba(73, 57, 110, 0.8);
+    font-size: 0.62rem;
+    font-style: normal;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
 .materials-v2-screenshot-thumbnail {
     display: block;
     width: 100%;
-    height: 100%;
+    min-height: 0;
+    flex: 1 1 auto;
     object-fit: contain;
 }
 
@@ -2821,25 +3336,63 @@ function notify(message, type = 'success') {
     display: flex;
     min-width: 0;
     margin-top: 0.9rem;
-    padding: 0.65rem 0.75rem;
+    padding: 0.7rem;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.7rem;
     overflow: hidden;
     border: 1px solid rgba(0, 137, 123, 0.16);
     border-radius: 12px;
-    background: rgba(0, 137, 123, 0.07);
-    color: rgb(var(--v-theme-primary));
-    font-weight: 700;
+    background: rgba(255, 255, 255, 0.74);
+    color: var(--materials-v2-ink);
     text-decoration: none;
+    transition: border-color 160ms ease, background 160ms ease;
 }
 
-.materials-v2-link-target span {
+.materials-v2-link-icon {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    place-items: center;
+    border-radius: 10px;
+    background: rgba(0, 137, 123, 0.11);
+    color: #00897b;
+}
+
+.materials-v2-link-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+}
+
+.materials-v2-link-copy small {
+    color: rgba(0, 105, 92, 0.78);
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.materials-v2-link-copy strong {
     overflow: hidden;
+    margin-top: 0.08rem;
+    font-size: 0.84rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
+.materials-v2-link-open-icon {
+    flex: 0 0 auto;
+    color: #00897b;
+}
+
 .materials-v2-link-target:hover {
+    border-color: rgba(0, 137, 123, 0.38);
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.materials-v2-link-target:hover .materials-v2-link-copy strong {
     text-decoration: underline;
 }
 
@@ -2854,15 +3407,36 @@ function notify(message, type = 'success') {
     background: rgba(255, 122, 50, 0.075);
 }
 
-.materials-v2-reminder-date-icon {
+.materials-v2-reminder-calendar-sheet {
+    display: flex;
+    width: 48px;
+    height: 51px;
+    flex: 0 0 48px;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(255, 122, 50, 0.2);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.9);
+    text-align: center;
+}
+
+.materials-v2-reminder-calendar-sheet span {
+    padding: 0.18rem 0.2rem;
+    background: #ff7a32;
+    color: #fff;
+    font-size: 0.56rem;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    line-height: 1;
+}
+
+.materials-v2-reminder-calendar-sheet strong {
     display: grid;
-    width: 36px;
-    height: 36px;
-    flex: 0 0 36px;
+    flex: 1 1 auto;
     place-items: center;
-    border-radius: 10px;
-    color: var(--materials-v2-accent);
-    background: rgba(255, 255, 255, 0.82);
+    color: #b74d14;
+    font-size: 1.15rem;
+    line-height: 1;
 }
 
 .materials-v2-reminder-date-copy {
@@ -2927,6 +3501,59 @@ function notify(message, type = 'success') {
 .materials-v2-description--empty {
     font-style: italic;
     opacity: 0.65;
+}
+
+.materials-v2-note-sheet {
+    position: relative;
+    min-height: 108px;
+    margin-top: 0.9rem;
+    padding: 0.75rem 0.85rem 0.75rem 1.25rem;
+    overflow: hidden;
+    border: 1px solid rgba(206, 155, 30, 0.19);
+    border-radius: 12px;
+    background:
+        linear-gradient(90deg, transparent 0 13px, rgba(221, 92, 92, 0.2) 13px 14px, transparent 14px),
+        repeating-linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.76) 0,
+            rgba(255, 255, 255, 0.76) 25px,
+            rgba(73, 126, 166, 0.12) 25px,
+            rgba(73, 126, 166, 0.12) 26px
+        );
+}
+
+.materials-v2-note-sheet::after {
+    position: absolute;
+    top: 0;
+    right: 1rem;
+    width: 24px;
+    height: 7px;
+    border-radius: 0 0 4px 4px;
+    background: rgba(206, 155, 30, 0.48);
+    content: '';
+}
+
+.materials-v2-note-sheet-label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: #946b08;
+    font-size: 0.64rem;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.materials-v2-note-sheet p {
+    display: -webkit-box;
+    margin: 0.55rem 0 0;
+    overflow: hidden;
+    color: var(--materials-v2-ink);
+    font-size: 0.88rem;
+    line-height: 1.6;
+    white-space: pre-line;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
 }
 
 .materials-v2-keyword-block + .materials-v2-keyword-block {
@@ -3184,6 +3811,23 @@ function notify(message, type = 'success') {
     padding-top: 0.6rem;
 }
 
+.materials-v2-file-browser {
+    margin-top: 0.9rem;
+    padding: 0.75rem;
+    border: 1px solid rgba(49, 105, 171, 0.14);
+    border-radius: 14px;
+    background: rgba(49, 105, 171, 0.045);
+}
+
+.materials-v2-card--standard .materials-v2-file-browser,
+.materials-v2-card--compact .materials-v2-file-browser {
+    padding: 0.7rem;
+}
+
+.materials-v2-file-browser .materials-v2-attachment-heading {
+    color: #315f94;
+}
+
 .materials-v2-attachment-heading {
     display: flex;
     align-items: center;
@@ -3199,8 +3843,26 @@ function notify(message, type = 'success') {
     gap: 0.5rem;
     min-width: 0;
     padding: 0.5rem 0.6rem;
+    border: 1px solid rgba(23, 45, 59, 0.055);
     border-radius: 12px;
-    background: #f6f8f8;
+    background: rgba(246, 248, 248, 0.9);
+}
+
+.materials-v2-file-browser .materials-v2-attachment-row {
+    padding: 0.55rem;
+    border-color: rgba(49, 105, 171, 0.11);
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 3px 10px rgba(49, 105, 171, 0.055);
+}
+
+.materials-v2-attachment-icon {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    place-items: center;
+    border-radius: 9px;
+    background: rgba(var(--v-theme-primary), 0.08);
 }
 
 .materials-v2-attachment-name {
@@ -3223,6 +3885,17 @@ function notify(message, type = 'success') {
 .materials-v2-file-size {
     color: var(--materials-v2-muted);
     font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.materials-v2-file-kind {
+    padding: 0.12rem 0.35rem;
+    border-radius: 5px;
+    background: rgba(49, 105, 171, 0.09);
+    color: #315f94;
+    font-size: 0.58rem;
+    font-weight: 850;
+    letter-spacing: 0.04em;
     white-space: nowrap;
 }
 

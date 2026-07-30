@@ -32,6 +32,7 @@ class MaterialV2Item extends Model
     protected $fillable = [
         'school_id',
         'user_id',
+        'material_v2_cluster_id',
         'title',
         'category',
         'description',
@@ -91,6 +92,11 @@ class MaterialV2Item extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function cluster(): BelongsTo
+    {
+        return $this->belongsTo(MaterialV2Cluster::class, 'material_v2_cluster_id');
     }
 
     public function attachments(): HasMany

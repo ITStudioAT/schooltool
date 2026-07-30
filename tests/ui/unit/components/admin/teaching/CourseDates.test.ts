@@ -259,6 +259,20 @@ describe('CourseDates course-specific schema', () => {
             { selected_courseDate: { date: '2026-07-24' } },
             topics[0].units[0].assignedCourseDates[0],
         )).toBe(false)
+        expect(methods.isCurriculumUnitForSelectedCourseDate.call(
+            {
+                selected_courseDate: { date: '2026-07-21' },
+                isCurriculumAssignmentForSelectedCourseDate: methods.isCurriculumAssignmentForSelectedCourseDate,
+            },
+            topics[0].units[0],
+        )).toBe(true)
+        expect(methods.isCurriculumUnitForSelectedCourseDate.call(
+            {
+                selected_courseDate: { date: '2026-07-24' },
+                isCurriculumAssignmentForSelectedCourseDate: methods.isCurriculumAssignmentForSelectedCourseDate,
+            },
+            topics[0].units[0],
+        )).toBe(false)
         expect(source).toContain(':prepend-icon="curriculumUnitPrependIcon(unit)"')
     })
 
@@ -619,6 +633,17 @@ describe('CourseDates course-specific schema', () => {
         expect(source).toContain('course-curriculum-item--topic')
         expect(source).toContain('.course-date-row--selected {')
         expect(source).toContain('.course-curriculum-item--selected {')
+    })
+
+    it('makes curriculum units for the selected date shine like a headlight', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+
+        expect(source).toContain("'course-curriculum-item--date-shine': isCurriculumUnitForSelectedCourseDate(unit)")
+        expect(source).toContain('.course-curriculum-panel .course-curriculum-item--date-shine {')
+        expect(source).toContain('radial-gradient(circle at 14% 50%')
+        expect(source).toContain('animation: curriculum-date-headlight-pulse 1.8s ease-in-out infinite;')
+        expect(source).toContain('@keyframes curriculum-date-headlight-sweep')
+        expect(source).toContain('@media (prefers-reduced-motion: reduce)')
     })
 
     it('uses the requested purple treatment for the curriculum panel and content', () => {

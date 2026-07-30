@@ -18,12 +18,15 @@ class MaterialV2StoreRequest extends FormRequest
     {
         $isScreenshot = $this->isScreenshotCategory();
         $isLink = $this->isLinkCategory();
+        $isFile = $this->isFileCategory();
         $isNote = $this->isNoteCategory();
 
         return [
             'title' => ['required', 'string', 'max:255'],
             'category' => ['nullable', 'string', 'max:255'],
             'force_new_category' => ['sometimes', 'boolean'],
+            'cluster_name' => ['nullable', 'string', 'max:255'],
+            'force_new_cluster' => ['sometimes', 'boolean'],
             'description' => $isNote
                 ? ['required', 'string', 'max:10000']
                 : ['nullable', 'string', 'max:10000'],
@@ -37,6 +40,7 @@ class MaterialV2StoreRequest extends FormRequest
             'attachments' => match (true) {
                 $isNote => ['prohibited'],
                 $isScreenshot => ['required', 'array', 'size:1'],
+                $isFile => ['required', 'array', 'min:1', 'max:10'],
                 default => ['nullable', 'array', 'max:10'],
             },
             'attachments.*' => ['required', $isScreenshot ? $this->screenshotFileRule() : $this->fileRule()],
@@ -79,6 +83,12 @@ class MaterialV2StoreRequest extends FormRequest
     {
         return Str::lower(Str::squish((string) $this->input('category')))
             === Str::lower(MaterialV2CategoryService::LINK_CATEGORY);
+    }
+
+    private function isFileCategory(): bool
+    {
+        return Str::lower(Str::squish((string) $this->input('category')))
+            === Str::lower(MaterialV2CategoryService::FILE_CATEGORY);
     }
 
     private function isNoteCategory(): bool

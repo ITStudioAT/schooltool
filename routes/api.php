@@ -558,6 +558,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/teaching/test-environment', [TeachingTestEnvironmentController::class, 'destroy']);
         Route::get('/admin/teaching/courses/{course}/performances_pdf', [TeachingCourseController::class, 'coursePerformancesPdf']);
         Route::get('/admin/teaching/courses/{course}/grades_pdf', [TeachingCourseController::class, 'courseGradesPdf']);
+        Route::get('/admin/teaching/courses/{course}/overview_pdf', [TeachingCourseController::class, 'courseOverviewPdf']);
         Route::get('/admin/teaching/courses/{course}/students/{course_student}/performances_pdf', [TeachingCourseController::class, 'studentPerformancesPdf']);
         Route::delete('/admin/teaching/courses/{course}/curriculum', [TeachingCourseCurriculumController::class, 'destroy']);
         Route::apiResource('/admin/teaching/courses', TeachingCourseController::class);

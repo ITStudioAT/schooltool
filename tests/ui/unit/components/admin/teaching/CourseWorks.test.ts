@@ -62,6 +62,65 @@ describe('CourseWorks title rendering', () => {
         expect(source).toContain('class="work-actions d-flex align-center ga-1"')
     })
 
+    it('renders and edits the finish-until date', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const watcher = (CourseWorks as any).watch['work_form.finish_until_date']
+        const ctx = {
+            work_form: {
+                finish_until_date: new Date(2026, 4, 20),
+            },
+            toDateString: (date: Date) => [
+                date.getFullYear(),
+                String(date.getMonth() + 1).padStart(2, '0'),
+                String(date.getDate()).padStart(2, '0'),
+            ].join('-'),
+        }
+
+        watcher.call(ctx, ctx.work_form.finish_until_date)
+
+        expect(source).toContain('v-model="work_form.finish_until_date" clearable label="Fertig bis"')
+        expect(source).toContain('Fertig bis {{ formatDate(work.finish_until_date) }}')
+        expect(ctx.work_form.finish_until_date).toBe('2026-05-20')
+    })
+
+    it('defaults the finish-until date when the work date is first selected', () => {
+        const watcher = (CourseWorks as any).watch['work_form.date_for_all_groups']
+        const ctx = {
+            is_initializing_form: false,
+            normalizeDateString: (date: string) => date,
+            work_form: {
+                date_for_all_groups: '2026-05-16',
+                finish_until_date: '',
+                groups: [],
+            },
+        }
+
+        watcher.call(ctx, ctx.work_form.date_for_all_groups)
+
+        expect(ctx.work_form.finish_until_date).toBe('2026-05-16')
+    })
+
+    it('preserves a manually selected finish-until date when the work date changes', () => {
+        const watcher = (CourseWorks as any).watch['work_form.date_for_all_groups']
+        const ctx = {
+            is_initializing_form: false,
+            normalizeDateString: (date: string) => date,
+            work_form: {
+                date_for_all_groups: '2026-05-16',
+                finish_until_date: '2026-05-20',
+                groups: [],
+            },
+        }
+
+        watcher.call(ctx, ctx.work_form.date_for_all_groups)
+
+        expect(ctx.work_form.finish_until_date).toBe('2026-05-20')
+    })
+
     it('opens a specific work from the route query after jumping from dates', () => {
         const componentPath = resolve(
             process.cwd(),

@@ -2,10 +2,99 @@ export const allCategoriesValue = '__all_categories__'
 export const reminderCategoryName = 'Termine'
 export const screenshotCategoryName = 'Screenshots'
 export const linkCategoryName = 'Links'
+export const fileCategoryName = 'Dateien'
 export const noteCategoryName = 'Notizen'
 
 function normalizedCategory(category) {
     return String(category || '').trim().toLocaleLowerCase('de-AT')
+}
+
+function normalizedSearchText(value) {
+    return String(value || '')
+        .normalize('NFKD')
+        .replace(/\p{Diacritic}/gu, '')
+        .replace(/ß/gu, 'ss')
+        .toLocaleLowerCase('de-AT')
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim()
+        .replace(/\s+/gu, ' ')
+}
+
+function editDistance(firstValue, secondValue) {
+    const first = Array.from(firstValue)
+    const second = Array.from(secondValue)
+    const distances = Array.from(
+        { length: first.length + 1 },
+        (_, row) => Array.from({ length: second.length + 1 }, (_, column) => (row === 0 ? column : row)),
+    )
+
+    for (let row = 1; row <= first.length; row += 1) {
+        for (let column = 1; column <= second.length; column += 1) {
+            const substitutionCost = first[row - 1] === second[column - 1] ? 0 : 1
+            distances[row][column] = Math.min(
+                distances[row - 1][column] + 1,
+                distances[row][column - 1] + 1,
+                distances[row - 1][column - 1] + substitutionCost,
+            )
+
+            if (
+                row > 1
+                && column > 1
+                && first[row - 1] === second[column - 2]
+                && first[row - 2] === second[column - 1]
+            ) {
+                distances[row][column] = Math.min(
+                    distances[row][column],
+                    distances[row - 2][column - 2] + substitutionCost,
+                )
+            }
+        }
+    }
+
+    return distances[first.length][second.length]
+}
+
+export function fuzzyTextMatch(value, query) {
+    const normalizedValue = normalizedSearchText(value)
+    const normalizedQuery = normalizedSearchText(query)
+
+    if (normalizedQuery === '') {
+        return true
+    }
+
+    const compactValue = normalizedValue.replaceAll(' ', '')
+    const compactQuery = normalizedQuery.replaceAll(' ', '')
+
+    if (compactValue.includes(compactQuery)) {
+        return true
+    }
+
+    if (compactQuery.length < 3) {
+        return false
+    }
+
+    const allowedDistance = compactQuery.length <= 4
+        ? 1
+        : compactQuery.length <= 10
+            ? 2
+            : 3
+    const comparableValues = [compactValue, ...normalizedValue.split(' ')]
+
+    return comparableValues.some((candidate) => {
+        const lengthDifference = Math.abs(candidate.length - compactQuery.length)
+        if (
+            lengthDifference <= allowedDistance
+            && editDistance(candidate, compactQuery) <= allowedDistance
+        ) {
+            return true
+        }
+
+        if (candidate.length < compactQuery.length) {
+            return false
+        }
+
+        return editDistance(candidate.slice(0, compactQuery.length), compactQuery) <= allowedDistance
+    })
 }
 
 export function isReminderCategory(category) {
@@ -20,6 +109,10 @@ export function isLinkCategory(category) {
     return normalizedCategory(category) === linkCategoryName.toLocaleLowerCase('de-AT')
 }
 
+export function isFileCategory(category) {
+    return normalizedCategory(category) === fileCategoryName.toLocaleLowerCase('de-AT')
+}
+
 export function isNoteCategory(category) {
     return normalizedCategory(category) === noteCategoryName.toLocaleLowerCase('de-AT')
 }
@@ -28,7 +121,12 @@ export function isDefaultCategory(category) {
     return isReminderCategory(category)
         || isScreenshotCategory(category)
         || isLinkCategory(category)
+        || isFileCategory(category)
         || isNoteCategory(category)
+}
+
+export function supportsDocumentProcessing(category) {
+    return isFileCategory(category) || !isDefaultCategory(category)
 }
 
 export function categoryIcon(category) {
@@ -42,6 +140,10 @@ export function categoryIcon(category) {
 
     if (isNoteCategory(category)) {
         return 'mdi-note-text-outline'
+    }
+
+    if (isFileCategory(category)) {
+        return 'mdi-file-multiple-outline'
     }
 
     return isLinkCategory(category) ? 'mdi-link-variant' : 'mdi-shape-outline'
@@ -60,6 +162,10 @@ export function createActionIcon(category) {
         return 'mdi-note-text-outline'
     }
 
+    if (isFileCategory(category)) {
+        return 'mdi-file-plus-outline'
+    }
+
     return isLinkCategory(category) ? 'mdi-link-plus' : 'mdi-plus'
 }
 
@@ -74,6 +180,10 @@ export function createActionLabel(category, fallback) {
 
     if (isNoteCategory(category)) {
         return 'Notiz hinzufügen'
+    }
+
+    if (isFileCategory(category)) {
+        return 'Dateien hinzufügen'
     }
 
     return isLinkCategory(category) ? 'Link hinzufügen' : fallback

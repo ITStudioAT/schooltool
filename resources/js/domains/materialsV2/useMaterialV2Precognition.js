@@ -4,6 +4,7 @@ import { materialsV2Api } from './api'
 const initialData = {
     title: '',
     category: '',
+    cluster_name: null,
     description: null,
     reminder_date: null,
     reminder_time: null,
@@ -27,6 +28,7 @@ export function useMaterialV2Precognition({ dialog, source }) {
         form.setData({
             title: String(source.title || '').trim(),
             category: String(source.category || '').trim() || null,
+            cluster_name: String(source.clusterName || '').trim() || null,
             description: String(source.description || '').trim() || null,
             reminder_date: String(source.reminderDate || '').trim() || null,
             reminder_time: String(source.reminderTime || '').trim() || null,

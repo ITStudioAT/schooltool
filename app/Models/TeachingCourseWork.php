@@ -22,12 +22,14 @@ class TeachingCourseWork extends Model
         'group_size',
         'is_random_groups',
         'date_for_all_groups',
+        'finish_until_date',
         'groups',
         'status',
     ];
 
     protected $casts = [
         'date_for_all_groups' => 'date:Y-m-d',
+        'finish_until_date' => 'date:Y-m-d',
         'is_group_work' => 'boolean',
         'group_size' => 'integer',
         'is_random_groups' => 'boolean',

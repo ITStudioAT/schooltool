@@ -24,6 +24,8 @@ class MaterialV2UpdateRequest extends FormRequest
             'title' => ['required', 'string', 'max:255'],
             'category' => ['nullable', 'string', 'max:255'],
             'force_new_category' => ['sometimes', 'boolean'],
+            'cluster_name' => ['nullable', 'string', 'max:255'],
+            'force_new_cluster' => ['sometimes', 'boolean'],
             'description' => $isNote
                 ? ['required', 'string', 'max:10000']
                 : ['nullable', 'string', 'max:10000'],

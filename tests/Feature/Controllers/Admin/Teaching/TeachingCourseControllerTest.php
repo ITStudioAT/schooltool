@@ -24,6 +24,7 @@ use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseWork;
 use App\Models\TeachingCourseWorkGroupStudent;
 use App\Models\TeachingCurriculum;
 use App\Models\TeachingEntryArea;
@@ -857,6 +858,156 @@ describe('index', function () {
             ->and($entryBlockedStudent['remove_block_reason'])->toContain('abhängige Einträge')
             ->and($attendanceBlockedStudent['is_removable'])->toBeFalse()
             ->and($attendanceBlockedStudent['remove_block_reason'])->toContain('abhängige Einträge');
+    });
+});
+
+describe('course overview pdf', function () {
+    test('does not use typography smaller than nine points', function () {
+        $viewSource = collect([
+            resource_path('views/pdfs/teachingCourseOverview.blade.php'),
+            resource_path('views/pdfs/teachingCourseOverviewHeader.blade.php'),
+            resource_path('views/pdfs/teachingCourseOverviewFooter.blade.php'),
+        ])
+            ->map(fn (string $path): string => file_get_contents($path))
+            ->implode("\n");
+
+        preg_match_all('/font-size:\s*([\d.]+)pt/', $viewSource, $matches);
+
+        $fontSizes = collect($matches[1])
+            ->map(fn (string $fontSize): float => (float) $fontSize)
+            ->all();
+
+        expect($fontSizes)
+            ->not->toBeEmpty()
+            ->each(fn ($fontSize) => $fontSize->toBeGreaterThanOrEqual(9.0))
+            ->and(preg_match('/font-size:\s*[\d.]+px/', $viewSource))
+            ->toBe(0);
+    });
+
+    test('returns a designed A4 landscape overview for the selected semester', function () {
+        Pdf::fake();
+
+        $this->schoolyear->update([
+            'sem_2_start' => '2026-02-01',
+        ]);
+
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'first_name' => 'Anna',
+            'last_name' => 'Beispiel',
+            'schoolclass' => '2A',
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'title' => 'Mathematik',
+            'classes' => ['2A'],
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+        ]);
+
+        TeachingCourseDate::query()->create([
+            'teaching_course_id' => $course->id,
+            'date' => '2026-01-05',
+            'hours' => [1, 2],
+            'content' => 'Einführung',
+        ]);
+        TeachingCourseDate::query()->create([
+            'teaching_course_id' => $course->id,
+            'date' => '2026-01-08',
+            'hours' => [1, 2],
+            'content' => 'Übungsphase',
+        ]);
+        $semesterOneDate = TeachingCourseDate::query()->create([
+            'teaching_course_id' => $course->id,
+            'date' => '2026-01-12',
+            'hours' => [1, 2],
+            'content' => '<p>Lineare Gleichungen</p>',
+            'attendance' => [(string) $student->id => false],
+            'attendance_checked' => true,
+        ]);
+        TeachingCourseDate::query()->create([
+            'teaching_course_id' => $course->id,
+            'date' => '2026-02-09',
+            'hours' => [3],
+            'content' => 'Quadratische Funktionen',
+        ]);
+
+        TeachingCourseDateMaterial::query()->create([
+            'teaching_course_date_id' => $semesterOneDate->id,
+            'title' => 'Algebra: Gleichungen lösen',
+            'material_title' => 'Algebra: Gleichungen lösen',
+            'type' => 'unit',
+        ]);
+
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $course->id,
+            'type' => 'SA',
+            'title' => 'Gleichungen',
+            'date_for_all_groups' => '2026-01-05',
+            'finish_until_date' => '2026-01-12',
+        ]);
+
+        TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'teaching_course_work_id' => $work->id,
+            'date' => '2026-01-12',
+            'type' => 'SA',
+            'grade' => '2',
+            'description' => 'Sicher gelöst',
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->get("/api/admin/teaching/courses/{$course->id}/overview_pdf?semester=1")
+            ->assertSuccessful();
+
+        Pdf::assertRespondedWithPdf(function ($pdf): bool {
+            $workLane = $pdf->viewData['date_sections'][0]['work_lanes'][0] ?? null;
+
+            return $pdf->viewName === 'pdfs.teachingCourseOverview'
+                && $pdf->headerViewName === 'pdfs.teachingCourseOverviewHeader'
+                && $pdf->footerViewName === 'pdfs.teachingCourseOverviewFooter'
+                && $pdf->format === 'a4'
+                && $pdf->orientation === 'Landscape'
+                && $pdf->viewData['period_label'] === '1. Semester'
+                && $pdf->viewData['date_count'] === 3
+                && $pdf->viewData['student_count'] === 1
+                && $workLane['has_timeline'] === true
+                && $workLane['cells'][0]['is_start'] === true
+                && $workLane['cells'][1]['is_arrow'] === true
+                && $workLane['cells'][2]['is_finish'] === true
+                && $pdf->contains('Lineare Gleichungen')
+                && $pdf->contains('Gleichungen lösen')
+                && $pdf->contains('Beispiel, Anna')
+                && $pdf->contains('work-timeline-arrow')
+                && ! $pdf->contains('Quadratische Funktionen');
+        });
+    });
+
+    test('requires a supported semester value', function () {
+        Pdf::fake();
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->getJson("/api/admin/teaching/courses/{$course->id}/overview_pdf?semester=4")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('semester');
     });
 });
 

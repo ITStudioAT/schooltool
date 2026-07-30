@@ -149,7 +149,9 @@
                             <v-list-item
                                 v-for="student in sortedSelectedStudents"
                                 :key="student.id"
-                                :class="show_bulk_entry ? '' : ''">
+                                :link="!show_bulk_entry"
+                                :class="{ 'student-list-item--clickable': !show_bulk_entry }"
+                                @click="openStudentFromCard(student)">
                                 <div class="student-row d-flex flex-wrap align-center ga-2 w-100" :class="{ 'student-row--canceled': isStudentCanceled(student) }">
                                     <v-checkbox
                                         v-if="show_bulk_entry"
@@ -176,8 +178,7 @@
                                     </v-chip>
                                     <div
                                         class="student-name"
-                                        :class="[show_bulk_entry ? '' : 'cursor-pointer', studentNameClass(student)]"
-                                        @click="show_bulk_entry ? null : openStudent(student)">
+                                        :class="studentNameClass(student)">
                                         <div class="student-name-line">
                                             <span class="student-name-text">
                                                 {{ student.last_name }}, {{ student.first_name }}
@@ -250,7 +251,12 @@
                     </v-card-text>
                     <v-card-text class="pa-0" v-else>
                         <v-list density="compact">
-                            <v-list-item v-for="item in dayOverviewStudents" :key="`day-overview-${item.student.id}`">
+                            <v-list-item
+                                v-for="item in dayOverviewStudents"
+                                :key="`day-overview-${item.student.id}`"
+                                link
+                                class="student-list-item--clickable"
+                                @click="openStudent(item.student)">
                                 <div class="d-flex flex-column ga-2 w-100 py-1">
                                     <div class="d-flex align-center ga-2 flex-wrap">
                                         <v-chip v-if="item.student.schoolclass || item.student.class" size="x-small" variant="tonal" color="primary">
@@ -1511,6 +1517,11 @@ export default {
             this.selected_course_student = student
             this.action_2 = 'course_student_view'
         },
+        openStudentFromCard(student) {
+            if (this.show_bulk_entry) return
+
+            this.openStudent(student)
+        },
         selectPrevCourseDate() {
             if (!this.hasPrevCourseDate) return
             const date = this.sortedCourseDates[this.selectedCourseDateIndex - 1] || null
@@ -1540,6 +1551,19 @@ export default {
 .students-grid {
     padding: 8px;
     gap: 8px;
+}
+
+.student-list-item--clickable {
+    cursor: pointer;
+}
+
+.student-list-item--clickable:focus-visible {
+    outline: none;
+}
+
+.student-list-item--clickable:focus-visible .student-row {
+    border-color: rgba(37, 99, 235, 0.5);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2), 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
 @media (min-width: 900px) {

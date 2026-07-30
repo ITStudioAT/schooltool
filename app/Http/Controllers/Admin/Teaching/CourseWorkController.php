@@ -59,6 +59,7 @@ class CourseWorkController extends Controller
         }
 
         $validated = $request->validate($this->workValidationRules($typeRules, true, $course));
+        $validated['finish_until_date'] ??= $validated['date_for_all_groups'] ?? null;
 
         $validated = $workService->prepareWorkData($validated, $course, (int) $auth_user->school_id);
 
@@ -157,6 +158,7 @@ class CourseWorkController extends Controller
             'group_size' => "nullable|integer|min:2|max:{$maximumGroupSize}",
             'is_random_groups' => 'sometimes|boolean',
             'date_for_all_groups' => 'nullable|date',
+            'finish_until_date' => 'nullable|date',
             'groups' => 'nullable|array',
             'groups.*.student_ids' => 'nullable|array',
             'groups.*.student_ids.*' => 'integer',

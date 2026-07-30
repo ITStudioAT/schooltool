@@ -15,6 +15,7 @@ use App\Models\TeachingCurriculum;
 use App\Models\TeachingEntryArea;
 use App\Models\User;
 use App\Services\TeachingClassHeadEmailService;
+use App\Services\TeachingCourseOverviewPdfService;
 use App\Services\TeachingCourseService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingService;
@@ -159,6 +160,24 @@ class TeachingCourseController extends Controller
         }
 
         return $service->downloadCourse($course, $courseStudent);
+    }
+
+    public function courseOverviewPdf(
+        Request $request,
+        TeachingCourse $course,
+        TeachingCourseOverviewPdfService $service
+    ): Responsable {
+        if (! $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        Gate::authorize('view', $course);
+
+        $validated = $request->validate([
+            'semester' => ['required', 'integer', Rule::in([1, 2, 3])],
+        ]);
+
+        return $service->download($course, (int) $validated['semester']);
     }
 
     public function courseGradesPdf(

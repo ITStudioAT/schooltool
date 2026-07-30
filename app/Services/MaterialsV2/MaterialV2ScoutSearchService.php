@@ -16,6 +16,7 @@ class MaterialV2ScoutSearchService
         int $page,
         int $perPage,
         string $category = '',
+        int $clusterId = 0,
         string $reminderFrom = '',
         string $reminderTo = '',
         string $reminderOrder = '',
@@ -29,6 +30,7 @@ class MaterialV2ScoutSearchService
                 page: $page,
                 perPage: $perPage,
                 category: $normalizedCategory,
+                clusterId: $clusterId,
                 reminderFrom: $reminderFrom,
                 reminderTo: $reminderTo,
                 reminderOrder: $reminderOrder,
@@ -39,6 +41,7 @@ class MaterialV2ScoutSearchService
             ->query(function (Builder $query) use (
                 $user,
                 $normalizedCategory,
+                $clusterId,
                 $reminderFrom,
                 $reminderTo,
             ): void {
@@ -49,6 +52,7 @@ class MaterialV2ScoutSearchService
                 $this->applyFilters(
                     query: $query,
                     category: $normalizedCategory,
+                    clusterId: $clusterId,
                     reminderFrom: $reminderFrom,
                     reminderTo: $reminderTo,
                 );
@@ -61,6 +65,7 @@ class MaterialV2ScoutSearchService
         int $page,
         int $perPage,
         string $category,
+        int $clusterId,
         string $reminderFrom,
         string $reminderTo,
         string $reminderOrder,
@@ -69,7 +74,7 @@ class MaterialV2ScoutSearchService
             ->whereBelongsTo($user)
             ->where('school_id', $user->school_id);
 
-        $this->applyFilters($query, $category, $reminderFrom, $reminderTo);
+        $this->applyFilters($query, $category, $clusterId, $reminderFrom, $reminderTo);
 
         if (
             $category === MaterialV2CategoryService::REMINDER_CATEGORY
@@ -106,14 +111,19 @@ class MaterialV2ScoutSearchService
     private function applyFilters(
         Builder $query,
         string $category,
+        int $clusterId,
         string $reminderFrom,
         string $reminderTo,
     ): void {
         $query
-            ->with(['attachments', 'automaticTagSuggestions'])
+            ->with(['attachments', 'automaticTagSuggestions', 'cluster'])
             ->when(
                 $category !== '',
                 fn (Builder $query): Builder => $query->where('category', $category),
+            )
+            ->when(
+                $clusterId > 0,
+                fn (Builder $query): Builder => $query->where('material_v2_cluster_id', $clusterId),
             )
             ->when(
                 $reminderFrom !== '',

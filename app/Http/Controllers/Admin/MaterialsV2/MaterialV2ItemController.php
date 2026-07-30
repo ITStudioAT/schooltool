@@ -11,10 +11,12 @@ use App\Http\Requests\Admin\MaterialsV2\MaterialV2UpdateRequest;
 use App\Http\Resources\Admin\MaterialsV2\MaterialV2ItemResource;
 use App\Jobs\MaterialsV2\ProcessMaterialV2Item;
 use App\Models\MaterialV2Attachment;
+use App\Models\MaterialV2Cluster;
 use App\Models\MaterialV2Item;
 use App\Models\User;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\MaterialsV2\MaterialV2CategoryService;
+use App\Services\MaterialsV2\MaterialV2ClusterService;
 use App\Services\MaterialsV2\MaterialV2KeywordService;
 use App\Services\MaterialsV2\MaterialV2ScoutSearchService;
 use App\Services\MaterialsV2\MaterialV2StorageService;
@@ -34,6 +36,7 @@ class MaterialV2ItemController extends Controller
     public function config(
         Request $request,
         MaterialV2CategoryService $categoryService,
+        MaterialV2ClusterService $clusterService,
     ): JsonResponse {
         /** @var User $user */
         $user = $request->user();
@@ -46,6 +49,7 @@ class MaterialV2ItemController extends Controller
             'max_file_upload_size_kb' => $maxUploadSizeKb > 0 ? $maxUploadSizeKb : 20480,
             'categories' => collect($categoryDetails)->pluck('name')->all(),
             'category_details' => $categoryDetails,
+            'cluster_details' => $clusterService->clusterDetails($user),
             'automatic_tag_extraction' => 'local',
             'ai_keyword_enrichment' => false,
         ]);
@@ -65,6 +69,7 @@ class MaterialV2ItemController extends Controller
             page: (int) ($validated['page'] ?? 1),
             perPage: (int) ($validated['per_page'] ?? 18),
             category: trim((string) ($validated['category'] ?? '')),
+            clusterId: (int) ($validated['cluster_id'] ?? 0),
             reminderFrom: trim((string) ($validated['reminder_from'] ?? '')),
             reminderTo: trim((string) ($validated['reminder_to'] ?? '')),
             reminderOrder: trim((string) ($validated['reminder_order'] ?? '')),
@@ -77,6 +82,7 @@ class MaterialV2ItemController extends Controller
         MaterialV2StoreRequest $request,
         MaterialV2StorageService $storageService,
         MaterialV2CategoryService $categoryService,
+        MaterialV2ClusterService $clusterService,
     ): JsonResponse {
         /** @var User $user */
         $user = $request->user();
@@ -99,6 +105,20 @@ class MaterialV2ItemController extends Controller
         $isNote = $categoryService->isNoteCategory($categoryResolution['category']);
         $skipsProcessing = $isReminder || $isScreenshot || $isLink || $isNote;
         $this->validateReminder($validated, $isReminder);
+        $this->validateClusterAssignment(
+            $validated['cluster_name'] ?? null,
+            $categoryResolution['category'],
+            $categoryService,
+        );
+        $clusterResolution = $clusterService->resolve(
+            $user,
+            $validated['cluster_name'] ?? null,
+            (bool) ($validated['force_new_cluster'] ?? false),
+        );
+
+        if ($clusterResolution['suggestion'] !== null) {
+            return $this->clusterConflictResponse($clusterResolution);
+        }
 
         $item = DB::transaction(function () use (
             $user,
@@ -106,13 +126,17 @@ class MaterialV2ItemController extends Controller
             $files,
             $storageService,
             $categoryResolution,
+            $clusterResolution,
+            $clusterService,
             $isReminder,
             $isLink,
             $skipsProcessing,
         ): MaterialV2Item {
+            $cluster = $clusterService->persist($user, $clusterResolution);
             $item = MaterialV2Item::query()->create([
                 'school_id' => $user->school_id,
                 'user_id' => $user->id,
+                'material_v2_cluster_id' => $cluster?->id,
                 'title' => Str::squish($validated['title']),
                 'category' => $categoryResolution['category'],
                 'description' => $this->nullableString($validated['description'] ?? null),
@@ -142,7 +166,7 @@ class MaterialV2ItemController extends Controller
             $this->dispatchProcessing($item);
         }
 
-        return (new MaterialV2ItemResource($item->load(['attachments', 'automaticTagSuggestions'])))
+        return (new MaterialV2ItemResource($item->load(['attachments', 'automaticTagSuggestions', 'cluster'])))
             ->response()
             ->setStatusCode(201);
     }
@@ -152,7 +176,7 @@ class MaterialV2ItemController extends Controller
         $this->authorizeItem($request, $materialV2Item);
 
         return new MaterialV2ItemResource(
-            $materialV2Item->load(['attachments', 'automaticTagSuggestions']),
+            $materialV2Item->load(['attachments', 'automaticTagSuggestions', 'cluster']),
         );
     }
 
@@ -160,6 +184,7 @@ class MaterialV2ItemController extends Controller
         MaterialV2UpdateRequest $request,
         MaterialV2Item $materialV2Item,
         MaterialV2CategoryService $categoryService,
+        MaterialV2ClusterService $clusterService,
         MaterialV2KeywordService $keywordService,
     ): MaterialV2ItemResource|JsonResponse {
         $this->authorizeItem($request, $materialV2Item);
@@ -182,6 +207,21 @@ class MaterialV2ItemController extends Controller
         $isNote = $categoryService->isNoteCategory($categoryResolution['category']);
         $skipsProcessing = $isReminder || $isScreenshot || $isLink || $isNote;
         $this->validateReminder($validated, $isReminder);
+        $this->validateClusterAssignment(
+            $validated['cluster_name'] ?? null,
+            $categoryResolution['category'],
+            $categoryService,
+        );
+        $clusterResolution = $clusterService->resolve(
+            $user,
+            $validated['cluster_name'] ?? null,
+            (bool) ($validated['force_new_cluster'] ?? false),
+        );
+
+        if ($clusterResolution['suggestion'] !== null) {
+            return $this->clusterConflictResponse($clusterResolution);
+        }
+
         $previousTitle = $materialV2Item->title;
         $previousDescription = $materialV2Item->description;
         $wasReminder = $categoryService->isReminderCategory($materialV2Item->category);
@@ -190,21 +230,36 @@ class MaterialV2ItemController extends Controller
         $wasNote = $categoryService->isNoteCategory($materialV2Item->category);
         $previouslySkippedProcessing = $wasReminder || $wasScreenshot || $wasLink || $wasNote;
 
-        $materialV2Item->update([
-            'title' => Str::squish($validated['title']),
-            'category' => $categoryResolution['category'],
-            'description' => $this->nullableString($validated['description'] ?? null),
-            'reminder_date' => $isReminder ? $validated['reminder_date'] : null,
-            'reminder_time' => $isReminder
-                ? $this->nullableString($validated['reminder_time'] ?? null)
-                : null,
-            'link_url' => $isLink
-                ? $this->nullableString($validated['link_url'] ?? null)
-                : null,
-            'user_keywords' => $skipsProcessing
-                ? []
-                : $this->normalizeKeywords($validated['user_keywords'] ?? []),
-        ]);
+        DB::transaction(function () use (
+            $clusterService,
+            $user,
+            $clusterResolution,
+            $materialV2Item,
+            $validated,
+            $categoryResolution,
+            $isReminder,
+            $isLink,
+            $skipsProcessing,
+        ): void {
+            $cluster = $clusterService->persist($user, $clusterResolution);
+
+            $materialV2Item->update([
+                'material_v2_cluster_id' => $cluster?->id,
+                'title' => Str::squish($validated['title']),
+                'category' => $categoryResolution['category'],
+                'description' => $this->nullableString($validated['description'] ?? null),
+                'reminder_date' => $isReminder ? $validated['reminder_date'] : null,
+                'reminder_time' => $isReminder
+                    ? $this->nullableString($validated['reminder_time'] ?? null)
+                    : null,
+                'link_url' => $isLink
+                    ? $this->nullableString($validated['link_url'] ?? null)
+                    : null,
+                'user_keywords' => $skipsProcessing
+                    ? []
+                    : $this->normalizeKeywords($validated['user_keywords'] ?? []),
+            ]);
+        });
 
         $requiresTagExtraction = ! $skipsProcessing && (
             $previousTitle !== $materialV2Item->title
@@ -232,7 +287,7 @@ class MaterialV2ItemController extends Controller
         }
 
         return new MaterialV2ItemResource(
-            $materialV2Item->load(['attachments', 'automaticTagSuggestions']),
+            $materialV2Item->load(['attachments', 'automaticTagSuggestions', 'cluster']),
         );
     }
 
@@ -274,7 +329,7 @@ class MaterialV2ItemController extends Controller
         $this->dispatchProcessing($materialV2Item);
 
         return new MaterialV2ItemResource(
-            $materialV2Item->load(['attachments', 'automaticTagSuggestions']),
+            $materialV2Item->load(['attachments', 'automaticTagSuggestions', 'cluster']),
         );
     }
 
@@ -345,7 +400,7 @@ class MaterialV2ItemController extends Controller
         );
 
         return new MaterialV2ItemResource(
-            $materialV2Item->refresh()->load(['attachments', 'automaticTagSuggestions']),
+            $materialV2Item->refresh()->load(['attachments', 'automaticTagSuggestions', 'cluster']),
         );
     }
 
@@ -361,7 +416,7 @@ class MaterialV2ItemController extends Controller
         );
 
         return new MaterialV2ItemResource(
-            $materialV2Item->refresh()->load(['attachments', 'automaticTagSuggestions']),
+            $materialV2Item->refresh()->load(['attachments', 'automaticTagSuggestions', 'cluster']),
         );
     }
 
@@ -449,6 +504,24 @@ class MaterialV2ItemController extends Controller
     }
 
     /**
+     * @param  array{
+     *     name:?string,
+     *     cluster:?MaterialV2Cluster,
+     *     suggestion:?MaterialV2Cluster
+     * }  $clusterResolution
+     */
+    private function clusterConflictResponse(array $clusterResolution): JsonResponse
+    {
+        return response()->json([
+            'message' => 'Ein ähnlicher Cluster ist bereits vorhanden.',
+            'cluster_suggestion' => [
+                'entered' => $clusterResolution['name'],
+                'existing' => $clusterResolution['suggestion']?->name,
+            ],
+        ], 409);
+    }
+
+    /**
      * @param  array{category:?string,suggestion:?string}  $categoryResolution
      */
     private function categoryConflictResponse(array $categoryResolution): JsonResponse
@@ -482,6 +555,20 @@ class MaterialV2ItemController extends Controller
         $normalized = trim((string) $value);
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    private function validateClusterAssignment(
+        mixed $clusterName,
+        ?string $category,
+        MaterialV2CategoryService $categoryService,
+    ): void {
+        if (! filled($clusterName) || $categoryService->isClusterableCategory($category)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'cluster_name' => 'Cluster können nur Termine, Screenshots, Links und Notizen enthalten.',
+        ]);
     }
 
     /**

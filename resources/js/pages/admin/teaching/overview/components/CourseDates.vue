@@ -397,6 +397,7 @@
                             class="course-curriculum-item pl-10"
                             :class="{
                                 'course-curriculum-item--selected': selectedCurriculumItemKey === unit.selectionKey,
+                                'course-curriculum-item--date-shine': isCurriculumUnitForSelectedCourseDate(unit),
                             }"
                             :prepend-icon="curriculumUnitPrependIcon(unit)"
                             :aria-pressed="selectedCurriculumItemKey === unit.selectionKey"
@@ -1408,6 +1409,12 @@ export default {
 
             return Boolean(selectedDate)
                 && String(assignment?.date) === String(selectedDate)
+        },
+        isCurriculumUnitForSelectedCourseDate(unit) {
+            return Array.isArray(unit?.assignedCourseDates)
+                && unit.assignedCourseDates.some((assignment) => (
+                    this.isCurriculumAssignmentForSelectedCourseDate(assignment)
+                ))
         },
         async loadCourseWorks() {
             const courseId = this.selected_course?.id
@@ -2765,6 +2772,84 @@ export default {
     border-color: var(--course-curriculum-purple);
     color: #fff;
     box-shadow: 0 7px 20px rgba(111, 66, 193, 0.34);
+}
+
+.course-curriculum-panel .course-curriculum-item--date-shine {
+    animation: curriculum-date-headlight-pulse 1.8s ease-in-out infinite;
+    background:
+        radial-gradient(circle at 14% 50%, rgba(255, 255, 255, 0.98) 0 5%, rgba(234, 255, 145, 0.95) 13%, rgba(168, 255, 58, 0.62) 32%, rgba(111, 66, 193, 0.15) 72%) !important;
+    border: 2px solid rgba(197, 255, 86, 0.96);
+    box-shadow:
+        inset 0 0 14px rgba(255, 255, 255, 0.92),
+        0 0 0 2px rgba(197, 255, 86, 0.24),
+        0 0 16px rgba(162, 255, 45, 0.78),
+        0 0 34px rgba(162, 255, 45, 0.48);
+    color: #17210b;
+    filter: saturate(1.25);
+    isolation: isolate;
+    overflow: hidden;
+    position: relative;
+    z-index: 2;
+}
+
+.course-curriculum-panel .course-curriculum-item--date-shine::after {
+    animation: curriculum-date-headlight-sweep 2.4s ease-in-out infinite;
+    background: linear-gradient(105deg, transparent 34%, rgba(255, 255, 255, 0.88) 49%, transparent 64%);
+    content: '';
+    inset: -55% -35%;
+    pointer-events: none;
+    position: absolute;
+    transform: translateX(-72%);
+    z-index: 0;
+}
+
+.course-curriculum-panel .course-curriculum-item--date-shine :deep(.v-list-item__prepend),
+.course-curriculum-panel .course-curriculum-item--date-shine :deep(.v-list-item__content) {
+    position: relative;
+    z-index: 1;
+}
+
+@keyframes curriculum-date-headlight-pulse {
+    0%,
+    100% {
+        box-shadow:
+            inset 0 0 12px rgba(255, 255, 255, 0.88),
+            0 0 0 2px rgba(197, 255, 86, 0.2),
+            0 0 13px rgba(162, 255, 45, 0.68),
+            0 0 28px rgba(162, 255, 45, 0.38);
+    }
+
+    50% {
+        box-shadow:
+            inset 0 0 18px rgba(255, 255, 255, 1),
+            0 0 0 3px rgba(217, 255, 139, 0.36),
+            0 0 22px rgba(180, 255, 73, 0.96),
+            0 0 46px rgba(162, 255, 45, 0.64);
+    }
+}
+
+@keyframes curriculum-date-headlight-sweep {
+    0%,
+    20% {
+        transform: translateX(-72%);
+    }
+
+    70%,
+    100% {
+        transform: translateX(72%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .course-curriculum-panel .course-curriculum-item--date-shine,
+    .course-curriculum-panel .course-curriculum-item--date-shine::after {
+        animation: none;
+    }
+
+    .course-curriculum-panel .course-curriculum-item--date-shine::after {
+        opacity: 0.28;
+        transform: translateX(0);
+    }
 }
 
 .course-date-row--marked-blue {

@@ -7,6 +7,7 @@ import CourseTable from '@/pages/admin/teaching/overview/components/CourseTable.
 vi.mock('axios', () => ({
     default: {
         delete: vi.fn(),
+        get: vi.fn(),
         post: vi.fn(),
     },
 }))
@@ -498,12 +499,139 @@ describe('CourseTable', () => {
         expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-18' })).toEqual([])
     })
 
+    it('moves a work to its later finish date and draws its timeline', () => {
+        const methods = (CourseTable as any).methods
+        const work = {
+            id: 12,
+            type: 'SA',
+            title: 'Schularbeit',
+            is_group_work: false,
+            date_for_all_groups: '2026-05-16',
+            finish_until_date: '2026-05-20',
+            groups: [],
+        }
+        const ctx: Record<string, any> = {
+            courseWorks: [work],
+            sortedCourseDates: [
+                { date: '2026-05-16' },
+                { date: '2026-05-18' },
+                { date: '2026-05-20' },
+            ],
+            sortedSelectedStudents: [{ id: 1 }, { id: 2 }],
+        }
+        Object.assign(ctx, methods)
+
+        expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-16' })).toEqual([])
+        expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-20' }))
+            .toMatchObject([{ id: 12, affectedStudentCount: 2 }])
+        expect(methods.courseWorkTimelinesForDate.call(ctx, { date: '2026-05-16' }))
+            .toMatchObject([{ isStart: true, isMiddle: false, isArrow: false }])
+        expect(methods.courseWorkTimelinesForDate.call(ctx, { date: '2026-05-18' }))
+            .toMatchObject([{ isStart: false, isMiddle: false, isArrow: true }])
+        expect(methods.courseWorkTimelinesForDate.call(ctx, { date: '2026-05-20' }))
+            .toEqual([])
+    })
+
+    it('shows a work timeline only while its start or finish cell is active', () => {
+        const methods = (CourseTable as any).methods
+        const ctx: Record<string, any> = {
+            courseWorks: [{
+                id: 12,
+                date_for_all_groups: '2026-05-16',
+                finish_until_date: '2026-05-20',
+            }],
+            hoveredCourseWorkTimelineKeys: [],
+            sortedCourseDates: [
+                { date: '2026-05-16' },
+                { date: '2026-05-18' },
+                { date: '2026-05-20' },
+            ],
+        }
+        Object.assign(ctx, methods)
+
+        methods.activateCourseWorkTimelinesForDate.call(ctx, { date: '2026-05-16' })
+        expect(ctx.hoveredCourseWorkTimelineKeys).toEqual(['work-timeline-12'])
+        expect(methods.isCourseWorkTimelineVisible.call(ctx, { key: 'work-timeline-12' })).toBe(true)
+
+        methods.activateCourseWorkTimelinesForDate.call(ctx, { date: '2026-05-18' })
+        expect(ctx.hoveredCourseWorkTimelineKeys).toEqual([])
+
+        methods.activateCourseWorkTimelinesForDate.call(ctx, { date: '2026-05-20' })
+        expect(ctx.hoveredCourseWorkTimelineKeys).toEqual(['work-timeline-12'])
+
+        methods.clearHoveredCourseWorkTimelines.call(ctx)
+        expect(ctx.hoveredCourseWorkTimelineKeys).toEqual([])
+    })
+
+    it('keeps a work at its start when its later finish date has no table cell', () => {
+        const methods = (CourseTable as any).methods
+        const ctx: Record<string, any> = {
+            courseWorks: [{
+                id: 12,
+                type: 'SA',
+                is_group_work: false,
+                date_for_all_groups: '2026-05-16',
+                finish_until_date: '2026-05-19',
+                groups: [],
+            }],
+            sortedCourseDates: [
+                { date: '2026-05-16' },
+                { date: '2026-05-20' },
+            ],
+            sortedSelectedStudents: [],
+        }
+        Object.assign(ctx, methods)
+
+        expect(methods.courseWorksForDate.call(ctx, { date: '2026-05-16' })).toHaveLength(1)
+        expect(methods.courseWorkTimelinesForDate.call(ctx, { date: '2026-05-16' })).toEqual([])
+    })
+
+    it('renders the arrow one date cell before the finish work', () => {
+        const source = readFileSync(
+            resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/CourseTable.vue'),
+            'utf8',
+        )
+
+        expect(source).toContain('class="course-table-work-timelines"')
+        expect(source).toContain('class="course-table-work-timeline-dot"')
+        expect(source).toContain('class="course-table-work-timeline-line"')
+        expect(source).toContain('class="course-table-work-timeline-arrow"')
+        expect(source).toContain("'course-table-work-timeline--arrow': timeline.isArrow")
+        expect(source).toContain("'course-table-work-timeline--visible': isCourseWorkTimelineVisible(timeline)")
+        expect(source).toContain('@mouseenter="activateCourseWorkTimelinesForDate(courseDate)"')
+        expect(source).toContain('@mouseleave="clearHoveredCourseWorkTimelines"')
+        expect(source).toContain('height: 2px;')
+        expect(source).toContain('opacity: 0;')
+        expect(source).toContain('.course-table-work-timeline--visible .course-table-work-timeline-line,')
+        expect(source).toContain('.course-table-work-timeline--visible .course-table-work-timeline-arrow')
+        const dotStylesStart = source.indexOf('.course-table-work-timeline-dot {')
+        const dotStylesEnd = source.indexOf('}', dotStylesStart)
+
+        expect(dotStylesStart).toBeGreaterThan(-1)
+        expect(source.slice(dotStylesStart, dotStylesEnd)).not.toContain('opacity:')
+        expect(source).toContain('.course-table-work-timeline--start .course-table-work-timeline-line')
+        expect(source).not.toContain('.course-table-work-timeline--finish .course-table-work-timeline-line')
+    })
+
+    it('aligns the timeline arrow with the work entry height', () => {
+        const source = readFileSync(
+            resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/CourseTable.vue'),
+            'utf8',
+        )
+
+        expect(source).toContain('.course-table-work-timelines {')
+        expect(source).toContain('bottom: 22px;')
+        expect(source).toContain('position: absolute;')
+        expect(source).toContain('left: 50%;')
+        expect(source).toContain('translate: -50% 0;')
+    })
+
     it('keeps the add-work icon before existing works', () => {
         const source = readFileSync(
             resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/CourseTable.vue'),
             'utf8',
         )
-        const workListStart = source.indexOf('<div class="course-table-work-list">')
+        const workListStart = source.indexOf('class="course-table-work-list"')
         const addIconPosition = source.indexOf('class="course-table-work-empty-icon"', workListStart)
         const existingWorksPosition = source.indexOf('v-for="work in courseWorksForDate(courseDate)"', workListStart)
 
@@ -512,6 +640,9 @@ describe('CourseTable', () => {
         expect(existingWorksPosition).toBeGreaterThan(addIconPosition)
         expect(source.slice(workListStart, addIconPosition)).not.toContain('v-if="!courseWorksForDate(courseDate).length"')
         expect(source).toContain('@click.stop="openNewWorkDialog(courseDate)"')
+        expect(source).toContain("'course-table-work-list--has-work': courseWorksForDate(courseDate).length > 0")
+        expect(source).toContain('.course-table-work-list--has-work {')
+        expect(source).toContain('padding-top: 30px;')
     })
 
     it('labels work assigned to all groups as group work', () => {
@@ -767,6 +898,7 @@ describe('CourseTable', () => {
         const methods = (CourseTable as any).methods
         const ctx = {
             workDialogDateEditing: false,
+            workDialogFinishDateEditing: true,
             workDialogFormOpen: true,
             workSaving: false,
         }
@@ -774,6 +906,75 @@ describe('CourseTable', () => {
         methods.beginWorkDialogDateEditing.call(ctx)
 
         expect(ctx.workDialogDateEditing).toBe(true)
+        expect(ctx.workDialogFinishDateEditing).toBe(false)
+    })
+
+    it('opens finish-date editing when its chip is activated', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            workDialogDateEditing: true,
+            workDialogFinishDateEditing: false,
+            workDialogFormOpen: true,
+            workSaving: false,
+        }
+
+        methods.beginWorkDialogFinishDateEditing.call(ctx)
+
+        expect(ctx.workDialogDateEditing).toBe(false)
+        expect(ctx.workDialogFinishDateEditing).toBe(true)
+    })
+
+    it('applies and closes finish-date editing', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+            workDialogFinishDateEditing: true,
+            workDialogForm: {
+                finish_until_date: '2026-05-16',
+            },
+        }
+
+        methods.applyWorkDialogFinishDate.call(ctx, new Date(2026, 4, 23))
+
+        expect(ctx.workDialogForm.finish_until_date).toBe('2026-05-23')
+        expect(ctx.workDialogFinishDateEditing).toBe(false)
+    })
+
+    it('calculates and labels the calendar days between work dates', () => {
+        const methods = (CourseTable as any).methods
+        const computed = (CourseTable as any).computed
+        const dateContext = {
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+        }
+        const durationContext = {
+            workDialogFormOpen: true,
+            workDialogForm: {
+                date_for_all_groups: '2026-03-28',
+                finish_until_date: '2026-03-30',
+            },
+            calendarDaysBetween: (startDate: string, finishDate: string) => (
+                methods.calendarDaysBetween.call(dateContext, startDate, finishDate)
+            ),
+        }
+
+        expect(methods.calendarDaysBetween.call(dateContext, '2026-03-28', '2026-03-30')).toBe(2)
+        expect(computed.workDialogDurationDays.call(durationContext)).toBe(2)
+        expect(computed.workDialogDurationLabel.call({ workDialogDurationDays: 0 })).toBe('0 Tage')
+        expect(computed.workDialogDurationLabel.call({ workDialogDurationDays: 1 })).toBe('1 Tag')
+        expect(computed.workDialogDurationLabel.call({ workDialogDurationDays: 2 })).toBe('2 Tage')
+
+        const workContext = {
+            calendarDaysBetween: (startDate: string, finishDate: string) => (
+                methods.calendarDaysBetween.call(dateContext, startDate, finishDate)
+            ),
+        }
+
+        expect(methods.courseWorkDurationLabel.call(workContext, {
+            date_for_all_groups: '2026-03-28',
+            finish_until_date: '2026-04-04',
+        })).toBe('7 Tage')
     })
 
     it('edits only the selected work-group date', () => {
@@ -1133,6 +1334,7 @@ describe('CourseTable', () => {
             workDialogForm: {
                 date_for_all_groups: '',
                 description: 'Kapitel 4',
+                finish_until_date: new Date(2026, 4, 20),
                 groups: [],
                 group_size: null,
                 id: null,
@@ -1153,6 +1355,7 @@ describe('CourseTable', () => {
         expect(store).toHaveBeenCalledWith({
             date_for_all_groups: '2026-05-16',
             description: 'Kapitel 4',
+            finish_until_date: '2026-05-20',
             groups: [],
             group_size: null,
             id: null,
@@ -1167,6 +1370,46 @@ describe('CourseTable', () => {
         expect(loadCourseTableData).toHaveBeenCalledWith(20, true)
         expect(ctx.courseWorks).toEqual([{ id: 12 }])
         expect(ctx.workSaving).toBe(false)
+    })
+
+    it('defaults the finish-until date to the selected dialog date', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+            selected_course: { id: 20 },
+            workDialog: { courseDate: { date: '2026-05-16' }, open: true },
+        }
+
+        const form = methods.emptyDateWorkForm.call(ctx)
+
+        expect(form.date_for_all_groups).toBe('2026-05-16')
+        expect(form.finish_until_date).toBe('2026-05-16')
+    })
+
+    it('normalizes the finish-until date when a work is opened for editing', () => {
+        const methods = (CourseTable as any).methods
+        const ctx: Record<string, any> = {
+            cloneDateWorkGroups: methods.cloneDateWorkGroups,
+            emptyDateWorkForm: vi.fn().mockReturnValue({ groups: [] }),
+            isGeneratedEmptyIndividualWorkGroups: vi.fn().mockReturnValue(false),
+            normalizeDateKey: methods.normalizeDateKey,
+            dateKey: methods.dateKey,
+            workDialogForm: {},
+        }
+
+        methods.startEditingDateWork.call(ctx, {
+            id: 12,
+            date_for_all_groups: '2026-05-16',
+            finish_until_date: '2026-05-20T00:00:00.000000Z',
+            groups: [],
+            is_group_work: false,
+            status: [],
+            title: 'Schularbeit',
+            type: 'SA',
+        })
+
+        expect(ctx.workDialogForm.finish_until_date).toBe('2026-05-20')
     })
 
     it('updates a work while preserving its group assignments', async () => {
@@ -2946,6 +3189,51 @@ describe('CourseTable', () => {
         expect(methods.targetInitialScrollCourseDate.call(ctx, new Date(2026, 2, 20))).toEqual({ id: 3, date: '2026-03-16' })
     })
 
+    it('downloads the generated course overview pdf through the authenticated axios client', async () => {
+        const methods = (CourseTable as any).methods
+        const pdf = new Blob(['pdf'], { type: 'application/pdf' })
+        vi.mocked(axios.get).mockResolvedValue({
+            data: pdf,
+            headers: {
+                'content-disposition': 'attachment; filename="mathematik_uebersicht.pdf"',
+                'content-type': 'application/pdf',
+            },
+        })
+        const createObjectURL = vi.fn().mockReturnValue('blob:course-overview')
+        const revokeObjectURL = vi.fn()
+        Object.defineProperty(URL, 'createObjectURL', {
+            configurable: true,
+            value: createObjectURL,
+        })
+        Object.defineProperty(URL, 'revokeObjectURL', {
+            configurable: true,
+            value: revokeObjectURL,
+        })
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+        const context = {
+            courseOverviewPdfDownloading: false,
+            selected_course: { id: 16 },
+            selectedSemester: 2,
+            courseOverviewPdfDownloadName: methods.courseOverviewPdfDownloadName,
+            courseOverviewPdfUrl: methods.courseOverviewPdfUrl,
+        }
+
+        expect(methods.courseOverviewPdfUrl.call(context))
+            .toBe('/api/admin/teaching/courses/16/overview_pdf?semester=2')
+
+        await methods.downloadCourseOverviewPdf.call(context)
+
+        expect(axios.get).toHaveBeenCalledWith(
+            '/api/admin/teaching/courses/16/overview_pdf?semester=2',
+            { responseType: 'blob' },
+        )
+        expect(createObjectURL).toHaveBeenCalledWith(pdf)
+        expect(click).toHaveBeenCalledTimes(1)
+        expect(revokeObjectURL).toHaveBeenCalledWith('blob:course-overview')
+        expect(context.courseOverviewPdfDownloading).toBe(false)
+        click.mockRestore()
+    })
+
     it('renders a designed matrix with date columns and student rows', () => {
         const source = readFileSync(
             resolve('resources/js/pages/admin/teaching/overview/components/CourseTable.vue'),
@@ -2959,11 +3247,25 @@ describe('CourseTable', () => {
         expect(source).not.toContain('@update:model-value="changeTableView"')
         expect(source).toContain("tableView === 'attendance' ? 'Anwesenheiten' : 'Tabelle'")
         expect(source).toContain('data-testid="course-table-semester-selection"')
+        expect(source).toContain('class="w-100"')
+        expect(source).toContain('data-testid="course-table-overview-pdf-button"')
+        expect(source).toContain("import { courseOverviewPdf } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingCourseController'")
+        expect(source).toContain('prepend-icon="mdi-file-pdf-box"')
+        expect(source).toContain('title="Kursübersicht als PDF herunterladen"')
+        expect(source).toContain('variant="flat"')
+        expect(source).toContain(':loading="courseOverviewPdfDownloading"')
+        expect(source).toContain('@click="downloadCourseOverviewPdf"')
+        expect(source).toContain("responseType: 'blob'")
+        expect(source).toContain('PDF')
+        expect(source.indexOf('data-testid="course-table-overview-pdf-button"'))
+            .toBeLessThan(source.indexOf('<v-btn-toggle v-model="selectedSemester" mandatory'))
         expect(source).toContain('<v-btn-toggle v-model="selectedSemester" mandatory')
         expect(source).toContain('<v-btn :value="1" size="small">1. Sem</v-btn>')
         expect(source).toContain('<v-btn :value="2" size="small">2. Sem</v-btn>')
         expect(source).toContain('<v-btn :value="3" size="small">Sem 1+2</v-btn>')
         expect(source).toContain('position: sticky;')
+        expect(source).not.toContain('course-table-overview-printing')
+        expect(source).not.toContain('window.print()')
         expect(source).toContain('class="course-table-title-row"')
         expect(source).toContain('class="course-table-work-row"')
         expect(source).toContain('class="course-table-work-label-content"')
@@ -3027,7 +3329,7 @@ describe('CourseTable', () => {
         expect(source).toContain('@click="openWorkDialog(courseDate)"')
         expect(source).toContain('@keydown.enter.prevent="openWorkDialog(courseDate)"')
         expect(source).toContain('<v-dialog v-model="workDialog.open" persistent max-width="720">')
-        expect(source).toContain('data-testid="course-table-date-create-work"')
+        expect(source).not.toContain('data-testid="course-table-date-create-work"')
         expect(source).not.toContain('course-table-date-edit-work-${assignment.id}')
         expect(source).toContain('course-table-date-delete-work-${assignment.id}')
         expect(source).toContain('class="course-table-date-work-item cursor-pointer"')
@@ -3155,6 +3457,29 @@ describe('CourseTable', () => {
         expect(source).toContain('@update:model-value="applyWorkDialogDate"')
         expect(source).toContain('<template #day="{ item, props }">')
         expect(source).toContain("workDialogCourseDateKeys.includes(item.isoDate) ? 'primary' : props.color")
+        expect(source).toContain('data-testid="course-table-date-edit-work-finish-until"')
+        expect(source).toMatch(/<v-chip\s+v-else-if="workDialogFormOpen"\s+data-testid="course-table-date-edit-work-finish-until"/)
+        expect(source).toContain('Fertig bis {{ workDialogFinishDateTitle }}')
+        expect(source).toContain('data-testid="course-table-date-work-duration"')
+        expect(source).toContain('prepend-icon="mdi-timer-sand"')
+        expect(source).toContain('{{ workDialogDurationLabel }}')
+        expect(source).toContain(':data-testid="`course-table-date-work-duration-${assignment.work.id}`"')
+        expect(source).toContain('{{ courseWorkDurationLabel(assignment.work) }}')
+        expect(source).toContain('@click="beginWorkDialogFinishDateEditing"')
+        expect(source).toContain('@keydown.enter.prevent="beginWorkDialogFinishDateEditing"')
+        expect(source).toContain('data-testid="course-table-date-work-finish-until-input"')
+        expect(source).toContain('v-if="workDialogFormOpen && workDialogFinishDateEditing"')
+        expect(source).toContain('@update:model-value="applyWorkDialogFinishDate"')
+        const workDialogTitleEnd = source.indexOf(
+            '</v-card-title>',
+            source.indexOf('<v-dialog v-model="workDialog.open"'),
+        )
+        expect(source.indexOf('data-testid="course-table-date-work-finish-until-input"'))
+            .toBeLessThan(workDialogTitleEnd)
+        expect(source.indexOf('data-testid="course-table-date-edit-work-date"'))
+            .toBeLessThan(source.indexOf('data-testid="course-table-date-work-duration"'))
+        expect(source.indexOf('data-testid="course-table-date-work-duration"'))
+            .toBeLessThan(source.indexOf('data-testid="course-table-date-edit-work-finish-until"'))
         expect(source).toContain('@click="saveDateWork"')
         expect(source).toContain('@click="confirmDeleteDateWork"')
         expect(source.indexOf('class="course-table-title-row"')).toBeLessThan(source.indexOf('class="course-table-work-row"'))

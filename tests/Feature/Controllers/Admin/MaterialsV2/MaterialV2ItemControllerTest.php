@@ -92,15 +92,17 @@ it('creates a persistent user category without a material', function () {
         ->assertJsonPath('category_details.1.items_count', 0)
         ->assertJsonPath('category_details.2.name', 'Links')
         ->assertJsonPath('category_details.2.items_count', 0)
-        ->assertJsonPath('category_details.3.name', 'Notizen')
+        ->assertJsonPath('category_details.3.name', 'Dateien')
         ->assertJsonPath('category_details.3.items_count', 0)
-        ->assertJsonPath('category_details.4.name', 'Biologie')
-        ->assertJsonPath('category_details.4.items_count', 0);
+        ->assertJsonPath('category_details.4.name', 'Notizen')
+        ->assertJsonPath('category_details.4.items_count', 0)
+        ->assertJsonPath('category_details.5.name', 'Biologie')
+        ->assertJsonPath('category_details.5.items_count', 0);
 
     $this->actingAs($this->otherUser, 'sanctum')
         ->getJson('/api/admin/materials-v2/config')
         ->assertSuccessful()
-        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Notizen']);
+        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Dateien', 'Notizen']);
 
     $this->putJson('/api/admin/materials-v2/categories', [
         'original_name' => 'Biologie',
@@ -135,12 +137,14 @@ it('counts category items and only deletes an empty category', function () {
         ->assertJsonPath('category_details.1.items_count', 0)
         ->assertJsonPath('category_details.2.name', 'Links')
         ->assertJsonPath('category_details.2.items_count', 0)
-        ->assertJsonPath('category_details.3.name', 'Notizen')
+        ->assertJsonPath('category_details.3.name', 'Dateien')
         ->assertJsonPath('category_details.3.items_count', 0)
-        ->assertJsonPath('category_details.4.name', 'Biologie')
-        ->assertJsonPath('category_details.4.items_count', 2)
-        ->assertJsonPath('category_details.5.name', 'Mathematik')
-        ->assertJsonPath('category_details.5.items_count', 0);
+        ->assertJsonPath('category_details.4.name', 'Notizen')
+        ->assertJsonPath('category_details.4.items_count', 0)
+        ->assertJsonPath('category_details.5.name', 'Biologie')
+        ->assertJsonPath('category_details.5.items_count', 2)
+        ->assertJsonPath('category_details.6.name', 'Mathematik')
+        ->assertJsonPath('category_details.6.items_count', 0);
 
     $this->deleteJson('/api/admin/materials-v2/categories', ['name' => 'Biologie'])
         ->assertConflict();
@@ -178,7 +182,7 @@ it('warns instead of creating the same category with different casing', function
 
     $this->getJson('/api/admin/materials-v2/config')
         ->assertSuccessful()
-        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Notizen', 'Video']);
+        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Dateien', 'Notizen', 'Video']);
 });
 
 it('prefers the original material spelling over a legacy manual duplicate', function () {
@@ -199,7 +203,7 @@ it('prefers the original material spelling over a legacy manual duplicate', func
 
     $this->getJson('/api/admin/materials-v2/config')
         ->assertSuccessful()
-        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Notizen', 'Video']);
+        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Dateien', 'Notizen', 'Video']);
 });
 
 it('renames a category and updates its materials', function () {
@@ -227,7 +231,7 @@ it('renames a category and updates its materials', function () {
 
     $this->getJson('/api/admin/materials-v2/config')
         ->assertSuccessful()
-        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Notizen', 'Medien']);
+        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Dateien', 'Notizen', 'Medien']);
 });
 
 it('warns instead of renaming a category to an existing category', function () {
@@ -298,20 +302,97 @@ it('creates a standalone material with optional attachments', function () {
     Queue::assertPushed(ProcessMaterialV2Item::class, fn (ProcessMaterialV2Item $job): bool => $job->itemId === $item->id);
 });
 
+it('creates a file material with required protected uploads', function () {
+    Queue::fake();
+    Storage::fake('local');
+    $this->actingAs($this->user, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials-v2/items', [
+        'title' => 'Unterrichtsunterlagen',
+        'category' => 'dateien',
+        'cluster_name' => 'Unterrichtsplanung',
+        'description' => 'Arbeitsblatt und Notizen',
+        'user_keywords' => ['Unterricht'],
+        'attachments' => [
+            UploadedFile::fake()->createWithContent('arbeitsblatt.txt', 'Bruchrechnen und Dezimalzahlen'),
+            UploadedFile::fake()->createWithContent('notizen.md', '# Unterrichtsplanung'),
+        ],
+    ]);
+
+    $response
+        ->assertCreated()
+        ->assertJsonPath('data.category', 'Dateien')
+        ->assertJsonPath('data.cluster.name', 'Unterrichtsplanung')
+        ->assertJsonPath('data.processing_status', MaterialV2Item::STATUS_PENDING)
+        ->assertJsonPath('data.user_keywords.0', 'Unterricht')
+        ->assertJsonCount(2, 'data.attachments');
+
+    $item = MaterialV2Item::query()->sole();
+    $attachments = MaterialV2Attachment::query()->orderBy('id')->get();
+
+    expect($attachments)->toHaveCount(2)
+        ->and($attachments->pluck('original_name')->all())->toBe(['arbeitsblatt.txt', 'notizen.md'])
+        ->and($attachments->every(
+            fn (MaterialV2Attachment $attachment): bool => str_starts_with(
+                $attachment->path,
+                "materials-v2/{$this->school->id}/{$this->user->id}/{$item->id}/",
+            ),
+        ))->toBeTrue();
+
+    foreach ($attachments as $attachment) {
+        Storage::disk('local')->assertExists($attachment->path);
+    }
+
+    Queue::assertPushed(
+        ProcessMaterialV2Item::class,
+        fn (ProcessMaterialV2Item $job): bool => $job->itemId === $item->id,
+    );
+});
+
+it('requires an allowed file for file materials', function () {
+    Queue::fake();
+    Storage::fake('local');
+    $this->actingAs($this->user, 'sanctum');
+
+    $this->postJson('/api/admin/materials-v2/items', [
+        'title' => 'Leere Dateisammlung',
+        'category' => 'Dateien',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('attachments');
+
+    $this->postJson('/api/admin/materials-v2/items', [
+        'title' => 'Unsichere Dateisammlung',
+        'category' => 'Dateien',
+        'attachments' => [
+            UploadedFile::fake()->createWithContent('programm.exe', 'MZ executable'),
+        ],
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('attachments.0');
+
+    $this->assertDatabaseCount('material_v2_items', 0);
+    $this->assertDatabaseCount('material_v2_attachments', 0);
+    Storage::disk('local')->assertDirectoryEmpty('/');
+    Queue::assertNothingPushed();
+});
+
 it('provides protected default categories', function () {
     $this->actingAs($this->user, 'sanctum');
 
     $this->getJson('/api/admin/materials-v2/config')
         ->assertSuccessful()
-        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Notizen'])
+        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Dateien', 'Notizen'])
         ->assertJsonPath('category_details.0.name', 'Termine')
         ->assertJsonPath('category_details.0.items_count', 0)
         ->assertJsonPath('category_details.1.name', 'Screenshots')
         ->assertJsonPath('category_details.1.items_count', 0)
         ->assertJsonPath('category_details.2.name', 'Links')
         ->assertJsonPath('category_details.2.items_count', 0)
-        ->assertJsonPath('category_details.3.name', 'Notizen')
-        ->assertJsonPath('category_details.3.items_count', 0);
+        ->assertJsonPath('category_details.3.name', 'Dateien')
+        ->assertJsonPath('category_details.3.items_count', 0)
+        ->assertJsonPath('category_details.4.name', 'Notizen')
+        ->assertJsonPath('category_details.4.items_count', 0);
 
     $this->postJson('/api/admin/materials-v2/categories', ['name' => 'termine'])
         ->assertConflict()
@@ -693,7 +774,7 @@ it('returns only the current users existing categories', function () {
     $this->actingAs($this->user, 'sanctum')
         ->getJson('/api/admin/materials-v2/config')
         ->assertSuccessful()
-        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Notizen', 'Biologie', 'Mathematik']);
+        ->assertJsonPath('categories', ['Termine', 'Screenshots', 'Links', 'Dateien', 'Notizen', 'Biologie', 'Mathematik']);
 });
 
 it('asks before creating a category similar to an existing category', function () {
