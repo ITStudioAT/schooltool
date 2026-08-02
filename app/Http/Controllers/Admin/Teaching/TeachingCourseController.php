@@ -14,10 +14,11 @@ use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCurriculum;
 use App\Models\TeachingEntryArea;
 use App\Models\User;
+use App\Services\PdfTableGenerator;
 use App\Services\TeachingClassHeadEmailService;
-use App\Services\TeachingCourseOverviewPdfService;
 use App\Services\TeachingCourseService;
 use App\Services\TeachingCourseWorkEntrySyncService;
+use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingService;
 use App\Services\TeachingStudentPerformancePdfService;
 use Illuminate\Contracts\Support\Responsable;
@@ -163,21 +164,253 @@ class TeachingCourseController extends Controller
     }
 
     public function courseOverviewPdf(
-        Request $request,
         TeachingCourse $course,
-        TeachingCourseOverviewPdfService $service
+        PdfTableGenerator $pdfTableGenerator,
+        TeachingHolidaySyncService $teachingHolidaySyncService,
     ): Responsable {
-        if (! $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+        if (! $authUser = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         Gate::authorize('view', $course);
 
-        $validated = $request->validate([
-            'semester' => ['required', 'integer', Rule::in([1, 2, 3])],
-        ]);
+        $schoolName = (string) $course->school()->value('long_name');
+        $courseDates = $course->teachingCourseDates()
+            ->select(['id', 'teaching_course_id', 'date', 'status'])
+            ->whereNotNull('date')
+            ->oldest('date')
+            ->oldest('id')
+            ->get();
+        $courseStudents = TeachingCourseStudent::query()
+            ->where('teaching_course_id', $course->id)
+            ->whereNull('canceled_at')
+            ->get();
+        $userIds = $courseStudents->pluck('user_id')->filter()->unique()->values();
+        $importIds = $courseStudents->pluck('import116_id')->filter()->unique()->values();
+        $studentsById = User::query()
+            ->select(['id', 'first_name', 'last_name', 'schoolclass', 'email'])
+            ->whereIn('id', $userIds)
+            ->get()
+            ->keyBy('id');
+        $importsById = Import116::query()
+            ->select(['id', 'user_id', 'first_name', 'last_name', 'class', 'email'])
+            ->where('school_id', $course->school_id)
+            ->where('schoolyear_id', $course->schoolyear_id)
+            ->whereIn('id', $importIds)
+            ->get()
+            ->keyBy('id');
+        $studentRows = $courseStudents
+            ->map(function (TeachingCourseStudent $courseStudent) use ($studentsById, $importsById): array {
+                $source = $this->courseStudentPayloadSource($courseStudent, $studentsById, $importsById);
 
-        return $service->download($course, (int) $validated['semester']);
+                if ($source === 'user') {
+                    $student = $studentsById->get((int) $courseStudent->user_id);
+
+                    return [
+                        'last_name' => trim((string) $student?->last_name),
+                        'first_name' => trim((string) $student?->first_name),
+                        'class' => trim((string) $student?->schoolclass),
+                    ];
+                }
+
+                $student = $importsById->get((int) $courseStudent->import116_id);
+
+                return [
+                    'last_name' => trim((string) $student?->last_name),
+                    'first_name' => trim((string) $student?->first_name),
+                    'class' => trim((string) $student?->class),
+                ];
+            })
+            ->filter(fn (array $student): bool => $student['last_name'] !== '' || $student['first_name'] !== '')
+            ->sortBy(
+                fn (array $student): string => implode('|', [
+                    $student['last_name'],
+                    $student['first_name'],
+                    $student['class'],
+                ]),
+                SORT_NATURAL | SORT_FLAG_CASE,
+            )
+            ->values()
+            ->map(fn (array $student): array => [
+                'student' => [
+                    trim("{$student['last_name']} {$student['class']}"),
+                    $student['first_name'],
+                ],
+            ])
+            ->all();
+        $studentColumn = [
+            'key' => 'student',
+            'label' => 'Schüler:in',
+            'width' => '37mm',
+            'font_size' => 8,
+            'cell_padding' => ['top' => 1.2, 'right' => 2.8, 'bottom' => 1.2, 'left' => 0],
+        ];
+        $dateColumnGroups = collect();
+        $currentDateColumns = collect();
+        $currentDateWidth = 0.0;
+        $availableDateWidth = 230.0;
+
+        foreach ($courseDates as $courseDate) {
+            $isFreeDay = in_array('free', is_array($courseDate->status) ? $courseDate->status : [], true);
+            $columnWidth = $isFreeDay ? 10.0 : 23.0;
+
+            if ($currentDateColumns->isNotEmpty() && $currentDateWidth + $columnWidth > $availableDateWidth) {
+                $dateColumnGroups->push($currentDateColumns);
+                $currentDateColumns = collect();
+                $currentDateWidth = 0.0;
+            }
+
+            $column = [
+                'key' => "course_date_{$courseDate->id}",
+                'label' => $courseDate->date?->format('d.m.') ?? '',
+                'width' => "{$columnWidth}mm",
+                'align' => 'center',
+                'cell_padding' => [
+                    'top' => 1.2,
+                    'right' => 1.2,
+                    'bottom' => 1.2,
+                    'left' => 1.2,
+                ],
+            ];
+
+            if ($isFreeDay) {
+                $freeReason = $teachingHolidaySyncService->resolveFreeReason(
+                    (int) $course->school_id,
+                    (int) $course->schoolyear_id,
+                    (int) $course->user_id,
+                    $courseDate->date?->format('Y-m-d'),
+                );
+                $column['row_span_value'] = $freeReason ?: 'Frei';
+                $column['row_span_rotation'] = -90;
+                $column['row_span_font_size'] = 6;
+                $column['cell_background'] = '#d9f0df';
+                $column['header_font_size'] = 6;
+                $column['header_padding'] = [
+                    'top' => 1.4,
+                    'right' => 0.2,
+                    'bottom' => 1.4,
+                    'left' => 0.2,
+                ];
+                $column['cell_padding'] = [
+                    'top' => 0,
+                    'right' => 0,
+                    'bottom' => 0,
+                    'left' => 0,
+                ];
+            }
+
+            $currentDateColumns->push($column);
+            $currentDateWidth += $columnWidth;
+        }
+
+        if ($currentDateColumns->isNotEmpty() || $dateColumnGroups->isEmpty()) {
+            $dateColumnGroups->push($currentDateColumns);
+        }
+
+        $studentRowGroups = collect($studentRows)->chunk(14);
+
+        if ($studentRowGroups->isEmpty()) {
+            $studentRowGroups->push(collect());
+        }
+
+        $tablePages = $dateColumnGroups
+            ->flatMap(function (Collection $dateColumns, int $pageIndex) use ($availableDateWidth, $studentColumn, $studentRowGroups): array {
+                $dateColumns = $dateColumns->values();
+                $usedDateWidth = $dateColumns->sum(
+                    fn (array $column): float => (float) Str::before($column['width'], 'mm'),
+                );
+                $blankColumnNumber = 1;
+
+                while ($usedDateWidth + 23.0 <= $availableDateWidth) {
+                    $dateColumns->push([
+                        'key' => "course_date_blank_{$pageIndex}_{$blankColumnNumber}",
+                        'label' => '',
+                        'width' => '23mm',
+                        'align' => 'center',
+                        'cell_padding' => [
+                            'top' => 1.2,
+                            'right' => 1.2,
+                            'bottom' => 1.2,
+                            'left' => 1.2,
+                        ],
+                    ]);
+                    $usedDateWidth += 23.0;
+                    $blankColumnNumber++;
+                }
+
+                $remainingDateWidth = $availableDateWidth - $usedDateWidth;
+
+                if ($remainingDateWidth > 0.001) {
+                    $dateColumns->push([
+                        'key' => "course_date_spacer_{$pageIndex}",
+                        'label' => '',
+                        'width' => number_format($remainingDateWidth, 4, '.', '').'mm',
+                        'is_spacer' => true,
+                        'cell_padding' => [
+                            'top' => 0,
+                            'right' => 0,
+                            'bottom' => 0,
+                            'left' => 0,
+                        ],
+                    ]);
+                }
+
+                if ($dateColumns->isNotEmpty()) {
+                    $lastColumnIndex = $dateColumns->count() - 1;
+                    $lastColumn = $dateColumns->get($lastColumnIndex);
+                    $lastColumn['cell_padding']['right'] = 0;
+                    $dateColumns->put($lastColumnIndex, $lastColumn);
+                }
+
+                $emptyDateCells = $dateColumns
+                    ->mapWithKeys(fn (array $column): array => [$column['key'] => ''])
+                    ->all();
+
+                return $studentRowGroups
+                    ->map(function (Collection $studentRowGroup) use ($dateColumns, $studentColumn, $emptyDateCells): array {
+                        $pageDateColumns = $dateColumns->map(function (array $column) use ($studentRowGroup): array {
+                            if (! isset($column['row_span_value'])) {
+                                return $column;
+                            }
+
+                            $reason = (string) $column['row_span_value'];
+                            $fontSize = (float) ($column['row_span_font_size'] ?? 6);
+                            $estimatedTextHeight = mb_strlen($reason) * $fontSize * 0.19;
+                            $availableCellHeight = max(1, $studentRowGroup->count()) * 10.5;
+
+                            if ($estimatedTextHeight > $availableCellHeight) {
+                                $column['row_span_value'] = 'Frei';
+                            }
+
+                            return $column;
+                        });
+
+                        return [
+                            'columns' => [$studentColumn, ...$pageDateColumns->all()],
+                            'rows' => $studentRowGroup
+                                ->map(fn (array $studentRow): array => [...$studentRow, ...$emptyDateCells])
+                                ->values()
+                                ->all(),
+                        ];
+                    })
+                    ->all();
+            })
+            ->all();
+
+        return $pdfTableGenerator->generate([
+            'title' => "Übersicht Unterricht . {$course->title}",
+            'subtitle' => $schoolName,
+            'user_name' => $authUser->full_name,
+            'print_date_time' => now()->format('d.m.Y · H:i'),
+            'orientation' => 'landscape',
+            'table_pages' => $tablePages,
+            'empty_message' => 'Keine Schüler:innen im Kurs.',
+            'title_page' => [
+                'label' => $schoolName,
+                'title' => $course->title,
+                'subtitle' => 'Übersicht Unterricht',
+            ],
+        ])->name(Str::slug($course->title).'-kursuebersicht.pdf');
     }
 
     public function courseGradesPdf(

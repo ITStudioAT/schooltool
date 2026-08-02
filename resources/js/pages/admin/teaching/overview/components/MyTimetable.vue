@@ -11,7 +11,7 @@
                 <v-btn-toggle v-model="range" mandatory color="primary" class="w-100 timetable-range-toggle" @update:model-value="resetOffset">
                     <v-btn :value="RANGE_TODAY">Heute</v-btn>
                     <v-btn :value="RANGE_WEEK">Diese Woche</v-btn>
-                    <v-btn :value="RANGE_NEXT_WEEK">Nächste Woche</v-btn>
+                    <v-btn :value="RANGE_NEXT_WEEK">Nächster Unterricht</v-btn>
                     <v-btn :value="RANGE_MONTH">Dieser Monat</v-btn>
                     <v-btn :value="RANGE_CURRENT_SEMESTER">{{ currentSemesterButtonLabel }}</v-btn>
                 </v-btn-toggle>

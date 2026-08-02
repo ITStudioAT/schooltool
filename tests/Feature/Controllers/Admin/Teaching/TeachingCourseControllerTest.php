@@ -24,17 +24,20 @@ use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
-use App\Models\TeachingCourseWork;
 use App\Models\TeachingCourseWorkGroupStudent;
 use App\Models\TeachingCurriculum;
 use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
+use App\Models\TeachingHoliday;
 use App\Models\TeachingSchema;
 use App\Models\User;
+use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingStudentPerformancePdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Smalot\PdfParser\Parser;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\Permission\Models\Role;
 
@@ -862,41 +865,15 @@ describe('index', function () {
 });
 
 describe('course overview pdf', function () {
-    test('does not use typography smaller than nine points', function () {
-        $viewSource = collect([
-            resource_path('views/pdfs/teachingCourseOverview.blade.php'),
-            resource_path('views/pdfs/teachingCourseOverviewHeader.blade.php'),
-            resource_path('views/pdfs/teachingCourseOverviewFooter.blade.php'),
-        ])
-            ->map(fn (string $path): string => file_get_contents($path))
-            ->implode("\n");
+    test('renders all dates across table pages with active students in the fixed first column', function () {
+        $this->travelTo(Carbon::parse('2026-08-01 14:30:00'));
 
-        preg_match_all('/font-size:\s*([\d.]+)pt/', $viewSource, $matches);
-
-        $fontSizes = collect($matches[1])
-            ->map(fn (string $fontSize): float => (float) $fontSize)
-            ->all();
-
-        expect($fontSizes)
-            ->not->toBeEmpty()
-            ->each(fn ($fontSize) => $fontSize->toBeGreaterThanOrEqual(9.0))
-            ->and(preg_match('/font-size:\s*[\d.]+px/', $viewSource))
-            ->toBe(0);
-    });
-
-    test('returns a designed A4 landscape overview for the selected semester', function () {
-        Pdf::fake();
-
-        $this->schoolyear->update([
-            'sem_2_start' => '2026-02-01',
+        $this->admin->update([
+            'first_name' => 'Erika',
+            'last_name' => 'Muster',
         ]);
-
-        $student = User::factory()->create([
-            'school_id' => $this->school->id,
-            'schoolyear_id' => $this->schoolyear->id,
-            'first_name' => 'Anna',
-            'last_name' => 'Beispiel',
-            'schoolclass' => '2A',
+        $this->school->update([
+            'long_name' => 'Christian-Doppler-Gymnasium Salzburg',
         ]);
 
         $course = TeachingCourse::factory()->create([
@@ -904,110 +881,277 @@ describe('course overview pdf', function () {
             'schoolyear_id' => $this->schoolyear->id,
             'user_id' => $this->admin->id,
             'title' => 'Mathematik',
-            'classes' => ['2A'],
             'teaching_schema_id' => $this->schemaId,
+        ]);
+        $studentA = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'last_name' => 'Beispiel',
+            'first_name' => 'Anna',
+            'schoolclass' => '2A',
+        ]);
+        $studentB = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'last_name' => 'Alpha',
+            'first_name' => 'Bea',
+            'schoolclass' => '1B',
+        ]);
+        $additionalStudents = collect(range(1, 13))
+            ->map(fn (int $number): User => User::factory()->create([
+                'school_id' => $this->school->id,
+                'schoolyear_id' => $this->schoolyear->id,
+                'last_name' => 'Zusatz'.str_pad((string) $number, 2, '0', STR_PAD_LEFT),
+                'first_name' => "Kind {$number}",
+                'schoolclass' => '3B',
+            ]));
+        $canceledStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'last_name' => 'Abgemeldet',
+            'first_name' => 'Clara',
+            'schoolclass' => '3C',
         ]);
 
         TeachingCourseStudent::query()->create([
             'teaching_course_id' => $course->id,
-            'user_id' => $student->id,
+            'user_id' => $studentA->id,
         ]);
-
-        TeachingCourseDate::query()->create([
+        TeachingCourseStudent::query()->create([
             'teaching_course_id' => $course->id,
-            'date' => '2026-01-05',
-            'hours' => [1, 2],
-            'content' => 'Einführung',
+            'user_id' => $studentB->id,
         ]);
-        TeachingCourseDate::query()->create([
-            'teaching_course_id' => $course->id,
-            'date' => '2026-01-08',
-            'hours' => [1, 2],
-            'content' => 'Übungsphase',
-        ]);
-        $semesterOneDate = TeachingCourseDate::query()->create([
-            'teaching_course_id' => $course->id,
-            'date' => '2026-01-12',
-            'hours' => [1, 2],
-            'content' => '<p>Lineare Gleichungen</p>',
-            'attendance' => [(string) $student->id => false],
-            'attendance_checked' => true,
-        ]);
-        TeachingCourseDate::query()->create([
-            'teaching_course_id' => $course->id,
-            'date' => '2026-02-09',
-            'hours' => [3],
-            'content' => 'Quadratische Funktionen',
-        ]);
-
-        TeachingCourseDateMaterial::query()->create([
-            'teaching_course_date_id' => $semesterOneDate->id,
-            'title' => 'Algebra: Gleichungen lösen',
-            'material_title' => 'Algebra: Gleichungen lösen',
-            'type' => 'unit',
-        ]);
-
-        $work = TeachingCourseWork::query()->create([
-            'teaching_course_id' => $course->id,
-            'type' => 'SA',
-            'title' => 'Gleichungen',
-            'date_for_all_groups' => '2026-01-05',
-            'finish_until_date' => '2026-01-12',
-        ]);
-
-        TeachingCourseStudentEntry::query()->create([
+        $additionalStudents->each(fn (User $student) => TeachingCourseStudent::query()->create([
             'teaching_course_id' => $course->id,
             'user_id' => $student->id,
-            'teaching_course_work_id' => $work->id,
-            'date' => '2026-01-12',
-            'type' => 'SA',
-            'grade' => '2',
-            'description' => 'Sicher gelöst',
+        ]));
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $canceledStudent->id,
+            'canceled_at' => now(),
         ]);
+        collect([
+            '2026-11-19',
+            '2026-09-10',
+            '2026-10-01',
+            '2026-09-17',
+            '2026-10-08',
+            '2026-09-24',
+            '2026-10-15',
+            '2026-10-22',
+            '2026-10-29',
+            '2026-11-05',
+            '2026-11-12',
+            '2026-11-26',
+            '2026-12-03',
+        ])->each(fn (string $date) => TeachingCourseDate::query()->create([
+            'teaching_course_id' => $course->id,
+            'date' => $date,
+        ]));
+        collect([
+            ['scope' => 'school', 'user_id' => null, 'date' => '2026-09-17', 'reason' => 'Herbstferien'],
+            ['scope' => 'teacher', 'user_id' => $this->admin->id, 'date' => '2026-10-08', 'reason' => 'Fortbildung'],
+            ['scope' => 'school', 'user_id' => null, 'date' => '2026-10-29', 'reason' => 'Schulfrei'],
+            ['scope' => 'teacher', 'user_id' => $this->admin->id, 'date' => '2026-11-12', 'reason' => 'Pädagogischer Tag'],
+        ])->each(fn (array $holiday) => TeachingHoliday::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            ...$holiday,
+        ]));
+        app(TeachingHolidaySyncService::class)->syncForSchoolyear(
+            $this->school->id,
+            $this->schoolyear->id,
+        );
 
         $this->actingAs($this->admin, 'sanctum');
 
-        $this->get("/api/admin/teaching/courses/{$course->id}/overview_pdf?semester=1")
+        $response = $this->get("/api/admin/teaching/courses/{$course->id}/overview_pdf")
+            ->assertSuccessful();
+
+        $pages = (new Parser)->parseContent($response->getContent())->getPages();
+        $pdfText = collect($pages)
+            ->map(fn ($page): string => $page->getText())
+            ->implode("\n");
+        $contentPageTextPositions = collect($pages[1]->getDataTm());
+        $firstDateHeaderPosition = $contentPageTextPositions->first(
+            fn (array $position): bool => $position[1] === '24.09.',
+        );
+        $secondDateHeaderPosition = $contentPageTextPositions->first(
+            fn (array $position): bool => $position[1] === '01.10.',
+        );
+        $dateBeforeFreeDayPosition = $contentPageTextPositions->first(
+            fn (array $position): bool => $position[1] === '10.09.',
+        );
+        $dateColumnWidthMillimetres = (
+            (float) $secondDateHeaderPosition[0][4] - (float) $firstDateHeaderPosition[0][4]
+        ) / (72 / 25.4);
+        $freeDayColumnWidthMillimetres = (
+            (float) $firstDateHeaderPosition[0][4] - (float) $dateBeforeFreeDayPosition[0][4]
+        ) / (72 / 25.4) - $dateColumnWidthMillimetres;
+
+        expect($pages)->toHaveCount(5)
+            ->and(abs($dateColumnWidthMillimetres - 23.0))->toBeLessThan(0.02)
+            ->and(abs($freeDayColumnWidthMillimetres - 10.0))->toBeLessThan(0.02)
+            ->and($pdfText)->not->toContain('SZENARIO')
+            ->and($pdfText)->not->toContain('TESTZEILEN')
+            ->and($pdfText)->not->toContain('Titelseite + 2 Tabellenseiten')
+            ->and($pdfText)->not->toContain('Drei-Seiten-Test')
+            ->and($pdfText)->not->toContain('PDF-Testzeile')
+            ->and($pdfText)->not->toContain('DOCUMENT')
+            ->and($pdfText)->not->toContain('Abgemeldet')
+            ->and($pages[0]->getText())->toContain('Mathematik')
+            ->and($pages[0]->getText())->toContain('Übersicht Unterricht')
+            ->and($pages[0]->getText())->toContain('CHRISTIAN-DOPPLER-GYMNASIUM SALZBURG')
+            ->and($pages[0]->getText())->toContain('Erika Muster')
+            ->and($pages[0]->getText())->toContain('01.08.2026 · 14:30')
+            ->and($pages[0]->getText())->not->toContain('Page 1 /')
+            ->and($pages[1]->getText())->toContain('Page 1 / 4')
+            ->and($pages[1]->getText())->toContain('Übersicht Unterricht . Mathematik')
+            ->and($pages[1]->getText())->toContain('Christian-Doppler-Gymnasium Salzburg')
+            ->and($pages[1]->getText())->toContain('Alpha 1B')
+            ->and($pages[1]->getText())->toContain('Bea')
+            ->and($pages[1]->getText())->toContain('Beispiel 2A')
+            ->and($pages[1]->getText())->toContain('Anna')
+            ->and($pages[1]->getText())->toContain('10.09.')
+            ->and($pages[1]->getText())->toContain('Herbstferien')
+            ->and($pages[1]->getText())->toContain('Fortbildung')
+            ->and($pages[1]->getText())->toContain('Schulfrei')
+            ->and($pages[1]->getText())->toContain('Pädagogischer Tag')
+            ->and($pages[1]->getText())->toContain('12.11.')
+            ->and($pages[1]->getText())->toContain('19.11.')
+            ->and($pages[1]->getText())->toContain('26.11.')
+            ->and($pages[1]->getText())->not->toContain('03.12.')
+            ->and($pages[2]->getText())->toContain('Page 2 / 4')
+            ->and($pages[2]->getText())->toContain('Übersicht Unterricht . Mathematik')
+            ->and($pages[2]->getText())->toContain('Frei')
+            ->and($pages[2]->getText())->not->toContain('Herbstferien')
+            ->and($pages[2]->getText())->not->toContain('Pädagogischer Tag')
+            ->and($pages[2]->getText())->toContain('Zusatz13 3B')
+            ->and($pages[2]->getText())->toContain('26.11.')
+            ->and($pages[2]->getText())->not->toContain('03.12.')
+            ->and($pages[3]->getText())->toContain('Page 3 / 4')
+            ->and($pages[3]->getText())->toContain('Übersicht Unterricht . Mathematik')
+            ->and($pages[3]->getText())->toContain('Alpha 1B')
+            ->and($pages[3]->getText())->toContain('Bea')
+            ->and($pages[3]->getText())->toContain('Beispiel 2A')
+            ->and($pages[3]->getText())->toContain('Anna')
+            ->and($pages[3]->getText())->toContain('03.12.')
+            ->and($pages[4]->getText())->toContain('Page 4 / 4')
+            ->and($pages[4]->getText())->toContain('Übersicht Unterricht . Mathematik')
+            ->and($pages[4]->getText())->toContain('Zusatz13 3B')
+            ->and($pages[4]->getText())->toContain('03.12.')
+            ->and($pdfText)->toContain('03.12.');
+
+        Pdf::fake();
+
+        $this->get("/api/admin/teaching/courses/{$course->id}/overview_pdf")
             ->assertSuccessful();
 
         Pdf::assertRespondedWithPdf(function ($pdf): bool {
-            $workLane = $pdf->viewData['date_sections'][0]['work_lanes'][0] ?? null;
+            $document = $pdf->viewData['document'];
+            $html = view($pdf->viewName, $pdf->viewData)->render();
 
-            return $pdf->viewName === 'pdfs.teachingCourseOverview'
-                && $pdf->headerViewName === 'pdfs.teachingCourseOverviewHeader'
-                && $pdf->footerViewName === 'pdfs.teachingCourseOverviewFooter'
-                && $pdf->format === 'a4'
-                && $pdf->orientation === 'Landscape'
-                && $pdf->viewData['period_label'] === '1. Semester'
-                && $pdf->viewData['date_count'] === 3
-                && $pdf->viewData['student_count'] === 1
-                && $workLane['has_timeline'] === true
-                && $workLane['cells'][0]['is_start'] === true
-                && $workLane['cells'][1]['is_arrow'] === true
-                && $workLane['cells'][2]['is_finish'] === true
-                && $pdf->contains('Lineare Gleichungen')
-                && $pdf->contains('Gleichungen lösen')
-                && $pdf->contains('Beispiel, Anna')
-                && $pdf->contains('work-timeline-arrow')
-                && ! $pdf->contains('Quadratische Funktionen');
+            $firstTablePage = $document['table_pages'][0];
+            $firstTableContinuationPage = $document['table_pages'][1];
+            $secondTablePage = $document['table_pages'][2];
+            $secondTableContinuationPage = $document['table_pages'][3];
+            $firstPageFlowColumns = array_slice($firstTablePage['columns'], 1);
+            $secondPageFlowColumns = array_slice($secondTablePage['columns'], 1);
+            $firstPageDateColumns = collect($firstPageFlowColumns)
+                ->reject(fn (array $column): bool => $column['is_spacer'] ?? false)
+                ->values()
+                ->all();
+            $secondPageDateColumns = collect($secondPageFlowColumns)
+                ->reject(fn (array $column): bool => $column['is_spacer'] ?? false)
+                ->values()
+                ->all();
+            $firstPageSpacerColumns = collect($firstPageFlowColumns)
+                ->filter(fn (array $column): bool => $column['is_spacer'] ?? false)
+                ->values();
+            $firstPageColumnsByLabel = collect($firstPageDateColumns)->keyBy('label');
+            $firstContinuationColumnsByLabel = collect(array_slice($firstTableContinuationPage['columns'], 1))
+                ->keyBy('label');
+
+            return count($document['table_pages']) === 4
+                && count($firstTablePage['rows']) === 14
+                && count($firstTableContinuationPage['rows']) === 1
+                && count($secondTablePage['rows']) === 14
+                && count($secondTableContinuationPage['rows']) === 1
+                && count($firstTablePage['columns']) === 14
+                && count($secondTablePage['columns']) === 11
+                && $firstTablePage['table_layout_width'] === '267.0000mm'
+                && $secondTablePage['table_layout_width'] === '267.0000mm'
+                && $firstPageSpacerColumns->count() === 1
+                && $firstPageSpacerColumns[0]['width'] === '6.0000mm'
+                && $firstTablePage['columns'][0]['width'] === '37mm'
+                && $firstTablePage['columns'][0]['font_size'] === 8.0
+                && $firstTablePage['columns'][0]['cell_padding'] === [
+                    'top' => 1.2,
+                    'right' => 2.8,
+                    'bottom' => 1.2,
+                    'left' => 0.0,
+                ]
+                && collect($firstPageDateColumns)->pluck('label')->all() === [
+                    '10.09.',
+                    '17.09.',
+                    '24.09.',
+                    '01.10.',
+                    '08.10.',
+                    '15.10.',
+                    '22.10.',
+                    '29.10.',
+                    '05.11.',
+                    '12.11.',
+                    '19.11.',
+                    '26.11.',
+                ]
+                && collect($secondPageDateColumns)->pluck('label')->all() === [
+                    '03.12.',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                ]
+                && $firstPageColumnsByLabel['17.09.']['width'] === '10mm'
+                && $firstPageColumnsByLabel['17.09.']['row_span_value'] === 'Herbstferien'
+                && $firstPageColumnsByLabel['08.10.']['width'] === '10mm'
+                && $firstPageColumnsByLabel['08.10.']['row_span_value'] === 'Fortbildung'
+                && $firstPageColumnsByLabel['29.10.']['width'] === '10mm'
+                && $firstPageColumnsByLabel['29.10.']['row_span_value'] === 'Schulfrei'
+                && $firstPageColumnsByLabel['12.11.']['width'] === '10mm'
+                && $firstPageColumnsByLabel['12.11.']['row_span_value'] === 'Pädagogischer Tag'
+                && collect(['17.09.', '08.10.', '29.10.', '12.11.'])
+                    ->every(fn (string $label): bool => $firstPageColumnsByLabel[$label]['row_span_rotation'] === -90)
+                && collect(['17.09.', '08.10.', '29.10.', '12.11.'])
+                    ->every(fn (string $label): bool => $firstPageColumnsByLabel[$label]['header_font_size'] === 6.0)
+                && collect(['17.09.', '08.10.', '29.10.', '12.11.'])
+                    ->every(fn (string $label): bool => $firstPageColumnsByLabel[$label]['cell_background'] === '#d9f0df')
+                && $firstContinuationColumnsByLabel['17.09.']['row_span_value'] === 'Frei'
+                && $firstContinuationColumnsByLabel['08.10.']['row_span_value'] === 'Frei'
+                && $firstContinuationColumnsByLabel['29.10.']['row_span_value'] === 'Schulfrei'
+                && $firstContinuationColumnsByLabel['12.11.']['row_span_value'] === 'Frei'
+                && collect(['10.09.', '24.09.', '01.10.', '15.10.', '22.10.', '05.11.', '19.11.', '26.11.'])
+                    ->every(fn (string $label): bool => $firstPageColumnsByLabel[$label]['width'] === '23mm')
+                && substr_count($html, 'class="document-table-page"') === 4
+                && str_contains($html, 'spacer-column')
+                && substr_count($html, 'rowspan="14"') === 4
+                && substr_count($html, 'rowspan="1"') === 4
+                && substr_count($html, 'row-spanning-column-cell') >= 9
+                && str_contains($html, 'class="rotated-table-cell"')
+                && str_contains($html, 'transform: rotate(-90deg);')
+                && str_contains($html, 'background-color: #d9f0df;')
+                && str_contains($html, 'Herbstferien')
+                && str_contains($html, 'Pädagogischer Tag')
+                && str_contains(
+                    $html,
+                    'font-size: 8pt; padding: 1.2mm 2.8mm 1.2mm 0mm;',
+                );
         });
-    });
-
-    test('requires a supported semester value', function () {
-        Pdf::fake();
-
-        $course = TeachingCourse::factory()->create([
-            'school_id' => $this->school->id,
-            'schoolyear_id' => $this->schoolyear->id,
-            'user_id' => $this->admin->id,
-            'teaching_schema_id' => $this->schemaId,
-        ]);
-
-        $this->actingAs($this->admin, 'sanctum');
-
-        $this->getJson("/api/admin/teaching/courses/{$course->id}/overview_pdf?semester=4")
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('semester');
     });
 });
 

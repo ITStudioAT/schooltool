@@ -256,6 +256,7 @@ describe('store', function () {
             'teaching_course_work_id' => $workId,
             'teaching_course_id' => $this->course->id,
             'user_id' => $this->student->id,
+            'date' => '2026-03-17',
             'type' => 'MA',
             'grade' => '2',
             'source' => 'course_work',
@@ -513,6 +514,7 @@ describe('show update destroy', function () {
             'title' => 'Individual work',
             'is_group_work' => false,
             'date_for_all_groups' => '2026-09-21',
+            'finish_until_date' => '2026-10-12',
             'groups' => [[
                 'student_ids' => [$this->student->id],
                 'date' => '2026-09-21',
@@ -530,6 +532,7 @@ describe('show update destroy', function () {
             ]],
         ])->assertOk()
             ->assertJsonPath('data.groups.0.student_ids.0', $this->student->id)
+            ->assertJsonPath('data.groups.0.date', '2026-09-21')
             ->assertJsonPath('data.groups.0.grades.0.grade', '1')
             ->assertJsonPath('data.groups.0.comments.0.comment', 'Sehr sauber gearbeitet');
 
@@ -542,6 +545,7 @@ describe('show update destroy', function () {
         $this->assertDatabaseHas('teaching_course_student_entries', [
             'teaching_course_work_id' => $work->id,
             'user_id' => $this->student->id,
+            'date' => '2026-10-12',
             'grade' => '1',
             'description' => 'Sehr sauber gearbeitet',
             'source' => 'course_work',

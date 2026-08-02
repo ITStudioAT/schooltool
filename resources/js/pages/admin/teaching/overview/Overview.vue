@@ -561,12 +561,12 @@ export default {
             }
             this._lastCourseId = newCourse.id
             this._urlPanelRestored = true
-            this.show_students = true
+            this.show_students = false
             this.show_infos = false
             this.show_works = false
             this.show_print = false
             this.show_dates = false
-            this.show_table = false
+            this.show_table = true
             this.show_attendance = false
             this.show_curriculum = false
             this.show_performances = false

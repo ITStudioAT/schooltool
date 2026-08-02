@@ -203,6 +203,28 @@ describe('Teaching page navigation', () => {
         })
     })
 
+    it('opens a selected course in the table view', () => {
+        const routerReplace = vi.fn().mockResolvedValue(undefined)
+        const course = { id: 16, title: 'Mathematik' }
+        const ctx = {
+            selected_course: null,
+            selected_course_id: null,
+            selected_courseDate: { id: 44 },
+            isStudentDetailActive: false,
+            $route: { query: {} },
+            $router: { replace: routerReplace },
+        }
+
+        ;(Teaching as any).methods.handleCourseSelect.call(ctx, course)
+
+        expect(ctx.selected_course).toBe(course)
+        expect(ctx.selected_course_id).toBe(16)
+        expect(ctx.selected_courseDate).toBeNull()
+        expect(routerReplace).toHaveBeenCalledWith({
+            query: { course: '16', panel: 'table' },
+        })
+    })
+
     it('builds hero chips from selected school context', () => {
         const ctx = {
             selectedSchoolLabel: 'Christian-Doppler-Gymnasium Salzburg',

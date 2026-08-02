@@ -760,7 +760,7 @@ export default {
             this.selected_courseDate = null
             this.selected_course = course
             this.selected_course_id = course.id
-            const query = { course: String(course.id) }
+            const query = { course: String(course.id), panel: 'table' }
             if (this.$route.query.grades) query.grades = this.$route.query.grades
             this.$router.replace({ query }).catch(() => {})
         },

@@ -27,24 +27,23 @@
             variant="tonal">
             <v-card-text class="d-flex align-center flex-wrap ga-3 px-3 py-2">
                 <span class="text-caption text-medium-emphasis font-weight-medium">Zeitraum:</span>
-                <v-btn
-                    color="error"
-                    data-testid="course-table-overview-pdf-button"
-                    density="comfortable"
-                    prepend-icon="mdi-file-pdf-box"
-                    size="small"
-                    title="Kursübersicht als PDF herunterladen"
-                    variant="flat"
-                    :disabled="!sortedCourseDates.length || courseOverviewPdfDownloading"
-                    :loading="courseOverviewPdfDownloading"
-                    @click="downloadCourseOverviewPdf">
-                    PDF
-                </v-btn>
                 <v-btn-toggle v-model="selectedSemester" mandatory density="compact" color="primary" variant="tonal">
                     <v-btn :value="1" size="small">1. Sem</v-btn>
                     <v-btn :value="2" size="small">2. Sem</v-btn>
                     <v-btn :value="3" size="small">Sem 1+2</v-btn>
                 </v-btn-toggle>
+                <v-btn
+                    class="ml-auto"
+                    color="error"
+                    data-testid="course-table-overview-pdf-button"
+                    density="comfortable"
+                    prepend-icon="mdi-file-pdf-box"
+                    size="small"
+                    title="Kursübersicht als PDF öffnen"
+                    variant="flat"
+                    @click="openCourseOverviewPdf">
+                    PDF
+                </v-btn>
             </v-card-text>
         </v-card>
 
@@ -140,6 +139,7 @@
                                                 v-for="timeline in courseWorkTimelinesForDate(courseDate)"
                                                 :key="timeline.key"
                                                 class="course-table-work-timeline"
+                                                :style="{ gridRow: timeline.destinationIndex + 1 }"
                                                 :class="{
                                                     'course-table-work-timeline--start': timeline.isStart,
                                                     'course-table-work-timeline--middle': timeline.isMiddle,
@@ -147,7 +147,12 @@
                                                     'course-table-work-timeline--visible': isCourseWorkTimelineVisible(timeline),
                                                 }">
                                                 <span class="course-table-work-timeline-line" />
-                                                <span v-if="timeline.isStart" class="course-table-work-timeline-dot" />
+                                                <span
+                                                    v-if="timeline.isStart"
+                                                    class="course-table-work-timeline-card"
+                                                    :class="{
+                                                        'course-table-work-timeline-card--group': timeline.work.is_group_work,
+                                                    }" />
                                                 <span v-if="timeline.isArrow" class="course-table-work-timeline-arrow" />
                                             </div>
                                         </div>
@@ -448,7 +453,7 @@
                                                         :color="cellEntryColor(entry)"
                                                         variant="tonal"
                                                         :title="entry.description || cellEntryTypeLabel(entry)">
-                                                        {{ compactCellEntryLabel(entry) }}
+                                                        {{ compactCellEntryType(entry) }}
                                                     </v-chip>
                                                 </div>
                                                 <div
@@ -468,18 +473,13 @@
                                                             {{ compactCellEntryType(entry) }}<template v-if="entryTypeHasProperties(entry)">:&nbsp;
                                                                 <span
                                                                     :class="{
+                                                                        'font-weight-bold': compactCellEntryGrade(entry),
                                                                         'course-table-entry-cell-grade--missing': !compactCellEntryGrade(entry),
                                                                     }">
-                                                                    {{ compactCellEntryGrade(entry) || 'NA' }}
+                                                                    {{ compactCellEntryGrade(entry) || 'N/A' }}
                                                                 </span>
                                                             </template>
                                                         </v-chip>
-                                                        <div
-                                                            v-if="entry.description"
-                                                            class="course-table-entry-cell-comment"
-                                                            :title="entry.description">
-                                                            {{ entry.description }}
-                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -642,9 +642,65 @@
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="d-flex flex-column ga-3">
-                    <div class="text-body-2">
-                        <strong>Termin:</strong> {{ compactCourseDateTitle(contentDialog.courseDate) }}
+                    <div class="d-flex align-center flex-wrap ga-2">
+                        <div class="text-body-2">
+                            <strong>Termin:</strong> {{ compactCourseDateTitle(contentDialog.courseDate) }}
+                        </div>
+                        <div class="d-flex ga-2 ml-auto">
+                            <v-btn
+                                color="primary"
+                                data-testid="course-table-content-dialog-previous-date"
+                                prepend-icon="mdi-chevron-left"
+                                size="small"
+                                variant="tonal"
+                                :disabled="contentSaving || !hasPreviousContentDialogDate"
+                                @click="navigateContentDialogDate(-1)">
+                                Vorheriger
+                            </v-btn>
+                            <v-btn
+                                color="primary"
+                                data-testid="course-table-content-dialog-next-date"
+                                append-icon="mdi-chevron-right"
+                                size="small"
+                                variant="tonal"
+                                :disabled="contentSaving || !hasNextContentDialogDate"
+                                @click="navigateContentDialogDate(1)">
+                                Nächster
+                            </v-btn>
+                        </div>
                     </div>
+                    <v-card
+                        color="deep-purple"
+                        data-testid="course-table-content-dialog-curriculum"
+                        variant="tonal">
+                        <v-card-text class="d-flex flex-column ga-2 pa-3">
+                            <div class="d-flex align-center justify-space-between ga-3">
+                                <strong class="text-body-2">Curriculum-Inhalt</strong>
+                                <v-btn
+                                    color="deep-purple"
+                                    data-testid="course-table-content-dialog-curriculum-apply"
+                                    prepend-icon="mdi-content-copy"
+                                    size="default"
+                                    variant="flat"
+                                    :disabled="contentSaving || !contentDialogCurriculumContent.length"
+                                    @click="applyCurriculumContentToContentDialog">
+                                    In Stoff übernehmen
+                                </v-btn>
+                            </div>
+                            <ul
+                                v-if="contentDialogCurriculumContent.length"
+                                class="course-table-content-dialog-curriculum-list text-body-2">
+                                <li
+                                    v-for="content in contentDialogCurriculumContent"
+                                    :key="content">
+                                    {{ content }}
+                                </li>
+                            </ul>
+                            <div v-else class="text-body-2 text-medium-emphasis">
+                                Für diesen Termin ist kein Curriculum-Inhalt verknüpft.
+                            </div>
+                        </v-card-text>
+                    </v-card>
                     <ItsRichTextEditor v-model="contentDialog.content" :disabled="contentSaving" />
                 </v-card-text>
                 <v-card-actions>
@@ -663,7 +719,7 @@
                         prepend-icon="mdi-content-save"
                         :disabled="contentSaving"
                         :loading="contentSaving"
-                        @click="saveContentDialog">
+                        @click="saveContentDialog()">
                         Speichern
                     </v-btn>
                 </v-card-actions>
@@ -772,8 +828,30 @@
                                             {{ assignment.work.type || 'Arbeit' }}
                                         </v-chip>
                                         <strong class="text-body-2">{{ assignment.work.title || assignment.label }}</strong>
-                                        <v-chip size="x-small" color="secondary" variant="outlined">
+                                        <v-chip
+                                            :data-testid="`course-table-date-work-mode-${assignment.work.id}`"
+                                            size="x-small"
+                                            :color="assignment.isGroupWork ? 'deep-purple' : 'primary'"
+                                            :prepend-icon="assignment.isGroupWork ? 'mdi-account-group' : 'mdi-account-outline'"
+                                            variant="tonal">
+                                            {{ assignment.isGroupWork ? 'Gruppenarbeit' : 'Einzelarbeit' }}
+                                        </v-chip>
+                                        <v-chip
+                                            v-if="assignment.isGroupWork && assignment.scope !== 'Gruppenarbeit'"
+                                            size="x-small"
+                                            color="secondary"
+                                            variant="outlined">
                                             {{ assignment.scope }}
+                                        </v-chip>
+                                        <v-chip
+                                            v-if="assignment.work.date_for_all_groups"
+                                            :data-testid="`course-table-date-work-start-${assignment.work.id}`"
+                                            prepend-icon="mdi-calendar-start"
+                                            size="x-small"
+                                            color="primary"
+                                            variant="tonal">
+                                            Start
+                                            {{ compactCourseDateTitle({ date: assignment.work.date_for_all_groups }) }}
                                         </v-chip>
                                         <v-chip
                                             v-if="assignment.work.finish_until_date"
@@ -1425,6 +1503,33 @@
                                     <v-chip v-if="entry.source === 'course_work'" size="x-small" color="info" variant="outlined">
                                         Aus Arbeit
                                     </v-chip>
+                                    <v-chip
+                                        v-if="entry.source === 'course_work' && courseWorkForCellEntry(entry)"
+                                        size="x-small"
+                                        :color="courseWorkForCellEntry(entry).is_group_work ? 'deep-purple' : 'primary'"
+                                        :prepend-icon="courseWorkForCellEntry(entry).is_group_work ? 'mdi-account-group' : 'mdi-account-outline'"
+                                        variant="tonal">
+                                        {{ courseWorkEntryModeTitle(entry) }}
+                                    </v-chip>
+                                </div>
+                                <div
+                                    v-if="entry.source === 'course_work' && courseWorkEntryPeriod(entry)"
+                                    class="d-flex flex-wrap ga-3 mt-2 text-caption text-medium-emphasis"
+                                    :data-testid="`course-table-cell-entry-work-period-${entry.uid}`">
+                                    <div v-if="courseWorkEntryPeriod(entry).isSameDate">
+                                        <strong>Beginn/Ende:</strong> {{ courseWorkEntryPeriod(entry).startDateTitle }}
+                                    </div>
+                                    <div v-else>
+                                        <strong>Beginn:</strong> {{ courseWorkEntryPeriod(entry).startDateTitle }}
+                                    </div>
+                                    <div
+                                        v-if="!courseWorkEntryPeriod(entry).isSameDate && courseWorkEntryPeriod(entry).finishDateTitle">
+                                        <strong>Ende:</strong> {{ courseWorkEntryPeriod(entry).finishDateTitle }}
+                                    </div>
+                                    <div
+                                        v-if="!courseWorkEntryPeriod(entry).isSameDate && courseWorkEntryPeriod(entry).durationLabel">
+                                        <strong>Dauer:</strong> {{ courseWorkEntryPeriod(entry).durationLabel }}
+                                    </div>
                                 </div>
                                 <div
                                     v-if="cellEntryListComment(entry)"
@@ -1794,7 +1899,6 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
-import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 const tableMarkingColors = new Set(['blue', 'green', 'orange', 'purple', 'red'])
 const ItsRichTextEditor = defineAsyncComponent(() => import('@/components/ItsRichTextEditor.vue'))
@@ -1850,7 +1954,6 @@ export default {
             curriculumStore: null,
             curriculumUnitActionKey: null,
             courseEntriesRequestPromise: null,
-            courseOverviewPdfDownloading: false,
             courseTableDataCourseId: null,
             courseTableDataRequestCourseId: null,
             courseTableDataRequestPromise: null,
@@ -2064,6 +2167,37 @@ export default {
             return this.curriculumDialog.courseDate
                 ? this.compactCourseDateTitle(this.curriculumDialog.courseDate)
                 : ''
+        },
+        contentDialogCurriculumContent() {
+            return this.curriculumContentForCourseDate(this.contentDialog.courseDate)
+        },
+        contentDialogCourseDateIndex() {
+            if (!this.contentDialog.courseDate) return -1
+
+            const selectedCourseDateKey = this.courseDateScrollKey(this.contentDialog.courseDate)
+
+            return this.sortedCourseDates.findIndex(
+                (courseDate) => this.courseDateScrollKey(courseDate) === selectedCourseDateKey
+            )
+        },
+        hasPreviousContentDialogDate() {
+            return this.contentDialogCourseDateIndex > 0
+        },
+        hasNextContentDialogDate() {
+            const currentIndex = this.contentDialogCourseDateIndex
+
+            return currentIndex >= 0 && currentIndex < this.sortedCourseDates.length - 1
+        },
+        courseWorkTimelineDestinationIndexes() {
+            const destinationIndexes = new Map()
+
+            this.sortedCourseDates.forEach((courseDate) => {
+                this.courseWorksForDate(courseDate).forEach((assignment, destinationIndex) => {
+                    destinationIndexes.set(String(assignment.id), destinationIndex)
+                })
+            })
+
+            return destinationIndexes
         },
         curriculumDialogTopics() {
             const topics = Array.isArray(this.curriculumDialog.curriculum?.topics)
@@ -2379,6 +2513,11 @@ export default {
     },
 
     methods: {
+        openCourseOverviewPdf() {
+            if (!this.selected_course?.id) return
+
+            window.open(courseOverviewPdf.url(this.selected_course.id), '_blank', 'noopener')
+        },
         async openCurriculumDialog(courseDate) {
             const curriculumId = this.assignedCurriculumId
             if (!curriculumId || !this.curriculumStore?.show) return
@@ -2760,6 +2899,7 @@ export default {
                 ))
                 .map((timeline) => ({
                     ...timeline,
+                    destinationIndex: this.courseWorkTimelineDestinationIndexes?.get(String(timeline.work.id)) ?? 0,
                     isArrow: timeline.arrowDate === date,
                     isMiddle: timeline.startDate < date && timeline.arrowDate !== date,
                     isStart: timeline.startDate === date,
@@ -2977,6 +3117,29 @@ export default {
                 open: true,
             }
         },
+        applyCurriculumContentToContentDialog() {
+            if (this.contentSaving || !this.contentDialogCurriculumContent.length) return
+
+            const curriculumContent = this.contentDialogCurriculumContent
+                .map((content) => `<p>${this.escapeCourseContentText(content)}</p>`)
+                .join('')
+            const currentContent = String(this.contentDialog.content || '').trim()
+
+            this.contentDialog.content = currentContent
+                ? `${currentContent}${curriculumContent}`
+                : curriculumContent
+        },
+        escapeCourseContentText(content) {
+            const characterEntities = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;',
+            }
+
+            return String(content || '').replace(/[&<>"']/g, (character) => characterEntities[character])
+        },
         closeContentDialog() {
             if (this.contentSaving) return
 
@@ -2986,9 +3149,25 @@ export default {
                 open: false,
             }
         },
-        async saveContentDialog() {
+        async navigateContentDialogDate(offset) {
+            if (this.contentSaving || ![-1, 1].includes(Number(offset))) return
+
+            const targetCourseDate = this.sortedCourseDates[this.contentDialogCourseDateIndex + Number(offset)]
+            if (!targetCourseDate) return
+
+            const currentContent = String(this.contentDialog.content ?? '')
+            const savedContent = String(this.contentDialog.courseDate?.content ?? '')
+
+            if (currentContent !== savedContent) {
+                const wasSaved = await this.saveContentDialog(false)
+                if (!wasSaved) return
+            }
+
+            this.openContentDialog(targetCourseDate)
+        },
+        async saveContentDialog(closeAfterSave = true) {
             const courseDate = this.contentDialog.courseDate
-            if (this.contentSaving || !courseDate?.id || !this.courseDateStore || !this.courseStore) return
+            if (this.contentSaving || !courseDate?.id || !this.courseDateStore || !this.courseStore) return false
 
             this.contentSaving = true
             let wasSaved = false
@@ -2999,7 +3178,7 @@ export default {
                     date: courseDate.date,
                     content: this.contentDialog.content ?? '',
                 })
-                if (!response) return
+                if (!response) return false
 
                 wasSaved = true
                 await this.courseStore.index()
@@ -3007,7 +3186,9 @@ export default {
                 this.contentSaving = false
             }
 
-            if (wasSaved) this.closeContentDialog()
+            if (wasSaved && closeAfterSave) this.closeContentDialog()
+
+            return wasSaved
         },
         isContentDialogCellSelected(courseDate) {
             if (!this.contentDialog.open) return false
@@ -3198,7 +3379,7 @@ export default {
             this.workDialogFinishDateEditing = true
         },
         applyWorkDialogFinishDate(value) {
-            this.workDialogForm.finish_until_date = this.normalizeDateKey(value)
+            this.workDialogForm.finish_until_date = this.normalizeDateKey(value) || null
             this.workDialogFinishDateEditing = false
         },
         beginWorkDialogGroupDateEditing(groupIndex) {
@@ -3794,7 +3975,10 @@ export default {
             if (!userId || !dateKey) return []
 
             const assessmentEntries = (this.entryStore?.courseEntries || [])
-                .filter((entry) => String(entry?.user_id) === String(userId) && this.normalizeDateKey(entry?.date) === dateKey)
+                .filter((entry) => (
+                    String(entry?.user_id) === String(userId)
+                    && this.studentCellEntryDateKey(entry) === dateKey
+                ))
                 .map((entry) => ({
                     ...entry,
                     kind: 'assessment',
@@ -3814,6 +3998,17 @@ export default {
 
                 return String(first.type || '').localeCompare(String(second.type || ''), 'de', { sensitivity: 'base' })
             })
+        },
+        studentCellEntryDateKey(entry) {
+            const entryDateKey = this.normalizeDateKey(entry?.date)
+            if (entry?.source !== 'course_work') return entryDateKey
+
+            const work = this.courseWorkForCellEntry(entry)
+            const finishDateKey = work?.finish_until_date
+                ? this.normalizeDateKey(work.finish_until_date)
+                : ''
+
+            return finishDateKey || entryDateKey
         },
         supplementaryEntriesForCell(student, courseDate) {
             return this.entriesForCell(student, courseDate)
@@ -4032,6 +4227,31 @@ export default {
             const date = group?.date || work?.date_for_all_groups
 
             return date ? this.compactCourseDateTitle({ date }) : 'Ohne Datum'
+        },
+        courseWorkEntryPeriod(entry) {
+            const work = this.courseWorkForCellEntry(entry)
+            if (!work) return null
+
+            const group = this.courseWorkGroupForCellEntry(entry)
+            const startDate = group?.date || work.date_for_all_groups || entry?.date
+            const finishDate = work.finish_until_date || ''
+            const isSameDate = Boolean(
+                startDate
+                && finishDate
+                && this.normalizeDateKey(startDate) === this.normalizeDateKey(finishDate)
+            )
+
+            return {
+                durationLabel: finishDate && !isSameDate
+                    ? this.courseWorkDurationLabel({
+                        date_for_all_groups: startDate,
+                        finish_until_date: finishDate,
+                    })
+                    : '',
+                finishDateTitle: finishDate ? this.compactCourseDateTitle({ date: finishDate }) : '',
+                isSameDate,
+                startDateTitle: startDate ? this.compactCourseDateTitle({ date: startDate }) : 'Ohne Datum',
+            }
         },
         courseWorkEntryModeTitle(entry) {
             const work = this.courseWorkForCellEntry(entry)
@@ -4680,61 +4900,6 @@ export default {
                 )
             })
         },
-        courseOverviewPdfUrl() {
-            if (!this.selected_course?.id) return ''
-
-            return courseOverviewPdf.url(this.selected_course.id, {
-                query: {
-                    semester: Number(this.selectedSemester),
-                },
-            })
-        },
-        courseOverviewPdfDownloadName(response) {
-            const disposition = String(response?.headers?.['content-disposition'] || '')
-            const filenameMatch = disposition.match(/filename\s*=\s*"?([^";]+)"?/i)
-
-            return filenameMatch?.[1]?.trim() || 'kursuebersicht.pdf'
-        },
-        async downloadCourseOverviewPdf() {
-            if (this.courseOverviewPdfDownloading) return
-
-            const url = this.courseOverviewPdfUrl()
-            if (!url) return
-
-            this.courseOverviewPdfDownloading = true
-
-            try {
-                const response = await axios.get(url, {
-                    responseType: 'blob',
-                })
-                const responseContentType = String(
-                    response?.headers?.['content-type'] || response?.data?.type || '',
-                ).toLowerCase()
-                if (!responseContentType.includes('application/pdf')) {
-                    throw new Error('The course overview response is not a PDF.')
-                }
-                const blob = response.data instanceof Blob
-                    ? response.data
-                    : new Blob([response.data], { type: 'application/pdf' })
-                const objectUrl = URL.createObjectURL(blob)
-                const link = document.createElement('a')
-
-                link.href = objectUrl
-                link.download = this.courseOverviewPdfDownloadName(response)
-                document.body.appendChild(link)
-                link.click()
-                link.remove()
-                URL.revokeObjectURL(objectUrl)
-            } catch (error) {
-                useNotificationStore().notify({
-                    status: error?.response?.status,
-                    message: 'Die PDF-Übersicht konnte nicht erstellt werden.',
-                    type: 'error',
-                })
-            } finally {
-                this.courseOverviewPdfDownloading = false
-            }
-        },
         courseDateScrollKey(courseDate) {
             return `course-date-${courseDate?.id || this.normalizeDateKey(courseDate?.date) || 'unknown'}`
         },
@@ -4857,6 +5022,8 @@ export default {
             return parsedDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
         },
         normalizeDateKey(date) {
+            if (date === null || date === undefined || date === '') return ''
+
             const parsedDate = parseLocalDate(date)
             if (isNaN(parsedDate.getTime())) return ''
 
@@ -5015,6 +5182,8 @@ export default {
 
 .course-table-work-label,
 .course-table-work-cell {
+    --course-table-work-card-height: 66px;
+
     background: linear-gradient(180deg, #eff6ff 0%, #e8f1ff 100%);
     border-bottom: 2px solid rgba(37, 99, 235, 0.38) !important;
     border-top: 2px solid rgba(37, 99, 235, 0.38);
@@ -5454,19 +5623,19 @@ export default {
 }
 
 .course-table-work-timelines {
-    bottom: 22px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+    display: grid;
+    grid-auto-rows: var(--course-table-work-card-height);
     left: 0;
     pointer-events: none;
     position: absolute;
     right: 0;
+    row-gap: 3px;
+    top: 30px;
     z-index: 1;
 }
 
 .course-table-work-timeline {
-    height: 12px;
+    height: var(--course-table-work-card-height);
     position: relative;
     width: 100%;
 }
@@ -5478,12 +5647,12 @@ export default {
     left: -1px;
     opacity: 0;
     position: absolute;
-    top: 5px;
+    top: calc(var(--course-table-work-card-height) / 2 - 1px);
     transition: opacity 0.15s ease;
 }
 
 .course-table-work-timeline--start .course-table-work-timeline-line {
-    left: 50%;
+    left: calc(50% + 6px);
     right: -1px;
 }
 
@@ -5496,16 +5665,23 @@ export default {
     right: 8px;
 }
 
-.course-table-work-timeline-dot {
-    background: #1d4ed8;
-    border: 2px solid #dbeafe;
-    border-radius: 50%;
-    box-shadow: 0 0 0 2px #1d4ed8, 0 0 8px rgba(37, 99, 235, 0.75);
-    height: 9px;
-    left: calc(50% - 4px);
+.course-table-work-timeline-card {
+    background: rgba(37, 99, 235, 0.2);
+    border: 1px solid rgba(37, 99, 235, 0.72);
+    border-radius: 5px;
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.38);
+    height: var(--course-table-work-card-height);
+    left: 50%;
     position: absolute;
-    top: 2px;
-    width: 9px;
+    top: 0;
+    translate: -50% 0;
+    width: 12px;
+}
+
+.course-table-work-timeline-card--group {
+    background: rgba(22, 163, 74, 0.2);
+    border-color: rgba(22, 163, 74, 0.72);
+    box-shadow: 0 1px 4px rgba(22, 163, 74, 0.38);
 }
 
 .course-table-work-timeline-arrow {
@@ -5516,7 +5692,7 @@ export default {
     opacity: 0;
     position: absolute;
     right: -1px;
-    top: 0;
+    top: calc(var(--course-table-work-card-height) / 2 - 6px);
     transition: opacity 0.15s ease;
 }
 
@@ -5552,8 +5728,10 @@ export default {
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
     box-sizing: border-box;
     color: #1e3a8a;
+    height: var(--course-table-work-card-height);
     max-width: 112px;
     min-width: 112px;
+    overflow: hidden;
     padding: 5px 6px;
     position: relative;
     text-align: left;
@@ -5939,7 +6117,7 @@ export default {
 
 .course-table-entry-cell-badge {
     font-size: 0.66rem;
-    font-weight: 700;
+    font-weight: 400;
     max-width: 82px;
 }
 
@@ -5954,20 +6132,6 @@ export default {
     flex-direction: column;
     gap: 3px;
     max-width: 92px;
-}
-
-.course-table-entry-cell-comment {
-    color: #475569;
-    display: -webkit-box;
-    font-size: 0.66rem;
-    font-weight: 500;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-height: 1.15;
-    max-width: 92px;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    text-align: center;
 }
 
 :deep(.course-table-entry-tooltip) {

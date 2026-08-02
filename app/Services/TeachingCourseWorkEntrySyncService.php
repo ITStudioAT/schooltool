@@ -434,7 +434,8 @@ class TeachingCourseWorkEntrySyncService
             $grade = $this->firstMappedValue($gradesByStudentId, $studentAliases);
             $comment = $this->firstMappedValue($commentsByStudentId, $studentAliases);
             $points = $this->firstMappedValue($pointsByStudentId, $studentAliases);
-            $entryDate = $this->firstMappedValue($dateByStudentId, $studentAliases) ?? $defaultDate;
+            $assignmentDate = $this->firstMappedValue($dateByStudentId, $studentAliases) ?? $defaultDate;
+            $entryDate = $this->studentEntryDate($work, $assignmentDate);
             $description = $comment ?: $this->toNullableString($work->description);
 
             $gradesByStudentId[$studentId] = $grade;
@@ -442,8 +443,8 @@ class TeachingCourseWorkEntrySyncService
             if ($points !== null) {
                 $pointsByStudentId[$studentId] = $points;
             }
-            if ($entryDate !== null) {
-                $dateByStudentId[$studentId] = $entryDate;
+            if ($assignmentDate !== null) {
+                $dateByStudentId[$studentId] = $assignmentDate;
             }
 
             $byUserId[$studentId] = [
@@ -569,8 +570,9 @@ class TeachingCourseWorkEntrySyncService
 
             $groupGrade = $this->toNullableString($group['grade'] ?? null);
             $groupComment = $this->toNullableString($group['comment'] ?? null);
-            $entryDate = $group['date'] ?? $work->date_for_all_groups;
-            $entryDate = $entryDate ? date('Y-m-d', strtotime((string) $entryDate)) : null;
+            $assignmentDate = $group['date'] ?? $work->date_for_all_groups;
+            $assignmentDate = $assignmentDate ? date('Y-m-d', strtotime((string) $assignmentDate)) : null;
+            $entryDate = $this->studentEntryDate($work, $assignmentDate);
 
             $gradesMap = [];
             foreach ((array) ($group['grades'] ?? []) as $gradeItem) {
@@ -618,6 +620,11 @@ class TeachingCourseWorkEntrySyncService
         }
 
         return array_values($byUserId);
+    }
+
+    private function studentEntryDate(TeachingCourseWork $work, ?string $fallbackDate): ?string
+    {
+        return $work->finish_until_date?->format('Y-m-d') ?? $fallbackDate;
     }
 
     private function toNullableString(mixed $value): ?string

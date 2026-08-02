@@ -8,6 +8,16 @@ afterEach(() => {
 })
 
 describe('MyTimetable time range labels', () => {
+    it('labels the next teaching range as the next lesson', () => {
+        const source = readFileSync(
+            resolve(process.cwd(), 'resources/js/pages/admin/teaching/overview/components/MyTimetable.vue'),
+            'utf8',
+        )
+
+        expect(source).toContain('<v-btn :value="RANGE_NEXT_WEEK">Nächster Unterricht</v-btn>')
+        expect(source).not.toContain('<v-btn :value="RANGE_NEXT_WEEK">Nächste Woche</v-btn>')
+    })
+
     it('builds a time range label from school hour definitions', () => {
         const computed = (MyTimetable as any).computed
         const methods = (MyTimetable as any).methods

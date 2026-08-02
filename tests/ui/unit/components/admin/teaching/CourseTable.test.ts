@@ -7,7 +7,6 @@ import CourseTable from '@/pages/admin/teaching/overview/components/CourseTable.
 vi.mock('axios', () => ({
     default: {
         delete: vi.fn(),
-        get: vi.fn(),
         post: vi.fn(),
     },
 }))
@@ -532,6 +531,52 @@ describe('CourseTable', () => {
             .toEqual([])
     })
 
+    it('keeps timeline markers in the vertical lane of their destination card', () => {
+        const computed = (CourseTable as any).computed
+        const methods = (CourseTable as any).methods
+        const project = {
+            id: 15,
+            date_for_all_groups: '2026-10-05',
+            finish_until_date: '2026-10-12',
+            groups: [],
+            is_group_work: true,
+            title: 'Projekt Zusammenarbeit',
+            type: 'A',
+        }
+        const writingExercise = {
+            id: 16,
+            date_for_all_groups: '2026-09-21',
+            finish_until_date: '2026-10-12',
+            groups: [],
+            is_group_work: false,
+            title: 'Schreibübungen bis Lektion 40',
+            type: 'TW',
+        }
+        const ctx: Record<string, any> = {
+            courseWorks: [project, writingExercise],
+            sortedCourseDates: [
+                { date: '2026-09-21' },
+                { date: '2026-10-05' },
+                { date: '2026-10-12' },
+            ],
+            sortedSelectedStudents: [],
+        }
+        Object.assign(ctx, methods)
+        ctx.courseWorkTimelineDestinationIndexes = computed.courseWorkTimelineDestinationIndexes.call(ctx)
+
+        expect([...ctx.courseWorkTimelineDestinationIndexes.entries()]).toEqual([
+            ['15', 0],
+            ['16', 1],
+        ])
+        expect(methods.courseWorkTimelinesForDate.call(ctx, { date: '2026-09-21' }))
+            .toMatchObject([{ destinationIndex: 1, isStart: true, work: { id: 16 } }])
+        expect(methods.courseWorkTimelinesForDate.call(ctx, { date: '2026-10-05' }))
+            .toMatchObject([
+                { destinationIndex: 0, isStart: true, work: { id: 15 } },
+                { destinationIndex: 1, isArrow: true, work: { id: 16 } },
+            ])
+    })
+
     it('shows a work timeline only while its start or finish cell is active', () => {
         const methods = (CourseTable as any).methods
         const ctx: Record<string, any> = {
@@ -593,7 +638,10 @@ describe('CourseTable', () => {
         )
 
         expect(source).toContain('class="course-table-work-timelines"')
-        expect(source).toContain('class="course-table-work-timeline-dot"')
+        expect(source).toContain('class="course-table-work-timeline-card"')
+        expect(source).toContain(':style="{ gridRow: timeline.destinationIndex + 1 }"')
+        expect(source).toContain("'course-table-work-timeline-card--group': timeline.work.is_group_work")
+        expect(source).not.toContain('class="course-table-work-timeline-dot"')
         expect(source).toContain('class="course-table-work-timeline-line"')
         expect(source).toContain('class="course-table-work-timeline-arrow"')
         expect(source).toContain("'course-table-work-timeline--arrow': timeline.isArrow")
@@ -604,11 +652,12 @@ describe('CourseTable', () => {
         expect(source).toContain('opacity: 0;')
         expect(source).toContain('.course-table-work-timeline--visible .course-table-work-timeline-line,')
         expect(source).toContain('.course-table-work-timeline--visible .course-table-work-timeline-arrow')
-        const dotStylesStart = source.indexOf('.course-table-work-timeline-dot {')
-        const dotStylesEnd = source.indexOf('}', dotStylesStart)
+        const markerStylesStart = source.indexOf('.course-table-work-timeline-card {')
+        const markerStylesEnd = source.indexOf('}', markerStylesStart)
 
-        expect(dotStylesStart).toBeGreaterThan(-1)
-        expect(source.slice(dotStylesStart, dotStylesEnd)).not.toContain('opacity:')
+        expect(markerStylesStart).toBeGreaterThan(-1)
+        expect(source.slice(markerStylesStart, markerStylesEnd)).toContain('width: 12px;')
+        expect(source.slice(markerStylesStart, markerStylesEnd)).not.toContain('opacity:')
         expect(source).toContain('.course-table-work-timeline--start .course-table-work-timeline-line')
         expect(source).not.toContain('.course-table-work-timeline--finish .course-table-work-timeline-line')
     })
@@ -620,10 +669,18 @@ describe('CourseTable', () => {
         )
 
         expect(source).toContain('.course-table-work-timelines {')
-        expect(source).toContain('bottom: 22px;')
+        const timelineStylesStart = source.indexOf('.course-table-work-timelines {')
+        const timelineStylesEnd = source.indexOf('}', timelineStylesStart)
+
+        expect(source.slice(timelineStylesStart, timelineStylesEnd)).toContain('top: 30px;')
+        expect(source.slice(timelineStylesStart, timelineStylesEnd)).not.toContain('bottom:')
         expect(source).toContain('position: absolute;')
         expect(source).toContain('left: 50%;')
         expect(source).toContain('translate: -50% 0;')
+        expect(source).toContain('--course-table-work-card-height: 66px;')
+        expect(source).toMatch(/\.course-table-work-timelines \{[\s\S]*display: grid;[\s\S]*grid-auto-rows: var\(--course-table-work-card-height\);[\s\S]*row-gap: 3px;/u)
+        expect(source).toMatch(/\.course-table-work-timeline \{[\s\S]*height: var\(--course-table-work-card-height\);/u)
+        expect(source).toMatch(/\.course-table-work-summary \{[\s\S]*height: var\(--course-table-work-card-height\);/u)
     })
 
     it('keeps the add-work icon before existing works', () => {
@@ -810,6 +867,100 @@ describe('CourseTable', () => {
         expect(ctx.contentDialog).toEqual({ content: '', courseDate: null, open: false })
     })
 
+    it('moves the content editor between dates and saves changed content first', async () => {
+        const methods = (CourseTable as any).methods
+        const previousCourseDate = { id: 7, date: '2026-05-09', content: '<p>Vorheriger</p>' }
+        const currentCourseDate = { id: 8, date: '2026-05-16', content: '<p>Gespeichert</p>' }
+        const nextCourseDate = { id: 9, date: '2026-05-23', content: '<p>Nächster</p>' }
+        const ctx: Record<string, any> = {
+            contentDialog: {
+                content: '<p>Geändert</p>',
+                courseDate: currentCourseDate,
+                open: true,
+            },
+            contentDialogCourseDateIndex: 1,
+            contentSaving: false,
+            openContentDialog: methods.openContentDialog,
+            saveContentDialog: vi.fn().mockResolvedValue(true),
+            sortedCourseDates: [previousCourseDate, currentCourseDate, nextCourseDate],
+        }
+
+        await methods.navigateContentDialogDate.call(ctx, 1)
+
+        expect(ctx.saveContentDialog).toHaveBeenCalledWith(false)
+        expect(ctx.contentDialog).toEqual({
+            content: '<p>Nächster</p>',
+            courseDate: nextCourseDate,
+            open: true,
+        })
+
+        ctx.contentDialogCourseDateIndex = 2
+        await methods.navigateContentDialogDate.call(ctx, -1)
+
+        expect(ctx.saveContentDialog).toHaveBeenCalledTimes(1)
+        expect(ctx.contentDialog.courseDate).toBe(currentCourseDate)
+    })
+
+    it('detects the previous and next content-editor dates', () => {
+        const computed = (CourseTable as any).computed
+        const methods = (CourseTable as any).methods
+        const courseDates = [
+            { id: 7, date: '2026-05-09' },
+            { id: 8, date: '2026-05-16' },
+            { id: 9, date: '2026-05-23' },
+        ]
+        const ctx: Record<string, any> = {
+            contentDialog: { courseDate: courseDates[1], open: true },
+            courseDateScrollKey: methods.courseDateScrollKey,
+            sortedCourseDates: courseDates,
+        }
+
+        ctx.contentDialogCourseDateIndex = computed.contentDialogCourseDateIndex.call(ctx)
+
+        expect(ctx.contentDialogCourseDateIndex).toBe(1)
+        expect(computed.hasPreviousContentDialogDate.call(ctx)).toBe(true)
+        expect(computed.hasNextContentDialogDate.call(ctx)).toBe(true)
+
+        ctx.contentDialogCourseDateIndex = 0
+        expect(computed.hasPreviousContentDialogDate.call(ctx)).toBe(false)
+
+        ctx.contentDialogCourseDateIndex = 2
+        expect(computed.hasNextContentDialogDate.call(ctx)).toBe(false)
+    })
+
+    it('copies the linked curriculum content into the Stoff draft', () => {
+        const computed = (CourseTable as any).computed
+        const methods = (CourseTable as any).methods
+        const courseDate = {
+            adopted_materials: [
+                { title: 'Brüche: Addieren & Subtrahieren' },
+                { title: 'Geometrie: Winkel < 90°' },
+            ],
+        }
+        const curriculumContext = {
+            contentDialog: { courseDate },
+            curriculumContentForCourseDate: methods.curriculumContentForCourseDate,
+        }
+        const curriculumContent = computed.contentDialogCurriculumContent.call(curriculumContext)
+        const ctx: Record<string, any> = {
+            contentDialog: {
+                content: '<p>Vorhandener Stoff</p>',
+                courseDate,
+                open: true,
+            },
+            contentDialogCurriculumContent: curriculumContent,
+            contentSaving: false,
+            escapeCourseContentText: methods.escapeCourseContentText,
+        }
+
+        methods.applyCurriculumContentToContentDialog.call(ctx)
+
+        expect(curriculumContent).toEqual(['Addieren & Subtrahieren', 'Winkel < 90°'])
+        expect(ctx.contentDialog.content).toBe(
+            '<p>Vorhandener Stoff</p><p>Addieren &amp; Subtrahieren</p><p>Winkel &lt; 90°</p>',
+        )
+    })
+
     it('creates a safe plain-text preview from rich Termin content', () => {
         const courseDateContentPreview = (CourseTable as any).methods.courseDateContentPreview
 
@@ -847,7 +998,7 @@ describe('CourseTable', () => {
             closeContentDialog: vi.fn(),
         }
 
-        await methods.saveContentDialog.call(ctx)
+        expect(await methods.saveContentDialog.call(ctx)).toBe(true)
 
         expect(ctx.courseDateStore.update).toHaveBeenCalledWith({
             id: 7,
@@ -939,6 +1090,24 @@ describe('CourseTable', () => {
 
         expect(ctx.workDialogForm.finish_until_date).toBe('2026-05-23')
         expect(ctx.workDialogFinishDateEditing).toBe(false)
+    })
+
+    it('sets the finish date to null when the date input is cleared', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+            workDialogFinishDateEditing: true,
+            workDialogForm: {
+                finish_until_date: '2026-10-12',
+            },
+        }
+
+        methods.applyWorkDialogFinishDate.call(ctx, null)
+
+        expect(ctx.workDialogForm.finish_until_date).toBeNull()
+        expect(ctx.workDialogFinishDateEditing).toBe(false)
+        expect(methods.normalizeDateKey.call(ctx, null)).toBe('')
     })
 
     it('calculates and labels the calendar days between work dates', () => {
@@ -2351,6 +2520,65 @@ describe('CourseTable', () => {
         expect(ctx.entryDialog.open).toBe(false)
     })
 
+    it('shows start, finish, and duration only on the linked work entry card', () => {
+        const methods = (CourseTable as any).methods
+        const work = {
+            date_for_all_groups: '2026-10-10',
+            finish_until_date: '2026-10-12',
+            id: 16,
+            title: 'Projektarbeit',
+        }
+        const entry = { date: '2026-10-12', teaching_course_work_id: 16 }
+        const methodContext = {
+            compactCourseDateTitle: ({ date }: { date: string }) => date,
+            courseWorkDurationLabel: vi.fn().mockReturnValue('3 Tage'),
+            courseWorkForCellEntry: vi.fn().mockReturnValue(work),
+            courseWorkGroupForCellEntry: vi.fn().mockReturnValue({ date: '2026-10-09' }),
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+        }
+        const period = methods.courseWorkEntryPeriod.call(methodContext, entry)
+
+        expect(period).toEqual({
+            durationLabel: '3 Tage',
+            finishDateTitle: '2026-10-12',
+            isSameDate: false,
+            startDateTitle: '2026-10-09',
+        })
+        expect(methodContext.courseWorkDurationLabel).toHaveBeenCalledWith({
+            date_for_all_groups: '2026-10-09',
+            finish_until_date: '2026-10-12',
+        })
+    })
+
+    it('combines matching work start and finish dates without a zero-day duration', () => {
+        const methods = (CourseTable as any).methods
+        const work = {
+            date_for_all_groups: '2026-10-05',
+            finish_until_date: '2026-10-05',
+            id: 16,
+        }
+        const methodContext = {
+            compactCourseDateTitle: ({ date }: { date: string }) => date,
+            courseWorkDurationLabel: vi.fn().mockReturnValue('0 Tage'),
+            courseWorkForCellEntry: vi.fn().mockReturnValue(work),
+            courseWorkGroupForCellEntry: vi.fn().mockReturnValue(null),
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+        }
+
+        expect(methods.courseWorkEntryPeriod.call(methodContext, {
+            date: '2026-10-05',
+            teaching_course_work_id: 16,
+        })).toEqual({
+            durationLabel: '',
+            finishDateTitle: '2026-10-05',
+            isSameDate: true,
+            startDateTitle: '2026-10-05',
+        })
+        expect(methodContext.courseWorkDurationLabel).not.toHaveBeenCalled()
+    })
+
     it('shows all assessment, behaviour, and notification entries for the selected cell only', () => {
         const methods = (CourseTable as any).methods
         const ctx = {
@@ -2372,6 +2600,7 @@ describe('CourseTable', () => {
             registeredStudentUserId: methods.registeredStudentUserId,
             normalizeDateKey: methods.normalizeDateKey,
             dateKey: methods.dateKey,
+            studentCellEntryDateKey: methods.studentCellEntryDateKey,
         }
 
         const entries = methods.entriesForCell.call(ctx, { id: 10, user_id: 10 }, { date: '2026-03-09' })
@@ -2382,6 +2611,43 @@ describe('CourseTable', () => {
             'behaviour-5',
             'behaviour-6',
         ])
+    })
+
+    it('shows work-derived student entries on the end date and falls back to their stored date', () => {
+        const methods = (CourseTable as any).methods
+        const workEntry = {
+            id: 1,
+            date: '2026-03-09',
+            source: 'course_work',
+            teaching_course_work_id: 12,
+            type: 'A',
+            user_id: 10,
+        }
+        const work = {
+            id: 12,
+            date_for_all_groups: '2026-03-09',
+            finish_until_date: '2026-03-10',
+        }
+        const context = {
+            behaviourEntryStore: { courseEntries: [] },
+            courseWorks: [work],
+            entryStore: { courseEntries: [workEntry] },
+            sortedCourseDates: [{ date: '2026-03-09' }, { date: '2026-03-10' }],
+            courseWorkForCellEntry: methods.courseWorkForCellEntry,
+            dateKey: methods.dateKey,
+            normalizeDateKey: methods.normalizeDateKey,
+            registeredStudentUserId: methods.registeredStudentUserId,
+            studentCellEntryDateKey: methods.studentCellEntryDateKey,
+        }
+
+        expect(methods.entriesForCell.call(context, { user_id: 10 }, { date: '2026-03-09' })).toEqual([])
+        expect(methods.entriesForCell.call(context, { user_id: 10 }, { date: '2026-03-10' }))
+            .toEqual([expect.objectContaining({ id: 1, uid: 'assessment-1' })])
+
+        work.finish_until_date = null
+
+        expect(methods.entriesForCell.call(context, { user_id: 10 }, { date: '2026-03-09' }))
+            .toEqual([expect.objectContaining({ id: 1, uid: 'assessment-1' })])
     })
 
     it('separates behaviour and other entries from performance entries in table cells', () => {
@@ -2801,6 +3067,7 @@ describe('CourseTable', () => {
         expect(methods.courseWorkStudentComment.call(ctx, entry, 10)).toBe('Super gemacht')
 
         work.is_group_work = false
+        expect(methods.courseWorkEntryModeTitle.call(ctx, entry)).toBe('Einzelarbeit')
         expect(methods.courseWorkEntryAssignmentTitle.call(ctx, entry)).toBe('')
         expect(methods.courseWorkEntryOtherGroupMembers.call(ctx, entry)).toEqual([])
     })
@@ -3189,49 +3456,35 @@ describe('CourseTable', () => {
         expect(methods.targetInitialScrollCourseDate.call(ctx, new Date(2026, 2, 20))).toEqual({ id: 3, date: '2026-03-16' })
     })
 
-    it('downloads the generated course overview pdf through the authenticated axios client', async () => {
+    it('opens the course overview pdf in a new tab', () => {
         const methods = (CourseTable as any).methods
-        const pdf = new Blob(['pdf'], { type: 'application/pdf' })
-        vi.mocked(axios.get).mockResolvedValue({
-            data: pdf,
-            headers: {
-                'content-disposition': 'attachment; filename="mathematik_uebersicht.pdf"',
-                'content-type': 'application/pdf',
-            },
-        })
-        const createObjectURL = vi.fn().mockReturnValue('blob:course-overview')
-        const revokeObjectURL = vi.fn()
-        Object.defineProperty(URL, 'createObjectURL', {
-            configurable: true,
-            value: createObjectURL,
-        })
-        Object.defineProperty(URL, 'revokeObjectURL', {
-            configurable: true,
-            value: revokeObjectURL,
-        })
-        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+        const open = vi.spyOn(window, 'open').mockImplementation(() => null)
         const context = {
-            courseOverviewPdfDownloading: false,
             selected_course: { id: 16 },
-            selectedSemester: 2,
-            courseOverviewPdfDownloadName: methods.courseOverviewPdfDownloadName,
-            courseOverviewPdfUrl: methods.courseOverviewPdfUrl,
         }
 
-        expect(methods.courseOverviewPdfUrl.call(context))
-            .toBe('/api/admin/teaching/courses/16/overview_pdf?semester=2')
+        methods.openCourseOverviewPdf.call(context)
 
-        await methods.downloadCourseOverviewPdf.call(context)
-
-        expect(axios.get).toHaveBeenCalledWith(
-            '/api/admin/teaching/courses/16/overview_pdf?semester=2',
-            { responseType: 'blob' },
+        expect(open).toHaveBeenCalledWith(
+            '/api/admin/teaching/courses/16/overview_pdf',
+            '_blank',
+            'noopener',
         )
-        expect(createObjectURL).toHaveBeenCalledWith(pdf)
-        expect(click).toHaveBeenCalledTimes(1)
-        expect(revokeObjectURL).toHaveBeenCalledWith('blob:course-overview')
-        expect(context.courseOverviewPdfDownloading).toBe(false)
-        click.mockRestore()
+
+        const source = readFileSync(
+            resolve('resources/js/pages/admin/teaching/overview/components/CourseTable.vue'),
+            'utf8',
+        )
+
+        expect(source).toContain('data-testid="course-table-overview-pdf-button"')
+        expect(source).toContain('title="Kursübersicht als PDF öffnen"')
+        expect(source).toContain('class="ml-auto"\n                    color="error"')
+        expect(source.indexOf('data-testid="course-table-overview-pdf-button"'))
+            .toBeGreaterThan(source.indexOf('<v-btn-toggle v-model="selectedSemester"'))
+        expect(source).toContain("import { courseOverviewPdf }")
+        expect(source).toContain('@click="openCourseOverviewPdf"')
+
+        open.mockRestore()
     })
 
     it('renders a designed matrix with date columns and student rows', () => {
@@ -3248,24 +3501,11 @@ describe('CourseTable', () => {
         expect(source).toContain("tableView === 'attendance' ? 'Anwesenheiten' : 'Tabelle'")
         expect(source).toContain('data-testid="course-table-semester-selection"')
         expect(source).toContain('class="w-100"')
-        expect(source).toContain('data-testid="course-table-overview-pdf-button"')
-        expect(source).toContain("import { courseOverviewPdf } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingCourseController'")
-        expect(source).toContain('prepend-icon="mdi-file-pdf-box"')
-        expect(source).toContain('title="Kursübersicht als PDF herunterladen"')
-        expect(source).toContain('variant="flat"')
-        expect(source).toContain(':loading="courseOverviewPdfDownloading"')
-        expect(source).toContain('@click="downloadCourseOverviewPdf"')
-        expect(source).toContain("responseType: 'blob'")
-        expect(source).toContain('PDF')
-        expect(source.indexOf('data-testid="course-table-overview-pdf-button"'))
-            .toBeLessThan(source.indexOf('<v-btn-toggle v-model="selectedSemester" mandatory'))
         expect(source).toContain('<v-btn-toggle v-model="selectedSemester" mandatory')
         expect(source).toContain('<v-btn :value="1" size="small">1. Sem</v-btn>')
         expect(source).toContain('<v-btn :value="2" size="small">2. Sem</v-btn>')
         expect(source).toContain('<v-btn :value="3" size="small">Sem 1+2</v-btn>')
         expect(source).toContain('position: sticky;')
-        expect(source).not.toContain('course-table-overview-printing')
-        expect(source).not.toContain('window.print()')
         expect(source).toContain('class="course-table-title-row"')
         expect(source).toContain('class="course-table-work-row"')
         expect(source).toContain('class="course-table-work-label-content"')
@@ -3316,8 +3556,17 @@ describe('CourseTable', () => {
         expect(source).toContain('padding: 0 5px;')
         expect(source).toContain('<v-dialog v-model="contentDialog.open" persistent max-width="720">')
         expect(source).toContain('data-testid="course-table-content-dialog"')
+        expect(source).toContain('data-testid="course-table-content-dialog-curriculum"')
+        expect(source).toContain('data-testid="course-table-content-dialog-previous-date"')
+        expect(source).toContain('@click="navigateContentDialogDate(-1)"')
+        expect(source).toContain('data-testid="course-table-content-dialog-next-date"')
+        expect(source).toContain('@click="navigateContentDialogDate(1)"')
+        expect(source).toMatch(/<v-btn\s+color="deep-purple"\s+data-testid="course-table-content-dialog-curriculum-apply"\s+prepend-icon="mdi-content-copy"\s+size="default"/u)
+        expect(source).toContain('v-for="content in contentDialogCurriculumContent"')
+        expect(source).toContain('In Stoff übernehmen')
+        expect(source).toContain('@click="applyCurriculumContentToContentDialog"')
         expect(source).toContain('<ItsRichTextEditor v-model="contentDialog.content" :disabled="contentSaving" />')
-        expect(source).toContain('@click="saveContentDialog"')
+        expect(source).toContain('@click="saveContentDialog()"')
         expect(source).not.toContain('Die Inhaltsverwaltung wird hier später ergänzt.')
         expect(source).toContain('mdi-plus-circle-outline')
         expect(source).toContain('v-for="work in courseWorksForDate(courseDate)"')
@@ -3333,6 +3582,11 @@ describe('CourseTable', () => {
         expect(source).not.toContain('course-table-date-edit-work-${assignment.id}')
         expect(source).toContain('course-table-date-delete-work-${assignment.id}')
         expect(source).toContain('class="course-table-date-work-item cursor-pointer"')
+        expect(source).toContain(':data-testid="`course-table-date-work-mode-${assignment.work.id}`"')
+        expect(source).toContain("assignment.isGroupWork ? 'deep-purple' : 'primary'")
+        expect(source).toContain("assignment.isGroupWork ? 'mdi-account-group' : 'mdi-account-outline'")
+        expect(source).toContain("{{ assignment.isGroupWork ? 'Gruppenarbeit' : 'Einzelarbeit' }}")
+        expect(source).toContain("v-if=\"assignment.isGroupWork && assignment.scope !== 'Gruppenarbeit'\"")
         expect(source).toContain('@click="startEditingDateWork(assignment.work)"')
         expect(source).toContain('@keydown.enter.self.prevent="startEditingDateWork(assignment.work)"')
         expect(source).toContain('@keydown.space.self.prevent="startEditingDateWork(assignment.work)"')
@@ -3463,6 +3717,9 @@ describe('CourseTable', () => {
         expect(source).toContain('data-testid="course-table-date-work-duration"')
         expect(source).toContain('prepend-icon="mdi-timer-sand"')
         expect(source).toContain('{{ workDialogDurationLabel }}')
+        expect(source).toContain(':data-testid="`course-table-date-work-start-${assignment.work.id}`"')
+        expect(source).toContain('v-if="assignment.work.date_for_all_groups"')
+        expect(source).toContain('{{ compactCourseDateTitle({ date: assignment.work.date_for_all_groups }) }}')
         expect(source).toContain(':data-testid="`course-table-date-work-duration-${assignment.work.id}`"')
         expect(source).toContain('{{ courseWorkDurationLabel(assignment.work) }}')
         expect(source).toContain('@click="beginWorkDialogFinishDateEditing"')
@@ -3530,20 +3787,22 @@ describe('CourseTable', () => {
         expect(source).toContain('data-testid="course-table-entry-cell-performance-row"')
         expect(source).toContain('v-for="entry in compactPerformanceEntriesForCell(student, courseDate)"')
         expect(source).toContain('{{ compactCellEntryType(entry) }}<template v-if="entryTypeHasProperties(entry)">:&nbsp;')
-        expect(source).toContain('v-if="entryExpectsProperty(entry)"')
+        expect(source).toContain("'font-weight-bold': compactCellEntryGrade(entry)")
         expect(source).toContain("'course-table-entry-cell-grade--missing': !compactCellEntryGrade(entry)")
-        expect(source).toContain("{{ compactCellEntryGrade(entry) || 'NA' }}")
-        expect(source).toContain('color: rgb(var(--v-theme-error));')
-        expect(source).toContain('font-weight: 400;')
-        expect(source).toContain('class="course-table-entry-cell-comment"')
-        expect(source).toContain('{{ entry.description }}')
+        expect(source).toContain("{{ compactCellEntryGrade(entry) || 'N/A' }}")
+        expect(source).toContain('v-if="entryExpectsProperty(entry)"')
+        expect(source).not.toContain("{{ compactCellEntryGrade(entry) || 'NA' }}")
+        expect(source).toMatch(/\.course-table-entry-cell-badge \{[\s\S]*font-weight: 400;/u)
+        expect(source).toMatch(/\.course-table-entry-cell-grade--missing \{[\s\S]*color: rgb\(var\(--v-theme-error\)\);[\s\S]*font-weight: 400;/u)
+        expect(source).not.toContain('class="course-table-entry-cell-comment"')
+        expect(source).not.toContain('{{ entry.description }}')
         expect(source).toContain('content-class="course-table-entry-tooltip"')
         expect(source).toContain('v-for="detail in cellEntryHoverItems(student, courseDate)"')
         expect(source).toContain('Note: {{ detail.grade }}')
         expect(source).toContain('<span>Kommentar:</span> {{ detail.comment }}')
         expect(source.indexOf('data-testid="course-table-entry-cell-supplementary-row"'))
             .toBeLessThan(source.indexOf('data-testid="course-table-entry-cell-performance-row"'))
-        expect(source).toContain('compactCellEntryLabel(entry)')
+        expect(source).not.toContain('{{ compactCellEntryLabel(entry) }}')
         expect(source).toContain("'course-table-entry-cell--selected': isEntryDialogCellSelected(student, courseDate)")
         expect(source).toContain('<v-tooltip')
         expect(source).toContain('activator="parent"')
@@ -3558,6 +3817,16 @@ describe('CourseTable', () => {
         expect(source).toContain('@click="openEntryDialog(student, courseDate)"')
         expect(source).toContain('@keydown.enter.prevent="openEntryDialog(student, courseDate)"')
         expect(source).toContain('<v-dialog v-model="entryDialog.open" persistent max-width="860">')
+        expect(source).not.toContain('data-testid="course-table-cell-entry-work-periods"')
+        expect(source).toContain('course-table-cell-entry-work-period-${entry.uid}')
+        expect(source).toContain("v-if=\"entry.source === 'course_work' && courseWorkEntryPeriod(entry)\"")
+        expect(source).toContain("courseWorkForCellEntry(entry).is_group_work ? 'deep-purple' : 'primary'")
+        expect(source).toContain("courseWorkForCellEntry(entry).is_group_work ? 'mdi-account-group' : 'mdi-account-outline'")
+        expect(source).toContain('{{ courseWorkEntryModeTitle(entry) }}')
+        expect(source).toContain('<strong>Beginn/Ende:</strong> {{ courseWorkEntryPeriod(entry).startDateTitle }}')
+        expect(source).toContain('<strong>Beginn:</strong> {{ courseWorkEntryPeriod(entry).startDateTitle }}')
+        expect(source).toContain('<strong>Ende:</strong> {{ courseWorkEntryPeriod(entry).finishDateTitle }}')
+        expect(source).toContain('<strong>Dauer:</strong> {{ courseWorkEntryPeriod(entry).durationLabel }}')
         expect(source).toContain('data-testid="course-table-cell-entry-list"')
         expect(source).toContain('course-table-cell-work-entry-${entry.uid}')
         expect(source).toContain('course-table-cell-work-comment-${entry.uid}')

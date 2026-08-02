@@ -6,6 +6,12 @@
 - Finish-Datum für Arbeiten
 - Curricula-Zuordnungen scheinen besser auf
 - Arbeiten können ein End-Datum haben und werden angezeigt
+- pdf-table-creator erstellt
+- Tabellen-Übersicht: pdf erstellen
+- Arbeiten: Bessere Darstellung
+
+### System
+- Laravel 13.23.0   
 
 
 ## 3.44.0-3.44.2

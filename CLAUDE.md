@@ -261,6 +261,7 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - laravel/scout (SCOUT) - v11
 - laravel/wayfinder (WAYFINDER) - v0
 - livewire/livewire (LIVEWIRE) - v4
+- larastan/larastan (LARASTAN) - v3
 - laravel/boost (BOOST) - v2
 - laravel/mcp (MCP) - v0
 - laravel/pail (PAIL) - v1
@@ -270,6 +271,7 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - phpunit/phpunit (PHPUNIT) - v12
 - vue (VUE) - v3
 - @laravel/echo-vue (ECHO_VUE) - v2
+- @laravel/vite-plugin-wayfinder (WAYFINDER_VITE) - v0
 - laravel-echo (ECHO) - v2
 
 ## Skills Activation

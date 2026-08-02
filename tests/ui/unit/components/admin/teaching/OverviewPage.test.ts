@@ -56,7 +56,7 @@ describe('Teaching overview controls', () => {
         expect(loadCourseDetails).toHaveBeenCalledWith(22)
     })
 
-    it('resets to students panel defaults when selected course changes', () => {
+    it('resets to the table panel when selected course changes', () => {
         const ctx = {
             show_students: false,
             show_infos: true,
@@ -77,11 +77,11 @@ describe('Teaching overview controls', () => {
             details_loaded: true,
         })
 
-        expect(ctx.show_students).toBe(true)
+        expect(ctx.show_students).toBe(false)
         expect(ctx.show_infos).toBe(false)
         expect(ctx.show_works).toBe(false)
         expect(ctx.show_dates).toBe(false)
-        expect(ctx.show_table).toBe(false)
+        expect(ctx.show_table).toBe(true)
         expect(ctx.show_curriculum).toBe(false)
         expect(ctx.show_attendance).toBe(false)
         expect(ctx.show_performances).toBe(false)
