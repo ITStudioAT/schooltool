@@ -1235,6 +1235,23 @@ describe('CourseTable', () => {
         expect(cellEntryColor.call({}, { kind: 'notification', type: 'MA' })).toBe('secondary')
     })
 
+    it('colors an entry red while its email confirmation is missing', () => {
+        const cellEntryColor = (CourseTable as any).methods.cellEntryColor
+
+        expect(cellEntryColor.call({}, {
+            has_pending_notification_confirmation: true,
+            kind: 'assessment',
+            type: 'V',
+        })).toBe('error')
+        expect(cellEntryColor.call({
+            entryDefinitionCategory: () => 'Verhalten',
+        }, {
+            has_pending_notification_confirmation: false,
+            kind: 'assessment',
+            type: 'V',
+        })).toBe('warning')
+    })
+
     it('keeps legacy schema work types before school year 2026/27', () => {
         const availableWorkTypes = (CourseTable as any).computed.availableWorkTypes
         const items = availableWorkTypes.call({
@@ -2876,6 +2893,50 @@ describe('CourseTable', () => {
         expect(ctx.entrySaving).toBe(false)
     })
 
+    it('creates an entry and immediately emails the selected recipients', async () => {
+        const methods = (CourseTable as any).methods
+        const store = vi.fn().mockResolvedValue({ data: { id: 12 } })
+        const sendNotifications = vi.fn().mockResolvedValue([
+            { key: 'class-head', informed_at: '2026-03-09T10:00:00+00:00' },
+            { key: 'mother', informed_at: '2026-03-09T10:00:00+00:00' },
+        ])
+        const ctx = {
+            canSaveCellEntry: true,
+            entryNotificationLoading: false,
+            entrySaving: false,
+            entryStore: { sendNotifications, store },
+            selected_course: { id: 20 },
+            selectedEntryNotificationRecipientKeys: ['class-head', 'mother'],
+            selectedEntryTypeCategory: 'Verhalten',
+            registeredEntryStudentId: 10,
+            entryDialog: { courseDate: { date: '2026-03-09' } },
+            entryForm: {
+                description: 'Bitte informieren',
+                grade: '',
+                id: null,
+                type: 'V',
+            },
+            normalizeDateKey: methods.normalizeDateKey,
+            dateKey: methods.dateKey,
+            cancelNewCellEntry: vi.fn(),
+            selectedCellEntryUid: null,
+        }
+
+        await methods.saveCellEntry.call(ctx)
+
+        expect(store).toHaveBeenCalledWith({
+            teaching_course_id: 20,
+            user_id: 10,
+            type: 'V',
+            grade: null,
+            date: '2026-03-09',
+            description: 'Bitte informieren',
+        })
+        expect(sendNotifications).toHaveBeenCalledWith(12, ['class-head', 'mother'])
+        expect(ctx.cancelNewCellEntry).toHaveBeenCalledTimes(1)
+        expect(ctx.entrySaving).toBe(false)
+    })
+
     it('opens manual entries for editing and keeps work-derived entries read-only', () => {
         const methods = (CourseTable as any).methods
         const ctx = {
@@ -3941,5 +4002,176 @@ describe('CourseTable', () => {
         }
 
         expect((CourseTable as any).computed.tableColumnCount.call(ctx)).toBe(4)
+    })
+
+    it('recognizes entry definitions with configured notifications', () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            selected_course: {
+                teaching_entry_area: {
+                    entry_definitions: [{
+                        short_name: 'V',
+                        has_notifications: true,
+                        notification_recipients: ['class_teacher', 'parents', 'student'],
+                    }],
+                },
+            },
+            entryDefinition: methods.entryDefinition,
+        }
+
+        expect(methods.entryHasNotificationWorkflow.call(ctx, { kind: 'assessment', type: 'V' })).toBe(true)
+        expect(methods.entryHasNotificationWorkflow.call(ctx, { kind: 'assessment', type: 'M' })).toBe(false)
+    })
+
+    it('shows the student warning only while an email confirmation is pending', async () => {
+        const methods = (CourseTable as any).methods
+        const ctx = {
+            entryStore: {
+                courseEntries: [
+                    { user_id: 27, has_pending_notification_confirmation: true },
+                    { user_id: 28, has_pending_notification_confirmation: false },
+                ],
+            },
+            registeredStudentUserId: (student: { user_id: number }) => student.user_id,
+        }
+
+        expect(methods.studentHasPendingNotificationConfirmation.call(ctx, { user_id: 27 })).toBe(true)
+        expect(methods.studentHasPendingNotificationConfirmation.call(ctx, { user_id: 28 })).toBe(false)
+        expect(methods.studentHasPendingNotificationConfirmation.call(ctx, { user_id: 29 })).toBe(false)
+
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseTable.vue', 'utf8')
+        )
+
+        expect(source).toContain('v-if="studentHasPendingNotificationConfirmation(student)"')
+        expect(source).toContain('class="course-table-student-confirmation-warning"')
+        expect(source).toContain('E-Mail-Bestätigung ausständig')
+    })
+
+    it('selects all available notification recipients after loading them', async () => {
+        const methods = (CourseTable as any).methods
+        const recipients = [
+            { key: 'class-head', available: true },
+            { key: 'mother', available: true },
+            { key: 'missing', available: false },
+        ]
+        const ctx: any = {
+            entryForm: { id: 42 },
+            entryHasNotificationWorkflow: vi.fn().mockReturnValue(true),
+            entryNotificationLoading: false,
+            entryNotificationRequestId: 0,
+            entryNotificationRecipients: [],
+            selectedEntryNotificationRecipientKeys: [],
+            entryStore: {
+                notificationRecipients: vi.fn().mockResolvedValue(recipients),
+            },
+        }
+
+        await methods.loadEntryNotificationRecipients.call(ctx, { id: 42 })
+
+        expect(ctx.entryNotificationRecipients).toEqual(recipients)
+        expect(ctx.selectedEntryNotificationRecipientKeys).toEqual(['class-head', 'mother'])
+        expect(ctx.entryNotificationLoading).toBe(false)
+    })
+
+    it('previews recipients while creating a notification-enabled entry', async () => {
+        const methods = (CourseTable as any).methods
+        const recipients = [
+            { key: 'class-head', available: true },
+            { key: 'mother', available: true },
+            { key: 'missing', available: false },
+        ]
+        const ctx: any = {
+            entryForm: { grade: '', id: null, type: '' },
+            entryHasNotificationWorkflow: (entry: { type: string }) => entry.type === 'V',
+            entryNotificationLoading: false,
+            entryNotificationRequestId: 0,
+            entryNotificationRecipients: [],
+            entryStore: {
+                previewNotificationRecipients: vi.fn().mockResolvedValue(recipients),
+            },
+            loadDraftEntryNotificationRecipients() {
+                return methods.loadDraftEntryNotificationRecipients.call(this)
+            },
+            registeredEntryStudentId: 27,
+            selected_course: { id: 16 },
+            selectedEntryNotificationRecipientKeys: [],
+        }
+
+        await methods.selectCellEntryType.call(ctx, 'V')
+
+        expect(ctx.entryStore.previewNotificationRecipients).toHaveBeenCalledWith(16, 27, 'V')
+        expect(ctx.entryNotificationRecipients).toEqual(recipients)
+        expect(ctx.selectedEntryNotificationRecipientKeys).toEqual(['class-head', 'mother'])
+        expect(ctx.entryNotificationLoading).toBe(false)
+
+        await methods.selectCellEntryType.call(ctx, 'M')
+
+        expect(ctx.entryNotificationRecipients).toEqual([])
+        expect(ctx.selectedEntryNotificationRecipientKeys).toEqual([])
+        expect(ctx.entryStore.previewNotificationRecipients).toHaveBeenCalledTimes(1)
+    })
+
+    it('renders notification email and timestamp controls in an entry form', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseTable.vue', 'utf8')
+        )
+
+        expect(source).toContain('v-if="entryHasNotificationWorkflow(entry)"')
+        expect(source).toContain('v-model="selectedEntryNotificationRecipientKeys"')
+        expect(source).toContain('Alle verfügbaren Personen sind standardmäßig ausgewählt.')
+        expect(source).toContain('Informiert: {{ formatNotificationDateTime(recipient.informed_at) }}')
+        expect(source).toContain('E-Mail geöffnet: {{ formatNotificationDateTime(recipient.opened_at) }}')
+        expect(source).toContain('{{ notificationConfirmationLabel(recipient) }}:')
+        expect(source).toContain('Per E-Mail informieren')
+        expect(source).toContain('data-testid="course-table-new-entry-notification-recipients"')
+        expect(source).toContain('Jetzt per E-Mail informieren')
+        expect(source).toContain('Beim Speichern werden die E-Mails direkt versendet.')
+        expect(source).toContain("'Speichern & E-Mail senden'")
+        expect(source).toContain('Manuell bestätigen')
+        expect(source).toContain('@click="confirmEntryNotificationManually(entry, recipient)"')
+    })
+
+    it('confirms a sent notification manually and refreshes recipient statuses', async () => {
+        const methods = (CourseTable as any).methods
+        const recipients = [{
+            available: true,
+            confirmed_at: '2026-10-20T15:05:00+00:00',
+            key: 'mother',
+            notification_id: 91,
+        }]
+        const ctx: any = {
+            entryForm: { id: 42 },
+            entryNotificationConfirmingId: null,
+            entryNotificationRecipients: [],
+            entryStore: {
+                confirmNotification: vi.fn().mockResolvedValue(recipients),
+            },
+            selectedEntryNotificationRecipientKeys: [],
+        }
+
+        await methods.confirmEntryNotificationManually.call(ctx, { id: 42 }, {
+            confirmed_at: null,
+            notification_id: 91,
+        })
+
+        expect(ctx.entryStore.confirmNotification).toHaveBeenCalledWith(42, 91)
+        expect(ctx.entryNotificationRecipients).toEqual(recipients)
+        expect(ctx.selectedEntryNotificationRecipientKeys).toEqual(['mother'])
+        expect(ctx.entryNotificationConfirmingId).toBeNull()
+    })
+
+    it('describes how and by whom a notification was confirmed', () => {
+        const confirmationLabel = (CourseTable as any).methods.notificationConfirmationLabel
+
+        expect(confirmationLabel({
+            confirmation_method: 'manual',
+            confirmed_by: 'Anna Admin',
+        })).toBe('Manuell bestätigt von Anna Admin')
+        expect(confirmationLabel({
+            confirmation_method: 'email',
+            confirmed_by: 'Maria Muster',
+        })).toBe('Per E-Mail bestätigt von Maria Muster')
+        expect(confirmationLabel({ confirmation_method: null })).toBe('Bestätigt (Art nicht erfasst)')
     })
 })

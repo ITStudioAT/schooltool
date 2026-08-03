@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Homepage\HomepageController;
+use App\Http\Controllers\TeachingCourseStudentEntryNotificationConfirmationController;
 use App\Http\Controllers\Tutoring\OfferController;
 use App\Http\Controllers\Tutoring\OfferRequestController;
 use App\Http\Controllers\Tutoring\TutoringController;
@@ -144,6 +145,16 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
             ->middleware('signed')
             ->name('homepage.tutoring.offer-request.store');
     });
+
+    Route::get('teaching/entry-notifications/{notification}/confirm', [TeachingCourseStudentEntryNotificationConfirmationController::class, 'show'])
+        ->middleware('signed')
+        ->name('teaching-entry-notifications.confirm.show');
+    Route::get('teaching/entry-notifications/{notification}/open', [TeachingCourseStudentEntryNotificationConfirmationController::class, 'open'])
+        ->middleware('signed')
+        ->name('teaching-entry-notifications.open');
+    Route::post('teaching/entry-notifications/{notification}/confirm', [TeachingCourseStudentEntryNotificationConfirmationController::class, 'store'])
+        ->middleware('signed')
+        ->name('teaching-entry-notifications.confirm.store');
 
     Route::prefix('homepage/restaurant')->group(function () {
         Route::get('confirm-user', [HomepageController::class, 'restaurantConfirmUserPrompt'])

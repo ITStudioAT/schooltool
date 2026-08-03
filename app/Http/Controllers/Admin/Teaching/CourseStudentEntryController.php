@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -42,6 +43,11 @@ class CourseStudentEntryController extends Controller
         }
 
         $entries = $query
+            ->withExists([
+                'notifications as has_pending_notification_confirmation' => fn (Builder $query): Builder => $query
+                    ->whereNotNull('informed_at')
+                    ->whereNull('confirmed_at'),
+            ])
             ->orderBy('date', 'desc')
             ->orderBy('id', 'desc')
             ->get();
@@ -105,6 +111,7 @@ class CourseStudentEntryController extends Controller
         }
 
         $entry = TeachingCourseStudentEntry::create($validated);
+        $this->loadPendingNotificationConfirmationState($entry);
         $this->attachEffectiveGrade($entry, $this->defaultGradesByType($course, $auth_user));
 
         return response()->json(['data' => $entry], 201);
@@ -147,6 +154,7 @@ class CourseStudentEntryController extends Controller
         }
 
         $course_student_entry->update($validated);
+        $this->loadPendingNotificationConfirmationState($course_student_entry);
         $this->attachEffectiveGrade($course_student_entry, $this->defaultGradesByType($course, $auth_user));
 
         return response()->json(['data' => $course_student_entry]);
@@ -239,5 +247,14 @@ class CourseStudentEntryController extends Controller
 
         $type = trim((string) ($entry->type ?? ''));
         $entry->setAttribute('effective_grade', $type !== '' ? ($defaultsByType[$type] ?? null) : null);
+    }
+
+    private function loadPendingNotificationConfirmationState(TeachingCourseStudentEntry $entry): void
+    {
+        $entry->loadExists([
+            'notifications as has_pending_notification_confirmation' => fn (Builder $query): Builder => $query
+                ->whereNotNull('informed_at')
+                ->whereNull('confirmed_at'),
+        ]);
     }
 }

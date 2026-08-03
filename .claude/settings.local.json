@@ -1,7 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
-    "defaultMode": "dontAsk",
     "allow": [
       "Read",
       "Edit",
@@ -22,7 +21,8 @@
       "mcp__laravel-boost__database-query",
       "mcp__vue-app-mcp__*",
       "mcp__vuetify-mcp__*",
-      "mcp__context7__*"
+      "mcp__context7__*",
+      "mcp__codex__*"
     ],
     "deny": [
       "Read(./.env)",
@@ -46,11 +46,19 @@
       "Bash(yarn remove:*)"
     ],
     "ask": [],
+    "defaultMode": "dontAsk",
     "additionalDirectories": [
       "C:\\Users\\kron\\.claude",
       "\\tmp",
       "C:\\Users\\kron"
     ]
   },
-  "model": "claude-opus-4-6"
+  "model": "claude-opus-4-6",
+  "enabledMcpjsonServers": [
+    "laravel-boost",
+    "vue-docs-mcp",
+    "vue-app-mcp",
+    "vuetify-mcp",
+    "codex"
+  ]
 }

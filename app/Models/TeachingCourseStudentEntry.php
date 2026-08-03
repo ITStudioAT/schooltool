@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TeachingCourseStudentEntry extends Model
 {
@@ -24,6 +25,7 @@ class TeachingCourseStudentEntry extends Model
 
     protected $casts = [
         'date' => 'date',
+        'has_pending_notification_confirmation' => 'boolean',
         'status' => 'array',
     ];
 
@@ -40,5 +42,10 @@ class TeachingCourseStudentEntry extends Model
     public function teachingCourseWork(): BelongsTo
     {
         return $this->belongsTo(TeachingCourseWork::class);
+    }
+
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(TeachingCourseStudentEntryNotification::class);
     }
 }

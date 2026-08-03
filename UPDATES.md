@@ -9,6 +9,8 @@
 - pdf-table-creator erstellt
 - Tabellen-Übersicht: pdf erstellen
 - Arbeiten: Bessere Darstellung
+- Stoff: Curricula-Zuordnungen können einfach übernommen werden
+- Verständigungen per E-Mail inkl. Bestätigungen
 
 ### System
 - Laravel 13.23.0   

@@ -354,6 +354,13 @@
                                     <div class="course-table-main-text">
                                         <span class="course-table-student-name">{{ studentLastName(student) }}</span>
                                         <span
+                                            v-if="studentHasPendingNotificationConfirmation(student)"
+                                            class="course-table-student-confirmation-warning"
+                                            aria-label="E-Mail-Bestätigung ausständig"
+                                            title="Mindestens eine E-Mail-Bestätigung ist noch ausständig.">
+                                            !
+                                        </span>
+                                        <span
                                             v-if="tableView === 'attendance' && studentPresencePercentage(student) !== null"
                                             class="course-table-presence-percentage">
                                             {{ studentPresencePercentage(student) }} %
@@ -1737,6 +1744,125 @@
                                         :counter="1024"
                                         :maxlength="1024" />
 
+                                    <section
+                                        v-if="entryHasNotificationWorkflow(entry)"
+                                        class="course-table-entry-notifications mb-4"
+                                        :data-testid="`course-table-entry-notifications-${entry.id}`">
+                                        <v-divider class="mb-3" />
+                                        <div class="d-flex align-center ga-2 mb-2">
+                                            <v-icon icon="mdi-email-check-outline" color="primary" size="20" />
+                                            <div class="text-subtitle-2 font-weight-bold">Verständigungen</div>
+                                            <v-spacer />
+                                            <v-btn
+                                                icon="mdi-refresh"
+                                                size="x-small"
+                                                variant="text"
+                                                title="Status aktualisieren"
+                                                :loading="entryNotificationLoading"
+                                                :disabled="entryNotificationSending"
+                                                @click="loadEntryNotificationRecipients(entry)" />
+                                        </div>
+                                        <div class="text-caption text-medium-emphasis mb-2">
+                                            Alle verfügbaren Personen sind standardmäßig ausgewählt.
+                                        </div>
+
+                                        <v-progress-linear v-if="entryNotificationLoading" indeterminate color="primary" class="mb-3" />
+                                        <v-alert
+                                            v-else-if="!entryNotificationRecipients.length"
+                                            type="warning"
+                                            variant="tonal"
+                                            density="compact">
+                                            Es wurden keine Empfänger:innen gefunden.
+                                        </v-alert>
+                                        <div v-else class="d-flex flex-column ga-1">
+                                            <div
+                                                v-for="recipient in entryNotificationRecipients"
+                                                :key="recipient.key"
+                                                class="d-flex align-start ga-2">
+                                                <v-checkbox
+                                                    v-model="selectedEntryNotificationRecipientKeys"
+                                                    class="flex-grow-1"
+                                                    :value="recipient.key"
+                                                    multiple
+                                                    color="primary"
+                                                    density="compact"
+                                                    hide-details
+                                                    :disabled="!recipient.available || entryNotificationSending">
+                                                    <template #label>
+                                                        <div class="course-table-entry-notification-label py-1">
+                                                            <div class="d-flex align-center flex-wrap ga-2">
+                                                                <strong>{{ recipient.group_label }}</strong>
+                                                                <span>{{ recipient.recipient_label }}</span>
+                                                                <span v-if="recipient.email" class="text-medium-emphasis">{{ recipient.email }}</span>
+                                                            </div>
+                                                            <div class="d-flex align-center flex-wrap ga-1 mt-1">
+                                                                <v-chip
+                                                                    v-if="recipient.informed_at"
+                                                                    size="x-small"
+                                                                    color="info"
+                                                                    variant="tonal">
+                                                                    Informiert: {{ formatNotificationDateTime(recipient.informed_at) }}
+                                                                </v-chip>
+                                                                <v-chip v-else size="x-small" variant="tonal">
+                                                                    Noch nicht informiert
+                                                                </v-chip>
+                                                                <v-chip
+                                                                    v-if="recipient.opened_at"
+                                                                    size="x-small"
+                                                                    color="success"
+                                                                    variant="tonal">
+                                                                    E-Mail geöffnet: {{ formatNotificationDateTime(recipient.opened_at) }}
+                                                                </v-chip>
+                                                                <v-chip
+                                                                    v-if="recipient.confirmed_at"
+                                                                    size="x-small"
+                                                                color="success"
+                                                                variant="tonal">
+                                                                {{ notificationConfirmationLabel(recipient) }}:
+                                                                {{ formatNotificationDateTime(recipient.confirmed_at) }}
+                                                                </v-chip>
+                                                                <v-chip
+                                                                    v-else-if="recipient.informed_at"
+                                                                    size="x-small"
+                                                                    color="warning"
+                                                                    variant="tonal">
+                                                                    Noch nicht bestätigt
+                                                                </v-chip>
+                                                            </div>
+                                                        </div>
+                                                    </template>
+                                                </v-checkbox>
+                                                <v-btn
+                                                    v-if="recipient.notification_id && recipient.informed_at && !recipient.confirmed_at"
+                                                    class="mt-2"
+                                                    color="success"
+                                                    prepend-icon="mdi-check"
+                                                    size="x-small"
+                                                    variant="tonal"
+                                                    :loading="entryNotificationConfirmingId === recipient.notification_id"
+                                                    :disabled="entryNotificationSending || (
+                                                        entryNotificationConfirmingId !== null
+                                                        && entryNotificationConfirmingId !== recipient.notification_id
+                                                    )"
+                                                    @click="confirmEntryNotificationManually(entry, recipient)">
+                                                    Manuell bestätigen
+                                                </v-btn>
+                                            </div>
+                                        </div>
+
+                                        <div class="d-flex justify-end mt-2">
+                                            <v-btn
+                                                color="primary"
+                                                prepend-icon="mdi-email-send-outline"
+                                                variant="tonal"
+                                                :loading="entryNotificationSending"
+                                                :disabled="entryNotificationLoading || !selectedEntryNotificationRecipientKeys.length"
+                                                @click="sendEntryNotificationEmails(entry)">
+                                                Per E-Mail informieren
+                                            </v-btn>
+                                        </div>
+                                    </section>
+
                                     <div class="d-flex align-center ga-2">
                                         <v-btn
                                             :data-testid="`course-table-cell-delete-entry-${entry.uid}`"
@@ -1837,15 +1963,64 @@
                                 :counter="1024"
                                 :maxlength="1024" />
 
+                            <section
+                                v-if="entryHasNotificationWorkflow(entryForm)"
+                                class="course-table-entry-notifications mb-4"
+                                data-testid="course-table-new-entry-notification-recipients">
+                                <v-divider class="mb-3" />
+                                <div class="d-flex align-center ga-2 mb-2">
+                                    <v-icon icon="mdi-email-check-outline" color="primary" size="20" />
+                                    <div class="text-subtitle-2 font-weight-bold">Jetzt per E-Mail informieren</div>
+                                </div>
+                                <div class="text-caption text-medium-emphasis mb-2">
+                                    Wähle die gewünschten Personen aus. Beim Speichern werden die E-Mails direkt versendet.
+                                </div>
+
+                                <v-progress-linear v-if="entryNotificationLoading" indeterminate color="primary" class="mb-3" />
+                                <v-alert
+                                    v-else-if="!entryNotificationRecipients.length"
+                                    type="warning"
+                                    variant="tonal"
+                                    density="compact">
+                                    Es wurden keine Empfänger:innen gefunden.
+                                </v-alert>
+                                <div v-else class="d-flex flex-column ga-1">
+                                    <v-checkbox
+                                        v-for="recipient in entryNotificationRecipients"
+                                        :key="recipient.key"
+                                        v-model="selectedEntryNotificationRecipientKeys"
+                                        :value="recipient.key"
+                                        multiple
+                                        color="primary"
+                                        density="compact"
+                                        hide-details
+                                        :disabled="!recipient.available || entrySaving">
+                                        <template #label>
+                                            <div class="course-table-entry-notification-label py-1">
+                                                <div class="d-flex align-center flex-wrap ga-2">
+                                                    <strong>{{ recipient.group_label }}</strong>
+                                                    <span>{{ recipient.recipient_label }}</span>
+                                                    <span v-if="recipient.email" class="text-medium-emphasis">
+                                                        {{ recipient.email }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </v-checkbox>
+                                </div>
+                            </section>
+
                             <div class="d-flex justify-end ga-2">
                                 <v-btn variant="text" :disabled="entrySaving" @click="cancelNewCellEntry">Abbrechen</v-btn>
                                 <v-btn
                                     color="success"
                                     variant="flat"
                                     :loading="entrySaving"
-                                    :disabled="!canSaveCellEntry"
+                                    :disabled="!canSaveCellEntry || entryNotificationLoading"
                                     @click="saveCellEntry">
-                                    Speichern
+                                    {{ selectedEntryNotificationRecipientKeys.length
+                                        ? 'Speichern & E-Mail senden'
+                                        : 'Speichern' }}
                                 </v-btn>
                             </div>
                         </div>
@@ -1994,7 +2169,13 @@ export default {
             entryDeleting: false,
             entrySaving: false,
             entryStore: null,
+            entryNotificationConfirmingId: null,
+            entryNotificationLoading: false,
+            entryNotificationRequestId: 0,
+            entryNotificationRecipients: [],
+            entryNotificationSending: false,
             selectedCellEntryUid: null,
+            selectedEntryNotificationRecipientKeys: [],
             randomGroupsDialog: {
                 groupSize: 2,
                 open: false,
@@ -3999,6 +4180,15 @@ export default {
                 return String(first.type || '').localeCompare(String(second.type || ''), 'de', { sensitivity: 'base' })
             })
         },
+        studentHasPendingNotificationConfirmation(student) {
+            const userId = this.registeredStudentUserId(student)
+            if (!userId) return false
+
+            return (this.entryStore?.courseEntries || []).some((entry) => (
+                String(entry?.user_id) === String(userId)
+                && entry?.has_pending_notification_confirmation === true
+            ))
+        },
         studentCellEntryDateKey(entry) {
             const entryDateKey = this.normalizeDateKey(entry?.date)
             if (entry?.source !== 'course_work') return entryDateKey
@@ -4113,6 +4303,8 @@ export default {
             return 'Verhalten'
         },
         cellEntryColor(entry) {
+            if (entry?.has_pending_notification_confirmation === true) return 'error'
+
             if (entry?.kind === 'assessment') {
                 const category = this.entryDefinitionCategory?.(entry) || 'Benotung'
                 if (category === 'Verhalten') return 'warning'
@@ -4133,6 +4325,144 @@ export default {
             const definition = definitions.find((item) => item?.short_name === entry?.type)
 
             return definition?.category || 'Benotung'
+        },
+        entryDefinition(entry) {
+            if (entry?.kind !== 'assessment') return null
+
+            const definitions = this.selected_course?.teaching_entry_area?.entry_definitions
+            if (!Array.isArray(definitions)) return null
+
+            return definitions.find((definition) => definition?.short_name === entry?.type) || null
+        },
+        entryHasNotificationWorkflow(entry) {
+            const definition = this.entryDefinition(entry)
+
+            return Boolean(definition?.has_notifications && definition.notification_recipients?.length)
+        },
+        resetEntryNotificationState() {
+            this.entryNotificationRequestId += 1
+            this.entryNotificationConfirmingId = null
+            this.entryNotificationLoading = false
+            this.entryNotificationRecipients = []
+            this.entryNotificationSending = false
+            this.selectedEntryNotificationRecipientKeys = []
+        },
+        async loadEntryNotificationRecipients(entry) {
+            if (!this.entryHasNotificationWorkflow(entry) || !entry?.id) return
+
+            const requestId = ++this.entryNotificationRequestId
+            this.entryNotificationLoading = true
+            try {
+                const recipients = await this.entryStore.notificationRecipients(entry.id)
+                if (
+                    !recipients
+                    || requestId !== this.entryNotificationRequestId
+                    || this.entryForm.id !== entry.id
+                ) return
+
+                this.entryNotificationRecipients = recipients
+                this.selectedEntryNotificationRecipientKeys = recipients
+                    .filter((recipient) => recipient.available)
+                    .map((recipient) => recipient.key)
+            } finally {
+                if (requestId === this.entryNotificationRequestId) {
+                    this.entryNotificationLoading = false
+                }
+            }
+        },
+        async loadDraftEntryNotificationRecipients() {
+            const requestId = ++this.entryNotificationRequestId
+            const courseId = this.selected_course?.id
+            const studentId = this.registeredEntryStudentId
+            const type = String(this.entryForm.type || '')
+            const draftEntry = { kind: 'assessment', type }
+
+            this.entryNotificationLoading = false
+            this.entryNotificationRecipients = []
+            this.selectedEntryNotificationRecipientKeys = []
+
+            if (!courseId || !studentId || !type || !this.entryHasNotificationWorkflow(draftEntry)) return
+
+            this.entryNotificationLoading = true
+            try {
+                const recipients = await this.entryStore.previewNotificationRecipients(courseId, studentId, type)
+                if (
+                    !recipients
+                    || requestId !== this.entryNotificationRequestId
+                    || this.entryForm.id
+                    || this.entryForm.type !== type
+                ) return
+
+                this.entryNotificationRecipients = recipients
+                this.selectedEntryNotificationRecipientKeys = recipients
+                    .filter((recipient) => recipient.available)
+                    .map((recipient) => recipient.key)
+            } finally {
+                if (requestId === this.entryNotificationRequestId) {
+                    this.entryNotificationLoading = false
+                }
+            }
+        },
+        async sendEntryNotificationEmails(entry) {
+            if (!entry?.id || !this.selectedEntryNotificationRecipientKeys.length) return
+
+            this.entryNotificationSending = true
+            try {
+                const recipients = await this.entryStore.sendNotifications(
+                    entry.id,
+                    this.selectedEntryNotificationRecipientKeys,
+                )
+                if (!recipients || this.entryForm.id !== entry.id) return
+
+                this.entryNotificationRecipients = recipients
+                this.selectedEntryNotificationRecipientKeys = recipients
+                    .filter((recipient) => recipient.available)
+                    .map((recipient) => recipient.key)
+            } finally {
+                this.entryNotificationSending = false
+            }
+        },
+        async confirmEntryNotificationManually(entry, recipient) {
+            if (!entry?.id || !recipient?.notification_id || recipient.confirmed_at) return
+
+            this.entryNotificationConfirmingId = recipient.notification_id
+            try {
+                const recipients = await this.entryStore.confirmNotification(entry.id, recipient.notification_id)
+                if (!recipients || this.entryForm.id !== entry.id) return
+
+                this.entryNotificationRecipients = recipients
+                this.selectedEntryNotificationRecipientKeys = recipients
+                    .filter((item) => item.available)
+                    .map((item) => item.key)
+            } finally {
+                this.entryNotificationConfirmingId = null
+            }
+        },
+        notificationConfirmationLabel(recipient) {
+            if (recipient?.confirmation_method === 'manual') {
+                return recipient.confirmed_by
+                    ? `Manuell bestätigt von ${recipient.confirmed_by}`
+                    : 'Manuell bestätigt'
+            }
+
+            if (recipient?.confirmation_method === 'email') {
+                return recipient.confirmed_by
+                    ? `Per E-Mail bestätigt von ${recipient.confirmed_by}`
+                    : 'Per E-Mail bestätigt'
+            }
+
+            return 'Bestätigt (Art nicht erfasst)'
+        },
+        formatNotificationDateTime(value) {
+            if (!value) return '–'
+
+            const date = new Date(value)
+            if (Number.isNaN(date.getTime())) return String(value)
+
+            return new Intl.DateTimeFormat('de-AT', {
+                dateStyle: 'short',
+                timeStyle: 'short',
+            }).format(date)
         },
         cellEntryTypeLabel(entry) {
             const type = String(entry?.type || '').trim()
@@ -4521,9 +4851,14 @@ export default {
                 uid: entry.uid,
             }
             this.entryFormOpen = true
+
+            if (this.entryHasNotificationWorkflow?.(entry)) {
+                this.loadEntryNotificationRecipients?.(entry)
+            }
         },
         cancelNewCellEntry() {
             this.entryFormOpen = false
+            this.resetEntryNotificationState?.()
             this.entryForm = {
                 description: '',
                 doneDate: null,
@@ -4566,9 +4901,13 @@ export default {
 
             this.selectCellEntry(entry)
         },
-        selectCellEntryType(type) {
+        async selectCellEntryType(type) {
             this.entryForm.type = this.entryForm.type === type ? '' : type
             this.entryForm.grade = ''
+
+            if (!this.entryForm.id) {
+                await this.loadDraftEntryNotificationRecipients()
+            }
         },
         entryTypeCategoryColor(category) {
             return {
@@ -4579,15 +4918,20 @@ export default {
             }[category] || 'default'
         },
         async saveCellEntry() {
-            if (!this.canSaveCellEntry) return
+            if (!this.canSaveCellEntry || this.entryNotificationLoading) return
 
             this.entrySaving = true
             try {
                 const date = this.normalizeDateKey(this.entryDialog.courseDate?.date) || null
                 const description = String(this.entryForm.description || '').trim() || null
+                const isCreatingEntry = !this.entryForm.id
+                const notificationRecipientKeys = isCreatingEntry
+                    && Array.isArray(this.selectedEntryNotificationRecipientKeys)
+                    ? [...this.selectedEntryNotificationRecipientKeys]
+                    : []
                 let response
 
-                if (!this.entryForm.id) {
+                if (isCreatingEntry) {
                     response = await this.entryStore.store({
                         teaching_course_id: this.selected_course.id,
                         user_id: this.registeredEntryStudentId,
@@ -4616,6 +4960,14 @@ export default {
                         is_done: Boolean(this.entryForm.doneDate),
                         done_date: this.entryForm.doneDate,
                     })
+                }
+
+                if (response && isCreatingEntry && notificationRecipientKeys.length) {
+                    const createdEntryId = response.data?.id
+
+                    if (createdEntryId) {
+                        await this.entryStore.sendNotifications(createdEntryId, notificationRecipientKeys)
+                    }
                 }
 
                 if (response) {
@@ -5886,6 +6238,21 @@ export default {
 .course-table-student-name {
     min-width: 0;
     overflow-wrap: anywhere;
+}
+
+.course-table-student-confirmation-warning {
+    align-items: center;
+    background: #dc2626;
+    border-radius: 999px;
+    color: #ffffff;
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 800;
+    height: 16px;
+    justify-content: center;
+    line-height: 1;
+    min-width: 16px;
 }
 
 .course-table-presence-percentage {

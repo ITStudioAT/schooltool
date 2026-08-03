@@ -7,6 +7,7 @@ use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseStudentEntryNotification;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
@@ -206,6 +207,56 @@ describe('authorization and index', function () {
             ->and($response->json('data.0.effective_grade'))->toBe('2')
             ->and($response->json('data.1.id'))->toBe($older->id)
             ->and($response->json('data.1.effective_grade'))->toBe('3');
+    });
+
+    test('marks entries with sent notifications that still need confirmation', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $pendingEntry = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'type' => 'MA',
+            'date' => '2026-03-03',
+            'source' => 'manual',
+        ]);
+        $confirmedEntry = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'type' => 'MA',
+            'date' => '2026-03-02',
+            'source' => 'manual',
+        ]);
+        $unsentEntry = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'type' => 'MA',
+            'date' => '2026-03-01',
+            'source' => 'manual',
+        ]);
+
+        TeachingCourseStudentEntryNotification::factory()->create([
+            'teaching_course_student_entry_id' => $pendingEntry->id,
+            'informed_at' => now(),
+            'confirmed_at' => null,
+        ]);
+        TeachingCourseStudentEntryNotification::factory()->create([
+            'teaching_course_student_entry_id' => $confirmedEntry->id,
+            'informed_at' => now()->subHour(),
+            'confirmed_at' => now(),
+        ]);
+        TeachingCourseStudentEntryNotification::factory()->create([
+            'teaching_course_student_entry_id' => $unsentEntry->id,
+            'informed_at' => null,
+            'confirmed_at' => null,
+        ]);
+
+        $response = $this->getJson('/api/admin/teaching/course_student_entries?course_id='.$this->course->id)
+            ->assertOk();
+        $entries = collect($response->json('data'))->keyBy('id');
+
+        expect($entries[$pendingEntry->id]['has_pending_notification_confirmation'])->toBeTrue()
+            ->and($entries[$confirmedEntry->id]['has_pending_notification_confirmation'])->toBeFalse()
+            ->and($entries[$unsentEntry->id]['has_pending_notification_confirmation'])->toBeFalse();
     });
 
     test('can include all data required by the entries table in one response', function () {

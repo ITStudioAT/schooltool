@@ -64,6 +64,7 @@ use App\Http\Controllers\Admin\TeachersListController;
 use App\Http\Controllers\Admin\Teaching\CourseBehaviourEntryController;
 use App\Http\Controllers\Admin\Teaching\CourseDateController;
 use App\Http\Controllers\Admin\Teaching\CourseStudentCategoryEvaluationController;
+use App\Http\Controllers\Admin\Teaching\CourseStudentEntryNotificationController;
 use App\Http\Controllers\Admin\Teaching\CourseWorkController;
 use App\Http\Controllers\Admin\Teaching\CurriculumController;
 use App\Http\Controllers\Admin\Teaching\CurriculumDocumentController;
@@ -627,6 +628,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/import116/runs/reset', [Import116Controller::class, 'resetRuns']);
         Route::delete('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);
         Route::apiResource('/admin/teaching/course_works', CourseWorkController::class);
+        Route::get('/admin/teaching/course_student_entry_notification_recipients', [CourseStudentEntryNotificationController::class, 'preview']);
+        Route::get('/admin/teaching/course_student_entries/{courseStudentEntry}/notifications', [CourseStudentEntryNotificationController::class, 'index']);
+        Route::post('/admin/teaching/course_student_entries/{courseStudentEntry}/notifications', [CourseStudentEntryNotificationController::class, 'store']);
+        Route::patch('/admin/teaching/course_student_entries/{courseStudentEntry}/notifications/{notification}', [CourseStudentEntryNotificationController::class, 'update']);
         Route::apiResource('/admin/teaching/course_student_entries', App\Http\Controllers\Admin\Teaching\CourseStudentEntryController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/teaching/course_student_category_evaluations', CourseStudentCategoryEvaluationController::class)->only(['index', 'store']);
         Route::apiResource('/admin/teaching/course_behaviour_entries', CourseBehaviourEntryController::class)->only(['index', 'store', 'update', 'destroy']);

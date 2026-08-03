@@ -1,4 +1,10 @@
 import { defineStore } from 'pinia'
+import {
+    index as notificationRecipientsIndex,
+    preview as previewNotificationRecipients,
+    store as sendEntryNotifications,
+    update as confirmEntryNotification,
+} from '@/actions/App/Http/Controllers/Admin/Teaching/CourseStudentEntryNotificationController'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
@@ -160,6 +166,117 @@ export const useCourseStudentEntryStore = defineStore('AdminCourseStudentEntrySt
             } finally {
                 adminStore.is_loading--
             }
+        },
+
+        async notificationRecipients(entryId) {
+            const notification = useNotificationStore()
+
+            try {
+                const response = await axios.get(notificationRecipientsIndex.url(entryId))
+
+                return response.data.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Verständigungen konnten nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return false
+            }
+        },
+
+        async previewNotificationRecipients(courseId, userId, type) {
+            const notification = useNotificationStore()
+
+            try {
+                const response = await axios.get(previewNotificationRecipients.url(), {
+                    params: {
+                        course_id: courseId,
+                        user_id: userId,
+                        type,
+                    },
+                })
+
+                return response.data.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Empfänger:innen konnten nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return false
+            }
+        },
+
+        async sendNotifications(entryId, recipients) {
+            const notification = useNotificationStore()
+
+            try {
+                const response = await axios.post(sendEntryNotifications.url(entryId), { recipients })
+                this.syncPendingNotificationConfirmation(entryId, response.data.data)
+                notification.notify({
+                    message: response.data.message,
+                    type: 'success',
+                    timeout: 3000,
+                })
+
+                return response.data.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Die E-Mails konnten nicht gesendet werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return false
+            }
+        },
+
+        async confirmNotification(entryId, notificationId) {
+            const notification = useNotificationStore()
+
+            try {
+                const response = await axios.patch(confirmEntryNotification.url({
+                    courseStudentEntry: entryId,
+                    notification: notificationId,
+                }))
+                this.syncPendingNotificationConfirmation(entryId, response.data.data)
+                notification.notify({
+                    message: response.data.message,
+                    type: 'success',
+                    timeout: 3000,
+                })
+
+                return response.data.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Die Bestätigung konnte nicht gespeichert werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return false
+            }
+        },
+
+        syncPendingNotificationConfirmation(entryId, recipients) {
+            const hasPendingNotificationConfirmation = recipients.some((recipient) => (
+                Boolean(recipient.informed_at) && !recipient.confirmed_at
+            ))
+            const updateEntry = (entry) => (
+                entry.id === entryId
+                    ? { ...entry, has_pending_notification_confirmation: hasPendingNotificationConfirmation }
+                    : entry
+            )
+
+            this.entries = (this.entries || []).map(updateEntry)
+            this.courseEntries = (this.courseEntries || []).map(updateEntry)
         },
 
         clear() {

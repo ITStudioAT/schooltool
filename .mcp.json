@@ -1,22 +1,31 @@
 {
-    "mcpServers": {
-        "laravel-boost": {
-            "command": "php",
-            "args": [
-                "artisan",
-                "boost:mcp"
-            ]
-        },
-        "vue-docs-mcp": {
-            "type": "http",
-            "url": "https://mcp.vue-mcp.org/mcp"
-        },
-        "vue-app-mcp": {
-            "url": "http://localhost:5173/__mcp/sse"
-        },
-        "vuetify-mcp": {
-            "type": "http",
-            "url": "https://mcp.vuetifyjs.com/mcp"
-        }
+  "mcpServers": {
+    "laravel-boost": {
+      "command": "php",
+      "args": [
+        "artisan",
+        "boost:mcp"
+      ]
+    },
+    "vue-docs-mcp": {
+      "type": "http",
+      "url": "https://mcp.vue-mcp.org/mcp"
+    },
+    "vue-app-mcp": {
+      "type": "sse",
+      "url": "http://localhost:5173/__mcp/sse"
+    },
+    "vuetify-mcp": {
+      "type": "http",
+      "url": "https://mcp.vuetifyjs.com/mcp"
+    },
+    "codex": {
+      "type": "stdio",
+      "command": "codex",
+      "args": [
+        "mcp-server"
+      ],
+      "env": {}
     }
+  }
 }
