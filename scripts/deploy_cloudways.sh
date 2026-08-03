@@ -5,6 +5,12 @@ project_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_directory"
 
 maintenance_mode_enabled=false
+horizon_restart_timeout="${DEPLOY_HORIZON_RESTART_TIMEOUT:-120}"
+
+if [[ ! "$horizon_restart_timeout" =~ ^[1-9][0-9]*$ ]]; then
+    echo "DEPLOY_HORIZON_RESTART_TIMEOUT must be a positive number of seconds." >&2
+    exit 1
+fi
 
 verify_queue_runtime() {
     echo "Verifying the Horizon queue runtime..."
@@ -19,9 +25,9 @@ verify_queue_runtime() {
 }
 
 wait_for_queue_runtime() {
-    echo "Waiting for the process monitor to restart Horizon..."
+    echo "Waiting up to ${horizon_restart_timeout} seconds for the process monitor to restart Horizon..."
 
-    for ((attempt = 1; attempt <= 20; attempt++)); do
+    for ((attempt = 1; attempt <= horizon_restart_timeout; attempt++)); do
         if php artisan queue:health-check >/dev/null 2>&1; then
             echo "Horizon restarted successfully."
 
@@ -32,7 +38,7 @@ wait_for_queue_runtime() {
     done
 
     php artisan queue:health-check || true
-    echo "Horizon did not restart within 20 seconds." >&2
+    echo "Horizon did not restart within ${horizon_restart_timeout} seconds." >&2
 
     return 1
 }
@@ -70,11 +76,11 @@ composer install \
     --no-interaction
 
 php artisan app:update --no-interaction
-wait_for_queue_runtime
 php artisan optimize
 php artisan up
 
 maintenance_mode_enabled=false
+wait_for_queue_runtime
 trap - EXIT
 
 echo "Cloudways deployment completed successfully."

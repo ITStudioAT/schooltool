@@ -138,8 +138,11 @@ it('blocks Cloudways deployments when Horizon is unavailable', function (): void
         ->toContain('verify_queue_runtime')
         ->toContain('wait_for_queue_runtime')
         ->toContain('php artisan queue:health-check')
+        ->toContain('DEPLOY_HORIZON_RESTART_TIMEOUT:-120')
+        ->toContain('attempt <= horizon_restart_timeout')
         ->toMatch('/verify_queue_runtime\s+php artisan down/s')
-        ->toMatch('/php artisan app:update --no-interaction\s+wait_for_queue_runtime/s');
+        ->toMatch('/php artisan app:update --no-interaction\s+php artisan optimize\s+php artisan up\s+\s*maintenance_mode_enabled=false\s+wait_for_queue_runtime/s')
+        ->not->toContain('Horizon did not restart within 20 seconds.');
 });
 
 it('runs isolated infrastructure and Horizon smoke coverage in CI', function (): void {
