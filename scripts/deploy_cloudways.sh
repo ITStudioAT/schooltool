@@ -19,6 +19,12 @@ verify_queue_runtime() {
         return
     fi
 
+    echo "Horizon is inactive before deployment. Giving the process monitor time to recover..." >&2
+
+    if wait_for_queue_runtime; then
+        return
+    fi
+
     echo "Horizon is not serving the configured queues. Aborting before maintenance mode." >&2
 
     return 1
