@@ -5,7 +5,6 @@ namespace Tests\Feature\Console;
 use App\Console\Commands\AppUpdateCommand;
 use App\Services\InstallUpdateService;
 use App\Services\RecordsCreateService;
-use Illuminate\Console\OutputStyle;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -104,15 +103,17 @@ function runAppUpdateCommand(
     InstallUpdateService $install,
     RecordsCreateService $records,
     ?AppUpdateCommand $command = null,
+    array $inputArguments = [],
 ): array {
     $command ??= app()->make(AppUpdateCommand::class);
-    $input = new ArrayInput([]);
+    $input = new ArrayInput($inputArguments);
     $output = new BufferedOutput;
 
-    $command->setLaravel(app());
-    $command->setOutput(new OutputStyle($input, $output));
+    app()->instance(InstallUpdateService::class, $install);
+    app()->instance(RecordsCreateService::class, $records);
 
-    $exitCode = $command->handle($install, $records);
+    $command->setLaravel(app());
+    $exitCode = $command->run($input, $output);
 
     return [
         'exit_code' => $exitCode,
@@ -216,6 +217,62 @@ it('runs the full update workflow end to end', function (): void {
         && ($process->environment['npm_config_cache'] ?? null) === base_path('storage/framework/npm-cache'));
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'), 1);
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm run build'), 1);
+});
+
+it('uses an installed frontend artifact without running Node', function (): void {
+    fakeAppUpdateFiles();
+    Process::fake();
+
+    $install = Mockery::spy(InstallUpdateService::class);
+    $records = Mockery::spy(RecordsCreateService::class);
+
+    $install->shouldReceive('pruneOrphanPrivateSchoolFolders')
+        ->once()
+        ->andReturn(['deleted' => [], 'failed' => []]);
+    $install->shouldReceive('normalizeRestaurantUserRoles')
+        ->once()
+        ->andReturn([
+            'restaurant_confirmed_backfilled' => 0,
+            'lunch_user_roles_assigned' => 0,
+            'lunch_candidate_roles_removed' => 0,
+        ]);
+
+    Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('horizon:terminate', [])->once()->andReturn(0);
+    Artisan::shouldReceive('output')->times(6)->andReturn('');
+
+    $result = runAppUpdateCommand($install, $records, inputArguments: ['--skip-frontend' => true]);
+
+    expect($result['exit_code'])->toBe(0)
+        ->and($result['output'])
+        ->toContain('▶ USING PREBUILT FRONTEND')
+        ->toContain('skipping npm and Vite on this server')
+        ->not->toContain('▶ INSTALLING FRONTEND DEPENDENCIES')
+        ->not->toContain('▶ BUILDING FRONTEND');
+
+    Process::assertNothingRan();
+    Artisan::shouldNotHaveReceived('call', ['route:clear', []]);
+});
+
+it('rejects a missing prebuilt frontend manifest', function (): void {
+    fakeAppUpdateFiles([base_path('public/build/manifest.json')]);
+    Process::fake();
+    Artisan::spy();
+
+    $install = Mockery::spy(InstallUpdateService::class);
+    $records = Mockery::spy(RecordsCreateService::class);
+
+    $result = runAppUpdateCommand($install, $records, inputArguments: ['--skip-frontend' => true]);
+
+    expect($result['exit_code'])->toBe(1)
+        ->and($result['output'])->toContain('Prebuilt frontend manifest is missing');
+
+    Process::assertNothingRan();
+    Artisan::shouldNotHaveReceived('call');
 });
 
 it('fails fast when a required frontend file is missing', function (): void {

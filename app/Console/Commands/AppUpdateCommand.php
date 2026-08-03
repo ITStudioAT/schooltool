@@ -23,7 +23,8 @@ class AppUpdateCommand extends Command
 
     private const int PROCESS_HEARTBEAT_INTERVAL_SECONDS = 15;
 
-    protected $signature = 'app:update';
+    protected $signature = 'app:update
+                            {--skip-frontend : Use the prebuilt frontend artifact already installed in public/build}';
 
     protected $description = 'Update application: frontend build, migrations, records, roles, folders, and caches';
 
@@ -34,12 +35,18 @@ class AppUpdateCommand extends Command
         $this->info('🚀 Starting application update...');
         $this->line(str_repeat('.', 50));
 
-        if (! $this->runPreflightChecks()) {
-            return self::FAILURE;
-        }
+        if ($this->option('skip-frontend')) {
+            if (! $this->validatePrebuiltFrontend()) {
+                return self::FAILURE;
+            }
+        } else {
+            if (! $this->runPreflightChecks()) {
+                return self::FAILURE;
+            }
 
-        if (! $this->runFrontendUpdate()) {
-            return self::FAILURE;
+            if (! $this->runFrontendUpdate()) {
+                return self::FAILURE;
+            }
         }
 
         $this->line(str_repeat('.', 50));
@@ -145,6 +152,22 @@ class AppUpdateCommand extends Command
         $this->info('🏁 Application update finished!');
 
         return self::SUCCESS;
+    }
+
+    private function validatePrebuiltFrontend(): bool
+    {
+        $manifestPath = base_path('public/build/manifest.json');
+
+        if (! File::exists($manifestPath)) {
+            $this->error("❌ Prebuilt frontend manifest is missing at {$manifestPath}.");
+
+            return false;
+        }
+
+        $this->info('▶ USING PREBUILT FRONTEND');
+        $this->waitingLine('The verified CI artifact is already installed; skipping npm and Vite on this server.');
+
+        return true;
     }
 
     private function runPreflightChecks(): bool

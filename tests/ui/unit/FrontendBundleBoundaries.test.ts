@@ -7,6 +7,26 @@ function readSource(path: string): string {
 }
 
 describe('frontend bundle boundaries', () => {
+    it('keeps production builds within the shared-host memory budget', () => {
+        const packageConfiguration = JSON.parse(readSource('package.json'))
+        const viteSource = readSource('vite.config.js')
+
+        expect(packageConfiguration.scripts.build).toContain('--max-old-space-size=1280')
+        expect(packageConfiguration.scripts.build).not.toContain('--max-old-space-size=4096')
+        expect(viteSource).toContain('reportCompressedSize: false')
+    })
+
+    it('reads production Echo settings at runtime instead of baking them into the bundle', () => {
+        const adminEntrySource = readSource('resources/js/apps/admin.js')
+        const adminViewSource = readSource('resources/views/admin.blade.php')
+        const packagedAdminViewSource = readSource('resources/views/vendor/spa/admin.blade.php')
+
+        expect(adminEntrySource).toContain('window.schooltoolEchoEnvironment ?? {}')
+        expect(adminEntrySource).not.toContain('import.meta.env')
+        expect(adminViewSource).toContain('window.schooltoolEchoEnvironment')
+        expect(packagedAdminViewSource).toContain('window.schooltoolEchoEnvironment')
+    })
+
     it('lets the Vuetify Vite plugin tree-shake components and directives', () => {
         const pluginSource = readSource('resources/plugins/admin.js')
         const viteSource = readSource('vite.config.js')

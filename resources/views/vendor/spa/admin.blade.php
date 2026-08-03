@@ -13,6 +13,12 @@
     <link href="https://fonts.bunny.net/css?family=roboto:100,300,400,500,700,900" rel="stylesheet" />
 
     <title>Admin</title>
+    @php
+        $adminEchoEnvironment = config('frontend.echo');
+    @endphp
+    <script>
+        window.schooltoolEchoEnvironment = {{ Illuminate\Support\Js::from($adminEchoEnvironment) }};
+    </script>
     @if (!app()->runningUnitTests())
     @vite('resources/js/apps/admin.js')
     @endif

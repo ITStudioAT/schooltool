@@ -136,6 +136,15 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Upload frontend deployment artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-build-${{ github.sha }}
+          path: public/build
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Run PHP tests with coverage
         run: php artisan test --compact --exclude-group=integration --coverage-clover=storage/logs/clover.xml
 
@@ -186,3 +195,44 @@ jobs:
 
           cat storage/logs/horizon-ci.log
           exit 1
+
+  publish-frontend:
+    name: Publish frontend deployment artifact
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download verified frontend build
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-build-${{ github.sha }}
+          path: ${{ runner.temp }}/frontend-build
+
+      - name: Publish commit-bound frontend assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          publish_directory="$RUNNER_TEMP/frontend-assets-branch"
+          git worktree add --detach "$publish_directory" "$GITHUB_SHA"
+          cd "$publish_directory"
+
+          git switch --orphan production-assets
+          git rm -rf --ignore-unmatch .
+          mkdir -p public/build
+          cp -a "$RUNNER_TEMP/frontend-build/." public/build/
+          printf '%s\n' "$GITHUB_SHA" > .source-commit
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -f .source-commit public/build
+          git commit -m "Build frontend for ${GITHUB_SHA}"
+          git push --force origin HEAD:production-assets

@@ -52,6 +52,7 @@ export default defineConfig({
 
     build: {
         sourcemap: shouldGenerateSourceMaps,
+        reportCompressedSize: false,
         rollupOptions: {
             output: {
                 manualChunks(id) {
