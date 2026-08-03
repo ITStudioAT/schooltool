@@ -196,8 +196,8 @@ jobs:
           cat storage/logs/horizon-ci.log
           exit 1
 
-  publish-frontend:
-    name: Publish frontend deployment artifact
+  publish-release:
+    name: Publish deployment release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
@@ -216,23 +216,30 @@ jobs:
           name: frontend-build-${{ github.sha }}
           path: ${{ runner.temp }}/frontend-build
 
-      - name: Publish commit-bound frontend assets
+      - name: Publish commit-bound release to main
         shell: bash
         run: |
           set -euo pipefail
 
-          publish_directory="$RUNNER_TEMP/frontend-assets-branch"
+          publish_directory="$RUNNER_TEMP/deployment-release"
           git worktree add --detach "$publish_directory" "$GITHUB_SHA"
           cd "$publish_directory"
 
-          git switch --orphan production-assets
-          git rm -rf --ignore-unmatch .
-          mkdir -p public/build
-          cp -a "$RUNNER_TEMP/frontend-build/." public/build/
-          printf '%s\n' "$GITHUB_SHA" > .source-commit
+          mkdir -p deployment
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/frontend-build/deployment-source.txt"
+          tar -czf deployment/frontend-build.tar.gz -C "$RUNNER_TEMP/frontend-build" .
+          printf '%s\n' "$GITHUB_SHA" > deployment/source-commit
 
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -f .source-commit public/build
-          git commit -m "Build frontend for ${GITHUB_SHA}"
-          git push --force origin HEAD:production-assets
+          git add -f deployment/frontend-build.tar.gz deployment/source-commit
+          git commit -m "Build deployment release for ${GITHUB_SHA}"
+
+          remote_main_sha="$(git ls-remote origin refs/heads/main | cut -f1)"
+
+          if [ "$remote_main_sha" != "$GITHUB_SHA" ]; then
+            echo "main advanced while this release was building; the newer CI run will publish its release."
+            exit 1
+          fi
+
+          git push origin HEAD:main
