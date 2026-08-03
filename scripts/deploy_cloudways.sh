@@ -6,20 +6,13 @@ cd "$project_directory"
 
 maintenance_mode_enabled=false
 horizon_restart_timeout="${DEPLOY_HORIZON_RESTART_TIMEOUT:-20}"
-frontend_artifact_branch="production-assets"
-frontend_artifact_wait_timeout="${DEPLOY_FRONTEND_ARTIFACT_WAIT_TIMEOUT:-900}"
-frontend_artifact_poll_interval=10
-frontend_artifact_commit=""
+frontend_release_archive="${project_directory}/deployment/frontend-build.tar.gz"
+frontend_release_marker="${project_directory}/deployment/source-commit"
 frontend_artifact_directory=""
 frontend_backup_directory=""
 
 if [[ ! "$horizon_restart_timeout" =~ ^[1-9][0-9]*$ ]]; then
     echo "DEPLOY_HORIZON_RESTART_TIMEOUT must be a positive number of seconds." >&2
-    exit 1
-fi
-
-if [[ ! "$frontend_artifact_wait_timeout" =~ ^[1-9][0-9]*$ ]]; then
-    echo "DEPLOY_FRONTEND_ARTIFACT_WAIT_TIMEOUT must be a positive number of seconds." >&2
     exit 1
 fi
 
@@ -93,55 +86,33 @@ ensure_queue_runtime() {
 }
 
 prepare_frontend_artifact() {
-    echo "Fetching the frontend artifact for this commit..."
+    echo "Verifying the CI-built frontend release..."
 
-    local artifact_reference="refs/remotes/origin/${frontend_artifact_branch}"
+    if [ ! -f "$frontend_release_archive" ] || [ ! -f "$frontend_release_marker" ]; then
+        echo "The CI-built Cloudways release is missing." >&2
+        echo "Configure Cloudways Deployment via Git to use the cloudways branch, then pull again after the Publish Cloudways release job succeeds." >&2
+
+        return 1
+    fi
+
+    local release_source_commit
     local artifact_source_commit
-    local application_source_commit
-    local elapsed_seconds=0
-    local remaining_seconds
-    local sleep_seconds
 
-    application_source_commit="$(git rev-parse HEAD)"
+    release_source_commit="$(tr -d '\r\n' < "$frontend_release_marker")"
 
-    while true; do
-        if ! GIT_TERMINAL_PROMPT=0 git fetch --quiet origin "+refs/heads/${frontend_artifact_branch}:refs/remotes/origin/${frontend_artifact_branch}"; then
-            echo "The frontend artifact could not be fetched. Confirm that CI published it and that this server can read the repository." >&2
+    if [[ ! "$release_source_commit" =~ ^[0-9a-f]{40,64}$ ]]; then
+        echo "The Cloudways release source marker is invalid." >&2
 
-            return 1
-        fi
-
-        frontend_artifact_commit="$(git rev-parse --verify "${artifact_reference}^{commit}")"
-        artifact_source_commit="$(git show "${frontend_artifact_commit}:.source-commit" | tr -d '\r\n')"
-
-        if [ "$artifact_source_commit" = "$application_source_commit" ]; then
-            break
-        fi
-
-        if [ "$elapsed_seconds" -ge "$frontend_artifact_wait_timeout" ]; then
-            echo "The frontend artifact still belongs to ${artifact_source_commit}, but the application is at ${application_source_commit}." >&2
-            echo "GitHub Actions did not publish the matching artifact within ${frontend_artifact_wait_timeout} seconds." >&2
-
-            return 1
-        fi
-
-        if [ "$elapsed_seconds" -eq 0 ]; then
-            echo "Waiting up to ${frontend_artifact_wait_timeout} seconds for GitHub Actions to publish the matching artifact..."
-        fi
-
-        remaining_seconds=$((frontend_artifact_wait_timeout - elapsed_seconds))
-        sleep_seconds="$frontend_artifact_poll_interval"
-
-        if [ "$remaining_seconds" -lt "$sleep_seconds" ]; then
-            sleep_seconds="$remaining_seconds"
-        fi
-
-        sleep "$sleep_seconds"
-        elapsed_seconds=$((elapsed_seconds + sleep_seconds))
-    done
+        return 1
+    fi
 
     frontend_artifact_directory="$(mktemp -d "${project_directory}/public/.schooltool-build.XXXXXX")"
-    git archive "$frontend_artifact_commit" public/build | tar -x --strip-components=2 -C "$frontend_artifact_directory"
+
+    if ! tar -xzf "$frontend_release_archive" -C "$frontend_artifact_directory"; then
+        echo "The CI-built frontend archive could not be extracted." >&2
+
+        return 1
+    fi
 
     if [ ! -f "$frontend_artifact_directory/manifest.json" ]; then
         echo "The frontend artifact does not contain public/build/manifest.json." >&2
@@ -149,7 +120,21 @@ prepare_frontend_artifact() {
         return 1
     fi
 
-    echo "Frontend artifact verified for ${application_source_commit}."
+    if [ ! -f "$frontend_artifact_directory/deployment-source.txt" ]; then
+        echo "The frontend artifact source marker is missing." >&2
+
+        return 1
+    fi
+
+    artifact_source_commit="$(tr -d '\r\n' < "$frontend_artifact_directory/deployment-source.txt")"
+
+    if [ "$artifact_source_commit" != "$release_source_commit" ]; then
+        echo "The frontend artifact was built for ${artifact_source_commit}, but the Cloudways release contains ${release_source_commit}." >&2
+
+        return 1
+    fi
+
+    echo "Frontend artifact verified for ${release_source_commit}."
 }
 
 install_frontend_artifact() {
@@ -245,11 +230,6 @@ command -v composer >/dev/null 2>&1 || {
 
 command -v nohup >/dev/null 2>&1 || {
     echo "nohup was not found on PATH."
-    exit 1
-}
-
-command -v git >/dev/null 2>&1 || {
-    echo "git was not found on PATH."
     exit 1
 }
 

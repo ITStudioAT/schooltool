@@ -149,7 +149,7 @@ it('recovers Cloudways Horizon before and after deployment', function (): void {
         ->not->toContain('Horizon did not restart within 20 seconds.');
 });
 
-it('deploys the frontend artifact built for the exact application commit', function (): void {
+it('publishes a complete Cloudways release with the frontend built for the exact source commit', function (): void {
     $deploymentScript = file_get_contents(base_path('scripts/deploy_cloudways.sh'));
     $workflow = file_get_contents(base_path('.github/workflows/ci.yml'));
 
@@ -160,20 +160,23 @@ it('deploys the frontend artifact built for the exact application commit', funct
         ->toContain('if: github.event_name == \'push\' && github.ref == \'refs/heads/main\'')
         ->toContain('needs: test')
         ->toContain('contents: write')
-        ->toContain('git switch --orphan production-assets')
-        ->toContain('git push --force origin HEAD:production-assets')
+        ->toContain('git worktree add --detach "$publish_directory" "$GITHUB_SHA"')
+        ->toContain('git switch -C cloudways')
+        ->toContain('tar -czf deployment/frontend-build.tar.gz')
+        ->toContain('deployment/source-commit')
+        ->toContain('git push --force origin HEAD:cloudways')
+        ->not->toContain('git switch --orphan')
         ->and($deploymentScript)
-        ->toContain('frontend_artifact_branch="production-assets"')
-        ->toContain('frontend_artifact_wait_timeout="${DEPLOY_FRONTEND_ARTIFACT_WAIT_TIMEOUT:-900}"')
-        ->toContain('GIT_TERMINAL_PROMPT=0 git fetch')
-        ->toContain('frontend_artifact_commit="$(git rev-parse --verify "${artifact_reference}^{commit}")"')
-        ->toContain('artifact_source_commit="$(git show "${frontend_artifact_commit}:.source-commit"')
-        ->toContain('application_source_commit="$(git rev-parse HEAD)"')
-        ->toContain('Waiting up to ${frontend_artifact_wait_timeout} seconds for GitHub Actions')
-        ->toContain('git archive "$frontend_artifact_commit" public/build')
+        ->toContain('frontend_release_archive="${project_directory}/deployment/frontend-build.tar.gz"')
+        ->toContain('frontend_release_marker="${project_directory}/deployment/source-commit"')
+        ->toContain('tar -xzf "$frontend_release_archive"')
+        ->toContain('artifact_source_commit="$(tr -d \'\r\n\' < "$frontend_artifact_directory/deployment-source.txt")"')
+        ->toContain('if [ "$artifact_source_commit" != "$release_source_commit" ]')
         ->toContain('public/.schooltool-build.XXXXXX')
         ->toContain('flock -n 9')
-        ->toContain('php artisan app:update --no-interaction --skip-frontend');
+        ->toContain('php artisan app:update --no-interaction --skip-frontend')
+        ->not->toContain('git fetch')
+        ->not->toContain('git rev-parse');
 });
 
 it('runs isolated infrastructure and Horizon smoke coverage in CI', function (): void {
