@@ -73,7 +73,10 @@
     "scripts": {
         "deploy": [
             "Composer\\Config::disableProcessTimeout",
-            "bash scripts/deploy_cloudways.sh"
+            "@php scripts/update.php"
+        ],
+        "setup:powershell": [
+            "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install_powershell_helpers.ps1"
         ],
         "setup": [
             "composer install",

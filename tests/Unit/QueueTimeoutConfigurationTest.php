@@ -142,44 +142,61 @@ it('recovers Cloudways Horizon before and after deployment', function (): void {
         ->toContain('php artisan queue:health-check')
         ->toContain('DEPLOY_HORIZON_RESTART_TIMEOUT:-20')
         ->toContain('attempt <= horizon_restart_timeout')
-        ->toContain('nohup php artisan horizon >> storage/logs/horizon.log 2>&1 </dev/null &')
+        ->toContain('nohup php artisan horizon 9>&- >> storage/logs/horizon.log 2>&1 </dev/null &')
+        ->toContain('wait_for_previous_horizon_to_exit')
+        ->toContain('Recycling unhealthy Horizon master process(es):')
+        ->toContain('kill -TERM "$process_id"')
+        ->toContain('The process monitor started Horizon, but it is still unhealthy:')
         ->toMatch('/verify_queue_runtime\(\).*?php artisan queue:health-check.*?ensure_queue_runtime/s')
         ->toMatch('/prepare_frontend_artifact\s+verify_queue_runtime\s+php artisan down/s')
-        ->toMatch('/install_frontend_artifact\s+php artisan app:update --no-interaction --skip-frontend\s+php artisan optimize\s+php artisan up\s+\s*maintenance_mode_enabled=false\s+ensure_queue_runtime/s')
+        ->toMatch('/install_frontend_artifact\s+php artisan app:update --no-interaction --skip-frontend\s+php artisan optimize.*?php artisan horizon:terminate.*?ensure_queue_runtime\s+\s*php artisan up/s')
         ->not->toContain('Horizon did not restart within 20 seconds.');
 });
 
-it('publishes the frontend release back to main for Cloudways deployment', function (): void {
+it('validates the locally published frontend release in parallel CI', function (): void {
     $deploymentScript = file_get_contents(base_path('scripts/deploy_cloudways.sh'));
     $workflow = file_get_contents(base_path('.github/workflows/ci.yml'));
+    $gitHelpers = file_get_contents(base_path('scripts/git_helpers.ps1'));
 
     expect($workflow)
-        ->toContain('actions/upload-artifact@v7')
-        ->toContain('actions/download-artifact@v8')
-        ->toContain('frontend-build-${{ github.sha }}')
+        ->toContain('php-quality:')
+        ->toContain('frontend:')
+        ->toContain('php-tests:')
+        ->toContain('infrastructure:')
+        ->toContain('release-integrity:')
+        ->toContain('READY — CI verified Cloudways release')
+        ->toContain('--parallel --processes=2 --recreate-databases --coverage-clover=storage/logs/clover.xml')
+        ->toContain('php scripts/frontend-release.php verify "$(git rev-parse HEAD^)"')
         ->toContain('if: github.event_name == \'push\' && github.ref == \'refs/heads/main\'')
-        ->toContain('needs: test')
-        ->toContain('contents: write')
-        ->toContain('git worktree add --detach "$publish_directory" "$GITHUB_SHA"')
-        ->toContain('tar -czf deployment/frontend-build.tar.gz')
-        ->toContain('deployment/source-commit')
-        ->toContain('remote_main_sha="$(git ls-remote origin refs/heads/main | cut -f1)"')
-        ->toContain('if [ "$remote_main_sha" != "$GITHUB_SHA" ]')
-        ->toContain('git push origin HEAD:main')
-        ->not->toContain('HEAD:cloudways')
-        ->not->toContain('HEAD:production-assets')
+        ->toMatch('/php-quality:.*?if: github\.event_name != \'push\'/s')
+        ->toMatch('/frontend:.*?if: github\.event_name != \'push\'/s')
+        ->toMatch('/php-tests:.*?if: github\.event_name != \'push\'/s')
+        ->toMatch('/infrastructure:.*?if: github\.event_name != \'push\'/s')
+        ->not->toContain('composer test:php:smoke')
+        ->not->toContain('npm run test:ui:smoke')
+        ->not->toContain('contents: write')
+        ->not->toContain('git push origin HEAD:main')
         ->and($deploymentScript)
         ->toContain('frontend_release_archive="${project_directory}/deployment/frontend-build.tar.gz"')
         ->toContain('frontend_release_marker="${project_directory}/deployment/source-commit"')
+        ->toContain('frontend_release_manifest="${project_directory}/deployment/source-manifest.sha256"')
+        ->toContain('php scripts/frontend-release.php verify')
         ->toContain('tar -xzf "$frontend_release_archive"')
         ->toContain('artifact_source_commit="$(tr -d \'\r\n\' < "$frontend_artifact_directory/deployment-source.txt")"')
         ->toContain('if [ "$artifact_source_commit" != "$release_source_commit" ]')
         ->toContain('public/.schooltool-build.XXXXXX')
         ->toContain('flock -n 9')
         ->toContain('php artisan app:update --no-interaction --skip-frontend')
-        ->toContain('Cloudways Pull from the main branch again')
+        ->toContain('Run gitpush locally and use Cloudways Pull again.')
         ->not->toContain('git fetch')
-        ->not->toContain('git rev-parse');
+        ->not->toContain('git rev-parse')
+        ->and($gitHelpers)
+        ->toContain('Invoke-SchooltoolReleaseChecks')
+        ->toContain('php scripts/frontend-release.php create $sourceCommit')
+        ->toContain('php scripts/frontend-release.php verify $sourceCommit')
+        ->toContain('git push @pushArguments')
+        ->toContain("'--atomic', 'origin', 'HEAD:main'")
+        ->toContain('Cloudways may Pull main and run: composer deploy');
 });
 
 it('runs isolated infrastructure and Horizon smoke coverage in CI', function (): void {
@@ -201,7 +218,7 @@ it('runs isolated infrastructure and Horizon smoke coverage in CI', function ():
         ->toContain('redis:')
         ->toContain('composer test:integration')
         ->toContain('php artisan horizon')
-        ->toContain('php artisan horizon:status')
+        ->toContain('php artisan queue:health-check')
         ->not->toContain('RUN_REDIS_INTEGRATION_TESTS');
 });
 

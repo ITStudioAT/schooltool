@@ -10,6 +10,7 @@ use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use JsonException;
 
 class AppUpdateCommand extends Command
 {
@@ -142,11 +143,6 @@ class AppUpdateCommand extends Command
         if (! $this->runArtisanCommand('optimize:clear', [], 'optimize:clear')) {
             return self::FAILURE;
         }
-        $this->info('▶ RESTARTING HORIZON');
-        $this->waitingLine('Giving Horizon a polite tap on the shoulder.');
-        if (! $this->runArtisanCommand('horizon:terminate', [], 'horizon:terminate')) {
-            return self::FAILURE;
-        }
         $this->info('✅ Caches cleared');
         $this->line(str_repeat('.', 50));
         $this->info('🏁 Application update finished!');
@@ -164,8 +160,22 @@ class AppUpdateCommand extends Command
             return false;
         }
 
+        try {
+            $manifest = json_decode(File::get($manifestPath), true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            $this->error("❌ Prebuilt frontend manifest is invalid at {$manifestPath}.");
+
+            return false;
+        }
+
+        if (! is_array($manifest)) {
+            $this->error("❌ Prebuilt frontend manifest is invalid at {$manifestPath}.");
+
+            return false;
+        }
+
         $this->info('▶ USING PREBUILT FRONTEND');
-        $this->waitingLine('The verified CI artifact is already installed; skipping npm and Vite on this server.');
+        $this->waitingLine('The verified frontend release is already installed; skipping npm and Vite on this server.');
 
         return true;
     }

@@ -1,6 +1,7 @@
 <?php
 
 use Laravel\Horizon\Contracts\MasterSupervisorRepository;
+use Laravel\Horizon\Contracts\SupervisorRepository;
 
 it('reports a running Horizon supervisor', function (): void {
     $repository = Mockery::mock(MasterSupervisorRepository::class);
@@ -9,9 +10,42 @@ it('reports a running Horizon supervisor', function (): void {
     ]);
     app()->instance(MasterSupervisorRepository::class, $repository);
 
+    $supervisors = Mockery::mock(SupervisorRepository::class);
+    $supervisors->shouldReceive('all')->once()->andReturn([
+        (object) [
+            'status' => 'running',
+            'options' => [
+                'queue' => 'critical,notifications,default,imports,materials,maintenance',
+            ],
+        ],
+    ]);
+    app()->instance(SupervisorRepository::class, $supervisors);
+
     $this->artisan('queue:health-check')
         ->expectsOutputToContain('Horizon laeuft.')
         ->assertExitCode(0);
+});
+
+it('reports queues missing from running Horizon supervisors', function (): void {
+    $repository = Mockery::mock(MasterSupervisorRepository::class);
+    $repository->shouldReceive('all')->once()->andReturn([
+        (object) ['status' => 'running'],
+    ]);
+    app()->instance(MasterSupervisorRepository::class, $repository);
+
+    $supervisors = Mockery::mock(SupervisorRepository::class);
+    $supervisors->shouldReceive('all')->once()->andReturn([
+        (object) [
+            'status' => 'running',
+            'options' => ['queue' => 'critical,notifications'],
+        ],
+    ]);
+    app()->instance(SupervisorRepository::class, $supervisors);
+
+    $this->artisan('queue:health-check')
+        ->expectsOutputToContain('Horizon bedient nicht alle erwarteten Queues.')
+        ->expectsOutputToContain('Fehlende Queues: default, imports, materials, maintenance')
+        ->assertExitCode(3);
 });
 
 it('reports a paused Horizon supervisor', function (): void {

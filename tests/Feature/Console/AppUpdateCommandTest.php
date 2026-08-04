@@ -16,6 +16,7 @@ function fakeAppUpdateFiles(
     array $missingPaths = [],
     bool $nodeModulesExists = false,
     bool $nodeModulesDeleteSucceeds = true,
+    string $frontendManifest = '{}',
 ): void {
     File::shouldReceive('exists')
         ->andReturnUsing(function (string $path) use ($missingPaths): bool {
@@ -36,6 +37,9 @@ function fakeAppUpdateFiles(
     File::shouldReceive('delete')
         ->zeroOrMoreTimes()
         ->andReturnTrue();
+    File::shouldReceive('get')
+        ->zeroOrMoreTimes()
+        ->andReturn($frontendManifest);
 }
 
 function fakeAppUpdateProcesses(string|array|null $npmCiError = null): void
@@ -183,8 +187,7 @@ it('runs the full update workflow end to end', function (): void {
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
-    Artisan::shouldReceive('call')->with('horizon:terminate', [])->once()->andReturn(0);
-    Artisan::shouldReceive('output')->times(7)->andReturn('');
+    Artisan::shouldReceive('output')->times(6)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records);
 
@@ -242,8 +245,7 @@ it('uses an installed frontend artifact without running Node', function (): void
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
-    Artisan::shouldReceive('call')->with('horizon:terminate', [])->once()->andReturn(0);
-    Artisan::shouldReceive('output')->times(6)->andReturn('');
+    Artisan::shouldReceive('output')->times(5)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records, inputArguments: ['--skip-frontend' => true]);
 
@@ -270,6 +272,23 @@ it('rejects a missing prebuilt frontend manifest', function (): void {
 
     expect($result['exit_code'])->toBe(1)
         ->and($result['output'])->toContain('Prebuilt frontend manifest is missing');
+
+    Process::assertNothingRan();
+    Artisan::shouldNotHaveReceived('call');
+});
+
+it('rejects an invalid prebuilt frontend manifest', function (): void {
+    fakeAppUpdateFiles(frontendManifest: 'not-json');
+    Process::fake();
+    Artisan::spy();
+
+    $install = Mockery::spy(InstallUpdateService::class);
+    $records = Mockery::spy(RecordsCreateService::class);
+
+    $result = runAppUpdateCommand($install, $records, inputArguments: ['--skip-frontend' => true]);
+
+    expect($result['exit_code'])->toBe(1)
+        ->and($result['output'])->toContain('Prebuilt frontend manifest is invalid');
 
     Process::assertNothingRan();
     Artisan::shouldNotHaveReceived('call');
@@ -387,8 +406,7 @@ it('removes existing node modules before npm ci on non windows hosts', function 
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
-    Artisan::shouldReceive('call')->with('horizon:terminate', [])->once()->andReturn(0);
-    Artisan::shouldReceive('output')->times(7)->andReturn('');
+    Artisan::shouldReceive('output')->times(6)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records, appUpdateCommandWithNodeModulesCleanup());
 
@@ -443,7 +461,6 @@ it('stops when the school user licence backfill fails', function (): void {
     expect($result['output'])->toContain('school_user_licences.role_name fehlt.');
 
     Artisan::shouldNotHaveReceived('call', ['optimize:clear', []]);
-    Artisan::shouldNotHaveReceived('call', ['horizon:terminate', []]);
     $install->shouldNotHaveReceived('clearModels');
     $install->shouldNotHaveReceived('createRoles');
     $install->shouldNotHaveReceived('findOrCreateFolders');
@@ -492,8 +509,7 @@ it('retries npm ci when a windows lock error is transient', function (): void {
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
-    Artisan::shouldReceive('call')->with('horizon:terminate', [])->once()->andReturn(0);
-    Artisan::shouldReceive('output')->times(7)->andReturn('');
+    Artisan::shouldReceive('output')->times(6)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records);
 
