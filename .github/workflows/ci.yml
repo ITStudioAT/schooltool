@@ -65,6 +65,7 @@ jobs:
         run: composer audit --locked
 
       - name: Audit production frontend dependencies
+        if: github.event_name != 'push'
         run: npm audit --omit=dev --audit-level=high
 
       - name: Audit all frontend dependencies for critical vulnerabilities

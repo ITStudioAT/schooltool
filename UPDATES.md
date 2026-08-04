@@ -1,5 +1,10 @@
 # UPDATES
 
+## 3.44.6
+
+### System
+- Fix cross-platform deployment source verification
+
 ## 3.44.5
 
 ### System

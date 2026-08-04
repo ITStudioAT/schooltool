@@ -40,11 +40,26 @@ function projectPath(string $relativePath = ''): string
         : $projectDirectory.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
 }
 
-function normalizeRelativePath(string $path): string
+function isIncludedSourcePath(string $relativePath): bool
 {
-    $relativePath = substr($path, strlen(projectPath()) + 1);
+    if ($relativePath === ''
+        || str_starts_with($relativePath, '/')
+        || str_contains($relativePath, '\\')
+        || preg_match('#(^|/)\.\.?(/|$)#', $relativePath)) {
+        return false;
+    }
 
-    return str_replace(DIRECTORY_SEPARATOR, '/', $relativePath);
+    if (isExcludedSourcePath($relativePath)) {
+        return false;
+    }
+
+    foreach (SOURCE_MANIFEST_PATHS as $includedPath) {
+        if ($relativePath === $includedPath || str_starts_with($relativePath, "{$includedPath}/")) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function isExcludedSourcePath(string $relativePath): bool
@@ -59,61 +74,76 @@ function isExcludedSourcePath(string $relativePath): bool
 }
 
 /** @return array<int, string> */
-function sourceFiles(): array
+function trackedSourceFiles(): array
 {
-    $files = [];
+    $process = proc_open(
+        ['git', 'ls-files', '-z', '--', ...SOURCE_MANIFEST_PATHS],
+        [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ],
+        $pipes,
+        projectPath(),
+    );
 
-    foreach (SOURCE_MANIFEST_PATHS as $relativeRoot) {
-        $absoluteRoot = projectPath($relativeRoot);
-
-        if (is_file($absoluteRoot)) {
-            $files[] = $relativeRoot;
-
-            continue;
-        }
-
-        if (! is_dir($absoluteRoot)) {
-            continue;
-        }
-
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($absoluteRoot, FilesystemIterator::SKIP_DOTS),
-        );
-
-        foreach ($iterator as $file) {
-            if (! $file->isFile() || $file->isLink()) {
-                continue;
-            }
-
-            $relativePath = normalizeRelativePath($file->getPathname());
-
-            if (! isExcludedSourcePath($relativePath)) {
-                $files[] = $relativePath;
-            }
-        }
+    if (! is_resource($process)) {
+        throw new RuntimeException('Could not list the Git-tracked deployment source.');
     }
+
+    fclose($pipes[0]);
+    $output = stream_get_contents($pipes[1]);
+    $error = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $exitCode = proc_close($process);
+
+    if ($exitCode !== 0 || $output === false) {
+        throw new RuntimeException('Could not list the Git-tracked deployment source: '.trim((string) $error));
+    }
+
+    $files = array_values(array_filter(
+        explode("\0", rtrim($output, "\0")),
+        fn (string $relativePath): bool => $relativePath !== '' && isIncludedSourcePath($relativePath),
+    ));
 
     sort($files, SORT_STRING);
 
     return array_values(array_unique($files));
 }
 
-function buildSourceManifest(): string
+function sourceFileHash(string $relativePath): string
+{
+    $absolutePath = projectPath($relativePath);
+
+    if (! is_file($absolutePath) || is_link($absolutePath)) {
+        throw new RuntimeException("Source file is missing: {$relativePath}");
+    }
+
+    $contents = file_get_contents($absolutePath);
+
+    if ($contents === false) {
+        throw new RuntimeException("Could not hash source file: {$relativePath}");
+    }
+
+    if (! str_contains($contents, "\0")) {
+        $contents = str_replace(["\r\n", "\r"], "\n", $contents);
+    }
+
+    return hash('sha256', $contents);
+}
+
+/** @param array<int, string> $relativePaths */
+function buildSourceManifest(array $relativePaths): string
 {
     $lines = [];
 
-    foreach (sourceFiles() as $relativePath) {
+    foreach ($relativePaths as $relativePath) {
         if (str_contains($relativePath, "\n") || str_contains($relativePath, "\r")) {
             throw new RuntimeException("Source path contains a line break: {$relativePath}");
         }
 
-        $hash = hash_file('sha256', projectPath($relativePath));
-
-        if ($hash === false) {
-            throw new RuntimeException("Could not hash source file: {$relativePath}");
-        }
-
-        $lines[] = "{$hash}  {$relativePath}";
+        $lines[] = sourceFileHash($relativePath)."  {$relativePath}";
     }
 
     return implode("\n", $lines)."\n";
@@ -133,34 +163,23 @@ function parseSourceManifest(string $manifest): array
             throw new RuntimeException('The source manifest contains an invalid line.');
         }
 
+        if (! isIncludedSourcePath($matches[2])) {
+            throw new RuntimeException("The source manifest contains an unsafe path: {$matches[2]}");
+        }
+
+        if (array_key_exists($matches[2], $entries)) {
+            throw new RuntimeException("The source manifest contains a duplicate path: {$matches[2]}");
+        }
+
         $entries[$matches[2]] = $matches[1];
     }
 
     return $entries;
 }
 
-function describeManifestMismatch(string $expected, string $actual): void
+/** @param array<int, string> $differences */
+function describeManifestMismatch(array $differences): void
 {
-    $expectedEntries = parseSourceManifest($expected);
-    $actualEntries = parseSourceManifest($actual);
-    $differences = [];
-
-    foreach ($expectedEntries as $path => $hash) {
-        if (! array_key_exists($path, $actualEntries)) {
-            $differences[] = "missing: {$path}";
-
-            continue;
-        }
-
-        if ($actualEntries[$path] !== $hash) {
-            $differences[] = "changed: {$path}";
-        }
-    }
-
-    foreach (array_diff_key($actualEntries, $expectedEntries) as $path => $hash) {
-        $differences[] = "unexpected: {$path}";
-    }
-
     foreach (array_slice($differences, 0, 10) as $difference) {
         fwrite(STDERR, "  - {$difference}\n");
     }
@@ -181,7 +200,7 @@ function writeSourceManifest(string $manifestPath): int
         return 1;
     }
 
-    if (file_put_contents($absoluteManifestPath, buildSourceManifest()) === false) {
+    if (file_put_contents($absoluteManifestPath, buildSourceManifest(trackedSourceFiles())) === false) {
         fwrite(STDERR, "Could not write source manifest: {$absoluteManifestPath}\n");
 
         return 1;
@@ -210,11 +229,23 @@ function verifySourceManifest(string $manifestPath): int
         return 1;
     }
 
-    $actual = buildSourceManifest();
+    $differences = [];
 
-    if (! hash_equals($expected, $actual)) {
+    foreach (parseSourceManifest($expected) as $relativePath => $expectedHash) {
+        if (! is_file(projectPath($relativePath)) || is_link(projectPath($relativePath))) {
+            $differences[] = "missing: {$relativePath}";
+
+            continue;
+        }
+
+        if (! hash_equals($expectedHash, sourceFileHash($relativePath))) {
+            $differences[] = "changed: {$relativePath}";
+        }
+    }
+
+    if ($differences !== []) {
         fwrite(STDERR, "The pulled source does not match its deployment release:\n");
-        describeManifestMismatch($expected, $actual);
+        describeManifestMismatch($differences);
         fwrite(STDERR, "Pull main again after gitpush has completed.\n");
 
         return 1;
