@@ -140,6 +140,12 @@ function composerDependenciesAreCurrent(): bool
         return false;
     }
 
+    $installed = require $installedPath;
+
+    if (! is_array($installed) || ! ($installed['root']['dev'] ?? false)) {
+        return false;
+    }
+
     $lockHash = hash_file('sha256', $lockPath);
 
     if (! is_string($lockHash)) {

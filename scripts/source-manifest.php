@@ -229,9 +229,23 @@ function verifySourceManifest(string $manifestPath): int
         return 1;
     }
 
+    $manifestEntries = parseSourceManifest($expected);
+    $trackedFiles = trackedSourceFiles();
     $differences = [];
 
-    foreach (parseSourceManifest($expected) as $relativePath => $expectedHash) {
+    foreach ($trackedFiles as $relativePath) {
+        if (! array_key_exists($relativePath, $manifestEntries)) {
+            $differences[] = "unlisted: {$relativePath}";
+        }
+    }
+
+    foreach ($manifestEntries as $relativePath => $expectedHash) {
+        if (! in_array($relativePath, $trackedFiles, true)) {
+            $differences[] = "no longer tracked: {$relativePath}";
+
+            continue;
+        }
+
         if (! is_file(projectPath($relativePath)) || is_link(projectPath($relativePath))) {
             $differences[] = "missing: {$relativePath}";
 

@@ -66,6 +66,21 @@ it('uses the cross-platform update launcher for composer deploy', function (): v
         ->not->toContain('npm run build');
 });
 
+it('installs a trusted repository-aware gitpush dispatcher', function (): void {
+    $installer = file_get_contents(deploymentProjectPath('scripts/install_powershell_helpers.ps1'));
+    $entrypoint = file_get_contents(deploymentProjectPath('scripts/gitpush.ps1'));
+
+    expect($installer)
+        ->toContain('ITStudioAT/(?:schooltool|stocks)')
+        ->toContain('remote get-url --all --push origin')
+        ->toContain('Push-Location -LiteralPath `$repositoryRoot')
+        ->toContain('Join-Path `$repositoryRoot \'scripts/gitpush.ps1\'')
+        ->not->toContain(". 'C:\\laravel\\schooltool\\scripts\\git_helpers.ps1'")
+        ->and($entrypoint)
+        ->toContain('Join-Path $PSScriptRoot \'git_helpers.ps1\'')
+        ->toContain('gitpush @PSBoundParameters');
+});
+
 it('writes manifests from tracked files and ignores extra server files', function (): void {
     $probeName = '.source-manifest-probe-'.bin2hex(random_bytes(4));
     $probePath = deploymentProjectPath("scripts/{$probeName}");
@@ -103,14 +118,18 @@ it('writes manifests from tracked files and ignores extra server files', functio
 
 it('detects changed required source files', function (): void {
     $probeName = '.source-manifest-probe-'.bin2hex(random_bytes(4));
-    $relativeProbePath = "scripts/{$probeName}";
-    $probePath = deploymentProjectPath($relativeProbePath);
     $manifestPath = "storage/framework/{$probeName}.sha256";
     $absoluteManifestPath = deploymentProjectPath($manifestPath);
 
     try {
-        file_put_contents($probePath, "changed\n");
-        file_put_contents($absoluteManifestPath, hash('sha256', "expected\n")."  {$relativeProbePath}\n");
+        $write = runDeploymentScript([
+            'scripts/source-manifest.php',
+            'write',
+            $manifestPath,
+        ]);
+        $manifest = file_get_contents($absoluteManifestPath);
+        $manifest = preg_replace('/^[0-9a-f]{64}  artisan$/m', str_repeat('0', 64).'  artisan', $manifest);
+        file_put_contents($absoluteManifestPath, $manifest);
 
         $verify = runDeploymentScript([
             'scripts/source-manifest.php',
@@ -118,31 +137,29 @@ it('detects changed required source files', function (): void {
             $manifestPath,
         ]);
 
-        expect($verify->isSuccessful())->toBeFalse()
+        expect($write->isSuccessful())->toBeTrue()
+            ->and($verify->isSuccessful())->toBeFalse()
             ->and($verify->getErrorOutput())
-            ->toContain("changed: {$relativeProbePath}")
+            ->toContain('changed: artisan')
             ->toContain('Pull main again after gitpush has completed.');
     } finally {
-        if (is_file($probePath)) {
-            unlink($probePath);
-        }
-
         if (is_file($absoluteManifestPath)) {
             unlink($absoluteManifestPath);
         }
     }
 });
 
-it('normalizes source line endings across Windows and Linux', function (): void {
+it('verifies a freshly written complete source manifest', function (): void {
     $probeName = '.source-manifest-probe-'.bin2hex(random_bytes(4));
-    $relativeProbePath = "scripts/{$probeName}";
-    $probePath = deploymentProjectPath($relativeProbePath);
     $manifestPath = "storage/framework/{$probeName}.sha256";
     $absoluteManifestPath = deploymentProjectPath($manifestPath);
 
     try {
-        file_put_contents($probePath, "first\r\nsecond\r\n");
-        file_put_contents($absoluteManifestPath, hash('sha256', "first\nsecond\n")."  {$relativeProbePath}\n");
+        $write = runDeploymentScript([
+            'scripts/source-manifest.php',
+            'write',
+            $manifestPath,
+        ]);
 
         $verify = runDeploymentScript([
             'scripts/source-manifest.php',
@@ -150,12 +167,9 @@ it('normalizes source line endings across Windows and Linux', function (): void 
             $manifestPath,
         ]);
 
-        expect($verify->isSuccessful())->toBeTrue();
+        expect($write->isSuccessful())->toBeTrue()
+            ->and($verify->isSuccessful())->toBeTrue();
     } finally {
-        if (is_file($probePath)) {
-            unlink($probePath);
-        }
-
         if (is_file($absoluteManifestPath)) {
             unlink($absoluteManifestPath);
         }

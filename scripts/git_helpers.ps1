@@ -290,6 +290,14 @@ function gitpush {
                     throw 'Could not create the source commit.'
                 }
 
+                $postCommitChanges = git status --porcelain --untracked-files=all | Where-Object {
+                    $_ -notmatch '^.. deployment/(frontend-build\.tar\.gz|source-commit|source-manifest\.sha256)$'
+                }
+
+                if ($postCommitChanges) {
+                    throw 'The source commit left additional changes in the worktree. Review them before publishing.'
+                }
+
                 $sourceCommit = git rev-parse HEAD
                 Write-Host "Source commit: $sourceCommit" -ForegroundColor Cyan
             }

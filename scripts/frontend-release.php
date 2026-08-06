@@ -27,6 +27,38 @@ function runReleaseCommand(array $command): int
     return proc_close($process);
 }
 
+/** @param array<int, string> $command */
+function releaseCommandOutput(array $command): string
+{
+    $process = proc_open(
+        $command,
+        [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ],
+        $pipes,
+        releaseProjectPath(),
+    );
+
+    if (! is_resource($process)) {
+        throw new RuntimeException('Could not inspect the release commit.');
+    }
+
+    fclose($pipes[0]);
+    $output = stream_get_contents($pipes[1]);
+    $error = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $exitCode = proc_close($process);
+
+    if ($exitCode !== 0 || ! is_string($output)) {
+        throw new RuntimeException('Could not inspect the release commit: '.trim((string) $error));
+    }
+
+    return trim($output);
+}
+
 function removeReleaseDirectory(string $directory): void
 {
     $projectPublicDirectory = realpath(releaseProjectPath('public'));
@@ -136,7 +168,12 @@ function releaseSourceCommit(?string $expectedSourceCommit = null): string
     $sourceCommit = trim((string) file_get_contents($sourcePath));
     validateReleaseSource($sourceCommit);
 
-    if ($expectedSourceCommit !== null && ! hash_equals($expectedSourceCommit, $sourceCommit)) {
+    if ($expectedSourceCommit === null) {
+        $expectedSourceCommit = releaseCommandOutput(['git', 'rev-parse', 'HEAD^']);
+        validateReleaseSource($expectedSourceCommit);
+    }
+
+    if (! hash_equals($expectedSourceCommit, $sourceCommit)) {
         throw new RuntimeException("The frontend release belongs to {$sourceCommit}, not {$expectedSourceCommit}.");
     }
 
