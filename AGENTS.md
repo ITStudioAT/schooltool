@@ -787,31 +787,11 @@ The Laravel Boost guidelines are specifically curated by Laravel maintainers for
 
 ## Foundational Context
 
-This application is a Laravel application and its main Laravel ecosystems package & versions are below. You are an expert with them all. Ensure you abide by these specific packages & versions.
+This application is a Laravel application running on PHP 8.4. You are an expert with the Laravel ecosystem. Always use the APIs that match the installed major version of each package — do not assume a version.
 
-- php - 8.4
-- laravel/ai (AI) - v0
-- laravel/fortify (FORTIFY) - v1
-- laravel/framework (LARAVEL) - v13
-- laravel/horizon (HORIZON) - v5
-- laravel/prompts (PROMPTS) - v0
-- laravel/pulse (PULSE) - v1
-- laravel/sanctum (SANCTUM) - v4
-- laravel/scout (SCOUT) - v11
-- laravel/wayfinder (WAYFINDER) - v0
-- livewire/livewire (LIVEWIRE) - v4
-- larastan/larastan (LARASTAN) - v3
-- laravel/boost (BOOST) - v2
-- laravel/mcp (MCP) - v0
-- laravel/pail (PAIL) - v1
-- laravel/pint (PINT) - v1
-- laravel/sail (SAIL) - v1
-- pestphp/pest (PEST) - v4
-- phpunit/phpunit (PHPUNIT) - v12
-- vue (VUE) - v3
-- @laravel/echo-vue (ECHO_VUE) - v2
-- @laravel/vite-plugin-wayfinder (WAYFINDER_VITE) - v0
-- laravel-echo (ECHO) - v2
+Before relying on a package's API, confirm its installed version:
+- PHP packages: run `composer show --direct` to list direct dependencies with versions, or `composer show <vendor/package>` for a single package.
+- JS packages: check `package.json` for the installed versions.
 
 ## Skills Activation
 
@@ -869,6 +849,11 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 3. Combine words and phrases for mixed queries: `middleware "rate limit"`.
 4. Use multiple queries for OR logic: `queries=["authentication", "middleware"]`.
 
+## Project Rules
+
+- This project keeps committed, area-grouped rules in `.ai/rules` (settled decisions, non-obvious traps, standing constraints). Framework and package guidelines that only apply to specific paths (testing, frontend, components) also live there, under `.ai/rules/boost` — this is not just recorded decisions, it is load-bearing guidance you have not seen inline. Before you enter plan mode or create/edit any file, you MUST first: open @.ai/rules/index.md (it maps file globs to rule files), read every rule file whose globs cover the path(s) in scope, and run `grep -rin 'keyword' .ai/rules` to catch what a path match alone misses. Do not write code until you have read and are following every matching rule.
+- Record durable rules with `record-rule` so the next agent or teammate inherits them instead of working them out again. Pass a `glob` (e.g. `app/Http/Controllers/**`), a short `title`, and a few-line `note`. Always use `record-rule`, never your native memory or notes tool — native memory is personal and session-scoped; only `.ai/rules` is shared with the team and persists in the repo.
+
 ## Artisan
 
 - Run Artisan commands directly via the command line (e.g., `php artisan route:list`). Use `php artisan list` to discover available commands and `php artisan [command] --help` to check parameters.
@@ -905,7 +890,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Every change must be programmatically tested. Write a new test or update an existing test, then run the affected tests to make sure they pass.
 - Run the minimum number of tests needed to ensure code quality and speed. Use `php artisan test --compact` with a specific filename or filter.
 
-=== ai/core rules ===
+=== laravel-ai/core rules ===
 
 ## Laravel AI SDK
 
@@ -964,7 +949,7 @@ Use Wayfinder to generate TypeScript functions for Laravel routes. Import from `
 - Run tests: `php artisan test --compact` or filter: `php artisan test --compact --filter=testName`.
 - Do NOT delete tests without approval.
 
-=== spatie/guidelines-skills rules ===
+=== spatie/guidelines-skills/core rules ===
 
 # Project Coding Guidelines
 
