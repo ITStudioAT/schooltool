@@ -66,6 +66,18 @@ it('uses the cross-platform update launcher for composer deploy', function (): v
         ->not->toContain('npm run build');
 });
 
+it('records environment versions before starting development services', function (): void {
+    $composer = json_decode(
+        file_get_contents(deploymentProjectPath('composer.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    expect($composer['scripts']['dev'])
+        ->toContain('@php artisan app:update --versions-only')
+        ->toContain("npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74,#86efac\" \"php artisan serve\" \"composer run queues:local\" \"php artisan schedule:work\" \"npm run dev\" --names='server,queues,scheduler,vite'");
+});
+
 it('installs a trusted repository-aware gitpush dispatcher', function (): void {
     $installer = file_get_contents(deploymentProjectPath('scripts/install_powershell_helpers.ps1'));
     $entrypoint = file_get_contents(deploymentProjectPath('scripts/gitpush.ps1'));

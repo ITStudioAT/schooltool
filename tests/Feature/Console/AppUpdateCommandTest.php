@@ -6,6 +6,7 @@ use App\Console\Commands\AppUpdateCommand;
 use App\Services\InstallUpdateService;
 use App\Services\RecordsCreateService;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Mockery;
@@ -146,6 +147,30 @@ function appUpdateCommandWithNodeModulesCleanup(): AppUpdateCommand
         }
     };
 }
+
+it('records environment versions without running the update workflow', function (): void {
+    fakeAppUpdateFiles();
+    fakeAppUpdateProcesses();
+    Artisan::spy();
+    Cache::put('admin.environment_versions.v13', ['composer' => null], now()->addMinutes(10));
+
+    $install = Mockery::spy(InstallUpdateService::class);
+    $records = Mockery::spy(RecordsCreateService::class);
+
+    $result = runAppUpdateCommand($install, $records, inputArguments: ['--versions-only' => true]);
+
+    expect($result['exit_code'])->toBe(0)
+        ->and($result['output'])->toContain('✅ Environment versions recorded')
+        ->not->toContain('Starting application update')
+        ->not->toContain('MIGRATIONS')
+        ->not->toContain('BUILDING FRONTEND')
+        ->and(Cache::has('admin.environment_versions.v13'))->toBeFalse();
+
+    Artisan::shouldNotHaveReceived('call');
+    $install->shouldNotHaveReceived('clearModels');
+    $install->shouldNotHaveReceived('createRoles');
+    $records->shouldNotHaveReceived('initRecords');
+});
 
 it('runs the full update workflow end to end', function (): void {
     fakeAppUpdateFiles();

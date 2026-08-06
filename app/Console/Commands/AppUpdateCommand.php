@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 use Illuminate\Contracts\Process\ProcessResult as ProcessResultContract;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use JsonException;
@@ -30,12 +31,19 @@ class AppUpdateCommand extends Command
     private const int PROCESS_HEARTBEAT_INTERVAL_SECONDS = 15;
 
     protected $signature = 'app:update
-                            {--skip-frontend : Use the prebuilt frontend artifact already installed in public/build}';
+                            {--skip-frontend : Use the prebuilt frontend artifact already installed in public/build}
+                            {--versions-only : Record environment versions without updating the application}';
 
     protected $description = 'Update application: frontend build, migrations, records, roles, folders, and caches';
 
     public function handle(InstallUpdateService $service, RecordsCreateService $recordsCreateService): int
     {
+        if ($this->option('versions-only')) {
+            $this->recordEnvironmentVersions();
+
+            return self::SUCCESS;
+        }
+
         // CLEAR CONSOLE
         $this->output->write("\033c");
         $this->info('🚀 Starting application update...');
@@ -291,6 +299,8 @@ class AppUpdateCommand extends Command
 
             return;
         }
+
+        Cache::forget('admin.environment_versions.v13');
 
         $this->info('✅ Environment versions recorded');
     }
