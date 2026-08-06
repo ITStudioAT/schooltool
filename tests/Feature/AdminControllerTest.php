@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Process;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -126,12 +127,13 @@ test('authenticated config excludes environment versions by default', function (
 });
 
 test('authenticated config can include environment versions', function () {
-    Cache::forget('admin.environment_versions.v12');
+    Cache::forget('admin.environment_versions.v13');
     config()->set('schooltool.environment_versions', [
         'composer' => '2.8.12',
         'npm' => '10.9.2',
         'node' => 'v22.16.0',
     ]);
+    Process::fake();
     $this->actingAs($this->user);
 
     $this->getJson('/api/admin/config?include_environment_versions=1')
@@ -194,23 +196,76 @@ test('authenticated config can include environment versions', function () {
                 ],
             ],
         ]);
+
+    Process::assertNothingRan();
 });
 
-test('authenticated config does not execute processes for missing environment versions', function () {
-    Cache::forget('admin.environment_versions.v12');
+test('authenticated config uses versions recorded during deployment without executing processes', function () {
+    Cache::forget('admin.environment_versions.v13');
+    config()->set('schooltool.environment_versions', [
+        'composer' => null,
+        'npm' => null,
+        'node' => null,
+    ]);
+    Process::fake();
+
+    $snapshotPath = storage_path('framework/environment-versions.json');
+    $previousSnapshot = is_file($snapshotPath) ? file_get_contents($snapshotPath) : false;
+    file_put_contents($snapshotPath, json_encode([
+        'composer' => '2.10.0',
+        'npm' => '11.17.0',
+        'node' => 'v24.19.0',
+    ], JSON_THROW_ON_ERROR));
+
+    $this->actingAs($this->user);
+
+    try {
+        $this->getJson('/api/admin/config?include_environment_versions=1')
+            ->assertSuccessful()
+            ->assertJsonPath('environment_versions.composer', '2.10.0')
+            ->assertJsonPath('environment_versions.npm', '11.17.0')
+            ->assertJsonPath('environment_versions.node', 'v24.19.0');
+    } finally {
+        if ($previousSnapshot === false && is_file($snapshotPath)) {
+            unlink($snapshotPath);
+        }
+
+        if ($previousSnapshot !== false) {
+            file_put_contents($snapshotPath, $previousSnapshot);
+        }
+    }
+
+    Process::assertNothingRan();
+});
+
+test('authenticated config handles a missing deployment version snapshot', function () {
+    Cache::forget('admin.environment_versions.v13');
     config()->set('schooltool.environment_versions', [
         'composer' => null,
         'npm' => null,
         'node' => null,
     ]);
 
+    $snapshotPath = storage_path('framework/environment-versions.json');
+    $previousSnapshot = is_file($snapshotPath) ? file_get_contents($snapshotPath) : false;
+
+    if (is_file($snapshotPath)) {
+        unlink($snapshotPath);
+    }
+
     $this->actingAs($this->user);
 
-    $this->getJson('/api/admin/config?include_environment_versions=1')
-        ->assertSuccessful()
-        ->assertJsonPath('environment_versions.composer', null)
-        ->assertJsonPath('environment_versions.npm', null)
-        ->assertJsonPath('environment_versions.node', null);
+    try {
+        $this->getJson('/api/admin/config?include_environment_versions=1')
+            ->assertSuccessful()
+            ->assertJsonPath('environment_versions.composer', null)
+            ->assertJsonPath('environment_versions.npm', null)
+            ->assertJsonPath('environment_versions.node', null);
+    } finally {
+        if ($previousSnapshot !== false) {
+            file_put_contents($snapshotPath, $previousSnapshot);
+        }
+    }
 });
 
 test('non-admin config cannot include environment diagnostics', function () {

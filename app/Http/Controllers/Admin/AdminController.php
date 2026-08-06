@@ -43,7 +43,10 @@ class AdminController extends Controller
 {
     use HasRoleTrait;
 
-    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v12';
+    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v13';
+
+    /** @var array<string, string|null>|null */
+    private ?array $runtimeVersionSnapshot = null;
 
     private const array STUDENTS_TIMETABLES_ROLES = [
         'super_admin',
@@ -218,11 +221,42 @@ class AdminController extends Controller
     private function configuredRuntimeVersion(string $configKey): ?string
     {
         $configuredVersion = config("schooltool.environment_versions.{$configKey}");
-        if (! is_string($configuredVersion) || blank($configuredVersion)) {
-            return null;
+        if (is_string($configuredVersion) && filled($configuredVersion)) {
+            return trim($configuredVersion);
         }
 
-        return trim($configuredVersion);
+        return $this->runtimeVersionSnapshot()[$configKey] ?? null;
+    }
+
+    /** @return array<string, string|null> */
+    private function runtimeVersionSnapshot(): array
+    {
+        if ($this->runtimeVersionSnapshot !== null) {
+            return $this->runtimeVersionSnapshot;
+        }
+
+        $path = storage_path('framework/environment-versions.json');
+        if (! is_file($path)) {
+            return $this->runtimeVersionSnapshot = [];
+        }
+
+        $contents = file_get_contents($path);
+        if ($contents === false) {
+            return $this->runtimeVersionSnapshot = [];
+        }
+
+        $versions = json_decode($contents, true);
+        if (! is_array($versions)) {
+            return $this->runtimeVersionSnapshot = [];
+        }
+
+        return $this->runtimeVersionSnapshot = collect(['composer', 'npm', 'node'])
+            ->mapWithKeys(function (string $key) use ($versions): array {
+                $version = $versions[$key] ?? null;
+
+                return [$key => is_string($version) && filled($version) ? trim($version) : null];
+            })
+            ->all();
     }
 
     private function packageLockVersion(string $package): ?string

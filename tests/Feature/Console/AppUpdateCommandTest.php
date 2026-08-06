@@ -17,6 +17,7 @@ function fakeAppUpdateFiles(
     bool $nodeModulesExists = false,
     bool $nodeModulesDeleteSucceeds = true,
     string $frontendManifest = '{}',
+    string $frontendEnvironmentVersions = '{}',
 ): void {
     File::shouldReceive('exists')
         ->andReturnUsing(function (string $path) use ($missingPaths): bool {
@@ -37,9 +38,15 @@ function fakeAppUpdateFiles(
     File::shouldReceive('delete')
         ->zeroOrMoreTimes()
         ->andReturnTrue();
+    File::shouldReceive('put')
+        ->zeroOrMoreTimes()
+        ->andReturn(1)
+        ->byDefault();
     File::shouldReceive('get')
         ->zeroOrMoreTimes()
-        ->andReturn($frontendManifest);
+        ->andReturnUsing(fn (string $path): string => str_ends_with($path, 'environment-versions.json')
+            ? $frontendEnvironmentVersions
+            : $frontendManifest);
 }
 
 function fakeAppUpdateProcesses(string|array|null $npmCiError = null): void
@@ -56,6 +63,10 @@ function fakeAppUpdateProcesses(string|array|null $npmCiError = null): void
 
         if (str_contains($command, 'node --version')) {
             return Process::result('v22.18.0');
+        }
+
+        if (str_contains($command, 'composer --version --no-ansi')) {
+            return Process::result('Composer version 2.10.0 2026-05-28 11:22:08');
         }
 
         if (str_contains($command, 'npm --version')) {
@@ -203,6 +214,7 @@ it('runs the full update workflow end to end', function (): void {
     expect($result['output'])->toContain('▶ BUILDING FRONTEND');
     expect($result['output'])->toContain('Vite is baking the frontend. Please enjoy the smell of compiled assets.');
     expect($result['output'])->toContain('Still building. Vite is transforming modules and keeping count.');
+    expect($result['output'])->toContain('✅ Environment versions recorded');
     expect($result['output'])->toContain('▶ CLEARING CONFIG CACHE');
     expect($result['output'])->toContain('Dusting off cached config so Laravel reads the fresh notes.');
     expect($result['output'])->toContain('▶ MIGRATIONS');
@@ -222,9 +234,32 @@ it('runs the full update workflow end to end', function (): void {
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm run build'), 1);
 });
 
-it('uses an installed frontend artifact without running Node', function (): void {
-    fakeAppUpdateFiles();
-    Process::fake();
+it('uses an installed frontend artifact without rebuilding the frontend', function (): void {
+    fakeAppUpdateFiles(frontendEnvironmentVersions: json_encode([
+        'composer' => '2.9.2',
+        'npm' => '11.17.0',
+        'node' => 'v24.19.0',
+    ], JSON_THROW_ON_ERROR));
+    Process::fake([
+        'composer --version --no-ansi' => Process::result('Composer version 2.10.0 2026-05-28 11:22:08'),
+        'npm --version' => Process::result(errorOutput: 'npm: command not found', exitCode: 127),
+        'node --version' => Process::result(errorOutput: 'node: command not found', exitCode: 127),
+    ]);
+    File::shouldReceive('put')
+        ->once()
+        ->with(
+            base_path('storage/framework/environment-versions.json'),
+            Mockery::on(function (string $contents): bool {
+                $versions = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
+
+                return $versions === [
+                    'composer' => '2.10.0',
+                    'npm' => '11.17.0',
+                    'node' => 'v24.19.0',
+                ];
+            }),
+        )
+        ->andReturn(1);
 
     $install = Mockery::spy(InstallUpdateService::class);
     $records = Mockery::spy(RecordsCreateService::class);
@@ -253,10 +288,11 @@ it('uses an installed frontend artifact without running Node', function (): void
         ->and($result['output'])
         ->toContain('▶ USING PREBUILT FRONTEND')
         ->toContain('skipping npm and Vite on this server')
+        ->toContain('✅ Environment versions recorded')
         ->not->toContain('▶ INSTALLING FRONTEND DEPENDENCIES')
         ->not->toContain('▶ BUILDING FRONTEND');
 
-    Process::assertNothingRan();
+    Process::assertNotRan(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'));
     Artisan::shouldNotHaveReceived('call', ['route:clear', []]);
 });
 

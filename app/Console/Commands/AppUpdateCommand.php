@@ -11,10 +11,15 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use JsonException;
+use Throwable;
 
 class AppUpdateCommand extends Command
 {
     private const string NPM_CACHE_RELATIVE_PATH = 'storage/framework/npm-cache';
+
+    private const string ENVIRONMENT_VERSIONS_RELATIVE_PATH = 'storage/framework/environment-versions.json';
+
+    private const string FRONTEND_ENVIRONMENT_VERSIONS_RELATIVE_PATH = 'public/build/environment-versions.json';
 
     private const int WINDOWS_NPM_CI_MAX_ATTEMPTS = 3;
 
@@ -49,6 +54,8 @@ class AppUpdateCommand extends Command
                 return self::FAILURE;
             }
         }
+
+        $this->recordEnvironmentVersions();
 
         $this->line(str_repeat('.', 50));
 
@@ -248,6 +255,86 @@ class AppUpdateCommand extends Command
         $this->info('✅ Frontend build completed');
 
         return true;
+    }
+
+    private function recordEnvironmentVersions(): void
+    {
+        $frontendVersions = $this->frontendEnvironmentVersions();
+        $versions = [
+            'composer' => $this->detectRuntimeVersion(
+                ['composer', '--version', '--no-ansi'],
+                '/Composer(?: version)?\s+(\d+(?:\.\d+){1,3})/i',
+            ) ?? ($frontendVersions['composer'] ?? null),
+            'npm' => $this->detectRuntimeVersion(
+                ['npm', '--version'],
+                '/^v?(\d+(?:\.\d+){1,3})/',
+            ) ?? ($frontendVersions['npm'] ?? null),
+            'node' => $this->detectRuntimeVersion(
+                ['node', '--version'],
+                '/^v?(\d+(?:\.\d+){1,3})/',
+                'v',
+            ) ?? ($frontendVersions['node'] ?? null),
+        ];
+
+        File::ensureDirectoryExists(dirname(base_path(self::ENVIRONMENT_VERSIONS_RELATIVE_PATH)));
+
+        try {
+            $contents = json_encode($versions, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR).PHP_EOL;
+        } catch (JsonException) {
+            $this->warn('⚠️ Environment versions could not be encoded.');
+
+            return;
+        }
+
+        if (File::put(base_path(self::ENVIRONMENT_VERSIONS_RELATIVE_PATH), $contents) === false) {
+            $this->warn('⚠️ Environment versions could not be recorded.');
+
+            return;
+        }
+
+        $this->info('✅ Environment versions recorded');
+    }
+
+    /** @return array<string, string|null> */
+    private function frontendEnvironmentVersions(): array
+    {
+        $path = base_path(self::FRONTEND_ENVIRONMENT_VERSIONS_RELATIVE_PATH);
+        if (! File::exists($path)) {
+            return [];
+        }
+
+        try {
+            $versions = json_decode(File::get($path), true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            $versions = [];
+        }
+
+        File::delete($path);
+
+        return is_array($versions) ? $versions : [];
+    }
+
+    /** @param array<int, string> $command */
+    private function detectRuntimeVersion(array $command, string $pattern, string $prefix = ''): ?string
+    {
+        try {
+            $result = Process::timeout(5)
+                ->path(base_path())
+                ->run($command);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (! $result->successful()) {
+            return null;
+        }
+
+        $output = trim($result->output() ?: $result->errorOutput());
+        if (preg_match($pattern, $output, $matches) !== 1) {
+            return null;
+        }
+
+        return $prefix.$matches[1];
     }
 
     private function waitingLine(string $message): void

@@ -5,6 +5,7 @@ declare(strict_types=1);
 const FRONTEND_RELEASE_ARCHIVE = 'deployment/frontend-build.tar.gz';
 const FRONTEND_RELEASE_SOURCE = 'deployment/source-commit';
 const FRONTEND_RELEASE_MANIFEST = 'deployment/source-manifest.sha256';
+const FRONTEND_ENVIRONMENT_VERSIONS = 'environment-versions.json';
 
 function releaseProjectPath(string $relativePath = ''): string
 {
@@ -110,6 +111,40 @@ function validateFrontendManifest(string $buildDirectory): void
     json_decode($manifest, true, flags: JSON_THROW_ON_ERROR);
 }
 
+/** @param array<int, string> $command */
+function releaseRuntimeVersion(array $command, string $pattern, string $prefix = ''): ?string
+{
+    try {
+        $output = releaseCommandOutput($command);
+    } catch (RuntimeException) {
+        return null;
+    }
+
+    if (preg_match($pattern, $output, $matches) !== 1) {
+        return null;
+    }
+
+    return $prefix.$matches[1];
+}
+
+function writeFrontendEnvironmentVersions(string $buildDirectory): void
+{
+    $versions = [
+        'composer' => releaseRuntimeVersion(
+            ['composer', '--version', '--no-ansi'],
+            '/Composer(?: version)?\s+(\d+(?:\.\d+){1,3})/i',
+        ),
+        'npm' => releaseRuntimeVersion(['npm', '--version'], '/^v?(\d+(?:\.\d+){1,3})/'),
+        'node' => releaseRuntimeVersion(['node', '--version'], '/^v?(\d+(?:\.\d+){1,3})/', 'v'),
+    ];
+
+    $contents = json_encode($versions, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR).PHP_EOL;
+
+    if (file_put_contents($buildDirectory.DIRECTORY_SEPARATOR.FRONTEND_ENVIRONMENT_VERSIONS, $contents) === false) {
+        throw new RuntimeException('Could not record the frontend environment versions.');
+    }
+}
+
 function createFrontendRelease(string $sourceCommit): int
 {
     validateReleaseSource($sourceCommit);
@@ -124,6 +159,7 @@ function createFrontendRelease(string $sourceCommit): int
     }
 
     file_put_contents($buildDirectory.DIRECTORY_SEPARATOR.'deployment-source.txt', "{$sourceCommit}\n");
+    writeFrontendEnvironmentVersions($buildDirectory);
     file_put_contents(releaseProjectPath(FRONTEND_RELEASE_SOURCE), "{$sourceCommit}\n");
 
     if (runReleaseCommand([
