@@ -4,11 +4,23 @@ set -Eeuo pipefail
 project_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_directory"
 
+prepare_only=false
+
+if [ "${1:-}" = "--prepare" ]; then
+    prepare_only=true
+elif [ "$#" -gt 0 ]; then
+    echo "Usage: bash scripts/deploy_cloudways.sh [--prepare]" >&2
+    exit 2
+fi
+
 maintenance_mode_enabled=false
 backend_update_started=false
+maintenance_marker="${project_directory}/storage/framework/cloudways-deploy-maintenance"
 horizon_restart_timeout="${DEPLOY_HORIZON_RESTART_TIMEOUT:-20}"
 frontend_release_archive="${project_directory}/deployment/frontend-build.tar.gz"
+frontend_release_archive_hash="${project_directory}/deployment/frontend-build.sha256"
 frontend_release_marker="${project_directory}/deployment/source-commit"
+frontend_release_manifest_path="deployment/source-manifest.sha256"
 frontend_release_manifest="${project_directory}/deployment/source-manifest.sha256"
 frontend_artifact_directory=""
 frontend_backup_directory=""
@@ -17,6 +29,44 @@ if [[ ! "$horizon_restart_timeout" =~ ^[1-9][0-9]*$ ]]; then
     echo "DEPLOY_HORIZON_RESTART_TIMEOUT must be a positive number of seconds." >&2
     exit 1
 fi
+
+prepare_cloudways_pull() {
+    if [ -f storage/framework/down ]; then
+        if [ ! -f "$maintenance_marker" ]; then
+            echo "The application is in maintenance mode, but not because of this deployment workflow." >&2
+            echo "Resolve that state before preparing a Cloudways Pull." >&2
+
+            return 1
+        fi
+
+        if [ "$(tr -d '\r\n' < "$maintenance_marker")" != prepared ]; then
+            echo "The deployment maintenance marker is not in the prepared state." >&2
+            echo "Resolve the interrupted deployment before preparing another Cloudways Pull." >&2
+
+            return 1
+        fi
+
+        echo "Cloudways deployment maintenance mode is already active."
+    else
+        printf 'preparing\n' > "$maintenance_marker"
+
+        if ! php artisan down --render="errors::503" --retry=60 --refresh=15; then
+            rm -f -- "$maintenance_marker"
+
+            return 1
+        fi
+
+        maintenance_mode_enabled=true
+        printf 'prepared\n' > "$maintenance_marker"
+        echo "Cloudways deployment maintenance mode enabled."
+    fi
+
+    if [ "${SCHOOLTOOL_CLOUDWAYS_TERMINAL_PULL:-false}" = true ]; then
+        echo "Cloudways deployment maintenance mode prepared for the terminal pull."
+    else
+        echo "Now use Cloudways Pull from main, then run composer deploy."
+    fi
+}
 
 verify_queue_runtime() {
     echo "Verifying the Horizon queue runtime..."
@@ -158,7 +208,7 @@ ensure_queue_runtime() {
 prepare_frontend_artifact() {
     echo "Verifying the locally built frontend release..."
 
-    if [ ! -f "$frontend_release_archive" ] || [ ! -f "$frontend_release_marker" ] || [ ! -f "$frontend_release_manifest" ]; then
+    if [ ! -f "$frontend_release_archive" ] || [ ! -f "$frontend_release_archive_hash" ] || [ ! -f "$frontend_release_marker" ] || [ ! -f "$frontend_release_manifest" ]; then
         echo "The deployment release is missing." >&2
         echo "Run gitpush locally, then use Cloudways Pull from the main branch again." >&2
 
@@ -321,7 +371,11 @@ restore_application() {
             echo "The application remains in maintenance mode. Fix the error, rerun composer deploy, then use php artisan up only after success." >&2
         else
             echo "Restoring the application from maintenance mode..."
-            php artisan up || true
+
+            if php artisan up; then
+                rm -f -- "$maintenance_marker"
+                maintenance_mode_enabled=false
+            fi
         fi
     fi
 
@@ -372,17 +426,63 @@ if ! flock -n 9; then
     exit 1
 fi
 
-if [ -f storage/framework/down ]; then
-    echo "The application was already in maintenance mode. Resolve that state before deploying." >&2
-    exit 1
+if [ "$prepare_only" = true ]; then
+    verify_queue_runtime
+    prepare_cloudways_pull
+    trap - EXIT
+
+    exit 0
 fi
 
-prepare_frontend_artifact
+if [ -f storage/framework/down ]; then
+    if [ ! -f "$maintenance_marker" ]; then
+        echo "The application is in maintenance mode, but not because of this deployment workflow." >&2
+        echo "Resolve that state before deploying." >&2
+        exit 1
+    fi
+
+    maintenance_state="$(tr -d '\r\n' < "$maintenance_marker")"
+    maintenance_mode_enabled=true
+
+    case "$maintenance_state" in
+        prepared)
+            echo "Resuming the Cloudways deployment prepared before Pull."
+            ;;
+        backend-started)
+            backend_update_started=true
+            echo "Resuming the interrupted Cloudways backend deployment."
+            ;;
+        *)
+            echo "The deployment maintenance marker has an unexpected state: ${maintenance_state:-empty}." >&2
+            echo "The application remains in maintenance mode for manual inspection." >&2
+            trap - EXIT
+            exit 1
+            ;;
+    esac
+elif [ -f "$maintenance_marker" ]; then
+    rm -f -- "$maintenance_marker"
+fi
+
 verify_queue_runtime
 
-php artisan down --render="errors::503" --retry=60 --refresh=15
-maintenance_mode_enabled=true
+if [ "$maintenance_mode_enabled" != true ]; then
+    printf 'preparing\n' > "$maintenance_marker"
+
+    if ! php artisan down --render="errors::503" --retry=60 --refresh=15; then
+        rm -f -- "$maintenance_marker"
+        exit 1
+    fi
+
+    maintenance_mode_enabled=true
+    printf 'prepared\n' > "$maintenance_marker"
+fi
+
+echo "Pruning stale source files preserved by Cloudways Pull..."
+php scripts/source-manifest.php prune-unlisted "$frontend_release_manifest_path"
+prepare_frontend_artifact
+
 backend_update_started=true
+printf 'backend-started\n' > "$maintenance_marker"
 
 composer install \
     --no-dev \
@@ -402,6 +502,7 @@ ensure_queue_runtime
 php artisan up
 maintenance_mode_enabled=false
 backend_update_started=false
+rm -f -- "$maintenance_marker"
 finalize_frontend_artifact
 cleanup_frontend_artifact
 trap - EXIT

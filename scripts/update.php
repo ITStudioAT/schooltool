@@ -338,10 +338,12 @@ if ($target === 'local') {
     exit(runLocalUpdate($prepareOnly));
 }
 
-if ($prepareOnly) {
-    exit(updateUsage());
-}
-
 fwrite(STDOUT, "Update target: Cloudways production.\n");
 
-exit(runUpdateCommand(['bash', updateProjectPath('scripts/deploy_cloudways.sh')]));
+$cloudwaysCommand = ['bash', updateProjectPath('scripts/deploy_cloudways.sh')];
+
+if ($prepareOnly) {
+    $cloudwaysCommand[] = '--prepare';
+}
+
+exit(runUpdateCommand($cloudwaysCommand));

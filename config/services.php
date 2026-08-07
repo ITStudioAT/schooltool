@@ -40,4 +40,19 @@ return [
         'worker_ping_url' => env('HEALTHCHECK_WORKER_PING_URL'),
     ],
 
+    'cloudways' => [
+        'deployment' => [
+            'base_url' => env('CLOUDWAYS_API_BASE_URL', 'https://api.cloudways.com/api/v2'),
+            'access_token' => env('CLOUDWAYS_API_ACCESS_TOKEN'),
+            'server_id' => env('CLOUDWAYS_SERVER_ID'),
+            'app_id' => env('CLOUDWAYS_APP_ID'),
+            'branch' => env('CLOUDWAYS_DEPLOY_BRANCH', 'main'),
+            'deploy_path' => env('CLOUDWAYS_DEPLOY_PATH'),
+            'connect_timeout' => (int) env('CLOUDWAYS_API_CONNECT_TIMEOUT', 5),
+            'timeout' => (int) env('CLOUDWAYS_API_TIMEOUT', 20),
+            'operation_timeout' => (int) env('CLOUDWAYS_DEPLOY_OPERATION_TIMEOUT', 600),
+            'poll_interval' => (int) env('CLOUDWAYS_DEPLOY_POLL_INTERVAL', 3),
+        ],
+    ],
+
 ];

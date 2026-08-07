@@ -31,6 +31,16 @@ const SOURCE_MANIFEST_EXCLUDED_PATHS = [
     'resources/js/wayfinder',
 ];
 
+const SOURCE_MANIFEST_PRUNE_REQUIRED_PATHS = [
+    'artisan',
+    'composer.json',
+    'composer.lock',
+    'scripts/deploy_cloudways.sh',
+    'scripts/frontend-release.php',
+    'scripts/pdeploy_cloudways.sh',
+    'scripts/source-manifest.php',
+];
+
 function projectPath(string $relativePath = ''): string
 {
     $projectDirectory = dirname(__DIR__);
@@ -112,6 +122,90 @@ function trackedSourceFiles(): array
     return array_values(array_unique($files));
 }
 
+function hasGitWorkingTree(): bool
+{
+    $process = proc_open(
+        ['git', 'rev-parse', '--is-inside-work-tree'],
+        [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ],
+        $pipes,
+        projectPath(),
+    );
+
+    if (! is_resource($process)) {
+        return false;
+    }
+
+    fclose($pipes[0]);
+    $output = stream_get_contents($pipes[1]);
+    stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    return proc_close($process) === 0 && trim((string) $output) === 'true';
+}
+
+/**
+ * @param  array<int, string>  $files
+ */
+function collectDeployedSourceFiles(string $relativeDirectory, array &$files): void
+{
+    $absoluteDirectory = projectPath($relativeDirectory);
+
+    if (! is_dir($absoluteDirectory) || is_link($absoluteDirectory)) {
+        if (is_link($absoluteDirectory)) {
+            $files[] = $relativeDirectory;
+        }
+
+        return;
+    }
+
+    foreach (new FilesystemIterator($absoluteDirectory, FilesystemIterator::SKIP_DOTS) as $item) {
+        $relativePath = $relativeDirectory.'/'.$item->getFilename();
+
+        if (isExcludedSourcePath($relativePath)) {
+            continue;
+        }
+
+        if ($item->isLink() || ! $item->isDir()) {
+            $files[] = $relativePath;
+
+            continue;
+        }
+
+        collectDeployedSourceFiles($relativePath, $files);
+    }
+}
+
+/** @return array<int, string> */
+function deployedSourceFiles(): array
+{
+    $files = [];
+
+    foreach (SOURCE_MANIFEST_PATHS as $includedPath) {
+        if (isExcludedSourcePath($includedPath)) {
+            continue;
+        }
+
+        $absolutePath = projectPath($includedPath);
+
+        if (is_link($absolutePath) || is_file($absolutePath)) {
+            $files[] = $includedPath;
+
+            continue;
+        }
+
+        collectDeployedSourceFiles($includedPath, $files);
+    }
+
+    sort($files, SORT_STRING);
+
+    return array_values(array_unique($files));
+}
+
 function sourceFileHash(string $relativePath): string
 {
     $absolutePath = projectPath($relativePath);
@@ -177,6 +271,68 @@ function parseSourceManifest(string $manifest): array
     return $entries;
 }
 
+/**
+ * @param  array<string, string>  $manifestEntries
+ * @param  array<int, string>  $deployedFiles
+ * @return array{unlisted: array<int, string>, blocking: array<int, string>}
+ */
+function sourceManifestDifferences(array $manifestEntries, array $deployedFiles): array
+{
+    $unlisted = [];
+    $blocking = [];
+
+    foreach ($deployedFiles as $relativePath) {
+        if (! array_key_exists($relativePath, $manifestEntries)) {
+            $unlisted[] = $relativePath;
+        }
+    }
+
+    foreach ($manifestEntries as $relativePath => $expectedHash) {
+        if (! in_array($relativePath, $deployedFiles, true)) {
+            $blocking[] = "missing: {$relativePath}";
+
+            continue;
+        }
+
+        if (! is_file(projectPath($relativePath)) || is_link(projectPath($relativePath))) {
+            $blocking[] = "missing: {$relativePath}";
+
+            continue;
+        }
+
+        if (! hash_equals($expectedHash, sourceFileHash($relativePath))) {
+            $blocking[] = "changed: {$relativePath}";
+        }
+    }
+
+    return [
+        'unlisted' => $unlisted,
+        'blocking' => $blocking,
+    ];
+}
+
+/** @param array<string, string> $manifestEntries */
+function validatePrunableManifest(array $manifestEntries): void
+{
+    foreach (SOURCE_MANIFEST_PRUNE_REQUIRED_PATHS as $requiredPath) {
+        if (! array_key_exists($requiredPath, $manifestEntries)) {
+            throw new RuntimeException("The source manifest cannot safely prune files because it omits: {$requiredPath}");
+        }
+    }
+}
+
+/** @param array<string, string> $manifestEntries */
+function isPrunableSourcePath(string $relativePath, array $manifestEntries): bool
+{
+    if (! isIncludedSourcePath($relativePath) || array_key_exists($relativePath, $manifestEntries)) {
+        return false;
+    }
+
+    $absolutePath = projectPath($relativePath);
+
+    return is_link($absolutePath) || is_file($absolutePath);
+}
+
 /** @param array<int, string> $differences */
 function describeManifestMismatch(array $differences): void
 {
@@ -230,37 +386,21 @@ function verifySourceManifest(string $manifestPath): int
     }
 
     $manifestEntries = parseSourceManifest($expected);
-    $trackedFiles = trackedSourceFiles();
-    $differences = [];
-
-    foreach ($trackedFiles as $relativePath) {
-        if (! array_key_exists($relativePath, $manifestEntries)) {
-            $differences[] = "unlisted: {$relativePath}";
-        }
-    }
-
-    foreach ($manifestEntries as $relativePath => $expectedHash) {
-        if (! in_array($relativePath, $trackedFiles, true)) {
-            $differences[] = "no longer tracked: {$relativePath}";
-
-            continue;
-        }
-
-        if (! is_file(projectPath($relativePath)) || is_link(projectPath($relativePath))) {
-            $differences[] = "missing: {$relativePath}";
-
-            continue;
-        }
-
-        if (! hash_equals($expectedHash, sourceFileHash($relativePath))) {
-            $differences[] = "changed: {$relativePath}";
-        }
-    }
+    $sourceFiles = hasGitWorkingTree() ? trackedSourceFiles() : deployedSourceFiles();
+    $manifestDifferences = sourceManifestDifferences($manifestEntries, $sourceFiles);
+    $differences = [
+        ...array_map(
+            fn (string $relativePath): string => "unlisted: {$relativePath}",
+            $manifestDifferences['unlisted'],
+        ),
+        ...$manifestDifferences['blocking'],
+    ];
 
     if ($differences !== []) {
         fwrite(STDERR, "The pulled source does not match its deployment release:\n");
         describeManifestMismatch($differences);
         fwrite(STDERR, "Pull main again after gitpush has completed.\n");
+        fwrite(STDERR, "If only unlisted files remain, Cloudways preserved removed source files; run the guarded deployment to prune exactly those files.\n");
 
         return 1;
     }
@@ -270,9 +410,64 @@ function verifySourceManifest(string $manifestPath): int
     return 0;
 }
 
+function pruneUnlistedSourceFiles(string $manifestPath): int
+{
+    $absoluteManifestPath = projectPath($manifestPath);
+
+    if (! is_file($absoluteManifestPath)) {
+        fwrite(STDERR, "Source manifest is missing: {$manifestPath}\n");
+
+        return 1;
+    }
+
+    $manifest = file_get_contents($absoluteManifestPath);
+
+    if ($manifest === false) {
+        fwrite(STDERR, "Could not read source manifest: {$manifestPath}\n");
+
+        return 1;
+    }
+
+    $manifestEntries = parseSourceManifest($manifest);
+    validatePrunableManifest($manifestEntries);
+    $manifestDifferences = sourceManifestDifferences($manifestEntries, deployedSourceFiles());
+
+    if ($manifestDifferences['blocking'] !== []) {
+        fwrite(STDERR, "Refusing to prune stale source files because expected release files differ:\n");
+        describeManifestMismatch($manifestDifferences['blocking']);
+
+        return 1;
+    }
+
+    foreach ($manifestDifferences['unlisted'] as $relativePath) {
+        if (! isPrunableSourcePath($relativePath, $manifestEntries)) {
+            fwrite(STDERR, "Refusing to prune an unsafe or changed source path: {$relativePath}\n");
+
+            return 1;
+        }
+    }
+
+    foreach ($manifestDifferences['unlisted'] as $relativePath) {
+        if (! isPrunableSourcePath($relativePath, $manifestEntries)
+            || ! unlink(projectPath($relativePath))) {
+            fwrite(STDERR, "Could not safely prune stale source file: {$relativePath}\n");
+
+            return 1;
+        }
+
+        fwrite(STDOUT, "Pruned stale deployment source file: {$relativePath}\n");
+    }
+
+    if ($manifestDifferences['unlisted'] === []) {
+        fwrite(STDOUT, "No stale deployment source files found.\n");
+    }
+
+    return verifySourceManifest($manifestPath);
+}
+
 function sourceManifestUsage(): int
 {
-    fwrite(STDERR, "Usage: php scripts/source-manifest.php <write|verify> <manifest-path>\n");
+    fwrite(STDERR, "Usage: php scripts/source-manifest.php <write|verify|prune-unlisted> <manifest-path>\n");
 
     return 2;
 }
@@ -288,6 +483,7 @@ try {
     exit(match ($command) {
         'write' => writeSourceManifest($manifestPath),
         'verify' => verifySourceManifest($manifestPath),
+        'prune-unlisted' => pruneUnlistedSourceFiles($manifestPath),
         default => sourceManifestUsage(),
     });
 } catch (Throwable $throwable) {

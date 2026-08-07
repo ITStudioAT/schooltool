@@ -148,7 +148,7 @@ it('recovers Cloudways Horizon before and after deployment', function (): void {
         ->toContain('kill -TERM "$process_id"')
         ->toContain('The process monitor started Horizon, but it is still unhealthy:')
         ->toMatch('/verify_queue_runtime\(\).*?php artisan queue:health-check.*?ensure_queue_runtime/s')
-        ->toMatch('/prepare_frontend_artifact\s+verify_queue_runtime\s+php artisan down/s')
+        ->toMatch('/verify_queue_runtime\s+.*?php artisan down.*?prune-unlisted.*?prepare_frontend_artifact/s')
         ->toMatch('/install_frontend_artifact\s+php artisan app:update --no-interaction --skip-frontend\s+php artisan optimize.*?php artisan horizon:terminate.*?ensure_queue_runtime\s+\s*php artisan up/s')
         ->not->toContain('Horizon did not restart within 20 seconds.');
 });
@@ -178,6 +178,7 @@ it('validates the locally published frontend release in parallel CI', function (
         ->not->toContain('git push origin HEAD:main')
         ->and($deploymentScript)
         ->toContain('frontend_release_archive="${project_directory}/deployment/frontend-build.tar.gz"')
+        ->toContain('frontend_release_archive_hash="${project_directory}/deployment/frontend-build.sha256"')
         ->toContain('frontend_release_marker="${project_directory}/deployment/source-commit"')
         ->toContain('frontend_release_manifest="${project_directory}/deployment/source-manifest.sha256"')
         ->toContain('php scripts/frontend-release.php verify')
@@ -194,6 +195,7 @@ it('validates the locally published frontend release in parallel CI', function (
         ->toContain('Invoke-SchooltoolReleaseChecks')
         ->toContain('php scripts/frontend-release.php create $sourceCommit')
         ->toContain('php scripts/frontend-release.php verify $sourceCommit')
+        ->toContain('deployment/frontend-build.sha256')
         ->toContain('git push @pushArguments')
         ->toContain("'--atomic', 'origin', 'HEAD:main'")
         ->toContain('Cloudways may Pull main and run: composer deploy');
