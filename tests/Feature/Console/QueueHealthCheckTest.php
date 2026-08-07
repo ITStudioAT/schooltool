@@ -79,3 +79,105 @@ it('reports Horizon as inactive without starting or killing processes', function
         ->not->toContain('pkill')
         ->not->toContain('queue:retry');
 });
+
+it('requires a replacement Horizon master when an old process is excluded', function (): void {
+    $repository = Mockery::mock(MasterSupervisorRepository::class);
+    $repository->shouldReceive('all')->once()->andReturn([
+        (object) [
+            'name' => 'schooltool-old-master',
+            'pid' => '123',
+            'status' => 'running',
+            'supervisors' => ['schooltool-old-supervisor'],
+        ],
+    ]);
+    app()->instance(MasterSupervisorRepository::class, $repository);
+
+    $supervisors = Mockery::mock(SupervisorRepository::class);
+    $supervisors->shouldReceive('all')->never();
+    app()->instance(SupervisorRepository::class, $supervisors);
+
+    $this->artisan('queue:health-check --exclude-master-pid=123')
+        ->expectsOutputToContain('Horizon ist inaktiv.')
+        ->assertExitCode(2);
+});
+
+it('uses only supervisors owned by a replacement Horizon master', function (): void {
+    $repository = Mockery::mock(MasterSupervisorRepository::class);
+    $repository->shouldReceive('all')->once()->andReturn([
+        (object) [
+            'name' => 'schooltool-old-master',
+            'pid' => '123',
+            'status' => 'running',
+            'supervisors' => ['schooltool-old-supervisor'],
+        ],
+        (object) [
+            'name' => 'schooltool-new-master',
+            'pid' => '456',
+            'status' => 'running',
+            'supervisors' => ['schooltool-new-supervisor'],
+        ],
+    ]);
+    app()->instance(MasterSupervisorRepository::class, $repository);
+
+    $supervisors = Mockery::mock(SupervisorRepository::class);
+    $supervisors->shouldReceive('all')->once()->andReturn([
+        (object) [
+            'name' => 'schooltool-old-supervisor',
+            'status' => 'running',
+            'options' => [
+                'queue' => 'critical,notifications,default,imports,materials,maintenance',
+            ],
+        ],
+        (object) [
+            'name' => 'schooltool-new-supervisor',
+            'status' => 'running',
+            'options' => ['queue' => 'critical,notifications'],
+        ],
+    ]);
+    app()->instance(SupervisorRepository::class, $supervisors);
+
+    $this->artisan('queue:health-check --exclude-master-pid=123')
+        ->expectsOutputToContain('Horizon bedient nicht alle erwarteten Queues.')
+        ->expectsOutputToContain('Fehlende Queues: default, imports, materials, maintenance')
+        ->assertExitCode(3);
+});
+
+it('accepts a replacement Horizon master serving every configured queue', function (): void {
+    $repository = Mockery::mock(MasterSupervisorRepository::class);
+    $repository->shouldReceive('all')->once()->andReturn([
+        (object) [
+            'name' => 'schooltool-old-master',
+            'pid' => '123',
+            'status' => 'running',
+            'supervisors' => ['schooltool-old-supervisor'],
+        ],
+        (object) [
+            'name' => 'schooltool-new-master',
+            'pid' => '456',
+            'status' => 'running',
+            'supervisors' => ['schooltool-new-supervisor'],
+        ],
+    ]);
+    app()->instance(MasterSupervisorRepository::class, $repository);
+
+    $supervisors = Mockery::mock(SupervisorRepository::class);
+    $supervisors->shouldReceive('all')->once()->andReturn([
+        (object) [
+            'name' => 'schooltool-old-supervisor',
+            'status' => 'running',
+            'options' => ['queue' => 'critical'],
+        ],
+        (object) [
+            'name' => 'schooltool-new-supervisor',
+            'status' => 'running',
+            'options' => [
+                'queue' => 'critical,notifications,default,imports,materials,maintenance',
+            ],
+        ],
+    ]);
+    app()->instance(SupervisorRepository::class, $supervisors);
+
+    $this->artisan('queue:health-check --exclude-master-pid=123')
+        ->expectsOutputToContain('Horizon laeuft.')
+        ->assertSuccessful();
+});

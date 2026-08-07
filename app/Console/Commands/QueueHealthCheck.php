@@ -8,7 +8,8 @@ use Laravel\Horizon\Contracts\SupervisorRepository;
 
 class QueueHealthCheck extends Command
 {
-    protected $signature = 'queue:health-check';
+    protected $signature = 'queue:health-check
+                            {--exclude-master-pid=* : Horizon master process IDs that must not satisfy this health check}';
 
     protected $description = 'Zeigt den von Horizon gemeldeten Queue-Status';
 
@@ -16,7 +17,16 @@ class QueueHealthCheck extends Command
         MasterSupervisorRepository $masterSupervisors,
         SupervisorRepository $supervisors,
     ): int {
-        $masters = collect($masterSupervisors->all());
+        $excludedMasterProcessIds = collect($this->option('exclude-master-pid'))
+            ->filter(fn (mixed $processId): bool => is_string($processId)
+                && ctype_digit($processId)
+                && (int) $processId > 0)
+            ->map(fn (string $processId): int => (int) $processId)
+            ->values();
+        $masters = collect($masterSupervisors->all())
+            ->reject(fn (object $master): bool => $excludedMasterProcessIds->containsStrict(
+                (int) ($master->pid ?? 0),
+            ));
 
         if ($masters->isEmpty()) {
             $this->error('Horizon ist inaktiv.');
@@ -33,7 +43,22 @@ class QueueHealthCheck extends Command
         }
 
         $expectedQueues = collect($this->expectedQueueNames());
-        $activeQueues = collect($supervisors->all())
+        $activeSupervisors = collect($supervisors->all());
+
+        if ($excludedMasterProcessIds->isNotEmpty()) {
+            $replacementSupervisorNames = $masters
+                ->flatMap(fn (object $master): array => is_array($master->supervisors ?? null)
+                    ? $master->supervisors
+                    : [])
+                ->filter(fn (mixed $name): bool => is_string($name) && $name !== '')
+                ->values();
+            $activeSupervisors = $activeSupervisors
+                ->filter(fn (object $supervisor): bool => $replacementSupervisorNames->containsStrict(
+                    $supervisor->name ?? null,
+                ));
+        }
+
+        $activeQueues = $activeSupervisors
             ->filter(fn (object $supervisor): bool => $supervisor->status === 'running')
             ->flatMap(function (object $supervisor): array {
                 $queues = $supervisor->options['queue'] ?? '';

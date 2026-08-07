@@ -140,16 +140,18 @@ it('recovers Cloudways Horizon before and after deployment', function (): void {
         ->toContain('ensure_queue_runtime')
         ->toContain('start_horizon_directly')
         ->toContain('php artisan queue:health-check')
-        ->toContain('DEPLOY_HORIZON_RESTART_TIMEOUT:-20')
+        ->toContain('DEPLOY_HORIZON_RESTART_TIMEOUT:-60')
         ->toContain('attempt <= horizon_restart_timeout')
         ->toContain('nohup php artisan horizon 9>&- >> storage/logs/horizon.log 2>&1 </dev/null &')
         ->toContain('wait_for_previous_horizon_to_exit')
         ->toContain('Recycling unhealthy Horizon master process(es):')
         ->toContain('kill -TERM "$process_id"')
         ->toContain('The process monitor started Horizon, but it is still unhealthy:')
+        ->toContain('health_check_arguments+=("--exclude-master-pid=${process_id}")')
         ->toMatch('/verify_queue_runtime\(\).*?php artisan queue:health-check.*?ensure_queue_runtime/s')
         ->toMatch('/verify_queue_runtime\s+.*?php artisan down.*?prune-unlisted.*?prepare_frontend_artifact/s')
-        ->toMatch('/install_frontend_artifact\s+php artisan app:update --no-interaction --skip-frontend\s+php artisan optimize.*?php artisan horizon:terminate.*?ensure_queue_runtime\s+\s*php artisan up/s')
+        ->toMatch('/install_frontend_artifact\s+php artisan app:update --no-interaction --skip-frontend\s+php artisan optimize.*?previous_horizon_process_ids=.*?php artisan horizon:terminate\s+wait_for_queue_runtime "\$previous_horizon_process_ids"\s+\s*php artisan up/s')
+        ->not->toMatch('/php artisan horizon:terminate\s+wait_for_previous_horizon_to_exit/s')
         ->not->toContain('Horizon did not restart within 20 seconds.');
 });
 

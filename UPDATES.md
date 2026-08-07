@@ -1,18 +1,28 @@
 # UPDATES
 
+## 3.45.0 - 3.45.1 x
+
+### System
+
+- Git-Upload and Pull on Cloudways
+- Testing
+
 ## 3.44.6
 
 ### System
+
 - Fix cross-platform deployment source verification
 
 ## 3.44.5
 
 ### System
+
 - Update-Run
 
 ## 3.44.3 - 3.44.4
 
 ### Unterricht
+
 - Finish-Datum für Arbeiten
 - Curricula-Zuordnungen scheinen besser auf
 - Arbeiten können ein End-Datum haben und werden angezeigt
@@ -23,30 +33,35 @@
 - Verständigungen per E-Mail inkl. Bestätigungen
 
 ### System
-- Laravel 13.23.0   
 
+- Laravel 13.23.0
 
 ## 3.44.0-3.44.2
+
 - Major Security Update
 
 ## 3.43.5
 
 ### Materialien
+
 - Kategorien Links, Termine, Screenshot by default vorhanden
 - UI-Design adaptiert
 - Screenshots werden in der Übersicht auch angezeigt
 
 ### Curriculum
+
 - Übernahme einzelner Einheiten aus anderem Curriculum
 
 ## 3.43.4
 
 ### Materialien
+
 - Anzeige auswählbar nach Kategorien
 - Kategorien Safety-check bei Anlegen
-- Automatische Tag-Erzeugung 
+- Automatische Tag-Erzeugung
 
 ### General
+
 - Ladepunkte werden zuverlässig ausgeblendet
 
 ## 3.43.3
@@ -58,6 +73,7 @@
 - Curricula sind von Materialien unabhängig
 
 ## Materialien
+
 - Version 2 gestartet
 - Keine 3-schichtige Einteilung
 - Nur noch eine Kategorie plus Suchbegriffe

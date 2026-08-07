@@ -16,7 +16,7 @@ fi
 maintenance_mode_enabled=false
 backend_update_started=false
 maintenance_marker="${project_directory}/storage/framework/cloudways-deploy-maintenance"
-horizon_restart_timeout="${DEPLOY_HORIZON_RESTART_TIMEOUT:-20}"
+horizon_restart_timeout="${DEPLOY_HORIZON_RESTART_TIMEOUT:-60}"
 frontend_release_archive="${project_directory}/deployment/frontend-build.tar.gz"
 frontend_release_archive_hash="${project_directory}/deployment/frontend-build.sha256"
 frontend_release_marker="${project_directory}/deployment/source-commit"
@@ -179,10 +179,19 @@ wait_for_previous_horizon_to_exit() {
 }
 
 wait_for_queue_runtime() {
+    local excluded_process_ids="${1:-}"
+    local health_check_arguments=()
+
+    while IFS= read -r process_id; do
+        if [[ "$process_id" =~ ^[1-9][0-9]*$ ]]; then
+            health_check_arguments+=("--exclude-master-pid=${process_id}")
+        fi
+    done <<< "$excluded_process_ids"
+
     echo "Waiting up to ${horizon_restart_timeout} seconds for the process monitor to restart Horizon..."
 
     for ((attempt = 1; attempt <= horizon_restart_timeout; attempt++)); do
-        if php artisan queue:health-check >/dev/null 2>&1; then
+        if php artisan queue:health-check "${health_check_arguments[@]}" >/dev/null 2>&1; then
             echo "Horizon restarted successfully."
 
             return
@@ -191,7 +200,7 @@ wait_for_queue_runtime() {
         sleep 1
     done
 
-    php artisan queue:health-check || true
+    php artisan queue:health-check "${health_check_arguments[@]}" || true
     echo "Horizon did not restart within ${horizon_restart_timeout} seconds." >&2
 
     return 1
@@ -496,8 +505,7 @@ php artisan optimize
 
 previous_horizon_process_ids="$(horizon_master_process_ids)"
 php artisan horizon:terminate
-wait_for_previous_horizon_to_exit "$previous_horizon_process_ids"
-ensure_queue_runtime
+wait_for_queue_runtime "$previous_horizon_process_ids"
 
 php artisan up
 maintenance_mode_enabled=false
