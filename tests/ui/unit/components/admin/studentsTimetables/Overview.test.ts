@@ -2296,6 +2296,32 @@ describe('Students timetable overview', () => {
         })
     })
 
+    it('does not mark Kompaktunterricht groups as FU', () => {
+        const methods = (Overview as any).methods
+        const compactCourseGroup = {
+            key: 'm1-compact',
+            display_label: 'M1 - 3R - SCH',
+            recurrence_label: '1-wöchig',
+            is_kompaktunterricht: true,
+            is_fu: true,
+        }
+        const ctx = {
+            courseGroupDetailLabel: methods.courseGroupDetailLabel,
+            courseGroupDisplayLabel: methods.courseGroupDisplayLabel,
+            courseGroupDistanceLearning: methods.courseGroupDistanceLearning,
+            courseGroupDates: methods.courseGroupDates,
+            courseGroupStudentCourseBadge: () => '',
+            courseGroupStudentCourseType: () => '',
+            dateFromIsoValue: methods.dateFromIsoValue,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+            timetablePdfCoursePayload: methods.timetablePdfCoursePayload,
+        }
+
+        expect(methods.courseGroupDistanceLearning.call(ctx, compactCourseGroup)).toBe(false)
+        expect(methods.courseGroupDetailLabel.call(ctx, compactCourseGroup)).toBe('1-wöchig')
+        expect(methods.timetablePdfCoursePayload.call(ctx, compactCourseGroup).is_fu).toBe(false)
+    })
+
     it('uses adopted robot FU course group keys in timetable details and pdf payloads', () => {
         const methods = (Overview as any).methods
         const courseGroup = {

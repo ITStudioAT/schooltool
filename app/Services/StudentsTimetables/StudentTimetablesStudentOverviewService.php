@@ -219,8 +219,13 @@ class StudentTimetablesStudentOverviewService
      * @param  array<string, mixed>  $selectionOverride
      * @return array<string, mixed>
      */
-    public function selectionSummaryForStudentCode(User $user, ?string $studentCode, array $selectionOverride = [], bool $strictSelectionOverride = false): array
-    {
+    public function selectionSummaryForStudentCode(
+        User $user,
+        ?string $studentCode,
+        array $selectionOverride = [],
+        bool $strictSelectionOverride = false,
+        StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
+    ): array {
         $schoolyearId = $this->schoolyearIdForUser($user);
 
         if (! $this->nonEmptyString($studentCode)) {
@@ -252,6 +257,7 @@ class StudentTimetablesStudentOverviewService
                     $selection,
                     [],
                     [],
+                    $studyProgram,
                 ),
             ];
         }
@@ -260,7 +266,7 @@ class StudentTimetablesStudentOverviewService
         $recognizedCourses = $this->completedCourses($user, $schoolyearId, $student->student_code);
         $completedCourses = $this->positiveCourses($recognizedCourses);
         $missingCourses = $this->negativeCourses($recognizedCourses);
-        $selection = $this->selectionForStudent($user, $schoolyearId, $student, $completedCourses);
+        $selection = $this->selectionForStudent($user, $schoolyearId, $student, $completedCourses, $studyProgram);
         $selection = $this->selectionWithOverrides($selection, $selectionOverride, $strictSelectionOverride);
 
         return [
@@ -282,6 +288,8 @@ class StudentTimetablesStudentOverviewService
                 $selection,
                 $completedCourses,
                 $missingCourses,
+                studyProgram: $studyProgram,
+                limitToStudentProgression: true,
             ),
         ];
     }
@@ -1101,27 +1109,43 @@ class StudentTimetablesStudentOverviewService
      * @param  list<array<string, mixed>>  $completedCourses
      * @return array<string, mixed>
      */
-    private function selectionForStudent(User $user, int $schoolyearId, ?Import116 $student, array $completedCourses): array
-    {
+    private function selectionForStudent(
+        User $user,
+        int $schoolyearId,
+        ?Import116 $student,
+        array $completedCourses,
+        ?StudentTimetableStudyProgram $studyProgram = null,
+    ): array {
         $completedCodes = collect($completedCourses)
             ->pluck('code')
             ->map(fn (mixed $code): string => $this->normalizedCourseCode((string) $code));
-        $studentSemester = $this->semesterForStudent($student);
+        $studentSemester = $this->semesterForStudent($student, $studyProgram);
 
         return [
             'semester' => $studentSemester ?? $this->currentSemesterFromCompletedCourses($completedCourses),
             'religion' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->religionSelectionCourseAliases())
                 ?? $this->studentReligionOptionValue((string) $student?->religion),
             'language' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->languageSelectionCourseAliases()),
-            'branch' => $this->branchFromCompletedCourses($user, $schoolyearId, $completedCodes, $student),
+            'branch' => $this->branchFromCompletedCourses(
+                $user,
+                $schoolyearId,
+                $completedCodes,
+                $student,
+                $studyProgram ?? StudentTimetableStudyProgram::Normalstudium,
+            ),
             'arts_subject' => $this->selectionOptionFromCompletedCodes($completedCodes, $this->artsSelectionCourseAliases()),
         ];
     }
 
-    public function semesterForStudent(?Import116 $student): ?int
-    {
+    public function semesterForStudent(
+        ?Import116 $student,
+        ?StudentTimetableStudyProgram $studyProgram = null,
+    ): ?int {
         $schoolLevel = $this->studentSchoolLevelKey($student);
-        $semesterBySchoolLevel = $this->overviewService->isKompaktunterrichtClass((string) $student?->class)
+        $usesCompactProgression = $studyProgram
+            ? $studyProgram === StudentTimetableStudyProgram::Kompaktstudium
+            : $this->overviewService->isKompaktunterrichtClass((string) $student?->class);
+        $semesterBySchoolLevel = $usesCompactProgression
             ? [
                 '09_1' => 1,
                 '09_2' => 2,
@@ -1329,13 +1353,18 @@ class StudentTimetablesStudentOverviewService
     /**
      * @param  Collection<int, string>  $completedCodes
      */
-    private function branchFromCompletedCourses(User $user, int $schoolyearId, Collection $completedCodes, ?Import116 $student): ?string
-    {
+    private function branchFromCompletedCourses(
+        User $user,
+        int $schoolyearId,
+        Collection $completedCodes,
+        ?Import116 $student,
+        StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
+    ): ?string {
         $branchOptions = ['wirtschaftskundlich', 'gymnasial'];
         $bestMatch = null;
 
         StudentTimetableSubjectRow::query()
-            ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
+            ->forStudyProgram($studyProgram)
             ->where('school_id', $user->school_id)
             ->where('schoolyear_id', $schoolyearId)
             ->where('is_active', true)
@@ -1433,10 +1462,14 @@ class StudentTimetablesStudentOverviewService
      * @param  array<string, mixed>  $selection
      * @return list<array<string, mixed>>
      */
-    private function subjectCourses(User $user, int $schoolyearId, array $selection): Collection
-    {
+    private function subjectCourses(
+        User $user,
+        int $schoolyearId,
+        array $selection,
+        StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
+    ): Collection {
         return StudentTimetableSubjectRow::query()
-            ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
+            ->forStudyProgram($studyProgram)
             ->where('school_id', $user->school_id)
             ->where('schoolyear_id', $schoolyearId)
             ->where('is_active', true)
@@ -1735,6 +1768,8 @@ class StudentTimetablesStudentOverviewService
         array $selection,
         array $completedCourses,
         array $missingCourses,
+        StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
+        bool $limitToStudentProgression = false,
     ): array {
         $studyModules = $this->studyModules($completedCourses, $missingCourses);
         $finishedModules = collect([
@@ -1744,11 +1779,39 @@ class StudentTimetablesStudentOverviewService
             ->unique(fn (array $course): string => $this->normalizedCourseCode((string) ($course['code'] ?? '')))
             ->values();
         $negativeModules = collect($studyModules['failed']);
+        $courseGroups = $this->manualTimetableCourseGroupsForUser($user);
         $unavailableCourseCodes = $this->studentPlannedCourseCodes([
             ...$completedCourses,
             ...$missingCourses,
         ]);
-        $availableModules = $this->subjectCourses($user, $schoolyearId, $selection)
+        $subjectCourses = $this->subjectCourses($user, $schoolyearId, $selection, $studyProgram);
+
+        if ($limitToStudentProgression) {
+            $completedCourseCodes = $this->studentCompletedCourseCodes($completedCourses);
+            $visitedCourseCodes = $this->studentVisitedCourseCodes([
+                ...$completedCourses,
+                ...$missingCourses,
+            ]);
+            $plannedModules = $this->plannedCoursesForProgression(
+                $subjectCourses,
+                $completedCourseCodes,
+                $visitedCourseCodes,
+                $missingCourses,
+            );
+            $progressionAdditionalModules = $this->additionalCoursesForProgression(
+                $subjectCourses,
+                $completedCourseCodes,
+                $visitedCourseCodes,
+                $missingCourses,
+                $plannedModules,
+            );
+            $subjectCourses = collect([
+                ...$plannedModules,
+                ...$progressionAdditionalModules,
+            ]);
+        }
+
+        $availableModules = $subjectCourses
             ->reject(fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $unavailableCourseCodes))
             ->unique(fn (array $course): string => $this->studentPlanningCourseUniqueKey($course))
             ->sort(fn (array $firstCourse, array $secondCourse): int => $this->studentProgressionCourseSort($firstCourse, $secondCourse))
@@ -1765,11 +1828,11 @@ class StudentTimetablesStudentOverviewService
             : $availableModules->filter(fn (array $course): bool => (int) ($course['semester'] ?? 0) > $currentSemester);
 
         return [
-            $this->moduleSelectionGroup('finished', 'Abgeschlossene', $finishedModules, false),
-            $this->moduleSelectionGroup('negative', 'Negative', $negativeModules, false, $currentSemester),
-            $this->moduleSelectionGroup('previous', 'Frühere', $previousModules, false),
-            $this->moduleSelectionGroup('current', 'Aktuelle', $currentModules, true),
-            $this->moduleSelectionGroup('additional', 'Zusätzliche', $additionalModules, false),
+            $this->moduleSelectionGroup('finished', 'Abgeschlossene', $finishedModules, false, courseGroups: $courseGroups),
+            $this->moduleSelectionGroup('negative', 'Negative', $negativeModules, false, $currentSemester, $courseGroups),
+            $this->moduleSelectionGroup('previous', 'Frühere', $previousModules, false, courseGroups: $courseGroups),
+            $this->moduleSelectionGroup('current', 'Aktuelle', $currentModules, true, courseGroups: $courseGroups),
+            $this->moduleSelectionGroup('additional', 'Zusätzliche', $additionalModules, false, courseGroups: $courseGroups),
         ];
     }
 
@@ -1783,16 +1846,17 @@ class StudentTimetablesStudentOverviewService
         Collection $modules,
         bool $selectedByDefault,
         ?int $selectedSemester = null,
+        array $courseGroups = [],
     ): array {
         return [
             'key' => $key,
             'label' => $label,
             'modules' => $modules
-                ->map(function (array $module) use ($key, $selectedByDefault, $selectedSemester): array {
+                ->map(function (array $module) use ($key, $selectedByDefault, $selectedSemester, $courseGroups): array {
                     $semester = $this->integerOrNull($module['semester'] ?? null);
 
                     return [
-                        ...$module,
+                        ...$this->courseWithManualTimetableGroups($module, $courseGroups),
                         'selection_key' => $key.':'.$this->normalizedCourseCode((string) ($module['code'] ?? '')),
                         'selected_by_default' => $selectedByDefault
                             || ($key === 'negative' && $semester !== null && $semester === $selectedSemester),

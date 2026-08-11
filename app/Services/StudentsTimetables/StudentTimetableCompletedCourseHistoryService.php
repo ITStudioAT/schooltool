@@ -3,6 +3,7 @@
 namespace App\Services\StudentsTimetables;
 
 use App\Enums\StudentTimetableStudyProgram;
+use App\Models\Import116;
 use App\Models\StudentTimetableRecognitionRow;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
@@ -86,6 +87,56 @@ class StudentTimetableCompletedCourseHistoryService
             ])
             ->values()
             ->all();
+    }
+
+    public function studyProgramForStudentCode(
+        User $user,
+        int $schoolyearId,
+        ?string $studentCode,
+    ): StudentTimetableStudyProgram {
+        if (! $studentCode) {
+            return StudentTimetableStudyProgram::Normalstudium;
+        }
+
+        $studentStudyProgram = Import116::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('student_code', $studentCode)
+            ->first(['study_program'])
+            ?->study_program;
+
+        if ($studentStudyProgram) {
+            return $studentStudyProgram;
+        }
+
+        $rowsByImport = StudentTimetableRecognitionRow::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('student_code', $studentCode)
+            ->orderByDesc('student_timetable_recognition_import_id')
+            ->orderByDesc('id')
+            ->get(['student_timetable_recognition_import_id', 'raw_data'])
+            ->groupBy('student_timetable_recognition_import_id');
+
+        foreach ($rowsByImport as $recognitionRows) {
+            $studyPrograms = $recognitionRows
+                ->map(fn (StudentTimetableRecognitionRow $row): ?StudentTimetableStudyProgram => StudentTimetableStudyProgram::fromSubjectPlan(
+                    data_get($row->raw_data, 'stundentafel'),
+                ))
+                ->filter()
+                ->unique(fn (StudentTimetableStudyProgram $program): string => $program->value)
+                ->values();
+
+            if ($studyPrograms->count() === 1) {
+                return $studyPrograms->first();
+            }
+
+            if ($studyPrograms->count() > 1) {
+                return StudentTimetableStudyProgram::Normalstudium;
+            }
+        }
+
+        return StudentTimetableStudyProgram::Normalstudium;
     }
 
     /**

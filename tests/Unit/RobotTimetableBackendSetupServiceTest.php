@@ -1596,23 +1596,21 @@ it('counts timetable variations without Saturday appointments', function () {
         ->and($result['no_saturday_timetable_count'])->toBe(1);
 });
 
-it('marks backend selected half-load timetable slots as distance learning', function () {
+it('does not classify compact half-load timetable slots as distance learning', function () {
     $service = app(RobotTimetableBackendSetupService::class);
 
-    $result = $service->calculateTimetableVariations(
-        subjectRows: [
-            [
-                'id' => 1,
-                'semester' => 1,
-                'branch' => 'common',
-                'json_code' => 'INF1',
-                'json_subject' => 'INF',
-                'name' => 'Informatik 1',
-                'tt_subject' => 'INF',
-                'hours_per_week' => 2,
-                'is_active' => true,
-            ],
-        ],
+    $calculateTimetable = fn (bool $isKompaktunterricht): array => $service->calculateTimetableVariations(
+        subjectRows: [[
+            'id' => 1,
+            'semester' => 1,
+            'branch' => 'common',
+            'json_code' => 'INF1',
+            'json_subject' => 'INF',
+            'name' => 'Informatik 1',
+            'tt_subject' => 'INF',
+            'hours_per_week' => 2,
+            'is_active' => true,
+        ]],
         subjectMappings: [],
         courseGroups: [
             [
@@ -1647,6 +1645,7 @@ it('marks backend selected half-load timetable slots as distance learning', func
                 'subject' => 'INF',
                 'dates' => [],
                 'dates_count' => 0,
+                'is_kompaktunterricht' => $isKompaktunterricht,
             ],
         ],
         settings: [
@@ -1662,9 +1661,7 @@ it('marks backend selected half-load timetable slots as distance learning', func
                 'availableTimes' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
                 'excludedWeekdayTimes' => [],
             ],
-            'selected_course_keys' => [
-                '1|1|common|INF1|INF|Informatik 1|INF1',
-            ],
+            'selected_course_keys' => ['1|1|common|INF1|INF|Informatik 1|INF1'],
             'deselected_course_keys' => [],
             'deselected_course_group_keys' => [],
             'selected_timetable_type' => 'full_green',
@@ -1672,8 +1669,12 @@ it('marks backend selected half-load timetable slots as distance learning', func
         ],
     );
 
-    expect($result['selected_timetable']['slots']['1-13']['sourceLabel'])->toBe('INF1-Grp2-KRO')
-        ->and($result['selected_timetable']['slots']['1-13']['isDistanceLearningCourse'])->toBeTrue();
+    $distanceLearningResult = $calculateTimetable(false);
+    $compactResult = $calculateTimetable(true);
+
+    expect($distanceLearningResult['selected_timetable']['slots']['1-13']['sourceLabel'])->toBe('INF1-Grp2-KRO')
+        ->and($distanceLearningResult['selected_timetable']['slots']['1-13']['isDistanceLearningCourse'])->toBeTrue()
+        ->and($compactResult['selected_timetable']['slots']['1-13']['isDistanceLearningCourse'])->toBeFalse();
 });
 
 it('counts quality criteria for the selected backend timetable type', function () {

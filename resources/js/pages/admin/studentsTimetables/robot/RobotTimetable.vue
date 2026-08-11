@@ -6563,6 +6563,8 @@ export default {
                 .filter(courseGroup => this.courseGroupMatchesCourse(courseGroup, course))
                 .filter(courseGroup => this.courseGroupOptionLabel(courseGroup) === group?.title)
 
+            if (matchingCourseGroups.some(courseGroup => courseGroup?.is_kompaktunterricht === true)) return false
+
             return this.courseGroupsAreDistanceLearningCourse(course, matchingCourseGroups)
         },
         courseGroupsAreDistanceLearningCourse(course, courseGroups) {

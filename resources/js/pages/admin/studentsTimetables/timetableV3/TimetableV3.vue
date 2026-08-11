@@ -314,47 +314,72 @@
                     clearable
                     hide-details />
 
-                <div class="timetable-v3__module-sections">
-                    <section
+                <div class="timetable-v3__module-group-cards" aria-label="Modularten">
+                    <button
                         v-for="group in displayedModuleSelectionGroups"
                         :key="group.key"
-                        class="timetable-v3__module-section"
-                        :class="`timetable-v3__module-section--${group.key}`">
-                        <div class="timetable-v3__module-section-heading">
-                            <div class="timetable-v3__module-section-copy">
-                                <div class="timetable-v3__module-section-title-row">
-                                    <h4 class="timetable-v3__module-section-title">{{ group.label }} Module</h4>
-                                    <span class="timetable-v3__module-section-count">
-                                        {{ selectedModuleCountForGroup(group) }}/{{ group.count }}
-                                    </span>
+                        type="button"
+                        class="timetable-v3__module-group-card"
+                        :class="[
+                            `timetable-v3__module-group-card--${group.key}`,
+                            { 'timetable-v3__module-group-card--active': moduleGroupActive(group) },
+                        ]"
+                        :aria-pressed="moduleGroupActive(group)"
+                        aria-controls="timetable-v3-module-group-panel"
+                        @click="toggleModuleGroup(group)">
+                        <span class="timetable-v3__module-group-card-topline">
+                            <span class="timetable-v3__module-group-card-icon">
+                                <v-icon :icon="moduleGroupIcon(group)" size="19" />
+                            </span>
+                            <span class="timetable-v3__module-group-card-count">
+                                {{ selectedModuleCountForGroup(group) }}/{{ group.count }}
+                            </span>
+                        </span>
+                        <span class="timetable-v3__module-group-card-title">{{ group.label }}</span>
+                        <span class="timetable-v3__module-group-card-description">{{ group.description }}</span>
+                        <span class="timetable-v3__module-group-card-active-mark" aria-hidden="true" />
+                    </button>
+                </div>
+
+                <transition name="timetable-v3-module-panel" mode="out-in">
+                    <section
+                        v-if="activeModuleSelectionGroup"
+                        :key="activeModuleSelectionGroup.key"
+                        id="timetable-v3-module-group-panel"
+                        class="timetable-v3__module-group-panel"
+                        :class="`timetable-v3__module-group-panel--${activeModuleSelectionGroup.key}`">
+                        <div class="timetable-v3__module-group-panel-heading">
+                            <div class="timetable-v3__module-group-panel-heading-main">
+                                <span class="timetable-v3__module-group-panel-icon">
+                                    <v-icon :icon="moduleGroupIcon(activeModuleSelectionGroup)" size="22" />
+                                </span>
+                                <div>
+                                    <h4 class="timetable-v3__module-group-panel-title">
+                                        {{ activeModuleSelectionGroup.label }} Module
+                                    </h4>
+                                    <div class="timetable-v3__module-group-panel-description">
+                                        {{ activeModuleSelectionGroup.description }}
+                                    </div>
                                 </div>
-                                <div class="timetable-v3__module-section-description">{{ group.description }}</div>
                             </div>
-                            <v-btn
-                                v-if="group.modules.length"
-                                size="x-small"
-                                density="compact"
-                                slim
-                                color="primary"
-                                variant="text"
-                                :prepend-icon="moduleGroupAllSelected(group) ? 'mdi-checkbox-multiple-blank-outline' : 'mdi-checkbox-multiple-marked-outline'"
-                                @click="toggleModuleGroup(group)">
-                                {{ moduleGroupAllSelected(group) ? 'Alle abwählen' : 'Alle auswählen' }}
-                            </v-btn>
+                            <span class="timetable-v3__module-group-panel-count">
+                                <strong>{{ selectedModuleCountForGroup(activeModuleSelectionGroup) }}</strong>
+                                von {{ activeModuleSelectionGroup.count }} gewählt
+                            </span>
                         </div>
 
-                        <div v-if="group.modules.length" class="timetable-v3__module-grid">
+                        <div v-if="activeModuleSelectionGroup.modules.length" class="timetable-v3__module-grid">
                             <button
-                                v-for="module in group.modules"
+                                v-for="module in activeModuleSelectionGroup.modules"
                                 :key="module.selection_key"
                                 type="button"
                                 class="timetable-v3__module-tile"
                                 :class="{ 'timetable-v3__module-tile--selected': moduleSelected(module) }"
                                 :aria-pressed="moduleSelected(module)"
-                                @click="toggleModule(module)">
+                                @click="openModuleCoursesDialog(module)">
                                 <span class="timetable-v3__module-check">
                                     <v-icon
-                                        :icon="moduleSelected(module) ? 'mdi-check' : 'mdi-plus'"
+                                        :icon="moduleSelected(module) ? 'mdi-check' : 'mdi-chevron-right'"
                                         size="16" />
                                 </span>
                                 <span class="timetable-v3__module-main">
@@ -368,6 +393,9 @@
                                         </span>
                                         <span v-if="module.semester_label">{{ module.semester_label }}</span>
                                         <span v-if="module.hours_label">{{ module.hours_label }}</span>
+                                        <span class="timetable-v3__module-course-count">
+                                            {{ selectedCourseCountForModule(module) }}/{{ moduleCourseCount(module) }} Kurse
+                                        </span>
                                         <span
                                             v-for="(grade, gradeIndex) in module.grades"
                                             :key="`${module.selection_key}-${gradeIndex}`"
@@ -382,7 +410,7 @@
                             {{ moduleSearch ? 'Keine passenden Module.' : 'Keine Module vorhanden.' }}
                         </div>
                     </section>
-                </div>
+                </transition>
 
                 <div v-if="planningMode === 'without_student'" class="timetable-v3__module-without-student-hint">
                     Ohne Studierenden werden alle verfügbaren Module unter „Zusätzliche“ angeboten.
@@ -408,6 +436,113 @@
                 </v-btn>
             </div>
         </div>
+
+        <v-dialog v-model="moduleCoursesDialogOpen" max-width="820" persistent scrollable>
+            <v-card rounded="lg" class="timetable-v3__module-courses-dialog">
+                <v-card-title class="timetable-v3__module-courses-dialog-title d-flex align-center ga-3 pa-5 pb-2">
+                    <span class="timetable-v3__module-courses-dialog-icon">
+                        <v-icon icon="mdi-book-open-variant-outline" size="23" />
+                    </span>
+                    <span>
+                        Kurse für {{ moduleCourseDialogModule?.code || 'Modul' }}
+                    </span>
+                </v-card-title>
+
+                <v-card-text class="px-5 pt-3">
+                    <div
+                        v-if="moduleCourseDialogModule?.name && moduleCourseDialogModule.name !== moduleCourseDialogModule.code"
+                        class="timetable-v3__module-courses-dialog-subtitle">
+                        {{ moduleCourseDialogModule.name }}
+                    </div>
+                    <div class="timetable-v3__module-courses-dialog-toolbar">
+                        <div class="timetable-v3__module-courses-dialog-summary" aria-live="polite">
+                            <strong>{{ selectedModuleCourseCount }}</strong>
+                            von {{ moduleCourseDialogCourses.length }} Kursen ausgewählt
+                        </div>
+                        <div class="timetable-v3__module-courses-dialog-actions">
+                            <v-btn
+                                size="small"
+                                variant="tonal"
+                                color="primary"
+                                prepend-icon="mdi-checkbox-multiple-marked-outline"
+                                :disabled="!moduleCourseDialogCourses.length || allModuleCoursesSelected"
+                                @click="selectAllModuleCourses">
+                                Alle auswählen
+                            </v-btn>
+                            <v-btn
+                                size="small"
+                                variant="text"
+                                color="primary"
+                                prepend-icon="mdi-checkbox-multiple-blank-outline"
+                                :disabled="!hasSelectedModuleCourses"
+                                @click="deselectAllModuleCourses">
+                                Alle abwählen
+                            </v-btn>
+                        </div>
+                    </div>
+
+                    <div v-if="moduleCourseDialogCourses.length" class="timetable-v3__module-course-list mt-4">
+                        <button
+                            v-for="course in moduleCourseDialogCourses"
+                            :key="course.key"
+                            type="button"
+                            class="timetable-v3__module-course"
+                            :class="{ 'timetable-v3__module-course--selected': moduleCourseSelected(course) }"
+                            role="checkbox"
+                            :aria-checked="moduleCourseSelected(course)"
+                            @click="toggleModuleCourse(course)">
+                            <span class="timetable-v3__module-course-check">
+                                <v-icon
+                                    :icon="moduleCourseSelected(course) ? 'mdi-check' : 'mdi-checkbox-blank-outline'"
+                                    size="18" />
+                            </span>
+                            <span class="timetable-v3__module-course-copy">
+                                <span class="timetable-v3__module-course-title">{{ course.title }}</span>
+                                <span
+                                    v-if="course.course_title && course.course_title !== course.title"
+                                    class="timetable-v3__module-course-subtitle">
+                                    {{ course.course_title }}
+                                </span>
+                                <span class="timetable-v3__module-course-meta">
+                                    <span
+                                        v-for="scheduleLabel in courseScheduleLabels(course)"
+                                        :key="scheduleLabel"
+                                        class="timetable-v3__module-course-schedule">
+                                        {{ scheduleLabel }}
+                                    </span>
+                                    <span v-if="course.hours_label" class="timetable-v3__module-course-hours">
+                                        <v-icon icon="mdi-clock-outline" size="12" />
+                                        {{ course.hours_label }}
+                                    </span>
+                                    <span
+                                        v-if="course.instruction_label"
+                                        class="timetable-v3__module-course-instruction">
+                                        <v-icon icon="mdi-laptop" size="12" />
+                                        {{ course.instruction_label }}
+                                    </span>
+                                    <span v-if="course.teacher">{{ course.teacher }}</span>
+                                    <span v-if="course.rooms_label">Raum {{ course.rooms_label }}</span>
+                                    <span v-if="course.block_label">{{ course.block_label }}</span>
+                                    <span v-if="course.dates_count">
+                                        {{ course.dates_count }} {{ course.dates_count === 1 ? 'Termin' : 'Termine' }}
+                                    </span>
+                                </span>
+                            </span>
+                        </button>
+                    </div>
+                    <div v-else class="timetable-v3__module-course-empty mt-4">
+                        Für dieses Modul sind keine Kurse im importierten Stundenplan vorhanden.
+                    </div>
+                </v-card-text>
+
+                <v-card-actions class="px-5 pb-5 pt-3">
+                    <v-spacer />
+                    <v-btn color="primary" variant="flat" size="large" @click="closeModuleCoursesDialog">
+                        Schließen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <v-dialog v-model="studentInfoDialogOpen" max-width="620" persistent>
             <v-card rounded="lg" class="timetable-v3__info-dialog">
@@ -635,6 +770,24 @@ const MODULE_SELECTION_STEP = 'modules'
 const TIMETABLE_V3_SELECTION_PATH = '/admin/students-timetables/timetable-v3/overview'
 const TIMETABLE_V3_MODULE_SELECTION_PATH = '/admin/students-timetables/timetable-v3/modules'
 
+function normalizedCourseSelectionKeys(course) {
+    const courseKeys = Array.isArray(course?.keys) ? course.keys : [course?.key]
+
+    return [...new Set(courseKeys
+        .map(courseKey => String(courseKey || '').trim())
+        .filter(Boolean))]
+}
+
+function normalizedCourseScheduleLabels(course) {
+    const scheduleLabels = Array.isArray(course?.schedule_labels)
+        ? course.schedule_labels
+        : [course?.schedule_label]
+
+    return [...new Set(scheduleLabels
+        .map(scheduleLabel => String(scheduleLabel || '').trim())
+        .filter(Boolean))]
+}
+
 export default {
     name: 'TimetableV3',
 
@@ -662,6 +815,10 @@ export default {
             studentStudyModuleGroups: [],
             moduleSelectionGroups: [],
             selectedModuleKeys: [],
+            selectedCourseKeys: [],
+            activeModuleGroupKey: '',
+            moduleCoursesDialogOpen: false,
+            moduleCourseDialogModule: null,
             moduleSearch: '',
             moduleSelectionResetPending: false,
             planningSelectionFields: [],
@@ -794,6 +951,25 @@ export default {
                         .map(value => String(value || '').toLocaleLowerCase('de-AT'))
                         .some(value => value.includes(search))),
             }))
+        },
+        activeModuleSelectionGroup() {
+            return this.displayedModuleSelectionGroups
+                .find(group => group.key === this.activeModuleGroupKey) || null
+        },
+        moduleCourseDialogCourses() {
+            return Array.isArray(this.moduleCourseDialogModule?.courses)
+                ? this.moduleCourseDialogModule.courses
+                : []
+        },
+        selectedModuleCourseCount() {
+            return this.selectedCourseCountForModule(this.moduleCourseDialogModule)
+        },
+        allModuleCoursesSelected() {
+            return this.moduleCourseDialogCourses.length > 0
+                && this.selectedModuleCourseCount === this.moduleCourseDialogCourses.length
+        },
+        hasSelectedModuleCourses() {
+            return this.selectedModuleCourseCount > 0
         },
         selectedStudentEmail() {
             if (this.planningMode !== WITH_STUDENT) return ''
@@ -938,6 +1114,10 @@ export default {
             this.studentStudyModuleGroups = []
             this.moduleSelectionGroups = []
             this.selectedModuleKeys = []
+            this.selectedCourseKeys = []
+            this.activeModuleGroupKey = ''
+            this.moduleCoursesDialogOpen = false
+            this.moduleCourseDialogModule = null
             this.moduleSearch = ''
             this.planningSelectionFields = []
             this.planningSelectionValues = {}
@@ -1047,9 +1227,14 @@ export default {
         },
         setModuleSelectionGroups(moduleGroups, selectionContextCode) {
             const groups = Array.isArray(moduleGroups) ? moduleGroups : []
-            const validSelectionKeys = new Set(groups
+            const modules = groups
                 .flatMap(group => Array.isArray(group.modules) ? group.modules : [])
+            const validSelectionKeys = new Set(modules
                 .map(module => String(module?.selection_key || '').trim())
+                .filter(Boolean))
+            const validCourseKeys = new Set(modules
+                .flatMap(module => Array.isArray(module?.courses) ? module.courses : [])
+                .flatMap(course => normalizedCourseSelectionKeys(course))
                 .filter(Boolean))
             const storedSelection = this.storedState?.moduleSelection
             const storedContextCode = storedSelection?.mode === WITH_STUDENT
@@ -1058,19 +1243,56 @@ export default {
             const storedPlanningValues = storedSelection?.planningValues || {}
             const currentPlanningValues = this.planningSelectionValues || {}
             const storedValuesMatch = JSON.stringify(storedPlanningValues) === JSON.stringify(currentPlanningValues)
-            const defaultSelectionKeys = groups
-                .flatMap(group => Array.isArray(group.modules) ? group.modules : [])
-                .filter(module => module?.selected_by_default)
-                .map(module => module.selection_key)
             const selectedKeys = !this.moduleSelectionResetPending
                 && storedContextCode === selectionContextCode
                 && storedValuesMatch
                 ? storedSelection?.selectedKeys || []
-                : defaultSelectionKeys
+                : []
+            const hasStoredCourseSelection = Array.isArray(storedSelection?.selectedCourseKeys)
+            const selectedCourseKeys = !this.moduleSelectionResetPending
+                && storedContextCode === selectionContextCode
+                && storedValuesMatch
+                && hasStoredCourseSelection
+                ? storedSelection.selectedCourseKeys
+                : []
 
             this.moduleSelectionGroups = groups
             this.selectedModuleKeys = [...new Set(selectedKeys)]
                 .filter(selectionKey => validSelectionKeys.has(selectionKey))
+            const storedSelectedCourseKeys = new Set(
+                [...new Set(selectedCourseKeys)]
+                    .filter(courseKey => validCourseKeys.has(courseKey)),
+            )
+            const restoredSelectedCourseKeys = modules
+                .flatMap(module => Array.isArray(module?.courses) ? module.courses : [])
+                .filter(course => normalizedCourseSelectionKeys(course)
+                    .some(courseKey => storedSelectedCourseKeys.has(courseKey)))
+                .flatMap(course => normalizedCourseSelectionKeys(course))
+            this.selectedCourseKeys = [...new Set(restoredSelectedCourseKeys)]
+
+            if (!hasStoredCourseSelection && this.selectedModuleKeys.length) {
+                const selectedModuleKeys = new Set(this.selectedModuleKeys)
+
+                const selectedCourseKeysForModules = modules
+                    .filter(module => selectedModuleKeys.has(module.selection_key))
+                    .flatMap(module => Array.isArray(module.courses) ? module.courses : [])
+                    .flatMap(course => normalizedCourseSelectionKeys(course))
+                    .filter(courseKey => validCourseKeys.has(courseKey))
+                this.selectedCourseKeys = [...new Set(selectedCourseKeysForModules)]
+            }
+            if (hasStoredCourseSelection) {
+                const selectedCourseKeys = new Set(this.selectedCourseKeys)
+
+                this.selectedModuleKeys = modules
+                    .filter(module => (Array.isArray(module.courses) ? module.courses : [])
+                        .some(course => normalizedCourseSelectionKeys(course)
+                            .some(courseKey => selectedCourseKeys.has(courseKey))))
+                    .map(module => module.selection_key)
+                    .filter(Boolean)
+            }
+            if (!groups.some(group => group.key === this.activeModuleGroupKey)) {
+                this.activeModuleGroupKey = ''
+            }
             this.moduleSelectionResetPending = false
         },
         selectedModuleCountForGroup(group) {
@@ -1083,29 +1305,92 @@ export default {
         moduleSelected(module) {
             return this.selectedModuleKeys.includes(module?.selection_key)
         },
-        moduleGroupAllSelected(group) {
-            const modules = Array.isArray(group?.modules) ? group.modules : []
-
-            return modules.length > 0 && modules.every(module => this.moduleSelected(module))
+        moduleCourseCount(module) {
+            return Array.isArray(module?.courses) ? module.courses.length : 0
         },
-        async toggleModule(module) {
-            const selectionKey = String(module?.selection_key || '').trim()
-            if (!selectionKey) return
+        selectedCourseCountForModule(module) {
+            const selectedCourseKeys = new Set(this.selectedCourseKeys)
 
-            this.selectedModuleKeys = this.moduleSelected(module)
-                ? this.selectedModuleKeys.filter(key => key !== selectionKey)
-                : [...this.selectedModuleKeys, selectionKey]
+            return (Array.isArray(module?.courses) ? module.courses : [])
+                .filter(course => {
+                    const courseKeys = normalizedCourseSelectionKeys(course)
+
+                    return courseKeys.length > 0 && courseKeys.every(courseKey => selectedCourseKeys.has(courseKey))
+                })
+                .length
+        },
+        moduleCourseSelected(course) {
+            const selectedCourseKeys = new Set(this.selectedCourseKeys)
+            const courseKeys = normalizedCourseSelectionKeys(course)
+
+            return courseKeys.length > 0 && courseKeys.every(courseKey => selectedCourseKeys.has(courseKey))
+        },
+        courseSelectionKeys(course) {
+            return normalizedCourseSelectionKeys(course)
+        },
+        courseScheduleLabels(course) {
+            return normalizedCourseScheduleLabels(course)
+        },
+        moduleGroupActive(group) {
+            return group?.key === this.activeModuleGroupKey
+        },
+        moduleGroupIcon(group) {
+            return {
+                finished: 'mdi-check-decagram-outline',
+                negative: 'mdi-alert-circle-outline',
+                previous: 'mdi-history',
+                current: 'mdi-calendar-star',
+                additional: 'mdi-shape-plus-outline',
+            }[group?.key] || 'mdi-view-grid-outline'
+        },
+        toggleModuleGroup(group) {
+            const groupKey = String(group?.key || '').trim()
+            if (!groupKey) return
+
+            this.activeModuleGroupKey = this.activeModuleGroupKey === groupKey ? '' : groupKey
+        },
+        openModuleCoursesDialog(module) {
+            if (!module?.selection_key) return
+
+            this.moduleCourseDialogModule = module
+            this.moduleCoursesDialogOpen = true
+        },
+        closeModuleCoursesDialog() {
+            this.moduleCoursesDialogOpen = false
+        },
+        async toggleModuleCourse(course) {
+            const courseKeys = normalizedCourseSelectionKeys(course)
+            const moduleSelectionKey = String(this.moduleCourseDialogModule?.selection_key || '').trim()
+            if (!courseKeys.length || !moduleSelectionKey) return
+
+            this.selectedCourseKeys = this.moduleCourseSelected(course)
+                ? this.selectedCourseKeys.filter(courseKey => !courseKeys.includes(courseKey))
+                : [...new Set([...this.selectedCourseKeys, ...courseKeys])]
+
+            const hasSelectedCourse = this.selectedCourseCountForModule(this.moduleCourseDialogModule) > 0
+            this.selectedModuleKeys = hasSelectedCourse
+                ? [...new Set([...this.selectedModuleKeys, moduleSelectionKey])]
+                : this.selectedModuleKeys.filter(key => key !== moduleSelectionKey)
             await this.saveState()
         },
-        async toggleModuleGroup(group) {
-            const moduleKeys = (Array.isArray(group?.modules) ? group.modules : [])
-                .map(module => module.selection_key)
-                .filter(Boolean)
-            const moduleKeySet = new Set(moduleKeys)
+        async selectAllModuleCourses() {
+            const moduleSelectionKey = String(this.moduleCourseDialogModule?.selection_key || '').trim()
+            const courseKeys = this.moduleCourseDialogCourses.flatMap(course => normalizedCourseSelectionKeys(course))
+            if (!moduleSelectionKey || !courseKeys.length) return
 
-            this.selectedModuleKeys = this.moduleGroupAllSelected(group)
-                ? this.selectedModuleKeys.filter(selectionKey => !moduleKeySet.has(selectionKey))
-                : [...new Set([...this.selectedModuleKeys, ...moduleKeys])]
+            this.selectedCourseKeys = [...new Set([...this.selectedCourseKeys, ...courseKeys])]
+            this.selectedModuleKeys = [...new Set([...this.selectedModuleKeys, moduleSelectionKey])]
+            await this.saveState()
+        },
+        async deselectAllModuleCourses() {
+            const moduleSelectionKey = String(this.moduleCourseDialogModule?.selection_key || '').trim()
+            const courseKeys = this.moduleCourseDialogCourses.flatMap(course => normalizedCourseSelectionKeys(course))
+            if (!moduleSelectionKey || !courseKeys.length) return
+
+            this.selectedCourseKeys = this.selectedCourseKeys
+                .filter(courseKey => !courseKeys.includes(courseKey))
+            this.selectedModuleKeys = this.selectedModuleKeys
+                .filter(selectionKey => selectionKey !== moduleSelectionKey)
             await this.saveState()
         },
         async updatePlanningSelection(key, value) {
@@ -1256,6 +1541,7 @@ export default {
                     studentCode: this.planningMode === WITH_STUDENT ? this.selectedStudentCode : null,
                     planningValues: this.planningSelectionValues,
                     selectedKeys: this.selectedModuleKeys || [],
+                    selectedCourseKeys: this.selectedCourseKeys || [],
                 },
             }
 
@@ -1573,11 +1859,13 @@ export default {
 }
 
 .timetable-v3__module-workspace {
-    padding: 15px 17px;
-    background: #fff;
-    border: 1px solid #dfe3f0;
-    border-radius: 15px;
-    box-shadow: 0 7px 20px rgba(30, 36, 51, 0.07);
+    padding: 18px;
+    background:
+        radial-gradient(circle at 96% 0%, rgba(99, 102, 241, 0.12), transparent 30%),
+        linear-gradient(155deg, #ffffff 0%, #fafbff 52%, #f8fafc 100%);
+    border: 1px solid rgba(203, 213, 225, 0.88);
+    border-radius: 20px;
+    box-shadow: 0 16px 42px rgba(30, 41, 59, 0.09);
 }
 
 .timetable-v3__module-workspace-heading {
@@ -1588,29 +1876,30 @@ export default {
 }
 
 .timetable-v3__module-workspace-eyebrow {
-    margin-bottom: 1px;
-    color: #4f46e5;
-    font-size: 0.68rem;
+    margin-bottom: 3px;
+    color: #6366f1;
+    font-size: 0.66rem;
     font-weight: 850;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.11em;
     text-transform: uppercase;
 }
 
 .timetable-v3__module-workspace-title {
-    color: #17134b;
-    font-size: clamp(1.05rem, 1.7vw, 1.3rem);
-    font-weight: 800;
+    color: #15173b;
+    font-size: clamp(1.08rem, 1.8vw, 1.38rem);
+    font-weight: 850;
     line-height: 1.25;
 }
 
 .timetable-v3__module-selected-total {
     flex: 0 0 auto;
-    padding: 6px 10px;
-    color: #3730a3;
-    background: #eef2ff;
+    padding: 7px 11px;
+    color: #4338ca;
+    background: rgba(238, 242, 255, 0.92);
+    border: 1px solid #c7d2fe;
     border-radius: 999px;
     font-size: 0.78rem;
-    font-weight: 700;
+    font-weight: 750;
     white-space: nowrap;
 }
 
@@ -1620,142 +1909,315 @@ export default {
 }
 
 .timetable-v3__module-search {
-    max-width: 360px;
+    max-width: 390px;
 }
 
-.timetable-v3__module-sections {
-    margin-top: 9px;
-    border-top: 1px solid #e8eaf2;
+.timetable-v3__module-search :deep(.v-field) {
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 12px;
 }
 
-.timetable-v3__module-section {
-    padding: 10px 0;
-    border-bottom: 1px solid #e8eaf2;
+.timetable-v3__module-group-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
+    gap: 9px;
+    margin-top: 13px;
 }
 
-.timetable-v3__module-section-heading {
+.timetable-v3__module-group-card {
+    --module-group-accent: #64748b;
+    --module-group-accent-rgb: 100, 116, 139;
+    --module-group-soft: #f1f5f9;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    min-height: 102px;
+    padding: 10px 11px 11px;
+    overflow: hidden;
+    font: inherit;
+    color: #344054;
+    text-align: left;
+    background: rgba(255, 255, 255, 0.84);
+    border: 1px solid rgba(203, 213, 225, 0.9);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: transform 170ms ease, border-color 170ms ease, box-shadow 170ms ease, background 170ms ease;
+}
+
+.timetable-v3__module-group-card:hover,
+.timetable-v3__module-group-card:focus-visible {
+    background: #fff;
+    border-color: var(--module-group-accent);
+    outline: none;
+    box-shadow: 0 10px 24px rgba(var(--module-group-accent-rgb), 0.16);
+    transform: translateY(-2px);
+}
+
+.timetable-v3__module-group-card--active {
+    color: #15173b;
+    background: linear-gradient(145deg, #fff 10%, var(--module-group-soft) 100%);
+    border-color: var(--module-group-accent);
+    box-shadow: 0 11px 26px rgba(var(--module-group-accent-rgb), 0.16);
+}
+
+.timetable-v3__module-group-card--finished,
+.timetable-v3__module-group-panel--finished {
+    --module-group-accent: #2563eb;
+    --module-group-accent-rgb: 37, 99, 235;
+    --module-group-soft: #eff6ff;
+}
+
+.timetable-v3__module-group-card--negative,
+.timetable-v3__module-group-panel--negative {
+    --module-group-accent: #dc2626;
+    --module-group-accent-rgb: 220, 38, 38;
+    --module-group-soft: #fef2f2;
+}
+
+.timetable-v3__module-group-card--previous,
+.timetable-v3__module-group-panel--previous {
+    --module-group-accent: #d97706;
+    --module-group-accent-rgb: 217, 119, 6;
+    --module-group-soft: #fffbeb;
+}
+
+.timetable-v3__module-group-card--current,
+.timetable-v3__module-group-panel--current {
+    --module-group-accent: #16a34a;
+    --module-group-accent-rgb: 22, 163, 74;
+    --module-group-soft: #f0fdf4;
+}
+
+.timetable-v3__module-group-card--additional,
+.timetable-v3__module-group-panel--additional {
+    --module-group-accent: #7c3aed;
+    --module-group-accent-rgb: 124, 58, 237;
+    --module-group-soft: #f5f3ff;
+}
+
+.timetable-v3__module-group-card-topline {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.timetable-v3__module-group-card-icon,
+.timetable-v3__module-group-panel-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    color: var(--module-group-accent);
+    background: var(--module-group-soft);
+    border: 1px solid rgba(var(--module-group-accent-rgb), 0.15);
+}
+
+.timetable-v3__module-group-card-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    transition: transform 170ms ease;
+}
+
+.timetable-v3__module-group-card:hover .timetable-v3__module-group-card-icon,
+.timetable-v3__module-group-card:focus-visible .timetable-v3__module-group-card-icon {
+    transform: scale(1.06);
+}
+
+.timetable-v3__module-group-card-title {
+    overflow: hidden;
+    margin-top: 1px;
+    color: #1e293b;
+    font-size: 0.84rem;
+    font-weight: 850;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.timetable-v3__module-group-card-count,
+.timetable-v3__module-group-panel-count {
+    flex: 0 0 auto;
+    padding: 3px 7px;
+    color: #475467;
+    background: rgba(241, 245, 249, 0.95);
+    border: 1px solid rgba(203, 213, 225, 0.85);
+    border-radius: 999px;
+    font-size: 0.67rem;
+    font-weight: 800;
+}
+
+.timetable-v3__module-group-card--active .timetable-v3__module-group-card-count {
+    color: var(--module-group-accent);
+    background: #fff;
+    border-color: rgba(var(--module-group-accent-rgb), 0.28);
+}
+
+.timetable-v3__module-group-card-description {
+    display: -webkit-box;
+    overflow: hidden;
+    color: #64748b;
+    font-size: 0.7rem;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.timetable-v3__module-group-card-active-mark {
+    position: absolute;
+    right: 11px;
+    bottom: 7px;
+    left: 11px;
+    height: 3px;
+    background: var(--module-group-accent);
+    border-radius: 999px;
+    opacity: 0;
+    transform: scaleX(0.35);
+    transition: opacity 170ms ease, transform 170ms ease;
+}
+
+.timetable-v3__module-group-card--active .timetable-v3__module-group-card-active-mark {
+    opacity: 1;
+    transform: scaleX(1);
+}
+
+.timetable-v3__module-group-panel {
+    --module-group-accent: #64748b;
+    --module-group-accent-rgb: 100, 116, 139;
+    --module-group-soft: #f1f5f9;
+    margin-top: 13px;
+    padding: 13px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(var(--module-group-accent-rgb), 0.28);
+    border-radius: 16px;
+    box-shadow: 0 13px 32px rgba(15, 23, 42, 0.08);
+}
+
+.timetable-v3__module-group-panel-heading {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    justify-content: space-between;
+    margin: -13px -13px 12px;
+    padding: 13px 14px;
+    background: linear-gradient(125deg, var(--module-group-soft), rgba(255, 255, 255, 0.9));
+    border-bottom: 1px solid rgba(var(--module-group-accent-rgb), 0.14);
+}
+
+.timetable-v3__module-group-panel-heading-main {
     display: flex;
     gap: 10px;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 7px;
-}
-
-.timetable-v3__module-section-copy {
     min-width: 0;
 }
 
-.timetable-v3__module-section-title-row {
-    display: flex;
-    gap: 7px;
-    align-items: center;
+.timetable-v3__module-group-panel-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
 }
 
-.timetable-v3__module-section-title {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    color: #1f2937;
-    font-size: 0.9rem;
-    font-weight: 800;
+.timetable-v3__module-group-panel-title {
+    color: #172033;
+    font-size: 1rem;
+    font-weight: 850;
 }
 
-.timetable-v3__module-section-title::before {
-    width: 7px;
-    height: 7px;
-    background: #64748b;
-    border-radius: 999px;
-    content: '';
+.timetable-v3__module-group-panel-description {
+    margin-top: 2px;
+    color: #5f6b7d;
+    font-size: 0.76rem;
 }
 
-.timetable-v3__module-section--finished .timetable-v3__module-section-title::before {
-    background: #2563eb;
-}
-
-.timetable-v3__module-section--negative .timetable-v3__module-section-title::before {
-    background: #dc2626;
-}
-
-.timetable-v3__module-section--previous .timetable-v3__module-section-title::before {
-    background: #d97706;
-}
-
-.timetable-v3__module-section--current .timetable-v3__module-section-title::before {
-    background: #16a34a;
-}
-
-.timetable-v3__module-section--additional .timetable-v3__module-section-title::before {
-    background: #7c3aed;
-}
-
-.timetable-v3__module-section-count {
-    padding: 1px 6px;
-    color: #475467;
-    background: #f2f4f7;
-    border-radius: 999px;
-    font-size: 0.68rem;
-    font-weight: 800;
-}
-
-.timetable-v3__module-section-description {
-    margin-top: 1px;
-    color: #667085;
-    font-size: 0.74rem;
+.timetable-v3__module-group-panel-count strong {
+    color: var(--module-group-accent);
+    font-size: 0.78rem;
 }
 
 .timetable-v3__module-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
-    gap: 6px;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 8px;
 }
 
 .timetable-v3__module-tile {
     display: grid;
-    grid-template-columns: 24px minmax(0, 1fr);
-    gap: 7px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 9px;
     align-items: center;
-    min-height: 50px;
-    padding: 7px 9px;
+    min-height: 60px;
+    padding: 9px 10px;
+    font: inherit;
     color: #1f2937;
     text-align: left;
-    background: #fafbff;
-    border: 1px solid #dfe3ed;
-    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #dbe1eb;
+    border-radius: 12px;
     cursor: pointer;
-    transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
 .timetable-v3__module-tile:hover,
 .timetable-v3__module-tile:focus-visible {
-    background: #f7f7ff;
-    border-color: #818cf8;
+    background: #fff;
+    border-color: var(--module-group-accent);
     outline: none;
-    box-shadow: 0 7px 18px rgba(79, 70, 229, 0.13);
+    box-shadow: 0 9px 22px rgba(var(--module-group-accent-rgb), 0.13);
     transform: translateY(-1px);
 }
 
 .timetable-v3__module-tile--selected {
-    background: linear-gradient(135deg, #eef2ff, #f5f3ff);
-    border-color: #6366f1;
-    box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.18);
+    background: linear-gradient(135deg, var(--module-group-soft), #fff);
+    border-color: var(--module-group-accent);
+    box-shadow: inset 0 0 0 1px rgba(var(--module-group-accent-rgb), 0.12);
 }
 
 .timetable-v3__module-check {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    color: #4f46e5;
-    background: #fff;
-    border: 1px solid #c7d2fe;
-    border-radius: 7px;
+    width: 28px;
+    height: 28px;
+    color: var(--module-group-accent);
+    background: var(--module-group-soft);
+    border: 1px solid rgba(var(--module-group-accent-rgb), 0.24);
+    border-radius: 9px;
 }
 
 .timetable-v3__module-tile--selected .timetable-v3__module-check {
     color: #fff;
-    background: #4f46e5;
-    border-color: #4f46e5;
+    background: var(--module-group-accent);
+    border-color: var(--module-group-accent);
+}
+
+.timetable-v3-module-panel-enter-active,
+.timetable-v3-module-panel-leave-active {
+    transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.timetable-v3-module-panel-enter-from {
+    opacity: 0;
+    transform: translateY(7px);
+}
+
+.timetable-v3-module-panel-leave-to {
+    opacity: 0;
+    transform: translateY(-3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .timetable-v3__module-group-card,
+    .timetable-v3__module-group-card-icon,
+    .timetable-v3__module-group-card-active-mark,
+    .timetable-v3__module-tile,
+    .timetable-v3__module-course,
+    .timetable-v3-module-panel-enter-active,
+    .timetable-v3-module-panel-leave-active {
+        transition: none;
+    }
 }
 
 .timetable-v3__module-main {
@@ -1790,7 +2252,8 @@ export default {
 }
 
 .timetable-v3__module-status,
-.timetable-v3__module-grade {
+.timetable-v3__module-grade,
+.timetable-v3__module-course-count {
     padding: 1px 5px;
     color: #3730a3;
     background: #e0e7ff;
@@ -1810,6 +2273,190 @@ export default {
     color: #5b21b6;
     font-size: 0.72rem;
     font-weight: 650;
+}
+
+.timetable-v3__module-courses-dialog {
+    overflow: hidden;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.timetable-v3__module-courses-dialog :deep(.v-card-text) {
+    max-height: min(65vh, 620px);
+}
+
+.timetable-v3__module-courses-dialog-title {
+    color: #1e1b4b;
+    font-size: 1.2rem;
+    font-weight: 850;
+}
+
+.timetable-v3__module-courses-dialog-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    color: #4f46e5;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 12px;
+}
+
+.timetable-v3__module-courses-dialog-subtitle {
+    margin-bottom: 8px;
+    color: #475467;
+    font-size: 0.92rem;
+    font-weight: 700;
+}
+
+.timetable-v3__module-courses-dialog-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.timetable-v3__module-courses-dialog-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.timetable-v3__module-courses-dialog-summary {
+    display: inline-flex;
+    gap: 4px;
+    align-items: baseline;
+    padding: 6px 10px;
+    color: #4338ca;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 750;
+}
+
+.timetable-v3__module-courses-dialog-summary strong {
+    font-size: 0.95rem;
+}
+
+.timetable-v3__module-course-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 9px;
+}
+
+.timetable-v3__module-course {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    min-height: 82px;
+    padding: 12px;
+    font: inherit;
+    color: #1f2937;
+    text-align: left;
+    background: #fff;
+    border: 1px solid #dbe1eb;
+    border-radius: 13px;
+    cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.timetable-v3__module-course:hover,
+.timetable-v3__module-course:focus-visible {
+    background: #fafaff;
+    border-color: #6366f1;
+    outline: none;
+    box-shadow: 0 9px 22px rgba(79, 70, 229, 0.12);
+    transform: translateY(-1px);
+}
+
+.timetable-v3__module-course--selected {
+    background: linear-gradient(135deg, #eef2ff, #fff);
+    border-color: #4f46e5;
+    box-shadow: inset 0 0 0 1px rgba(79, 70, 229, 0.1);
+}
+
+.timetable-v3__module-course-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    color: #4f46e5;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 10px;
+}
+
+.timetable-v3__module-course--selected .timetable-v3__module-course-check {
+    color: #fff;
+    background: #4f46e5;
+    border-color: #4f46e5;
+}
+
+.timetable-v3__module-course-copy {
+    display: grid;
+    min-width: 0;
+}
+
+.timetable-v3__module-course-title {
+    color: #111827;
+    font-size: 0.9rem;
+    font-weight: 850;
+    overflow-wrap: anywhere;
+}
+
+.timetable-v3__module-course-subtitle {
+    margin-top: 1px;
+    color: #667085;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.timetable-v3__module-course-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 8px;
+    margin-top: 6px;
+    color: #667085;
+    font-size: 0.68rem;
+    font-weight: 650;
+}
+
+.timetable-v3__module-course-schedule {
+    flex-basis: 100%;
+}
+
+.timetable-v3__module-course-hours,
+.timetable-v3__module-course-instruction {
+    display: inline-flex;
+    gap: 3px;
+    align-items: center;
+    padding: 2px 6px;
+    border-radius: 999px;
+}
+
+.timetable-v3__module-course-hours {
+    color: #344054;
+    background: #f2f4f7;
+}
+
+.timetable-v3__module-course-instruction {
+    color: #4338ca;
+    background: #e0e7ff;
+}
+
+.timetable-v3__module-course-empty {
+    padding: 22px 16px;
+    color: #667085;
+    text-align: center;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 13px;
 }
 
 .timetable-v3__selection-label {
@@ -2166,8 +2813,7 @@ export default {
         padding: 13px;
     }
 
-    .timetable-v3__module-workspace-heading,
-    .timetable-v3__module-section-heading {
+    .timetable-v3__module-workspace-heading {
         align-items: stretch;
         flex-direction: column;
     }
@@ -2176,7 +2822,24 @@ export default {
         align-self: flex-start;
     }
 
+    .timetable-v3__module-group-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .timetable-v3__module-search {
+        max-width: none;
+    }
+
+    .timetable-v3__module-group-panel-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
     .timetable-v3__module-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .timetable-v3__module-course-list {
         grid-template-columns: 1fr;
     }
 

@@ -2,7 +2,9 @@
 
 namespace App\Services\StudentsTimetables;
 
+use App\Enums\StudentTimetableStudyProgram;
 use App\Jobs\StudentsTimetables\ProcessRecognitionCsvImportJob;
+use App\Models\Import116;
 use App\Models\StudentTimetableRecognitionImport;
 use App\Models\StudentTimetableRecognitionRow;
 use App\Models\User;
@@ -206,6 +208,7 @@ class RecognitionImportService
         }
 
         $batch = [];
+        $studyProgramsByStudentCode = [];
 
         try {
             $headerLine = fgets($input);
@@ -225,6 +228,8 @@ class RecognitionImportService
 
                     $rowNumber++;
                     $record = $this->recordFromRow($headers, $row);
+                    $this->collectStudentStudyProgram($studyProgramsByStudentCode, $record);
+
                     if (! $this->recognitionRecordShouldBeImported($record)) {
                         continue;
                     }
@@ -241,6 +246,8 @@ class RecognitionImportService
             if ($batch !== []) {
                 $this->upsertRecognitionRows($batch);
             }
+
+            $this->persistStudentStudyPrograms($import, $studyProgramsByStudentCode);
         } finally {
             fclose($input);
         }
@@ -349,6 +356,59 @@ class RecognitionImportService
             'created_at' => $now,
             'updated_at' => $now,
         ];
+    }
+
+    /**
+     * @param  array<string, array<string, StudentTimetableStudyProgram>>  $studyProgramsByStudentCode
+     * @param  array<string, string>  $record
+     */
+    private function collectStudentStudyProgram(array &$studyProgramsByStudentCode, array $record): void
+    {
+        $studentCode = $this->firstRecordValue($record, ['schuelerinnenkennzahl']);
+        $studyProgram = StudentTimetableStudyProgram::fromSubjectPlan($record['stundentafel'] ?? null);
+
+        if (! $studentCode || ! $studyProgram) {
+            return;
+        }
+
+        $studyProgramsByStudentCode[$studentCode][$studyProgram->value] = $studyProgram;
+    }
+
+    /**
+     * @param  array<string, array<string, StudentTimetableStudyProgram>>  $studyProgramsByStudentCode
+     */
+    private function persistStudentStudyPrograms(
+        StudentTimetableRecognitionImport $import,
+        array $studyProgramsByStudentCode,
+    ): void {
+        $studentCodesByStudyProgram = collect($studyProgramsByStudentCode)
+            ->filter(fn (array $studyPrograms): bool => count($studyPrograms) === 1)
+            ->mapWithKeys(fn (array $studyPrograms, string $studentCode): array => [
+                $studentCode => array_key_first($studyPrograms),
+            ])
+            ->groupBy(fn (string $studyProgram): string => $studyProgram, preserveKeys: true);
+
+        foreach ($studentCodesByStudyProgram as $studyProgram => $studentCodes) {
+            Import116::query()
+                ->where('school_id', $import->school_id)
+                ->where('schoolyear_id', $import->schoolyear_id)
+                ->whereIn('student_code', $studentCodes->keys())
+                ->update(['study_program' => $studyProgram]);
+        }
+
+        $ambiguousStudentCodes = collect($studyProgramsByStudentCode)
+            ->filter(fn (array $studyPrograms): bool => count($studyPrograms) > 1)
+            ->keys();
+
+        if ($ambiguousStudentCodes->isEmpty()) {
+            return;
+        }
+
+        Import116::query()
+            ->where('school_id', $import->school_id)
+            ->where('schoolyear_id', $import->schoolyear_id)
+            ->whereIn('student_code', $ambiguousStudentCodes)
+            ->update(['study_program' => null]);
     }
 
     /**

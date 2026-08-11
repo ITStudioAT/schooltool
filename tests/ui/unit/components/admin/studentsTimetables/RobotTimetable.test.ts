@@ -7694,6 +7694,14 @@ describe('Students timetable robot page', () => {
         expect(methods.courseGroupDistanceLearning.call(ctx, course, fullGroup)).toBe(false)
         expect(halfLoadGroup.meta).toBe('Di 14.-15., 20:25-21:10 (1-w), 21:10-21:55 (2-w)')
         expect(methods.courseGroupDistanceLearning.call(ctx, course, halfLoadGroup)).toBe(true)
+
+        ctx.configuredCourseGroups = ctx.configuredCourseGroups.map(courseGroup => (
+            courseGroup.class_name === 'D1-1K-GOS'
+                ? { ...courseGroup, is_kompaktunterricht: true }
+                : courseGroup
+        ))
+
+        expect(methods.courseGroupDistanceLearning.call(ctx, course, halfLoadGroup)).toBe(false)
     })
 
     it('applies mixed weekly recurrence formatting to expanded additional course group rows', () => {

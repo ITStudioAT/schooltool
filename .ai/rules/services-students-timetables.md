@@ -13,3 +13,6 @@ A recognized course code R is generic religion and must not be interpreted as Ca
 
 ## Identify recognition records by module ID
 Recognition CSV exports are snapshots. Use the stable imported `modulid` (scoped by school and schoolyear) as the primary record identity; never hash mutable display fields such as student names. Repeated exports of the same module ID are one record, while equal grades with different module IDs are distinct attempts. Legacy duplicate rows must be collapsed at read time without deleting source data.
+
+## Limit V3 selectable modules by student progression
+For a selected V3 student, build selectable modules with the shared progression rules: no positive/exempt M allows M1 and M2, positive/exempt M1 allows M2 and M3, and higher modules stay hidden until their prerequisites are met. Keep failed modules in the negative group and leave the no-student module catalog unrestricted.

@@ -3851,9 +3851,17 @@ class RobotTimetableBackendSetupService
      */
     private function optionIsDistanceLearningCourse(array $course, array $option): bool
     {
+        $courseGroups = collect($option['course_groups'] ?? []);
+
+        if ($courseGroups->contains(
+            fn (array $courseGroup): bool => ($courseGroup['is_kompaktunterricht'] ?? false) === true,
+        )) {
+            return false;
+        }
+
         $requiredSlotCount = $this->requiredSlotCountForCourse($course);
         $scheduledWeeklyLoad = $this->courseGroupsScheduledWeeklyLoad(
-            collect($option['course_groups'] ?? [])
+            $courseGroups
                 ->reject(fn (array $courseGroup): bool => $this->isOccasionalCourseGroup($courseGroup))
                 ->values()
                 ->all(),

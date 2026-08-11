@@ -6045,6 +6045,8 @@ export default {
             return ''
         },
         courseGroupDistanceLearning(courseGroup) {
+            if (courseGroup?.is_kompaktunterricht === true) return false
+
             if (
                 courseGroup?.is_fu === true
                 || courseGroup?.is_distance_learning === true

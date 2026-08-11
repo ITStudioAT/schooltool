@@ -376,6 +376,8 @@ describe('TimetableV3', () => {
             studentStudyModuleGroups: [],
             moduleSelectionGroups: [],
             selectedModuleKeys: [],
+            selectedCourseKeys: [],
+            activeModuleGroupKey: '',
             moduleSelectionResetPending: false,
             planningSelectionFields: [],
             planningSelectionValues: {},
@@ -396,7 +398,9 @@ describe('TimetableV3', () => {
         expect(context.studentStudyModuleGroups).toEqual(moduleGroups)
         expect(context.studentStudyModuleGroups[1].modules[0].name).toBe('Deutsch 1')
         expect(context.moduleSelectionGroups).toEqual(moduleSelectionGroups)
-        expect(context.selectedModuleKeys).toEqual(['current:D5'])
+        expect(context.selectedModuleKeys).toEqual([])
+        expect(context.selectedCourseKeys).toEqual([])
+        expect(context.activeModuleGroupKey).toBe('')
         expect(context.planningSelectionFields).toEqual(selectionFields)
         expect(context.planningSelectionValues).toEqual({
             religion: 'ETH',
@@ -580,7 +584,7 @@ describe('TimetableV3', () => {
         expect(nextStepSource).toContain('Welche Module sollen berücksichtigt werden?')
         expect(nextStepSource).toContain('v-for="group in displayedModuleSelectionGroups"')
         expect(nextStepSource).toContain('class="timetable-v3__module-tile"')
-        expect(nextStepSource).toContain('@click="toggleModule(module)"')
+        expect(nextStepSource).toContain('@click="openModuleCoursesDialog(module)"')
         expect(nextStepSource).not.toContain('role="tab"')
         expect(nextStepSource).toContain('class="timetable-v3__back-button"')
         expect(nextStepSource).toContain('prepend-icon="mdi-arrow-left"')
@@ -590,57 +594,190 @@ describe('TimetableV3', () => {
         expect(nextContinueSource).not.toContain('@click')
     })
 
-    it('shows every module group at once and selects modules with a direct tile click', async () => {
+    it('opens a persistent course dialog from an individual module tile', async () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
         )
         const methods = (TimetableV3 as any).methods
         const displayedModuleSelectionGroups = (TimetableV3 as any).computed.displayedModuleSelectionGroups
+        const activeModuleSelectionGroup = (TimetableV3 as any).computed.activeModuleSelectionGroup
         const saveState = vi.fn().mockResolvedValue(undefined)
         const groups = [
             {
                 key: 'finished',
                 count: 1,
-                modules: [{ selection_key: 'finished:D1', code: 'D1', name: 'Deutsch 1' }],
+                modules: [{
+                    selection_key: 'finished:D1',
+                    code: 'D1',
+                    name: 'Deutsch 1',
+                    courses: [{ key: 'd1-a', title: 'D1 - 1A - MA' }],
+                }],
             },
             {
                 key: 'current',
                 count: 1,
-                modules: [{ selection_key: 'current:M5', code: 'M5', name: 'Mathematik 5' }],
+                modules: [{
+                    selection_key: 'current:M5',
+                    code: 'M5',
+                    name: 'Mathematik 5',
+                    courses: [
+                        {
+                            key: 'm5-a-1',
+                            keys: ['m5-a-1', 'm5-a-2'],
+                            title: 'M5 - 3A - HU',
+                            schedule_labels: [
+                                'Montag · 09:50–10:40 · 1-wöchig',
+                                'Montag · 10:40–11:30 · 2-wöchig',
+                            ],
+                            scheduled_hours: 1,
+                            usual_hours: 2,
+                            hours_label: '1 von 2 Std.',
+                            instruction_label: 'Fernunterricht',
+                        },
+                        { key: 'm5-b', keys: ['m5-b'], title: 'M5 - 3B - KO' },
+                    ],
+                }],
             },
         ]
         const context = {
             selectedModuleKeys: [],
-            moduleSelected: methods.moduleSelected,
-            moduleGroupAllSelected: methods.moduleGroupAllSelected,
+            selectedCourseKeys: [],
+            moduleCoursesDialogOpen: false,
+            moduleCourseDialogModule: null,
+            moduleCourseDialogCourses: groups[1].modules[0].courses,
+            moduleCourseSelected: methods.moduleCourseSelected,
+            selectedCourseCountForModule: methods.selectedCourseCountForModule,
             saveState,
         }
+        const groupContext = {
+            activeModuleGroupKey: '',
+        }
 
-        await methods.toggleModule.call(context, groups[1].modules[0])
+        methods.openModuleCoursesDialog.call(context, groups[1].modules[0])
 
+        expect(context.moduleCoursesDialogOpen).toBe(true)
+        expect(context.moduleCourseDialogModule).toBe(groups[1].modules[0])
+        await methods.toggleModuleCourse.call(context, groups[1].modules[0].courses[0])
+        expect(context.selectedCourseKeys).toEqual(['m5-a-1', 'm5-a-2'])
         expect(context.selectedModuleKeys).toEqual(['current:M5'])
+        expect(methods.selectedCourseCountForModule.call(context, groups[1].modules[0])).toBe(1)
         expect(saveState).toHaveBeenCalledOnce()
-
-        await methods.toggleModuleGroup.call(context, groups[0])
-
-        expect(context.selectedModuleKeys).toEqual(['current:M5', 'finished:D1'])
+        await methods.toggleModuleCourse.call(context, groups[1].modules[0].courses[0])
+        expect(context.selectedCourseKeys).toEqual([])
+        expect(context.selectedModuleKeys).toEqual([])
         expect(saveState).toHaveBeenCalledTimes(2)
-        expect(displayedModuleSelectionGroups.call({
+        await methods.selectAllModuleCourses.call(context)
+        expect(context.selectedCourseKeys).toEqual(['m5-a-1', 'm5-a-2', 'm5-b'])
+        expect(context.selectedModuleKeys).toEqual(['current:M5'])
+        expect(methods.selectedCourseCountForModule.call(context, groups[1].modules[0])).toBe(2)
+        expect(saveState).toHaveBeenCalledTimes(3)
+        await methods.deselectAllModuleCourses.call(context)
+        expect(context.selectedCourseKeys).toEqual([])
+        expect(context.selectedModuleKeys).toEqual([])
+        expect(saveState).toHaveBeenCalledTimes(4)
+        expect(methods.courseSelectionKeys(groups[1].modules[0].courses[0])).toEqual(['m5-a-1', 'm5-a-2'])
+        expect(methods.courseScheduleLabels(groups[1].modules[0].courses[0])).toEqual([
+            'Montag · 09:50–10:40 · 1-wöchig',
+            'Montag · 10:40–11:30 · 2-wöchig',
+        ])
+        methods.closeModuleCoursesDialog.call(context)
+        expect(context.moduleCoursesDialogOpen).toBe(false)
+        methods.toggleModuleGroup.call(groupContext, groups[0])
+        expect(groupContext.activeModuleGroupKey).toBe('finished')
+        expect(methods.moduleGroupActive.call(groupContext, groups[0])).toBe(true)
+        methods.toggleModuleGroup.call(groupContext, groups[0])
+        expect(groupContext.activeModuleGroupKey).toBe('')
+        expect(methods.moduleGroupActive.call(groupContext, groups[0])).toBe(false)
+        expect(methods.moduleGroupIcon(groups[0])).toBe('mdi-check-decagram-outline')
+        expect(methods.moduleGroupIcon({ key: 'unknown' })).toBe('mdi-view-grid-outline')
+        const displayedGroups = displayedModuleSelectionGroups.call({
             moduleSearch: 'deutsch',
             moduleSelectionGroups: groups,
-        })).toEqual([
+        })
+        expect(displayedGroups).toEqual([
             { ...groups[0], modules: groups[0].modules },
             { ...groups[1], modules: [] },
         ])
+        expect(activeModuleSelectionGroup.call({
+            activeModuleGroupKey: 'finished',
+            displayedModuleSelectionGroups: displayedGroups,
+        })).toEqual(displayedGroups[0])
+        expect(activeModuleSelectionGroup.call({
+            activeModuleGroupKey: '',
+            displayedModuleSelectionGroups: displayedGroups,
+        })).toBeNull()
         expect(source).toContain('v-for="group in displayedModuleSelectionGroups"')
+        expect(source).toContain('class="timetable-v3__module-group-card"')
+        expect(source).toContain('class="timetable-v3__module-group-panel"')
+        expect(source).toContain('@click="toggleModuleGroup(group)"')
+        expect(source).toContain('v-if="activeModuleSelectionGroup"')
+        expect(source).toContain('<transition name="timetable-v3-module-panel" mode="out-in">')
+        expect(source).toContain(':icon="moduleGroupIcon(group)"')
         expect(source).toContain('class="timetable-v3__module-tile"')
         expect(source).toContain(':aria-pressed="moduleSelected(module)"')
-        expect(source).toContain('@click="toggleModule(module)"')
+        expect(source).toContain('@click="openModuleCoursesDialog(module)"')
+        expect(source).toContain('v-model="moduleCoursesDialogOpen" max-width="820" persistent scrollable')
+        expect(source).toContain('v-for="course in moduleCourseDialogCourses"')
+        expect(source).toContain('role="checkbox"')
+        expect(source).toContain('@click="toggleModuleCourse(course)"')
+        expect(source).toContain('@click="selectAllModuleCourses"')
+        expect(source).toContain('@click="deselectAllModuleCourses"')
+        expect(source).toContain('Alle auswählen')
+        expect(source).toContain('Alle abwählen')
+        expect(source).toContain('v-for="scheduleLabel in courseScheduleLabels(course)"')
+        expect(source).not.toContain('course.recurrence_label')
+        expect(source).toContain('v-if="course.hours_label"')
+        expect(source).toContain('{{ course.hours_label }}')
+        expect(source).toContain('v-if="course.instruction_label"')
+        expect(source).toContain('{{ course.instruction_label }}')
         expect(source).toContain('class="timetable-v3__module-search mt-3"')
-        expect(source).toContain('grid-template-columns: repeat(auto-fill, minmax(178px, 1fr))')
-        expect(source).toContain('min-height: 50px')
+        expect(source).toContain('grid-template-columns: repeat(auto-fit, minmax(142px, 1fr))')
+        expect(source).toContain('grid-template-columns: repeat(auto-fill, minmax(190px, 1fr))')
+        expect(source).toContain('min-height: 60px')
+        expect(source).toContain('@media (prefers-reduced-motion: reduce)')
         expect(source).not.toContain('role="tab"')
+        expect(source).not.toContain('mdi-chevron-down')
+        expect(source).not.toContain('mdi-chevron-up')
+        expect(source).not.toContain('toggleModuleGroupCollapse')
+        expect(source).not.toContain('@click="openModuleGroup(group)"')
+    })
+
+    it('restores only persisted course selections from the matching planning context', () => {
+        const methods = (TimetableV3 as any).methods
+        const groups = [{
+            key: 'current',
+            modules: [{
+                selection_key: 'current:D5',
+                code: 'D5',
+                courses: [
+                    { key: 'd5-a-1', keys: ['d5-a-1', 'd5-a-2'], title: 'D5 - 3A - HU' },
+                    { key: 'd5-b', title: 'D5 - 3B - KO' },
+                ],
+            }],
+        }]
+        const context = {
+            storedState: {
+                moduleSelection: {
+                    mode: 'with_student',
+                    studentCode: '1001',
+                    planningValues: { language: 'L' },
+                    selectedKeys: ['current:D5'],
+                    selectedCourseKeys: ['d5-a-2', 'missing-course'],
+                },
+            },
+            planningSelectionValues: { language: 'L' },
+            moduleSelectionGroups: [],
+            selectedModuleKeys: [],
+            selectedCourseKeys: [],
+            activeModuleGroupKey: '',
+            moduleSelectionResetPending: false,
+        }
+
+        methods.setModuleSelectionGroups.call(context, groups, '1001')
+
+        expect(context.selectedCourseKeys).toEqual(['d5-a-1', 'd5-a-2'])
+        expect(context.selectedModuleKeys).toEqual(['current:D5'])
     })
 
     it('keeps both entry choices editable and offers a persistent V3 restart action', async () => {
@@ -796,6 +933,7 @@ describe('TimetableV3', () => {
                 language: 'F',
             },
             selectedModuleKeys: ['current:D5'],
+            selectedCourseKeys: ['d5-a'],
         }
 
         await methods.saveState.call(context)
@@ -823,6 +961,7 @@ describe('TimetableV3', () => {
                         language: 'F',
                     },
                     selectedKeys: ['current:D5'],
+                    selectedCourseKeys: ['d5-a'],
                 },
             },
         })

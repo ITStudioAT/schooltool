@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\StudentTimetableStudyProgram;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $class
  * @property string|null $school_level
  * @property string|null $attendance_year
+ * @property StudentTimetableStudyProgram|null $study_program
  * @property string|null $religion
  * @property string $student_code
  * @property string $last_name
@@ -52,6 +54,7 @@ class Import116 extends Model
         'class',
         'school_level',
         'attendance_year',
+        'study_program',
         'religion',
         'student_code',
         'last_name',
@@ -76,6 +79,7 @@ class Import116 extends Model
     ];
 
     protected $casts = [
+        'study_program' => StudentTimetableStudyProgram::class,
         'birth_date' => 'date',
         'import_date' => 'datetime',
         'exists_date' => 'datetime',

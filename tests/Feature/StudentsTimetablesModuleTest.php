@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\StudentTimetableStudyProgram;
 use App\Jobs\StudentsTimetables\ProcessRecognitionCsvImportJob;
 use App\Jobs\StudentsTimetables\ProcessTimetableUnimportJob;
 use App\Models\Import116;
@@ -1848,10 +1849,23 @@ it('stores filtered recognition csv uploads for the selected school', function (
     File::deleteDirectory(storage_path("app/private/{$user->school_id}/recognition-imports"));
     Queue::fake([ProcessRecognitionCsvImportJob::class]);
 
+    $normalStudent = Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'student_code' => '100',
+        'import_user_id' => $user->id,
+    ]);
+    $compactStudentWithoutAssessment = Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'student_code' => '300',
+        'import_user_id' => $user->id,
+    ]);
+
     $csv = implode("\n", [
-        'Studierende;SchülerInnenkennzahl;Gegenstand;Note;Kolloquien;Modulwiederholungen;Lehrerkürzel',
-        'Max Muster;100;Deutsch;1;0;0/0;',
-        'Ohne Wert;300;Mathematik;;0;0/0;',
+        'Studierende;SchülerInnenkennzahl;Gegenstand;Note;Kolloquien;Modulwiederholungen;Lehrerkürzel;Stundentafel',
+        'Max Muster;100;Deutsch;1;0;0/0;;AHS-Alle',
+        'Ohne Wert;300;Mathematik;;0;0/0;;AHS-KS-Alle',
         'Kolloq Wert;200;Englisch;N;1;0/0;',
         'Modul Wert;200;Biologie;B;0;1/0;',
         'Lehrer Wert;;Geschichte;5;0;0/0;AB',
@@ -1941,7 +1955,9 @@ it('stores filtered recognition csv uploads for the selected school', function (
                 'Fritz Wert',
                 'Sonder Wert',
                 'Ohne Note Wert',
-            ]);
+            ])
+        ->and($normalStudent->refresh()->study_program)->toBe(StudentTimetableStudyProgram::Normalstudium)
+        ->and($compactStudentWithoutAssessment->refresh()->study_program)->toBe(StudentTimetableStudyProgram::Kompaktstudium);
 
     $this->actingAs($user)
         ->getJson('/api/admin/students-timetables/recognitions-csv')
@@ -2654,6 +2670,210 @@ it('returns graded recognition courses for the selected robot student', function
         ->assertJsonPath('total', 5);
 });
 
+it('uses each student recognition subject plan for v3 module recommendations', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    collect([
+        [
+            'student_code' => 'normal-plan-student',
+            'class' => '4S',
+            'last_name' => 'Normal',
+            'subject_plan' => 'AHS-Alle',
+        ],
+        [
+            'student_code' => 'compact-plan-student',
+            'class' => '1A',
+            'last_name' => 'Kompakt',
+            'subject_plan' => 'AHS-KS-Alle',
+        ],
+    ])->each(function (array $student) use ($user, $schoolyear): void {
+        Import116::factory()->create([
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $schoolyear->id,
+            'class' => $student['class'],
+            'school_level' => '11_1',
+            'student_code' => $student['student_code'],
+            'last_name' => $student['last_name'],
+            'first_name' => 'Student',
+            'import_user_id' => $user->id,
+            'exists_date' => now(),
+        ]);
+    });
+
+    collect([
+        ['study_program' => StudentTimetableStudyProgram::Normalstudium, 'semester' => 3, 'json_code' => 'D3'],
+        ['study_program' => StudentTimetableStudyProgram::Normalstudium, 'semester' => 5, 'json_code' => 'N5'],
+        ['study_program' => StudentTimetableStudyProgram::Normalstudium, 'semester' => 6, 'json_code' => 'N6'],
+        ['study_program' => StudentTimetableStudyProgram::Kompaktstudium, 'semester' => 1, 'json_code' => 'D3'],
+        ['study_program' => StudentTimetableStudyProgram::Kompaktstudium, 'semester' => 3, 'json_code' => 'D5'],
+        ['study_program' => StudentTimetableStudyProgram::Kompaktstudium, 'semester' => 3, 'json_code' => 'M3'],
+        ['study_program' => StudentTimetableStudyProgram::Kompaktstudium, 'semester' => 4, 'json_code' => 'M4'],
+    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => $subjectRow['study_program'],
+        'semester' => $subjectRow['semester'],
+        'branch' => 'common',
+        'json_code' => $subjectRow['json_code'],
+        'json_subject' => preg_replace('/\d+$/u', '', $subjectRow['json_code']),
+        'name' => $subjectRow['json_code'],
+        'hours_per_week' => 2,
+        'is_active' => true,
+        'sort_order' => $index,
+        'source' => 'test',
+    ]));
+
+    $import = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'noten.csv',
+        'stored_filename' => 'noten.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten.csv",
+        'total_rows' => 4,
+        'imported_rows' => 4,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+
+    collect([
+        ['student_code' => 'normal-plan-student', 'subject' => 'ZZ1', 'grade' => 'T', 'semester' => '1', 'subject_plan' => 'AHS-Alle'],
+        ['student_code' => 'normal-plan-student', 'subject' => 'N4', 'grade' => '2', 'semester' => '4', 'subject_plan' => 'AHS-Alle'],
+        ['student_code' => 'compact-plan-student', 'subject' => 'D', 'grade' => '2', 'semester' => '3', 'subject_plan' => 'AHS-KS-Alle'],
+        ['student_code' => 'compact-plan-student', 'subject' => 'M2', 'grade' => '2', 'semester' => '2', 'subject_plan' => 'AHS-KS-Alle'],
+    ])->each(fn (array $student, int $index): StudentTimetableRecognitionRow => StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $import->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => $index + 2,
+        'student_code' => $student['student_code'],
+        'subject' => $student['subject'],
+        'grade' => $student['grade'],
+        'note' => $student['grade'],
+        'raw_data' => [
+            'semester' => $student['semester'],
+            'stundentafel' => $student['subject_plan'],
+        ],
+    ]));
+
+    $normalResponse = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=normal-plan-student')
+        ->assertSuccessful()
+        ->assertJsonPath('data.study_program', 'normalstudium');
+
+    $compactResponse = $this
+        ->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=compact-plan-student')
+        ->assertSuccessful()
+        ->assertJsonPath('data.study_program', 'kompaktstudium');
+
+    $moduleCodes = function ($response, string $groupKey): array {
+        $group = collect($response->json('data.module_selection_groups'))->firstWhere('key', $groupKey);
+
+        return collect($group['modules'] ?? [])
+            ->pluck('code')
+            ->all();
+    };
+
+    expect($normalResponse->json('data.semester'))->toBe(5)
+        ->and($compactResponse->json('data.semester'))->toBe(3)
+        ->and($compactResponse->json('data.module_groups.1.modules.0.code'))->toBe('D3')
+        ->and($moduleCodes($normalResponse, 'current'))->toBe(['N5'])
+        ->and($moduleCodes($normalResponse, 'additional'))->toBe(['N6'])
+        ->and($moduleCodes($compactResponse, 'current'))->toBe(['D5', 'M3'])
+        ->and($moduleCodes($compactResponse, 'additional'))->toBe(['M4']);
+});
+
+it('limits v3 selectable modules to the next two levels per subject', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    collect([
+        ['student_code' => 'no-mathematics-module', 'last_name' => 'Ohne Modul'],
+        ['student_code' => 'mathematics-one-completed', 'last_name' => 'Mit Modul'],
+    ])->each(function (array $student) use ($user, $schoolyear): void {
+        Import116::factory()->create([
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $schoolyear->id,
+            'class' => '4S',
+            'school_level' => '11_2',
+            'student_code' => $student['student_code'],
+            'last_name' => $student['last_name'],
+            'first_name' => 'Student',
+            'import_user_id' => $user->id,
+            'exists_date' => now(),
+        ]);
+    });
+
+    collect(range(1, 5))->each(fn (int $moduleNumber): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Normalstudium,
+        'semester' => $moduleNumber,
+        'branch' => 'common',
+        'json_code' => "M{$moduleNumber}",
+        'json_subject' => 'M',
+        'name' => "Mathematik {$moduleNumber}",
+        'hours_per_week' => 3,
+        'is_active' => true,
+        'sort_order' => $moduleNumber,
+        'source' => 'test',
+    ]));
+
+    $import = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'noten.csv',
+        'stored_filename' => 'noten.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten.csv",
+        'total_rows' => 1,
+        'imported_rows' => 1,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+
+    StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $import->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => 2,
+        'student_code' => 'mathematics-one-completed',
+        'subject' => 'M1',
+        'grade' => '2',
+        'note' => '2',
+        'raw_data' => [
+            'semester' => '1',
+            'stundentafel' => 'AHS-Alle',
+        ],
+    ]);
+
+    $selectableModuleCodes = function (string $studentCode) use ($user): array {
+        $response = $this->actingAs($user)
+            ->getJson("/api/admin/students-timetables/timetable-v3/student-information?student_code={$studentCode}")
+            ->assertSuccessful();
+
+        return collect($response->json('data.module_selection_groups'))
+            ->whereIn('key', ['previous', 'current', 'additional'])
+            ->flatMap(fn (array $group): array => $group['modules'])
+            ->pluck('code')
+            ->sort(fn (string $firstCode, string $secondCode): int => strnatcasecmp($firstCode, $secondCode))
+            ->values()
+            ->all();
+    };
+
+    expect($selectableModuleCodes('no-mathematics-module'))->toBe(['M1', 'M2'])
+        ->and($selectableModuleCodes('mathematics-one-completed'))->toBe(['M2', 'M3']);
+});
+
 it('returns the shared student overview summary for a selected robot student', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
@@ -2682,7 +2902,7 @@ it('returns the shared student overview summary for a selected robot student', f
         ['semester' => 2, 'branch' => 'common', 'json_code' => 'BU2', 'json_subject' => 'BU', 'name' => 'Buchhaltung 2', 'hours_per_week' => 2],
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'M1', 'json_subject' => 'M', 'name' => 'Mathematik 1', 'hours_per_week' => 3],
         ['semester' => 2, 'branch' => 'common', 'json_code' => 'M2', 'json_subject' => 'M', 'name' => 'Mathematik 2', 'hours_per_week' => 3],
-        ['semester' => 1, 'branch' => 'common', 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1', 'hours_per_week' => 3],
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1', 'hours_per_week' => 2],
         ['semester' => 2, 'branch' => 'common', 'json_code' => 'D2', 'json_subject' => 'D', 'name' => 'Deutsch 2', 'hours_per_week' => 3],
     ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
         'school_id' => $user->school_id,
@@ -2691,6 +2911,147 @@ it('returns the shared student overview summary for a selected robot student', f
         'sort_order' => $index + 1,
         ...$subjectRow,
     ]));
+
+    $timetableImport = TimetableImport::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    collect([
+        [
+            'line_number' => 1,
+            'date' => '2026-09-14',
+            'period' => '3',
+            'starts_at' => '09:50',
+            'ends_at' => '10:40',
+            'teacher' => 'HUB',
+            'room' => 'R101',
+            'class_name' => 'D1-1A-HUB',
+        ],
+        [
+            'line_number' => 2,
+            'date' => '2026-09-14',
+            'period' => '4',
+            'starts_at' => '10:40',
+            'ends_at' => '11:30',
+            'teacher' => 'HUB',
+            'room' => 'R101',
+            'class_name' => 'D1-1A-HUB',
+        ],
+        [
+            'line_number' => 3,
+            'date' => '2026-09-15',
+            'period' => '5',
+            'starts_at' => '11:45',
+            'ends_at' => '12:35',
+            'teacher' => 'KOL',
+            'room' => 'R202',
+            'class_name' => 'D1-1B-KOL',
+        ],
+        [
+            'line_number' => 4,
+            'date' => '2026-09-21',
+            'period' => '3',
+            'starts_at' => '09:50',
+            'ends_at' => '10:40',
+            'teacher' => 'HUB',
+            'room' => 'R101',
+            'class_name' => 'D1-1A-HUB',
+        ],
+        [
+            'line_number' => 5,
+            'date' => '2026-09-28',
+            'period' => '3',
+            'starts_at' => '09:50',
+            'ends_at' => '10:40',
+            'teacher' => 'HUB',
+            'room' => 'R101',
+            'class_name' => 'D1-1A-HUB',
+        ],
+        [
+            'line_number' => 6,
+            'date' => '2026-09-21',
+            'period' => '4',
+            'starts_at' => '10:40',
+            'ends_at' => '11:30',
+            'teacher' => 'HUB',
+            'room' => 'R101',
+            'class_name' => 'D1-1A-HUB',
+        ],
+        [
+            'line_number' => 7,
+            'date' => '2026-09-28',
+            'period' => '4',
+            'starts_at' => '10:40',
+            'ends_at' => '11:30',
+            'teacher' => 'HUB',
+            'room' => 'R101',
+            'class_name' => 'D1-1A-HUB',
+        ],
+        [
+            'line_number' => 8,
+            'date' => '2026-09-22',
+            'period' => '5',
+            'starts_at' => '11:45',
+            'ends_at' => '12:35',
+            'teacher' => 'KOL',
+            'room' => 'R202',
+            'class_name' => 'D1-1B-KOL',
+        ],
+        [
+            'line_number' => 9,
+            'date' => '2026-09-29',
+            'period' => '5',
+            'starts_at' => '11:45',
+            'ends_at' => '12:35',
+            'teacher' => 'KOL',
+            'room' => 'R202',
+            'class_name' => 'D1-1B-KOL',
+        ],
+        [
+            'line_number' => 10,
+            'date' => '2026-09-16',
+            'period' => '6',
+            'starts_at' => '12:35',
+            'ends_at' => '13:25',
+            'teacher' => 'SCH',
+            'room' => 'R303',
+            'class_name' => 'D1-3R-SCH',
+        ],
+        [
+            'line_number' => 11,
+            'date' => '2026-09-23',
+            'period' => '6',
+            'starts_at' => '12:35',
+            'ends_at' => '13:25',
+            'teacher' => 'SCH',
+            'room' => 'R303',
+            'class_name' => 'D1-3R-SCH',
+        ],
+        [
+            'line_number' => 12,
+            'date' => '2026-09-30',
+            'period' => '6',
+            'starts_at' => '12:35',
+            'ends_at' => '13:25',
+            'teacher' => 'SCH',
+            'room' => 'R303',
+            'class_name' => 'D1-3R-SCH',
+        ],
+    ])->each(fn (array $course): StudentTimetableEntry => StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'timetable_import_id' => $timetableImport->id,
+        'semester' => 1,
+        'subject' => 'D',
+        'course' => 'D',
+        'module_code' => 'D1',
+        'student_group' => null,
+        ...$course,
+    ]));
+
+    StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
 
     $import = StudentTimetableRecognitionImport::query()->create([
         'school_id' => $user->school_id,
@@ -2845,6 +3206,31 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.3.modules.0.code', 'D1')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.name', 'Deutsch 1')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.selected_by_default', true)
+        ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.teacher', 'HUB')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.rooms_label', 'R101')
+        ->assertJsonCount(2, 'data.module_selection_groups.3.modules.0.courses.0.keys')
+        ->assertJsonCount(2, 'data.module_selection_groups.3.modules.0.courses.0.schedule_labels')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.0', 'Montag · 09:50–10:40 · 1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.1', 'Montag · 10:40–11:30 · 1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.scheduled_hours', 2)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.usual_hours', 2)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.hours_label', '2 von 2 Std.')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.is_distance_learning', false)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.instruction_label', null)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.teacher', 'KOL')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.schedule_labels.0', 'Dienstag · 11:45–12:35 · 1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.scheduled_hours', 1)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.usual_hours', 2)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.hours_label', '1 von 2 Std.')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.is_distance_learning', true)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.instruction_label', 'Fernunterricht')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.teacher', 'SCH')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.scheduled_hours', 1)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.usual_hours', 2)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.hours_label', '1 von 2 Std.')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.is_distance_learning', false)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.instruction_label', null)
         ->assertJsonPath('data.module_selection_groups.4.key', 'additional')
         ->assertJsonPath('data.module_selection_groups.4.modules.0.code', 'D2')
         ->assertJsonMissing(['code' => 'PH1'])

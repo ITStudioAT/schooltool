@@ -13,3 +13,6 @@ Calculate student timetable business rules only in backend services, including i
 
 ## Group imported module results in the backend
 For V3 study information, categorize imported module results server-side: B is exempt, grades 1–4 are passed, and N or 5 are failed. Ignore other result codes unless the product rule changes; Vue only renders the ready-made groups.
+
+## Do not classify Kompaktunterricht as Fernunterricht
+Kompaktunterricht schedules only the in-school contact half; the other half is self-study at home, not a scheduled FU course. Never infer or display FU for course groups marked is_kompaktunterricht, and exclude them from distance-learning quality metrics.
