@@ -629,99 +629,6 @@
                     </v-expansion-panels>
                 </section>
 
-                <section
-                    v-if="activeImportPage === 'faecher' && activeSubjectImport"
-                    class="st-main-dataset-summary mb-4">
-                    <div class="st-main-dataset-summary__header">
-                        <v-icon icon="mdi-code-json" color="primary" size="20" />
-                        <div class="st-main-dataset-summary__title">
-                            <div class="text-caption text-medium-emphasis">Importdaten</div>
-                            <div class="font-weight-bold">Aktive Fächer</div>
-                        </div>
-                        <v-chip size="small" color="primary" variant="tonal">
-                            {{ subjectDataset.table || 'student_timetable_subject_rows' }}
-                        </v-chip>
-                    </div>
-
-                    <div class="st-main-dataset-summary__grid">
-                        <div
-                            v-for="item in subjectImportSummaryItems"
-                            :key="item.label"
-                            class="st-main-dataset-summary__item">
-                            <span>{{ item.label }}</span>
-                            <strong>{{ item.value }}</strong>
-                        </div>
-                    </div>
-                </section>
-
-                <section
-                    v-if="activeImportPage === 'faecher' && activeSubjectRows.length"
-                    class="st-subject-summary mb-4">
-                    <v-expansion-panels variant="accordion">
-                        <v-expansion-panel elevation="0" class="st-subject-summary__panel">
-                            <v-expansion-panel-title>
-                                <div class="st-subject-summary__title">
-                                    <v-icon icon="mdi-book-open-page-variant" color="primary" size="18" />
-                                    <span class="font-weight-medium">Alle Fächer</span>
-                                    <v-chip size="x-small" color="primary" variant="tonal">
-                                        {{ activeSubjectRows.length }}
-                                    </v-chip>
-                                </div>
-                            </v-expansion-panel-title>
-                            <v-expansion-panel-text>
-                                <div class="st-subject-semester-list">
-                                    <section
-                                        v-for="semesterGroup in activeSubjectRowsBySemester"
-                                        :key="semesterGroup.key"
-                                        class="st-subject-semester-block">
-                                        <div class="st-subject-semester-block__header">
-                                            <span>{{ semesterGroup.label }}</span>
-                                            <v-chip size="x-small" color="primary" variant="tonal">
-                                                {{ semesterGroup.count }}
-                                            </v-chip>
-                                        </div>
-
-                                        <div
-                                            v-for="branchGroup in semesterGroup.branchGroups"
-                                            :key="branchGroup.key"
-                                            class="st-subject-branch-block"
-                                            :class="subjectBranchBlockClass(branchGroup.key)">
-                                            <div class="st-subject-branch-block__header">
-                                                <span>{{ branchGroup.label }}</span>
-                                                <v-chip size="x-small" color="primary" variant="tonal">
-                                                    {{ branchGroup.rows.length }}
-                                                </v-chip>
-                                            </div>
-
-                                            <div class="st-subject-pill-list">
-                                                <div
-                                                    v-for="subjectRow in branchGroup.rows"
-                                                    :key="subjectRowKey(subjectRow)"
-                                                    class="st-subject-pill">
-                                                    <span class="st-subject-pill__code">{{ subjectRow.json_code || subjectRow.json_subject || '-' }}</span>
-                                                    <span class="st-subject-pill__separator">·</span>
-                                                    <span class="st-subject-pill__name">{{ subjectRow.name || subjectRow.json_subject || '-' }}</span>
-                                                    <span v-if="subjectHoursLabel(subjectRow) !== '-'" class="st-subject-pill__hours">
-                                                        {{ subjectHoursLabel(subjectRow) }} WStd.
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </section>
-                                </div>
-                            </v-expansion-panel-text>
-                        </v-expansion-panel>
-                    </v-expansion-panels>
-                </section>
-
-                <v-alert
-                    v-else-if="activeImportPage === 'faecher' && !loadingImportButtonInfo"
-                    type="info"
-                    variant="tonal"
-                    class="mb-4">
-                    Noch keine Fächer-Datei importiert.
-                </v-alert>
-
                 </v-card-text>
             </v-card>
 
@@ -772,54 +679,6 @@
             </v-card>
 
             <v-card
-                v-if="activeImportPage === 'faecher'"
-                rounded="xl"
-                class="st-import-file-info-card mt-3">
-                <v-card-title class="st-import-file-info-card__title px-4 pt-4">
-                    <v-icon icon="mdi-file-code-outline" size="20" color="primary" />
-                    <span class="font-weight-bold">Benötigte Importdatei</span>
-                    <div class="st-import-file-info-card__actions">
-                        <v-btn
-                            size="small"
-                            variant="tonal"
-                            color="warning"
-                            prepend-icon="mdi-content-copy"
-                            @click="copySubjectImportPrompt">
-                            {{ subjectImportPromptCopied ? 'Kopiert' : 'Prompt kopieren' }}
-                        </v-btn>
-                        <v-btn
-                            size="small"
-                            variant="tonal"
-                            color="primary"
-                            prepend-icon="mdi-upload"
-                            to="/admin/students-timetables/timetable/imports/faecher/import">
-                            Import
-                        </v-btn>
-                    </div>
-                </v-card-title>
-                <v-card-text class="px-4 pb-4">
-                    <div class="st-import-file-info-grid">
-                        <div class="st-import-file-info-item">
-                            <span>Dateityp</span>
-                            <strong>JSON-Datei (.json)</strong>
-                        </div>
-                        <div class="st-import-file-info-item">
-                            <span>Quelle</span>
-                            <strong>KI-generiert</strong>
-                        </div>
-                        <div class="st-import-file-info-item">
-                            <span>Struktur</span>
-                            <strong>JSON mit Semestern, Fächern und Zweigen</strong>
-                        </div>
-                        <div class="st-import-file-info-item st-import-file-info-item--wide">
-                            <span>Inhalt</span>
-                            <strong>Fächer, Wochenstunden, Semester und Zweig-Varianten</strong>
-                        </div>
-                    </div>
-                </v-card-text>
-            </v-card>
-
-            <v-card
                 v-if="activeImportPage === 'anrechnungen'"
                 rounded="xl"
                 class="st-import-file-info-card mt-3">
@@ -849,43 +708,6 @@
                         <div class="st-import-file-info-item st-import-file-info-item--wide">
                             <span>Inhalt</span>
                             <strong>Studierende, Fächer, Noten</strong>
-                        </div>
-                    </div>
-                </v-card-text>
-            </v-card>
-
-            <v-card
-                v-if="activeImportPage === 'faecher'"
-                rounded="xl"
-                class="st-import-history-card mt-3">
-                <v-card-title class="st-import-history-card__title px-4 pt-4">
-                    <v-icon icon="mdi-history" size="20" color="primary" />
-                    <span class="font-weight-bold">Importverlauf</span>
-                    <v-chip v-if="activeSubjectImport" size="x-small" variant="tonal" color="primary">
-                        Letzter Import
-                    </v-chip>
-                </v-card-title>
-                <v-card-text class="px-4 pb-4">
-                    <v-alert v-if="!loadingImportButtonInfo && !activeSubjectImport" type="info" variant="tonal">
-                        Noch keine Fächer-Datei importiert.
-                    </v-alert>
-
-                    <v-progress-linear v-if="loadingImportButtonInfo" indeterminate color="primary" class="mb-2" />
-
-                    <div v-if="activeSubjectImport" class="st-subject-import-history-list">
-                        <div class="st-subject-import-history-item">
-                            <v-icon icon="mdi-code-json" color="primary" size="18" />
-                            <div class="st-subject-import-history-item__content">
-                                <div class="font-weight-medium">
-                                    {{ activeSubjectImport.original_filename || activeSubjectImport.filename }}
-                                </div>
-                                <div class="text-caption text-medium-emphasis">
-                                    {{ formatDate(activeSubjectImport.uploaded_at) }}
-                                </div>
-                            </div>
-                            <v-chip size="x-small" color="primary" variant="tonal">
-                                {{ subjectImportCountLabel(activeSubjectImport) }}
-                            </v-chip>
                         </div>
                     </div>
                 </v-card-text>
@@ -1352,10 +1174,8 @@ export default {
             loadingImportButtonInfo: false,
             importButtonInfo: {
                 timetable: null,
-                subjects: null,
                 recognitions: null,
                 mainDataset: null,
-                subjectDataset: null,
                 recognitionDataset: null,
             },
             imports: [],
@@ -1377,7 +1197,6 @@ export default {
             schoolyearData: {},
             schoolyearValid: false,
             savingSchoolyear: false,
-            subjectImportPromptCopied: false,
             uploadedFilename: '',
             refreshFilePond: 0,
             uploadError: '',
@@ -1447,13 +1266,6 @@ export default {
                     detail: this.timetableImportDetail,
                 },
                 {
-                    key: 'faecher',
-                    label: 'Fächer',
-                    icon: 'mdi-book-open-page-variant',
-                    meta: this.importButtonDateMeta(this.importButtonInfo.subjects?.uploaded_at),
-                    detail: this.subjectImportDetail,
-                },
-                {
                     key: 'anrechnungen',
                     label: 'Anrechnungen',
                     icon: 'mdi-check-decagram-outline',
@@ -1481,25 +1293,26 @@ export default {
         activeImportUploadIcon() {
             if (this.activeImportPage === 'import116') return 'mdi-file-table-outline'
             if (this.activeImportPage === 'anrechnungen') return 'mdi-file-delimited-outline'
-            return this.activeImportPage === 'faecher' ? 'mdi-code-json' : 'mdi-upload'
+
+            return 'mdi-upload'
         },
         activeImportUploadTitle() {
             if (this.activeImportPage === 'import116') return 'XLSX-Datei importieren'
             if (this.activeImportPage === 'anrechnungen') return 'CSV-Datei importieren'
-            return this.activeImportPage === 'faecher' ? 'JSON-Datei importieren' : 'TXT-Datei importieren'
+
+            return 'TXT-Datei importieren'
         },
         activeImportUploadMeta() {
             if (this.activeImportPage === 'import116') return 'Sokrates 116 · Schüler- und Elterndaten'
             if (this.activeImportPage === 'anrechnungen') return 'Anrechnungen · Sokrates Bund'
-            return this.activeImportPage === 'faecher' ? 'Fächer · JSON-Import' : 'Stundenplan · Untis-Export'
+
+            return 'Stundenplan · Untis-Export'
         },
         activeImportUploadDetail() {
             if (this.activeImportPage === 'import116') return 'XLSX-Datei (.xlsx), Sokrates Bund Abfrage 116'
             if (this.activeImportPage === 'anrechnungen') return 'CSV-Datei (.csv), mit Studierenden, Fächern und Noten'
 
-            return this.activeImportPage === 'faecher'
-                ? 'JSON-Datei (.json), mit Semestern, Fächern und Zweigen'
-                : 'TXT-Datei (.txt), tabulatorgetrennt, mit TT-Einträgen'
+            return 'TXT-Datei (.txt), tabulatorgetrennt, mit TT-Einträgen'
         },
         activeImportUploadPath() {
             if (this.activeImportPage === 'import116') {
@@ -1509,20 +1322,18 @@ export default {
                 return '/api/admin/students-timetables/recognitions-csv'
             }
 
-            return this.activeImportPage === 'faecher'
-                ? '/api/admin/students-timetables/subjects-overview-json'
-                : '/api/admin/students-timetables/upload'
+            return '/api/admin/students-timetables/upload'
         },
         activeImportAllowedFileTypes() {
             if (this.activeImportPage === 'import116') return ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
             if (this.activeImportPage === 'anrechnungen') return ['text/csv', 'application/csv', 'application/vnd.ms-excel']
 
-            return this.activeImportPage === 'faecher' ? ['application/json'] : ['text/plain']
+            return ['text/plain']
         },
         activeImportUploadVisible() {
             if (this.activeImportPage === 'anrechnungen') return true
 
-            return this.activeImportPage === 'faecher' || Boolean(this.semester2StartRaw)
+            return Boolean(this.semester2StartRaw)
         },
         activeImportUploadAllowsMultiple() {
             return this.activeImportPage === 'anrechnungen'
@@ -1530,7 +1341,7 @@ export default {
         activeImportUploadSuccessLabel() {
             if (this.activeImportPage === 'anrechnungen') return 'CSV-Datei'
 
-            return this.activeImportPage === 'faecher' ? 'JSON-Datei' : 'TXT-Datei'
+            return 'TXT-Datei'
         },
         semester2StartRaw() {
             return this.config?.selected_schoolyear?.sem_2_start || ''
@@ -1545,9 +1356,6 @@ export default {
         },
         mainDataset() {
             return this.importButtonInfo.mainDataset
-        },
-        activeSubjectImport() {
-            return this.importButtonInfo.subjects
         },
         activeRecognitionImport() {
             return this.importButtonInfo.recognitions
@@ -1567,61 +1375,6 @@ export default {
             const teacherCodes = this.activeRecognitionDataset?.teacher_codes
 
             return Array.isArray(teacherCodes) ? teacherCodes : []
-        },
-        subjectDataset() {
-            return this.importButtonInfo.subjectDataset || {}
-        },
-        activeSubjectRows() {
-            const subjectRows = this.activeSubjectImport?.analysis?.subject_rows
-
-            return Array.isArray(subjectRows) ? subjectRows : []
-        },
-        activeSubjectRowsBySemester() {
-            const branchOrder = ['common', 'wirtschaftskundlich', 'gymnasial']
-
-            return Object.values(this.activeSubjectRows.reduce((semesters, subjectRow) => {
-                const semester = subjectRow.semester || 'ohne'
-                const semesterKey = `semester-${semester}`
-                const branch = subjectRow.branch || 'common'
-
-                if (!semesters[semesterKey]) {
-                    semesters[semesterKey] = {
-                        key: semesterKey,
-                        semester,
-                        label: semester === 'ohne' ? 'Ohne Semester' : `${semester}. Semester`,
-                        branchGroupsByKey: {},
-                    }
-                }
-
-                if (!semesters[semesterKey].branchGroupsByKey[branch]) {
-                    semesters[semesterKey].branchGroupsByKey[branch] = {
-                        key: branch,
-                        label: this.subjectBranchGroupLabel(branch),
-                        rows: [],
-                    }
-                }
-
-                semesters[semesterKey].branchGroupsByKey[branch].rows.push(subjectRow)
-
-                return semesters
-            }, {}))
-                .sort((firstSemester, secondSemester) => Number(firstSemester.semester) - Number(secondSemester.semester))
-                .map(semesterGroup => {
-                    const branchGroups = Object.values(semesterGroup.branchGroupsByKey)
-                        .sort((firstBranch, secondBranch) =>
-                            this.branchSortValue(firstBranch.key, branchOrder) - this.branchSortValue(secondBranch.key, branchOrder))
-                        .map(branchGroup => ({
-                            ...branchGroup,
-                            rows: branchGroup.rows.sort((firstSubject, secondSubject) =>
-                                this.compareText(firstSubject.json_code || firstSubject.name, secondSubject.json_code || secondSubject.name)),
-                        }))
-
-                    return {
-                        ...semesterGroup,
-                        count: branchGroups.reduce((total, branchGroup) => total + branchGroup.rows.length, 0),
-                        branchGroups,
-                    }
-                })
         },
         activeDatasetCourses() {
             return Array.isArray(this.mainDataset?.courses) ? this.mainDataset.courses : []
@@ -1679,28 +1432,6 @@ export default {
                 },
             ]
         },
-        subjectImportSummaryItems() {
-            const analysis = this.activeSubjectImport?.analysis || {}
-
-            return [
-                {
-                    label: 'Semester',
-                    value: this.subjectDataset.semesters_count ?? (Array.isArray(analysis.semesters) ? analysis.semesters.length : 0),
-                },
-                {
-                    label: 'Fächer',
-                    value: this.subjectDataset.subjects_count ?? Number(analysis.subjects_total || 0),
-                },
-                {
-                    label: 'Zweige',
-                    value: this.subjectDataset.branches_count ?? (Array.isArray(analysis.branches) ? analysis.branches.length : 0),
-                },
-                {
-                    label: 'Zuletzt geändert',
-                    value: this.formatDate(this.subjectDataset.updated_at) || '-',
-                },
-            ]
-        },
         recognitionDatasetSummaryItems() {
             return [
                 {
@@ -1730,15 +1461,6 @@ export default {
                 this.importedTtCount(importItem) ? `${this.importedTtCount(importItem)} Einträge` : '',
             ].filter(Boolean).join(' · ')
         },
-        subjectImportDetail() {
-            const importItem = this.importButtonInfo.subjects
-            if (!importItem) return ''
-
-            return [
-                importItem.filename,
-                this.subjectImportCountLabel(importItem),
-            ].filter(Boolean).join(' · ')
-        },
         recognitionImportDetail() {
             const importItem = this.importButtonInfo.recognitions
             if (!importItem) return ''
@@ -1751,62 +1473,6 @@ export default {
         allowedUntisEntryTypes() {
             return Object.keys(SECTION_LABELS).join(', ')
         },
-        subjectImportPrompt() {
-            return [
-                'Erstelle eine valide JSON-Datei fuer den Faecher-Import in einer Schulverwaltungssoftware und stelle sie als herunterladbare Datei bereit.',
-                'Der Dateiname soll faecher-vollstudium-abendgymnasium.json lauten.',
-                '',
-                'Analysiere diese Webseite inklusive eingebetteter Grafiken, Tabellen und Studienplan-Abbildungen:',
-                'https://abendgymnasium.salzburg.at/vollstudium/',
-                '',
-                'Gib als Ergebnis eine herunterladbare .json-Datei aus. Der Dateiinhalt muss ausschliesslich valides JSON sein, ohne Markdown, ohne Kommentare und ohne Erklaertext.',
-                'Falls deine Oberflaeche keine Datei direkt erzeugen kann, gib den kompletten JSON-Inhalt in einem einzigen json-Codeblock aus und nenne exakt den Dateinamen faecher-vollstudium-abendgymnasium.json.',
-                '',
-                'Erwartete Struktur:',
-                '{',
-                '  "course_abbreviations": {',
-                '    "D": "Deutsch",',
-                '    "E": "Englisch",',
-                '    "M": "Mathematik"',
-                '  },',
-                '  "branches": {',
-                '    "wirtschaftskundlich": "Wirtschaftskundlicher Zweig",',
-                '    "gymnasial": "Gymnasialer Zweig"',
-                '  },',
-                '  "semesters": [',
-                '    {',
-                '      "semester": 1,',
-                '      "common_courses": [',
-                '        { "code": "D1", "subject": "D", "hours_per_week": 3 }',
-                '      ],',
-                '      "branches": {',
-                '        "wirtschaftskundlich": [',
-                '          { "code": "ÖKO2", "subject": "ÖKO", "hours_per_week": 2 }',
-                '        ],',
-                '        "gymnasial": [',
-                '          { "code": "L6", "subject": "L", "hours_per_week": 3 }',
-                '        ]',
-                '      }',
-                '    }',
-                '  ]',
-                '}',
-                '',
-                'Regeln:',
-                '- Verwende pro Fach/Kurs ein Objekt mit code, subject und hours_per_week.',
-                '- code ist das konkrete Modul/Kurskuerzel inklusive Semester-/Modulnummer, z. B. D1, M2, ÖKO2.',
-                '- subject ist das Grundfachkuerzel ohne Modulnummer, z. B. D, M, ÖKO, L, F, S.',
-                '- Gemeinsame Faecher kommen in common_courses.',
-                '- Zweig-spezifische Faecher kommen unter branches.wirtschaftskundlich oder branches.gymnasial.',
-                '- ÖKO 2/3 darf nicht als ein einzelnes Fach verloren gehen: bilde daraus getrennte Kurse ÖKO2 und ÖKO3, wenn beide Module gemeint sind. Teile die Wochenstunden sinnvoll auf, falls die Grafik nur eine Gesamtsumme zeigt.',
-                '- Wahlalternativen werden als eigene Kursobjekte importiert, aber in der Anzeige zusammengefasst und nur einmal gezaehlt.',
-                '- Sprachen: Unterscheide Deutsch, Englisch und weitere Sprachen sauber. Wahlsprachen wie Latein, Franzoesisch oder Spanisch als eigene Kuerzel L, F, S fuehren; nicht als einzelnes Kursobjekt L/F/S importieren. Beispiel: F1, L1 und S1 jeweils mit 4 Wochenstunden importieren; die Anzeige zeigt F1/L1/S1* mit 4 Wochenstunden.',
-                '- Kunst/Musik: Bildnerische Erziehung und Musikerziehung sind Wahlalternativen, wenn sie in derselben Semester-/Zweig-Position stehen. Beispiel: BE1 und ME1 jeweils als eigenes Kursobjekt mit denselben Wochenstunden importieren; die Anzeige markiert sie mit * und zaehlt die Wochenstunden nur einmal.',
-                '- Zweige: Wirtschaftskundliche Inhalte nur dem wirtschaftskundlichen Zweig zuordnen; gymnasiale/sprachliche Inhalte nur dem gymnasialen Zweig zuordnen.',
-                '- Wenn in der Grafik ein Fach in mehreren Semestern vorkommt, lege fuer jedes Semester einen eigenen Kurs mit passender Nummer an.',
-                '- Verwende Dezimalzahlen fuer halbe Wochenstunden, falls noetig.',
-                '- Wenn ein Wert aus der Webseite nicht eindeutig lesbar ist, setze ihn nicht auf 0, sondern leite ihn aus der Grafik und dem Studienplan-Kontext ab.',
-            ].join('\\n')
-        },
     },
     watch: {
         'config.selected_schoolyear.id'() {
@@ -1817,6 +1483,10 @@ export default {
         },
         '$route.params.subsection'(subsection) {
             this.subAction = this.normalizedSubAction(subsection)
+            if (this.redirectRemovedSubjectImportRoute()) {
+                return
+            }
+
             if (this.redirectLegacyOverviewRoute()) {
                 return
             }
@@ -1829,6 +1499,10 @@ export default {
             this.importPage = this.normalizedImportPage(detail)
             this.uploadedFilename = ''
             this.uploadError = ''
+            if (this.redirectRemovedSubjectImportRoute()) {
+                return
+            }
+
             this.redirectLegacyOverviewRoute()
             this.loadImportButtonInfo()
         },
@@ -1867,7 +1541,7 @@ export default {
         normalizedImportPage(detail) {
             if (!this.canManageTimetableImports) return ''
 
-            const allowed = ['stundenplan', 'faecher', 'anrechnungen', 'import116']
+            const allowed = ['stundenplan', 'anrechnungen', 'import116']
 
             return allowed.includes(detail) ? detail : ''
         },
@@ -1892,6 +1566,10 @@ export default {
             this.importPage = this.normalizedImportPage(this.$route.params.detail)
             this.importSubPage = this.normalizedImportSubPage(this.$route.params.action)
 
+            if (this.redirectRemovedSubjectImportRoute()) {
+                return
+            }
+
             if (this.redirectLegacyOverviewRoute()) {
                 return
             }
@@ -1912,6 +1590,20 @@ export default {
             this.importPage = ''
             this.importSubPage = ''
             this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
+
+            return true
+        },
+        redirectRemovedSubjectImportRoute() {
+            if (
+                this.$route.params.subsection !== 'imports'
+                || this.$route.params.detail !== 'faecher'
+            ) {
+                return false
+            }
+
+            this.importPage = ''
+            this.importSubPage = ''
+            this.$router.replace({ path: '/admin/students-timetables/timetable/imports' })
 
             return true
         },
@@ -1938,7 +1630,10 @@ export default {
         },
         closeImportUploadPage() {
             this.importSubPage = ''
-            this.$router.push({ path: `/admin/students-timetables/timetable/imports/${this.activeImportPage || 'stundenplan'}` })
+            this.$router.push({
+                path: `/admin/students-timetables/timetable/imports/${this.activeImportPage || 'stundenplan'}`,
+                query: this.$route.query,
+            })
         },
         onImportUploadStart() {
             this.uploadError = ''
@@ -1946,14 +1641,6 @@ export default {
         },
         onUploadFinished(file) {
             this.uploadError = ''
-            if (this.activeImportPage === 'faecher') {
-                this.uploadedFilename = file?.name || 'gespeichert'
-                this.refreshFilePond++
-                this.loadImportButtonInfo()
-
-                return
-            }
-
             if (this.activeImportPage === 'anrechnungen') {
                 this.uploadedFilename = file?.name || 'gespeichert'
                 this.refreshFilePond++
@@ -1967,14 +1654,6 @@ export default {
             this.schedulePolling()
         },
         onUploadError() {
-            if (this.activeImportPage === 'faecher') {
-                this.uploadedFilename = ''
-                this.uploadError = 'Die JSON-Datei konnte nicht gespeichert werden.'
-                this.refreshFilePond++
-
-                return
-            }
-
             if (this.activeImportPage === 'anrechnungen') {
                 this.uploadedFilename = ''
                 this.uploadError = 'Die CSV-Datei konnte nicht gespeichert werden.'
@@ -2009,35 +1688,21 @@ export default {
                 this.savingSchoolyear = false
             }
         },
-        async copySubjectImportPrompt() {
-            await navigator.clipboard.writeText(this.subjectImportPrompt)
-            this.subjectImportPromptCopied = true
-
-            window.setTimeout(() => {
-                this.subjectImportPromptCopied = false
-            }, 1800)
-        },
         async loadImportButtonInfo() {
             if (this.subAction !== 'imports' || this.loadingImportButtonInfo) return
 
             this.loadingImportButtonInfo = true
             try {
                 const shouldLoadFullTimetableImports = this.activeImportPage === 'stundenplan'
-                const shouldLoadFullSubjectImports = this.activeImportPage === 'faecher'
                 const shouldLoadFullRecognitionImports = this.activeImportPage === 'anrechnungen'
 
-                const [timetableResponse, subjectsResponse, recognitionsResponse] = await Promise.all([
+                const [timetableResponse, recognitionsResponse] = await Promise.all([
                     axios.get('/api/admin/students-timetables/imports', {
                         params: {
                             page: 1,
                             per_page: shouldLoadFullTimetableImports ? 100 : 1,
                             include_single_date_courses: shouldLoadFullTimetableImports ? 1 : 0,
                             summary: shouldLoadFullTimetableImports ? 0 : 1,
-                        },
-                    }),
-                    axios.get('/api/admin/students-timetables/subjects-overview-json', {
-                        params: {
-                            summary: shouldLoadFullSubjectImports ? 0 : 1,
                         },
                     }),
                     axios.get('/api/admin/students-timetables/recognitions-csv', {
@@ -2051,10 +1716,8 @@ export default {
 
                 this.importButtonInfo = {
                     timetable: this.imports[0] || null,
-                    subjects: subjectsResponse.data?.data?.[0] || null,
                     recognitions: this.recognitionImports[0] || null,
                     mainDataset: timetableResponse.data?.main_dataset || null,
-                    subjectDataset: subjectsResponse.data?.active_dataset || null,
                     recognitionDataset: recognitionsResponse.data?.active_dataset || null,
                 }
                 if (!this.singleDateActivationSaveInProgress) {
@@ -2065,10 +1728,8 @@ export default {
                 this.imports = []
                 this.importButtonInfo = {
                     timetable: null,
-                    subjects: null,
                     recognitions: null,
                     mainDataset: null,
-                    subjectDataset: null,
                     recognitionDataset: null,
                 }
                 this.recognitionImports = []
@@ -2199,11 +1860,6 @@ export default {
 
             return 'default'
         },
-        subjectImportCountLabel(importItem) {
-            const subjectsTotal = Number(importItem?.analysis?.subjects_total || 0)
-
-            return subjectsTotal ? `${subjectsTotal} Fächer` : ''
-        },
         recognitionImportCountLabel(importItem) {
             const importedRows = Number(importItem?.imported_rows || 0)
 
@@ -2290,49 +1946,6 @@ export default {
             if (!Array.isArray(teacherItem?.subjects) || teacherItem.subjects.length === 0) return ''
 
             return teacherItem.subjects.join(', ')
-        },
-        subjectRowKey(subjectRow) {
-            return [
-                subjectRow?.semester || '',
-                subjectRow?.branch || '',
-                subjectRow?.json_code || '',
-                subjectRow?.json_subject || '',
-                subjectRow?.name || '',
-            ].join('|')
-        },
-        subjectHoursLabel(subjectRow) {
-            const hours = Number(subjectRow?.hours_per_week || 0)
-
-            return hours > 0 ? `${hours}` : '-'
-        },
-        subjectBranchLabel(subjectRow) {
-            if (subjectRow?.branch === 'wirtschaftskundlich') return 'Wirtschaftskundlicher Zweig'
-            if (subjectRow?.branch === 'gymnasial') return 'Gymnasialer Zweig'
-
-            return 'Gemeinsam'
-        },
-        subjectBranchGroupLabel(branch) {
-            if (branch === 'wirtschaftskundlich') return 'Wirtschaftskundlicher Zweig'
-            if (branch === 'gymnasial') return 'Gymnasialer Zweig'
-
-            return 'alle'
-        },
-        subjectBranchBlockClass(branch) {
-            if (branch === 'wirtschaftskundlich') return 'st-subject-branch-block--wirtschaftskundlich'
-            if (branch === 'gymnasial') return 'st-subject-branch-block--gymnasial'
-
-            return 'st-subject-branch-block--common'
-        },
-        branchSortValue(branch, branchOrder) {
-            const index = branchOrder.indexOf(branch)
-
-            return index === -1 ? branchOrder.length : index
-        },
-        compareText(firstValue, secondValue) {
-            return String(firstValue || '').localeCompare(String(secondValue || ''), 'de-AT', {
-                numeric: true,
-                sensitivity: 'base',
-            })
         },
         formatFileSize(size) {
             const bytes = Number(size || 0)
@@ -2894,34 +2507,6 @@ export default {
     flex: 0 0 auto;
 }
 
-.st-subject-import-history-list {
-    display: grid;
-    gap: 8px;
-}
-
-.st-subject-import-history-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    border: 1px solid rgba(37, 99, 235, 0.12);
-    border-radius: 8px;
-    padding: 10px 12px;
-    background: rgba(248, 251, 255, 0.9);
-}
-
-.st-subject-import-history-item__content {
-    min-width: 0;
-    flex: 1;
-}
-
-.st-subject-import-history-item__content .font-weight-medium,
-.st-subject-import-history-item__content .text-caption {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .st-import-history-meta-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -3213,133 +2798,6 @@ export default {
 .st-single-date-appointment-row--inactive td {
     color: rgba(0, 0, 0, 0.46);
     text-decoration: line-through;
-}
-
-.st-subject-summary {
-    border: 1px solid rgba(25, 118, 210, 0.18);
-    border-radius: 8px;
-    background: #fff;
-    overflow: hidden;
-}
-
-.st-subject-summary__panel {
-    border: 0;
-    background: transparent;
-}
-
-.st-subject-summary__title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    min-width: 0;
-}
-
-.st-subject-summary :deep(.v-expansion-panel-title) {
-    min-height: 44px;
-    padding: 10px 12px;
-}
-
-.st-subject-summary :deep(.v-expansion-panel-text__wrapper) {
-    padding: 0 12px 12px;
-}
-
-.st-subject-semester-list {
-    display: grid;
-    gap: 10px;
-}
-
-.st-subject-semester-block {
-    border: 1px solid rgba(37, 99, 235, 0.18);
-    border-radius: 8px;
-    padding: 8px;
-    background: #f8fbff;
-}
-
-.st-subject-semester-block__header,
-.st-subject-branch-block__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    font-size: 0.86rem;
-    font-weight: 700;
-}
-
-.st-subject-semester-block__header {
-    margin-bottom: 8px;
-}
-
-.st-subject-branch-block {
-    border: 1px solid rgba(37, 99, 235, 0.14);
-    border-radius: 8px;
-    padding: 8px;
-    background: rgba(255, 255, 255, 0.72);
-}
-
-.st-subject-branch-block + .st-subject-branch-block {
-    margin-top: 8px;
-}
-
-.st-subject-branch-block--wirtschaftskundlich {
-    border-color: rgba(22, 163, 74, 0.28);
-    background: rgba(187, 247, 208, 0.78);
-}
-
-.st-subject-branch-block--gymnasial {
-    border-color: rgba(37, 99, 235, 0.26);
-    background: rgba(191, 219, 254, 0.78);
-}
-
-.st-subject-pill-list {
-    display: grid;
-    gap: 5px;
-    margin-top: 6px;
-}
-
-.st-subject-pill {
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    border-radius: 999px;
-    padding: 3px 12px;
-    background: rgba(207, 213, 232, 0.82);
-    color: #1d4ed8;
-    font-size: 0.78rem;
-    line-height: 1.3;
-}
-
-.st-subject-branch-block--wirtschaftskundlich .st-subject-pill {
-    background: rgba(134, 220, 185, 0.72);
-}
-
-.st-subject-branch-block--gymnasial .st-subject-pill {
-    background: rgba(147, 188, 240, 0.62);
-}
-
-.st-subject-pill__code {
-    flex: 0 0 auto;
-    font-weight: 700;
-}
-
-.st-subject-pill__separator {
-    flex: 0 0 auto;
-    margin: 0 4px;
-}
-
-.st-subject-pill__name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.st-subject-pill__hours {
-    flex: 0 0 auto;
-    margin-left: auto;
-    padding-left: 8px;
-    color: rgba(30, 64, 175, 0.72);
-    font-size: 0.72rem;
 }
 
 @media (max-width: 640px) {

@@ -2,6 +2,7 @@
 
 namespace App\Services\StudentsTimetables;
 
+use App\Enums\StudentTimetableStudyProgram;
 use App\Models\StudentTimetableRecognitionRow;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
@@ -9,6 +10,8 @@ use Illuminate\Support\Collection;
 
 class StudentTimetableCompletedCourseHistoryService
 {
+    public function __construct(private StudentTimetableRecognitionIdentityService $identityService) {}
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -19,18 +22,34 @@ class StudentTimetableCompletedCourseHistoryService
         }
 
         $subjectRows = StudentTimetableSubjectRow::query()
+            ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
             ->where('school_id', $user->school_id)
             ->where('schoolyear_id', $schoolyearId)
             ->where('is_active', true)
-            ->get(['semester', 'json_code', 'json_subject']);
+            ->get(['semester', 'json_code', 'json_subject', 'name']);
 
         $recognitionRows = StudentTimetableRecognitionRow::query()
             ->where('school_id', $user->school_id)
             ->where('schoolyear_id', $schoolyearId)
             ->where('student_code', $studentCode)
-            ->orderBy('subject')
-            ->orderBy('row_number')
-            ->get(['id', 'subject', 'grade', 'note', 'raw_data']);
+            ->orderByDesc('student_timetable_recognition_import_id')
+            ->orderByDesc('id')
+            ->get(['id', 'row_number', 'student_code', 'subject', 'grade', 'note', 'raw_data'])
+            ->unique(fn (StudentTimetableRecognitionRow $row): string => $this->identityService->sourceIdentity(
+                [
+                    'student_code' => $row->student_code,
+                    'subject' => $row->subject,
+                    'grade' => $row->grade,
+                    'note' => $row->note,
+                    ...($row->raw_data ?? []),
+                ],
+            ))
+            ->sortBy(fn (StudentTimetableRecognitionRow $row): string => sprintf(
+                '%s|%010d',
+                (string) $row->subject,
+                (int) $row->row_number,
+            ), SORT_NATURAL)
+            ->values();
 
         $sequentialSubjectLabels = $this->sequentialRecognitionSubjectLabels($recognitionRows, $subjectRows);
 
@@ -42,20 +61,48 @@ class StudentTimetableCompletedCourseHistoryService
                 'raw_data' => $row->raw_data,
             ])
             ->filter(fn (array $course): bool => $course['code'] !== '' && $course['grade'] !== '')
-            ->unique(fn (array $course): string => "{$course['code']}|{$course['grade']}")
+            ->groupBy(fn (array $course): string => "{$course['code']}|{$course['grade']}")
+            ->map(function (Collection $attempts): array {
+                $course = $attempts->first();
+
+                return [
+                    'code' => (string) ($course['code'] ?? ''),
+                    'grade' => (string) ($course['grade'] ?? ''),
+                    'raw_data' => $course['raw_data'] ?? [],
+                    'attempt_count' => $attempts->count(),
+                ];
+            })
             ->sortBy([
                 ['code', 'asc'],
                 ['grade', 'asc'],
             ], SORT_NATURAL)
             ->map(fn (array $course): array => [
                 'code' => (string) $course['code'],
-                'name' => (string) $course['code'],
+                'name' => $this->recognitionCompletedCourseName((string) $course['code'], $subjectRows),
                 'subject' => (string) $course['code'],
                 'grade' => (string) $course['grade'],
                 'semester' => $this->integerOrNull(data_get($course, 'raw_data.semester')),
+                'attempt_count' => (int) ($course['attempt_count'] ?? 1),
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  Collection<int, StudentTimetableSubjectRow>  $subjectRows
+     */
+    private function recognitionCompletedCourseName(string $code, Collection $subjectRows): string
+    {
+        $courseCodeAliases = $this->timetableCourseCodeAliases($code);
+        $subjectRow = $subjectRows->first(function (StudentTimetableSubjectRow $subjectRow) use ($courseCodeAliases): bool {
+            $jsonCode = $this->normalizedTimetableCourseCode((string) $subjectRow->json_code);
+
+            return $jsonCode !== ''
+                && array_intersect($courseCodeAliases, $this->timetableCourseCodeAliases($jsonCode)) !== [];
+        });
+        $name = trim((string) $subjectRow?->name);
+
+        return $name !== '' ? $name : $code;
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace App\Services\StudentsTimetables;
 
+use App\Enums\StudentTimetableStudyProgram;
 use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
@@ -44,6 +45,7 @@ class RobotTimetableBackendSetupService
         $this->resetRuntimeCache();
 
         $subjectRows = StudentTimetableSubjectRow::query()
+            ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
             ->orderBy('sort_order')
@@ -241,6 +243,7 @@ class RobotTimetableBackendSetupService
         $this->resetRuntimeCache();
 
         $subjectRows = StudentTimetableSubjectRow::query()
+            ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
             ->orderBy('sort_order')
@@ -290,6 +293,7 @@ class RobotTimetableBackendSetupService
         $this->resetRuntimeCache();
 
         $subjectRows = StudentTimetableSubjectRow::query()
+            ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
             ->orderBy('sort_order')

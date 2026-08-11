@@ -82,7 +82,7 @@ describe('Students timetable subjects overview', () => {
         const [row] = computed.subjectOverviewRows.call(ctx)
         const languageCell = row.cells.find(cell => cell.column.key === 'L/F/S')
 
-        expect(languageCell.subjects.map(subject => subject.display_code)).toEqual(['F1/L1/S1*'])
+        expect(languageCell.subjects.map(subject => subject.display_code)).toEqual(['L1/F1/S1*'])
         expect(languageCell.subjects.map(subject => subject.hours_per_week)).toEqual([4])
         expect(row.totals.map(total => total.value)).toEqual(['4'])
     })
@@ -143,7 +143,7 @@ describe('Students timetable subjects overview', () => {
         expect(grandTotals.map(total => total.value)).toEqual(['2'])
     })
 
-    it('keeps the module shell navigation focused on timetable v2', () => {
+    it('keeps the module shell navigation focused on the configured timetable version', () => {
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue',
             'utf8',
@@ -158,7 +158,9 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('canAccessNavigationItem(item)')
         expect(componentSource).not.toContain("meta: 'Center'")
         expect(componentSource).toContain("label: 'Stundenplan v2'")
-        expect(componentSource).toContain("meta: 'Neu'")
+        expect(componentSource).toContain("label: 'Stundenplan v3'")
+        expect(componentSource).toContain("meta: 'Stabil'")
+        expect(componentSource).toContain("meta: 'Entwicklung'")
         expect(componentSource).toContain("label: 'TT-Einträge'")
         expect(componentSource).toContain("meta: 'Kurse'")
         expect(componentSource).toContain("label: 'Importe'")
@@ -173,29 +175,34 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).not.toContain('st-nav__automatic-button')
         expect(componentSource).toContain('AUTOMATIC_TIMETABLE_OVERVIEW_PATH')
         expect(componentSource).toContain('/admin/students-timetables/subjects-overview/subject-plan')
-        expect(componentSource).toContain("const mainSectionKeys = ['timetable', 'timetable-v2', 'tt-entries', 'subjects-overview', 'import']")
+        expect(componentSource).toContain("const mainSectionKeys = ['timetable', 'timetable-v2', 'timetable-v3', 'tt-entries', 'subjects-overview', 'import']")
         expect(componentSource).toContain("const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'")
         expect(componentSource).toContain("const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'")
+        expect(componentSource).toContain("const TIMETABLE_V3_OVERVIEW_PATH = '/admin/students-timetables/timetable-v3/overview'")
         expect(componentSource).toContain("const TT_ENTRIES_OVERVIEW_PATH = '/admin/students-timetables/tt-entries/overview'")
         expect(componentSource).toContain("redirectMissingSection()")
         expect(componentSource).toContain("redirectLegacySection(section)")
         expect(componentSource).toContain("this.$router.replace({ path: TIMETABLE_OVERVIEW_PATH })")
-        expect(componentSource).toContain("this.$router.replace({ path: TIMETABLE_V2_OVERVIEW_PATH })")
+        expect(componentSource).toContain("this.$router.replace({ path: this.activeTimetablePath })")
         expect(componentSource).not.toContain("this.$router.replace({ path: '/admin/students-timetables' })")
         expect(componentSource).toContain('const AUTOMATIC_TIMETABLE_OVERVIEW_PATH = `${TIMETABLE_OVERVIEW_PATH}/automatic`')
         expect(componentSource).toContain('this.$router.replace({ path: AUTOMATIC_TIMETABLE_OVERVIEW_PATH })')
         expect(componentSource).toContain("activeNavigationKey === item.key")
         expect(componentSource).toContain('timetable: TIMETABLE_OVERVIEW_PATH')
         expect(componentSource).toContain("'timetable-v2': TIMETABLE_V2_OVERVIEW_PATH")
+        expect(componentSource).toContain("'timetable-v3': TIMETABLE_V3_OVERVIEW_PATH")
         expect(componentSource).toContain("'tt-entries': TT_ENTRIES_OVERVIEW_PATH")
         expect(componentSource).toContain("imports: '/admin/students-timetables/timetable/imports'")
         expect(componentSource).toContain("import('./timetableV2/TimetableV2.vue')")
+        expect(componentSource).toContain("import('./timetableV3/TimetableV3.vue')")
         expect(componentSource).toContain("import('./ttEntries/TtEntries.vue')")
         expect(componentSource).toContain("import('./subjectsOverview/SubjectsOverview.vue')")
         expect(componentSource).not.toContain("import('./overview/Overview.vue')")
         expect(componentSource).not.toContain("import('./robot/RobotTimetable.vue')")
         expect(componentSource).toContain("<v-col v-if=\"main_action === 'timetable-v2'\" cols=\"12\">")
         expect(componentSource).toContain('<TimetableV2 />')
+        expect(componentSource).toContain("<v-col v-if=\"main_action === 'timetable-v3'\" cols=\"12\">")
+        expect(componentSource).toContain('<TimetableV3 />')
         expect(componentSource).toContain("<v-col v-if=\"main_action === 'tt-entries'\" cols=\"12\">")
         expect(componentSource).toContain('<TtEntries />')
         expect(componentSource).toContain("Import v-if=\"main_action === 'import'\"")
@@ -203,6 +210,8 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("SubjectsOverview v-if=\"main_action === 'subjects-overview'\"")
         expect(componentSource).not.toContain("Overview v-if=\"main_action === 'overview'\"")
         expect(componentSource.indexOf("key: 'timetable-v2'"))
+            .toBeLessThan(componentSource.indexOf("key: 'timetable-v3'"))
+        expect(componentSource.indexOf("key: 'timetable-v3'"))
             .toBeLessThan(componentSource.indexOf("key: 'tt-entries'"))
         expect(componentSource.indexOf("key: 'tt-entries'"))
             .toBeLessThan(componentSource.indexOf("key: 'imports'"))
@@ -229,7 +238,7 @@ describe('Students timetable subjects overview', () => {
         expect(computed.automaticTimetableRouteActive.call(ctx)).toBe(false)
     })
 
-    it('writes the default module timetable v2 step into the URL', () => {
+    it('writes the configured default timetable step into the URL', () => {
         const methods = (StudentsTimetables as any).methods
         const replace = vi.fn()
         const ctx: any = {
@@ -240,11 +249,13 @@ describe('Students timetable subjects overview', () => {
                 replace,
             },
             main_action: 'subjects-overview',
+            activeTimetableKey: 'timetable-v3',
+            activeTimetablePath: '/admin/students-timetables/timetable-v3/overview',
         }
 
         expect(methods.redirectMissingSection.call(ctx)).toBe(true)
-        expect(ctx.main_action).toBe('timetable-v2')
-        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v2/overview' })
+        expect(ctx.main_action).toBe('timetable-v3')
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v3/overview' })
     })
 
     it('opens the timetable navigation on the canonical overview URL', () => {
@@ -279,6 +290,22 @@ describe('Students timetable subjects overview', () => {
         expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v2/overview' })
     })
 
+    it('opens the standalone timetable v3 page from the module navigation', () => {
+        const methods = (StudentsTimetables as any).methods
+        const push = vi.fn()
+        const ctx: any = {
+            $router: {
+                push,
+            },
+            main_action: 'timetable-v2',
+        }
+
+        methods.handleNavigation.call(ctx, 'timetable-v3')
+
+        expect(ctx.main_action).toBe('timetable-v3')
+        expect(push).toHaveBeenCalledWith({ path: '/admin/students-timetables/timetable-v3/overview' })
+    })
+
     it('opens the TT entries page from the module navigation', () => {
         const methods = (StudentsTimetables as any).methods
         const push = vi.fn()
@@ -301,6 +328,8 @@ describe('Students timetable subjects overview', () => {
         const ctx: any = {
             ...methods,
             configuredRoleNames: ['studentstimetables_admin'],
+            activeTimetableKey: 'timetable-v2',
+            activeTimetableVersion: 'v2',
         }
 
         Object.defineProperty(ctx, 'allNavigationItems', {
@@ -318,6 +347,7 @@ describe('Students timetable subjects overview', () => {
         expect(adminNavigationKeys).toContain('tt-entries')
         expect(moderatorNavigationKeys).not.toContain('tt-entries')
         expect(moderatorNavigationKeys).toContain('timetable-v2')
+        expect(moderatorNavigationKeys).toContain('timetable-v3')
         expect(moderatorNavigationKeys).toContain('subjects-overview')
     })
 
@@ -335,6 +365,8 @@ describe('Students timetable subjects overview', () => {
             },
             canManageStudentsTimetables: false,
             main_action: 'tt-entries',
+            activeTimetableKey: 'timetable-v2',
+            activeTimetablePath: '/admin/students-timetables/timetable-v2/overview',
         }
 
         methods.redirectUnauthorizedSection.call(ctx)
@@ -2388,7 +2420,7 @@ describe('Students timetable subjects overview', () => {
         })
     })
 
-    it('splits the subjects area into subject plan, hidden import route, subjects, and mapping pages', () => {
+    it('splits the subjects area into subject plan, subjects, and mapping pages', () => {
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue',
             'utf8',
@@ -2405,17 +2437,18 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain("label: 'Zuordnung'")
         expect(componentSource).toContain("v-if=\"subject_action === 'subject-plan'\"")
         expect(componentSource).toContain("subject_action === 'subject-plan'")
-        expect(componentSource).toContain("v-if=\"subject_action === 'import'\"")
+        expect(componentSource).not.toContain("v-if=\"subject_action === 'import'\"")
         expect(componentSource).toContain("v-if=\"subject_action === 'subjects'\"")
         expect(componentSource).toContain("v-if=\"subject_action === 'mapping'\"")
         expect(componentSource).toContain("'subject-plan'")
         expect(componentSource).toContain('canManageSubjectSettings()')
-        expect(componentSource).toContain("['subject-plan', 'import', 'subjects', 'mapping']")
+        expect(componentSource).toContain("['subject-plan', 'subjects', 'mapping']")
         expect(componentSource).toContain("['subject-plan']")
         expect(componentSource).toContain("return allowedActions.includes(subsection) ? subsection : 'subject-plan'")
         expect(componentSource).toContain('redirectUnauthorizedSubjectRoute()')
+        expect(componentSource).toContain('redirectRemovedSubjectImportRoute()')
         expect(componentSource).toContain('redirectMissingSubjectRoute()')
-        expect(componentSource).toContain("this.$router.replace({ path: '/admin/students-timetables/subjects-overview/subject-plan' })")
+        expect(componentSource).toContain("path: '/admin/students-timetables/subjects-overview/subject-plan'")
         expect(componentSource).toContain('handleSubjectNavigation(key)')
         expect(componentSource).toContain('embedded')
         expect(componentSource).toContain("subject_action: this.embedded ? 'subject-plan' : this.normalizedSubjectAction(this.$route.params.subsection)")
@@ -2432,6 +2465,7 @@ describe('Students timetable subjects overview', () => {
                 params: {
                     section: 'subjects-overview',
                 },
+                query: {},
             },
             $router: {
                 replace,
@@ -2441,10 +2475,35 @@ describe('Students timetable subjects overview', () => {
 
         expect(methods.redirectMissingSubjectRoute.call(ctx)).toBe(true)
         expect(ctx.subject_action).toBe('subject-plan')
-        expect(replace).toHaveBeenCalledWith({ path: '/admin/students-timetables/subjects-overview/subject-plan' })
+        expect(replace).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/subjects-overview/subject-plan',
+            query: { study_program: undefined },
+        })
     })
 
-    it('uses FilePond upload for json files', () => {
+    it('redirects the removed subject import page to the graphic', () => {
+        const methods = (SubjectsOverview as any).methods
+        const replace = vi.fn()
+        const ctx: any = {
+            embedded: false,
+            studyProgram: 'kompaktstudium',
+            subject_action: 'import',
+            $route: {
+                params: { subsection: 'import' },
+                query: {},
+            },
+            $router: { replace },
+        }
+
+        expect(methods.redirectRemovedSubjectImportRoute.call(ctx)).toBe(true)
+        expect(ctx.subject_action).toBe('subject-plan')
+        expect(replace).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/subjects-overview/subject-plan',
+            query: { study_program: 'kompaktstudium' },
+        })
+    })
+
+    it('renders the subject plan without a JSON import workflow', () => {
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue',
             'utf8',
@@ -2483,15 +2542,15 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('@media (max-width: 599px)')
         expect(componentSource).toContain('subject-plan-layout--split')
         expect(componentSource).toContain('subject-plan-layout--desktop')
-        expect(componentSource).toContain('<FileUpload')
-        expect(componentSource).toContain('/api/admin/students-timetables/subjects-overview-json')
-        expect(componentSource).toContain(":allowedFileTypes=\"['application/json']\"")
-        expect(componentSource).toContain('loadImports()')
+        expect(componentSource).not.toContain('<FileUpload')
+        expect(componentSource).not.toContain('subjectUploadRoute')
+        expect(componentSource).not.toContain('loadImports()')
         expect(componentSource).toContain('loadSettings()')
         expect(componentSource).toContain("'config.selected_schoolyear.id'()")
         expect(componentSource).toContain('refreshForSchoolyearChange()')
-        expect(componentSource).toContain('this.refreshFilePond++')
-        expect(componentSource).toContain('Noch keine JSON-Datei importiert.')
+        expect(componentSource).not.toContain('refreshFilePond')
+        expect(componentSource).not.toContain('Noch keine JSON-Datei importiert.')
+        expect(componentSource).toContain('Kontakt-Unterrichtseinheiten')
         expect(componentSource).not.toContain('importSubjectCountLabel(importItem.analysis)')
         expect(componentSource).not.toContain('analysis?.subjects_total')
         expect(componentSource).not.toContain('Fächer / ${courseRowsTotal} Kurse')
@@ -2513,15 +2572,17 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('subjectOverviewCourseItems(this.uniqueSubjectOverviewSubjects(matchingSubjects))')
         expect(componentSource).toContain('subjectOverviewDisplayCodes(subject)')
         expect(componentSource).toContain('subjectOverviewMergedChoiceSubjects(subjects)')
+        expect(componentSource).toContain('subjectOverviewMergedCompactModuleSubjects(subjects)')
+        expect(componentSource).toContain('subjectOverviewCombinedCompactChoiceCodes(displayCodes)')
         expect(componentSource).toContain('subjectOverviewMergeableChoiceGroupForSubject(subject)')
         expect(componentSource).toContain('isSubjectOverviewChoiceSubject(subject)')
         expect(componentSource).toContain('subjectMatchesSubjectOverviewChoiceGroup(subject, group)')
         expect(componentSource).toContain('subjectOverviewChoiceGroups()')
-        expect(componentSource).toContain("codes: ['R/ET1']")
+        expect(componentSource).toContain('subjectOverviewReligionChoiceGroups()')
         expect(componentSource).toContain("choices: ['Rev', 'Ris', 'Rk', 'Ror', 'ET']")
         expect(componentSource).toContain('subjectOverviewLanguageChoiceGroups()')
         expect(componentSource).toContain('subjectOverviewArtChoiceGroups()')
-        expect(componentSource).toContain("return this.subjectOverviewAlternativeChoiceGroups(['BE', 'ME'])")
+        expect(componentSource).toContain("const groups = this.subjectOverviewAlternativeChoiceGroups(['BE', 'ME'])")
         expect(componentSource).toContain('alternativeParts(value)')
         expect(componentSource).toContain('subjectNameLines(subject)')
         expect(componentSource).toContain('isAlternativeSubjectCode(subject.json_code, subject.json_subject)')
@@ -2540,11 +2601,11 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('const compactModuleMatch = normalizedValue.match(/^(.*?)([1-9]{2,})$/)')
         expect(componentSource).toContain("compactModuleMatch[2]")
         expect(componentSource).toContain('subjects-settings-table__name-lines')
-        expect(componentSource).toContain('Importierte Fächer')
+        expect(componentSource).not.toContain('Importierte Fächer')
         expect(componentSource).toContain('Fach-Zuordnung')
-        expect(componentSource).toContain('/api/admin/students-timetables/subjects-overview-settings')
-        expect(componentSource).toContain('/api/admin/students-timetables/subjects-overview-settings/subjects')
-        expect(componentSource).toContain('/api/admin/students-timetables/subjects-overview-settings/mappings')
+        expect(componentSource).toContain('subjectSettingsRoute.url({ studyProgram: this.studyProgram })')
+        expect(componentSource).toContain('updateSubjectsRoute.url({ studyProgram: this.studyProgram })')
+        expect(componentSource).toContain('updateSubjectMappingsRoute.url({ studyProgram: this.studyProgram })')
         expect(componentSource).toContain('saveSubjectRows()')
         expect(componentSource).toContain('saveMappings()')
         expect(componentSource).toContain('rawSubjectHours(subjects)')

@@ -40,6 +40,15 @@ class SchoolTool extends Model
 {
     use HasFactory;
 
+    public const STUDENTS_TIMETABLES_ADMIN_VERSION_V2 = 'v2';
+
+    public const STUDENTS_TIMETABLES_ADMIN_VERSION_V3 = 'v3';
+
+    public const STUDENTS_TIMETABLES_ADMIN_VERSIONS = [
+        self::STUDENTS_TIMETABLES_ADMIN_VERSION_V2,
+        self::STUDENTS_TIMETABLES_ADMIN_VERSION_V3,
+    ];
+
     protected $fillable = [
         'school_id',
         'active_schoolyear_id',
@@ -71,6 +80,7 @@ class SchoolTool extends Model
         'students_timetables_visible_user',
         'students_timetables_user_test_mode',
         'students_timetables_user_comming_soon',
+        'students_timetables_admin_version',
         'register_status',
         'tutoring_status',
         'teaching_status',
@@ -151,6 +161,13 @@ class SchoolTool extends Model
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class, 'school_id');
+    }
+
+    public static function normalizeStudentsTimetablesAdminVersion(mixed $version): string
+    {
+        return in_array($version, self::STUDENTS_TIMETABLES_ADMIN_VERSIONS, true)
+            ? $version
+            : self::STUDENTS_TIMETABLES_ADMIN_VERSION_V2;
     }
 
     protected function restaurantUserInformationIntroHtml(): Attribute

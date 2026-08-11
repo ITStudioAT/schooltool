@@ -330,6 +330,7 @@ describe('saveModuleStatuses', function () {
                 'aba_visible_user' => true,
                 'aba_user_test_mode' => false,
                 'aba_user_comming_soon' => false,
+                'students_timetables_admin_version' => 'v3',
             ],
         ];
 
@@ -340,7 +341,8 @@ describe('saveModuleStatuses', function () {
             ->assertJsonPath('register_user_comming_soon', true)
             ->assertJsonPath('tutoring_user_test_mode', true)
             ->assertJsonPath('restaurant_visible_admin', true)
-            ->assertJsonPath('restaurant_visible_user', true);
+            ->assertJsonPath('restaurant_visible_user', true)
+            ->assertJsonPath('students_timetables_admin_version', 'v3');
 
         $this->assertDatabaseHas('school_tools', [
             'id' => 1,
@@ -359,7 +361,12 @@ describe('saveModuleStatuses', function () {
             'restaurant_visible_user' => true,
             'aba_visible_admin' => true,
             'aba_visible_user' => true,
+            'students_timetables_admin_version' => 'v3',
         ]);
+
+        $this->getJson('/api/admin/config')
+            ->assertOk()
+            ->assertJsonPath('students_timetables.admin_version', 'v3');
     });
 
     test('save module statuses only updates the authenticated school', function () {

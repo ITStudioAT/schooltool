@@ -56,6 +56,8 @@ use App\Http\Controllers\Admin\SpaRoleController;
 use App\Http\Controllers\Admin\StudentsTimetables\AdminUserController as StudentsTimetablesAdminUserController;
 use App\Http\Controllers\Admin\StudentsTimetables\RecognitionCsvUploadController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentsTimetablesController;
+use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3StateController;
+use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3StudentInformationController;
 use App\Http\Controllers\Admin\StudentsTimetables\SubjectOverviewJsonUploadController;
 use App\Http\Controllers\Admin\StudentsTimetables\TimetableFileUploadController;
 use App\Http\Controllers\Admin\StudentsTimetables\TimetableImportController;
@@ -222,17 +224,20 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables/timetable-v2-selection-bootstrap', [StudentsTimetablesController::class, 'timetableV2SelectionBootstrap']);
         Route::get('/admin/students-timetables/timetable-v2-state', [StudentsTimetablesController::class, 'timetableV2State']);
         Route::put('/admin/students-timetables/timetable-v2-state', [StudentsTimetablesController::class, 'updateTimetableV2State']);
+        Route::get('/admin/students-timetables/timetable-v3-state', [StudentTimetableV3StateController::class, 'show']);
+        Route::put('/admin/students-timetables/timetable-v3-state', [StudentTimetableV3StateController::class, 'update']);
+        Route::get('/admin/students-timetables/timetable-v3/student-information', [StudentTimetableV3StudentInformationController::class, 'show']);
         Route::get('/admin/students-timetables/overview/student-timetable', [StudentsTimetablesController::class, 'publishedStudentTimetable']);
         Route::post('/admin/students-timetables/overview/student-timetable', [StudentsTimetablesController::class, 'publishStudentTimetable']);
         Route::post('/admin/students-timetables/overview/pdf', [StudentsTimetablesController::class, 'overviewPdf']);
-        Route::get('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'index']);
-        Route::post('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'upload'])
+        Route::get('/admin/students-timetables/subjects-overview-json/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'index']);
+        Route::post('/admin/students-timetables/subjects-overview-json/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'upload'])
             ->middleware('throttle:uploads');
-        Route::patch('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'uploadNext'])
+        Route::patch('/admin/students-timetables/subjects-overview-json/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'uploadNext'])
             ->middleware('throttle:uploads');
-        Route::get('/admin/students-timetables/subjects-overview-settings', [SubjectOverviewJsonUploadController::class, 'settings']);
-        Route::put('/admin/students-timetables/subjects-overview-settings/subjects', [SubjectOverviewJsonUploadController::class, 'updateSubjects']);
-        Route::put('/admin/students-timetables/subjects-overview-settings/mappings', [SubjectOverviewJsonUploadController::class, 'updateMappings']);
+        Route::get('/admin/students-timetables/subjects-overview-settings/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'settings']);
+        Route::put('/admin/students-timetables/subjects-overview-settings/subjects/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'updateSubjects']);
+        Route::put('/admin/students-timetables/subjects-overview-settings/mappings/{studyProgram?}', [SubjectOverviewJsonUploadController::class, 'updateMappings']);
         Route::post('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'upload'])
             ->middleware('throttle:uploads');
         Route::patch('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'uploadNext'])

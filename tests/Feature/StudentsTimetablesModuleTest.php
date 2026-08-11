@@ -17,12 +17,14 @@ use App\Models\StudentTimetableSubjectImport;
 use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\StudentTimetableV2State;
+use App\Models\StudentTimetableV3State;
 use App\Models\TeachingSchoolHour;
 use App\Models\TimetableImport;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\StudentsTimetables\RecognitionImportService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
+use App\Services\StudentsTimetables\StudentTimetableRecognitionIdentityService;
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
@@ -2090,7 +2092,7 @@ it('counts recognition students from collapsed scientific notation exports by st
         ->assertJsonPath('active_dataset.students_count', 3);
 });
 
-it('does not duplicate active recognition rows when the same csv is imported again', function () {
+it('does not duplicate module records when a repeated export changes only the student name encoding', function () {
     $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -2102,14 +2104,15 @@ it('does not duplicate active recognition rows when the same csv is imported aga
     File::deleteDirectory(storage_path("app/private/{$user->school_id}/recognition-imports"));
     File::ensureDirectoryExists($directory);
 
-    $csv = implode("\n", [
-        'Studierende;SchülerInnenkennzahl;Gegenstand;Note;Kolloquien;Modulwiederholungen;Lehrerkürzel',
-        'Max Muster;100;Deutsch;1;0;0/0;',
-        'Kolloq Wert;200;Englisch;N;1;0/0;',
+    $firstCsv = implode("\n", [
+        'Studierende;SchülerInnenkennzahl;Gegenstand;Note;Kolloquien;Modulwiederholungen;Lehrerkürzel;ModulID',
+        'G\u00D6REN Diyar;100;Deutsch;1;0;0/0;;10001',
+        'Kolloq Wert;200;Englisch;N;1;0/0;;10002',
         '',
     ]);
+    $secondCsv = str_replace('G\u00D6REN', 'GÖREN', $firstCsv);
 
-    $createImport = function (string $filename) use ($user, $schoolyear, $directory, $csv): StudentTimetableRecognitionImport {
+    $createImport = function (string $filename, string $csv) use ($user, $schoolyear, $directory): StudentTimetableRecognitionImport {
         File::put("{$directory}/{$filename}", $csv);
 
         return StudentTimetableRecognitionImport::query()->create([
@@ -2129,7 +2132,7 @@ it('does not duplicate active recognition rows when the same csv is imported aga
     };
 
     $service = app(RecognitionImportService::class);
-    $firstImport = $createImport('anrechnungen_first.csv');
+    $firstImport = $createImport('anrechnungen_first.csv', $firstCsv);
     $service->processImport($firstImport);
 
     expect(StudentTimetableRecognitionRow::query()
@@ -2143,7 +2146,17 @@ it('does not duplicate active recognition rows when the same csv is imported aga
             ->pluck('student_code')
             ->all())->toBe(['100', '200']);
 
-    $secondImport = $createImport('anrechnungen_second.csv');
+    StudentTimetableRecognitionRow::query()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $schoolyear->id)
+        ->get()
+        ->each(function (StudentTimetableRecognitionRow $row): void {
+            $row->forceFill([
+                'identity_hash' => hash('sha256', "legacy-raw-row-{$row->id}"),
+            ])->save();
+        });
+
+    $secondImport = $createImport('anrechnungen_second.csv', $secondCsv);
     $service->processImport($secondImport);
 
     expect(StudentTimetableRecognitionImport::query()
@@ -2270,7 +2283,7 @@ it('restores the original recognition csv when database persistence fails', func
         'imported_at' => now(),
     ]);
 
-    $service = new class extends RecognitionImportService
+    $service = new class(app(StudentTimetableRecognitionIdentityService::class)) extends RecognitionImportService
     {
         protected function upsertRecognitionRows(array $rows): void
         {
@@ -2526,6 +2539,7 @@ it('returns current schoolyear import116 students for the robot student selector
         'last_name' => 'Alpha',
         'first_name' => 'Anna',
         'email' => 'anna.alpha@example.test',
+        'sex' => 'w',
         'import_user_id' => $user->id,
         'exists_date' => now(),
     ]);
@@ -2547,6 +2561,9 @@ it('returns current schoolyear import116 students for the robot student selector
         ->assertJsonPath('data.0.attendance_year', '1')
         ->assertJsonPath('data.0.religion', 'Rk')
         ->assertJsonPath('data.0.email', 'anna.alpha@example.test')
+        ->assertJsonPath('data.0.sex', 'w')
+        ->assertJsonPath('data.0.instruction_type', 'Normalunterricht')
+        ->assertJsonPath('data.0.semester', 1)
         ->assertJsonPath('data.1.student_code', '200');
 });
 
@@ -2593,8 +2610,8 @@ it('returns graded recognition courses for the selected robot student', function
         'original_filename' => 'noten.csv',
         'stored_filename' => 'noten.csv',
         'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten.csv",
-        'total_rows' => 7,
-        'imported_rows' => 7,
+        'total_rows' => 9,
+        'imported_rows' => 9,
         'skipped_rows' => 0,
         'import_status' => 'completed',
         'imported_at' => now(),
@@ -2660,6 +2677,11 @@ it('returns the shared student overview summary for a selected robot student', f
 
     collect([
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'R/ET1', 'json_subject' => 'R/ET', 'name' => 'Religion/Ethik', 'hours_per_week' => 2],
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'ETH1', 'json_subject' => 'ETH', 'name' => 'Ethik 1', 'hours_per_week' => 2],
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'BU1', 'json_subject' => 'BU', 'name' => 'Buchhaltung 1', 'hours_per_week' => 2],
+        ['semester' => 2, 'branch' => 'common', 'json_code' => 'BU2', 'json_subject' => 'BU', 'name' => 'Buchhaltung 2', 'hours_per_week' => 2],
+        ['semester' => 1, 'branch' => 'common', 'json_code' => 'M1', 'json_subject' => 'M', 'name' => 'Mathematik 1', 'hours_per_week' => 3],
+        ['semester' => 2, 'branch' => 'common', 'json_code' => 'M2', 'json_subject' => 'M', 'name' => 'Mathematik 2', 'hours_per_week' => 3],
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1', 'hours_per_week' => 3],
         ['semester' => 2, 'branch' => 'common', 'json_code' => 'D2', 'json_subject' => 'D', 'name' => 'Deutsch 2', 'hours_per_week' => 3],
     ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
@@ -2677,24 +2699,71 @@ it('returns the shared student overview summary for a selected robot student', f
         'original_filename' => 'noten.csv',
         'stored_filename' => 'noten.csv',
         'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten.csv",
-        'total_rows' => 1,
-        'imported_rows' => 1,
+        'total_rows' => 9,
+        'imported_rows' => 9,
         'skipped_rows' => 0,
         'import_status' => 'completed',
         'imported_at' => now(),
     ]);
 
-    StudentTimetableRecognitionRow::query()->create([
+    $recognizedCourses = collect([
+        ['subject' => 'ETH1', 'grade' => '1', 'module_id' => 'eth1-pass'],
+        ['subject' => 'BU1', 'grade' => 'B', 'module_id' => 'bu1-exempt'],
+        ['subject' => 'BU2', 'grade' => '4', 'module_id' => 'bu2-pass'],
+        ['subject' => 'BU2', 'grade' => 'N', 'module_id' => 'bu2-failed-first'],
+        ['subject' => 'BU2', 'grade' => 'N', 'module_id' => 'bu2-failed-second'],
+        ['subject' => 'BU2', 'grade' => '5', 'module_id' => 'bu2-failed-third'],
+        ['subject' => 'M1', 'grade' => 'N', 'module_id' => 'm1-failed'],
+        ['subject' => 'M2', 'grade' => '5', 'module_id' => 'm2-failed'],
+        ['subject' => 'PH1', 'grade' => 'T', 'module_id' => 'ph1-other'],
+    ])->each(fn (array $course, int $index): StudentTimetableRecognitionRow => StudentTimetableRecognitionRow::query()->create([
         'student_timetable_recognition_import_id' => $import->id,
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
-        'row_number' => 2,
+        'row_number' => $index + 2,
         'student_code' => '100',
-        'subject' => 'ETH1',
-        'grade' => '1',
-        'note' => '1',
-        'raw_data' => ['semester' => '1'],
+        'subject' => $course['subject'],
+        'grade' => $course['grade'],
+        'note' => $course['grade'],
+        'raw_data' => [
+            'semester' => '1',
+            'modulid' => $course['module_id'],
+            'familienname' => 'MUSTER',
+        ],
+    ]));
+
+    $repeatedExport = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'noten-erneut.csv',
+        'stored_filename' => 'noten-erneut.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten-erneut.csv",
+        'total_rows' => 3,
+        'imported_rows' => 3,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now()->addMinute(),
     ]);
+
+    $recognizedCourses
+        ->only([1, 2, 3])
+        ->values()
+        ->each(fn (array $course, int $index): StudentTimetableRecognitionRow => StudentTimetableRecognitionRow::query()->create([
+            'student_timetable_recognition_import_id' => $repeatedExport->id,
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $schoolyear->id,
+            'row_number' => $index + 2,
+            'student_code' => '100',
+            'subject' => $course['subject'],
+            'grade' => $course['grade'],
+            'note' => $course['grade'],
+            'raw_data' => [
+                'semester' => '1',
+                'modulid' => $course['module_id'],
+                'familienname' => 'M\u00DCSTER',
+            ],
+        ]));
 
     $this->actingAs($user)
         ->getJson('/api/admin/students-timetables/robot/student-overview?student_code=100')
@@ -2703,11 +2772,161 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.student.religion', 'Rk')
         ->assertJsonPath('data.selection.religion', 'ETH')
         ->assertJsonPath('data.selection_items.1.meta', 'Religion: Rk')
-        ->assertJsonPath('data.completed_courses.0.code', 'ETH1')
+        ->assertJsonPath('data.completed_courses.0.code', 'BU1')
+        ->assertJsonPath('data.completed_courses.1.code', 'BU2')
+        ->assertJsonPath('data.completed_courses.2.code', 'ETH1')
         ->assertJsonPath('data.proposed_courses.0.code', 'D1')
         ->assertJsonPath('data.additional_courses.0.code', 'D2')
-        ->assertJsonPath('data.course_sections.0.items.0.code', 'ETH1')
+        ->assertJsonPath('data.course_sections.0.items.0.code', 'BU1')
         ->assertJsonPath('data.course_sections.2.items.0.code', 'D1');
+
+    $v3StudentInformationResponse = $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=100')
+        ->assertSuccessful()
+        ->assertJsonPath('data.student_code', '100')
+        ->assertJsonPath('data.religion', 'Rk')
+        ->assertJsonPath('data.instruction_type', 'Kompaktunterricht')
+        ->assertJsonPath('data.semester', 1)
+        ->assertJsonPath('data.items.0.label', 'Ethik / Religion')
+        ->assertJsonPath('data.items.0.value', 'ETH - Ethik')
+        ->assertJsonPath('data.items.1.label', 'Sprache')
+        ->assertJsonPath('data.items.2.label', 'Zweig')
+        ->assertJsonPath('data.items.3.label', 'ME / BE')
+        ->assertJsonCount(4, 'data.selection_fields')
+        ->assertJsonPath('data.selection_fields.0.key', 'religion')
+        ->assertJsonPath('data.selection_fields.0.label', 'Ethik / Religion')
+        ->assertJsonPath('data.selection_fields.0.selected_value', 'ETH')
+        ->assertJsonCount(2, 'data.selection_fields.0.options')
+        ->assertJsonPath('data.selection_fields.0.options.0.value', 'ETH')
+        ->assertJsonPath('data.selection_fields.0.options.1.value', 'Rk')
+        ->assertJsonPath('data.selection_fields.1.key', 'language')
+        ->assertJsonPath('data.selection_fields.2.key', 'branch')
+        ->assertJsonPath('data.selection_fields.3.key', 'arts_subject')
+        ->assertJsonPath('data.module_groups.0.key', 'exempt')
+        ->assertJsonPath('data.module_groups.0.label', 'Befreite Module')
+        ->assertJsonPath('data.module_groups.0.count', 1)
+        ->assertJsonPath('data.module_groups.0.modules.0.code', 'BU1')
+        ->assertJsonPath('data.module_groups.0.modules.0.name', 'Buchhaltung 1')
+        ->assertJsonPath('data.module_groups.0.modules.0.grade', 'B')
+        ->assertJsonPath('data.module_groups.1.key', 'passed')
+        ->assertJsonPath('data.module_groups.1.label', 'Bestandene Module')
+        ->assertJsonPath('data.module_groups.1.count', 2)
+        ->assertJsonPath('data.module_groups.1.modules.0.code', 'BU2')
+        ->assertJsonPath('data.module_groups.1.modules.0.name', 'Buchhaltung 2')
+        ->assertJsonPath('data.module_groups.1.modules.0.grade', '4')
+        ->assertJsonPath('data.module_groups.1.modules.0.grades.0.value', '4')
+        ->assertJsonPath('data.module_groups.1.modules.0.grades.0.status', 'passed')
+        ->assertJsonPath('data.module_groups.1.modules.0.grades.1.value', '5')
+        ->assertJsonPath('data.module_groups.1.modules.0.grades.1.status', 'failed')
+        ->assertJsonPath('data.module_groups.1.modules.0.grades.2.value', 'N')
+        ->assertJsonPath('data.module_groups.1.modules.0.grades.2.status', 'failed')
+        ->assertJsonPath('data.module_groups.1.modules.0.grades.3.value', 'N')
+        ->assertJsonPath('data.module_groups.1.modules.0.grades.3.status', 'failed')
+        ->assertJsonPath('data.module_groups.1.modules.1.code', 'ETH1')
+        ->assertJsonPath('data.module_groups.1.modules.1.grade', '1')
+        ->assertJsonPath('data.module_groups.2.key', 'failed')
+        ->assertJsonPath('data.module_groups.2.label', 'Nicht bestandene Module')
+        ->assertJsonPath('data.module_groups.2.count', 2)
+        ->assertJsonPath('data.module_groups.2.modules.0.code', 'M1')
+        ->assertJsonPath('data.module_groups.2.modules.0.name', 'Mathematik 1')
+        ->assertJsonPath('data.module_groups.2.modules.0.grade', 'N')
+        ->assertJsonPath('data.module_groups.2.modules.1.code', 'M2')
+        ->assertJsonPath('data.module_groups.2.modules.1.grade', '5')
+        ->assertJsonCount(5, 'data.module_selection_groups')
+        ->assertJsonPath('data.module_selection_groups.0.key', 'finished')
+        ->assertJsonPath('data.module_selection_groups.0.label', 'Abgeschlossene')
+        ->assertJsonPath('data.module_selection_groups.0.count', 3)
+        ->assertJsonPath('data.module_selection_groups.0.modules.0.selection_key', 'finished:BU1')
+        ->assertJsonPath('data.module_selection_groups.0.modules.0.status_label', 'Befreit')
+        ->assertJsonPath('data.module_selection_groups.1.key', 'negative')
+        ->assertJsonPath('data.module_selection_groups.1.count', 2)
+        ->assertJsonPath('data.module_selection_groups.2.key', 'previous')
+        ->assertJsonPath('data.module_selection_groups.2.count', 0)
+        ->assertJsonPath('data.module_selection_groups.3.key', 'current')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.code', 'D1')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.name', 'Deutsch 1')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.selected_by_default', true)
+        ->assertJsonPath('data.module_selection_groups.4.key', 'additional')
+        ->assertJsonPath('data.module_selection_groups.4.modules.0.code', 'D2')
+        ->assertJsonMissing(['code' => 'PH1'])
+        ->assertJsonMissingPath('data.completed_courses')
+        ->assertJsonMissingPath('data.course_sections');
+
+    foreach ($v3StudentInformationResponse->json('data.module_selection_groups') as $moduleSelectionGroup) {
+        $moduleCodes = collect($moduleSelectionGroup['modules'])->pluck('code')->all();
+        $naturallySortedModuleCodes = collect($moduleCodes)
+            ->sort(fn (string $firstCode, string $secondCode): int => strnatcasecmp($firstCode, $secondCode))
+            ->values()
+            ->all();
+
+        expect($moduleCodes)->toBe($naturallySortedModuleCodes);
+    }
+
+    $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=100&selection[language]=F')
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection_fields.1.selected_value', 'F');
+
+    $this->getJson('/api/admin/students-timetables/timetable-v3/student-information')
+        ->assertSuccessful()
+        ->assertJsonPath('data.student_code', '')
+        ->assertJsonCount(4, 'data.selection_fields')
+        ->assertJsonPath('data.selection_fields.0.key', 'religion')
+        ->assertJsonPath('data.selection_fields.0.selected_value', null)
+        ->assertJsonCount(5, 'data.selection_fields.0.options')
+        ->assertJsonPath('data.selection_fields.1.key', 'language')
+        ->assertJsonPath('data.selection_fields.2.key', 'branch')
+        ->assertJsonPath('data.selection_fields.3.key', 'arts_subject')
+        ->assertJsonCount(5, 'data.module_selection_groups')
+        ->assertJsonPath('data.module_selection_groups.3.count', 0)
+        ->assertJsonPath('data.module_selection_groups.4.count', 7);
+});
+
+it('uses the imported confession for a generic recognized religion course', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $student = Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '3R',
+        'school_level' => '11_1',
+        'religion' => 'evang. A.B.',
+        'student_code' => '100',
+        'last_name' => 'Fruk',
+        'first_name' => 'Alan',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
+    $recognitionImport = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'recognitions.csv',
+        'stored_filename' => 'recognitions.csv',
+        'file_path' => 'recognitions.csv',
+        'imported_at' => now(),
+    ]);
+
+    StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $recognitionImport->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => 1,
+        'student_code' => $student->student_code,
+        'subject' => 'R',
+        'grade' => '3',
+        'raw_data' => [],
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=100')
+        ->assertSuccessful()
+        ->assertJsonPath('data.religion', 'evang. A.B.')
+        ->assertJsonPath('data.items.0.label', 'Ethik / Religion')
+        ->assertJsonPath('data.items.0.value', 'Rev - Religion evangelisch');
 });
 
 it('can return a slim robot student overview course history payload', function () {
@@ -2754,6 +2973,46 @@ it('can return a slim robot student overview course history payload', function (
         ->assertJsonMissingPath('data.school_hours')
         ->assertJsonMissingPath('data.selection_options')
         ->assertJsonMissingPath('data.selection_items');
+});
+
+it('uses the compact semester progression only for Kompaktunterricht students', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $semesterCases = [
+        ['student_code' => '901', 'class' => '3R', 'school_level' => '9', 'attendance_year' => '1', 'semester' => 1],
+        ['student_code' => '902', 'class' => '4S', 'school_level' => '9.2', 'attendance_year' => null, 'semester' => 2],
+        ['student_code' => '1101', 'class' => '5T', 'school_level' => '11-1', 'attendance_year' => null, 'semester' => 3],
+        ['student_code' => '1102', 'class' => '6U', 'school_level' => '11 2', 'attendance_year' => null, 'semester' => 4],
+        ['student_code' => '1202', 'class' => '7V', 'school_level' => '12_2', 'attendance_year' => null, 'semester' => 5],
+        ['student_code' => 'normal-1101', 'class' => '6A', 'school_level' => '11_1', 'attendance_year' => null, 'semester' => 5],
+    ];
+
+    foreach ($semesterCases as $semesterCase) {
+        Import116::factory()->create([
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $schoolyear->id,
+            'class' => $semesterCase['class'],
+            'school_level' => $semesterCase['school_level'],
+            'attendance_year' => $semesterCase['attendance_year'],
+            'student_code' => $semesterCase['student_code'],
+            'last_name' => 'Semester',
+            'first_name' => $semesterCase['student_code'],
+            'import_user_id' => $user->id,
+            'exists_date' => now(),
+        ]);
+    }
+
+    $this->actingAs($user);
+
+    foreach ($semesterCases as $semesterCase) {
+        $this->getJson('/api/admin/students-timetables/robot/student-overview?student_code='.$semesterCase['student_code'])
+            ->assertSuccessful()
+            ->assertJsonPath('data.selection.semester', $semesterCase['semester']);
+    }
 });
 
 it('bases student overview planned and additional courses on passed progression instead of student semester', function () {
@@ -3481,6 +3740,50 @@ it('stores timetable v2 state per authenticated user and schoolyear', function (
         ->assertSuccessful()
         ->assertJsonPath('data.state.transferredStudentContext.student.studentCode', '1001')
         ->assertJsonPath('data.state.selection.semester', 5);
+});
+
+it('stores timetable v3 state independently from timetable v2', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_moderator');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    StudentTimetableV2State::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'state' => ['selection' => ['semester' => 4]],
+    ]);
+
+    $v3State = [
+        'workspace' => [
+            'selectedStudentCode' => '1001',
+            'draftModules' => ['D1', 'INF2'],
+        ],
+    ];
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/timetable-v3-state', ['state' => $v3State])
+        ->assertSuccessful()
+        ->assertJsonPath('message', 'V3-Arbeitsstand wurde gespeichert.')
+        ->assertJsonPath('data.state.workspace.selectedStudentCode', '1001');
+
+    $this->assertDatabaseHas('student_timetable_v3_states', [
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    expect(StudentTimetableV3State::query()->first()?->state)->toEqual($v3State)
+        ->and(StudentTimetableV2State::query()->first()?->state)->toEqual([
+            'selection' => ['semester' => 4],
+        ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v3-state')
+        ->assertSuccessful()
+        ->assertJsonPath('data.state.workspace.draftModules.1', 'INF2');
 });
 
 it('creates a timetable overview pdf from posted timetable data', function () {

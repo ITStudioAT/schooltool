@@ -55,6 +55,10 @@ class SchoolToolController extends Controller
 
         $updatable = $this->normalizeModuleVisibilityFlags($updatable);
 
+        if (array_key_exists('students_timetables_admin_version', $validated)) {
+            $updatable['students_timetables_admin_version'] = $validated['students_timetables_admin_version'];
+        }
+
         if ($updatable !== []) {
             $schoolTool->update($updatable);
             $schoolTool->refresh();

@@ -72,6 +72,29 @@
             </div>
         </div>
 
+        <v-divider class="my-5" />
+
+        <div class="module-status-card__version">
+            <div class="module-status-card__copy">
+                <div class="module-status-card__module">Schülerstundenpläne</div>
+                <div class="module-status-card__meta">
+                    Aktive Admin-Version. Version 2 bleibt unabhängig erreichbar und kann jederzeit wieder aktiviert werden.
+                </div>
+            </div>
+
+            <v-select
+                :model-value="form.students_timetables_admin_version"
+                :items="studentsTimetablesVersionItems"
+                item-title="title"
+                item-value="value"
+                label="Aktive Version"
+                variant="outlined"
+                density="compact"
+                hide-details
+                class="module-status-card__version-select"
+                @update:modelValue="setStudentsTimetablesAdminVersion" />
+        </div>
+
     </v-sheet>
 </template>
 
@@ -118,10 +141,14 @@ const defaultForm = (data = null, rows = []) => {
         }
     })
 
-    return Array.from(fieldNames).reduce((form, field) => {
-        form[field] = Boolean(data?.[field])
-        return form
+    const form = Array.from(fieldNames).reduce((values, field) => {
+        values[field] = Boolean(data?.[field])
+        return values
     }, {})
+
+    form.students_timetables_admin_version = data?.students_timetables_admin_version === 'v3' ? 'v3' : 'v2'
+
+    return form
 }
 
 export default {
@@ -143,6 +170,10 @@ export default {
             schoolToolStore: null,
             form: defaultForm(),
             moduleRows: [],
+            studentsTimetablesVersionItems: [
+                { title: 'Version 2 – stabil', value: 'v2' },
+                { title: 'Version 3 – Entwicklung', value: 'v3' },
+            ],
         }
     },
 
@@ -237,6 +268,11 @@ export default {
             void this.save()
         },
 
+        setStudentsTimetablesAdminVersion(value) {
+            this.form.students_timetables_admin_version = value === 'v3' ? 'v3' : 'v2'
+            void this.save()
+        },
+
         async save() {
             const id = this.schoolToolStore?.data?.id
             if (! id) {
@@ -313,6 +349,21 @@ export default {
     gap: 8px 10px;
 }
 
+.module-status-card__version {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+    gap: 20px;
+    align-items: center;
+    padding: 14px;
+    border: 1px solid rgba(79, 70, 229, 0.18);
+    border-radius: 16px;
+    background: rgba(238, 242, 255, 0.72);
+}
+
+.module-status-card__version-select {
+    min-width: 0;
+}
+
 .module-status-card__toggle {
     min-height: 46px;
     border-radius: 12px;
@@ -372,6 +423,10 @@ export default {
 
 @media (max-width: 760px) {
     .module-status-card__switches {
+        grid-template-columns: 1fr;
+    }
+
+    .module-status-card__version {
         grid-template-columns: 1fr;
     }
 }

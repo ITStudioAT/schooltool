@@ -6,6 +6,7 @@ use App\Jobs\StudentsTimetables\ProcessRecognitionCsvImportJob;
 use App\Models\StudentTimetableRecognitionImport;
 use App\Models\StudentTimetableRecognitionRow;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -15,7 +16,7 @@ class RecognitionImportService
 {
     private const BATCH_SIZE = 500;
 
-    private const IDENTITY_SEPARATOR = "\x1F";
+    public function __construct(private StudentTimetableRecognitionIdentityService $identityService) {}
 
     public function createQueuedImport(
         User $user,
@@ -339,7 +340,7 @@ class RecognitionImportService
             'colloquia' => $payload['colloquia'],
             'module_repetitions' => $payload['module_repetitions'],
             'teacher_code' => $payload['teacher_code'],
-            'identity_hash' => $this->recognitionRowIdentityHash(
+            'identity_hash' => $this->identityService->hash(
                 (int) $import->school_id,
                 (int) $import->schoolyear_id,
                 $payload['raw_data'],
@@ -355,6 +356,8 @@ class RecognitionImportService
      */
     protected function upsertRecognitionRows(array $rows): void
     {
+        $this->adoptExistingIdentityHashes($rows);
+
         DB::table('student_timetable_recognition_rows')->upsert(
             $rows,
             ['school_id', 'schoolyear_id', 'identity_hash'],
@@ -373,6 +376,114 @@ class RecognitionImportService
                 'updated_at',
             ],
         );
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     */
+    private function adoptExistingIdentityHashes(array $rows): void
+    {
+        collect($rows)
+            ->groupBy(fn (array $row): string => "{$row['school_id']}|{$row['schoolyear_id']}")
+            ->each(function (Collection $importRows): void {
+                $schoolId = (int) $importRows->first()['school_id'];
+                $schoolyearId = (int) $importRows->first()['schoolyear_id'];
+                $identityHashes = $importRows->pluck('identity_hash')->filter()->unique()->values();
+                $importRowsWithModuleIds = $importRows->map(fn (array $row): array => [
+                    'student_code' => $row['student_code'] ?? null,
+                    'module_id' => trim((string) data_get(
+                        json_decode((string) ($row['raw_data'] ?? '[]'), true),
+                        'modulid',
+                    )),
+                ]);
+                $moduleIds = $importRowsWithModuleIds
+                    ->pluck('module_id')
+                    ->filter()
+                    ->unique()
+                    ->values();
+                $fallbackStudentCodes = $importRowsWithModuleIds
+                    ->where('module_id', '')
+                    ->pluck('student_code')
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                $existingRows = StudentTimetableRecognitionRow::query()
+                    ->where('school_id', $schoolId)
+                    ->where('schoolyear_id', $schoolyearId)
+                    ->where(function ($query) use ($identityHashes, $fallbackStudentCodes, $moduleIds): void {
+                        $query->whereIn('identity_hash', $identityHashes);
+
+                        if ($fallbackStudentCodes->isNotEmpty()) {
+                            $query->orWhereIn('student_code', $fallbackStudentCodes);
+                        }
+
+                        if ($moduleIds->isNotEmpty()) {
+                            $moduleIdExpression = DB::connection()->getDriverName() === 'sqlite'
+                                ? "json_extract(raw_data, '$.modulid')"
+                                : "JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.modulid'))";
+
+                            $query->orWhereIn(DB::raw($moduleIdExpression), $moduleIds);
+                        }
+                    })
+                    ->latest('id')
+                    ->get(['id', 'school_id', 'schoolyear_id', 'identity_hash', 'raw_data']);
+                $existingRowsByIdentityHash = $existingRows->groupBy(
+                    fn (StudentTimetableRecognitionRow $row): string => $this->identityService->hash(
+                        (int) $row->school_id,
+                        (int) $row->schoolyear_id,
+                        $row->raw_data ?? [],
+                    ),
+                );
+                $identityHashUpdates = [];
+
+                foreach ($identityHashes as $identityHash) {
+                    $matchingRows = $existingRowsByIdentityHash->get($identityHash, collect());
+                    if ($matchingRows->isEmpty()) {
+                        continue;
+                    }
+
+                    $identityOwner = $matchingRows->first(
+                        fn (StudentTimetableRecognitionRow $row): bool => $row->identity_hash === $identityHash,
+                    ) ?? $matchingRows->first();
+
+                    if ($identityOwner->identity_hash !== $identityHash) {
+                        $identityHashUpdates[(int) $identityOwner->id] = $identityHash;
+                    }
+                }
+
+                $this->updateIdentityHashes($identityHashUpdates);
+            });
+    }
+
+    /**
+     * @param  array<int, string>  $identityHashUpdates
+     */
+    private function updateIdentityHashes(array $identityHashUpdates): void
+    {
+        collect($identityHashUpdates)
+            ->chunk(self::BATCH_SIZE)
+            ->each(function (Collection $identityHashChunk): void {
+                $cases = [];
+                $bindings = [];
+
+                foreach ($identityHashChunk as $id => $identityHash) {
+                    $cases[] = 'WHEN ? THEN ?';
+                    $bindings[] = $id;
+                    $bindings[] = $identityHash;
+                }
+
+                $ids = $identityHashChunk->keys()->map(fn (mixed $id): int => (int) $id)->values();
+                $placeholders = $ids->map(fn (): string => '?')->implode(', ');
+                $bindings = [...$bindings, ...$ids];
+
+                DB::update(
+                    'UPDATE student_timetable_recognition_rows SET identity_hash = CASE id '
+                    .implode(' ', $cases)
+                    .' ELSE identity_hash END WHERE id IN ('.$placeholders.')',
+                    $bindings,
+                );
+            });
     }
 
     private function detectDelimiter(string $headerLine): string
@@ -508,20 +619,6 @@ class RecognitionImportService
             'module_repetitions' => $this->firstRecordValue($record, ['modulwiederholungen']),
             'teacher_code' => $this->firstRecordValue($record, ['lehrerkuerzel', 'lehrerkurzel', 'lehrerkürzel', 'lehrerkã¼rzel']),
         ];
-    }
-
-    /**
-     * @param  array<string, string>  $rawData
-     */
-    private function recognitionRowIdentityHash(int $schoolId, int $schoolyearId, array $rawData): string
-    {
-        ksort($rawData);
-
-        return hash('sha256', implode(self::IDENTITY_SEPARATOR, [
-            $schoolId,
-            $schoolyearId,
-            json_encode($rawData, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
-        ]));
     }
 
     /**

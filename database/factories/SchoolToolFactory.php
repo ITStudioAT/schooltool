@@ -48,6 +48,7 @@ class SchoolToolFactory extends Factory
             'students_timetables_visible_user' => false,
             'students_timetables_user_test_mode' => false,
             'students_timetables_user_comming_soon' => false,
+            'students_timetables_admin_version' => SchoolTool::STUDENTS_TIMETABLES_ADMIN_VERSION_V2,
             'tutoring_student_must_be_confirmed' => false,
             'tutoring_confirmer_email' => null,
             'tutoring_max_offers_per_student' => 0,

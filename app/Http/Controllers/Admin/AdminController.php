@@ -23,6 +23,7 @@ use App\Http\Resources\Admin\SchoolyearResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
 use App\Models\Role;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Teacher;
 use App\Models\User;
 use App\Services\AdminNavigationService;
@@ -144,6 +145,11 @@ class AdminController extends Controller
             ],
             'teaching' => [
                 'last_import_116_at' => $lastImport116At,
+            ],
+            'students_timetables' => [
+                'admin_version' => SchoolTool::normalizeStudentsTimetablesAdminVersion(
+                    $user?->selectedSchool?->schoolTool?->students_timetables_admin_version,
+                ),
             ],
         ];
 

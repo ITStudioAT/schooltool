@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
+use App\Enums\StudentTimetableStudyProgram;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Teaching\SchoolHourResource;
 use App\Models\Import116;
@@ -66,8 +67,9 @@ class StudentsTimetablesController extends Controller
         ]);
     }
 
-    public function robotStudents(): JsonResponse
-    {
+    public function robotStudents(
+        StudentTimetablesStudentOverviewService $studentOverviewService,
+    ): JsonResponse {
         $authUser = $this->studentsTimetablesUser();
 
         $students = Import116::query()
@@ -77,7 +79,7 @@ class StudentsTimetablesController extends Controller
             ->orderBy('class')
             ->orderBy('last_name')
             ->orderBy('first_name')
-            ->get(['id', 'class', 'school_level', 'attendance_year', 'religion', 'student_code', 'last_name', 'first_name', 'email']);
+            ->get(['id', 'class', 'school_level', 'attendance_year', 'religion', 'student_code', 'last_name', 'first_name', 'email', 'sex']);
 
         $publishedTimetables = StudentTimetablePublishedTimetable::query()
             ->where('school_id', $authUser->school_id)
@@ -97,6 +99,9 @@ class StudentsTimetablesController extends Controller
                 'last_name' => (string) $student->last_name,
                 'first_name' => (string) $student->first_name,
                 'email' => (string) $student->email,
+                'sex' => (string) $student->sex,
+                'instruction_type' => $studentOverviewService->instructionTypeForStudent($student),
+                'semester' => $studentOverviewService->semesterForStudent($student),
                 'title' => trim("{$student->class} · {$student->last_name} {$student->first_name}"),
                 'has_published_timetable' => $publishedTimetables->has((string) $student->student_code),
                 'published_timetable_id' => $publishedTimetables->get((string) $student->student_code)?->id,
@@ -684,6 +689,7 @@ class StudentsTimetablesController extends Controller
     private function timetableV2SubjectRows(User $authUser): array
     {
         return StudentTimetableSubjectRow::query()
+            ->forStudyProgram(StudentTimetableStudyProgram::Normalstudium)
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
             ->orderBy('sort_order')

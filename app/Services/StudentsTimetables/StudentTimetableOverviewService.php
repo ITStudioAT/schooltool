@@ -532,7 +532,7 @@ class StudentTimetableOverviewService
         return trim($formatted ?: $value);
     }
 
-    private function isKompaktunterrichtClass(string $className): bool
+    public function isKompaktunterrichtClass(string $className): bool
     {
         $className = $this->withoutTimeFragments($className);
         if ($className === '') {

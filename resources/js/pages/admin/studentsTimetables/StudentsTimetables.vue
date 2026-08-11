@@ -67,6 +67,9 @@
                 <v-col v-if="main_action === 'timetable-v2'" cols="12">
                     <TimetableV2 />
                 </v-col>
+                <v-col v-if="main_action === 'timetable-v3'" cols="12">
+                    <TimetableV3 />
+                </v-col>
                 <v-col v-if="main_action === 'tt-entries'" cols="12">
                     <TtEntries />
                 </v-col>
@@ -86,21 +89,24 @@ import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
 const Timetable = defineAsyncComponent(() => import('./timetable/Timetable.vue'))
 const TimetableV2 = defineAsyncComponent(() => import('./timetableV2/TimetableV2.vue'))
+const TimetableV3 = defineAsyncComponent(() => import('./timetableV3/TimetableV3.vue'))
 const TtEntries = defineAsyncComponent(() => import('./ttEntries/TtEntries.vue'))
 const Import = defineAsyncComponent(() => import('./import/Import.vue'))
 const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/SubjectsOverview.vue'))
 
 const TIMETABLE_OVERVIEW_PATH = '/admin/students-timetables/timetable/overview'
 const TIMETABLE_V2_OVERVIEW_PATH = '/admin/students-timetables/timetable-v2/overview'
+const TIMETABLE_V3_OVERVIEW_PATH = '/admin/students-timetables/timetable-v3/overview'
 const TT_ENTRIES_OVERVIEW_PATH = '/admin/students-timetables/tt-entries/overview'
 const AUTOMATIC_TIMETABLE_OVERVIEW_PATH = `${TIMETABLE_OVERVIEW_PATH}/automatic`
-const mainSectionKeys = ['timetable', 'timetable-v2', 'tt-entries', 'subjects-overview', 'import']
+const mainSectionKeys = ['timetable', 'timetable-v2', 'timetable-v3', 'tt-entries', 'subjects-overview', 'import']
 
 export default {
     components: {
         AdminSectionHero,
         Timetable,
         TimetableV2,
+        TimetableV3,
         TtEntries,
         Import,
         SubjectsOverview,
@@ -140,8 +146,15 @@ export default {
                 {
                     key: 'timetable-v2',
                     label: 'Stundenplan v2',
-                    meta: 'Neu',
+                    meta: 'Stabil',
                     icon: 'mdi-calendar-edit-outline',
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
+                },
+                {
+                    key: 'timetable-v3',
+                    label: 'Stundenplan v3',
+                    meta: 'Entwicklung',
+                    icon: 'mdi-flask-outline',
                     roles: ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'],
                 },
                 {
@@ -181,6 +194,17 @@ export default {
         configuredRoleNames() {
             return Array.isArray(this.config?.roles) ? this.config.roles : []
         },
+        activeTimetableVersion() {
+            return this.config?.students_timetables?.admin_version === 'v3' ? 'v3' : 'v2'
+        },
+        activeTimetableKey() {
+            return `timetable-${this.activeTimetableVersion}`
+        },
+        activeTimetablePath() {
+            return this.activeTimetableVersion === 'v3'
+                ? TIMETABLE_V3_OVERVIEW_PATH
+                : TIMETABLE_V2_OVERVIEW_PATH
+        },
         canManageStudentsTimetables() {
             return this.hasAnyRole(['super_admin', 'admin', 'studentstimetables_admin'])
         },
@@ -201,6 +225,11 @@ export default {
                     icon: 'mdi-calendar-edit-outline',
                     note: 'Neue Stundenplan-Version.',
                 },
+                'timetable-v3': {
+                    label: 'Stundenplan v3',
+                    icon: 'mdi-flask-outline',
+                    note: 'Unabhängiger Entwicklungsbereich.',
+                },
                 'tt-entries': {
                     label: 'TT-Einträge',
                     icon: 'mdi-format-list-bulleted-square',
@@ -217,7 +246,7 @@ export default {
                     note: 'Fächer, Import und Zuordnung.',
                 },
             }
-            return sections[this.activeNavigationKey] || sections['timetable-v2']
+            return sections[this.activeNavigationKey] || sections[this.activeTimetableKey]
         },
     },
     created() {
@@ -254,11 +283,16 @@ export default {
                 return
             }
 
-            this.main_action = 'timetable-v2'
+            this.main_action = this.activeTimetableKey
             this.redirectUnauthorizedSection()
         },
         '$route.params.subsection'() {
             this.redirectUnauthorizedSection()
+        },
+        activeTimetableVersion() {
+            if (!this.$route.params.section) {
+                this.redirectMissingSection()
+            }
         },
     },
     methods: {
@@ -271,8 +305,8 @@ export default {
         redirectMissingSection() {
             if (this.$route.params.section) return false
 
-            this.main_action = 'timetable-v2'
-            this.$router.replace({ path: TIMETABLE_V2_OVERVIEW_PATH })
+            this.main_action = this.activeTimetableKey
+            this.$router.replace({ path: this.activeTimetablePath })
 
             return true
         },
@@ -287,8 +321,8 @@ export default {
                 )
                 && !this.canManageStudentsTimetables
             ) {
-                this.main_action = 'timetable-v2'
-                this.$router.replace({ path: TIMETABLE_V2_OVERVIEW_PATH })
+                this.main_action = this.activeTimetableKey
+                this.$router.replace({ path: this.activeTimetablePath })
             }
         },
         redirectLegacySection(section) {
@@ -313,6 +347,7 @@ export default {
             const paths = {
                 timetable: TIMETABLE_OVERVIEW_PATH,
                 'timetable-v2': TIMETABLE_V2_OVERVIEW_PATH,
+                'timetable-v3': TIMETABLE_V3_OVERVIEW_PATH,
                 'tt-entries': TT_ENTRIES_OVERVIEW_PATH,
                 'automatic-timetable': AUTOMATIC_TIMETABLE_OVERVIEW_PATH,
                 imports: '/admin/students-timetables/timetable/imports',

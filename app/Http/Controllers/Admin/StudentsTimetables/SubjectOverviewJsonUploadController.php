@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
+use App\Enums\StudentTimetableStudyProgram;
 use App\Http\Controllers\Controller;
 use App\Models\SchoolTool;
 use App\Models\StudentTimetableSubjectImport;
@@ -9,6 +10,7 @@ use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\User;
 use App\Services\FileUploadService;
+use App\Services\StudentsTimetables\StudentTimetableCompactSubjectPlanService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -27,6 +29,10 @@ class SubjectOverviewJsonUploadController extends Controller
         'LPT' => 'Lern- und Präsentationstechniken',
     ];
 
+    public function __construct(
+        private StudentTimetableCompactSubjectPlanService $compactSubjectPlanService,
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         if (! $authUser = $this->userHasRole(self::MODERATOR_ROLES)) {
@@ -34,15 +40,18 @@ class SubjectOverviewJsonUploadController extends Controller
         }
 
         $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $studyProgram = $this->studyProgram($request);
 
         if ($request->boolean('summary')) {
             $import = StudentTimetableSubjectImport::query()
                 ->where('school_id', $authUser->school_id)
                 ->where('schoolyear_id', $authUser->schoolyear_id)
+                ->forStudyProgram($studyProgram)
                 ->orderByDesc('imported_at')
                 ->orderByDesc('id')
                 ->first([
                     'id',
+                    'study_program',
                     'stored_filename',
                     'original_filename',
                     'file_size',
@@ -57,14 +66,16 @@ class SubjectOverviewJsonUploadController extends Controller
                 'data' => $import ? [$this->subjectImportSummaryPayload($import)] : [],
                 'total' => $import ? 1 : 0,
                 'active_dataset' => null,
+                'study_program' => $studyProgram->value,
             ]);
         }
 
-        $this->importLegacyJsonIfMissing($authUser);
+        $this->importLegacyJsonIfMissing($authUser, $studyProgram);
 
         $imports = StudentTimetableSubjectImport::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->forStudyProgram($studyProgram)
             ->orderByDesc('imported_at')
             ->orderByDesc('id')
             ->get()
@@ -74,7 +85,8 @@ class SubjectOverviewJsonUploadController extends Controller
         return response()->json([
             'data' => $imports,
             'total' => $imports->count(),
-            'active_dataset' => $this->activeSubjectDatasetMetadata($authUser),
+            'active_dataset' => $this->activeSubjectDatasetMetadata($authUser, $studyProgram),
+            'study_program' => $studyProgram->value,
         ]);
     }
 
@@ -85,11 +97,19 @@ class SubjectOverviewJsonUploadController extends Controller
         }
 
         $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $studyProgram = $this->studyProgram($request);
 
-        $this->seedEditableDataFromLatestImportIfMissing($authUser);
+        if ($studyProgram === StudentTimetableStudyProgram::Kompaktstudium) {
+            $this->compactSubjectPlanService->seedIfMissing(
+                (int) $authUser->school_id,
+                (int) $authUser->schoolyear_id,
+            );
+        } else {
+            $this->seedEditableDataFromLatestImportIfMissing($authUser, $studyProgram);
+        }
 
         return response()->json([
-            'data' => $this->editableSettingsData($authUser, $request->boolean('subjects_only')),
+            'data' => $this->editableSettingsData($authUser, $studyProgram, $request->boolean('subjects_only')),
         ]);
     }
 
@@ -100,6 +120,7 @@ class SubjectOverviewJsonUploadController extends Controller
         }
 
         $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $studyProgram = $this->studyProgram($request);
 
         $validated = $request->validate([
             'subjects' => ['array'],
@@ -116,6 +137,7 @@ class SubjectOverviewJsonUploadController extends Controller
             ->map(fn (array $subject, int $index): array => [
                 'school_id' => $authUser->school_id,
                 'schoolyear_id' => $authUser->schoolyear_id,
+                'study_program' => $studyProgram->value,
                 'semester' => $subject['semester'] ?? null,
                 'branch' => $this->normalizeSubjectBranch($subject['branch'] ?? null),
                 'json_code' => $this->emptyToNull($subject['json_code'] ?? null),
@@ -133,8 +155,9 @@ class SubjectOverviewJsonUploadController extends Controller
             ->filter(fn (array $subject): bool => $this->subjectRowHasContent($subject))
             ->values();
 
-        DB::transaction(function () use ($authUser, $subjects): void {
+        DB::transaction(function () use ($authUser, $studyProgram, $subjects): void {
             StudentTimetableSubjectRow::query()
+                ->forStudyProgram($studyProgram)
                 ->where('school_id', $authUser->school_id)
                 ->where('schoolyear_id', $authUser->schoolyear_id)
                 ->delete();
@@ -143,7 +166,7 @@ class SubjectOverviewJsonUploadController extends Controller
         });
 
         return response()->json([
-            'data' => $this->editableSettingsData($authUser),
+            'data' => $this->editableSettingsData($authUser, $studyProgram),
         ]);
     }
 
@@ -154,6 +177,7 @@ class SubjectOverviewJsonUploadController extends Controller
         }
 
         $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $studyProgram = $this->studyProgram($request);
 
         $validated = $request->validate([
             'mappings' => ['array'],
@@ -187,7 +211,7 @@ class SubjectOverviewJsonUploadController extends Controller
         });
 
         return response()->json([
-            'data' => $this->editableSettingsData($authUser),
+            'data' => $this->editableSettingsData($authUser, $studyProgram),
         ]);
     }
 
@@ -197,6 +221,7 @@ class SubjectOverviewJsonUploadController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
+        $this->studyProgram($request);
         $this->ensureJson();
 
         $id = $fileUploadService->upload($request, 'subject-import');
@@ -211,10 +236,11 @@ class SubjectOverviewJsonUploadController extends Controller
         }
 
         $authUser = $this->scopeToSchoolImportSchoolyear($authUser);
+        $studyProgram = $this->studyProgram($request);
 
         $this->ensureJson();
 
-        $uploadPath = $this->storageDirectory($authUser->school_id, $authUser->schoolyear_id);
+        $uploadPath = $this->storageDirectory($authUser->school_id, $authUser->schoolyear_id, $studyProgram);
         $storedName = $this->storedFilename($request->header('Upload-Name'));
 
         $result = $fileUploadService->uploadNext(
@@ -231,11 +257,27 @@ class SubjectOverviewJsonUploadController extends Controller
         $storedPath = storage_path("{$uploadPath}/{$result}");
 
         $this->ensureStoredFileContainsJson("{$uploadPath}/{$result}");
-        $analysis = $this->analyzeJsonFile($storedPath);
+        $this->ensureJsonStudyProgramMatches($storedPath, $studyProgram);
+        $analysis = $this->analyzeJsonFile($storedPath, $studyProgram);
+        $this->ensureSubjectRowsWereAnalyzed($storedPath, $analysis);
         $originalFilename = $request->header('Upload-Name') ?: $storedName;
-        $this->createSubjectImport($authUser, $originalFilename, $result, "{$uploadPath}/{$result}", $storedPath, $analysis);
-        $this->replaceSubjectRowsFromAnalysis($authUser, $analysis);
-        $this->seedDefaultSubjectMappings($authUser, collect($analysis['subject_rows'] ?? [])->pluck('json_subject')->filter()->unique()->values()->all());
+
+        DB::transaction(function () use ($authUser, $studyProgram, $originalFilename, $result, $uploadPath, $storedPath, $analysis): void {
+            $this->createSubjectImport(
+                $authUser,
+                $studyProgram,
+                $originalFilename,
+                $result,
+                "{$uploadPath}/{$result}",
+                $storedPath,
+                $analysis,
+            );
+            $this->replaceSubjectRowsFromAnalysis($authUser, $studyProgram, $analysis);
+            $this->seedDefaultSubjectMappings(
+                $authUser,
+                collect($analysis['subject_rows'] ?? [])->pluck('json_subject')->filter()->unique()->values()->all(),
+            );
+        });
 
         return response($result, 200)->header('Content-Type', 'text/plain');
     }
@@ -251,6 +293,62 @@ class SubjectOverviewJsonUploadController extends Controller
         if ($extension !== 'json') {
             abort(422, 'Nur JSON-Dateien sind erlaubt.');
         }
+    }
+
+    private function studyProgram(Request $request): StudentTimetableStudyProgram
+    {
+        $value = $request->route('studyProgram');
+
+        if ($value === null || $value === '') {
+            return StudentTimetableStudyProgram::Normalstudium;
+        }
+
+        $studyProgram = is_string($value)
+            ? StudentTimetableStudyProgram::tryFrom(Str::lower(trim($value)))
+            : null;
+
+        if (! $studyProgram) {
+            abort(422, 'Ungültige Studienform.');
+        }
+
+        return $studyProgram;
+    }
+
+    private function ensureJsonStudyProgramMatches(
+        string $storedPath,
+        StudentTimetableStudyProgram $studyProgram,
+    ): void {
+        $contents = file_get_contents($storedPath);
+        $data = is_string($contents) ? json_decode($contents, true) : null;
+        $declaredValue = is_array($data) ? ($data['study_program'] ?? null) : null;
+
+        if ($declaredValue === null || $declaredValue === '') {
+            return;
+        }
+
+        $declaredStudyProgram = is_string($declaredValue)
+            ? StudentTimetableStudyProgram::tryFrom(Str::lower(trim($declaredValue)))
+            : null;
+
+        if ($declaredStudyProgram === $studyProgram) {
+            return;
+        }
+
+        @unlink($storedPath);
+        abort(422, 'Die Studienform der JSON-Datei passt nicht zum gewählten Import.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $analysis
+     */
+    private function ensureSubjectRowsWereAnalyzed(string $storedPath, array $analysis): void
+    {
+        if (count($analysis['subject_rows'] ?? []) > 0) {
+            return;
+        }
+
+        @unlink($storedPath);
+        abort(422, 'Die JSON-Datei enthält keine importierbaren Fächer.');
     }
 
     private function storedFilename(mixed $originalName): string
@@ -283,15 +381,18 @@ class SubjectOverviewJsonUploadController extends Controller
     }
 
     /**
-     * @return array{subjects_total: int, semesters: list<array<string, mixed>>, branches: list<array<string, mixed>>, subject_rows: list<array<string, mixed>>}
+     * @return array{study_program: string, subjects_total: int, semesters: list<array<string, mixed>>, branches: list<array<string, mixed>>, subject_rows: list<array<string, mixed>>}
      */
-    private function analyzeJsonFile(string $path): array
-    {
+    private function analyzeJsonFile(
+        string $path,
+        StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
+    ): array {
         $contents = file_get_contents($path);
         $data = is_string($contents) ? json_decode($contents, true) : null;
 
         if (! is_array($data)) {
             return [
+                'study_program' => $studyProgram->value,
                 'subjects_total' => 0,
                 'semesters' => [],
                 'branches' => [],
@@ -323,6 +424,7 @@ class SubjectOverviewJsonUploadController extends Controller
             ->all();
 
         return [
+            'study_program' => $studyProgram->value,
             'subjects_total' => collect($semesters)
                 ->flatMap(fn (array $semester): array => $semester['subjects'])
                 ->pluck('name')
@@ -1016,9 +1118,16 @@ class SubjectOverviewJsonUploadController extends Controller
         return (int) $matches[1];
     }
 
-    private function storageDirectory(int|string|null $schoolId, int|string|null $schoolyearId): string
-    {
-        return "app/private/{$schoolId}/student-timetable-subjects/{$schoolyearId}";
+    private function storageDirectory(
+        int|string|null $schoolId,
+        int|string|null $schoolyearId,
+        StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
+    ): string {
+        $directory = "app/private/{$schoolId}/student-timetable-subjects/{$schoolyearId}";
+
+        return $studyProgram === StudentTimetableStudyProgram::Normalstudium
+            ? $directory
+            : "{$directory}/{$studyProgram->value}";
     }
 
     private function scopeToSchoolImportSchoolyear(User $authUser): User
@@ -1049,11 +1158,18 @@ class SubjectOverviewJsonUploadController extends Controller
             ->values();
     }
 
-    private function importLegacyJsonIfMissing(mixed $authUser): void
-    {
+    private function importLegacyJsonIfMissing(
+        mixed $authUser,
+        StudentTimetableStudyProgram $studyProgram,
+    ): void {
+        if ($studyProgram !== StudentTimetableStudyProgram::Normalstudium) {
+            return;
+        }
+
         if (StudentTimetableSubjectImport::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->forStudyProgram($studyProgram)
             ->exists()) {
             return;
         }
@@ -1064,11 +1180,12 @@ class SubjectOverviewJsonUploadController extends Controller
             return;
         }
 
-        $analysis = $this->analyzeJsonFile($path);
+        $analysis = $this->analyzeJsonFile($path, $studyProgram);
         $filename = basename($path);
 
         $this->createSubjectImport(
             $authUser,
+            $studyProgram,
             $filename,
             $filename,
             $this->relativeStoragePath($path),
@@ -1083,6 +1200,7 @@ class SubjectOverviewJsonUploadController extends Controller
      */
     private function createSubjectImport(
         mixed $authUser,
+        StudentTimetableStudyProgram $studyProgram,
         string $originalFilename,
         string $storedFilename,
         string $filePath,
@@ -1093,6 +1211,7 @@ class SubjectOverviewJsonUploadController extends Controller
         return StudentTimetableSubjectImport::create([
             'school_id' => $authUser->school_id,
             'schoolyear_id' => $authUser->schoolyear_id,
+            'study_program' => $studyProgram->value,
             'user_id' => $authUser->id,
             'original_filename' => $originalFilename,
             'stored_filename' => $storedFilename,
@@ -1118,13 +1237,17 @@ class SubjectOverviewJsonUploadController extends Controller
     /**
      * @param  array<string, mixed>  $analysis
      */
-    private function replaceSubjectRowsFromAnalysis(mixed $authUser, array $analysis): void
-    {
+    private function replaceSubjectRowsFromAnalysis(
+        mixed $authUser,
+        StudentTimetableStudyProgram $studyProgram,
+        array $analysis,
+    ): void {
         $subjectRows = collect($analysis['subject_rows'] ?? [])
             ->values()
             ->map(fn (array $subjectRow, int $index): array => [
                 'school_id' => $authUser->school_id,
                 'schoolyear_id' => $authUser->schoolyear_id,
+                'study_program' => $studyProgram->value,
                 'semester' => $subjectRow['semester'] ?? null,
                 'branch' => $this->normalizeSubjectBranch($subjectRow['branch'] ?? null),
                 'json_code' => $subjectRow['json_code'] ?? null,
@@ -1140,8 +1263,9 @@ class SubjectOverviewJsonUploadController extends Controller
                 'source' => 'json',
             ]);
 
-        DB::transaction(function () use ($authUser, $subjectRows): void {
+        DB::transaction(function () use ($authUser, $studyProgram, $subjectRows): void {
             StudentTimetableSubjectRow::query()
+                ->forStudyProgram($studyProgram)
                 ->where('school_id', $authUser->school_id)
                 ->where('schoolyear_id', $authUser->schoolyear_id)
                 ->delete();
@@ -1168,6 +1292,8 @@ class SubjectOverviewJsonUploadController extends Controller
             'subject_rows_total' => $import->subject_rows_total,
             'semesters_total' => $import->semesters_total,
             'branches_total' => $import->branches_total,
+            'study_program' => $import->study_program->value,
+            'study_program_label' => $import->study_program->label(),
         ];
     }
 
@@ -1187,15 +1313,20 @@ class SubjectOverviewJsonUploadController extends Controller
             'subject_rows_total' => $import->subject_rows_total,
             'semesters_total' => $import->semesters_total,
             'branches_total' => $import->branches_total,
+            'study_program' => $import->study_program->value,
+            'study_program_label' => $import->study_program->label(),
         ];
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function activeSubjectDatasetMetadata(mixed $authUser): array
-    {
+    private function activeSubjectDatasetMetadata(
+        mixed $authUser,
+        StudentTimetableStudyProgram $studyProgram,
+    ): array {
         $baseQuery = StudentTimetableSubjectRow::query()
+            ->forStudyProgram($studyProgram)
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
             ->where('is_active', true);
@@ -1203,6 +1334,8 @@ class SubjectOverviewJsonUploadController extends Controller
         return [
             'name' => 'Aktive Fächer',
             'table' => 'student_timetable_subject_rows',
+            'study_program' => $studyProgram->value,
+            'study_program_label' => $studyProgram->label(),
             'subjects_count' => (clone $baseQuery)
                 ->whereNotNull('name')
                 ->distinct('name')
@@ -1220,11 +1353,14 @@ class SubjectOverviewJsonUploadController extends Controller
         ];
     }
 
-    private function seedEditableDataFromLatestImportIfMissing(mixed $authUser): void
-    {
-        $this->importLegacyJsonIfMissing($authUser);
+    private function seedEditableDataFromLatestImportIfMissing(
+        mixed $authUser,
+        StudentTimetableStudyProgram $studyProgram,
+    ): void {
+        $this->importLegacyJsonIfMissing($authUser, $studyProgram);
 
         $hasSubjectRows = StudentTimetableSubjectRow::query()
+            ->forStudyProgram($studyProgram)
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
             ->exists();
@@ -1232,6 +1368,7 @@ class SubjectOverviewJsonUploadController extends Controller
         $import = StudentTimetableSubjectImport::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->forStudyProgram($studyProgram)
             ->orderByDesc('imported_at')
             ->orderByDesc('id')
             ->first();
@@ -1243,9 +1380,9 @@ class SubjectOverviewJsonUploadController extends Controller
         $subjectRows = $import->analysis['subject_rows'] ?? [];
 
         if ($hasSubjectRows) {
-            $this->refreshJsonSubjectRowNames($authUser, $subjectRows);
+            $this->refreshJsonSubjectRowNames($authUser, $studyProgram, $subjectRows);
         } else {
-            $this->replaceSubjectRowsFromAnalysis($authUser, $import->analysis ?? []);
+            $this->replaceSubjectRowsFromAnalysis($authUser, $studyProgram, $import->analysis ?? []);
         }
 
         $this->seedDefaultSubjectMappings($authUser, collect($subjectRows)->pluck('json_subject')->filter()->unique()->values()->all());
@@ -1254,12 +1391,16 @@ class SubjectOverviewJsonUploadController extends Controller
     /**
      * @param  list<array<string, mixed>>  $subjectRows
      */
-    private function refreshJsonSubjectRowNames(mixed $authUser, array $subjectRows): void
-    {
+    private function refreshJsonSubjectRowNames(
+        mixed $authUser,
+        StudentTimetableStudyProgram $studyProgram,
+        array $subjectRows,
+    ): void {
         $subjectRowsByIdentity = collect($subjectRows)
             ->keyBy(fn (array $subjectRow): string => $this->subjectRowStableIdentitySignature($subjectRow));
 
         StudentTimetableSubjectRow::query()
+            ->forStudyProgram($studyProgram)
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
             ->get()
@@ -1384,10 +1525,16 @@ class SubjectOverviewJsonUploadController extends Controller
     /**
      * @return array{subjects: list<array<string, mixed>>, mappings?: list<array<string, mixed>>}
      */
-    private function editableSettingsData(mixed $authUser, bool $subjectsOnly = false): array
-    {
+    private function editableSettingsData(
+        mixed $authUser,
+        StudentTimetableStudyProgram $studyProgram,
+        bool $subjectsOnly = false,
+    ): array {
         $settingsData = [
+            'study_program' => $studyProgram->value,
+            'study_program_label' => $studyProgram->label(),
             'subjects' => StudentTimetableSubjectRow::query()
+                ->forStudyProgram($studyProgram)
                 ->where('school_id', $authUser->school_id)
                 ->where('schoolyear_id', $authUser->schoolyear_id)
                 ->orderBy('sort_order')

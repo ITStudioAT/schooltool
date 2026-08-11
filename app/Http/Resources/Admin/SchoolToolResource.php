@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Admin;
 
+use App\Models\SchoolTool;
 use App\Services\SchoolToolModuleStatusService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -26,6 +27,9 @@ class SchoolToolResource extends JsonResource
             'active_schoolyear_id' => $this->active_schoolyear_id,
             'module_rows' => $moduleStatusService->configurableModuleRows(),
             ...$moduleVisibilityFields,
+            'students_timetables_admin_version' => SchoolTool::normalizeStudentsTimetablesAdminVersion(
+                $this->students_timetables_admin_version,
+            ),
             'tutoring_student_must_be_confirmed' => $this->tutoring_student_must_be_confirmed ? true : false,
             'tutoring_confirmer_email' => $this->tutoring_confirmer_email,
             'tutoring_max_offers_per_student' => $this->tutoring_max_offers_per_student,

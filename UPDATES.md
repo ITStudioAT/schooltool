@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.46.0
+
+### Timetable V3
+
+- Startseite erzeugt
+
 ## 3.45.0 - 3.45.1
 
 ### System

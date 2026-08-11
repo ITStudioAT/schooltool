@@ -14,46 +14,45 @@
             </v-btn>
         </v-sheet>
 
-        <v-card v-if="subject_action === 'import'" rounded="lg" border class="subject-section-card mb-4">
-            <v-card-title class="subject-section-card__title d-flex align-center ga-2">
-                <v-icon icon="mdi-upload" />
-                Import
-            </v-card-title>
-            <v-card-text class="subject-section-card__text">
-                <v-alert v-if="uploadError" type="error" variant="tonal" class="mb-3">
-                    {{ uploadError }}
-                </v-alert>
-                <v-alert v-if="uploadedFilename" type="success" variant="tonal" class="mb-3">
-                    JSON-Datei gespeichert: <strong>{{ uploadedFilename }}</strong>
-                </v-alert>
-                <FileUpload
-                    :path="'/api/admin/students-timetables/subjects-overview-json'"
-                    fileLabel
-                    :allowedFileTypes="['application/json']"
-                    :refreshFilePond="refreshFilePond"
-                    @uploadStart="onUploadStart"
-                    @fileUploadFinished="onUploadFinished"
-                    @error="onUploadError" />
-            </v-card-text>
-        </v-card>
+        <v-btn-toggle
+            :model-value="studyProgram"
+            mandatory
+            density="compact"
+            color="primary"
+            variant="outlined"
+            class="mb-4"
+            :disabled="studyProgramSwitchDisabled"
+            @update:model-value="changeStudyProgram">
+            <v-btn
+                v-for="option in studyProgramOptions"
+                :key="option.value"
+                :value="option.value">
+                {{ option.label }}
+            </v-btn>
+        </v-btn-toggle>
 
         <v-card v-if="subject_action === 'subject-plan'" rounded="lg" border class="subject-overview-card mb-4">
             <v-card-title class="subject-overview-card__title d-flex align-center ga-2">
                 <v-icon icon="mdi-table-large" />
-                Fächerübersicht
+                Fächerübersicht · {{ studyProgramLabel }}
                 <v-chip size="x-small" color="primary" variant="tonal">
                     {{ subjectRows.length }}
                 </v-chip>
             </v-card-title>
             <v-card-text class="subject-overview-card__text">
-                <v-progress-linear v-if="loading || settingsLoading" indeterminate color="primary" class="mb-2" />
-
-                <v-alert v-if="!loading && !imports.length" type="info" variant="tonal">
-                    Noch keine JSON-Datei importiert.
+                <v-alert
+                    v-if="studyProgram === 'kompaktstudium'"
+                    type="info"
+                    variant="tonal"
+                    density="compact"
+                    class="mb-3">
+                    Die angezeigten Wochenstunden sind Kontakt-Unterrichtseinheiten. Eigenstudium ist nicht enthalten.
                 </v-alert>
 
+                <v-progress-linear v-if="settingsLoading" indeterminate color="primary" class="mb-2" />
+
                 <v-alert
-                    v-if="subject_action === 'subject-plan' && !settingsLoading && imports.length && !activeSubjectRows.length"
+                    v-if="!settingsLoading && !activeSubjectRows.length"
                     type="info"
                     variant="tonal"
                     class="mb-3">
@@ -173,7 +172,7 @@
         <v-card v-if="subject_action === 'subjects'" rounded="lg" border class="subject-section-card mb-4">
             <v-card-title class="subject-section-card__title d-flex flex-wrap align-center ga-2">
                 <v-icon icon="mdi-table-edit" />
-                Importierte Fächer
+                Fächer
                 <v-chip size="x-small" color="primary" variant="tonal">
                     {{ subjectRows.length }}
                 </v-chip>
@@ -482,12 +481,26 @@
 
 <script>
 import { mapWritableState } from 'pinia'
-import FileUpload from '@/pages/components/FileUpload.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import {
+    settings as subjectSettingsRoute,
+    updateMappings as updateSubjectMappingsRoute,
+    updateSubjects as updateSubjectsRoute,
+} from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/SubjectOverviewJsonUploadController'
+
+const NORMAL_STUDY_PROGRAM = 'normalstudium'
+const COMPACT_STUDY_PROGRAM = 'kompaktstudium'
+const STUDY_PROGRAM_OPTIONS = [
+    { value: NORMAL_STUDY_PROGRAM, label: 'Normalstudium' },
+    { value: COMPACT_STUDY_PROGRAM, label: 'Kompaktstudium' },
+]
+
+const normalizeStudyProgram = value => (
+    value === COMPACT_STUDY_PROGRAM ? COMPACT_STUDY_PROGRAM : NORMAL_STUDY_PROGRAM
+)
 
 export default {
     name: 'StudentsTimetablesSubjectsOverview',
-    components: { FileUpload },
     props: {
         embedded: {
             type: Boolean,
@@ -496,12 +509,8 @@ export default {
     },
     data() {
         return {
-            imports: [],
-            loading: false,
+            studyProgram: normalizeStudyProgram(this.$route.query.study_program),
             subject_action: this.embedded ? 'subject-plan' : this.normalizedSubjectAction(this.$route.params.subsection),
-            uploadError: '',
-            uploadedFilename: '',
-            refreshFilePond: 0,
             subjectRows: [],
             subjectMappings: [],
             settingsLoading: false,
@@ -521,9 +530,10 @@ export default {
         }
     },
     mounted() {
-        this.redirectMissingSubjectRoute()
-        this.redirectUnauthorizedSubjectRoute()
-        this.loadImports()
+        if (!this.redirectRemovedSubjectImportRoute()) {
+            this.redirectMissingSubjectRoute()
+            this.redirectUnauthorizedSubjectRoute()
+        }
         this.loadSettings()
     },
     computed: {
@@ -533,6 +543,19 @@ export default {
         },
         canManageSubjectSettings() {
             return ['super_admin', 'admin', 'studentstimetables_admin'].some(roleName => this.configuredRoleNames.includes(roleName))
+        },
+        studyProgramOptions() {
+            return STUDY_PROGRAM_OPTIONS
+        },
+        studyProgramLabel() {
+            return STUDY_PROGRAM_OPTIONS.find(option => option.value === this.studyProgram)?.label || 'Normalstudium'
+        },
+        studyProgramSwitchDisabled() {
+            return this.settingsLoading
+                || this.subjectsSaving
+                || this.subjectsEditMode
+                || this.mappingsSaving
+                || this.mappingsEditMode
         },
         subjectNavigationItems() {
             return [
@@ -568,7 +591,7 @@ export default {
             return this.subjectRows.filter(subject => subject.is_active !== false)
         },
         subjectOverviewColumns() {
-            return [
+            const columns = [
                 { key: 'ÖKO', label: 'ÖKO', subjectKeys: ['ÖKO'] },
                 { key: 'INF', label: 'INF', subjectKeys: ['INF'] },
                 { key: 'ME', label: 'ME', subjectKeys: ['ME'] },
@@ -580,12 +603,18 @@ export default {
                 { key: 'GS', label: 'GS', subjectKeys: ['GS'] },
                 { key: 'GW', label: 'GW', subjectKeys: ['GW'] },
                 { key: 'LPT/VWA', label: 'LPT/VWA', subjectKeys: ['LPT', 'VWA'] },
-                { key: 'R/ET', label: 'R/ET', subjectKeys: ['R/ET'] },
+                { key: 'R/ET', label: 'R/ET', subjectKeys: ['R/ET', 'R', 'ET'] },
                 { key: 'L/F/S', label: 'L/F/S', subjectKeys: ['L/F/S', 'L', 'F', 'S'] },
                 { key: 'D', label: 'D', subjectKeys: ['D'] },
                 { key: 'E', label: 'E', subjectKeys: ['E'] },
                 { key: 'M', label: 'M', subjectKeys: ['M'] },
-            ].map(column => ({
+            ]
+            const compactColumnOrder = ['R/ET', 'L/F/S', 'BU', 'GS', 'GW', 'PP', 'PH', 'INF', 'ÖKO', 'CH', 'ME', 'BE', 'LPT/VWA', 'D', 'E', 'M']
+            const orderedColumns = this.studyProgram === COMPACT_STUDY_PROGRAM
+                ? compactColumnOrder.map(key => columns.find(column => column.key === key))
+                : columns
+
+            return orderedColumns.map(column => ({
                 ...column,
                 subtitle: this.subjectOverviewColumnSubtitle(column),
             }))
@@ -635,7 +664,7 @@ export default {
 
                     return {
                         column,
-                        branches: [...new Set(subjects.map(subject => subject.branch || 'common'))],
+                        branches: [...new Set(matchingSubjects.map(subject => subject.branch || 'common'))],
                         subjects,
                     }
                 })
@@ -649,7 +678,7 @@ export default {
         },
         subjectOverviewSemesters() {
             const maximumSemester = Math.max(
-                8,
+                this.studyProgram === COMPACT_STUDY_PROGRAM ? 5 : 8,
                 ...this.activeSubjectRows
                     .map(subject => Number(subject.semester || 0))
                     .filter(semester => semester > 0),
@@ -688,8 +717,18 @@ export default {
             }
 
             this.subject_action = this.normalizedSubjectAction(subsection)
+            if (this.redirectRemovedSubjectImportRoute()) {
+                return
+            }
+
             this.redirectMissingSubjectRoute()
             this.redirectUnauthorizedSubjectRoute()
+        },
+        '$route.query.study_program'(value) {
+            const studyProgram = normalizeStudyProgram(value)
+            if (studyProgram === this.studyProgram) return
+
+            this.applyStudyProgram(studyProgram)
         },
         'config.selected_schoolyear.id'() {
             this.refreshForSchoolyearChange()
@@ -698,7 +737,7 @@ export default {
     methods: {
         normalizedSubjectAction(subsection) {
             const allowedActions = this.canManageSubjectSettings
-                ? ['subject-plan', 'import', 'subjects', 'mapping']
+                ? ['subject-plan', 'subjects', 'mapping']
                 : ['subject-plan']
 
             return allowedActions.includes(subsection) ? subsection : 'subject-plan'
@@ -709,7 +748,10 @@ export default {
                 return
             }
 
-            this.$router.push({ path: `/admin/students-timetables/subjects-overview/${this.subject_action}` })
+            this.$router.push({
+                path: `/admin/students-timetables/subjects-overview/${this.subject_action}`,
+                query: { ...this.$route.query, study_program: this.studyProgram },
+            })
         },
         redirectMissingSubjectRoute() {
             if (
@@ -721,20 +763,51 @@ export default {
             }
 
             this.subject_action = 'subject-plan'
-            this.$router.replace({ path: '/admin/students-timetables/subjects-overview/subject-plan' })
+            this.$router.replace({
+                path: '/admin/students-timetables/subjects-overview/subject-plan',
+                query: { ...this.$route.query, study_program: this.studyProgram },
+            })
+
+            return true
+        },
+        redirectRemovedSubjectImportRoute() {
+            if (this.embedded || this.$route.params.subsection !== 'import') return false
+
+            this.subject_action = 'subject-plan'
+            this.$router.replace({
+                path: '/admin/students-timetables/subjects-overview/subject-plan',
+                query: { ...this.$route.query, study_program: this.studyProgram },
+            })
 
             return true
         },
         redirectUnauthorizedSubjectRoute() {
             if (this.embedded || this.canManageSubjectSettings) return
-            if (!['import', 'subjects', 'mapping'].includes(this.$route.params.subsection)) return
+            if (!['subjects', 'mapping'].includes(this.$route.params.subsection)) return
 
             this.subject_action = 'subject-plan'
-            this.$router.replace({ path: '/admin/students-timetables/subjects-overview/subject-plan' })
+            this.$router.replace({
+                path: '/admin/students-timetables/subjects-overview/subject-plan',
+                query: { ...this.$route.query, study_program: this.studyProgram },
+            })
+        },
+        changeStudyProgram(value) {
+            const studyProgram = normalizeStudyProgram(value)
+            if (studyProgram === this.studyProgram) return
+
+            this.applyStudyProgram(studyProgram)
+            if (this.embedded) return
+
+            this.$router.replace({
+                path: this.$route.path,
+                query: { ...this.$route.query, study_program: studyProgram },
+            })
+        },
+        applyStudyProgram(studyProgram) {
+            this.studyProgram = studyProgram
+            this.refreshForSchoolyearChange()
         },
         refreshForSchoolyearChange() {
-            this.uploadError = ''
-            this.uploadedFilename = ''
             this.settingsError = ''
             this.settingsMessage = ''
             this.subjectsEditMode = false
@@ -743,27 +816,13 @@ export default {
             this.subjectMappings = []
             this.subjectRowsSnapshot = []
             this.subjectMappingsSnapshot = []
-            this.imports = []
-            this.refreshFilePond++
-            this.loadImports()
             this.loadSettings()
-        },
-        async loadImports() {
-            this.loading = true
-            try {
-                const response = await axios.get('/api/admin/students-timetables/subjects-overview-json')
-                this.imports = response.data.data || []
-            } catch {
-                this.imports = []
-            } finally {
-                this.loading = false
-            }
         },
         async loadSettings() {
             this.settingsLoading = true
             this.settingsError = ''
             try {
-                const response = await axios.get('/api/admin/students-timetables/subjects-overview-settings')
+                const response = await axios.get(subjectSettingsRoute.url({ studyProgram: this.studyProgram }))
                 this.applySettings(response.data.data || {})
             } catch {
                 this.subjectRows = []
@@ -772,23 +831,6 @@ export default {
             } finally {
                 this.settingsLoading = false
             }
-        },
-        onUploadStart() {
-            this.uploadError = ''
-            this.uploadedFilename = ''
-            this.settingsMessage = ''
-        },
-        onUploadFinished(file) {
-            this.uploadError = ''
-            this.uploadedFilename = file?.name || 'gespeichert'
-            this.refreshFilePond++
-            this.loadImports()
-            this.loadSettings()
-        },
-        onUploadError() {
-            this.uploadedFilename = ''
-            this.uploadError = 'Die JSON-Datei konnte nicht gespeichert werden.'
-            this.refreshFilePond++
         },
         subjectOverviewGridStyle(columnGroup) {
             const sumColumnCount = columnGroup.showSum ? 1 : 0
@@ -854,7 +896,12 @@ export default {
             return `${displayCode}*`
         },
         subjectOverviewCourseItems(subjects) {
-            return this.subjectOverviewMergedChoiceSubjects(subjects).flatMap(subject => {
+            const mergedChoiceSubjects = this.subjectOverviewMergedChoiceSubjects(subjects)
+            const mergedSubjects = this.subjectOverviewMergedCompactModuleSubjects(
+                this.subjectOverviewMergedCompactChoiceModuleSubjects(mergedChoiceSubjects),
+            )
+
+            return mergedSubjects.flatMap(subject => {
                 const displayCodes = this.subjectOverviewDisplayCodes(subject)
 
                 if (displayCodes.length <= 1) {
@@ -901,10 +948,18 @@ export default {
 
                 const sortedSubjects = choiceSubjects
                     .map(({ candidate }) => candidate)
-                    .sort((firstSubject, secondSubject) => this.compareText(firstSubject.json_code, secondSubject.json_code))
-                const displayCodes = sortedSubjects
+                    .sort((firstSubject, secondSubject) => {
+                        const orderedCodes = choiceGroup.orderedCodes || []
+                        const firstIndex = orderedCodes.indexOf(String(firstSubject.json_code || ''))
+                        const secondIndex = orderedCodes.indexOf(String(secondSubject.json_code || ''))
+
+                        if (firstIndex >= 0 && secondIndex >= 0) return firstIndex - secondIndex
+
+                        return this.compareText(firstSubject.json_code, secondSubject.json_code)
+                    })
+                const displayCodes = this.subjectOverviewCombinedCompactChoiceCodes(sortedSubjects
                     .map(candidate => this.alternativeDisplay(candidate.json_code))
-                    .filter(displayCode => displayCode !== '-')
+                    .filter(displayCode => displayCode !== '-'))
                 const subjectHours = Math.max(...sortedSubjects.map(candidate => Number(candidate.hours_per_week || 0)))
 
                 return [
@@ -922,6 +977,149 @@ export default {
                         ].join('-'),
                     },
                 ]
+            })
+        },
+        subjectOverviewMergedCompactChoiceModuleSubjects(subjects) {
+            if (this.studyProgram !== COMPACT_STUDY_PROGRAM) return subjects
+
+            const usedSubjectIndexes = new Set()
+
+            return subjects.flatMap((subject, subjectIndex) => {
+                if (usedSubjectIndexes.has(subjectIndex)) return []
+
+                const parsedCodes = String(subject.display_code || '')
+                    .replace(/\*$/u, '')
+                    .split('/')
+                    .map(code => code.match(/^(.*?)(\d+)$/u))
+
+                if (parsedCodes.length < 2 || parsedCodes.some(code => !code)) return [subject]
+
+                const prefixSignature = parsedCodes.map(code => code[1]).join('|')
+                const matchingSubjects = subjects
+                    .map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
+                    .filter(({ candidate, candidateIndex }) => {
+                        if (usedSubjectIndexes.has(candidateIndex)) return false
+                        if ((candidate.branch || 'common') !== (subject.branch || 'common')) return false
+
+                        const candidateCodes = String(candidate.display_code || '')
+                            .replace(/\*$/u, '')
+                            .split('/')
+                            .map(code => code.match(/^(.*?)(\d+)$/u))
+
+                        return candidateCodes.length === parsedCodes.length
+                            && candidateCodes.every(code => code)
+                            && candidateCodes.map(code => code[1]).join('|') === prefixSignature
+                    })
+
+                if (matchingSubjects.length < 2) return [subject]
+
+                matchingSubjects.forEach(({ candidateIndex }) => usedSubjectIndexes.add(candidateIndex))
+
+                const combinedCodes = parsedCodes.map((parsedCode, codeIndex) => {
+                    const moduleNumbers = matchingSubjects
+                        .map(({ candidate }) => String(candidate.display_code || '')
+                            .replace(/\*$/u, '')
+                            .split('/')[codeIndex]
+                            .match(/\d+$/u)?.[0])
+                        .filter(Boolean)
+                        .sort((firstNumber, secondNumber) => Number(firstNumber) - Number(secondNumber))
+
+                    return `${parsedCode[1]}${moduleNumbers.join('+')}`
+                })
+
+                return [{
+                    ...subject,
+                    json_code: combinedCodes.join('/'),
+                    hours_per_week: matchingSubjects.reduce(
+                        (total, item) => total + Number(item.candidate.hours_per_week || 0),
+                        0,
+                    ),
+                    display_code: `${combinedCodes.join('/')}*`,
+                    display_key: [
+                        'compact-choice-modules',
+                        subject.semester,
+                        subject.branch || 'common',
+                        combinedCodes.join('-'),
+                    ].join('-'),
+                }]
+            })
+        },
+        subjectOverviewMergedCompactModuleSubjects(subjects) {
+            if (this.studyProgram !== COMPACT_STUDY_PROGRAM) return subjects
+
+            const groupedSubjects = new Map()
+
+            subjects.forEach((subject, index) => {
+                const code = String(subject.json_code || '')
+                const moduleMatch = code.match(/^(.*?)(\d+)$/u)
+                const groupKey = subject.display_code || !moduleMatch
+                    ? `single-${index}`
+                    : [
+                        subject.semester || '',
+                        subject.branch || 'common',
+                        this.subjectOverviewSubjectKey(subject),
+                        moduleMatch[1],
+                    ].join('|')
+                const group = groupedSubjects.get(groupKey) || []
+
+                group.push({ subject, moduleMatch })
+                groupedSubjects.set(groupKey, group)
+            })
+
+            return [...groupedSubjects.values()].map(group => {
+                if (group.length < 2 || group.some(item => !item.moduleMatch)) return group[0].subject
+
+                const sortedGroup = [...group].sort((firstItem, secondItem) =>
+                    Number(firstItem.moduleMatch[2]) - Number(secondItem.moduleMatch[2]))
+                const moduleNumbers = sortedGroup.map(item => item.moduleMatch[2])
+                const subjectHours = sortedGroup.reduce(
+                    (total, item) => total + Number(item.subject.hours_per_week || 0),
+                    0,
+                )
+
+                return {
+                    ...sortedGroup[0].subject,
+                    json_code: `${sortedGroup[0].moduleMatch[1]}${moduleNumbers.join('+')}`,
+                    hours_per_week: subjectHours,
+                    display_key: [
+                        'compact-modules',
+                        sortedGroup[0].subject.semester,
+                        sortedGroup[0].subject.branch || 'common',
+                        sortedGroup[0].moduleMatch[1],
+                        moduleNumbers.join('-'),
+                    ].join('-'),
+                }
+            })
+        },
+        subjectOverviewCombinedCompactChoiceCodes(displayCodes) {
+            if (this.studyProgram !== COMPACT_STUDY_PROGRAM) return displayCodes
+
+            const codesByPrefix = new Map()
+
+            displayCodes.forEach(displayCode => {
+                const moduleMatch = String(displayCode).match(/^(.*?)(\d+)$/u)
+                if (!moduleMatch) {
+                    codesByPrefix.set(`single-${displayCode}`, { prefix: displayCode, moduleNumbers: [] })
+
+                    return
+                }
+
+                const group = codesByPrefix.get(moduleMatch[1]) || {
+                    prefix: moduleMatch[1],
+                    moduleNumbers: [],
+                }
+
+                group.moduleNumbers.push(moduleMatch[2])
+                codesByPrefix.set(moduleMatch[1], group)
+            })
+
+            return [...codesByPrefix.values()].map(group => {
+                if (!group.moduleNumbers.length) return group.prefix
+
+                const moduleNumbers = [...group.moduleNumbers].sort((firstNumber, secondNumber) =>
+                    Number(firstNumber) - Number(secondNumber))
+
+                return `${group.prefix}${moduleNumbers.join('+')}`
             })
         },
         subjectOverviewMergeableChoiceGroupForSubject(subject) {
@@ -957,50 +1155,112 @@ export default {
         },
         subjectOverviewChoiceGroups() {
             return [
-                {
-                    semester: 1,
-                    branch: 'common',
-                    codes: ['R/ET1'],
-                    choices: ['Rev', 'Ris', 'Rk', 'Ror', 'ET'],
-                },
-                {
-                    semester: 2,
-                    branch: 'common',
-                    codes: ['R/ET2'],
-                    choices: ['Rev', 'Ris', 'Rk', 'Ror', 'ET'],
-                },
-                {
-                    semester: 3,
-                    branch: 'common',
-                    codes: ['R/ET3'],
-                    choices: ['Rev', 'Ris', 'Rk', 'Ror', 'ET'],
-                },
-                {
-                    semester: 4,
-                    branch: 'common',
-                    codes: ['R/ET4'],
-                    choices: ['Rev', 'Ris', 'Rk', 'Ror', 'ET'],
-                },
+                ...this.subjectOverviewReligionChoiceGroups(),
                 ...this.subjectOverviewLanguageChoiceGroups(),
                 ...this.subjectOverviewArtChoiceGroups(),
             ]
         },
+        subjectOverviewReligionChoiceGroups() {
+            const groups = new Map()
+            const subjectRows = this.activeSubjectRows || []
+
+            subjectRows
+                .filter(subject => this.subjectOverviewSubjectKey(subject) === 'R/ET')
+                .forEach(subject => {
+                    const semester = Number(subject.semester) || 0
+                    const branch = this.subjectOverviewChoiceGroupBranch(subject)
+                    const code = String(subject.json_code || '')
+                    const groupKey = [semester, branch, code].join('|')
+
+                    if (semester < 1 || !code || groups.has(groupKey)) return
+
+                    groups.set(groupKey, {
+                        semester,
+                        branch,
+                        codes: [code],
+                        choices: ['Rev', 'Ris', 'Rk', 'Ror', 'ET'],
+                    })
+                })
+
+            const separateReligionSubjects = subjectRows.filter(subject =>
+                ['R', 'ET'].includes(this.subjectOverviewSubjectKey(subject)),
+            )
+            const separateGroups = new Map()
+
+            separateReligionSubjects.forEach(subject => {
+                const semester = Number(subject.semester) || 0
+                const branch = this.subjectOverviewChoiceGroupBranch(subject)
+                const code = String(subject.json_code || '')
+                const moduleNumber = code.match(/\d+$/u)?.[0] || code
+                const groupKey = [semester, branch, moduleNumber].join('|')
+                const group = separateGroups.get(groupKey) || {
+                    semester,
+                    branch,
+                    codes: new Set(),
+                    subjects: new Set(),
+                }
+
+                group.codes.add(String(subject.json_code || ''))
+                group.subjects.add(this.subjectOverviewSubjectKey(subject))
+                separateGroups.set(groupKey, group)
+            })
+
+            separateGroups.forEach((group, groupKey) => {
+                if (group.semester < 1 || group.subjects.size < 2) return
+
+                const codes = [...group.codes]
+                const orderedCodes = [
+                    ...codes.filter(code => code.startsWith('R')),
+                    ...codes.filter(code => code.startsWith('ET')),
+                ]
+
+                groups.set(`separate|${groupKey}`, {
+                    semester: group.semester,
+                    branch: group.branch,
+                    codes,
+                    orderedCodes,
+                })
+            })
+
+            return [...groups.values()]
+        },
         subjectOverviewLanguageChoiceGroups() {
-            return this.subjectOverviewAlternativeChoiceGroups(['L', 'F', 'S'])
+            return this.subjectOverviewAlternativeChoiceGroups(
+                ['L', 'F', 'S'],
+                this.studyProgram === COMPACT_STUDY_PROGRAM,
+            )
         },
         subjectOverviewArtChoiceGroups() {
-            return this.subjectOverviewAlternativeChoiceGroups(['BE', 'ME'])
+            const groups = this.subjectOverviewAlternativeChoiceGroups(['BE', 'ME'])
+            if (this.studyProgram !== COMPACT_STUDY_PROGRAM) return groups
+
+            return groups.filter(group => {
+                const codes = new Set(group.codes)
+
+                return (
+                    group.branch === 'wirtschaftskundlich'
+                    && codes.has('BE1')
+                    && codes.has('ME1')
+                ) || (
+                    group.branch === 'gymnasial'
+                    && codes.has('BE2')
+                    && codes.has('ME2')
+                )
+            })
         },
-        subjectOverviewAlternativeChoiceGroups(subjectKeys) {
+        subjectOverviewAlternativeChoiceGroups(subjectKeys, groupByModule = false) {
             const alternativeSubjects = (this.activeSubjectRows || []).filter(subject =>
                 subjectKeys.includes(this.subjectOverviewSubjectKey(subject)),
             )
             const groups = new Map()
 
             alternativeSubjects.forEach(subject => {
+                const subjectCode = String(subject.json_code || '')
+                const moduleNumber = groupByModule ? subjectCode.match(/\d+$/u)?.[0] || subjectCode : ''
                 const groupKey = [
                     Number(subject.semester) || 0,
                     this.subjectOverviewChoiceGroupBranch(subject),
+                    moduleNumber,
                 ].join('|')
                 const group = groups.get(groupKey) || {
                     semester: Number(subject.semester) || 0,
@@ -1016,11 +1276,22 @@ export default {
 
             return [...groups.values()]
                 .filter(group => group.semester > 0 && group.subjects.size > 1)
-                .map(group => ({
-                    semester: group.semester,
-                    branch: group.branch,
-                    codes: [...group.codes],
-                }))
+                .map(group => {
+                    const codes = [...group.codes].sort((firstCode, secondCode) => {
+                        const firstSubjectIndex = subjectKeys.findIndex(subjectKey => firstCode.startsWith(subjectKey))
+                        const secondSubjectIndex = subjectKeys.findIndex(subjectKey => secondCode.startsWith(subjectKey))
+
+                        return firstSubjectIndex - secondSubjectIndex
+                            || this.compareText(firstCode, secondCode)
+                    })
+
+                    return {
+                        semester: group.semester,
+                        branch: group.branch,
+                        codes,
+                        orderedCodes: codes,
+                    }
+                })
         },
         subjectOverviewChoiceGroupBranch(subject = {}) {
             return subject.branch || 'common'
@@ -1385,7 +1656,7 @@ export default {
             this.settingsError = ''
             this.settingsMessage = ''
             try {
-                const response = await axios.put('/api/admin/students-timetables/subjects-overview-settings/subjects', {
+                const response = await axios.put(updateSubjectsRoute.url({ studyProgram: this.studyProgram }), {
                     subjects: this.subjectRows.map(subject => ({
                         semester: subject.semester || null,
                         branch: subject.branch === 'common' ? null : subject.branch || null,
@@ -1411,7 +1682,7 @@ export default {
             this.settingsError = ''
             this.settingsMessage = ''
             try {
-                const response = await axios.put('/api/admin/students-timetables/subjects-overview-settings/mappings', {
+                const response = await axios.put(updateSubjectMappingsRoute.url({ studyProgram: this.studyProgram }), {
                     mappings: this.subjectMappings.map(mapping => ({
                         json_subject: mapping.json_subject || null,
                         tt_subject: mapping.tt_subject || null,

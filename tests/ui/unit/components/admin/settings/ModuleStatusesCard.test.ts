@@ -7,6 +7,9 @@ describe('ModuleStatusesCard', () => {
         const source = readFileSync('resources/js/pages/admin/settings/components/ModuleStatusesCard.vue', 'utf8')
 
         expect(source).toContain('<v-switch')
+        expect(source).toContain('<v-select')
+        expect(source).toContain('Aktive Version')
+        expect(source).toContain('Version 3 – Entwicklung')
         expect(source).toContain('Angezeigt Admin')
         expect(source).toContain('Angezeigt Benutzer')
         expect(source).toContain('Benutzer Testmodus')
@@ -126,6 +129,22 @@ describe('ModuleStatusesCard', () => {
         methods.setUserComingSoon.call(context, item, true)
 
         expect(save).toHaveBeenCalledTimes(4)
+    })
+
+    it('saves a normalized timetable admin version immediately', () => {
+        const methods = (ModuleStatusesCard as any).methods
+        const save = vi.fn()
+        const context = {
+            form: {
+                students_timetables_admin_version: 'v2',
+            },
+            save,
+        }
+
+        methods.setStudentsTimetablesAdminVersion.call(context, 'v3')
+
+        expect(context.form.students_timetables_admin_version).toBe('v3')
+        expect(save).toHaveBeenCalledOnce()
     })
 
     it('forces user visibility off when admin visibility is disabled', () => {

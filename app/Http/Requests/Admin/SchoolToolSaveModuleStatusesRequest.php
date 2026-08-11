@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Models\SchoolTool;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -50,6 +51,11 @@ class SchoolToolSaveModuleStatusesRequest extends FormRequest
             'data.students_timetables_visible_user' => ['sometimes', 'boolean'],
             'data.students_timetables_user_test_mode' => ['sometimes', 'boolean'],
             'data.students_timetables_user_comming_soon' => ['sometimes', 'boolean'],
+            'data.students_timetables_admin_version' => [
+                'sometimes',
+                'string',
+                Rule::in(SchoolTool::STUDENTS_TIMETABLES_ADMIN_VERSIONS),
+            ],
         ];
     }
 }

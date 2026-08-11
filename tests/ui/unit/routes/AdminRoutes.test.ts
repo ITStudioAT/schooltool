@@ -37,4 +37,18 @@ describe('admin routes', () => {
         expect(resolvedRoute.matched).toHaveLength(1)
         expect(resolvedRoute.matched[0]?.path).toBe('/admin/students-timetables/:section?/:subsection?/:detail?/:action?')
     })
+
+    it('resolves every students timetable v3 step to its own URL', () => {
+        const selectionRoute = router.resolve('/admin/students-timetables/timetable-v3/overview')
+        const moduleSelectionRoute = router.resolve('/admin/students-timetables/timetable-v3/modules')
+
+        expect(selectionRoute.params).toMatchObject({
+            section: 'timetable-v3',
+            subsection: 'overview',
+        })
+        expect(moduleSelectionRoute.params).toMatchObject({
+            section: 'timetable-v3',
+            subsection: 'modules',
+        })
+    })
 })
