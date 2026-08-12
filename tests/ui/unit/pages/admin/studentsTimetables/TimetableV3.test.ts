@@ -593,11 +593,12 @@ describe('TimetableV3', () => {
         expect(nextStepSource).toContain('{{ item.value }}')
         expect(nextStepSource).not.toContain('timetable-v3__compact-planning-title')
         expect(nextStepSource).not.toContain('mdi-tune-variant')
-        expect(nextStepSource).not.toContain('Automatik')
-        expect(nextStepSource).not.toContain('Manuell')
-        expect(nextStepSource).not.toContain('chooseCreationMode')
-        expect(nextStepSource).toContain('Welche Module sollen berücksichtigt werden?')
-        expect(nextStepSource).toContain('v-for="group in displayedModuleSelectionGroups"')
+        expect(nextStepSource).toContain('Welche Module sollen zur Stundenplanerstellung berücksichtigt werden?')
+        expect(nextStepSource).toContain('Automatischer Stundenplan')
+        expect(nextStepSource).toContain('Manueller Stundenplan')
+        expect(nextStepSource).toContain('chooseScheduleCreationMode')
+        expect(nextStepSource).toContain('v-for="group in moduleSelectionGroups"')
+        expect(nextStepSource).toContain('Ausgewählte Module')
         expect(nextStepSource).toContain('class="timetable-v3__module-tile"')
         expect(nextStepSource).toContain('@click="openModuleCoursesDialog(module)"')
         expect(nextStepSource).not.toContain('role="tab"')
@@ -609,13 +610,77 @@ describe('TimetableV3', () => {
         expect(nextContinueSource).not.toContain('@click')
     })
 
+    it('starts without a timetable mode and only shows modules for automatic creation', () => {
+        const source = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
+            'utf8',
+        )
+        const methods = (TimetableV3 as any).methods
+        const currentStepWatcher = (TimetableV3 as any).watch.currentStep
+        const data = (TimetableV3 as any).data()
+        const context = {
+            scheduleCreationMode: null,
+        }
+        const questionPosition = source.indexOf('Welche Module sollen zur Stundenplanerstellung berücksichtigt werden?')
+        const modeCardsPosition = source.indexOf('class="timetable-v3__schedule-mode-options"')
+        const automaticCardPosition = source.indexOf('timetable-v3__schedule-mode-card--automatic')
+        const automaticCardEndPosition = source.indexOf('</label>', automaticCardPosition)
+        const selectedModulesPosition = source.indexOf('timetable-v3__schedule-mode-selected-modules')
+        const manualCardPosition = source.indexOf('timetable-v3__schedule-mode-card--manual')
+        const manualCardEndPosition = source.indexOf('</label>', manualCardPosition)
+        const availableModulesPosition = source.indexOf('timetable-v3__schedule-mode-available-modules')
+
+        expect(questionPosition).toBeGreaterThan(-1)
+        expect(modeCardsPosition).toBeGreaterThan(questionPosition)
+        expect(selectedModulesPosition).toBeGreaterThan(automaticCardPosition)
+        expect(selectedModulesPosition).toBeLessThan(automaticCardEndPosition)
+        expect(availableModulesPosition).toBeGreaterThan(manualCardPosition)
+        expect(availableModulesPosition).toBeLessThan(manualCardEndPosition)
+        expect(source).toContain('Verfügbare Module und Unterrichte')
+        expect(source).toContain('Alle Module und Unterrichte stehen zur Verfügung.')
+        expect(source).toContain('role="radiogroup"')
+        expect(source).toContain('type="radio"')
+        expect(source).toContain('name="timetable-v3-schedule-mode"')
+        expect(source).toContain(':checked="scheduleCreationMode === \'automatic\'"')
+        expect(source).toContain(':checked="scheduleCreationMode === \'manual\'"')
+        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+        expect(source).toContain(
+            "'timetable-v3__schedule-mode-options--automatic-selected': scheduleCreationMode === 'automatic'",
+        )
+        expect(source).toContain(
+            "'timetable-v3__schedule-mode-options--manual-selected': scheduleCreationMode === 'manual'",
+        )
+        expect(source).toContain('grid-template-columns: minmax(0, 2fr) minmax(0, 1fr)')
+        expect(source).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 2fr)')
+        expect(source).toContain('.timetable-v3__schedule-mode-card--selected .timetable-v3__schedule-mode-icon')
+        expect(source).toContain('background: var(--schedule-mode-accent)')
+        expect(source.match(/v-if="scheduleCreationMode === 'automatic'"/g)).toHaveLength(3)
+        expect(source).toContain(`v-if="scheduleCreationMode === 'automatic' && planningMode === 'without_student'"`)
+        expect(source).not.toContain('scheduleCreationMode: this.scheduleCreationMode')
+        expect(data.scheduleCreationMode).toBeNull()
+
+        methods.chooseScheduleCreationMode.call(context, 'unsupported')
+        expect(context.scheduleCreationMode).toBeNull()
+
+        methods.chooseScheduleCreationMode.call(context, 'automatic')
+        expect(context.scheduleCreationMode).toBe('automatic')
+
+        methods.chooseScheduleCreationMode.call(context, 'manual')
+        expect(context.scheduleCreationMode).toBe('manual')
+
+        currentStepWatcher.call(context, 'modules')
+        expect(context.scheduleCreationMode).toBeNull()
+    })
+
     it('opens a persistent course dialog from an individual module tile', async () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
         )
         const methods = (TimetableV3 as any).methods
-        const displayedModuleSelectionGroups = (TimetableV3 as any).computed.displayedModuleSelectionGroups
+        const selectedModules = (TimetableV3 as any).computed.selectedModules
+        const selectedModuleHours = (TimetableV3 as any).computed.selectedModuleHours
+        const selectedModuleHoursLabel = (TimetableV3 as any).computed.selectedModuleHoursLabel
         const activeModuleSelectionGroup = (TimetableV3 as any).computed.activeModuleSelectionGroup
         const saveState = vi.fn().mockResolvedValue(undefined)
         const groups = [
@@ -626,6 +691,7 @@ describe('TimetableV3', () => {
                     selection_key: 'finished:D1',
                     code: 'D1',
                     name: 'Deutsch 1',
+                    hours: 1.5,
                     courses: [{ key: 'd1-a', title: 'D1 - 1A - MA' }],
                 }],
             },
@@ -636,6 +702,7 @@ describe('TimetableV3', () => {
                     selection_key: 'current:M5',
                     code: 'M5',
                     name: 'Mathematik 5',
+                    hours: 2,
                     courses: [
                         {
                             key: 'm5-a-1',
@@ -667,6 +734,8 @@ describe('TimetableV3', () => {
         }
         const groupContext = {
             activeModuleGroupKey: '',
+            selectedModuleKeys: ['current:M5'],
+            selectedCourseKeys: ['m5-a-1', 'm5-a-2'],
         }
 
         methods.openModuleCoursesDialog.call(context, groups[1].modules[0])
@@ -708,33 +777,57 @@ describe('TimetableV3', () => {
         methods.toggleModuleGroup.call(groupContext, groups[0])
         expect(groupContext.activeModuleGroupKey).toBe('finished')
         expect(methods.moduleGroupActive.call(groupContext, groups[0])).toBe(true)
+        methods.closeModuleGroup.call(groupContext)
+        expect(groupContext.activeModuleGroupKey).toBe('')
+        expect(groupContext.selectedModuleKeys).toEqual(['current:M5'])
+        expect(groupContext.selectedCourseKeys).toEqual(['m5-a-1', 'm5-a-2'])
+        methods.toggleModuleGroup.call(groupContext, groups[0])
         methods.toggleModuleGroup.call(groupContext, groups[0])
         expect(groupContext.activeModuleGroupKey).toBe('')
         expect(methods.moduleGroupActive.call(groupContext, groups[0])).toBe(false)
         expect(methods.moduleGroupIcon(groups[0])).toBe('mdi-check-decagram-outline')
         expect(methods.moduleGroupIcon({ key: 'unknown' })).toBe('mdi-view-grid-outline')
-        const displayedGroups = displayedModuleSelectionGroups.call({
-            moduleSearch: 'deutsch',
+        expect(selectedModules.call({
             moduleSelectionGroups: groups,
-        })
-        expect(displayedGroups).toEqual([
-            { ...groups[0], modules: groups[0].modules },
-            { ...groups[1], modules: [] },
-        ])
+            selectedModuleKeys: ['current:M5'],
+        })).toEqual([groups[1].modules[0]])
+        expect(selectedModuleHours.call({
+            selectedModules: [groups[0].modules[0], groups[1].modules[0]],
+        })).toBe(3.5)
+        expect(selectedModuleHoursLabel.call({ selectedModuleHours: 3.5 })).toBe('3,5')
         expect(activeModuleSelectionGroup.call({
             activeModuleGroupKey: 'finished',
-            displayedModuleSelectionGroups: displayedGroups,
-        })).toEqual(displayedGroups[0])
+            moduleSelectionGroups: groups,
+        })).toEqual(groups[0])
         expect(activeModuleSelectionGroup.call({
             activeModuleGroupKey: '',
-            displayedModuleSelectionGroups: displayedGroups,
+            moduleSelectionGroups: groups,
         })).toBeNull()
-        expect(source).toContain('v-for="group in displayedModuleSelectionGroups"')
+        expect(source).toContain('v-for="group in moduleSelectionGroups"')
+        expect(source).toContain('timetable-v3__schedule-mode-selected-modules')
+        expect(source).not.toContain('class="timetable-v3__selected-modules mt-3"')
+        expect(source).toContain('v-for="module in selectedModules"')
+        expect(source).toContain('Ausgewählte Module')
+        expect(source).toContain("{{ selectedModuleCount === 1 ? 'Modul' : 'Module' }}")
+        expect(source).toContain('· {{ selectedModuleHoursLabel }} Std.')
+        expect(source).toContain('Keine Module ausgewählt.')
+        expect(source).not.toContain('Module suchen')
+        expect(source).not.toContain('moduleSearch')
         expect(source).toContain('class="timetable-v3__module-group-card"')
         expect(source).toContain('class="timetable-v3__module-group-panel"')
         expect(source).toContain('@click="toggleModuleGroup(group)"')
+        expect(source).toContain('class="timetable-v3__module-group-panel-close"')
+        expect(source).toMatch(/class="timetable-v3__module-group-panel-close"[\s\S]*?color="orange-darken-2"/)
+        expect(source).toContain('<v-icon icon="mdi-close" size="20" />')
+        expect(source).toContain('height="34"')
+        expect(source).toContain('min-width="34"')
+        expect(source).toContain('rounded="sm"')
+        expect(source).toContain('variant="flat"')
+        expect(source).toContain('width="34"')
+        expect(source).toContain('aria-label="Modulart schließen"')
+        expect(source).toContain('@click="closeModuleGroup"')
         expect(source).toContain('v-if="activeModuleSelectionGroup"')
-        expect(source).toContain('<transition name="timetable-v3-module-panel" mode="out-in">')
+        expect(source).toMatch(/<transition[\s\S]*?name="timetable-v3-module-panel"[\s\S]*?mode="out-in">/)
         expect(source).toContain(':icon="moduleGroupIcon(group)"')
         expect(source).toContain('class="timetable-v3__module-tile"')
         expect(source).toContain(':aria-pressed="moduleSelected(module)"')
@@ -753,8 +846,11 @@ describe('TimetableV3', () => {
         expect(source).toContain('{{ course.hours_label }}')
         expect(source).toContain('v-if="course.instruction_label"')
         expect(source).toContain('{{ course.instruction_label }}')
-        expect(source).toContain('class="timetable-v3__module-search mt-3"')
-        expect(source).toContain('grid-template-columns: repeat(auto-fit, minmax(142px, 1fr))')
+        expect(source).toMatch(/\.timetable-v3__module-group-cards\s*\{[\s\S]*?display: flex;/)
+        expect(source).toMatch(/\.timetable-v3__module-group-card\s*\{[\s\S]*?flex: 1 1 0;/)
+        expect(source).toMatch(/\.timetable-v3__module-group-card--active\s*\{[\s\S]*?flex-grow: 1\.5;/)
+        expect(source).toContain('transition: flex-grow 170ms ease')
+        expect(source).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.timetable-v3__module-group-cards\s*\{[\s\S]*?display: grid;[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/)
         expect(source).toContain('grid-template-columns: repeat(auto-fill, minmax(190px, 1fr))')
         expect(source).toContain('min-height: 60px')
         expect(source).toContain('@media (prefers-reduced-motion: reduce)')
@@ -792,6 +888,7 @@ describe('TimetableV3', () => {
             moduleSelectionGroups: [],
             selectedModuleKeys: [],
             selectedCourseKeys: [],
+            scheduleCreationMode: null,
             activeModuleGroupKey: '',
             moduleSelectionResetPending: false,
         }
@@ -800,6 +897,7 @@ describe('TimetableV3', () => {
 
         expect(context.selectedCourseKeys).toEqual(['d5-a-1', 'd5-a-2'])
         expect(context.selectedModuleKeys).toEqual(['current:D5'])
+        expect(context.scheduleCreationMode).toBeNull()
     })
 
     it('keeps both entry choices editable and offers a persistent V3 restart action', async () => {

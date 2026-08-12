@@ -179,6 +179,7 @@ class StudentTimetableV3StudentInformationService
                     ->map(function (array $module) use ($groupKey): array {
                         $grade = mb_strtoupper(trim((string) ($module['grade'] ?? '')), 'UTF-8');
                         $semester = is_numeric($module['semester'] ?? null) ? (int) $module['semester'] : null;
+                        $hours = $this->moduleHours($module);
                         $hoursLabel = trim((string) ($module['hours_label'] ?? ''));
 
                         return [
@@ -187,7 +188,10 @@ class StudentTimetableV3StudentInformationService
                             'name' => trim((string) ($module['name'] ?? '')),
                             'semester' => $semester,
                             'semester_label' => $semester ? "{$semester}. Semester" : null,
-                            'hours_label' => $hoursLabel !== '' ? $hoursLabel : null,
+                            'hours' => $hours,
+                            'hours_label' => $hoursLabel !== ''
+                                ? $hoursLabel
+                                : ($hours !== null ? $this->courseHoursLabel($hours) : null),
                             'status_label' => match ($groupKey) {
                                 'finished' => $grade === 'B' ? 'Befreit' : 'Bestanden',
                                 'negative' => 'Negativ',
@@ -301,6 +305,7 @@ class StudentTimetableV3StudentInformationService
             if ($lastRangeIndex >= 0
                 && $this->courseGroupsHaveContinuousSchedule($scheduleRanges[$lastRangeIndex], $courseGroup)) {
                 $scheduleRanges[$lastRangeIndex]['time_until'] = trim((string) ($courseGroup['time_until'] ?? $courseGroup['ends_at'] ?? ''));
+                $scheduleRanges[$lastRangeIndex]['display_range_until_hour'] = $this->courseGroupDisplayRangeUntilHour($courseGroup);
 
                 continue;
             }
@@ -334,13 +339,33 @@ class StudentTimetableV3StudentInformationService
      */
     private function courseGroupsHaveContinuousSchedule(array $firstCourseGroup, array $secondCourseGroup): bool
     {
+        if ($this->courseGroupScheduleSeriesKey($firstCourseGroup)
+            !== $this->courseGroupScheduleSeriesKey($secondCourseGroup)) {
+            return false;
+        }
+
+        $firstHour = $this->courseGroupDisplayRangeUntilHour($firstCourseGroup);
+        $secondHour = $this->courseGroupDisplayRangeUntilHour($secondCourseGroup);
+
+        if ($firstHour !== null && $secondHour !== null) {
+            return $secondHour === $firstHour + 1;
+        }
+
         $firstEndTime = trim((string) ($firstCourseGroup['time_until'] ?? $firstCourseGroup['ends_at'] ?? ''));
         $secondStartTime = trim((string) ($secondCourseGroup['time_from'] ?? $secondCourseGroup['starts_at'] ?? ''));
 
         return $firstEndTime !== ''
-            && $firstEndTime === $secondStartTime
-            && $this->courseGroupScheduleSeriesKey($firstCourseGroup)
-                === $this->courseGroupScheduleSeriesKey($secondCourseGroup);
+            && $firstEndTime === $secondStartTime;
+    }
+
+    /** @param array<string, mixed> $courseGroup */
+    private function courseGroupDisplayRangeUntilHour(array $courseGroup): ?int
+    {
+        $hour = $courseGroup['display_range_until_hour'] ?? $courseGroup['hour'] ?? null;
+
+        return is_numeric($hour) && (int) $hour > 0
+            ? (int) $hour
+            : null;
     }
 
     /** @param array<string, mixed> $courseGroup */

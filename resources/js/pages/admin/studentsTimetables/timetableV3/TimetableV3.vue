@@ -295,28 +295,129 @@
                     <div>
                         <div class="timetable-v3__module-workspace-eyebrow">Modulauswahl</div>
                         <h3 id="timetable-v3-module-selection-title" class="timetable-v3__module-workspace-title">
-                            Welche Module sollen berücksichtigt werden?
+                            Welche Module sollen zur Stundenplanerstellung berücksichtigt werden?
                         </h3>
                     </div>
-                    <div class="timetable-v3__module-selected-total" aria-live="polite">
+                    <div
+                        v-if="scheduleCreationMode === 'automatic'"
+                        class="timetable-v3__module-selected-total"
+                        aria-live="polite">
                         <strong>{{ selectedModuleCount }}</strong>
                         {{ selectedModuleCount === 1 ? 'Modul ausgewählt' : 'Module ausgewählt' }}
                     </div>
                 </div>
 
-                <v-text-field
-                    v-model="moduleSearch"
-                    class="timetable-v3__module-search mt-3"
-                    label="Module suchen"
-                    prepend-inner-icon="mdi-magnify"
-                    variant="outlined"
-                    density="compact"
-                    clearable
-                    hide-details />
+                <div
+                    class="timetable-v3__schedule-mode-options"
+                    :class="{
+                        'timetable-v3__schedule-mode-options--automatic-selected': scheduleCreationMode === 'automatic',
+                        'timetable-v3__schedule-mode-options--manual-selected': scheduleCreationMode === 'manual',
+                    }"
+                    role="radiogroup"
+                    aria-label="Art der Stundenplanerstellung">
+                    <label
+                        class="timetable-v3__schedule-mode-card timetable-v3__schedule-mode-card--automatic"
+                        :class="{ 'timetable-v3__schedule-mode-card--selected': scheduleCreationMode === 'automatic' }">
+                        <input
+                            class="timetable-v3__schedule-mode-input"
+                            type="radio"
+                            name="timetable-v3-schedule-mode"
+                            value="automatic"
+                            :checked="scheduleCreationMode === 'automatic'"
+                            @change="chooseScheduleCreationMode('automatic')" />
+                        <span class="timetable-v3__schedule-mode-icon">
+                            <v-icon icon="mdi-calendar-clock" size="22" />
+                        </span>
+                        <span class="timetable-v3__schedule-mode-copy">
+                            <span class="timetable-v3__schedule-mode-title">Automatischer Stundenplan</span>
+                            <span class="timetable-v3__schedule-mode-description">
+                                Stundenplan automatisch optimieren
+                            </span>
+                        </span>
+                        <v-icon
+                            :icon="scheduleCreationMode === 'automatic' ? 'mdi-check-circle' : 'mdi-circle-outline'"
+                            size="22" />
 
-                <div class="timetable-v3__module-group-cards" aria-label="Modularten">
+                        <div
+                            class="timetable-v3__selected-modules timetable-v3__schedule-mode-selected-modules"
+                            aria-live="polite">
+                            <div class="timetable-v3__selected-modules-heading">
+                                <span class="timetable-v3__selected-modules-heading-label">
+                                    <v-icon icon="mdi-check-circle-outline" size="18" />
+                                    Ausgewählte Module
+                                </span>
+                                <span class="timetable-v3__selected-modules-summary">
+                                    {{ selectedModuleCount }}
+                                    {{ selectedModuleCount === 1 ? 'Modul' : 'Module' }}
+                                    · {{ selectedModuleHoursLabel }} Std.
+                                </span>
+                            </div>
+                            <div v-if="selectedModules.length" class="timetable-v3__selected-modules-list">
+                                <v-chip
+                                    v-for="module in selectedModules"
+                                    :key="module.selection_key"
+                                    color="primary"
+                                    label
+                                    size="small"
+                                    variant="tonal">
+                                    <strong>{{ module.code }}</strong>
+                                    <span v-if="module.name && module.name !== module.code">
+                                        &nbsp;· {{ module.name }}
+                                    </span>
+                                </v-chip>
+                            </div>
+                            <div v-else class="timetable-v3__selected-modules-empty">
+                                Keine Module ausgewählt.
+                            </div>
+                        </div>
+                    </label>
+
+                    <label
+                        class="timetable-v3__schedule-mode-card timetable-v3__schedule-mode-card--manual"
+                        :class="{ 'timetable-v3__schedule-mode-card--selected': scheduleCreationMode === 'manual' }">
+                        <input
+                            class="timetable-v3__schedule-mode-input"
+                            type="radio"
+                            name="timetable-v3-schedule-mode"
+                            value="manual"
+                            :checked="scheduleCreationMode === 'manual'"
+                            @change="chooseScheduleCreationMode('manual')" />
+                        <span class="timetable-v3__schedule-mode-icon">
+                            <v-icon icon="mdi-calendar-edit" size="22" />
+                        </span>
+                        <span class="timetable-v3__schedule-mode-copy">
+                            <span class="timetable-v3__schedule-mode-title">Manueller Stundenplan</span>
+                            <span class="timetable-v3__schedule-mode-description">
+                                Stundenplan selbst zusammenstellen
+                            </span>
+                        </span>
+                        <v-icon
+                            :icon="scheduleCreationMode === 'manual' ? 'mdi-check-circle' : 'mdi-circle-outline'"
+                            size="22" />
+
+                        <div
+                            class="
+                                timetable-v3__selected-modules
+                                timetable-v3__schedule-mode-selected-modules
+                                timetable-v3__schedule-mode-available-modules
+                            ">
+                            <div class="timetable-v3__selected-modules-heading">
+                                <v-icon icon="mdi-book-open-variant" size="18" />
+                                Verfügbare Module und Unterrichte
+                            </div>
+                            <div class="timetable-v3__selected-modules-empty">
+                                Alle Module und Unterrichte stehen zur Verfügung.
+                            </div>
+                        </div>
+                    </label>
+                </div>
+
+                <div
+                    v-if="scheduleCreationMode === 'automatic'"
+                    class="timetable-v3__module-group-cards"
+                    aria-label="Modularten">
                     <button
-                        v-for="group in displayedModuleSelectionGroups"
+                        v-for="group in moduleSelectionGroups"
                         :key="group.key"
                         type="button"
                         class="timetable-v3__module-group-card"
@@ -341,7 +442,10 @@
                     </button>
                 </div>
 
-                <transition name="timetable-v3-module-panel" mode="out-in">
+                <transition
+                    v-if="scheduleCreationMode === 'automatic'"
+                    name="timetable-v3-module-panel"
+                    mode="out-in">
                     <section
                         v-if="activeModuleSelectionGroup"
                         :key="activeModuleSelectionGroup.key"
@@ -353,10 +457,26 @@
                                 <span class="timetable-v3__module-group-panel-icon">
                                     <v-icon :icon="moduleGroupIcon(activeModuleSelectionGroup)" size="22" />
                                 </span>
-                                <div>
-                                    <h4 class="timetable-v3__module-group-panel-title">
-                                        {{ activeModuleSelectionGroup.label }} Module
-                                    </h4>
+                                <div class="timetable-v3__module-group-panel-heading-copy">
+                                    <div class="timetable-v3__module-group-panel-title-row">
+                                        <h4 class="timetable-v3__module-group-panel-title">
+                                            {{ activeModuleSelectionGroup.label }} Module
+                                        </h4>
+                                        <v-btn
+                                            class="timetable-v3__module-group-panel-close"
+                                            color="orange-darken-2"
+                                            height="34"
+                                            min-width="34"
+                                            rounded="sm"
+                                            size="small"
+                                            variant="flat"
+                                            width="34"
+                                            aria-label="Modulart schließen"
+                                            title="Modulart schließen"
+                                            @click="closeModuleGroup">
+                                            <v-icon icon="mdi-close" size="20" />
+                                        </v-btn>
+                                    </div>
                                     <div class="timetable-v3__module-group-panel-description">
                                         {{ activeModuleSelectionGroup.description }}
                                     </div>
@@ -407,12 +527,14 @@
                             </button>
                         </div>
                         <div v-else class="timetable-v3__module-list-empty">
-                            {{ moduleSearch ? 'Keine passenden Module.' : 'Keine Module vorhanden.' }}
+                            Keine Module vorhanden.
                         </div>
                     </section>
                 </transition>
 
-                <div v-if="planningMode === 'without_student'" class="timetable-v3__module-without-student-hint">
+                <div
+                    v-if="scheduleCreationMode === 'automatic' && planningMode === 'without_student'"
+                    class="timetable-v3__module-without-student-hint">
                     Ohne Studierenden werden alle verfügbaren Module unter „Zusätzliche“ angeboten.
                 </div>
             </section>
@@ -765,6 +887,8 @@ import {
 
 const WITH_STUDENT = 'with_student'
 const WITHOUT_STUDENT = 'without_student'
+const AUTOMATIC_TIMETABLE = 'automatic'
+const MANUAL_TIMETABLE = 'manual'
 const SELECTION_STEP = 'selection'
 const MODULE_SELECTION_STEP = 'modules'
 const TIMETABLE_V3_SELECTION_PATH = '/admin/students-timetables/timetable-v3/overview'
@@ -821,10 +945,10 @@ export default {
             moduleSelectionGroups: [],
             selectedModuleKeys: [],
             selectedCourseKeys: [],
+            scheduleCreationMode: null,
             activeModuleGroupKey: '',
             moduleCoursesDialogOpen: false,
             moduleCourseDialogModule: null,
-            moduleSearch: '',
             moduleSelectionResetPending: false,
             planningSelectionFields: [],
             planningSelectionValues: {},
@@ -944,21 +1068,28 @@ export default {
         selectedModuleCount() {
             return this.selectedModuleKeys.length
         },
-        displayedModuleSelectionGroups() {
-            const search = String(this.moduleSearch || '').trim().toLocaleLowerCase('de-AT')
+        selectedModules() {
+            const selectedModuleKeys = new Set(this.selectedModuleKeys)
 
-            if (!search) return this.moduleSelectionGroups
+            return this.moduleSelectionGroups
+                .flatMap(group => Array.isArray(group?.modules) ? group.modules : [])
+                .filter(module => selectedModuleKeys.has(module.selection_key))
+        },
+        selectedModuleHours() {
+            return this.selectedModules.reduce((totalHours, module) => {
+                const moduleHours = Number(module?.hours ?? 0)
 
-            return this.moduleSelectionGroups.map(group => ({
-                ...group,
-                modules: (Array.isArray(group.modules) ? group.modules : [])
-                    .filter(module => [module.code, module.name, module.semester_label, module.status_label]
-                        .map(value => String(value || '').toLocaleLowerCase('de-AT'))
-                        .some(value => value.includes(search))),
-            }))
+                return Number.isFinite(moduleHours) ? totalHours + moduleHours : totalHours
+            }, 0)
+        },
+        selectedModuleHoursLabel() {
+            return this.selectedModuleHours.toLocaleString('de-AT', {
+                maximumFractionDigits: 2,
+                minimumFractionDigits: 0,
+            })
         },
         activeModuleSelectionGroup() {
-            return this.displayedModuleSelectionGroups
+            return this.moduleSelectionGroups
                 .find(group => group.key === this.activeModuleGroupKey) || null
         },
         moduleCourseDialogCourses() {
@@ -980,6 +1111,14 @@ export default {
             if (this.planningMode !== WITH_STUDENT) return ''
 
             return String(this.selectedStudent?.email || '').trim()
+        },
+    },
+
+    watch: {
+        currentStep(currentStep) {
+            if (currentStep === MODULE_SELECTION_STEP) {
+                this.scheduleCreationMode = null
+            }
         },
     },
 
@@ -1120,10 +1259,10 @@ export default {
             this.moduleSelectionGroups = []
             this.selectedModuleKeys = []
             this.selectedCourseKeys = []
+            this.scheduleCreationMode = null
             this.activeModuleGroupKey = ''
             this.moduleCoursesDialogOpen = false
             this.moduleCourseDialogModule = null
-            this.moduleSearch = ''
             this.planningSelectionFields = []
             this.planningSelectionValues = {}
         },
@@ -1260,7 +1399,6 @@ export default {
                 && hasStoredCourseSelection
                 ? storedSelection.selectedCourseKeys
                 : []
-
             this.moduleSelectionGroups = groups
             this.selectedModuleKeys = [...new Set(selectedKeys)]
                 .filter(selectionKey => validSelectionKeys.has(selectionKey))
@@ -1353,6 +1491,15 @@ export default {
             if (!groupKey) return
 
             this.activeModuleGroupKey = this.activeModuleGroupKey === groupKey ? '' : groupKey
+        },
+        closeModuleGroup() {
+            this.activeModuleGroupKey = ''
+        },
+        chooseScheduleCreationMode(scheduleCreationMode) {
+            if (![AUTOMATIC_TIMETABLE, MANUAL_TIMETABLE].includes(scheduleCreationMode)) return
+            if (this.scheduleCreationMode === scheduleCreationMode) return
+
+            this.scheduleCreationMode = scheduleCreationMode
         },
         openModuleCoursesDialog(module) {
             if (!module?.selection_key) return
@@ -1914,18 +2061,177 @@ export default {
     font-size: 0.94rem;
 }
 
-.timetable-v3__module-search {
-    max-width: 390px;
+.timetable-v3__schedule-mode-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 13px;
+    transition: grid-template-columns 170ms ease;
 }
 
-.timetable-v3__module-search :deep(.v-field) {
-    background: rgba(255, 255, 255, 0.9);
+.timetable-v3__schedule-mode-options--automatic-selected {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.timetable-v3__schedule-mode-options--manual-selected {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+}
+
+.timetable-v3__schedule-mode-card {
+    --schedule-mode-accent: #4f46e5;
+    --schedule-mode-accent-rgb: 79, 70, 229;
+    --schedule-mode-soft: #eef2ff;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 11px;
+    align-items: center;
+    align-content: start;
+    min-width: 0;
+    min-height: 78px;
+    padding: 12px 14px;
+    font: inherit;
+    color: #344054;
+    text-align: left;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid #dbe3ef;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.timetable-v3__schedule-mode-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+}
+
+.timetable-v3__schedule-mode-card--manual {
+    --schedule-mode-accent: #b45309;
+    --schedule-mode-accent-rgb: 180, 83, 9;
+    --schedule-mode-soft: #fffbeb;
+}
+
+.timetable-v3__schedule-mode-card:hover,
+.timetable-v3__schedule-mode-card:focus-within {
+    background: #fff;
+    border-color: var(--schedule-mode-accent);
+    outline: none;
+    box-shadow: 0 9px 22px rgba(var(--schedule-mode-accent-rgb), 0.14);
+    transform: translateY(-1px);
+}
+
+.timetable-v3__schedule-mode-card--selected {
+    color: var(--schedule-mode-accent);
+    background: linear-gradient(
+        135deg,
+        rgba(var(--schedule-mode-accent-rgb), 0.18),
+        var(--schedule-mode-soft) 58%,
+        #fff
+    );
+    border-color: var(--schedule-mode-accent);
+    box-shadow:
+        inset 0 0 0 2px rgba(var(--schedule-mode-accent-rgb), 0.2),
+        0 10px 26px rgba(var(--schedule-mode-accent-rgb), 0.18);
+}
+
+.timetable-v3__schedule-mode-card--selected > .v-icon,
+.timetable-v3__schedule-mode-card--selected .timetable-v3__schedule-mode-title {
+    color: var(--schedule-mode-accent);
+}
+
+.timetable-v3__schedule-mode-card--selected .timetable-v3__schedule-mode-icon {
+    color: #fff;
+    background: var(--schedule-mode-accent);
+    border-color: var(--schedule-mode-accent);
+    box-shadow: 0 6px 16px rgba(var(--schedule-mode-accent-rgb), 0.24);
+}
+
+.timetable-v3__schedule-mode-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    color: var(--schedule-mode-accent);
+    background: var(--schedule-mode-soft);
+    border: 1px solid rgba(var(--schedule-mode-accent-rgb), 0.2);
+    border-radius: 11px;
+}
+
+.timetable-v3__schedule-mode-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.timetable-v3__schedule-mode-title {
+    color: #1e293b;
+    font-size: 0.88rem;
+    font-weight: 850;
+}
+
+.timetable-v3__schedule-mode-description {
+    color: #64748b;
+    font-size: 0.7rem;
+    line-height: 1.35;
+}
+
+.timetable-v3__schedule-mode-selected-modules {
+    grid-column: 1 / -1;
+    margin-top: 2px;
+    background: rgba(255, 255, 255, 0.7);
+    border-color: rgba(var(--schedule-mode-accent-rgb), 0.2);
+}
+
+.timetable-v3__selected-modules {
+    display: grid;
+    gap: 8px;
+    padding: 11px 13px;
+    background: rgba(248, 250, 252, 0.92);
+    border: 1px solid #dbe3ef;
     border-radius: 12px;
 }
 
+.timetable-v3__selected-modules-heading {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    align-items: center;
+    justify-content: space-between;
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 850;
+}
+
+.timetable-v3__selected-modules-heading-label {
+    display: inline-flex;
+    gap: 7px;
+    align-items: center;
+}
+
+.timetable-v3__selected-modules-summary {
+    padding: 3px 8px;
+    color: var(--schedule-mode-accent);
+    white-space: nowrap;
+    background: rgba(var(--schedule-mode-accent-rgb), 0.1);
+    border: 1px solid rgba(var(--schedule-mode-accent-rgb), 0.2);
+    border-radius: 999px;
+}
+
+.timetable-v3__selected-modules-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.timetable-v3__selected-modules-empty {
+    color: #64748b;
+    font-size: 0.78rem;
+}
+
 .timetable-v3__module-group-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
+    display: flex;
     gap: 9px;
     margin-top: 13px;
 }
@@ -1936,6 +2242,7 @@ export default {
     --module-group-soft: #f1f5f9;
     position: relative;
     display: flex;
+    flex: 1 1 0;
     flex-direction: column;
     gap: 4px;
     min-width: 0;
@@ -1949,7 +2256,7 @@ export default {
     border: 1px solid rgba(203, 213, 225, 0.9);
     border-radius: 14px;
     cursor: pointer;
-    transition: transform 170ms ease, border-color 170ms ease, box-shadow 170ms ease, background 170ms ease;
+    transition: flex-grow 170ms ease, transform 170ms ease, border-color 170ms ease, box-shadow 170ms ease, background 170ms ease;
 }
 
 .timetable-v3__module-group-card:hover,
@@ -1962,6 +2269,7 @@ export default {
 }
 
 .timetable-v3__module-group-card--active {
+    flex-grow: 1.5;
     color: #15173b;
     background: linear-gradient(145deg, #fff 10%, var(--module-group-soft) 100%);
     border-color: var(--module-group-accent);
@@ -2120,6 +2428,21 @@ export default {
     min-width: 0;
 }
 
+.timetable-v3__module-group-panel-heading-copy {
+    min-width: 0;
+}
+
+.timetable-v3__module-group-panel-title-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px 10px;
+    align-items: center;
+}
+
+.timetable-v3__module-group-panel-close {
+    padding: 0;
+}
+
 .timetable-v3__module-group-panel-icon {
     width: 40px;
     height: 40px;
@@ -2215,9 +2538,11 @@ export default {
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .timetable-v3__schedule-mode-options,
     .timetable-v3__module-group-card,
     .timetable-v3__module-group-card-icon,
     .timetable-v3__module-group-card-active-mark,
+    .timetable-v3__schedule-mode-card,
     .timetable-v3__module-tile,
     .timetable-v3__module-course,
     .timetable-v3-module-panel-enter-active,
@@ -2815,6 +3140,10 @@ export default {
         grid-template-columns: 1fr;
     }
 
+    .timetable-v3__schedule-mode-options {
+        grid-template-columns: 1fr;
+    }
+
     .timetable-v3__module-workspace {
         padding: 13px;
     }
@@ -2829,11 +3158,8 @@ export default {
     }
 
     .timetable-v3__module-group-cards {
+        display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .timetable-v3__module-search {
-        max-width: none;
     }
 
     .timetable-v3__module-group-panel-heading {

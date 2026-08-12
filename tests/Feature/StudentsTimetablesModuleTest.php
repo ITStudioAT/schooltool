@@ -2935,9 +2935,9 @@ it('returns the shared student overview summary for a selected robot student', f
         [
             'line_number' => 1,
             'date' => '2026-09-14',
-            'period' => '3',
-            'starts_at' => '09:50',
-            'ends_at' => '10:40',
+            'period' => '10',
+            'starts_at' => '17:50',
+            'ends_at' => '18:35',
             'teacher' => 'HUB',
             'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
@@ -2945,9 +2945,9 @@ it('returns the shared student overview summary for a selected robot student', f
         [
             'line_number' => 2,
             'date' => '2026-09-14',
-            'period' => '4',
-            'starts_at' => '10:40',
-            'ends_at' => '11:30',
+            'period' => '11',
+            'starts_at' => '18:45',
+            'ends_at' => '19:30',
             'teacher' => 'HUB',
             'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
@@ -2965,9 +2965,9 @@ it('returns the shared student overview summary for a selected robot student', f
         [
             'line_number' => 4,
             'date' => '2026-09-21',
-            'period' => '3',
-            'starts_at' => '09:50',
-            'ends_at' => '10:40',
+            'period' => '10',
+            'starts_at' => '17:50',
+            'ends_at' => '18:35',
             'teacher' => 'HUB',
             'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
@@ -2975,9 +2975,9 @@ it('returns the shared student overview summary for a selected robot student', f
         [
             'line_number' => 5,
             'date' => '2026-09-28',
-            'period' => '3',
-            'starts_at' => '09:50',
-            'ends_at' => '10:40',
+            'period' => '10',
+            'starts_at' => '17:50',
+            'ends_at' => '18:35',
             'teacher' => 'HUB',
             'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
@@ -2985,9 +2985,9 @@ it('returns the shared student overview summary for a selected robot student', f
         [
             'line_number' => 6,
             'date' => '2026-09-21',
-            'period' => '4',
-            'starts_at' => '10:40',
-            'ends_at' => '11:30',
+            'period' => '11',
+            'starts_at' => '18:45',
+            'ends_at' => '19:30',
             'teacher' => 'HUB',
             'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
@@ -2995,9 +2995,9 @@ it('returns the shared student overview summary for a selected robot student', f
         [
             'line_number' => 7,
             'date' => '2026-09-28',
-            'period' => '4',
-            'starts_at' => '10:40',
-            'ends_at' => '11:30',
+            'period' => '11',
+            'starts_at' => '18:45',
+            'ends_at' => '19:30',
             'teacher' => 'HUB',
             'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
@@ -3055,9 +3055,9 @@ it('returns the shared student overview summary for a selected robot student', f
         [
             'line_number' => 13,
             'date' => '2026-09-14',
-            'period' => '5',
-            'starts_at' => '11:45',
-            'ends_at' => '12:35',
+            'period' => '13',
+            'starts_at' => '20:25',
+            'ends_at' => '21:10',
             'teacher' => 'HUB',
             'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
@@ -3065,9 +3065,9 @@ it('returns the shared student overview summary for a selected robot student', f
         [
             'line_number' => 14,
             'date' => '2026-09-21',
-            'period' => '5',
-            'starts_at' => '11:45',
-            'ends_at' => '12:35',
+            'period' => '13',
+            'starts_at' => '20:25',
+            'ends_at' => '21:10',
             'teacher' => 'HUB',
             'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
@@ -3075,9 +3075,9 @@ it('returns the shared student overview summary for a selected robot student', f
         [
             'line_number' => 15,
             'date' => '2026-09-28',
-            'period' => '5',
-            'starts_at' => '11:45',
-            'ends_at' => '12:35',
+            'period' => '13',
+            'starts_at' => '20:25',
+            'ends_at' => '21:10',
             'teacher' => 'HUB',
             'room' => 'R101',
             'class_name' => 'D1-1A-HUB',
@@ -3269,12 +3269,13 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.rooms_label', 'R101')
         ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.keys')
         ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.schedule_labels')
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.0', 'Montag · 09:50–10:40 · 1-wöchig')
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.1', 'Montag · 10:40–11:30 · 1-wöchig')
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.2', 'Montag · 11:45–12:35 · 1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.0', 'Montag · 17:50–18:35 · 1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.1', 'Montag · 18:45–19:30 · 1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.2', 'Montag · 20:25–21:10 · 1-wöchig')
         ->assertJsonCount(2, 'data.module_selection_groups.3.modules.0.courses.0.display_schedule_labels')
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.display_schedule_labels.0', 'Montag · 09:50–11:30 · 1-wöchig')
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.display_schedule_labels.1', 'Montag · 11:45–12:35 · 1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.display_schedule_labels.0', 'Montag · 17:50–19:30 · 1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.display_schedule_labels.1', 'Montag · 20:25–21:10 · 1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.hours', 2)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.scheduled_hours', 3)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.usual_hours', 2)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.hours_label', '2 Std.')
