@@ -179,7 +179,7 @@ class StudentTimetableV3StudentInformationService
                     ->map(function (array $module) use ($groupKey): array {
                         $grade = mb_strtoupper(trim((string) ($module['grade'] ?? '')), 'UTF-8');
                         $semester = is_numeric($module['semester'] ?? null) ? (int) $module['semester'] : null;
-                        $hours = $this->moduleHours($module);
+                        $hours = $this->moduleRegularHours($module) ?? $this->moduleHours($module);
                         $hoursLabel = trim((string) ($module['hours_label'] ?? ''));
 
                         return [
@@ -189,9 +189,9 @@ class StudentTimetableV3StudentInformationService
                             'semester' => $semester,
                             'semester_label' => $semester ? "{$semester}. Semester" : null,
                             'hours' => $hours,
-                            'hours_label' => $hoursLabel !== ''
-                                ? $hoursLabel
-                                : ($hours !== null ? $this->courseHoursLabel($hours) : null),
+                            'hours_label' => $hours !== null
+                                ? $this->courseHoursLabel($hours)
+                                : ($hoursLabel !== '' ? $hoursLabel : null),
                             'status_label' => match ($groupKey) {
                                 'finished' => $grade === 'B' ? 'Befreit' : 'Bestanden',
                                 'negative' => 'Negativ',
@@ -238,8 +238,9 @@ class StudentTimetableV3StudentInformationService
                     ->all();
                 $displayScheduleLabels = $this->courseDisplayScheduleLabels($courseGroups);
                 $usualHours = $this->moduleHours($module);
+                $regularHours = $this->moduleRegularHours($module) ?? $usualHours;
                 $scheduledHours = $this->courseScheduledWeeklyHours($courseGroups);
-                $isDistanceLearning = $this->courseIsDistanceLearning($courseGroups, $scheduledHours, $usualHours);
+                $isDistanceLearning = $this->courseIsDistanceLearning($courseGroups, $scheduledHours, $regularHours);
 
                 return [
                     'key' => $this->courseKey($course),
@@ -268,7 +269,8 @@ class StudentTimetableV3StudentInformationService
                     'display_schedule_labels' => $displayScheduleLabels,
                     'scheduled_hours' => $scheduledHours,
                     'usual_hours' => $usualHours,
-                    'hours_label' => $this->courseHoursLabel($usualHours),
+                    'regular_hours' => $regularHours,
+                    'hours_label' => $this->courseHoursLabel($regularHours),
                     'is_distance_learning' => $isDistanceLearning,
                     'instruction_label' => $isDistanceLearning ? 'Fernunterricht' : null,
                     'block_label' => $courseGroups
@@ -406,7 +408,7 @@ class StudentTimetableV3StudentInformationService
     private function courseIsDistanceLearning(
         Collection $courseGroups,
         ?float $scheduledHours,
-        ?float $usualHours,
+        ?float $regularHours,
     ): bool {
         if ($courseGroups->contains(
             fn (array $courseGroup): bool => ($courseGroup['is_kompaktunterricht'] ?? false) === true,
@@ -414,11 +416,11 @@ class StudentTimetableV3StudentInformationService
             return false;
         }
 
-        if ($scheduledHours === null || $usualHours === null) {
+        if ($scheduledHours === null || $regularHours === null) {
             return false;
         }
 
-        return abs(($scheduledHours * 2) - $usualHours) < 0.001;
+        return abs(($scheduledHours * 2) - $regularHours) < 0.001;
     }
 
     /**
@@ -445,6 +447,16 @@ class StudentTimetableV3StudentInformationService
     private function moduleHours(array $module): ?float
     {
         $hours = $module['hours'] ?? $module['hours_per_week'] ?? null;
+
+        return is_numeric($hours) && (float) $hours > 0
+            ? (float) $hours
+            : null;
+    }
+
+    /** @param array<string, mixed> $module */
+    private function moduleRegularHours(array $module): ?float
+    {
+        $hours = $module['regular_hours'] ?? null;
 
         return is_numeric($hours) && (float) $hours > 0
             ? (float) $hours

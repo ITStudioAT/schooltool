@@ -1773,14 +1773,17 @@ class StudentTimetablesStudentOverviewService
     ): array {
         $studyModules = $this->studyModules($completedCourses, $missingCourses);
         $subjectCourses = $this->subjectCourses($user, $schoolyearId, $selection, $studyProgram);
-        $historicalSubjectCourses = $studyProgram === StudentTimetableStudyProgram::Normalstudium
+        $regularSubjectCourses = $studyProgram === StudentTimetableStudyProgram::Normalstudium
             ? $subjectCourses
-            : $subjectCourses->concat($this->subjectCourses(
+            : $this->subjectCourses(
                 $user,
                 $schoolyearId,
                 $selection,
                 StudentTimetableStudyProgram::Normalstudium,
-            ));
+            );
+        $historicalSubjectCourses = $studyProgram === StudentTimetableStudyProgram::Normalstudium
+            ? $subjectCourses
+            : $subjectCourses->concat($regularSubjectCourses);
         $finishedModules = collect([
             ...$studyModules['exempt'],
             ...$studyModules['passed'],
@@ -1838,11 +1841,11 @@ class StudentTimetablesStudentOverviewService
             : $availableModules->filter(fn (array $course): bool => (int) ($course['semester'] ?? 0) > $currentSemester);
 
         return [
-            $this->moduleSelectionGroup('finished', 'Abgeschlossene', $finishedModules, false, courseGroups: $courseGroups),
-            $this->moduleSelectionGroup('negative', 'Negative', $negativeModules, false, $currentSemester, $courseGroups),
-            $this->moduleSelectionGroup('previous', 'Frühere', $previousModules, false, courseGroups: $courseGroups),
-            $this->moduleSelectionGroup('current', 'Aktuelle', $currentModules, true, courseGroups: $courseGroups),
-            $this->moduleSelectionGroup('additional', 'Zusätzliche', $additionalModules, false, courseGroups: $courseGroups),
+            $this->moduleSelectionGroup('finished', 'Abgeschlossene', $finishedModules, false, $regularSubjectCourses, courseGroups: $courseGroups),
+            $this->moduleSelectionGroup('negative', 'Negative', $negativeModules, false, $regularSubjectCourses, $currentSemester, $courseGroups),
+            $this->moduleSelectionGroup('previous', 'Frühere', $previousModules, false, $regularSubjectCourses, courseGroups: $courseGroups),
+            $this->moduleSelectionGroup('current', 'Aktuelle', $currentModules, true, $regularSubjectCourses, courseGroups: $courseGroups),
+            $this->moduleSelectionGroup('additional', 'Zusätzliche', $additionalModules, false, $regularSubjectCourses, courseGroups: $courseGroups),
         ];
     }
 
@@ -1855,6 +1858,7 @@ class StudentTimetablesStudentOverviewService
         string $label,
         Collection $modules,
         bool $selectedByDefault,
+        Collection $regularSubjectCourses,
         ?int $selectedSemester = null,
         array $courseGroups = [],
     ): array {
@@ -1862,8 +1866,9 @@ class StudentTimetablesStudentOverviewService
             'key' => $key,
             'label' => $label,
             'modules' => $modules
-                ->map(function (array $module) use ($key, $selectedByDefault, $selectedSemester, $courseGroups): array {
+                ->map(function (array $module) use ($key, $selectedByDefault, $selectedSemester, $courseGroups, $regularSubjectCourses): array {
                     $semester = $this->integerOrNull($module['semester'] ?? null);
+                    $module = $this->moduleWithRegularSubjectPlanHours($module, $regularSubjectCourses);
 
                     return [
                         ...$this->courseWithManualTimetableGroups($module, $courseGroups),
@@ -1879,6 +1884,29 @@ class StudentTimetablesStudentOverviewService
                 ))
                 ->values()
                 ->all(),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $regularSubjectCourses
+     */
+    private function moduleWithRegularSubjectPlanHours(array $module, Collection $regularSubjectCourses): array
+    {
+        $moduleCourseCodes = $this->studentPlannedCourseCodes([$module]);
+        $regularSubjectCourse = $regularSubjectCourses->first(
+            fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $moduleCourseCodes),
+        );
+
+        if (! is_array($regularSubjectCourse)) {
+            return $module;
+        }
+
+        return [
+            ...$module,
+            'regular_hours' => $regularSubjectCourse['hours']
+                ?? $regularSubjectCourse['hours_per_week']
+                ?? $module['regular_hours']
+                ?? null,
         ];
     }
 

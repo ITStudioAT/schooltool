@@ -483,6 +483,8 @@ describe('TimetableV3', () => {
         expect(source).toContain('{{ option.title }}')
         expect(source).toContain('@click="updatePlanningSelection(field.key, option.value)"')
         expect(source).toContain('timetable-v3__planning-selection-option--selected')
+        expect(source).toContain('v-if="planningSelectionFields.length && !studentSelectionDetailsError"')
+        expect(source).toContain(':disabled="studentSelectionDetailsLoading || isSavingState"')
         expect(source).not.toContain('<v-select')
         expect(source).toContain('Ethik / Religion')
         expect(source).toContain('Sprache')
@@ -573,6 +575,9 @@ describe('TimetableV3', () => {
         const nextStepStart = source.indexOf('<div v-else class="timetable-v3__step timetable-v3__next-step">')
         const nextStepEnd = source.indexOf('<v-dialog', nextStepStart)
         const nextStepSource = source.slice(nextStepStart, nextStepEnd)
+        const backButtonStart = nextStepSource.indexOf('class="timetable-v3__back-button"')
+        const backButtonEnd = nextStepSource.indexOf('</v-btn>', backButtonStart)
+        const backButtonSource = nextStepSource.slice(backButtonStart, backButtonEnd)
         const nextContinueStart = nextStepSource.indexOf('class="timetable-v3__next-continue-button"')
         const nextContinueEnd = nextStepSource.indexOf('</v-btn>', nextContinueStart)
         const nextContinueSource = nextStepSource.slice(nextContinueStart, nextContinueEnd)
@@ -593,6 +598,7 @@ describe('TimetableV3', () => {
         expect(nextStepSource).toContain('{{ item.value }}')
         expect(nextStepSource).not.toContain('timetable-v3__compact-planning-title')
         expect(nextStepSource).not.toContain('mdi-tune-variant')
+        expect(nextStepSource).toContain('Soll der Stundenplan automatisch oder manuell erzeugt werden?')
         expect(nextStepSource).toContain('Welche Module sollen zur Stundenplanerstellung berücksichtigt werden?')
         expect(nextStepSource).toContain('Automatischer Stundenplan')
         expect(nextStepSource).toContain('Manueller Stundenplan')
@@ -606,7 +612,9 @@ describe('TimetableV3', () => {
         expect(nextStepSource).toContain('prepend-icon="mdi-arrow-left"')
         expect(nextStepSource).toContain('@click="returnToSelectionStep"')
         expect(nextStepSource).toContain('Zurück')
+        expect(backButtonSource).toContain(':disabled="studentSelectionDetailsLoading || isLoadingState || isSavingState"')
         expect(nextContinueSource).toContain('Weiter')
+        expect(nextContinueSource).toContain(':disabled="studentSelectionDetailsLoading || isLoadingState || isSavingState"')
         expect(nextContinueSource).not.toContain('@click')
     })
 
@@ -621,7 +629,7 @@ describe('TimetableV3', () => {
         const context = {
             scheduleCreationMode: null,
         }
-        const questionPosition = source.indexOf('Welche Module sollen zur Stundenplanerstellung berücksichtigt werden?')
+        const questionPosition = source.indexOf('Soll der Stundenplan automatisch oder manuell erzeugt werden?')
         const modeCardsPosition = source.indexOf('class="timetable-v3__schedule-mode-options"')
         const automaticCardPosition = source.indexOf('timetable-v3__schedule-mode-card--automatic')
         const automaticCardEndPosition = source.indexOf('</label>', automaticCardPosition)
@@ -632,6 +640,9 @@ describe('TimetableV3', () => {
 
         expect(questionPosition).toBeGreaterThan(-1)
         expect(modeCardsPosition).toBeGreaterThan(questionPosition)
+        expect(source).toContain("scheduleCreationMode === 'automatic' ? 'Modulauswahl' : 'Stundenplanerstellung'")
+        expect(source).toContain("scheduleCreationMode === 'automatic'")
+        expect(source).toContain('Welche Module sollen zur Stundenplanerstellung berücksichtigt werden?')
         expect(selectedModulesPosition).toBeGreaterThan(automaticCardPosition)
         expect(selectedModulesPosition).toBeLessThan(automaticCardEndPosition)
         expect(availableModulesPosition).toBeGreaterThan(manualCardPosition)
@@ -838,6 +849,15 @@ describe('TimetableV3', () => {
         expect(source).toContain('@click="toggleModuleCourse(course)"')
         expect(source).toContain('@click="selectAllModuleCourses"')
         expect(source).toContain('@click="deselectAllModuleCourses"')
+        expect(source).toMatch(/@click="closeModuleCoursesDialog">\s*Bestätigen/)
+        expect(source).not.toMatch(/@click="closeModuleCoursesDialog">\s*Schließen/)
+        expect(source).toContain('{{ selectedCourseCountForModule(module) }}/{{ moduleCourseCount(module) }} Unterrichte')
+        expect(source).toContain("Unterrichte für {{ moduleCourseDialogModule?.code || 'Modul' }}")
+        expect(source).toContain('von {{ moduleCourseDialogCourses.length }} Unterrichten ausgewählt')
+        expect(source).toContain('Für dieses Modul sind keine Unterrichte im importierten Stundenplan vorhanden.')
+        expect(source).not.toContain('Kurse für {{ moduleCourseDialogModule')
+        expect(source).not.toContain('Kursen ausgewählt')
+        expect(source).not.toContain('keine Kurse im importierten Stundenplan')
         expect(source).toContain('Alle auswählen')
         expect(source).toContain('Alle abwählen')
         expect(source).toContain('v-for="scheduleLabel in courseScheduleLabels(course)"')
@@ -859,6 +879,109 @@ describe('TimetableV3', () => {
         expect(source).not.toContain('mdi-chevron-up')
         expect(source).not.toContain('toggleModuleGroupCollapse')
         expect(source).not.toContain('@click="openModuleGroup(group)"')
+    })
+
+    it('selects and deselects every module in the open module type', async () => {
+        const source = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
+            'utf8',
+        )
+        const methods = (TimetableV3 as any).methods
+        const saveState = vi.fn().mockResolvedValue(undefined)
+        const group = {
+            key: 'current',
+            label: 'Aktuelle',
+            modules: [
+                {
+                    selection_key: 'current:M5',
+                    courses: [
+                        { key: 'm5-a-1', keys: ['m5-a-1', 'm5-a-2'] },
+                        { key: 'm5-b' },
+                    ],
+                },
+                {
+                    selection_key: 'current:D5',
+                    courses: [{ key: 'd5-a' }],
+                },
+                {
+                    selection_key: 'current:EMPTY',
+                    courses: [],
+                },
+            ],
+        }
+        const context = {
+            selectedModuleKeys: ['finished:D1'],
+            selectedCourseKeys: ['d1-a'],
+            selectableModulesForGroup: methods.selectableModulesForGroup,
+            moduleSelectionKeysForGroup: methods.moduleSelectionKeysForGroup,
+            courseSelectionKeysForGroup: methods.courseSelectionKeysForGroup,
+            saveState,
+        }
+
+        expect(methods.moduleSelectionKeysForGroup.call(context, group)).toEqual(['current:M5', 'current:D5'])
+        expect(methods.courseSelectionKeysForGroup.call(context, group)).toEqual([
+            'm5-a-1',
+            'm5-a-2',
+            'm5-b',
+            'd5-a',
+        ])
+        expect(methods.allModulesSelectedForGroup.call(context, group)).toBe(false)
+        expect(methods.hasSelectedModulesForGroup.call(context, group)).toBe(false)
+
+        await methods.selectAllModulesInGroup.call(context, group)
+
+        expect(context.selectedModuleKeys).toEqual(['finished:D1', 'current:M5', 'current:D5'])
+        expect(context.selectedCourseKeys).toEqual(['d1-a', 'm5-a-1', 'm5-a-2', 'm5-b', 'd5-a'])
+        expect(methods.allModulesSelectedForGroup.call(context, group)).toBe(true)
+        expect(methods.hasSelectedModulesForGroup.call(context, group)).toBe(true)
+        expect(saveState).toHaveBeenCalledOnce()
+
+        await methods.deselectAllModulesInGroup.call(context, group)
+
+        expect(context.selectedModuleKeys).toEqual(['finished:D1'])
+        expect(context.selectedCourseKeys).toEqual(['d1-a'])
+        expect(methods.allModulesSelectedForGroup.call(context, group)).toBe(false)
+        expect(methods.hasSelectedModulesForGroup.call(context, group)).toBe(false)
+        expect(saveState).toHaveBeenCalledTimes(2)
+        expect(source).toContain('{{ activeModuleSelectionGroup.label }} Module auswählen')
+        expect(source).toContain('{{ activeModuleSelectionGroup.label }} Module abwählen')
+        expect(source).toContain('@click="selectAllModulesInGroup(activeModuleSelectionGroup)"')
+        expect(source).toContain('@click="deselectAllModulesInGroup(activeModuleSelectionGroup)"')
+        expect(source).toContain('allModulesSelectedForGroup(activeModuleSelectionGroup)')
+        expect(source).toContain('hasSelectedModulesForGroup(activeModuleSelectionGroup)')
+    })
+
+    it('removes a selected module from the automatic mode summary', async () => {
+        const source = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
+            'utf8',
+        )
+        const methods = (TimetableV3 as any).methods
+        const saveState = vi.fn().mockResolvedValue(undefined)
+        const context = {
+            selectedModuleKeys: ['finished:D1', 'current:M5'],
+            selectedCourseKeys: ['d1-a', 'm5-a-1', 'm5-a-2', 'm5-b'],
+            saveState,
+        }
+        const module = {
+            selection_key: 'current:M5',
+            code: 'M5',
+            courses: [
+                { key: 'm5-a-1', keys: ['m5-a-1', 'm5-a-2'] },
+                { key: 'm5-b' },
+            ],
+        }
+
+        await methods.removeSelectedModule.call(context, module)
+
+        expect(context.selectedModuleKeys).toEqual(['finished:D1'])
+        expect(context.selectedCourseKeys).toEqual(['d1-a'])
+        expect(saveState).toHaveBeenCalledOnce()
+        expect(source).toContain('class="timetable-v3__selected-module-chip"')
+        expect(source).toContain('close-icon="mdi-close-circle"')
+        expect(source).toContain(':close-label="`${module.code} aus der Auswahl entfernen`"')
+        expect(source).toContain('@click:close.stop="removeSelectedModule(module)"')
+        expect(source).toMatch(/\.timetable-v3__selected-module-chip :deep\(\.v-chip__close\)[\s\S]*?color: #dc2626;/)
     })
 
     it('restores only persisted course selections from the matching planning context', () => {

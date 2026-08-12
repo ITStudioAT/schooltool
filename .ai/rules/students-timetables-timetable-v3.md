@@ -32,8 +32,8 @@ Clicking the currently selected Studienauswahl option clears that field. Persist
 ## Show selected modules instead of module search
 Keep all module-type groups unfiltered and replace module search with a compact live overview of selected module codes and names. Show a clear empty state when no module is selected.
 
-## Choose timetable creation mode below the module heading
-On the V3 modules step, place a single-choice selector directly below “Welche Module sollen zur Stundenplanerstellung berücksichtigt werden?”. Present exactly two side-by-side selectable cards: “Automatischer Stundenplan” and “Manueller Stundenplan”.
+## Choose timetable creation mode before module selection
+On the V3 modules step, ask “Soll der Stundenplan automatisch oder manuell erzeugt werden?” before a mode is chosen. Present exactly two side-by-side selectable cards: “Automatischer Stundenplan” and “Manueller Stundenplan”. Switch the heading to “Modulauswahl” and “Welche Module sollen zur Stundenplanerstellung berücksichtigt werden?” only after automatic mode is selected.
 
 ## Use an orange module panel close button
 Keep the solid square X button beside the open module-panel title orange, not red. Closing it clears only the active module type and preserves selected modules and courses.
@@ -52,3 +52,21 @@ Before a timetable mode is chosen, keep the two mode cards equal width. After se
 
 ## Emphasize the open module type
 On desktop, the open module-type summary card uses a 1.5 width factor relative to each sibling card. With no open type the cards remain equal width, and the existing two-column small-screen layout stays unchanged.
+
+## Call module timetable choices Unterrichte
+In visible German V3 UI copy, a module contains concrete `Unterrichte`, never `Kurse`. Use `Unterricht` / `Unterrichte` / `Unterrichten` in headings, counts, selection summaries, actions, and empty states. Keep internal API and JavaScript `course` field names unchanged.
+
+## Disable module-step navigation while selection loads
+While the modules route shows “Auswahl wird geladen”, keep both “Zurück” and “Weiter” disabled until the student selection details request finishes.
+
+## Disable visible study choices while reloading
+When V3 recalculates Studienauswahl, keep already loaded option buttons visible and disable them until the details request finishes. On the initial load, show only the loading feedback because no options exist yet.
+
+## Allow bulk selection within the open module type
+This supersedes the earlier individual-only module selection rule. In the open V3 module-type panel, provide group-wide actions labelled with that type (for example, “Aktuelle Module auswählen/abwählen”); selecting includes every available course key for those modules, and deselecting preserves selections from other module types.
+
+## Confirm module course choices
+Label the footer action in the persistent V3 Unterricht selection dialog “Bestätigen”, not “Schließen”. Course changes continue to persist immediately; the confirmation action closes the dialog.
+
+## Remove modules from the automatic summary
+Each selected-module chip inside the automatic mode card has an accessible red close action. Closing a chip removes that module and all of its selected course keys, persists the state, and leaves other selected modules untouched.

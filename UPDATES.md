@@ -5,7 +5,7 @@
 ### Timetable V3
 
 - Startseite erzeugt
--Seite Moduleauswahl
+- Seite Modulauswahl
 
 ## 3.45.0 - 3.45.1
 

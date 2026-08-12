@@ -18,5 +18,8 @@ Recognition CSV exports are snapshots. Use the stable imported `modulid` (scoped
 ## Limit V3 selectable modules by student progression
 For a selected V3 student, build selectable modules with the shared progression rules: no positive/exempt M allows M1 and M2, positive/exempt M1 allows M2 and M3, and higher modules stay hidden until their prerequisites are met. Keep failed modules in the negative group and leave the no-student module catalog unrestricted.
 
-## Display only subject-plan hours on V3 course cards
-Course-card `hours_label` must show only the regular `usual_hours` value sourced from the selected study program's subject plan. Keep `scheduled_hours` for backend Fernunterricht detection and diagnostics, but never include it in the visible hours label.
+## Display imported weekly hours on V3 course cards
+Course-card `hours_label` shows the calculated `scheduled_hours` from the imported recurring timetable slots, weighted by recurrence interval. Fall back to the selected study program's `usual_hours` only when no recurring schedule load can be calculated. Keep module-level hours and `usual_hours` as selected-study-program values for planning; use `regular_hours` from Normalstudium for Fernunterricht comparison.
+
+## Compare regular timetable options with Normalstudium hours
+Keep module-card hours tied to the selected study program. For V3 Fernunterricht detection, compare each non-compact concrete Unterricht's imported recurring weekly load with the module's Normalstudium hours; exactly half is Fernunterricht. Q–V Kompaktunterricht remains excluded because its missing half is self-study, not scheduled Fernunterricht.

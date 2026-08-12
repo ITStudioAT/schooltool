@@ -2912,7 +2912,7 @@ it('returns the shared student overview summary for a selected robot student', f
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'R/ET1', 'json_subject' => 'R/ET', 'name' => 'Religion/Ethik', 'hours_per_week' => 2],
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'ETH1', 'json_subject' => 'ETH', 'name' => 'Ethik 1', 'hours_per_week' => 2],
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'BU1', 'json_subject' => 'BU', 'name' => 'Buchhaltung 1', 'hours_per_week' => 2],
-        ['semester' => 2, 'branch' => 'common', 'json_code' => 'BU2', 'json_subject' => 'BU', 'name' => 'Buchhaltung 2', 'hours_per_week' => 2],
+        ['semester' => 2, 'branch' => 'common', 'json_code' => 'BU2', 'json_subject' => 'BU', 'name' => 'Buchhaltung 2', 'hours_per_week' => 4],
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'M1', 'json_subject' => 'M', 'name' => 'Mathematik 1', 'hours_per_week' => 3],
         ['semester' => 2, 'branch' => 'common', 'json_code' => 'M2', 'json_subject' => 'M', 'name' => 'Mathematik 2', 'hours_per_week' => 3],
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'D1', 'json_subject' => 'D', 'name' => 'Deutsch 1', 'hours_per_week' => 2],
@@ -3093,6 +3093,100 @@ it('returns the shared student overview summary for a selected robot student', f
         'student_group' => null,
         ...$course,
     ]));
+
+    $d2LineNumber = 16;
+    $createD2CourseSeries = function (
+        array $dates,
+        string $period,
+        string $startsAt,
+        string $endsAt,
+    ) use ($user, $schoolyear, $timetableImport, &$d2LineNumber): void {
+        collect($dates)->each(function (string $date) use (
+            $user,
+            $schoolyear,
+            $timetableImport,
+            &$d2LineNumber,
+            $period,
+            $startsAt,
+            $endsAt,
+        ): void {
+            StudentTimetableEntry::factory()->create([
+                'school_id' => $user->school_id,
+                'schoolyear_id' => $schoolyear->id,
+                'timetable_import_id' => $timetableImport->id,
+                'line_number' => $d2LineNumber++,
+                'date' => $date,
+                'semester' => 2,
+                'period' => $period,
+                'starts_at' => $startsAt,
+                'ends_at' => $endsAt,
+                'subject' => 'D',
+                'teacher' => 'ENNS',
+                'class_name' => 'D2-2A-ENNS',
+                'course' => 'D',
+                'module_code' => 'D2',
+                'student_group' => null,
+            ]);
+        });
+    };
+
+    $createD2CourseSeries(['2026-09-14', '2026-09-21', '2026-09-28'], '10', '17:50', '18:35');
+    $createD2CourseSeries(['2026-09-14', '2026-09-28', '2026-10-12'], '11', '18:45', '19:30');
+    $createD2CourseSeries(['2026-09-17', '2026-10-01', '2026-10-15'], '12', '18:45', '19:30');
+    $createD2CourseSeries(['2026-09-17', '2026-09-24', '2026-10-01'], '13', '19:30', '20:15');
+
+    $bu2LineNumber = $d2LineNumber;
+    $createBu2CourseSeries = function (
+        string $className,
+        string $teacher,
+        array $dates,
+        string $period,
+        string $startsAt,
+        string $endsAt,
+    ) use ($user, $schoolyear, $timetableImport, &$bu2LineNumber): void {
+        collect($dates)->each(function (string $date) use (
+            $user,
+            $schoolyear,
+            $timetableImport,
+            &$bu2LineNumber,
+            $className,
+            $teacher,
+            $period,
+            $startsAt,
+            $endsAt,
+        ): void {
+            StudentTimetableEntry::factory()->create([
+                'school_id' => $user->school_id,
+                'schoolyear_id' => $schoolyear->id,
+                'timetable_import_id' => $timetableImport->id,
+                'line_number' => $bu2LineNumber++,
+                'date' => $date,
+                'semester' => 2,
+                'period' => $period,
+                'starts_at' => $startsAt,
+                'ends_at' => $endsAt,
+                'subject' => 'BU',
+                'teacher' => $teacher,
+                'class_name' => $className,
+                'course' => 'BU',
+                'module_code' => 'BU2',
+                'student_group' => null,
+            ]);
+        });
+    };
+
+    $weeklyTuesdays = ['2026-09-15', '2026-09-22', '2026-09-29'];
+    $weeklyWednesdays = ['2026-09-16', '2026-09-23', '2026-09-30'];
+    $weeklyFridays = ['2026-09-18', '2026-09-25', '2026-10-02'];
+
+    $createBu2CourseSeries('BU2-4A-KOW', 'KOW', $weeklyTuesdays, '10', '17:50', '18:35');
+    $createBu2CourseSeries('BU2-4A-KOW', 'KOW', $weeklyTuesdays, '11', '18:45', '19:30');
+    $createBu2CourseSeries('BU2-4A-KOW', 'KOW', $weeklyWednesdays, '13', '20:25', '21:10');
+    $createBu2CourseSeries('BU2-4A-KOW', 'KOW', $weeklyWednesdays, '14', '21:10', '21:55');
+    $createBu2CourseSeries('BU2-4F-KOW', 'KOW', $weeklyTuesdays, '10', '17:50', '18:35');
+    $createBu2CourseSeries('BU2-4F-KOW', 'KOW', $weeklyTuesdays, '11', '18:45', '19:30');
+    $createBu2CourseSeries('BU2-2Q-HER', 'HER', $weeklyFridays, '13', '20:25', '21:10');
+    $createBu2CourseSeries('BU2-2Q-HER', 'HER', $weeklyFridays, '14', '21:10', '21:55');
 
     StudentTimetableOverviewService::forgetCacheFor((int) $user->school_id, (int) $schoolyear->id);
 
@@ -3328,7 +3422,7 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.3.count', 0)
         ->assertJsonPath('data.module_selection_groups.4.count', 7);
 
-    $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=101')
+    $compactStudentResponse = $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=101')
         ->assertSuccessful()
         ->assertJsonPath('data.study_program', StudentTimetableStudyProgram::Kompaktstudium->value)
         ->assertJsonPath('data.module_selection_groups.0.modules.0.code', 'D1')
@@ -3337,6 +3431,50 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.module_selection_groups.0.modules.0.courses.1.hours_label', '2 Std.')
         ->assertJsonPath('data.module_selection_groups.0.modules.0.courses.1.is_distance_learning', true)
         ->assertJsonPath('data.module_selection_groups.0.modules.0.courses.1.instruction_label', 'Fernunterricht');
+
+    $d2Module = collect($compactStudentResponse->json('data.module_selection_groups'))
+        ->flatMap(fn (array $group): array => $group['modules'])
+        ->firstWhere('code', 'D2');
+    $d2Course = $d2Module['courses'][0];
+
+    expect($d2Module['hours'])->toEqual(3)
+        ->and($d2Module['hours_label'])->toBe('3 Std.')
+        ->and($d2Course['schedule_labels'])->toHaveCount(4)
+        ->and($d2Course['scheduled_hours'])->toEqual(3)
+        ->and($d2Course['usual_hours'])->toEqual(1.5)
+        ->and($d2Course['regular_hours'])->toEqual(3)
+        ->and($d2Course['hours_label'])->toBe('3 Std.')
+        ->and($d2Course['is_distance_learning'])->toBeFalse()
+        ->and($d2Course['instruction_label'])->toBeNull();
+
+    $bu2Module = collect($compactStudentResponse->json('data.module_selection_groups'))
+        ->flatMap(fn (array $group): array => $group['modules'])
+        ->firstWhere('code', 'BU2');
+    $bu2Course = fn (string $className): array => collect($bu2Module['courses'])
+        ->firstOrFail(fn (array $course): bool => str_contains($course['title'], $className));
+    $regularCourse = $bu2Course('4A');
+    $distanceLearningCourse = $bu2Course('4F');
+    $compactCourse = $bu2Course('2Q');
+
+    expect($bu2Module['hours'])->toEqual(4)
+        ->and($bu2Module['hours_label'])->toBe('4 Std.')
+        ->and($regularCourse['scheduled_hours'])->toEqual(4)
+        ->and($regularCourse['usual_hours'])->toEqual(2)
+        ->and($regularCourse['regular_hours'])->toEqual(4)
+        ->and($regularCourse['hours_label'])->toBe('4 Std.')
+        ->and($regularCourse['is_distance_learning'])->toBeFalse()
+        ->and($regularCourse['instruction_label'])->toBeNull()
+        ->and($distanceLearningCourse['scheduled_hours'])->toEqual(2)
+        ->and($distanceLearningCourse['usual_hours'])->toEqual(2)
+        ->and($distanceLearningCourse['regular_hours'])->toEqual(4)
+        ->and($distanceLearningCourse['hours_label'])->toBe('4 Std.')
+        ->and($distanceLearningCourse['is_distance_learning'])->toBeTrue()
+        ->and($distanceLearningCourse['instruction_label'])->toBe('Fernunterricht')
+        ->and($compactCourse['scheduled_hours'])->toEqual(2)
+        ->and($compactCourse['regular_hours'])->toEqual(4)
+        ->and($compactCourse['hours_label'])->toBe('4 Std.')
+        ->and($compactCourse['is_distance_learning'])->toBeFalse()
+        ->and($compactCourse['instruction_label'])->toBeNull();
 
     $clearedLanguageQuery = http_build_query([
         'student_code' => '100',
