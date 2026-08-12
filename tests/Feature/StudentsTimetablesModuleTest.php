@@ -2895,6 +2895,19 @@ it('returns the shared student overview summary for a selected robot student', f
         'exists_date' => now(),
     ]);
 
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'class' => '3R',
+        'school_level' => '11_1',
+        'study_program' => StudentTimetableStudyProgram::Kompaktstudium,
+        'student_code' => '101',
+        'last_name' => 'Muster',
+        'first_name' => 'Student',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+
     collect([
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'R/ET1', 'json_subject' => 'R/ET', 'name' => 'Religion/Ethik', 'hours_per_week' => 2],
         ['semester' => 1, 'branch' => 'common', 'json_code' => 'ETH1', 'json_subject' => 'ETH', 'name' => 'Ethik 1', 'hours_per_week' => 2],
@@ -3039,6 +3052,36 @@ it('returns the shared student overview summary for a selected robot student', f
             'room' => 'R303',
             'class_name' => 'D1-3R-SCH',
         ],
+        [
+            'line_number' => 13,
+            'date' => '2026-09-14',
+            'period' => '5',
+            'starts_at' => '11:45',
+            'ends_at' => '12:35',
+            'teacher' => 'HUB',
+            'room' => 'R101',
+            'class_name' => 'D1-1A-HUB',
+        ],
+        [
+            'line_number' => 14,
+            'date' => '2026-09-21',
+            'period' => '5',
+            'starts_at' => '11:45',
+            'ends_at' => '12:35',
+            'teacher' => 'HUB',
+            'room' => 'R101',
+            'class_name' => 'D1-1A-HUB',
+        ],
+        [
+            'line_number' => 15,
+            'date' => '2026-09-28',
+            'period' => '5',
+            'starts_at' => '11:45',
+            'ends_at' => '12:35',
+            'teacher' => 'HUB',
+            'room' => 'R101',
+            'class_name' => 'D1-1A-HUB',
+        ],
     ])->each(fn (array $course): StudentTimetableEntry => StudentTimetableEntry::factory()->create([
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
@@ -3092,6 +3135,21 @@ it('returns the shared student overview summary for a selected robot student', f
             'familienname' => 'MUSTER',
         ],
     ]));
+
+    StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $import->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => 20,
+        'student_code' => '101',
+        'subject' => 'D1',
+        'grade' => '1',
+        'note' => '1',
+        'raw_data' => [
+            'semester' => '1',
+            'stundentafel' => 'AHS-KS-WIKU',
+        ],
+    ]);
 
     $repeatedExport = StudentTimetableRecognitionImport::query()->create([
         'school_id' => $user->school_id,
@@ -3209,26 +3267,30 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.teacher', 'HUB')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.rooms_label', 'R101')
-        ->assertJsonCount(2, 'data.module_selection_groups.3.modules.0.courses.0.keys')
-        ->assertJsonCount(2, 'data.module_selection_groups.3.modules.0.courses.0.schedule_labels')
+        ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.keys')
+        ->assertJsonCount(3, 'data.module_selection_groups.3.modules.0.courses.0.schedule_labels')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.0', 'Montag · 09:50–10:40 · 1-wöchig')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.1', 'Montag · 10:40–11:30 · 1-wöchig')
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.scheduled_hours', 2)
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.schedule_labels.2', 'Montag · 11:45–12:35 · 1-wöchig')
+        ->assertJsonCount(2, 'data.module_selection_groups.3.modules.0.courses.0.display_schedule_labels')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.display_schedule_labels.0', 'Montag · 09:50–11:30 · 1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.display_schedule_labels.1', 'Montag · 11:45–12:35 · 1-wöchig')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.scheduled_hours', 3)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.usual_hours', 2)
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.hours_label', '2 von 2 Std.')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.hours_label', '2 Std.')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.is_distance_learning', false)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.0.instruction_label', null)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.teacher', 'KOL')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.schedule_labels.0', 'Dienstag · 11:45–12:35 · 1-wöchig')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.scheduled_hours', 1)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.usual_hours', 2)
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.hours_label', '1 von 2 Std.')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.hours_label', '2 Std.')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.is_distance_learning', true)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.1.instruction_label', 'Fernunterricht')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.teacher', 'SCH')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.scheduled_hours', 1)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.usual_hours', 2)
-        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.hours_label', '1 von 2 Std.')
+        ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.hours_label', '2 Std.')
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.is_distance_learning', false)
         ->assertJsonPath('data.module_selection_groups.3.modules.0.courses.2.instruction_label', null)
         ->assertJsonPath('data.module_selection_groups.4.key', 'additional')
@@ -3264,6 +3326,31 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonCount(5, 'data.module_selection_groups')
         ->assertJsonPath('data.module_selection_groups.3.count', 0)
         ->assertJsonPath('data.module_selection_groups.4.count', 7);
+
+    $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=101')
+        ->assertSuccessful()
+        ->assertJsonPath('data.study_program', StudentTimetableStudyProgram::Kompaktstudium->value)
+        ->assertJsonPath('data.module_selection_groups.0.modules.0.code', 'D1')
+        ->assertJsonPath('data.module_selection_groups.0.modules.0.courses.1.scheduled_hours', 1)
+        ->assertJsonPath('data.module_selection_groups.0.modules.0.courses.1.usual_hours', 2)
+        ->assertJsonPath('data.module_selection_groups.0.modules.0.courses.1.hours_label', '2 Std.')
+        ->assertJsonPath('data.module_selection_groups.0.modules.0.courses.1.is_distance_learning', true)
+        ->assertJsonPath('data.module_selection_groups.0.modules.0.courses.1.instruction_label', 'Fernunterricht');
+
+    $clearedLanguageQuery = http_build_query([
+        'student_code' => '100',
+        'selection' => [
+            'religion' => 'ETH',
+            'language' => '',
+            'branch' => 'wirtschaftskundlich',
+            'arts_subject' => 'BE',
+        ],
+    ]);
+
+    $this->getJson("/api/admin/students-timetables/timetable-v3/student-information?{$clearedLanguageQuery}")
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection_fields.1.key', 'language')
+        ->assertJsonPath('data.selection_fields.1.selected_value', null);
 });
 
 it('uses the imported confession for a generic recognized religion course', function () {

@@ -41,6 +41,7 @@ class StudentTimetableV3StudentInformationService
             $user,
             $studentCode,
             $selectionOverride,
+            strictSelectionOverride: $selectionOverride !== [],
             studyProgram: $studyProgram,
         );
 
@@ -231,6 +232,7 @@ class StudentTimetableV3StudentInformationService
                     ->unique()
                     ->values()
                     ->all();
+                $displayScheduleLabels = $this->courseDisplayScheduleLabels($courseGroups);
                 $usualHours = $this->moduleHours($module);
                 $scheduledHours = $this->courseScheduledWeeklyHours($courseGroups);
                 $isDistanceLearning = $this->courseIsDistanceLearning($courseGroups, $scheduledHours, $usualHours);
@@ -259,9 +261,10 @@ class StudentTimetableV3StudentInformationService
                         ->implode(', '),
                     'schedule_label' => $scheduleLabels[0] ?? '',
                     'schedule_labels' => $scheduleLabels,
+                    'display_schedule_labels' => $displayScheduleLabels,
                     'scheduled_hours' => $scheduledHours,
                     'usual_hours' => $usualHours,
-                    'hours_label' => $this->courseHoursLabel($scheduledHours, $usualHours),
+                    'hours_label' => $this->courseHoursLabel($usualHours),
                     'is_distance_learning' => $isDistanceLearning,
                     'instruction_label' => $isDistanceLearning ? 'Fernunterricht' : null,
                     'block_label' => $courseGroups
@@ -279,19 +282,92 @@ class StudentTimetableV3StudentInformationService
             ->all();
     }
 
-    private function courseHoursLabel(?float $scheduledHours, ?float $usualHours): string
+    /**
+     * @param  Collection<int, array<string, mixed>>  $courseGroups
+     * @return list<string>
+     */
+    private function courseDisplayScheduleLabels(Collection $courseGroups): array
     {
-        if ($scheduledHours === null) {
-            return $usualHours === null
-                ? ''
-                : $this->formatHours($usualHours).' Std. üblich';
+        $scheduleRanges = [];
+
+        $sortedCourseGroups = $courseGroups->sortBy(
+            fn (array $courseGroup): string => $this->courseGroupScheduleSeriesKey($courseGroup)
+                .'|'.$this->courseGroupScheduleSortValue($courseGroup),
+        );
+
+        foreach ($sortedCourseGroups as $courseGroup) {
+            $lastRangeIndex = count($scheduleRanges) - 1;
+
+            if ($lastRangeIndex >= 0
+                && $this->courseGroupsHaveContinuousSchedule($scheduleRanges[$lastRangeIndex], $courseGroup)) {
+                $scheduleRanges[$lastRangeIndex]['time_until'] = trim((string) ($courseGroup['time_until'] ?? $courseGroup['ends_at'] ?? ''));
+
+                continue;
+            }
+
+            $scheduleRanges[] = $courseGroup;
         }
 
-        if ($usualHours === null) {
-            return $this->formatHours($scheduledHours).' Std.';
-        }
+        return collect($scheduleRanges)
+            ->sortBy(fn (array $courseGroup): string => $this->courseGroupScheduleSortValue($courseGroup))
+            ->map(fn (array $courseGroup): string => $this->courseScheduleLabel($courseGroup))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
 
-        return $this->formatHours($scheduledHours).' von '.$this->formatHours($usualHours).' Std.';
+    /** @param array<string, mixed> $courseGroup */
+    private function courseGroupScheduleSortValue(array $courseGroup): string
+    {
+        return implode('|', [
+            str_pad((string) ($courseGroup['weekday'] ?? 0), 2, '0', STR_PAD_LEFT),
+            trim((string) ($courseGroup['time_from'] ?? $courseGroup['starts_at'] ?? '')),
+            str_pad((string) ($courseGroup['hour'] ?? 0), 3, '0', STR_PAD_LEFT),
+            $this->courseGroupScheduleSeriesKey($courseGroup),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $firstCourseGroup
+     * @param  array<string, mixed>  $secondCourseGroup
+     */
+    private function courseGroupsHaveContinuousSchedule(array $firstCourseGroup, array $secondCourseGroup): bool
+    {
+        $firstEndTime = trim((string) ($firstCourseGroup['time_until'] ?? $firstCourseGroup['ends_at'] ?? ''));
+        $secondStartTime = trim((string) ($secondCourseGroup['time_from'] ?? $secondCourseGroup['starts_at'] ?? ''));
+
+        return $firstEndTime !== ''
+            && $firstEndTime === $secondStartTime
+            && $this->courseGroupScheduleSeriesKey($firstCourseGroup)
+                === $this->courseGroupScheduleSeriesKey($secondCourseGroup);
+    }
+
+    /** @param array<string, mixed> $courseGroup */
+    private function courseGroupScheduleSeriesKey(array $courseGroup): string
+    {
+        $dates = collect(is_array($courseGroup['dates'] ?? null) ? $courseGroup['dates'] : [])
+            ->map(fn (mixed $date): string => trim((string) $date))
+            ->filter()
+            ->sort()
+            ->values()
+            ->implode(',');
+
+        return implode('|', [
+            (string) ($courseGroup['weekday'] ?? ''),
+            (string) ($courseGroup['recurrence_interval'] ?? ''),
+            trim((string) ($courseGroup['recurrence_label'] ?? '')),
+            $dates,
+            trim((string) ($courseGroup['block_label'] ?? '')),
+            ($courseGroup['is_kompaktunterricht'] ?? false) === true ? 'compact' : 'regular',
+        ]);
+    }
+
+    private function courseHoursLabel(?float $usualHours): string
+    {
+        return $usualHours === null
+            ? ''
+            : $this->formatHours($usualHours).' Std.';
     }
 
     private function formatHours(float $hours): string

@@ -25,3 +25,6 @@ Start the V3 module-type card deck with no active type and no detail panel. A ca
 
 ## Choose V3 courses in a persistent module dialog
 This supersedes direct module selection from a tile. Clicking a module tile opens a persistent dialog containing the backend-supplied timetable courses; users select or deselect courses individually, and a module counts as selected while at least one of its courses is selected. Persist both module and course selection keys in the matching V3 planning context.
+
+## Allow V3 study selections to be cleared
+Clicking the currently selected Studienauswahl option clears that field. Persist cleared values as null, serialize them as empty query values so Axios does not omit them, and apply V3 selection overrides strictly so the backend does not restore the calculated default.

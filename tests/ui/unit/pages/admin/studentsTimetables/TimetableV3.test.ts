@@ -456,12 +456,27 @@ describe('TimetableV3', () => {
             value: 'F - Französisch',
         }])
 
+        await methods.updatePlanningSelection.call(context, 'language', 'F')
+
+        expect(context.planningSelectionValues).toEqual({ language: null })
+        expect(saveState).toHaveBeenCalledTimes(4)
+        expect(loadSelectedStudentSelection).toHaveBeenCalledTimes(2)
+        expect(compactPlanningSelectionItems.call(context)).toEqual([{
+            key: 'language',
+            label: 'Sprache',
+            value: '–',
+        }])
+        expect(methods.planningSelectionForRequest.call({
+            planningSelectionValues: { language: null },
+            storedState: null,
+        }, '1001')).toEqual({ language: '' })
+
         await methods.updatePlanningSelection.call(context, 'language', 'invented')
 
-        expect(context.planningSelectionValues).toEqual({ language: 'F' })
-        expect(saveState).toHaveBeenCalledTimes(2)
+        expect(context.planningSelectionValues).toEqual({ language: null })
+        expect(saveState).toHaveBeenCalledTimes(4)
         expect(source).toContain('Studienauswahl')
-        expect(source).toContain('Die berechnete Auswahl kann hier direkt angepasst werden.')
+        expect(source).toContain('Erneut anklicken, um eine Auswahl abzuwählen.')
         expect(source).toContain('v-for="field in planningSelectionFields"')
         expect(source).toContain('v-for="option in field.options"')
         expect(source).toContain('{{ field.label }}')
@@ -681,6 +696,13 @@ describe('TimetableV3', () => {
             'Montag · 09:50–10:40 · 1-wöchig',
             'Montag · 10:40–11:30 · 2-wöchig',
         ])
+        expect(methods.courseScheduleLabels({
+            display_schedule_labels: ['Montag · 20:25–21:55 · 1-wöchig'],
+            schedule_labels: [
+                'Montag · 20:25–21:10 · 1-wöchig',
+                'Montag · 21:10–21:55 · 1-wöchig',
+            ],
+        })).toEqual(['Montag · 20:25–21:55 · 1-wöchig'])
         methods.closeModuleCoursesDialog.call(context)
         expect(context.moduleCoursesDialogOpen).toBe(false)
         methods.toggleModuleGroup.call(groupContext, groups[0])

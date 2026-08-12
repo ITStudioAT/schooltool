@@ -132,7 +132,7 @@
                             Studienauswahl
                         </h3>
                         <p class="timetable-v3__planning-selection-description">
-                            Die berechnete Auswahl kann hier direkt angepasst werden.
+                            Erneut anklicken, um eine Auswahl abzuwählen.
                         </p>
                     </div>
                 </div>
@@ -779,9 +779,14 @@ function normalizedCourseSelectionKeys(course) {
 }
 
 function normalizedCourseScheduleLabels(course) {
-    const scheduleLabels = Array.isArray(course?.schedule_labels)
-        ? course.schedule_labels
-        : [course?.schedule_label]
+    const displayScheduleLabels = Array.isArray(course?.display_schedule_labels)
+        ? course.display_schedule_labels
+        : []
+    const scheduleLabels = displayScheduleLabels.length
+        ? displayScheduleLabels
+        : Array.isArray(course?.schedule_labels)
+            ? course.schedule_labels
+            : [course?.schedule_label]
 
     return [...new Set(scheduleLabels
         .map(scheduleLabel => String(scheduleLabel || '').trim())
@@ -1123,18 +1128,18 @@ export default {
             this.planningSelectionValues = {}
         },
         planningSelectionForRequest(selectionContextCode) {
-            if (Object.keys(this.planningSelectionValues).length) {
-                return this.planningSelectionValues
-            }
-
             const storedSelection = this.storedState?.planningSelection
             const storedContextCode = storedSelection?.mode === WITH_STUDENT
                 ? String(storedSelection.studentCode || '').trim()
                 : storedSelection?.mode === WITHOUT_STUDENT ? WITHOUT_STUDENT : ''
+            const selection = Object.keys(this.planningSelectionValues).length
+                ? this.planningSelectionValues
+                : storedContextCode === selectionContextCode && storedSelection?.values
+                    ? storedSelection.values
+                    : {}
 
-            return storedContextCode === selectionContextCode && storedSelection?.values
-                ? storedSelection.values
-                : {}
+            return Object.fromEntries(Object.entries(selection)
+                .map(([key, value]) => [key, value ?? '']))
         },
         async loadSelectedStudentSelection() {
             const studentCode = this.selectedStudentCode
@@ -1400,9 +1405,10 @@ export default {
 
             if (!allowedValues.includes(value)) return
 
+            const nextValue = this.planningSelectionValues[key] === value ? null : value
             this.planningSelectionValues = {
                 ...this.planningSelectionValues,
-                [key]: value,
+                [key]: nextValue,
             }
             this.moduleSelectionResetPending = true
             await this.saveState()

@@ -1,6 +1,7 @@
 ---
 paths:
   - 'app/Services/StudentsTimetables/**'
+  - 'app/Services/StudentsTimetables/*TimetableV3*'
 ---
 
 # Services Students Timetables
@@ -16,3 +17,6 @@ Recognition CSV exports are snapshots. Use the stable imported `modulid` (scoped
 
 ## Limit V3 selectable modules by student progression
 For a selected V3 student, build selectable modules with the shared progression rules: no positive/exempt M allows M1 and M2, positive/exempt M1 allows M2 and M3, and higher modules stay hidden until their prerequisites are met. Keep failed modules in the negative group and leave the no-student module catalog unrestricted.
+
+## Display only subject-plan hours on V3 course cards
+Course-card `hours_label` must show only the regular `usual_hours` value sourced from the selected study program's subject plan. Keep `scheduled_hours` for backend Fernunterricht detection and diagnostics, but never include it in the visible hours label.

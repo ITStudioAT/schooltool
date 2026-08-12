@@ -1772,19 +1772,29 @@ class StudentTimetablesStudentOverviewService
         bool $limitToStudentProgression = false,
     ): array {
         $studyModules = $this->studyModules($completedCourses, $missingCourses);
+        $subjectCourses = $this->subjectCourses($user, $schoolyearId, $selection, $studyProgram);
+        $historicalSubjectCourses = $studyProgram === StudentTimetableStudyProgram::Normalstudium
+            ? $subjectCourses
+            : $subjectCourses->concat($this->subjectCourses(
+                $user,
+                $schoolyearId,
+                $selection,
+                StudentTimetableStudyProgram::Normalstudium,
+            ));
         $finishedModules = collect([
             ...$studyModules['exempt'],
             ...$studyModules['passed'],
         ])
             ->unique(fn (array $course): string => $this->normalizedCourseCode((string) ($course['code'] ?? '')))
+            ->map(fn (array $course): array => $this->moduleWithSubjectPlanHours($course, $historicalSubjectCourses))
             ->values();
-        $negativeModules = collect($studyModules['failed']);
+        $negativeModules = collect($studyModules['failed'])
+            ->map(fn (array $course): array => $this->moduleWithSubjectPlanHours($course, $historicalSubjectCourses));
         $courseGroups = $this->manualTimetableCourseGroupsForUser($user);
         $unavailableCourseCodes = $this->studentPlannedCourseCodes([
             ...$completedCourses,
             ...$missingCourses,
         ]);
-        $subjectCourses = $this->subjectCourses($user, $schoolyearId, $selection, $studyProgram);
 
         if ($limitToStudentProgression) {
             $completedCourseCodes = $this->studentCompletedCourseCodes($completedCourses);
@@ -1869,6 +1879,29 @@ class StudentTimetablesStudentOverviewService
                 ))
                 ->values()
                 ->all(),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $subjectCourses
+     */
+    private function moduleWithSubjectPlanHours(array $module, Collection $subjectCourses): array
+    {
+        $moduleCourseCodes = $this->studentPlannedCourseCodes([$module]);
+        $subjectCourse = $subjectCourses->first(
+            fn (array $course): bool => $this->courseCompletedForStudentPlanning($course, $moduleCourseCodes),
+        );
+
+        if (! is_array($subjectCourse)) {
+            return $module;
+        }
+
+        return [
+            ...$module,
+            'hours_per_week' => $subjectCourse['hours_per_week'] ?? $module['hours_per_week'] ?? null,
+            'hours' => $subjectCourse['hours'] ?? $module['hours'] ?? null,
+            'hours_value' => $subjectCourse['hours_value'] ?? $module['hours_value'] ?? null,
+            'hours_label' => $subjectCourse['hours_label'] ?? $module['hours_label'] ?? null,
         ];
     }
 
