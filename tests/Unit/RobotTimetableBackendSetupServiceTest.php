@@ -3,6 +3,7 @@
 use App\Models\User;
 use App\Services\StudentsTimetables\RobotTimetableBackendSetupService;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -3547,4 +3548,585 @@ it('does not collapse different imported options that share the same time slots'
         ->and($result['selected_timetable']['slots']['1-1']['code'])->toBe('CH2')
         ->and($result['selected_timetable']['slots']['1-1']['conflicts'][0]['code'])->toBe('D6')
         ->and($result['selected_timetable']['problems'])->toHaveCount(1);
+});
+
+it('rejects a missing requested module even when another module resolves to duplicate courses', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $settings = [
+        'selection' => [
+            'semester' => 2,
+            'branch' => '',
+            'artsSubject' => null,
+            'language' => 'F',
+            'religion' => 'Rev',
+        ],
+        'constraints' => [
+            'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+            'availableTimes' => range(1, 15),
+            'excludedWeekdayTimes' => [],
+        ],
+        'selected_course_keys' => ['D1', 'Rev2'],
+        'deselected_course_keys' => [],
+        'deselected_course_group_keys' => [],
+        'selected_additional_course_keys' => [],
+        'selected_additional_courses_required' => false,
+        'selected_timetable_type' => 'full_green',
+        'selected_timetable_number' => 1,
+    ];
+    $duplicateGermanSubjects = collect([1, 2])
+        ->map(fn (int $id): array => [
+            'id' => $id,
+            'semester' => 1,
+            'branch' => 'common',
+            'json_code' => 'D1',
+            'json_subject' => 'D',
+            'name' => 'Deutsch 1',
+            'tt_subject' => 'D',
+            'hours_per_week' => 1,
+            'is_active' => true,
+        ])
+        ->all();
+
+    try {
+        $service->calculateAllPossibleTimetableVariations(
+            subjectRows: $duplicateGermanSubjects,
+            subjectMappings: [],
+            courseGroups: [
+                [
+                    'key' => 'd1-a',
+                    'weekday' => 1,
+                    'hour' => 1,
+                    'class_name' => 'D1-A',
+                    'display_label' => 'D1-A',
+                    'title' => 'D1-A',
+                    'course' => 'D1',
+                    'subject' => 'D',
+                    'dates' => [],
+                    'dates_count' => 0,
+                ],
+            ],
+            settings: $settings,
+            maximumTimetables: 10,
+        );
+
+        $this->fail('A missing requested module must abort timetable generation.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())
+            ->toHaveKey('modules')
+            ->and($exception->errors()['modules'][0])
+            ->toContain('REV2');
+    }
+});
+
+it('resolves a compact generic religion subject to the selected religion module in every plan', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateAllPossibleTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 20,
+                'semester' => 2,
+                'branch' => 'common',
+                'json_code' => 'R2',
+                'json_subject' => 'R',
+                'name' => 'Religion 2',
+                'tt_subject' => 'R',
+                'hours_per_week' => 1,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'key' => 'rev2-a',
+                'weekday' => 1,
+                'hour' => 1,
+                'class_name' => 'Rev2-3RU-AUER',
+                'display_label' => 'Rev2-3RU-AUER',
+                'title' => 'Rev2-3RU-AUER',
+                'course' => 'Rev2',
+                'subject' => 'R',
+                'is_kompaktunterricht' => true,
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'key' => 'rev2-b',
+                'weekday' => 2,
+                'hour' => 2,
+                'class_name' => 'Rev2-5RU-BAUER',
+                'display_label' => 'Rev2-5RU-BAUER',
+                'title' => 'Rev2-5RU-BAUER',
+                'course' => 'Rev2',
+                'subject' => 'R',
+                'is_kompaktunterricht' => true,
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 2,
+                'branch' => '',
+                'artsSubject' => null,
+                'language' => 'F',
+                'religion' => 'Rev',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => ['Rev2'],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        maximumTimetables: 10,
+    );
+
+    expect($result['timetables'])->toHaveCount(2)
+        ->and(collect($result['timetables'])->every(
+            fn (array $timetable): bool => collect($timetable['slots'])
+                ->contains(fn (array $slot): bool => ($slot['code'] ?? null) === 'Rev2'),
+        ))->toBeTrue();
+});
+
+it('rejects a required raw course group assigned to the wrong selected module', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    try {
+        $service->calculateAllPossibleTimetableVariations(
+            subjectRows: [
+                [
+                    'id' => 30,
+                    'semester' => 1,
+                    'branch' => 'common',
+                    'json_code' => 'D1',
+                    'json_subject' => 'D',
+                    'name' => 'Deutsch 1',
+                    'tt_subject' => 'D',
+                    'hours_per_week' => 1,
+                    'is_active' => true,
+                ],
+                [
+                    'id' => 31,
+                    'semester' => 1,
+                    'branch' => 'common',
+                    'json_code' => 'M1',
+                    'json_subject' => 'M',
+                    'name' => 'Mathematik 1',
+                    'tt_subject' => 'M',
+                    'hours_per_week' => 1,
+                    'is_active' => true,
+                ],
+            ],
+            subjectMappings: [],
+            courseGroups: [
+                [
+                    'key' => 'd1-a',
+                    'weekday' => 1,
+                    'hour' => 1,
+                    'class_name' => 'D1-A',
+                    'display_label' => 'D1-A',
+                    'title' => 'D1-A',
+                    'course' => 'D1',
+                    'subject' => 'D',
+                    'dates' => [],
+                    'dates_count' => 0,
+                ],
+                [
+                    'key' => 'm1-a',
+                    'weekday' => 2,
+                    'hour' => 1,
+                    'class_name' => 'M1-A',
+                    'display_label' => 'M1-A',
+                    'title' => 'M1-A',
+                    'course' => 'M1',
+                    'subject' => 'M',
+                    'dates' => [],
+                    'dates_count' => 0,
+                ],
+            ],
+            settings: [
+                'selection' => [
+                    'semester' => 1,
+                    'branch' => '',
+                    'artsSubject' => null,
+                    'language' => 'F',
+                    'religion' => 'Rev',
+                ],
+                'constraints' => [
+                    'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                    'availableTimes' => range(1, 15),
+                    'excludedWeekdayTimes' => [],
+                ],
+                'selected_course_keys' => ['D1', 'M1'],
+                'deselected_course_keys' => [],
+                'deselected_course_group_keys' => [],
+                'selected_additional_course_keys' => [],
+                'selected_additional_courses_required' => false,
+                'selected_timetable_type' => 'full_green',
+                'selected_timetable_number' => 1,
+            ],
+            maximumTimetables: 10,
+            requiredCourseGroupsByModule: [
+                'D1' => ['m1-a'],
+            ],
+        );
+
+        $this->fail('A raw course group must not resolve through a different selected module.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey('selected_course_keys');
+    }
+});
+
+it('excludes a whole logical course when one of its rows is outside strict v3 constraints', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+
+    $result = $service->calculateAllPossibleTimetableVariations(
+        subjectRows: [
+            [
+                'id' => 40,
+                'semester' => 1,
+                'branch' => 'common',
+                'json_code' => 'D1',
+                'json_subject' => 'D',
+                'name' => 'Deutsch 1',
+                'tt_subject' => 'D',
+                'hours_per_week' => 2,
+                'is_active' => true,
+            ],
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            [
+                'key' => 'd1-a-friday',
+                'weekday' => 5,
+                'hour' => 1,
+                'class_name' => 'D1-A',
+                'display_label' => 'D1-A',
+                'title' => 'D1-A',
+                'course' => 'D1',
+                'subject' => 'D',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+            [
+                'key' => 'd1-a-saturday',
+                'weekday' => 6,
+                'hour' => 1,
+                'class_name' => 'D1-A',
+                'display_label' => 'D1-A',
+                'title' => 'D1-A',
+                'course' => 'D1',
+                'subject' => 'D',
+                'dates' => [],
+                'dates_count' => 0,
+            ],
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => null,
+                'language' => 'F',
+                'religion' => 'Rev',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => ['D1'],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        maximumTimetables: 10,
+        requiredCourseGroupsByModule: [
+            'D1' => ['d1-a-friday', 'd1-a-saturday'],
+        ],
+    );
+
+    expect($result['timetable_variation_count'])->toBe(0)
+        ->and($result['timetables'])->toBe([]);
+});
+
+it('counts possible timetables after removing each course without materializing trial plans', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $subjects = collect([
+        ['id' => 61, 'code' => 'D1', 'subject' => 'D', 'name' => 'Deutsch 1'],
+        ['id' => 62, 'code' => 'M1', 'subject' => 'M', 'name' => 'Mathematik 1'],
+        ['id' => 63, 'code' => 'BU1', 'subject' => 'BU', 'name' => 'Biologie 1'],
+    ])->map(fn (array $subject): array => [
+        'id' => $subject['id'],
+        'semester' => 1,
+        'branch' => 'common',
+        'json_code' => $subject['code'],
+        'json_subject' => $subject['subject'],
+        'name' => $subject['name'],
+        'tt_subject' => $subject['subject'],
+        'hours_per_week' => 1,
+        'is_active' => true,
+    ])->all();
+    $courseGroups = collect([
+        ['key' => 'd1-a', 'label' => 'D1-A', 'course' => 'D1', 'subject' => 'D', 'hour' => 1],
+        ['key' => 'm1-a', 'label' => 'M1-A', 'course' => 'M1', 'subject' => 'M', 'hour' => 1],
+        ['key' => 'm1-b', 'label' => 'M1-B', 'course' => 'M1', 'subject' => 'M', 'hour' => 2],
+        ['key' => 'bu1-a', 'label' => 'BU1-A', 'course' => 'BU1', 'subject' => 'BU', 'hour' => 1],
+        ['key' => 'bu1-b', 'label' => 'BU1-B', 'course' => 'BU1', 'subject' => 'BU', 'hour' => 2],
+    ])->map(fn (array $group): array => [
+        'key' => $group['key'],
+        'weekday' => 1,
+        'hour' => $group['hour'],
+        'class_name' => $group['label'],
+        'display_label' => $group['label'],
+        'title' => $group['label'],
+        'course' => $group['course'],
+        'subject' => $group['subject'],
+        'dates' => [],
+        'dates_count' => 0,
+    ])->all();
+
+    $result = $service->calculateAllPossibleTimetableVariations(
+        subjectRows: $subjects,
+        subjectMappings: [],
+        courseGroups: $courseGroups,
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => null,
+                'language' => 'F',
+                'religion' => 'Rev',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 15),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => ['D1', 'M1', 'BU1'],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        maximumTimetables: 10,
+        includeOneCourseRemovalCountsWhenNoPossible: true,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(0)
+        ->green_timetable_count->toBe(0)
+        ->timetables->toBe([])
+        ->one_course_removal_counts->toBe([
+            [
+                'removed_course_code' => 'D1',
+                'possible_timetable_count' => 2,
+                'full_green_timetable_count' => 2,
+                'green_timetable_count' => 0,
+                'status' => 'calculated',
+            ],
+            [
+                'removed_course_code' => 'M1',
+                'possible_timetable_count' => 1,
+                'full_green_timetable_count' => 1,
+                'green_timetable_count' => 0,
+                'status' => 'calculated',
+            ],
+            [
+                'removed_course_code' => 'BU1',
+                'possible_timetable_count' => 1,
+                'full_green_timetable_count' => 1,
+                'green_timetable_count' => 0,
+                'status' => 'calculated',
+            ],
+        ]);
+});
+
+it('counts a removal scenario beyond the materialization cap without materializing it', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $subjects = collect([
+        ['id' => 71, 'code' => 'D1', 'subject' => 'D', 'name' => 'Deutsch 1'],
+        ['id' => 72, 'code' => 'M1', 'subject' => 'M', 'name' => 'Mathematik 1'],
+        ['id' => 73, 'code' => 'BU1', 'subject' => 'BU', 'name' => 'Biologie 1'],
+    ])->map(fn (array $subject): array => [
+        'id' => $subject['id'],
+        'semester' => 1,
+        'branch' => 'common',
+        'json_code' => $subject['code'],
+        'json_subject' => $subject['subject'],
+        'name' => $subject['name'],
+        'tt_subject' => $subject['subject'],
+        'hours_per_week' => 1,
+        'is_active' => true,
+    ])->all();
+    $courseGroup = fn (
+        string $key,
+        string $label,
+        string $course,
+        string $subject,
+        int $weekday,
+        int $hour,
+    ): array => [
+        'key' => $key,
+        'weekday' => $weekday,
+        'hour' => $hour,
+        'class_name' => $label,
+        'display_label' => $label,
+        'title' => $label,
+        'course' => $course,
+        'subject' => $subject,
+        'dates' => [],
+        'dates_count' => 0,
+    ];
+    $mathematicsGroups = collect(range(1, 25))
+        ->map(fn (int $hour): array => $courseGroup(
+            "m1-{$hour}",
+            "M1-{$hour}",
+            'M1',
+            'M',
+            1,
+            $hour,
+        ));
+    $biologyGroups = collect(range(1, 25))
+        ->map(fn (int $hour): array => $courseGroup(
+            "bu1-{$hour}",
+            "BU1-{$hour}",
+            'BU1',
+            'BU',
+            2,
+            $hour,
+        ));
+    $blockingGermanGroups = collect([1, 2])
+        ->flatMap(fn (int $weekday): array => collect(range(1, 25))
+            ->map(fn (int $hour): array => $courseGroup(
+                "d1-blocker-{$weekday}-{$hour}",
+                'D1-BLOCKER',
+                'D1',
+                'D',
+                $weekday,
+                $hour,
+            ))
+            ->all());
+
+    $result = $service->calculateAllPossibleTimetableVariations(
+        subjectRows: $subjects,
+        subjectMappings: [],
+        courseGroups: [
+            ...$blockingGermanGroups,
+            ...$mathematicsGroups,
+            ...$biologyGroups,
+        ],
+        settings: [
+            'selection' => [
+                'semester' => 1,
+                'branch' => '',
+                'artsSubject' => null,
+                'language' => 'F',
+                'religion' => 'Rev',
+            ],
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => range(1, 25),
+                'excludedWeekdayTimes' => [],
+            ],
+            'selected_course_keys' => ['D1', 'M1', 'BU1'],
+            'deselected_course_keys' => [],
+            'deselected_course_group_keys' => [],
+            'selected_additional_course_keys' => [],
+            'selected_additional_courses_required' => false,
+            'selected_timetable_type' => 'full_green',
+            'selected_timetable_number' => 1,
+        ],
+        maximumTimetables: 500,
+        includeOneCourseRemovalCountsWhenNoPossible: true,
+    );
+    $removeGermanScenario = collect($result['one_course_removal_counts'])
+        ->firstWhere('removed_course_code', 'D1');
+
+    expect($result)
+        ->full_green_timetable_count->toBe(0)
+        ->green_timetable_count->toBe(0)
+        ->timetables->toBe([])
+        ->and($removeGermanScenario)->toBe([
+            'removed_course_code' => 'D1',
+            'possible_timetable_count' => 625,
+            'full_green_timetable_count' => 625,
+            'green_timetable_count' => 0,
+            'status' => 'calculated',
+        ]);
+});
+
+it('rejects two requested aliases that resolve to the same robot course', function () {
+    $service = app(RobotTimetableBackendSetupService::class);
+    $robotCourseKey = '50|1|common|D1|D|Deutsch 1|D1';
+
+    try {
+        $service->calculateAllPossibleTimetableVariations(
+            subjectRows: [
+                [
+                    'id' => 50,
+                    'semester' => 1,
+                    'branch' => 'common',
+                    'json_code' => 'D1',
+                    'json_subject' => 'D',
+                    'name' => 'Deutsch 1',
+                    'tt_subject' => 'D',
+                    'hours_per_week' => 1,
+                    'is_active' => true,
+                ],
+            ],
+            subjectMappings: [],
+            courseGroups: [
+                [
+                    'key' => 'd1-a',
+                    'weekday' => 1,
+                    'hour' => 1,
+                    'class_name' => 'D1-A',
+                    'display_label' => 'D1-A',
+                    'title' => 'D1-A',
+                    'course' => 'D1',
+                    'subject' => 'D',
+                    'dates' => [],
+                    'dates_count' => 0,
+                ],
+            ],
+            settings: [
+                'selection' => [
+                    'semester' => 1,
+                    'branch' => '',
+                    'artsSubject' => null,
+                    'language' => 'F',
+                    'religion' => 'Rev',
+                ],
+                'constraints' => [
+                    'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                    'availableTimes' => range(1, 15),
+                    'excludedWeekdayTimes' => [],
+                ],
+                'selected_course_keys' => [$robotCourseKey, 'D1'],
+                'deselected_course_keys' => [],
+                'deselected_course_group_keys' => [],
+                'selected_additional_course_keys' => [],
+                'selected_additional_courses_required' => false,
+                'selected_timetable_type' => 'full_green',
+                'selected_timetable_number' => 1,
+            ],
+            maximumTimetables: 10,
+        );
+
+        $this->fail('Each requested module must resolve to a distinct Robot course.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey('modules');
+    }
 });

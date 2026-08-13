@@ -263,11 +263,22 @@ class StudentTimetablesStudentOverviewService
         }
 
         $student = $this->studentByCode($user, $schoolyearId, $studentCode);
-        $recognizedCourses = $this->completedCourses($user, $schoolyearId, $student->student_code);
+        $recognizedCourses = $this->recognizedCoursesWithResolvedGenericReligion(
+            $this->completedCourses($user, $schoolyearId, $student->student_code),
+            $student,
+        );
         $completedCourses = $this->positiveCourses($recognizedCourses);
         $missingCourses = $this->negativeCourses($recognizedCourses);
+        $completedReligionSelection = $this->completedReligionSelection($completedCourses);
         $selection = $this->selectionForStudent($user, $schoolyearId, $student, $completedCourses, $studyProgram);
         $selection = $this->selectionWithOverrides($selection, $selectionOverride, $strictSelectionOverride);
+
+        if (
+            $completedReligionSelection !== null
+            && $this->nonEmptyString($selectionOverride['religion'] ?? null) === null
+        ) {
+            $selection['religion'] = $completedReligionSelection;
+        }
 
         return [
             'student' => [
@@ -1137,6 +1148,69 @@ class StudentTimetablesStudentOverviewService
         ];
     }
 
+    /**
+     * @param  list<array<string, mixed>>  $recognizedCourses
+     * @return list<array<string, mixed>>
+     */
+    private function recognizedCoursesWithResolvedGenericReligion(array $recognizedCourses, Import116 $student): array
+    {
+        $religion = $this->studentReligionOptionValue((string) $student->religion);
+
+        if (! $religion) {
+            return $recognizedCourses;
+        }
+
+        return collect($recognizedCourses)
+            ->map(function (array $course) use ($religion): array {
+                $parts = $this->courseCodeModuleParts((string) ($course['code'] ?? ''));
+
+                if (($parts['base'] ?? '') !== 'R') {
+                    return $course;
+                }
+
+                $resolvedCode = $religion.($parts['module'] ?? '');
+                $moduleNumber = (string) ($parts['module'] ?? '');
+
+                return [
+                    ...$course,
+                    'code' => $resolvedCode,
+                    'subject' => $resolvedCode,
+                    'planning_codes' => [
+                        $resolvedCode,
+                        "R{$moduleNumber}",
+                        "ETH{$moduleNumber}",
+                    ],
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $completedCourses
+     */
+    private function completedReligionSelection(array $completedCourses): ?string
+    {
+        $completedCodes = collect($completedCourses)
+            ->pluck('code')
+            ->map(fn (mixed $code): string => $this->normalizedCourseCode((string) $code));
+
+        $ethicsSelection = $this->selectionOptionFromCompletedCodes($completedCodes, [
+            'ETH' => ['ETH', 'ET'],
+        ]);
+
+        if ($ethicsSelection !== null) {
+            return $ethicsSelection;
+        }
+
+        return $this->selectionOptionFromCompletedCodes($completedCodes, [
+            'Rev' => ['REV'],
+            'Ris' => ['RIS'],
+            'Rk' => ['RK'],
+            'Ror' => ['ROR'],
+        ]);
+    }
+
     public function semesterForStudent(
         ?Import116 $student,
         ?StudentTimetableStudyProgram $studyProgram = null,
@@ -1491,7 +1565,21 @@ class StudentTimetablesStudentOverviewService
         }
 
         if ($this->isReligionSubject($row)) {
-            return $this->nonEmptyString($selection['religion'] ?? null) !== null;
+            $selectedReligion = $this->nonEmptyString($selection['religion'] ?? null);
+
+            if ($selectedReligion === null) {
+                return false;
+            }
+
+            $subjectBase = $this->normalizedCourseCode($this->subjectBaseKey($row));
+
+            if ($subjectBase === 'R/ET') {
+                return true;
+            }
+
+            return $selectedReligion === 'ETH'
+                ? in_array($subjectBase, ['ET', 'ETH'], true)
+                : $subjectBase === 'R';
         }
 
         if ($this->isArtsSubject($row)) {
@@ -2040,7 +2128,7 @@ class StudentTimetablesStudentOverviewService
     {
         return collect($completedCourses)
             ->filter(fn (array $course): bool => $this->completedCourseCountsAsDone((string) ($course['grade'] ?? '')))
-            ->flatMap(fn (array $course): array => $this->courseCodeAliasParts((string) ($course['code'] ?? '')))
+            ->flatMap(fn (array $course): array => $this->studentPlanningCodes($course))
             ->map(fn (string $code): string => $this->normalizedCourseCode($code))
             ->filter()
             ->unique()
@@ -2055,7 +2143,7 @@ class StudentTimetablesStudentOverviewService
     private function studentVisitedCourseCodes(array $completedCourses): array
     {
         return collect($completedCourses)
-            ->flatMap(fn (array $course): array => $this->courseCodeAliasParts((string) ($course['code'] ?? '')))
+            ->flatMap(fn (array $course): array => $this->studentPlanningCodes($course))
             ->map(fn (string $code): string => $this->normalizedCourseCode($code))
             ->filter()
             ->unique()
@@ -2301,8 +2389,25 @@ class StudentTimetablesStudentOverviewService
     private function studentPlannedCourseCodes(array $plannedCourses): array
     {
         return collect($plannedCourses)
-            ->flatMap(fn (array $course): array => $this->courseCodeAliases($course))
+            ->flatMap(fn (array $course): array => $this->studentPlanningCodes($course))
             ->map(fn (string $courseCode): string => $this->normalizedCourseCode($courseCode))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @return list<string>
+     */
+    private function studentPlanningCodes(array $course): array
+    {
+        return collect([
+            ...$this->courseCodeAliases($course),
+            ...(is_array($course['planning_codes'] ?? null) ? $course['planning_codes'] : []),
+        ])
+            ->map(fn (mixed $courseCode): string => trim((string) $courseCode))
             ->filter()
             ->unique()
             ->values()
@@ -2359,7 +2464,14 @@ class StudentTimetablesStudentOverviewService
 
     private function isReligionSubject(StudentTimetableSubjectRow $row): bool
     {
-        return $this->subjectBaseKey($row) === 'R/ET';
+        $subjectBase = $this->normalizedCourseCode($this->subjectBaseKey($row));
+
+        if ($subjectBase === 'R/ET') {
+            return true;
+        }
+
+        return $row->study_program === StudentTimetableStudyProgram::Kompaktstudium
+            && in_array($subjectBase, ['R', 'ET', 'ETH'], true);
     }
 
     private function isLanguageSubject(StudentTimetableSubjectRow $row): bool

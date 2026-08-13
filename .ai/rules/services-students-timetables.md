@@ -23,3 +23,9 @@ Course-card `hours_label` shows the calculated `scheduled_hours` from the import
 
 ## Compare regular timetable options with Normalstudium hours
 Keep module-card hours tied to the selected study program. For V3 Fernunterricht detection, compare each non-compact concrete Unterricht's imported recurring weekly load with the module's Normalstudium hours; exactly half is Fernunterricht. Q–V Kompaktunterricht remains excluded because its missing half is self-study, not scheduled Fernunterricht.
+
+## Keep completed V3 religion selections authoritative
+In V3 Studienauswahl, a completed ETH/ET course selects ETH; otherwise a completed generic R resolves through import116.religion (or a specific religion code selects itself). A blank strict/persisted religion override must not erase that completed-course selection, while a non-empty explicit alternative remains allowed.
+
+## Group V3 no-student modules by main module
+For V3 requests without student_code, transform the available selection modules into naturally sorted main-module families by removing trailing module numbers from code/name (BU1/BU2 -> BU). Preserve each concrete module's existing selection_key, course payload, hours, and other selection data; requests with a student_code keep the five progression groups.

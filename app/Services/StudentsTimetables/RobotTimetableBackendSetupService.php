@@ -1215,6 +1215,201 @@ class RobotTimetableBackendSetupService
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
+     * @param  array<string, list<string>>  $requiredCourseGroupsByModule
+     * @return array<string, mixed>
+     */
+    public function calculateAllTimetableVariations(
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+        int $maximumTimetables,
+        array $evaluationCriteria = [],
+        array $selectedQualityCriterionKeys = [],
+        array $requiredCourseGroupsByModule = [],
+    ): array {
+        $this->resetRuntimeCache();
+        $settings['require_complete_course_group_options'] = true;
+
+        if (
+            ($settings['selected_additional_courses_required'] ?? false) === true
+            || $this->stringList($settings['selected_additional_course_keys'] ?? []) !== []
+        ) {
+            throw ValidationException::withMessages([
+                'selected_additional_course_keys' => 'Zusatzkurse werden bei der vollständigen V3-Ausgabe als reguläre Module übergeben.',
+            ]);
+        }
+
+        $base = $this->timetableVariationBase(
+            $subjectRows,
+            $subjectMappings,
+            $courseGroups,
+            $settings,
+            $evaluationCriteria,
+            $selectedQualityCriterionKeys,
+            maximumMaterializedTimetables: max(1, $maximumTimetables),
+            requireAllSelectedCourses: true,
+            requiredCourseGroupsByModule: $requiredCourseGroupsByModule,
+        );
+        $timetableCount = (int) $base['counts']['timetable_variation_count'];
+
+        if ($timetableCount > max(1, $maximumTimetables)) {
+            throw ValidationException::withMessages([
+                'modules' => sprintf(
+                    'Diese Auswahl erzeugt %s Stundenpläne. Für eine vollständige Ausgabe sind höchstens %s Stundenpläne erlaubt.',
+                    number_format($timetableCount, 0, ',', '.'),
+                    number_format(max(1, $maximumTimetables), 0, ',', '.'),
+                ),
+            ]);
+        }
+
+        return [
+            ...$this->calculateTimetableVariationsFromBase(
+                $base,
+                $settings,
+                $evaluationCriteria,
+                selectedTimetable: null,
+                selectedTimetableResolved: true,
+            ),
+            'timetables' => $this->allTimetables($base['course_options']),
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
+     * @param  array<string, list<string>>  $requiredCourseGroupsByModule
+     * @return array<string, mixed>
+     */
+    public function calculateAllPossibleTimetableVariations(
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+        int $maximumTimetables,
+        array $evaluationCriteria = [],
+        array $selectedQualityCriterionKeys = [],
+        array $requiredCourseGroupsByModule = [],
+        bool $includeOneCourseRemovalCountsWhenNoPossible = false,
+    ): array {
+        $this->resetRuntimeCache();
+        $settings['require_complete_course_group_options'] = true;
+
+        if (
+            ($settings['selected_additional_courses_required'] ?? false) === true
+            || $this->stringList($settings['selected_additional_course_keys'] ?? []) !== []
+        ) {
+            throw ValidationException::withMessages([
+                'selected_additional_course_keys' => 'Zusatzkurse werden bei der vollständigen V3-Ausgabe als reguläre Module übergeben.',
+            ]);
+        }
+
+        $base = $this->timetableVariationBase(
+            $subjectRows,
+            $subjectMappings,
+            $courseGroups,
+            $settings,
+            $evaluationCriteria,
+            $selectedQualityCriterionKeys,
+            requireAllSelectedCourses: true,
+            requiredCourseGroupsByModule: $requiredCourseGroupsByModule,
+        );
+        $maximumTimetables = max(1, $maximumTimetables);
+        $possibleTimetableCount = (int) $base['counts']['full_green_timetable_count']
+            + (int) $base['counts']['green_timetable_count'];
+
+        if ($possibleTimetableCount > $maximumTimetables) {
+            throw ValidationException::withMessages([
+                'modules' => sprintf(
+                    'Diese Auswahl erzeugt %s mögliche Stundenpläne. Für eine vollständige Ausgabe sind höchstens %s Stundenpläne erlaubt.',
+                    number_format($possibleTimetableCount, 0, ',', '.'),
+                    number_format($maximumTimetables, 0, ',', '.'),
+                ),
+            ]);
+        }
+
+        $result = [
+            ...$this->calculateTimetableVariationsFromBase(
+                $base,
+                $settings,
+                $evaluationCriteria,
+                selectedTimetable: null,
+                selectedTimetableResolved: true,
+            ),
+            'timetables' => $this->allPossibleTimetables($base['course_options']),
+        ];
+
+        if ($includeOneCourseRemovalCountsWhenNoPossible) {
+            $result['one_course_removal_counts'] = $possibleTimetableCount === 0
+                ? $this->oneCourseRemovalCounts($base)
+                : [];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array{selected_courses: list<array<string, mixed>>, course_options: list<list<array<string, mixed>>>}  $base
+     * @return list<array{removed_course_code: string, possible_timetable_count: ?int, full_green_timetable_count: ?int, green_timetable_count: ?int, status: 'calculated'|'combination_limit_exceeded'}>
+     */
+    private function oneCourseRemovalCounts(array $base): array
+    {
+        return collect($base['selected_courses'])
+            ->values()
+            ->map(function (array $removedCourse, int $removedCourseIndex) use ($base): array {
+                $remainingCourses = collect($base['selected_courses'])
+                    ->except($removedCourseIndex)
+                    ->values()
+                    ->all();
+                $remainingCourseOptions = collect($base['course_options'])
+                    ->except($removedCourseIndex)
+                    ->values()
+                    ->all();
+                $hasMissingOptions = collect($remainingCourseOptions)
+                    ->contains(fn (array $options): bool => $options === []);
+
+                if ($this->timetableVariationLimitExceeded(
+                    $remainingCourses,
+                    $remainingCourseOptions,
+                    $hasMissingOptions,
+                )) {
+                    return [
+                        'removed_course_code' => (string) ($removedCourse['code'] ?? ''),
+                        'possible_timetable_count' => null,
+                        'full_green_timetable_count' => null,
+                        'green_timetable_count' => null,
+                        'status' => 'combination_limit_exceeded',
+                    ];
+                }
+
+                $typeCounts = $remainingCourses === [] || $hasMissingOptions
+                    ? ['full_green' => 0, 'green' => 0]
+                    : $this->timetableTypeVariationCounts($remainingCourseOptions);
+                $fullGreenTimetableCount = (int) $typeCounts['full_green'];
+                $greenTimetableCount = (int) $typeCounts['green'];
+
+                return [
+                    'removed_course_code' => (string) ($removedCourse['code'] ?? ''),
+                    'possible_timetable_count' => $fullGreenTimetableCount + $greenTimetableCount,
+                    'full_green_timetable_count' => $fullGreenTimetableCount,
+                    'green_timetable_count' => $greenTimetableCount,
+                    'status' => 'calculated',
+                ];
+            })
+            ->all();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  list<string>  $selectedQualityCriterionKeys
      * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, selected_additional_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int, selected_quality_criteria_count: int}
      */
     public function calculateCachedTimetableVariationsForUser(
@@ -1321,6 +1516,7 @@ class RobotTimetableBackendSetupService
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
+     * @param  array<string, list<string>>  $requiredCourseGroupsByModule
      * @return array{course_options: list<list<array<string, mixed>>>, additional_course_options: list<list<array<string, mixed>>>, selected_additional_course_count: int, counts: array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}, quality_summary: array<string, mixed>, quality_combination_counts: array<string, int>, selected_quality_criterion_keys: list<string>, selected_quality_subset: array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}, all_quality_criteria_count: int, selected_quality_criteria_count: int}
      */
     private function timetableVariationBase(
@@ -1330,14 +1526,44 @@ class RobotTimetableBackendSetupService
         array $settings,
         array $evaluationCriteria = [],
         array $selectedQualityCriterionKeys = [],
+        ?int $maximumMaterializedTimetables = null,
+        bool $requireAllSelectedCourses = false,
+        array $requiredCourseGroupsByModule = [],
     ): array {
         $input = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
+
+        if ($requireAllSelectedCourses) {
+            $this->ensureEverySelectedCourseWasResolved($settings, $input['selected_courses']);
+            $this->ensureEveryRequiredCourseGroupWasResolvedForItsModule(
+                $requiredCourseGroupsByModule,
+                $courseGroups,
+                $input['selected_courses'],
+                $subjectMappings,
+            );
+        }
 
         if ($this->timetableVariationLimitExceeded($input['selected_courses'], $input['course_options'], $input['has_missing_options'])) {
             throw ValidationException::withMessages([
                 'selected_course_keys' => sprintf(
                     'Diese Auswahl erzeugt zu viele Stundenplan-Variationen. Bitte weniger Kurse auswählen oder die Auswahl einschränken. Maximum: %s Variationen.',
                     number_format(self::MAX_BACKEND_TIMETABLE_VARIATIONS, 0, ',', '.'),
+                ),
+            ]);
+        }
+
+        if (
+            $maximumMaterializedTimetables !== null
+            && $this->timetableVariationLimitExceeded(
+                $input['selected_courses'],
+                $input['course_options'],
+                $input['has_missing_options'],
+                $maximumMaterializedTimetables,
+            )
+        ) {
+            throw ValidationException::withMessages([
+                'modules' => sprintf(
+                    'Diese Auswahl erzeugt zu viele Stundenpläne für eine vollständige Ausgabe. Maximum: %s Stundenpläne.',
+                    number_format($maximumMaterializedTimetables, 0, ',', '.'),
                 ),
             ]);
         }
@@ -1535,8 +1761,12 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $selectedCourses
      * @param  list<list<array<string, mixed>>>  $courseOptions
      */
-    private function timetableVariationLimitExceeded(array $selectedCourses, array $courseOptions, bool $hasMissingOptions): bool
-    {
+    private function timetableVariationLimitExceeded(
+        array $selectedCourses,
+        array $courseOptions,
+        bool $hasMissingOptions,
+        int $maximumTimetables = self::MAX_BACKEND_TIMETABLE_VARIATIONS,
+    ): bool {
         if ($selectedCourses === [] || $hasMissingOptions) {
             return false;
         }
@@ -1546,7 +1776,7 @@ class RobotTimetableBackendSetupService
         foreach ($courseOptions as $options) {
             $variationCount *= count($options);
 
-            if ($variationCount > self::MAX_BACKEND_TIMETABLE_VARIATIONS) {
+            if ($variationCount > $maximumTimetables) {
                 return true;
             }
         }
@@ -3509,6 +3739,193 @@ class RobotTimetableBackendSetupService
 
     /**
      * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @return list<array<string, mixed>>
+     */
+    private function allTimetables(array $courseOptions): array
+    {
+        if ($courseOptions === [] || collect($courseOptions)->contains(fn (array $options): bool => $options === [])) {
+            return [];
+        }
+
+        $timetablesByType = [
+            'full_green' => [],
+            'green' => [],
+            'conflict' => [],
+        ];
+        $numbersByType = [
+            'full_green' => 0,
+            'green' => 0,
+            'conflict' => 0,
+        ];
+
+        $this->collectAllTimetables(
+            $courseOptions,
+            $timetablesByType,
+            $numbersByType,
+        );
+
+        return [
+            ...$timetablesByType['full_green'],
+            ...$timetablesByType['green'],
+            ...$timetablesByType['conflict'],
+        ];
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @return list<array<string, mixed>>
+     */
+    private function allPossibleTimetables(array $courseOptions): array
+    {
+        if ($courseOptions === [] || collect($courseOptions)->contains(fn (array $options): bool => $options === [])) {
+            return [];
+        }
+
+        $timetablesByType = [
+            'full_green' => [],
+            'green' => [],
+        ];
+        $numbersByType = [
+            'full_green' => 0,
+            'green' => 0,
+        ];
+
+        $this->collectAllPossibleTimetables(
+            $courseOptions,
+            $timetablesByType,
+            $numbersByType,
+        );
+
+        return [
+            ...$timetablesByType['full_green'],
+            ...$timetablesByType['green'],
+        ];
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @param  array{full_green: list<array<string, mixed>>, green: list<array<string, mixed>>}  $timetablesByType
+     * @param  array{full_green: int, green: int}  $numbersByType
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
+     * @param  list<array<string, mixed>>  $selectedOptions
+     */
+    private function collectAllPossibleTimetables(
+        array $courseOptions,
+        array &$timetablesByType,
+        array &$numbersByType,
+        int $courseIndex = 0,
+        ?array $usedAllSummary = null,
+        ?array $usedRegularDateSummary = null,
+        ?array $usedRegularWeeklySlotSummary = null,
+        bool $isFullGreenCandidate = true,
+        bool $hasRegularConflict = false,
+        array $selectedOptions = [],
+    ): void {
+        if ($hasRegularConflict) {
+            return;
+        }
+
+        if ($courseIndex >= count($courseOptions)) {
+            $type = $isFullGreenCandidate ? 'full_green' : 'green';
+            $number = ++$numbersByType[$type];
+            $timetablesByType[$type][] = $this->timetableFromOptions($selectedOptions, $type, $number);
+
+            return;
+        }
+
+        $usedAllSummary ??= $this->emptyDateKeySummary();
+        $usedRegularDateSummary ??= $this->emptyDateKeySummary();
+        $usedRegularWeeklySlotSummary ??= $this->emptyDateKeySummary();
+
+        foreach ($courseOptions[$courseIndex] as $option) {
+            $nextState = $this->nextTimetableTypeState(
+                $option,
+                $usedAllSummary,
+                $usedRegularDateSummary,
+                $usedRegularWeeklySlotSummary,
+                $isFullGreenCandidate,
+                $hasRegularConflict,
+            );
+
+            $this->collectAllPossibleTimetables(
+                $courseOptions,
+                $timetablesByType,
+                $numbersByType,
+                $courseIndex + 1,
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $nextState['is_full_green_candidate'],
+                $nextState['has_regular_conflict'],
+                [...$selectedOptions, $option],
+            );
+        }
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
+     * @param  array{full_green: list<array<string, mixed>>, green: list<array<string, mixed>>, conflict: list<array<string, mixed>>}  $timetablesByType
+     * @param  array{full_green: int, green: int, conflict: int}  $numbersByType
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
+     * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
+     * @param  list<array<string, mixed>>  $selectedOptions
+     */
+    private function collectAllTimetables(
+        array $courseOptions,
+        array &$timetablesByType,
+        array &$numbersByType,
+        int $courseIndex = 0,
+        ?array $usedAllSummary = null,
+        ?array $usedRegularDateSummary = null,
+        ?array $usedRegularWeeklySlotSummary = null,
+        bool $isFullGreenCandidate = true,
+        bool $hasRegularConflict = false,
+        array $selectedOptions = [],
+    ): void {
+        if ($courseIndex >= count($courseOptions)) {
+            $type = $hasRegularConflict
+                ? 'conflict'
+                : ($isFullGreenCandidate ? 'full_green' : 'green');
+            $number = ++$numbersByType[$type];
+            $timetablesByType[$type][] = $this->timetableFromOptions($selectedOptions, $type, $number);
+
+            return;
+        }
+
+        $usedAllSummary ??= $this->emptyDateKeySummary();
+        $usedRegularDateSummary ??= $this->emptyDateKeySummary();
+        $usedRegularWeeklySlotSummary ??= $this->emptyDateKeySummary();
+
+        foreach ($courseOptions[$courseIndex] as $option) {
+            $nextState = $this->nextTimetableTypeState(
+                $option,
+                $usedAllSummary,
+                $usedRegularDateSummary,
+                $usedRegularWeeklySlotSummary,
+                $isFullGreenCandidate,
+                $hasRegularConflict,
+            );
+
+            $this->collectAllTimetables(
+                $courseOptions,
+                $timetablesByType,
+                $numbersByType,
+                $courseIndex + 1,
+                $nextState['used_all_summary'],
+                $nextState['used_regular_date_summary'],
+                $nextState['used_regular_weekly_slot_summary'],
+                $nextState['is_full_green_candidate'],
+                $nextState['has_regular_conflict'],
+                [...$selectedOptions, $option],
+            );
+        }
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $courseOptions
      * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
@@ -4299,6 +4716,102 @@ class RobotTimetableBackendSetupService
     }
 
     /**
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $selectedCourses
+     */
+    private function ensureEverySelectedCourseWasResolved(array $settings, array $selectedCourses): void
+    {
+        $requestedCourseKeys = $this->stringList($settings['selected_course_keys'] ?? []);
+        $unresolvedCourseKeys = collect($requestedCourseKeys)
+            ->filter(fn (string $courseKey): bool => collect($selectedCourses)
+                ->filter(fn (array $course): bool => $this->courseMatchesSelectedCourseKeys($course, [$courseKey]))
+                ->count() !== 1)
+            ->map(fn (string $courseKey): string => $this->selectedCourseCodeFromKey($courseKey) ?: trim($courseKey))
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+        $hasOneToOneCourseResolution = $requestedCourseKeys === []
+            || count($requestedCourseKeys) === count($selectedCourses);
+
+        if ($unresolvedCourseKeys === [] && $hasOneToOneCourseResolution) {
+            return;
+        }
+
+        if ($unresolvedCourseKeys === []) {
+            $unresolvedCourseKeys = collect($requestedCourseKeys)
+                ->map(fn (string $courseKey): string => $this->selectedCourseCodeFromKey($courseKey) ?: trim($courseKey))
+                ->filter()
+                ->unique()
+                ->sort()
+                ->values()
+                ->all();
+        }
+
+        throw ValidationException::withMessages([
+            'modules' => sprintf(
+                'Die ausgewählten Module konnten nicht eindeutig und vollständig aufgelöst werden: %s. Die Berechnung wurde abgebrochen.',
+                implode(', ', $unresolvedCourseKeys),
+            ),
+        ]);
+    }
+
+    /**
+     * @param  array<string, list<string>>  $requiredCourseGroupsByModule
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $selectedCourses
+     * @param  list<array<string, mixed>>  $subjectMappings
+     */
+    private function ensureEveryRequiredCourseGroupWasResolvedForItsModule(
+        array $requiredCourseGroupsByModule,
+        array $courseGroups,
+        array $selectedCourses,
+        array $subjectMappings,
+    ): void {
+        if ($requiredCourseGroupsByModule === []) {
+            return;
+        }
+
+        $courseGroupsByKey = collect($courseGroups)
+            ->filter(fn (array $courseGroup): bool => trim((string) ($courseGroup['key'] ?? '')) !== '')
+            ->keyBy(fn (array $courseGroup): string => (string) $courseGroup['key']);
+        $hasUnresolvedCourseGroup = collect($requiredCourseGroupsByModule)
+            ->contains(function (array $courseGroupKeys, int|string $moduleCode) use ($courseGroupsByKey, $selectedCourses, $subjectMappings): bool {
+                $moduleCode = (string) $moduleCode;
+                $coursesForModule = collect($selectedCourses)
+                    ->filter(fn (array $course): bool => $this->courseMatchesSelectedCourseKeys($course, [$moduleCode]))
+                    ->values();
+
+                if ($coursesForModule->isEmpty()) {
+                    return true;
+                }
+
+                return collect($courseGroupKeys)->contains(function (string $courseGroupKey) use ($courseGroupsByKey, $coursesForModule, $subjectMappings): bool {
+                    $courseGroup = $courseGroupsByKey->get($courseGroupKey);
+
+                    if (! is_array($courseGroup) || $this->courseGroupOptionLabel($courseGroup) === '') {
+                        return true;
+                    }
+
+                    return ! $coursesForModule->contains(fn (array $course): bool => $this->courseGroupMatchesCourse(
+                        $courseGroup,
+                        $course,
+                        $subjectMappings,
+                    ));
+                });
+            });
+
+        if (! $hasUnresolvedCourseGroup) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'selected_course_keys' => 'Mindestens ein ausgewählter Unterricht konnte nicht vollständig für die Berechnung aufgelöst werden. Die Berechnung wurde abgebrochen.',
+        ]);
+    }
+
+    /**
      * @param  list<string>  $selectedCourseKeys
      */
     private function courseMatchesSelectedCourseKeys(array $course, array $selectedCourseKeys): bool
@@ -4374,6 +4887,7 @@ class RobotTimetableBackendSetupService
         $cacheKey = hash('sha256', json_encode($this->canonicalCacheValue([
             'constraints' => $settings['constraints'] ?? [],
             'course' => $this->courseCacheKey($course),
+            'require_complete_course_group_options' => ($settings['require_complete_course_group_options'] ?? false) === true,
             'selected_course_group_keys' => $cacheSelectedCourseGroupKeys,
         ]), JSON_THROW_ON_ERROR));
 
@@ -4383,11 +4897,23 @@ class RobotTimetableBackendSetupService
 
         $hasSelectedCourseGroupKeys = $this->courseHasSelectedCourseGroupKeys($course, $selectedCourseGroupKeys);
 
-        $options = collect($courseGroups)
+        $courseGroupsByOption = collect($courseGroups)
             ->filter(fn (array $courseGroup): bool => $this->courseGroupMatchesCourse($courseGroup, $course, $subjectMappings))
-            ->filter(fn (array $courseGroup): bool => $this->courseGroupAvailable($courseGroup, $settings))
             ->groupBy(fn (array $courseGroup): string => $this->courseGroupOptionLabel($courseGroup))
-            ->reject(fn (Collection $groups, string $label): bool => $label === '')
+            ->reject(fn (Collection $groups, string $label): bool => $label === '');
+
+        if (($settings['require_complete_course_group_options'] ?? false) === true) {
+            $courseGroupsByOption = $courseGroupsByOption
+                ->filter(fn (Collection $groups): bool => $groups
+                    ->every(fn (array $courseGroup): bool => $this->courseGroupAvailable($courseGroup, $settings)));
+        } else {
+            $courseGroupsByOption = $courseGroupsByOption
+                ->map(fn (Collection $groups): Collection => $groups
+                    ->filter(fn (array $courseGroup): bool => $this->courseGroupAvailable($courseGroup, $settings)))
+                ->filter(fn (Collection $groups): bool => $groups->isNotEmpty());
+        }
+
+        $options = $courseGroupsByOption
             ->when(
                 $hasSelectedCourseGroupKeys,
                 fn (Collection $groups): Collection => $groups
@@ -4929,7 +5455,11 @@ class RobotTimetableBackendSetupService
      */
     private function isReligionSubject(array $subject): bool
     {
-        return $this->subjectBaseKey($subject) === 'R/ET';
+        return in_array(
+            $this->normalizedCourseCode($this->subjectBaseKey($subject)),
+            ['R', 'R/ET'],
+            true,
+        );
     }
 
     /**

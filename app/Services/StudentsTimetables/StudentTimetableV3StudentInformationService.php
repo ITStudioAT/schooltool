@@ -24,8 +24,12 @@ class StudentTimetableV3StudentInformationService
     ) {}
 
     /** @return array<string, mixed> */
-    public function informationForStudent(User $user, ?string $studentCode, array $selectionOverride = []): array
-    {
+    public function informationForStudent(
+        User $user,
+        ?string $studentCode,
+        array $selectionOverride = [],
+        bool $seedCompactSubjectPlanIfMissing = true,
+    ): array {
         $schoolyearId = (int) $user->schoolyear_id;
         $studyProgram = $this->completedCourseHistoryService->studyProgramForStudentCode(
             $user,
@@ -33,7 +37,7 @@ class StudentTimetableV3StudentInformationService
             $studentCode,
         );
 
-        if ($studyProgram === StudentTimetableStudyProgram::Kompaktstudium) {
+        if ($studyProgram === StudentTimetableStudyProgram::Kompaktstudium && $seedCompactSubjectPlanIfMissing) {
             $this->compactSubjectPlanService->seedIfMissing((int) $user->school_id, $schoolyearId);
         }
 
@@ -43,6 +47,9 @@ class StudentTimetableV3StudentInformationService
             $selectionOverride,
             strictSelectionOverride: $selectionOverride !== [],
             studyProgram: $studyProgram,
+        );
+        $moduleSelectionGroups = $this->moduleSelectionGroups(
+            (array) ($selectionSummary['module_selection_groups'] ?? []),
         );
 
         return [
@@ -62,9 +69,9 @@ class StudentTimetableV3StudentInformationService
                 ->all(),
             'selection_fields' => $this->selectionFields($selectionSummary),
             'module_groups' => $this->moduleGroups((array) ($selectionSummary['study_modules'] ?? [])),
-            'module_selection_groups' => $this->moduleSelectionGroups(
-                (array) ($selectionSummary['module_selection_groups'] ?? []),
-            ),
+            'module_selection_groups' => trim((string) $studentCode) === ''
+                ? $this->mainModuleSelectionGroups($moduleSelectionGroups)
+                : $moduleSelectionGroups,
         ];
     }
 
@@ -217,6 +224,64 @@ class StudentTimetableV3StudentInformationService
             ->filter(fn (array $group): bool => $group['key'] !== '' && $group['label'] !== '')
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $groups
+     * @return list<array<string, mixed>>
+     */
+    private function mainModuleSelectionGroups(array $groups): array
+    {
+        return collect($groups)
+            ->flatMap(fn (array $group): array => (array) ($group['modules'] ?? []))
+            ->filter(fn (array $module): bool => $this->mainModuleCode((string) ($module['code'] ?? '')) !== '')
+            ->unique(fn (array $module): string => (string) ($module['selection_key'] ?? ''))
+            ->groupBy(fn (array $module): string => $this->mainModuleCode((string) ($module['code'] ?? '')))
+            ->map(function (Collection $modules, string $mainModuleCode): array {
+                $sortedModules = $modules
+                    ->sort(fn (array $firstModule, array $secondModule): int => strnatcasecmp(
+                        (string) ($firstModule['code'] ?? ''),
+                        (string) ($secondModule['code'] ?? ''),
+                    ))
+                    ->values();
+                $mainModuleName = $this->mainModuleName((array) $sortedModules->first());
+                $moduleCount = $sortedModules->count();
+
+                return [
+                    'key' => $mainModuleCode,
+                    'code' => $mainModuleCode,
+                    'name' => $mainModuleName,
+                    'label' => trim("{$mainModuleCode} {$mainModuleName}"),
+                    'description' => $moduleCount === 1 ? '1 Modul verfügbar' : "{$moduleCount} Module verfügbar",
+                    'count' => $moduleCount,
+                    'modules' => $sortedModules->all(),
+                ];
+            })
+            ->sort(fn (array $firstGroup, array $secondGroup): int => strnatcasecmp(
+                (string) $firstGroup['code'],
+                (string) $secondGroup['code'],
+            ))
+            ->values()
+            ->all();
+    }
+
+    private function mainModuleCode(string $moduleCode): string
+    {
+        return Str::of($moduleCode)
+            ->trim()
+            ->upper()
+            ->replaceMatches('/\d+$/u', '')
+            ->toString();
+    }
+
+    /** @param array<string, mixed> $module */
+    private function mainModuleName(array $module): string
+    {
+        return Str::of((string) ($module['name'] ?? ''))
+            ->trim()
+            ->replaceMatches('/\s*\d+$/u', '')
+            ->trim()
+            ->toString();
     }
 
     /**

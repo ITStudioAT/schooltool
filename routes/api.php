@@ -58,6 +58,7 @@ use App\Http\Controllers\Admin\StudentsTimetables\RecognitionCsvUploadController
 use App\Http\Controllers\Admin\StudentsTimetables\StudentsTimetablesController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3StateController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3StudentInformationController;
+use App\Http\Controllers\Admin\StudentsTimetables\StudentTimetableV3TimetableController;
 use App\Http\Controllers\Admin\StudentsTimetables\SubjectOverviewJsonUploadController;
 use App\Http\Controllers\Admin\StudentsTimetables\TimetableFileUploadController;
 use App\Http\Controllers\Admin\StudentsTimetables\TimetableImportController;
@@ -227,6 +228,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables/timetable-v3-state', [StudentTimetableV3StateController::class, 'show']);
         Route::put('/admin/students-timetables/timetable-v3-state', [StudentTimetableV3StateController::class, 'update']);
         Route::get('/admin/students-timetables/timetable-v3/student-information', [StudentTimetableV3StudentInformationController::class, 'show']);
+        Route::get('/admin/students-timetables/timetable-v3/timetable', [StudentTimetableV3TimetableController::class, 'show']);
+        Route::put('/admin/students-timetables/timetable-v3/timetable', [StudentTimetableV3TimetableController::class, 'update'])
+            ->middleware('throttle:10,1');
         Route::get('/admin/students-timetables/overview/student-timetable', [StudentsTimetablesController::class, 'publishedStudentTimetable']);
         Route::post('/admin/students-timetables/overview/student-timetable', [StudentsTimetablesController::class, 'publishStudentTimetable']);
         Route::post('/admin/students-timetables/overview/pdf', [StudentsTimetablesController::class, 'overviewPdf']);

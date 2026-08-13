@@ -70,3 +70,45 @@ Label the footer action in the persistent V3 Unterricht selection dialog “Best
 
 ## Remove modules from the automatic summary
 Each selected-module chip inside the automatic mode card has an accessible red close action. Closing a chip removes that module and all of its selected course keys, persists the state, and leaves other selected modules untouched.
+
+## Restore completed religion choices after clearing
+This narrows the general clearable-Studienauswahl rule: religion cannot remain cleared when a completed ETH/ET or religion module determines it. The backend restores ETH or the mapped confession; Vue must accept that returned value. Non-empty alternative choices remain selectable.
+
+## Make timetable creation modes visually unmistakable
+Keep the Automatischer and Manueller Stundenplan choices as large, color-distinct cards with prominent icons, plain-language explanations, and an explicit full-width choose/selected state. Preserve the stronger selected-card emphasis and the responsive single-column layout.
+
+## Cap automatic V3 module selection
+Automatic V3 planning may contain at most 10 selected modules and at most 30 total canonical module hours. Enforce both limits before individual, all-courses, or group-wide additions; allow exactly 10/30, show a warning for rejected additions, and constrain oversized persisted selections during restoration.
+
+## Show timetable mode details only after selection
+This supersedes the always-visible mode-card detail behavior. Hide the automatic selected-module summary until Automatic is selected, and hide the manual module-availability summary until Manual is selected; keep each summary inside its matching card.
+
+## Use main-module drill-down without a student
+When V3 plans without a student, show backend-provided main-module families (for example BU Biologie) instead of the five progression/status groups. Opening a family reveals its concrete modules and must reuse the existing module/course selection, limits, and persistence; planning with a student keeps the status groups.
+
+## Keep the V3 modules step back-only
+This supersedes the earlier rule that mentions disabling both module-step navigation buttons. The V3 modules route renders only the Zurück navigation action; do not render a Weiter button on this step. Keep Zurück disabled while student details or persisted state are loading/saving, and retain the overview step's Weiter action that enters the modules route.
+
+## Show an inert automatic timetable CTA
+When Automatic is selected, show a bottom-right “Stundenplan erstellen” button inside the automatic mode card. It is currently presentational only: its click must prevent default and stop propagation, with no timetable creation, navigation, state mutation, or accidental schedule-mode selection.
+
+## Gate and emphasize the automatic timetable CTA
+This supersedes the rule that shows the inert CTA as soon as Automatic is selected. Render “Stundenplan erstellen” only when selectedModuleCount is greater than zero, keep it bottom-right inside the automatic card, and style it as the prominent primary completion action. It remains inert until creation behavior is explicitly implemented.
+
+## Open a static V3 creation stage from the automatic CTA
+This supersedes the inert-CTA rule. With Automatic selected and at least one module chosen, “Stundenplan erstellen” navigates to the V3 creation subsection. Keep the complete current-selection summary, then show a static read-only automatic card without module remove actions or CTA and a completely empty second card reserved for future creation status. Render no module workspace beneath these cards and apply no hover/selection animation to them.
+
+## Configure V3 creation options in the right static card
+This supersedes the empty-right-card part of the creation-stage rule. The static right card is the creation-options panel; currently it exposes a boolean “Samstags Unterricht?” switch defaulting to no. Keep the card itself free of hover/selection animation. The creation-page Zurück action must use router history so it returns to the immediately previous view and preserves the automatic module view.
+
+## Restore the complete V3 workflow after page reload
+Every V3 subsection must survive F5 by awaiting persisted entry, planning, module, course, timetable-mode, and creation-option restoration before the step is considered loaded. Restore module data before any student hydration write so an incomplete reload cannot overwrite saved selections. On the creation step, Zurück navigates explicitly to the modules subsection as a reliable fallback when browser history was lost by a reload, while preserving the restored automatic mode.
+
+## Make V3 F5 restoration deterministic
+Persisted planning-value objects come back from MySQL JSON with normalized key order; compare their scalar/null key-value content, never raw JSON.stringify order, before restoring module/course selections. While the V3 draft and current catalog are restoring, render only a loading state and expose no mutating controls. Serialize full-state PUTs and await the latest save before navigating to creation so an older snapshot cannot overwrite newer module/settings state.
+
+## Step back through V3 creation substates
+On the V3 creation route, Zurück from calculation success/error first resets the in-memory calculation and returns to the Optionen/Los view. Only Zurück from the idle Optionen view navigates to the modules subsection. Keep Zurück disabled while calculation is running.
+
+## Render all possible V3 timetable entries
+Show backend-returned possible timetables one at a time in preserved array order with client-side index navigation. A slot must render its primary entry, every sameSlotEntries item, and every permitted conflicts item; never hide an Unterricht. Use timetable.key for identity, include Saturday only when allowed/used, and present exact backend times, recurrence/date ranges, and Unterricht markers in a responsive semantic weekly table.

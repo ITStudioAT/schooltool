@@ -3408,7 +3408,11 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertSuccessful()
         ->assertJsonPath('data.selection_fields.1.selected_value', 'F');
 
-    $this->getJson('/api/admin/students-timetables/timetable-v3/student-information')
+    $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=100&selection[religion]=')
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection_fields.0.selected_value', 'ETH');
+
+    $withoutStudentResponse = $this->getJson('/api/admin/students-timetables/timetable-v3/student-information')
         ->assertSuccessful()
         ->assertJsonPath('data.student_code', '')
         ->assertJsonCount(4, 'data.selection_fields')
@@ -3418,9 +3422,19 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertJsonPath('data.selection_fields.1.key', 'language')
         ->assertJsonPath('data.selection_fields.2.key', 'branch')
         ->assertJsonPath('data.selection_fields.3.key', 'arts_subject')
-        ->assertJsonCount(5, 'data.module_selection_groups')
-        ->assertJsonPath('data.module_selection_groups.3.count', 0)
-        ->assertJsonPath('data.module_selection_groups.4.count', 7);
+        ->assertJsonCount(4, 'data.module_selection_groups')
+        ->assertJsonPath('data.module_selection_groups.0.key', 'BU')
+        ->assertJsonPath('data.module_selection_groups.0.code', 'BU')
+        ->assertJsonPath('data.module_selection_groups.0.name', 'Buchhaltung')
+        ->assertJsonPath('data.module_selection_groups.0.label', 'BU Buchhaltung')
+        ->assertJsonPath('data.module_selection_groups.0.description', '2 Module verfügbar')
+        ->assertJsonPath('data.module_selection_groups.0.count', 2)
+        ->assertJsonPath('data.module_selection_groups.0.modules.0.selection_key', 'additional:BU1')
+        ->assertJsonPath('data.module_selection_groups.0.modules.0.code', 'BU1')
+        ->assertJsonPath('data.module_selection_groups.0.modules.1.code', 'BU2');
+
+    expect(collect($withoutStudentResponse->json('data.module_selection_groups'))->pluck('key')->all())
+        ->toBe(['BU', 'D', 'ETH', 'M']);
 
     $compactStudentResponse = $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=101')
         ->assertSuccessful()
@@ -3512,6 +3526,22 @@ it('uses the imported confession for a generic recognized religion course', func
         'exists_date' => now(),
     ]);
 
+    collect([
+        ['semester' => 1, 'json_code' => 'R1', 'json_subject' => 'R', 'name' => 'Religion 1'],
+        ['semester' => 1, 'json_code' => 'ET1', 'json_subject' => 'ET', 'name' => 'Ethik 1'],
+        ['semester' => 2, 'json_code' => 'R2', 'json_subject' => 'R', 'name' => 'Religion 2'],
+        ['semester' => 2, 'json_code' => 'ET2', 'json_subject' => 'ET', 'name' => 'Ethik 2'],
+    ])->each(fn (array $subjectRow, int $index): StudentTimetableSubjectRow => StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Kompaktstudium,
+        'is_active' => true,
+        'sort_order' => $index + 1,
+        'branch' => 'common',
+        'hours_per_week' => 2,
+        ...$subjectRow,
+    ]));
+
     $recognitionImport = StudentTimetableRecognitionImport::query()->create([
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
@@ -3530,15 +3560,50 @@ it('uses the imported confession for a generic recognized religion course', func
         'student_code' => $student->student_code,
         'subject' => 'R',
         'grade' => '3',
-        'raw_data' => [],
+        'raw_data' => [
+            'semester' => '1',
+            'stundentafel' => 'AHS-KS-WIKU',
+        ],
     ]);
 
-    $this->actingAs($user)
+    $response = $this->actingAs($user)
         ->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=100')
         ->assertSuccessful()
+        ->assertJsonPath('data.study_program', StudentTimetableStudyProgram::Kompaktstudium->value)
         ->assertJsonPath('data.religion', 'evang. A.B.')
         ->assertJsonPath('data.items.0.label', 'Ethik / Religion')
-        ->assertJsonPath('data.items.0.value', 'Rev - Religion evangelisch');
+        ->assertJsonPath('data.items.0.value', 'Rev - Religion evangelisch')
+        ->assertJsonPath('data.selection_fields.0.selected_value', 'Rev')
+        ->assertJsonPath('data.selection_fields.0.options.0.value', 'ETH')
+        ->assertJsonPath('data.selection_fields.0.options.1.value', 'Rev')
+        ->assertJsonPath('data.module_groups.1.modules.0.code', 'Rev1')
+        ->assertJsonPath('data.module_selection_groups.0.modules.0.code', 'Rev1');
+
+    $selectableReligionModules = collect($response->json('data.module_selection_groups'))
+        ->whereIn('key', ['previous', 'current', 'additional'])
+        ->flatMap(fn (array $group): array => $group['modules'])
+        ->pluck('code');
+
+    expect($selectableReligionModules)
+        ->toContain('Rev2')
+        ->not->toContain('Rev1');
+
+    $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=100&selection[religion]=')
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection_fields.0.selected_value', 'Rev');
+
+    $ethicsResponse = $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=100&selection[religion]=ETH')
+        ->assertSuccessful()
+        ->assertJsonPath('data.selection_fields.0.selected_value', 'ETH');
+
+    $selectableEthicsModules = collect($ethicsResponse->json('data.module_selection_groups'))
+        ->whereIn('key', ['previous', 'current', 'additional'])
+        ->flatMap(fn (array $group): array => $group['modules'])
+        ->pluck('code');
+
+    expect($selectableEthicsModules)
+        ->toContain('ETH2')
+        ->not->toContain('ETH1');
 });
 
 it('can return a slim robot student overview course history payload', function () {
