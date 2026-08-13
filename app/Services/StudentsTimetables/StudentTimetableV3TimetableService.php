@@ -10,6 +10,7 @@ use App\Models\StudentTimetableV3Timetable;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class StudentTimetableV3TimetableService
@@ -22,7 +23,7 @@ class StudentTimetableV3TimetableService
 
     private const MAX_PERSISTED_TIMETABLE_BYTES = 8388608;
 
-    private const ALGORITHM_VERSION = 3;
+    private const ALGORITHM_VERSION = 4;
 
     public function __construct(
         private StudentTimetableV3StudentInformationService $studentInformationService,
@@ -39,12 +40,13 @@ class StudentTimetableV3TimetableService
     public function resultForUser(User $authUser, array $parameters): ?array
     {
         $schoolyearId = $this->schoolyearIdForUser($authUser);
+        $workspaceId = $this->workspaceId($parameters);
         $studentCode = $this->studentCode($parameters);
         $planningMode = $this->planningMode($parameters, $studentCode);
         $timetable = $this->timetableForContext(
             $authUser,
             $schoolyearId,
-            $this->contextKey($planningMode, $studentCode),
+            $this->contextKey($planningMode, $studentCode, $workspaceId),
         );
 
         if (! $timetable) {
@@ -200,6 +202,7 @@ class StudentTimetableV3TimetableService
         bool $seedCompactSubjectPlanIfMissing = true,
     ): array {
         $moduleInput = $this->normalizedModuleInput($modules);
+        $workspaceId = $this->workspaceId($parameters);
         $studentCode = $this->studentCode($parameters);
         $planningMode = $this->planningMode($parameters, $studentCode);
         $selectionOverride = $this->selectionOverride($parameters);
@@ -240,6 +243,7 @@ class StudentTimetableV3TimetableService
             ])
             ->all();
         $canonicalParameters = [
+            ...($workspaceId !== null ? ['workspace_id' => $workspaceId] : []),
             'planning_mode' => $planningMode,
             'student_code' => $studentCode,
             'study_program' => $studyProgram->value,
@@ -253,7 +257,7 @@ class StudentTimetableV3TimetableService
             $selection,
             $constraints,
         );
-        $contextKey = $this->contextKey($planningMode, $studentCode);
+        $contextKey = $this->contextKey($planningMode, $studentCode, $workspaceId);
         $fingerprint = $this->fingerprint([
             'algorithm_version' => self::ALGORITHM_VERSION,
             'scope' => [
@@ -270,6 +274,7 @@ class StudentTimetableV3TimetableService
         ]);
 
         return [
+            'workspace_id' => $workspaceId,
             'student_code' => $studentCode,
             'planning_mode' => $planningMode,
             'context_key' => $contextKey,
@@ -636,6 +641,13 @@ class StudentTimetableV3TimetableService
             ->sort()
             ->values()
             ->all();
+        $regularCourseHours = collect($selectedModules)
+            ->filter(fn (array $module): bool => is_numeric($module['hours'] ?? null) && (float) $module['hours'] > 0)
+            ->mapWithKeys(fn (array $module): array => [
+                preg_replace('/\s+/u', '', mb_strtoupper(trim((string) ($module['code'] ?? '')), 'UTF-8')) => (float) $module['hours'],
+            ])
+            ->filter(fn (float $hours, string $moduleCode): bool => $moduleCode !== '')
+            ->all();
 
         return [
             'selection' => [
@@ -653,6 +665,7 @@ class StudentTimetableV3TimetableService
             'deselected_course_group_keys' => [],
             'selected_additional_course_keys' => [],
             'selected_additional_courses_required' => false,
+            'regular_course_hours' => $regularCourseHours,
             'selected_timetable_type' => 'full_green',
             'selected_timetable_number' => 1,
             'selected_quality_criterion_keys' => [],
@@ -763,6 +776,22 @@ class StudentTimetableV3TimetableService
     }
 
     /** @param array<string, mixed> $parameters */
+    private function workspaceId(array $parameters): ?string
+    {
+        $workspaceId = trim((string) ($parameters['workspace_id'] ?? ''));
+
+        if ($workspaceId === '') {
+            return null;
+        }
+
+        if (! Str::isUuid($workspaceId)) {
+            $this->invalid('workspace_id', 'Die Arbeitsbereich-ID ist ungültig.');
+        }
+
+        return $workspaceId;
+    }
+
+    /** @param array<string, mixed> $parameters */
     private function studentCode(array $parameters): ?string
     {
         $value = $parameters['student_code'] ?? '';
@@ -841,8 +870,12 @@ class StudentTimetableV3TimetableService
         return $normalizedSelection;
     }
 
-    private function contextKey(string $planningMode, ?string $studentCode): string
+    private function contextKey(string $planningMode, ?string $studentCode, ?string $workspaceId = null): string
     {
+        if ($workspaceId !== null) {
+            return 'workspace:'.hash('sha256', $workspaceId);
+        }
+
         return $planningMode === 'without_student'
             ? 'without-student'
             : 'student:'.hash('sha256', (string) $studentCode);
@@ -874,17 +907,20 @@ class StudentTimetableV3TimetableService
     /** @return array<string, mixed> */
     private function result(StudentTimetableV3Timetable $timetable, string $status, bool $reused): array
     {
+        $parameters = $timetable->parameters ?? [];
+
         return [
             'id' => (int) $timetable->id,
             'status' => $status,
             'reused' => $reused,
             'fingerprint' => (string) $timetable->fingerprint,
             'context' => [
+                ...(isset($parameters['workspace_id']) ? ['workspace_id' => $parameters['workspace_id']] : []),
                 'planning_mode' => (string) $timetable->planning_mode,
                 'student_code' => $timetable->student_code,
             ],
             'modules' => $timetable->modules ?? [],
-            'parameters' => $timetable->parameters ?? [],
+            'parameters' => $parameters,
             'summary' => $timetable->summary ?? [],
             'timetables' => $timetable->timetables ?? [],
             'generated_at' => $timetable->generated_at?->toISOString(),

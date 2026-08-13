@@ -92,6 +92,7 @@ describe('TimetableV3PossibleTimetables', () => {
 
     it('renders every primary, same-slot, and allowed overlap Unterricht', () => {
         const slot = slotFixture('D5', 1, 2, {
+            isDistanceLearningCourse: true,
             conflicts: [slotFixture('BU2', 1, 2, {
                 courseGroup: {
                     dates: ['2026-09-14'],
@@ -129,6 +130,7 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.text()).toContain('CH1')
         expect(wrapper.text()).toContain('BU2')
         expect(wrapper.text()).toContain('Einzeltermin-Überschneidung')
+        expect(wrapper.text()).toContain('Fernunterricht')
         expect(wrapper.text()).toContain('17:50–18:35')
         expect(wrapper.text()).toContain('1-wöchig')
         expect(wrapper.text()).not.toContain('Mag. Test · Raum 101')

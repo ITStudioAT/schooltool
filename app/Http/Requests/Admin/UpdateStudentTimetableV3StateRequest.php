@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Admin;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateStudentTimetableV3StateRequest extends FormRequest
 {
@@ -19,6 +20,15 @@ class UpdateStudentTimetableV3StateRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'context' => ['required', 'array:workspace_id,planning_mode,student_code'],
+            'context.workspace_id' => ['required', 'uuid'],
+            'context.planning_mode' => ['required', 'string', Rule::in(['with_student', 'without_student'])],
+            'context.student_code' => [
+                Rule::requiredIf(fn (): bool => $this->input('context.planning_mode') === 'with_student'),
+                Rule::prohibitedIf(fn (): bool => $this->input('context.planning_mode') === 'without_student'),
+                'string',
+                'max:255',
+            ],
             'state' => ['required', 'array', 'max:50'],
         ];
     }

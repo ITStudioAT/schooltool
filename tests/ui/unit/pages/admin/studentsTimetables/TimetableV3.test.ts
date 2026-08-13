@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import TimetableV3 from '@/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue'
 
+const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111'
+
 describe('TimetableV3', () => {
     afterEach(() => {
         vi.unstubAllGlobals()
@@ -13,7 +15,7 @@ describe('TimetableV3', () => {
             'utf8',
         )
         expect(source).toContain('StudentTimetableV3StateController')
-        expect(source).toContain('showTimetableV3State.url()')
+        expect(source).toContain('showTimetableV3State.url(')
         expect(source).toContain('updateTimetableV3State.url()')
         expect(source).toContain('loadRobotStudents.url()')
         expect(source).toContain('StudentTimetableV3StudentInformationController')
@@ -588,6 +590,9 @@ describe('TimetableV3', () => {
         const push = vi.fn()
         const context = {
             hasPlanningSelectionContext: false,
+            workspaceId: WORKSPACE_ID,
+            planningMode: 'with_student',
+            selectedStudentCode: '1001',
             $router: { push },
         }
 
@@ -598,11 +603,21 @@ describe('TimetableV3', () => {
         methods.continueToNextStep.call(context)
         expect(push).toHaveBeenCalledWith({
             path: '/admin/students-timetables/timetable-v3/modules',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'with_student',
+                student_code: '1001',
+            },
         })
 
         methods.returnToSelectionStep.call(context)
         expect(push).toHaveBeenLastCalledWith({
             path: '/admin/students-timetables/timetable-v3/overview',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'with_student',
+                student_code: '1001',
+            },
         })
         expect(currentStep.call({ $route: { params: { subsection: 'overview' } } })).toBe('selection')
         expect(currentStep.call({ $route: { params: { subsection: 'modules' } } })).toBe('modules')
@@ -760,6 +775,9 @@ describe('TimetableV3', () => {
         const context = {
             scheduleCreationMode: 'automatic',
             selectedModuleCount: 0,
+            workspaceId: WORKSPACE_ID,
+            planningMode: 'with_student',
+            selectedStudentCode: '1001',
             isSavingState: false,
             stateSaveFailed: false,
             timetableCalculationStatus: 'idle',
@@ -778,6 +796,11 @@ describe('TimetableV3', () => {
         expect(context.saveState).toHaveBeenCalledOnce()
         expect(push).toHaveBeenCalledWith({
             path: '/admin/students-timetables/timetable-v3/creation',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'with_student',
+                student_code: '1001',
+            },
         })
 
         context.scheduleCreationMode = 'manual'
@@ -787,6 +810,11 @@ describe('TimetableV3', () => {
         methods.returnFromTimetableCreationStep.call(context)
         expect(push).toHaveBeenLastCalledWith({
             path: '/admin/students-timetables/timetable-v3/modules',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'with_student',
+                student_code: '1001',
+            },
         })
 
         context.timetableCalculationStatus = 'success'
@@ -873,6 +901,7 @@ describe('TimetableV3', () => {
         vi.stubGlobal('axios', { put })
         const context: any = {
             currentStep: 'creation',
+            workspaceId: WORKSPACE_ID,
             selectedModuleKeys: ['current:D5', 'additional:M5'],
             selectedCourseKeys: ['d5-a', 'm5-b'],
             planningMode: 'with_student',
@@ -911,6 +940,7 @@ describe('TimetableV3', () => {
         expect(put).toHaveBeenCalledWith('/api/admin/students-timetables/timetable-v3/timetable', {
             modules: ['current:D5', 'additional:M5'],
             parameters: {
+                workspace_id: WORKSPACE_ID,
                 planning_mode: 'with_student',
                 student_code: '1001',
                 selection: {
@@ -1362,12 +1392,17 @@ describe('TimetableV3', () => {
             }],
         }
         const persistedResult = {
-            context: { planning_mode: 'with_student', student_code: '1001' },
+            context: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'with_student',
+                student_code: '1001',
+            },
             modules: [{
                 selection_key: 'current:CH1',
                 selected_course_keys: ['ch1-a', 'ch1-b'],
             }],
             parameters: {
+                workspace_id: WORKSPACE_ID,
                 planning_mode: 'with_student',
                 student_code: '1001',
                 selection: {
@@ -1387,6 +1422,7 @@ describe('TimetableV3', () => {
         vi.stubGlobal('axios', { get })
         const context: any = {
             currentStep: 'creation',
+            workspaceId: WORKSPACE_ID,
             hasPlanningSelectionContext: true,
             planningMode: 'with_student',
             selectedStudentCode: '1001',
@@ -1414,7 +1450,7 @@ describe('TimetableV3', () => {
         await methods.restorePersistedTimetableCalculation.call(context)
 
         expect(get).toHaveBeenCalledWith(
-            '/api/admin/students-timetables/timetable-v3/timetable?planning_mode=with_student&student_code=1001',
+            `/api/admin/students-timetables/timetable-v3/timetable?workspace_id=${WORKSPACE_ID}&planning_mode=with_student&student_code=1001`,
         )
         expect(context.timetableCalculationStatus).toBe('success')
         expect(context.timetableCalculationResult.summary.solution_plan).toEqual(solutionPlan)
@@ -1498,6 +1534,8 @@ describe('TimetableV3', () => {
             isLoadingState: false,
             stateLoadFailed: false,
             storedState: null,
+            workspaceId: WORKSPACE_ID,
+            $route: { query: {} },
             restoreCreationOptions: vi.fn(),
             restoreEntrySelection: vi.fn(async () => {
                 loadingStates.push(context.isLoadingState)
@@ -1518,6 +1556,81 @@ describe('TimetableV3', () => {
         expect(loadingStates).toEqual([true, true, true])
         expect(context.isLoadingState).toBe(false)
         expect(context.storedState).toEqual({ draft: true })
+    })
+
+    it('assigns a stable workspace to a tab before loading its draft', async () => {
+        const methods = (TimetableV3 as any).methods
+        const replace = vi.fn().mockResolvedValue(undefined)
+        vi.stubGlobal('crypto', { randomUUID: () => WORKSPACE_ID })
+        const context: any = {
+            workspaceId: '',
+            $route: {
+                path: '/admin/students-timetables/timetable-v3/creation',
+                query: {
+                    planning_mode: 'with_student',
+                    student_code: 'same-student',
+                },
+            },
+            $router: { replace },
+        }
+
+        await methods.initializeWorkspace.call(context)
+
+        expect(context.workspaceId).toBe(WORKSPACE_ID)
+        expect(replace).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/timetable-v3/creation',
+            query: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'with_student',
+                student_code: 'same-student',
+            },
+        })
+
+        replace.mockClear()
+        await methods.initializeWorkspace.call({
+            workspaceId: '',
+            $route: {
+                path: '/admin/students-timetables/timetable-v3/creation',
+                query: { workspace_id: WORKSPACE_ID },
+            },
+            $router: { replace },
+        })
+        expect(replace).not.toHaveBeenCalled()
+    })
+
+    it('reloads the draft belonging to the workspace in the current browser tab', async () => {
+        const methods = (TimetableV3 as any).methods
+        const context: any = {
+            isLoadingState: false,
+            stateLoadFailed: false,
+            storedState: null,
+            workspaceId: WORKSPACE_ID,
+            $route: {
+                query: {
+                    planning_mode: 'with_student',
+                    student_code: 'student-03',
+                },
+            },
+            restoreCreationOptions: vi.fn(),
+            restoreEntrySelection: vi.fn().mockResolvedValue(undefined),
+            ensureValidCurrentStep: vi.fn().mockResolvedValue(undefined),
+            restorePersistedTimetableCalculation: vi.fn().mockResolvedValue(undefined),
+        }
+        const get = vi.fn().mockResolvedValue({
+            data: {
+                data: {
+                    state: { tab: 'student-03' },
+                },
+            },
+        })
+        vi.stubGlobal('axios', { get })
+
+        await methods.loadState.call(context)
+
+        expect(get).toHaveBeenCalledWith(
+            `/api/admin/students-timetables/timetable-v3-state?workspace_id=${WORKSPACE_ID}`,
+        )
+        expect(context.storedState).toEqual({ tab: 'student-03' })
     })
 
     it('shows main modules before concrete modules without a student', () => {
@@ -2083,6 +2196,7 @@ describe('TimetableV3', () => {
             studyInfoDialogOpen: true,
             resetSelectedStudentSelectionDetails: vi.fn(),
             saveState: vi.fn().mockResolvedValue(undefined),
+            replaceRoutePlanningContext: vi.fn(),
         }
 
         await methods.restartPlanning.call(context)
@@ -2108,6 +2222,7 @@ describe('TimetableV3', () => {
         expect(context.studyInfoDialogOpen).toBe(false)
         expect(context.resetSelectedStudentSelectionDetails).toHaveBeenCalledOnce()
         expect(context.saveState).toHaveBeenCalledOnce()
+        expect(context.replaceRoutePlanningContext).toHaveBeenCalledWith(null)
     })
 
     it('formats student choices without semester information', () => {
@@ -2131,12 +2246,14 @@ describe('TimetableV3', () => {
         const context = {
             planningMode: null,
             selectedStudent: null,
+            selectedStudentCode: '1001',
             closeStudentDialog: vi.fn(),
             resetSelectedStudentSelectionDetails: vi.fn(),
             normalizedStudentSex: methods.normalizedStudentSex,
             normalizedStudentSemester: methods.normalizedStudentSemester,
             loadSelectedStudentSelection: vi.fn(),
             saveState: vi.fn().mockResolvedValue(undefined),
+            replaceRoutePlanningContext: vi.fn(),
         }
 
         await methods.selectStudent.call(context, {
@@ -2171,6 +2288,10 @@ describe('TimetableV3', () => {
         expect(context.resetSelectedStudentSelectionDetails).toHaveBeenCalledOnce()
         expect(context.loadSelectedStudentSelection).toHaveBeenCalledOnce()
         expect(context.saveState).toHaveBeenCalledOnce()
+        expect(context.replaceRoutePlanningContext).toHaveBeenCalledWith({
+            planning_mode: 'with_student',
+            student_code: '1001',
+        })
     })
 
     it('switches to planning without a student and clears the selected person', async () => {
@@ -2181,6 +2302,7 @@ describe('TimetableV3', () => {
             resetSelectedStudentSelectionDetails: vi.fn(),
             saveState: vi.fn().mockResolvedValue(undefined),
             loadSelectedStudentSelection: vi.fn(),
+            replaceRoutePlanningContext: vi.fn(),
         }
 
         await methods.chooseWithoutStudent.call(context)
@@ -2190,6 +2312,10 @@ describe('TimetableV3', () => {
         expect(context.resetSelectedStudentSelectionDetails).toHaveBeenCalledOnce()
         expect(context.saveState).toHaveBeenCalledOnce()
         expect(context.loadSelectedStudentSelection).toHaveBeenCalledOnce()
+        expect(context.replaceRoutePlanningContext).toHaveBeenCalledWith({
+            planning_mode: 'without_student',
+            student_code: null,
+        })
     })
 
     it('persists the selection through the separate V3 state endpoint', async () => {
@@ -2212,6 +2338,7 @@ describe('TimetableV3', () => {
             isSavingState: false,
             stateSaveFailed: false,
             storedState: { retained: true },
+            workspaceId: WORKSPACE_ID,
             planningMode: 'without_student',
             selectedStudent: null,
             selectedStudentCode: '',
@@ -2228,6 +2355,11 @@ describe('TimetableV3', () => {
         await methods.saveState.call(context)
 
         expect(put).toHaveBeenCalledWith('/api/admin/students-timetables/timetable-v3-state', {
+            context: {
+                workspace_id: WORKSPACE_ID,
+                planning_mode: 'without_student',
+                student_code: null,
+            },
             state: {
                 retained: true,
                 entrySelection: {
@@ -2280,6 +2412,7 @@ describe('TimetableV3', () => {
             stateSaveQueue: null,
             stateSaveFailed: false,
             storedState: {},
+            workspaceId: WORKSPACE_ID,
             planningMode: 'without_student',
             selectedStudent: null,
             selectedStudentCode: '',

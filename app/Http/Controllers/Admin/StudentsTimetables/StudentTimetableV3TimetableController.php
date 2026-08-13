@@ -21,6 +21,7 @@ class StudentTimetableV3TimetableController extends Controller
     ): JsonResponse {
         $authUser = $this->studentsTimetablesUser();
         $validated = $request->validate([
+            'workspace_id' => ['required', 'uuid'],
             'planning_mode' => ['required', 'string', Rule::in(['with_student', 'without_student'])],
             'student_code' => [
                 Rule::requiredIf(fn (): bool => $request->query('planning_mode') === 'with_student'),
@@ -33,6 +34,7 @@ class StudentTimetableV3TimetableController extends Controller
 
         return response()->json([
             'data' => $service->resultForUser($authUser, [
+                'workspace_id' => $validated['workspace_id'],
                 'planning_mode' => $validated['planning_mode'],
                 'student_code' => $validated['student_code'] ?? null,
             ]),

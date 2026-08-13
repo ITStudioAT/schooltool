@@ -27,7 +27,8 @@ class UpdateStudentTimetableV3TimetableRequest extends FormRequest
         return [
             'modules' => ['required', 'array', 'min:1', 'max:10'],
             'modules.*' => ['required', 'string', 'distinct', 'max:255'],
-            'parameters' => ['required', 'array:planning_mode,student_code,selection,selected_course_keys'],
+            'parameters' => ['required', 'array:workspace_id,planning_mode,student_code,selection,selected_course_keys'],
+            'parameters.workspace_id' => ['required', 'uuid'],
             'parameters.planning_mode' => ['required', 'string', Rule::in(['with_student', 'without_student'])],
             'parameters.student_code' => [
                 Rule::requiredIf(fn (): bool => $this->input('parameters.planning_mode') === 'with_student'),

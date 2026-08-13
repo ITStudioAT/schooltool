@@ -14,6 +14,8 @@ use function Pest\Laravel\mock;
 
 uses(RefreshDatabase::class);
 
+const V3_WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
+
 it('returns the persisted v3 timetable result for the validated planning context', function (
     string $query,
     array $expectedParameters,
@@ -35,21 +37,21 @@ it('returns the persisted v3 timetable result for the validated planning context
         ->assertExactJson(['data' => $serviceResult]);
 })->with([
     'without student, found' => [
-        'planning_mode=without_student',
-        ['planning_mode' => 'without_student', 'student_code' => null],
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student',
+        ['workspace_id' => V3_WORKSPACE_ID, 'planning_mode' => 'without_student', 'student_code' => null],
         [
             'id' => 42,
             'status' => 'reused',
             'reused' => true,
             'modules' => [['selection_key' => 'additional:D1']],
             'parameters' => ['planning_mode' => 'without_student'],
-            'summary' => ['algorithm_version' => 3, 'timetable_count' => 0],
+            'summary' => ['algorithm_version' => 4, 'timetable_count' => 0],
             'timetables' => [],
         ],
     ],
     'with student, none' => [
-        'planning_mode=with_student&student_code=student-100',
-        ['planning_mode' => 'with_student', 'student_code' => 'student-100'],
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=with_student&student_code=student-100',
+        ['workspace_id' => V3_WORKSPACE_ID, 'planning_mode' => 'with_student', 'student_code' => 'student-100'],
         null,
     ],
 ]);
@@ -65,17 +67,24 @@ it('validates the v3 timetable result planning context', function (string $query
         ->assertUnprocessable()
         ->assertJsonValidationErrors($errors);
 })->with([
-    'with student requires student code' => ['planning_mode=with_student', ['student_code']],
-    'without student prohibits student code' => [
-        'planning_mode=without_student&student_code=student-100',
+    'with student requires student code' => [
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=with_student',
         ['student_code'],
     ],
-    'planning mode is required' => ['', ['planning_mode']],
-    'planning mode is restricted' => ['planning_mode=unknown', ['planning_mode']],
+    'without student prohibits student code' => [
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student&student_code=student-100',
+        ['student_code'],
+    ],
+    'workspace is required' => ['planning_mode=without_student', ['workspace_id']],
+    'planning mode is required' => ['workspace_id='.V3_WORKSPACE_ID, ['planning_mode']],
+    'planning mode is restricted' => [
+        'workspace_id='.V3_WORKSPACE_ID.'&planning_mode=unknown',
+        ['planning_mode'],
+    ],
 ]);
 
 it('requires authentication for loading a persisted v3 timetable result', function () {
-    $this->getJson('/api/admin/students-timetables/timetable-v3/timetable?planning_mode=without_student')
+    $this->getJson('/api/admin/students-timetables/timetable-v3/timetable?workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student')
         ->assertUnauthorized();
 });
 
@@ -86,7 +95,7 @@ it('forbids loading a persisted v3 timetable result without a students timetable
         ->shouldNotReceive('resultForUser');
 
     $this->actingAs($user)
-        ->getJson('/api/admin/students-timetables/timetable-v3/timetable?planning_mode=without_student')
+        ->getJson('/api/admin/students-timetables/timetable-v3/timetable?workspace_id='.V3_WORKSPACE_ID.'&planning_mode=without_student')
         ->assertForbidden();
 });
 
@@ -113,6 +122,7 @@ it('calculates v3 timetables with server-side weekday constraints', function (bo
                 && (int) $authUser->schoolyear_id === $schoolyear->id
                 && $modules === ['additional:D1']
                 && $parameters === [
+                    'workspace_id' => V3_WORKSPACE_ID,
                     'planning_mode' => 'without_student',
                     'student_code' => null,
                     'selection' => [
@@ -131,6 +141,7 @@ it('calculates v3 timetables with server-side weekday constraints', function (bo
         ->putJson('/api/admin/students-timetables/timetable-v3/timetable', [
             'modules' => ['additional:D1'],
             'parameters' => [
+                'workspace_id' => V3_WORKSPACE_ID,
                 'planning_mode' => 'without_student',
                 'student_code' => null,
                 'selection' => [
@@ -165,6 +176,7 @@ it('validates the strict v3 timetable payload and planning mode context', functi
         ->putJson('/api/admin/students-timetables/timetable-v3/timetable', [
             'modules' => ['additional:D1', 'additional:D1'],
             'parameters' => [
+                'workspace_id' => V3_WORKSPACE_ID,
                 'planning_mode' => 'with_student',
                 'student_code' => null,
                 'selection' => [
@@ -265,6 +277,7 @@ function v3TimetableControllerPayload(): array
     return [
         'modules' => ['additional:D1'],
         'parameters' => [
+            'workspace_id' => V3_WORKSPACE_ID,
             'planning_mode' => 'without_student',
             'student_code' => null,
             'selection' => [

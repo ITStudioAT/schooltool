@@ -38,6 +38,8 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+const V3_STATE_WORKSPACE_ID = '22222222-2222-4222-8222-222222222222';
+
 it('registers StudentsTimetables as a configured licence', function () {
     $licence = collect(config('schooltool.licences'))
         ->firstWhere('name', 'StudentsTimetables');
@@ -4441,7 +4443,14 @@ it('stores timetable v3 state independently from timetable v2', function () {
     ];
 
     $this->actingAs($user)
-        ->putJson('/api/admin/students-timetables/timetable-v3-state', ['state' => $v3State])
+        ->putJson('/api/admin/students-timetables/timetable-v3-state', [
+            'context' => [
+                'workspace_id' => V3_STATE_WORKSPACE_ID,
+                'planning_mode' => 'with_student',
+                'student_code' => '1001',
+            ],
+            'state' => $v3State,
+        ])
         ->assertSuccessful()
         ->assertJsonPath('message', 'V3-Arbeitsstand wurde gespeichert.')
         ->assertJsonPath('data.state.workspace.selectedStudentCode', '1001');
@@ -4452,15 +4461,86 @@ it('stores timetable v3 state independently from timetable v2', function () {
         'user_id' => $user->id,
     ]);
 
-    expect(StudentTimetableV3State::query()->first()?->state)->toEqual($v3State)
+    $storedV3State = StudentTimetableV3State::query()->first()?->state;
+
+    expect($storedV3State['version'] ?? null)->toBe(2)
+        ->and($storedV3State['contexts'] ?? [])->toHaveCount(1)
+        ->and(collect($storedV3State['contexts'] ?? [])->first()['state'] ?? null)->toEqual($v3State)
         ->and(StudentTimetableV2State::query()->first()?->state)->toEqual([
             'selection' => ['semester' => 4],
         ]);
 
     $this->actingAs($user)
-        ->getJson('/api/admin/students-timetables/timetable-v3-state')
+        ->getJson('/api/admin/students-timetables/timetable-v3-state?workspace_id='.V3_STATE_WORKSPACE_ID)
         ->assertSuccessful()
         ->assertJsonPath('data.state.workspace.draftModules.1', 'INF2');
+});
+
+it('keeps timetable v3 drafts isolated across any number of workspaces for the same student', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_moderator');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $workspaces = collect(range(1, 12))
+        ->mapWithKeys(fn (int $number): array => [
+            sprintf('33333333-3333-4333-8333-%012d', $number) => $number,
+        ]);
+
+    foreach ($workspaces as $workspaceId => $number) {
+        $this->actingAs($user)
+            ->putJson('/api/admin/students-timetables/timetable-v3-state', [
+                'context' => [
+                    'workspace_id' => $workspaceId,
+                    'planning_mode' => 'with_student',
+                    'student_code' => 'same-student',
+                ],
+                'state' => [
+                    'entrySelection' => [
+                        'mode' => 'with_student',
+                        'student' => ['studentCode' => 'same-student'],
+                    ],
+                    'moduleSelection' => [
+                        'selectedKeys' => ["current:M{$number}"],
+                    ],
+                ],
+            ])
+            ->assertSuccessful();
+    }
+
+    foreach ($workspaces as $workspaceId => $number) {
+        $this->actingAs($user)
+            ->getJson('/api/admin/students-timetables/timetable-v3-state?workspace_id='.$workspaceId)
+            ->assertSuccessful()
+            ->assertJsonPath('data.state.entrySelection.student.studentCode', 'same-student')
+            ->assertJsonPath('data.state.moduleSelection.selectedKeys.0', "current:M{$number}");
+    }
+
+    $storedState = StudentTimetableV3State::query()->firstOrFail()->state;
+
+    expect($storedState['contexts'])->toHaveCount($workspaces->count());
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/timetable-v3-state?workspace_id='.$workspaces->keys()->last())
+        ->assertSuccessful()
+        ->assertJsonPath('data.state.moduleSelection.selectedKeys.0', 'current:M12');
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/timetable-v3-state', [
+            'context' => [
+                'workspace_id' => V3_STATE_WORKSPACE_ID,
+                'planning_mode' => 'with_student',
+                'student_code' => 'student-01',
+            ],
+            'state' => [
+                'entrySelection' => [
+                    'mode' => 'with_student',
+                    'student' => ['studentCode' => 'student-02'],
+                ],
+            ],
+        ])
+        ->assertUnprocessable();
 });
 
 it('creates a timetable overview pdf from posted timetable data', function () {

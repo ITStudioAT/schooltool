@@ -6,6 +6,7 @@
 
 - Startseite erzeugt
 - Seite Modulauswahl
+- Erstellung der Stundenpläne
 
 ## 3.45.0 - 3.45.1
 

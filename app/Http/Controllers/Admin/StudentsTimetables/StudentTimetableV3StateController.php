@@ -8,18 +8,22 @@ use App\Models\User;
 use App\Services\SchoolyearService;
 use App\Services\StudentsTimetables\StudentTimetableV3StateService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class StudentTimetableV3StateController extends Controller
 {
     private const MODERATOR_ROLES = ['super_admin', 'admin', 'studentstimetables_admin', 'studentstimetables_moderator'];
 
-    public function show(StudentTimetableV3StateService $service): JsonResponse
+    public function show(Request $request, StudentTimetableV3StateService $service): JsonResponse
     {
         $authUser = $this->studentsTimetablesUser();
+        $validated = $request->validate([
+            'workspace_id' => ['required', 'uuid'],
+        ]);
 
         return response()->json([
             'data' => [
-                'state' => $service->stateForUser($authUser),
+                'state' => $service->stateForUser($authUser, $validated),
             ],
         ]);
     }
@@ -33,7 +37,11 @@ class StudentTimetableV3StateController extends Controller
         return response()->json([
             'message' => 'V3-Arbeitsstand wurde gespeichert.',
             'data' => [
-                'state' => $service->updateForUser($authUser, $request->validated('state')),
+                'state' => $service->updateForUser(
+                    $authUser,
+                    $request->validated('context'),
+                    $request->validated('state'),
+                ),
             ],
         ]);
     }

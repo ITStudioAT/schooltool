@@ -1599,6 +1599,70 @@ const TIMETABLE_CREATION_STEP = 'creation'
 const TIMETABLE_V3_SELECTION_PATH = '/admin/students-timetables/timetable-v3/overview'
 const TIMETABLE_V3_MODULE_SELECTION_PATH = '/admin/students-timetables/timetable-v3/modules'
 const TIMETABLE_V3_CREATION_PATH = '/admin/students-timetables/timetable-v3/creation'
+const WORKSPACE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const normalizedWorkspaceId = workspaceId => {
+    const normalizedValue = String(workspaceId || '').trim()
+
+    return WORKSPACE_ID_PATTERN.test(normalizedValue) ? normalizedValue.toLowerCase() : ''
+}
+
+const createWorkspaceId = () => {
+    if (typeof globalThis.crypto?.randomUUID === 'function') {
+        return globalThis.crypto.randomUUID()
+    }
+
+    const randomValues = new Uint8Array(16)
+    if (typeof globalThis.crypto?.getRandomValues === 'function') {
+        globalThis.crypto.getRandomValues(randomValues)
+    } else {
+        randomValues.forEach((_, index) => {
+            randomValues[index] = Math.floor(Math.random() * 256)
+        })
+    }
+    randomValues[6] = (randomValues[6] & 0x0f) | 0x40
+    randomValues[8] = (randomValues[8] & 0x3f) | 0x80
+    const hexadecimal = [...randomValues]
+        .map(value => value.toString(16).padStart(2, '0'))
+        .join('')
+
+    return [
+        hexadecimal.slice(0, 8),
+        hexadecimal.slice(8, 12),
+        hexadecimal.slice(12, 16),
+        hexadecimal.slice(16, 20),
+        hexadecimal.slice(20),
+    ].join('-')
+}
+
+const normalizedPlanningContext = (planningMode, studentCode = '') => {
+    const normalizedStudentCode = String(studentCode || '').trim()
+
+    if (planningMode === WITHOUT_STUDENT) {
+        return {
+            planning_mode: WITHOUT_STUDENT,
+            student_code: null,
+        }
+    }
+
+    if (planningMode !== WITH_STUDENT || !normalizedStudentCode) return null
+
+    return {
+        planning_mode: WITH_STUDENT,
+        student_code: normalizedStudentCode,
+    }
+}
+
+const timetableV3RouteLocation = (path, planningContext, workspaceId) => {
+    return {
+        path,
+        query: {
+            ...(workspaceId ? { workspace_id: workspaceId } : {}),
+            ...(planningContext ? { planning_mode: planningContext.planning_mode } : {}),
+            ...(planningContext?.student_code ? { student_code: planningContext.student_code } : {}),
+        },
+    }
+}
 
 function normalizedCourseSelectionKeys(course) {
     const courseKeys = Array.isArray(course?.keys) ? course.keys : [course?.key]
@@ -1742,6 +1806,7 @@ export default {
             stateLoadFailed: false,
             stateSaveFailed: false,
             storedState: null,
+            workspaceId: '',
             planningMode: null,
             selectedStudent: null,
             studentDialogOpen: false,
@@ -2030,6 +2095,7 @@ export default {
     },
 
     async created() {
+        await this.initializeWorkspace()
         await this.loadState()
     },
 
@@ -2037,10 +2103,29 @@ export default {
         continueToNextStep() {
             if (!this.hasPlanningSelectionContext) return
 
-            void this.$router.push({ path: TIMETABLE_V3_MODULE_SELECTION_PATH })
+            const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
+
+            void this.$router.push(timetableV3RouteLocation(
+                TIMETABLE_V3_MODULE_SELECTION_PATH,
+                planningContext,
+                this.workspaceId,
+            ))
         },
         returnToSelectionStep() {
-            void this.$router.push({ path: TIMETABLE_V3_SELECTION_PATH })
+            const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
+
+            void this.$router.push(timetableV3RouteLocation(
+                TIMETABLE_V3_SELECTION_PATH,
+                planningContext,
+                this.workspaceId,
+            ))
+        },
+        replaceRoutePlanningContext(planningContext) {
+            if (!this.$router?.replace) return
+
+            const path = String(this.$route?.path || TIMETABLE_V3_SELECTION_PATH)
+
+            void this.$router.replace(timetableV3RouteLocation(path, planningContext, this.workspaceId))
         },
         returnFromTimetableCreationStep() {
             if (this.timetableCalculationStatus !== 'idle') {
@@ -2049,7 +2134,13 @@ export default {
                 return
             }
 
-            void this.$router.push({ path: TIMETABLE_V3_MODULE_SELECTION_PATH })
+            const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
+
+            void this.$router.push(timetableV3RouteLocation(
+                TIMETABLE_V3_MODULE_SELECTION_PATH,
+                planningContext,
+                this.workspaceId,
+            ))
         },
         normalizedTimetableCalculationCount(value) {
             const count = Number(value)
@@ -2107,6 +2198,7 @@ export default {
             return {
                 modules: [...(this.selectedModuleKeys || [])],
                 parameters: {
+                    workspace_id: this.workspaceId,
                     planning_mode: this.planningMode,
                     student_code: this.planningMode === WITH_STUDENT ? this.selectedStudentCode : null,
                     selection: { ...(this.planningSelectionValues || {}) },
@@ -2136,8 +2228,10 @@ export default {
                 || typeof parameters !== 'object'
                 || Array.isArray(parameters)
                 || !Array.isArray(modules)
+                || context.workspace_id !== this.workspaceId
                 || context.planning_mode !== this.planningMode
                 || (context.student_code ?? null) !== expectedStudentCode
+                || parameters.workspace_id !== this.workspaceId
                 || parameters.planning_mode !== this.planningMode
                 || (parameters.student_code ?? null) !== expectedStudentCode
             ) return false
@@ -2220,6 +2314,7 @@ export default {
             const studentCode = planningMode === WITH_STUDENT ? this.selectedStudentCode : null
             const url = showTimetableV3Timetable.url({
                 query: {
+                    workspace_id: this.workspaceId,
                     planning_mode: planningMode,
                     ...(studentCode ? { student_code: studentCode } : {}),
                 },
@@ -2316,14 +2411,24 @@ export default {
             await this.saveState()
             if (this.stateSaveFailed) return
 
-            await this.$router.push({ path: TIMETABLE_V3_CREATION_PATH })
+            const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
+
+            await this.$router.push(timetableV3RouteLocation(
+                TIMETABLE_V3_CREATION_PATH,
+                planningContext,
+                this.workspaceId,
+            ))
         },
         async ensureValidCurrentStep() {
             if (
                 [MODULE_SELECTION_STEP, TIMETABLE_CREATION_STEP].includes(this.currentStep)
                 && !this.hasPlanningSelectionContext
             ) {
-                await this.$router.replace({ path: TIMETABLE_V3_SELECTION_PATH })
+                await this.$router.replace(timetableV3RouteLocation(
+                    TIMETABLE_V3_SELECTION_PATH,
+                    null,
+                    this.workspaceId,
+                ))
                 return
             }
 
@@ -2332,15 +2437,41 @@ export default {
                 && !this.studentSelectionDetailsError
                 && (this.selectedModuleCount === 0 || this.scheduleCreationMode !== AUTOMATIC_TIMETABLE)
             ) {
-                await this.$router.replace({ path: TIMETABLE_V3_MODULE_SELECTION_PATH })
+                const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
+
+                await this.$router.replace(timetableV3RouteLocation(
+                    TIMETABLE_V3_MODULE_SELECTION_PATH,
+                    planningContext,
+                    this.workspaceId,
+                ))
             }
+        },
+        async initializeWorkspace() {
+            const routeWorkspaceId = normalizedWorkspaceId(this.$route?.query?.workspace_id)
+            this.workspaceId = routeWorkspaceId || createWorkspaceId()
+
+            if (routeWorkspaceId || !this.$router?.replace) return
+
+            const routePlanningContext = normalizedPlanningContext(
+                this.$route?.query?.planning_mode,
+                this.$route?.query?.student_code,
+            )
+            const path = String(this.$route?.path || TIMETABLE_V3_SELECTION_PATH)
+
+            await this.$router.replace(timetableV3RouteLocation(
+                path,
+                routePlanningContext,
+                this.workspaceId,
+            ))
         },
         async loadState() {
             this.isLoadingState = true
             this.stateLoadFailed = false
 
             try {
-                const response = await axios.get(showTimetableV3State.url())
+                const response = await axios.get(showTimetableV3State.url({
+                    query: { workspace_id: this.workspaceId },
+                }))
                 this.storedState = response.data?.data?.state ?? null
                 this.restoreCreationOptions()
                 await this.restoreEntrySelection()
@@ -2402,9 +2533,12 @@ export default {
             this.studentInfoDialogOpen = false
             this.studyInfoDialogOpen = false
             await this.saveState()
+            this.replaceRoutePlanningContext(normalizedPlanningContext(this.planningMode))
             void this.loadSelectedStudentSelection()
         },
         async restartPlanning() {
+            const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
+
             this.planningMode = null
             this.selectedStudent = null
             this.studentDialogOpen = false
@@ -2413,7 +2547,8 @@ export default {
             this.studentInfoDialogOpen = false
             this.studyInfoDialogOpen = false
             this.resetSelectedStudentSelectionDetails()
-            await this.saveState()
+            await this.saveState(planningContext)
+            this.replaceRoutePlanningContext(null)
         },
         closeStudentDialog() {
             this.studentDialogOpen = false
@@ -3000,6 +3135,7 @@ export default {
             }
             this.closeStudentDialog()
             await this.saveState()
+            this.replaceRoutePlanningContext(normalizedPlanningContext(this.planningMode, this.selectedStudentCode))
             void this.loadSelectedStudentSelection()
         },
         async copySelectedStudentEmail() {
@@ -3018,7 +3154,39 @@ export default {
                 this.emailCopyStatus = 'failed'
             }
         },
-        async saveState() {
+        async saveState(planningContext = null) {
+            const stateContext = planningContext
+                || normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
+
+            if (!stateContext || !this.workspaceId) return
+
+            const currentState = this.storedState && typeof this.storedState === 'object'
+                ? this.storedState
+                : {}
+            const state = {
+                ...currentState,
+                entrySelection: {
+                    mode: this.planningMode,
+                    student: this.planningMode === WITH_STUDENT ? this.selectedStudent : null,
+                },
+                planningSelection: {
+                    mode: this.planningMode,
+                    studentCode: this.planningMode === WITH_STUDENT ? this.selectedStudentCode : null,
+                    values: this.planningSelectionValues,
+                },
+                moduleSelection: {
+                    mode: this.planningMode,
+                    studentCode: this.planningMode === WITH_STUDENT ? this.selectedStudentCode : null,
+                    planningValues: this.planningSelectionValues,
+                    scheduleCreationMode: this.scheduleCreationMode,
+                    selectedKeys: this.selectedModuleKeys || [],
+                    selectedCourseKeys: this.selectedCourseKeys || [],
+                },
+                creationOptions: {
+                    allowSaturdayLessons: this.allowSaturdayLessons,
+                },
+            }
+
             this.pendingStateSaveCount = Number(this.pendingStateSaveCount || 0) + 1
             this.isSavingState = true
             const precedingSave = this.stateSaveQueue || Promise.resolve()
@@ -3027,35 +3195,14 @@ export default {
                 .then(async () => {
                     this.stateSaveFailed = false
 
-                    const currentState = this.storedState && typeof this.storedState === 'object'
-                        ? this.storedState
-                        : {}
-                    const state = {
-                        ...currentState,
-                        entrySelection: {
-                            mode: this.planningMode,
-                            student: this.planningMode === WITH_STUDENT ? this.selectedStudent : null,
-                        },
-                        planningSelection: {
-                            mode: this.planningMode,
-                            studentCode: this.planningMode === WITH_STUDENT ? this.selectedStudentCode : null,
-                            values: this.planningSelectionValues,
-                        },
-                        moduleSelection: {
-                            mode: this.planningMode,
-                            studentCode: this.planningMode === WITH_STUDENT ? this.selectedStudentCode : null,
-                            planningValues: this.planningSelectionValues,
-                            scheduleCreationMode: this.scheduleCreationMode,
-                            selectedKeys: this.selectedModuleKeys || [],
-                            selectedCourseKeys: this.selectedCourseKeys || [],
-                        },
-                        creationOptions: {
-                            allowSaturdayLessons: this.allowSaturdayLessons,
-                        },
-                    }
-
                     try {
-                        const response = await axios.put(updateTimetableV3State.url(), { state })
+                        const response = await axios.put(updateTimetableV3State.url(), {
+                            context: {
+                                workspace_id: this.workspaceId,
+                                ...stateContext,
+                            },
+                            state,
+                        })
                         this.storedState = response.data?.data?.state ?? state
                     } catch {
                         this.stateSaveFailed = true

@@ -4294,7 +4294,7 @@ class RobotTimetableBackendSetupService
      */
     private function requiredSlotCountForCourse(array $course): int
     {
-        return max(1, (int) round((float) ($course['hours'] ?? 0)));
+        return max(1, (int) round((float) ($course['regular_hours'] ?? $course['hours'] ?? 0)));
     }
 
     /**
@@ -5040,6 +5040,10 @@ class RobotTimetableBackendSetupService
         array $settings,
     ): array {
         $courseCode = $this->selectedCourseCode($subject, $settings);
+        $regularCourseHours = $settings['regular_course_hours'] ?? [];
+        $regularHours = is_array($regularCourseHours)
+            ? $regularCourseHours[$this->normalizedCourseCode($courseCode)] ?? null
+            : null;
 
         return [
             'key' => implode('|', [
@@ -5055,6 +5059,9 @@ class RobotTimetableBackendSetupService
             'name' => $subject['name'] ?? $subject['json_subject'] ?? $subject['json_code'] ?? '',
             'ttCodes' => $this->selectedCourseTimetableCodes($subject, $subjectMappings, $courseGroups, $settings),
             'hours' => (float) ($subject['hours_per_week'] ?? 0),
+            'regular_hours' => is_numeric($regularHours) && (float) $regularHours > 0
+                ? (float) $regularHours
+                : null,
         ];
     }
 
