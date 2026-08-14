@@ -2,6 +2,8 @@
 paths:
   - 'app/Services/StudentsTimetables/**'
   - 'app/Services/StudentsTimetables/*TimetableV3*'
+  - 'app/Services/StudentsTimetables/StudentTimetableV3Timetable*.php'
+  - 'app/Services/StudentsTimetables/*.php'
 ---
 
 # Services Students Timetables
@@ -29,3 +31,9 @@ In V3 Studienauswahl, a completed ETH/ET course selects ETH; otherwise a complet
 
 ## Group V3 no-student modules by main module
 For V3 requests without student_code, transform the available selection modules into naturally sorted main-module families by removing trailing module numbers from code/name (BU1/BU2 -> BU). Preserve each concrete module's existing selection_key, course payload, hours, and other selection data; requests with a student_code keep the five progression groups.
+
+## Persist V3 timetable sets as a lesson catalog
+Store generated V3 timetables in the existing JSON column as a versioned compact envelope: shared lesson payloads once, with each timetable slot retaining only primary/same-slot/conflict lesson references. Expand at the service response boundary so the API shape stays unchanged; read legacy list rows without mutating them, and validate the 8 MiB bound against the compact envelope.
+
+## Treat resolved V3 modules as authoritative during generation
+After V3 selection keys and underlying active course-group keys are resolved against the current server catalog, timetable generation must use the exact selected module codes. Do not filter or rewrite those modules from the student's religion, language, branch, or arts choices. Keep strict one-to-one module resolution, active-group completeness, ambiguity, and cross-module integrity checks.

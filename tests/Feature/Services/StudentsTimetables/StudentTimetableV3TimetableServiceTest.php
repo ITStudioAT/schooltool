@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\StudentTimetableStudyProgram;
+use App\Models\Import116;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableSubjectMapping;
@@ -11,10 +12,14 @@ use App\Services\StudentsTimetables\RobotTimetableBackendSetupService;
 use App\Services\StudentsTimetables\StudentTimetableCalculationSettingsService;
 use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\StudentTimetableRememberedTtEntryService;
+use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
+use App\Services\StudentsTimetables\StudentTimetableV3SessionScope;
 use App\Services\StudentsTimetables\StudentTimetableV3StudentInformationService;
 use App\Services\StudentsTimetables\StudentTimetableV3TimetableService;
+use App\Services\StudentsTimetables\StudentTimetableV3TimetableStorage;
 use App\Services\StudentsTimetables\TimetableDateSlotOverlapService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -48,11 +53,155 @@ it('returns a persisted v3 timetable without recalculating or mutating it', func
         ->modules->toEqual($timetable->modules)
         ->parameters->toEqual($timetable->parameters)
         ->summary->toEqual($timetable->summary)
-        ->timetables->toEqual($timetable->timetables)
+        ->timetables->toEqual((new StudentTimetableV3TimetableStorage)->expand($timetable->timetables))
+        ->timetables_meta->toMatchArray([
+            'current_page' => 1,
+            'per_page' => 100,
+            'last_page' => 1,
+            'total' => 1,
+            'offset' => 0,
+            'from' => 1,
+            'to' => 1,
+        ])
         ->and($freshTimetable?->getRawOriginal('fingerprint'))->toBe($storedFingerprint)
         ->and($freshTimetable?->getRawOriginal('generated_at'))->toBe($storedGeneratedAt)
         ->and($freshTimetable?->getRawOriginal('updated_at'))->toBe($storedUpdatedAt)
         ->and(StudentTimetableV3Timetable::query()->count())->toBe(1);
+});
+
+it('reads a scoped legacy timetable page without migrating the stored payload', function () {
+    [$user, , $studentCode, $information, $courseGroups, $timetable] = v3PersistedReadFixture();
+    $expandedTimetables = (new StudentTimetableV3TimetableStorage)->expand($timetable->timetables);
+    $legacyTimetables = collect(range(1, 101))
+        ->map(fn (int $number): array => [
+            ...$expandedTimetables[0],
+            'key' => "legacy-{$number}",
+            'number' => $number,
+        ])
+        ->all();
+    $timetable->update([
+        'summary' => [
+            ...$timetable->summary,
+            'timetable_count' => 101,
+        ],
+        'timetables' => $legacyTimetables,
+    ]);
+    $timetable = $timetable->fresh();
+    $storedPayload = $timetable->getRawOriginal('timetables');
+    $storedUpdatedAt = $timetable->getRawOriginal('updated_at');
+
+    $service = v3TimetableReadService(
+        $user,
+        $information,
+        $courseGroups,
+        $studentCode,
+    );
+    $result = $service->resultForUser($user, [
+        'planning_mode' => 'with_student',
+        'student_code' => $studentCode,
+    ], 2, (string) $timetable->fingerprint);
+    $outsideActualPageRange = v3TimetableReadService(
+        $user,
+        $information,
+        $courseGroups,
+        $studentCode,
+    )->resultForUser($user, [
+        'planning_mode' => 'with_student',
+        'student_code' => $studentCode,
+    ], 5, (string) $timetable->fingerprint);
+
+    expect($result)
+        ->timetables->toHaveCount(1)
+        ->and($result['timetables'][0])->toMatchArray([
+            'key' => 'legacy-101',
+            'number' => 101,
+        ])
+        ->and($result['timetables_meta'])->toMatchArray([
+            'current_page' => 2,
+            'per_page' => 100,
+            'last_page' => 2,
+            'total' => 101,
+            'offset' => 100,
+            'from' => 101,
+            'to' => 101,
+        ])
+        ->and($outsideActualPageRange)->toBeNull()
+        ->and($timetable->fresh()?->getRawOriginal('timetables'))->toBe($storedPayload)
+        ->and($timetable->fresh()?->getRawOriginal('updated_at'))->toBe($storedUpdatedAt);
+});
+
+it('requires the current fingerprint for persisted follow-up pages', function () {
+    [$user] = v3TimetableServiceUser();
+    $exception = null;
+
+    try {
+        v3TimetableReadService()->resultForUser(
+            $user,
+            ['planning_mode' => 'without_student'],
+            2,
+        );
+    } catch (ValidationException $caughtException) {
+        $exception = $caughtException;
+    }
+
+    expect($exception)
+        ->toBeInstanceOf(ValidationException::class)
+        ->and($exception?->errors())->toHaveKey('fingerprint');
+});
+
+it('fails closed when persisted timetable storage is not an array', function () {
+    [$user, , $studentCode, $information, $courseGroups, $timetable] = v3PersistedReadFixture();
+
+    DB::table('student_timetable_v3_timetables')
+        ->where('id', $timetable->id)
+        ->update(['timetables' => json_encode('corrupt', JSON_THROW_ON_ERROR)]);
+
+    $result = v3TimetableReadService(
+        $user,
+        $information,
+        $courseGroups,
+        $studentCode,
+    )->resultForUser($user, [
+        'planning_mode' => 'with_student',
+        'student_code' => $studentCode,
+    ]);
+
+    expect($result)->toBeNull();
+});
+
+it('fails closed when the persisted timetable count is not an integer', function () {
+    [$user, , $studentCode, $information, $courseGroups, $timetable] = v3PersistedReadFixture();
+    $timetable->update([
+        'summary' => [
+            ...$timetable->summary,
+            'timetable_count' => '1corrupt',
+        ],
+    ]);
+
+    $result = v3TimetableReadService(
+        $user,
+        $information,
+        $courseGroups,
+        $studentCode,
+    )->resultForUser($user, [
+        'planning_mode' => 'with_student',
+        'student_code' => $studentCode,
+    ]);
+
+    expect($result)->toBeNull();
+});
+
+it('does not restore an expired v3 timetable for an otherwise matching session', function () {
+    [$user, , $studentCode, , , $timetable] = v3PersistedReadFixture();
+    $timetable->update(['expires_at' => now()->subSecond()]);
+
+    $result = v3TimetableReadService()->resultForUser($user, [
+        'planning_mode' => 'with_student',
+        'student_code' => $studentCode,
+    ]);
+
+    expect($result)->toBeNull()
+        ->and($timetable->fresh())->not->toBeNull();
 });
 
 it('ignores a persisted v3 timetable when the selected course schedule changed', function (
@@ -182,6 +331,7 @@ it('ignores a persisted v3 timetable generated by an unknown or older algorithm'
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
         'user_id' => $user->id,
+        'session_id_hash' => app(StudentTimetableV3SessionScope::class)->currentHash(),
         'context_key' => 'without-student',
         'planning_mode' => 'without_student',
         'student_code' => null,
@@ -191,6 +341,7 @@ it('ignores a persisted v3 timetable generated by an unknown or older algorithm'
         'summary' => $summary,
         'timetables' => [['number' => 1]],
         'generated_at' => now()->subMinute(),
+        'expires_at' => app(StudentTimetableV3SessionScope::class)->expiresAt(),
     ]);
     $storedUpdatedAt = $timetable->getRawOriginal('updated_at');
 
@@ -203,7 +354,7 @@ it('ignores a persisted v3 timetable generated by an unknown or older algorithm'
         ->and(StudentTimetableV3Timetable::query()->count())->toBe(1);
 })->with([
     'missing version' => [['timetable_count' => 18]],
-    'older version' => [['algorithm_version' => 3, 'timetable_count' => 18]],
+    'older version' => [['algorithm_version' => 6, 'timetable_count' => 18]],
 ]);
 
 it('returns null when no persisted v3 timetable exists for the exact user and planning context', function () {
@@ -319,7 +470,7 @@ it('creates, updates, and reuses all possible v3 timetables for a planning conte
     expect($created)
         ->status->toBe('created')
         ->reused->toBeFalse()
-        ->summary->algorithm_version->toBe(4)
+        ->summary->algorithm_version->toBe(7)
         ->summary->timetable_count->toBe(4)
         ->summary->timetable_variation_count->toBe(4)
         ->summary->full_green_timetable_count->toBe(4)
@@ -343,7 +494,9 @@ it('creates, updates, and reuses all possible v3 timetables for a planning conte
         ->user_id->toBe($user->id)
         ->planning_mode->toBe('without_student')
         ->student_code->toBeNull()
-        ->and($record->timetables)->toHaveCount(4);
+        ->and($record->timetables['storage_version'])->toBe(1)
+        ->and($record->timetables['timetables'])->toHaveCount(4)
+        ->and($record->timetables['lessons'])->not->toBeEmpty();
 
     $updated = $service->createOrUpdateForUser($user, $modules, [
         ...$parameters,
@@ -354,7 +507,7 @@ it('creates, updates, and reuses all possible v3 timetables for a planning conte
         ->id->toBe($created['id'])
         ->status->toBe('updated')
         ->reused->toBeFalse()
-        ->summary->algorithm_version->toBe(4)
+        ->summary->algorithm_version->toBe(7)
         ->summary->timetable_count->toBe(2)
         ->timetables->toHaveCount(2)
         ->fingerprint->not->toBe($created['fingerprint'])
@@ -420,6 +573,57 @@ it('keeps different workspace calculations for the same student isolated', funct
         ->and(StudentTimetableV3Timetable::query()->count())->toBe(2);
 });
 
+it('keeps the same workspace isolated between concurrent login sessions', function () {
+    [$user, $schoolyear] = v3TimetableServiceUser();
+    $workspaceId = '55555555-5555-4555-8555-555555555555';
+    $firstSessionId = str_repeat('a', 40);
+    $secondSessionId = str_repeat('b', 40);
+
+    v3TimetableServiceSubjectRow($user, $schoolyear, 'D1', 'D', 'Deutsch 1', 1);
+    $information = v3TimetableServiceInformation(includeMathematics: false);
+    $courseGroups = [
+        v3TimetableServiceCourseGroup('d1-a', 'D1-A', 'D1', 1, 1),
+        v3TimetableServiceCourseGroup('d1-b', 'D1-B', 'D1', 2, 1),
+    ];
+    $service = v3TimetableService($user, $information, $courseGroups);
+
+    session()->setId($firstSessionId);
+    $first = $service->createOrUpdateForUser($user, ['additional:D1'], [
+        'workspace_id' => $workspaceId,
+        'planning_mode' => 'without_student',
+        'selected_course_keys' => ['d1-a'],
+    ]);
+
+    session()->setId($secondSessionId);
+    $second = $service->createOrUpdateForUser($user, ['additional:D1'], [
+        'workspace_id' => $workspaceId,
+        'planning_mode' => 'without_student',
+        'selected_course_keys' => ['d1-b'],
+    ]);
+    $restoredSecond = v3TimetableReadService($user, $information, $courseGroups)->resultForUser($user, [
+        'workspace_id' => $workspaceId,
+        'planning_mode' => 'without_student',
+    ]);
+
+    session()->setId($firstSessionId);
+    $restoredFirst = v3TimetableReadService($user, $information, $courseGroups)->resultForUser($user, [
+        'workspace_id' => $workspaceId,
+        'planning_mode' => 'without_student',
+    ]);
+    $records = StudentTimetableV3Timetable::query()->orderBy('id')->get();
+
+    expect($first['id'])->not->toBe($second['id'])
+        ->and($restoredFirst['id'])->toBe($first['id'])
+        ->and($restoredFirst['parameters']['selected_course_keys'])->toBe(['d1-a'])
+        ->and($restoredSecond['id'])->toBe($second['id'])
+        ->and($restoredSecond['parameters']['selected_course_keys'])->toBe(['d1-b'])
+        ->and($records)->toHaveCount(2)
+        ->and($records->pluck('session_id_hash')->unique())->toHaveCount(2)
+        ->and($records->pluck('session_id_hash'))->not->toContain($firstSessionId, $secondSessionId)
+        ->and($records->every(fn (StudentTimetableV3Timetable $record): bool => $record->expires_at->isFuture()))
+        ->toBeTrue();
+});
+
 it('marks distance learning in generated v3 timetables using normal study hours', function () {
     [$user, $schoolyear] = v3TimetableServiceUser();
     $subjectRow = v3TimetableServiceSubjectRow($user, $schoolyear, 'D1', 'D', 'Deutsch 1', 1);
@@ -448,7 +652,7 @@ it('marks distance learning in generated v3 timetables using normal study hours'
     $slots = collect($result['timetables'][0]['slots']);
 
     expect($result)
-        ->summary->algorithm_version->toBe(4)
+        ->summary->algorithm_version->toBe(7)
         ->timetables->toHaveCount(1)
         ->and($slots)->toHaveCount(2)
         ->and($slots->every(
@@ -479,7 +683,7 @@ it('rejects stale or unrelated course keys without overwriting the last v3 resul
 
     expect($record)
         ->fingerprint->toBe($created['fingerprint'])
-        ->and($record->timetables)->toEqual($created['timetables']);
+        ->and((new StudentTimetableV3TimetableStorage)->expand($record->timetables))->toEqual($created['timetables']);
 });
 
 it('rejects generation when any selected module is missing from the resolved courses', function () {
@@ -569,6 +773,162 @@ it('resolves compact generic religion rows to Rev2 in every generated timetable'
     }
 });
 
+it('builds a generation catalog without student eligibility filters', function () {
+    [$user, $schoolyear] = v3TimetableServiceUser();
+    Import116::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'student_code' => 'student-1',
+        'school_level' => '05_1',
+        'religion' => 'röm.-kath.',
+        'import_user_id' => $user->id,
+        'exists_date' => now(),
+    ]);
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Normalstudium,
+        'semester' => 3,
+        'branch' => 'common',
+        'json_code' => 'R/ET3',
+        'json_subject' => 'R/ET',
+        'name' => 'Religion/Ethik 3',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => 1,
+        'source' => 'test',
+    ]);
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Normalstudium,
+        'semester' => 2,
+        'branch' => 'wirtschaftskundlich',
+        'json_code' => 'INF2',
+        'json_subject' => 'INF',
+        'name' => 'Informatik 2',
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => 2,
+        'source' => 'test',
+    ]);
+    $selection = [
+        'semester' => 1,
+        'religion' => 'Rk',
+        'language' => 'L',
+        'branch' => 'gymnasial',
+        'arts_subject' => 'ME',
+    ];
+    $overviewService = app(StudentTimetablesStudentOverviewService::class);
+    $filteredSummary = $overviewService->selectionSummaryForStudentCode(
+        $user,
+        'student-1',
+        $selection,
+        strictSelectionOverride: true,
+        studyProgram: StudentTimetableStudyProgram::Normalstudium,
+    );
+    $generationSummary = $overviewService->selectionSummaryForStudentCode(
+        $user,
+        'student-1',
+        $selection,
+        strictSelectionOverride: true,
+        studyProgram: StudentTimetableStudyProgram::Normalstudium,
+        includeAllSelectableModules: true,
+    );
+    $moduleCodes = fn (array $summary): array => collect($summary['module_selection_groups'])
+        ->flatMap(fn (array $group): array => $group['modules'])
+        ->pluck('code')
+        ->all();
+
+    expect($moduleCodes($filteredSummary))
+        ->not->toContain('ETH3', 'INF2')
+        ->and($moduleCodes($generationSummary))
+        ->toContain('ETH3', 'INF2');
+});
+
+it('uses selected modules without rechecking student eligibility during generation', function (array $case) {
+    [$user, $schoolyear] = v3TimetableServiceUser();
+    $studentCode = 'student-1';
+
+    StudentTimetableSubjectRow::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'study_program' => StudentTimetableStudyProgram::Normalstudium,
+        'semester' => $case['semester'],
+        'branch' => $case['subject_branch'],
+        'json_code' => $case['subject_code'],
+        'json_subject' => $case['subject'],
+        'name' => $case['module_code'],
+        'hours_per_week' => 1,
+        'is_active' => true,
+        'sort_order' => 1,
+        'source' => 'test',
+    ]);
+    $information = v3TimetableServiceInformation(includeMathematics: false);
+    $information['student_code'] = $studentCode;
+    $information['semester'] = $case['semester'];
+    $information['selection_fields'] = collect($information['selection_fields'])
+        ->map(fn (array $field): array => [
+            ...$field,
+            'selected_value' => array_key_exists($field['key'], $case['selection'])
+                ? $case['selection'][$field['key']]
+                : $field['selected_value'],
+        ])
+        ->all();
+    $information['module_selection_groups'][0]['modules'] = [[
+        'selection_key' => "additional:{$case['module_code']}",
+        'code' => $case['module_code'],
+        'name' => $case['module_code'],
+        'hours' => 1,
+        'courses' => [[
+            'key' => $case['course_key'],
+            'keys' => [$case['course_key']],
+            'title' => "{$case['module_code']}-A",
+        ]],
+    ]];
+    $courseGroup = v3TimetableServiceCourseGroup(
+        $case['course_key'],
+        "{$case['module_code']}-A",
+        $case['module_code'],
+        1,
+        1,
+    );
+    $courseGroup['semester'] = $case['semester'];
+    $service = v3TimetableService($user, $information, [$courseGroup], $studentCode);
+
+    $result = $service->createOrUpdateForUser($user, ["additional:{$case['module_code']}"], [
+        'planning_mode' => 'with_student',
+        'student_code' => $studentCode,
+        'selected_course_keys' => [$case['course_key']],
+    ]);
+
+    expect($result)
+        ->summary->selected_module_count->toBe(1)
+        ->summary->timetable_count->toBe(1)
+        ->timetables->toHaveCount(1)
+        ->and(collect($result['timetables'][0]['slots'])->pluck('code')->unique()->values()->all())
+        ->toBe([$case['module_code']]);
+})->with([
+    'catholic student selects ethics' => [[
+        'semester' => 3,
+        'selection' => ['religion' => 'Rk'],
+        'subject_branch' => 'common',
+        'subject_code' => 'R/ET3',
+        'subject' => 'R/ET',
+        'module_code' => 'ETH3',
+        'course_key' => 'eth3-a',
+    ]],
+    'gymnasial student selects wirtschaftskundlich informatics' => [[
+        'semester' => 2,
+        'selection' => ['branch' => 'gymnasial'],
+        'subject_branch' => 'wirtschaftskundlich',
+        'subject_code' => 'INF2',
+        'subject' => 'INF',
+        'module_code' => 'INF2',
+        'course_key' => 'inf2-a',
+    ]],
+]);
+
 it('persists zero possible timetables when every selected module resolves but all variants conflict', function () {
     [$user, $schoolyear] = v3TimetableServiceUser();
 
@@ -584,10 +944,23 @@ it('persists zero possible timetables when every selected module resolves but al
         ],
     );
 
-    $result = $service->createOrUpdateForUser($user, ['additional:D1', 'additional:M1'], [
-        'planning_mode' => 'without_student',
-        'selected_course_keys' => ['d1-a', 'm1-a'],
-    ]);
+    $progressPhases = [];
+    $result = $service->createOrUpdateForUser(
+        $user,
+        ['additional:D1', 'additional:M1'],
+        [
+            'planning_mode' => 'without_student',
+            'selected_course_keys' => ['d1-a', 'm1-a'],
+        ],
+        function (
+            int $progressPercent,
+            int $combinationCount,
+            string $phase,
+            int $checkedCombinationCount,
+        ) use (&$progressPhases): void {
+            $progressPhases[] = $phase;
+        },
+    );
     $record = StudentTimetableV3Timetable::query()->sole();
 
     expect($result)
@@ -629,7 +1002,12 @@ it('persists zero possible timetables when every selected module resolves but al
             'timetable_count' => 0,
             'solution_plan' => $result['summary']['solution_plan'],
         ])
-        ->and($record->timetables)->toBe([]);
+        ->and($record->timetables)->toEqual([
+            'storage_version' => 1,
+            'lessons' => [],
+            'timetables' => [],
+        ])
+        ->and($progressPhases)->toContain('analyzing_solutions', 'persisting', 'complete');
 });
 
 it('refuses to materialize a partial list when the complete result exceeds the v3 limit', function () {
@@ -720,7 +1098,7 @@ it('materializes only possible timetables while retaining conflict counts', func
         ->and(collect($result['timetables'])->pluck('type')->unique()->values()->all())
         ->not->toContain('conflict');
 
-    expect(fn () => $backendSetupService->calculateAllPossibleTimetableVariations(
+    $limitedResult = $backendSetupService->calculateAllPossibleTimetableVariations(
         subjectRows: [
             v3TimetableServiceRobotSubject('D1'),
             v3TimetableServiceRobotSubject('M1'),
@@ -734,7 +1112,83 @@ it('materializes only possible timetables while retaining conflict counts', func
         ],
         settings: v3TimetableServiceRobotSettings(),
         maximumTimetables: 2,
-    ))->toThrow(ValidationException::class);
+    );
+
+    expect($limitedResult)
+        ->timetable_variation_count->toBe(4)
+        ->full_green_timetable_count->toBe(3)
+        ->green_timetable_count->toBe(0)
+        ->red_timetable_count->toBe(1)
+        ->timetables->toHaveCount(2)
+        ->and(array_column($limitedResult['timetables'], 'type'))->toBe(['full_green', 'full_green']);
+});
+
+it('checks and materializes all 1420 possible timetables below the 2000 limit', function () {
+    $backendSetupService = new RobotTimetableBackendSetupService(
+        new StudentTimetableRememberedTtEntryService,
+        new TimetableDateSlotOverlapService,
+    );
+    $courseGroups = [
+        ...collect(range(1, 20))
+            ->map(fn (int $number): array => v3TimetableServiceCourseGroup(
+                "d1-{$number}",
+                "D1-{$number}",
+                'D1',
+                1,
+                1,
+            ))
+            ->all(),
+        ...collect(range(1, 71))
+            ->map(fn (int $number): array => v3TimetableServiceCourseGroup(
+                "m1-{$number}",
+                "M1-{$number}",
+                'M1',
+                2,
+                1,
+            ))
+            ->all(),
+    ];
+    $progress = [];
+
+    $result = $backendSetupService->calculateAllPossibleTimetableVariations(
+        subjectRows: [
+            v3TimetableServiceRobotSubject('D1'),
+            v3TimetableServiceRobotSubject('M1'),
+        ],
+        subjectMappings: [],
+        courseGroups: $courseGroups,
+        settings: v3TimetableServiceRobotSettings(),
+        maximumTimetables: 2000,
+        calculateNoSaturdayTimetableCount: false,
+        progressCallback: function (
+            int $progressPercent,
+            int $combinationCount,
+            string $phase,
+            int $checkedCombinationCount,
+        ) use (&$progress): void {
+            $progress[] = [$progressPercent, $combinationCount, $phase, $checkedCombinationCount];
+        },
+    );
+
+    expect($result)
+        ->timetable_variation_count->toBe(1420)
+        ->full_green_timetable_count->toBe(1420)
+        ->green_timetable_count->toBe(0)
+        ->red_timetable_count->toBe(0)
+        ->no_saturday_timetable_count->toBe(0)
+        ->timetables->toHaveCount(1420)
+        ->and(array_column($result['timetables'], 'number'))->toBe(range(1, 1420))
+        ->and(array_column($progress, 0))->toBe([0, ...range(5, 90, 5)])
+        ->and(array_column($progress, 2))->toBe([
+            ...array_fill(0, 17, 'checking'),
+            'materializing',
+            'compacting',
+        ])
+        ->and(collect($progress)->pluck(1)->unique()->values()->all())->toBe([1420])
+        ->and(array_column($progress, 3))->toBe(
+            collect($progress)->pluck(3)->sort()->values()->all(),
+        )
+        ->and($progress[array_key_last($progress)][3])->toBe(1420);
 });
 
 it('persists full green and green timetables while retaining omitted conflict counts', function () {
@@ -771,6 +1225,7 @@ it('persists full green and green timetables while retaining omitted conflict co
             v3TimetableServiceCourseGroup('m1-conflict', 'M1-CONFLICT', 'M1', 1, 1),
         ],
     );
+    $progress = [];
 
     $result = $service->createOrUpdateForUser(
         $user,
@@ -784,6 +1239,20 @@ it('persists full green and green timetables while retaining omitted conflict co
                 'm1-conflict',
             ],
         ],
+        function (
+            int $progressPercent,
+            int $combinationCount,
+            string $phase,
+            int $checkedCombinationCount,
+        ) use (&$progress): void {
+            $progress[] = [
+                $progressPercent,
+                $combinationCount,
+                $phase,
+                $checkedCombinationCount,
+                StudentTimetableV3Timetable::query()->exists(),
+            ];
+        },
     );
     $persistedTimetable = StudentTimetableV3Timetable::query()->sole();
 
@@ -793,6 +1262,18 @@ it('persists full green and green timetables while retaining omitted conflict co
         ->summary->full_green_timetable_count->toBe(1)
         ->summary->green_timetable_count->toBe(1)
         ->summary->conflict_timetable_count->toBe(1)
+        ->and(array_column($progress, 0))->toBe([0, 0, ...range(5, 100, 5)])
+        ->and(array_column($progress, 2))->toBe([
+            'preparing',
+            ...array_fill(0, 17, 'checking'),
+            'materializing',
+            'compacting',
+            'persisting',
+            'complete',
+        ])
+        ->and(collect($progress)->pluck(1)->unique()->values()->all())->toBe([0, 3])
+        ->and(collect($progress)->firstWhere(0, 95)[4])->toBeFalse()
+        ->and(collect($progress)->firstWhere(0, 100)[4])->toBeTrue()
         ->and(array_column($result['timetables'], 'type'))->toBe(['full_green', 'green'])
         ->and($persistedTimetable->summary)->toMatchArray([
             'timetable_count' => 2,
@@ -801,7 +1282,193 @@ it('persists full green and green timetables while retaining omitted conflict co
             'green_timetable_count' => 1,
             'conflict_timetable_count' => 1,
         ])
-        ->and(array_column($persistedTimetable->timetables, 'type'))->toBe(['full_green', 'green']);
+        ->and(array_column($persistedTimetable->timetables['timetables'], 'type'))->toBe(['full_green', 'green']);
+});
+
+it('caps persisted timetables at 2000 while returning fixed pages of 100', function () {
+    [$user, $schoolyear] = v3TimetableServiceUser();
+    v3TimetableServiceSubjectRow($user, $schoolyear, 'D1', 'D', 'Deutsch 1', 1);
+
+    $courseGroup = v3TimetableServiceCourseGroup('d1-a', 'D1-A', 'D1', 1, 1);
+    $lesson = [
+        'key' => 'D1',
+        'code' => 'D1',
+        'name' => 'Deutsch 1',
+        'sourceLabel' => 'D1 A',
+        'alternativeLabels' => ['D1 A'],
+        'courseGroup' => [
+            ...$courseGroup,
+            'shared_details' => str_repeat('x', 18_000),
+        ],
+        'dateRangeLabel' => '',
+        'conflicts' => [],
+        'isOccasional' => false,
+        'isAdditionalCourse' => false,
+        'isDistanceLearningCourse' => false,
+    ];
+    $timetables = collect(range(1, 2001))
+        ->map(fn (int $number): array => [
+            'key' => "backend-full_green-{$number}",
+            'number' => $number,
+            'type' => 'full_green',
+            'metrics' => ['regular_conflict_count' => 0],
+            'statusMessage' => 'Voller grüner Stundenplan',
+            'additionalCoursesAccepted' => false,
+            'acceptedAdditionalCourseCount' => 0,
+            'missingAdditionalCourses' => [],
+            'qualityCriteria' => [],
+            'slots' => ['1-1' => $lesson],
+            'occasionalAppointments' => [],
+            'problems' => [],
+        ])
+        ->all();
+    $backendSetupService = Mockery::mock(RobotTimetableBackendSetupService::class);
+    $backendSetupService
+        ->shouldReceive('calculateAllPossibleTimetableVariations')
+        ->once()
+        ->andReturn([
+            'timetable_variation_count' => 2500,
+            'full_green_timetable_count' => 2500,
+            'green_timetable_count' => 0,
+            'red_timetable_count' => 0,
+            'problem_courses' => [],
+            'timetables' => $timetables,
+        ]);
+    $service = v3TimetableService(
+        $user,
+        v3TimetableServiceInformation(includeMathematics: false),
+        [$courseGroup],
+        backendSetupService: $backendSetupService,
+    );
+
+    expect(strlen(json_encode($timetables, JSON_THROW_ON_ERROR)))->toBeGreaterThan(8_388_608);
+
+    $created = $service->createOrUpdateForUser($user, ['additional:D1'], [
+        'planning_mode' => 'without_student',
+        'selected_course_keys' => ['d1-a'],
+    ]);
+    $persistedTimetables = StudentTimetableV3Timetable::query()->sole()->timetables;
+    $reused = $service->createOrUpdateForUser($user, ['additional:D1'], [
+        'planning_mode' => 'without_student',
+        'selected_course_keys' => ['d1-a'],
+    ]);
+    $persistedTimetable = StudentTimetableV3Timetable::query()->sole();
+    $storedPayload = $persistedTimetable->getRawOriginal('timetables');
+    $storedFingerprint = $persistedTimetable->getRawOriginal('fingerprint');
+    $storedGeneratedAt = $persistedTimetable->getRawOriginal('generated_at');
+    $storedUpdatedAt = $persistedTimetable->getRawOriginal('updated_at');
+    $storedExpiresAt = $persistedTimetable->getRawOriginal('expires_at');
+    $secondPage = v3TimetableReadService(
+        $user,
+        v3TimetableServiceInformation(includeMathematics: false),
+        [$courseGroup],
+    )->resultForUser(
+        $user,
+        ['planning_mode' => 'without_student'],
+        2,
+        $created['fingerprint'],
+    );
+    $twentiethPage = v3TimetableReadService(
+        $user,
+        v3TimetableServiceInformation(includeMathematics: false),
+        [$courseGroup],
+    )->resultForUser(
+        $user,
+        ['planning_mode' => 'without_student'],
+        20,
+        $created['fingerprint'],
+    );
+    $freshTimetable = $persistedTimetable->fresh();
+
+    expect($created)
+        ->summary->timetable_count->toBe(2000)
+        ->summary->possible_timetable_count->toBe(2500)
+        ->summary->timetables_truncated->toBeTrue()
+        ->timetables->toEqual(array_slice($timetables, 0, 100))
+        ->timetables_meta->toMatchArray([
+            'current_page' => 1,
+            'per_page' => 100,
+            'last_page' => 20,
+            'total' => 2000,
+            'offset' => 0,
+            'from' => 1,
+            'to' => 100,
+        ])
+        ->and($persistedTimetables['storage_version'])->toBe(1)
+        ->and($persistedTimetables['lessons'])->toHaveCount(1)
+        ->and($persistedTimetables['timetables'])->toHaveCount(2000)
+        ->and(strlen(json_encode($persistedTimetables, JSON_THROW_ON_ERROR)))->toBeLessThan(8_388_608)
+        ->and($reused['status'])->toBe('reused')
+        ->and($reused['timetables'])->toEqual(array_slice($timetables, 0, 100))
+        ->and($secondPage['timetables'])->toEqual(array_slice($timetables, 100, 100))
+        ->and(array_column($secondPage['timetables'], 'number'))->toBe(range(101, 200))
+        ->and($secondPage['timetables_meta'])->toMatchArray([
+            'current_page' => 2,
+            'per_page' => 100,
+            'last_page' => 20,
+            'total' => 2000,
+            'offset' => 100,
+            'from' => 101,
+            'to' => 200,
+        ])
+        ->and(array_column($twentiethPage['timetables'], 'number'))->toBe(range(1901, 2000))
+        ->and($twentiethPage['timetables_meta'])->toMatchArray([
+            'current_page' => 20,
+            'per_page' => 100,
+            'last_page' => 20,
+            'total' => 2000,
+            'offset' => 1900,
+            'from' => 1901,
+            'to' => 2000,
+        ])
+        ->and($freshTimetable?->getRawOriginal('timetables'))->toBe($storedPayload)
+        ->and($freshTimetable?->getRawOriginal('fingerprint'))->toBe($storedFingerprint)
+        ->and($freshTimetable?->getRawOriginal('generated_at'))->toBe($storedGeneratedAt)
+        ->and($freshTimetable?->getRawOriginal('updated_at'))->toBe($storedUpdatedAt)
+        ->and($freshTimetable?->getRawOriginal('expires_at'))->toBe($storedExpiresAt)
+        ->and(v3TimetableReadService()->resultForUser(
+            $user,
+            ['planning_mode' => 'without_student'],
+            2,
+            str_repeat('f', 64),
+        ))->toBeNull();
+});
+
+it('keeps the eight MiB compact storage guard with the higher timetable limit', function () {
+    [$user, $schoolyear] = v3TimetableServiceUser();
+    v3TimetableServiceSubjectRow($user, $schoolyear, 'D1', 'D', 'Deutsch 1', 1);
+
+    $courseGroup = v3TimetableServiceCourseGroup('d1-a', 'D1-A', 'D1', 1, 1);
+    $backendSetupService = Mockery::mock(RobotTimetableBackendSetupService::class);
+    $backendSetupService
+        ->shouldReceive('calculateAllPossibleTimetableVariations')
+        ->once()
+        ->andReturn([
+            'timetable_variation_count' => 1,
+            'full_green_timetable_count' => 1,
+            'green_timetable_count' => 0,
+            'red_timetable_count' => 0,
+            'problem_courses' => [],
+            'timetables' => [[
+                'key' => 'oversized-full-green-1',
+                'number' => 1,
+                'type' => 'full_green',
+                'statusMessage' => str_repeat('x', 8_388_608),
+                'slots' => [],
+            ]],
+        ]);
+    $service = v3TimetableService(
+        $user,
+        v3TimetableServiceInformation(includeMathematics: false),
+        [$courseGroup],
+        backendSetupService: $backendSetupService,
+    );
+
+    expect(fn () => $service->createOrUpdateForUser($user, ['additional:D1'], [
+        'planning_mode' => 'without_student',
+        'selected_course_keys' => ['d1-a'],
+    ]))->toThrow(ValidationException::class)
+        ->and(StudentTimetableV3Timetable::query()->count())->toBe(0);
 });
 
 it('changes the possible timetable count when Saturday lessons are allowed', function () {
@@ -1004,11 +1671,12 @@ function v3TimetableService(
     array $information,
     array $courseGroups,
     ?string $studentCode = null,
+    ?RobotTimetableBackendSetupService $backendSetupService = null,
 ): StudentTimetableV3TimetableService {
     $informationService = Mockery::mock(StudentTimetableV3StudentInformationService::class);
     $informationService
         ->shouldReceive('informationForStudent')
-        ->with($user, $studentCode, [], true)
+        ->with($user, $studentCode, [], true, true)
         ->andReturn($information);
     $overviewService = Mockery::mock(StudentTimetableOverviewService::class);
     $overviewService
@@ -1022,10 +1690,12 @@ function v3TimetableService(
         $overviewService,
         $rememberedTtEntryService,
         new StudentTimetableCalculationSettingsService,
-        new RobotTimetableBackendSetupService(
+        $backendSetupService ?? new RobotTimetableBackendSetupService(
             $rememberedTtEntryService,
             new TimetableDateSlotOverlapService,
         ),
+        new StudentTimetableV3TimetableStorage,
+        app(StudentTimetableV3SessionScope::class),
     );
 }
 
@@ -1052,9 +1722,11 @@ function v3TimetableReadService(
                 ?string $currentStudentCode,
                 array $selection,
                 bool $seedCompactSubjectPlanIfMissing,
+                bool $includeAllSelectableModules,
             ): bool => $authUser->is($user)
                 && $currentStudentCode === $studentCode
                 && ! $seedCompactSubjectPlanIfMissing
+                && $includeAllSelectableModules
                 && $selection == [
                     'religion' => 'ETH',
                     'language' => 'L',
@@ -1079,6 +1751,8 @@ function v3TimetableReadService(
         $rememberedTtEntryService,
         new StudentTimetableCalculationSettingsService,
         $backendSetupService,
+        new StudentTimetableV3TimetableStorage,
+        app(StudentTimetableV3SessionScope::class),
     );
 }
 

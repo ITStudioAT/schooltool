@@ -2,15 +2,20 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StudentTimetableV3Timetable extends Model
 {
+    use MassPrunable;
+
     protected $fillable = [
         'school_id',
         'schoolyear_id',
         'user_id',
+        'session_id_hash',
         'context_key',
         'planning_mode',
         'student_code',
@@ -20,6 +25,7 @@ class StudentTimetableV3Timetable extends Model
         'summary',
         'timetables',
         'generated_at',
+        'expires_at',
     ];
 
     protected function casts(): array
@@ -30,7 +36,19 @@ class StudentTimetableV3Timetable extends Model
             'summary' => 'array',
             'timetables' => 'array',
             'generated_at' => 'datetime',
+            'expires_at' => 'datetime',
         ];
+    }
+
+    public function prunable(): Builder
+    {
+        return static::query()
+            ->where(function (Builder $query): void {
+                $query
+                    ->whereNull('session_id_hash')
+                    ->orWhereNull('expires_at')
+                    ->orWhere('expires_at', '<=', now());
+            });
     }
 
     public function school(): BelongsTo

@@ -228,6 +228,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables/timetable-v3-state', [StudentTimetableV3StateController::class, 'show']);
         Route::put('/admin/students-timetables/timetable-v3-state', [StudentTimetableV3StateController::class, 'update']);
         Route::get('/admin/students-timetables/timetable-v3/student-information', [StudentTimetableV3StudentInformationController::class, 'show']);
+        Route::put('/admin/students-timetables/timetable-v3/student-information/school-level', [StudentTimetableV3StudentInformationController::class, 'updateSchoolLevel']);
         Route::get('/admin/students-timetables/timetable-v3/timetable', [StudentTimetableV3TimetableController::class, 'show']);
         Route::put('/admin/students-timetables/timetable-v3/timetable', [StudentTimetableV3TimetableController::class, 'update'])
             ->middleware('throttle:10,1');

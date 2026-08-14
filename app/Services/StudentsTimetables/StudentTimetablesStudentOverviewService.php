@@ -25,6 +25,25 @@ class StudentTimetablesStudentOverviewService
 
     private const DEFAULT_BRANCH = 'wirtschaftskundlich';
 
+    private const COMPACT_SEMESTER_BY_SCHOOL_LEVEL = [
+        '09_1' => 1,
+        '09_2' => 2,
+        '11_1' => 3,
+        '11_2' => 4,
+        '12_2' => 5,
+    ];
+
+    private const NORMAL_SEMESTER_BY_SCHOOL_LEVEL = [
+        '09_1' => 1,
+        '09_2' => 2,
+        '10_1' => 3,
+        '10_2' => 4,
+        '11_1' => 5,
+        '11_2' => 6,
+        '12_1' => 7,
+        '12_2' => 8,
+    ];
+
     public function __construct(
         protected StudentTimetableCompletedCourseHistoryService $completedCourseHistoryService,
         protected StudentTimetableOverviewService $overviewService,
@@ -225,6 +244,7 @@ class StudentTimetablesStudentOverviewService
         array $selectionOverride = [],
         bool $strictSelectionOverride = false,
         StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
+        bool $includeAllSelectableModules = false,
     ): array {
         $schoolyearId = $this->schoolyearIdForUser($user);
 
@@ -246,6 +266,9 @@ class StudentTimetablesStudentOverviewService
                     'last_name' => null,
                     'religion' => null,
                     'instruction_type' => null,
+                    'school_level' => null,
+                    'school_level_mismatch' => false,
+                    'original_school_level' => null,
                 ],
                 'selection' => $selection,
                 'selection_options' => $this->selectionOptions(null),
@@ -258,6 +281,7 @@ class StudentTimetablesStudentOverviewService
                     [],
                     [],
                     $studyProgram,
+                    applySelectionEligibility: ! $includeAllSelectableModules,
                 ),
             ];
         }
@@ -288,6 +312,9 @@ class StudentTimetablesStudentOverviewService
                 'last_name' => $student->last_name,
                 'religion' => $student->religion,
                 'instruction_type' => $this->instructionTypeForStudent($student),
+                'school_level' => $this->importedSchoolLevelForStudent($student),
+                'school_level_mismatch' => $this->schoolLevelMismatchForStudent($student, $studyProgram),
+                'original_school_level' => $this->originalSchoolLevelForStudent($student),
             ],
             'selection' => $selection,
             'selection_options' => $this->selectionOptions($student->religion),
@@ -300,7 +327,8 @@ class StudentTimetablesStudentOverviewService
                 $completedCourses,
                 $missingCourses,
                 studyProgram: $studyProgram,
-                limitToStudentProgression: true,
+                limitToStudentProgression: ! $includeAllSelectableModules,
+                applySelectionEligibility: ! $includeAllSelectableModules,
             ),
         ];
     }
@@ -1219,24 +1247,48 @@ class StudentTimetablesStudentOverviewService
         $usesCompactProgression = $studyProgram
             ? $studyProgram === StudentTimetableStudyProgram::Kompaktstudium
             : $this->overviewService->isKompaktunterrichtClass((string) $student?->class);
+
+        return $this->semesterForSchoolLevel($schoolLevel, $usesCompactProgression);
+    }
+
+    /** @return list<array{value: string, semester: int}> */
+    public function schoolLevelOptionsForStudyProgram(StudentTimetableStudyProgram $studyProgram): array
+    {
+        $semesterBySchoolLevel = $studyProgram === StudentTimetableStudyProgram::Kompaktstudium
+            ? self::COMPACT_SEMESTER_BY_SCHOOL_LEVEL
+            : self::NORMAL_SEMESTER_BY_SCHOOL_LEVEL;
+
+        return collect($semesterBySchoolLevel)
+            ->map(fn (int $semester, string $schoolLevel): array => [
+                'value' => $schoolLevel,
+                'semester' => $semester,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function schoolLevelMismatchForStudent(
+        ?Import116 $student,
+        StudentTimetableStudyProgram $studyProgram,
+    ): bool {
+        if (! $student || trim((string) $student->school_level) === '') {
+            return false;
+        }
+
+        $schoolLevel = $this->normalizedStudentSchoolLevel($student->school_level, $student->attendance_year);
+
+        return $schoolLevel === ''
+            || $this->semesterForSchoolLevel(
+                $schoolLevel,
+                $studyProgram === StudentTimetableStudyProgram::Kompaktstudium,
+            ) === null;
+    }
+
+    private function semesterForSchoolLevel(string $schoolLevel, bool $usesCompactProgression): ?int
+    {
         $semesterBySchoolLevel = $usesCompactProgression
-            ? [
-                '09_1' => 1,
-                '09_2' => 2,
-                '11_1' => 3,
-                '11_2' => 4,
-                '12_2' => 5,
-            ]
-            : [
-                '09_1' => 1,
-                '09_2' => 2,
-                '10_1' => 3,
-                '10_2' => 4,
-                '11_1' => 5,
-                '11_2' => 6,
-                '12_1' => 7,
-                '12_2' => 8,
-            ];
+            ? self::COMPACT_SEMESTER_BY_SCHOOL_LEVEL
+            : self::NORMAL_SEMESTER_BY_SCHOOL_LEVEL;
 
         return $semesterBySchoolLevel[$schoolLevel] ?? null;
     }
@@ -1276,6 +1328,35 @@ class StudentTimetablesStudentOverviewService
         }
 
         return $this->normalizedStudentSchoolLevel($student->class);
+    }
+
+    private function importedSchoolLevelForStudent(Import116 $student): string
+    {
+        return $this->displaySchoolLevel($student->school_level, $student->attendance_year);
+    }
+
+    private function originalSchoolLevelForStudent(Import116 $student): string
+    {
+        if ($student->original_school_level === null) {
+            return '';
+        }
+
+        return $this->displaySchoolLevel(
+            $student->original_school_level,
+            $student->original_attendance_year,
+        );
+    }
+
+    public function displaySchoolLevel(?string $schoolLevel, ?string $attendanceYear = null): string
+    {
+        $normalizedSchoolLevel = $this->normalizedStudentSchoolLevel(
+            $schoolLevel,
+            $attendanceYear,
+        );
+
+        return $normalizedSchoolLevel !== ''
+            ? $normalizedSchoolLevel
+            : trim((string) $schoolLevel);
     }
 
     private function normalizedStudentSchoolLevel(?string $schoolLevel, ?string $attendanceYear = null): string
@@ -1541,6 +1622,7 @@ class StudentTimetablesStudentOverviewService
         int $schoolyearId,
         array $selection,
         StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
+        bool $applySelectionEligibility = true,
     ): Collection {
         return StudentTimetableSubjectRow::query()
             ->forStudyProgram($studyProgram)
@@ -1551,8 +1633,16 @@ class StudentTimetablesStudentOverviewService
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()
-            ->filter(fn (StudentTimetableSubjectRow $row): bool => $this->subjectMatchesSelection($row, $selection))
-            ->flatMap(fn (StudentTimetableSubjectRow $row): array => $this->subjectRowCoursePayloads($row, $selection));
+            ->when(
+                $applySelectionEligibility,
+                fn (Collection $rows): Collection => $rows
+                    ->filter(fn (StudentTimetableSubjectRow $row): bool => $this->subjectMatchesSelection($row, $selection)),
+            )
+            ->flatMap(fn (StudentTimetableSubjectRow $row): array => $this->subjectRowCoursePayloads(
+                $row,
+                $selection,
+                $applySelectionEligibility,
+            ));
     }
 
     /**
@@ -1621,12 +1711,14 @@ class StudentTimetablesStudentOverviewService
      * @param  array<string, mixed>  $selection
      * @return list<array<string, mixed>>
      */
-    private function subjectRowCoursePayloads(StudentTimetableSubjectRow $row, array $selection): array
-    {
-        $code = $this->selectedSubjectCode($row, $selection);
-        $codes = $this->isReligionSubject($row) || $this->isLanguageSubject($row)
-            ? [$code]
-            : $this->courseCodeAliasParts($code);
+    private function subjectRowCoursePayloads(
+        StudentTimetableSubjectRow $row,
+        array $selection,
+        bool $applySelectionEligibility = true,
+    ): array {
+        $codes = $applySelectionEligibility
+            ? $this->selectedSubjectCodes($row, $selection)
+            : $this->allSelectableSubjectCodes($row);
 
         return collect($codes)
             ->map(function (string $courseCode) use ($row): array {
@@ -1657,6 +1749,54 @@ class StudentTimetablesStudentOverviewService
             ->filter(fn (array $course): bool => trim((string) $course['code']) !== '')
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $selection
+     * @return list<string>
+     */
+    private function selectedSubjectCodes(StudentTimetableSubjectRow $row, array $selection): array
+    {
+        $code = $this->selectedSubjectCode($row, $selection);
+
+        return $this->isReligionSubject($row) || $this->isLanguageSubject($row)
+            ? [$code]
+            : $this->courseCodeAliasParts($code);
+    }
+
+    /** @return list<string> */
+    private function allSelectableSubjectCodes(StudentTimetableSubjectRow $row): array
+    {
+        $moduleNumber = $this->subjectModuleNumber($row);
+        $subjectBase = $this->normalizedCourseCode($this->subjectBaseKey($row));
+
+        if ($this->isReligionSubject($row)) {
+            $religionCodes = match ($subjectBase) {
+                'R/ET' => collect($this->religionOptions())->pluck('value'),
+                'ET', 'ETH' => collect(['ETH']),
+                default => collect($this->religionOptions())
+                    ->pluck('value')
+                    ->reject(fn (string $religion): bool => $religion === 'ETH'),
+            };
+
+            return $religionCodes
+                ->map(fn (string $religion): string => $religion.$moduleNumber)
+                ->values()
+                ->all();
+        }
+
+        if ($this->isLanguageSubject($row)) {
+            $languageCodes = $subjectBase === 'L/F/S'
+                ? collect($this->languageOptions())->pluck('value')
+                : collect([$subjectBase]);
+
+            return $languageCodes
+                ->map(fn (string $language): string => $language.$moduleNumber)
+                ->values()
+                ->all();
+        }
+
+        return $this->courseCodeAliasParts((string) ($row->json_code ?: $row->json_subject ?: $row->name ?: ''));
     }
 
     private function courseBranchLabel(?string $branch): string
@@ -1858,9 +1998,16 @@ class StudentTimetablesStudentOverviewService
         array $missingCourses,
         StudentTimetableStudyProgram $studyProgram = StudentTimetableStudyProgram::Normalstudium,
         bool $limitToStudentProgression = false,
+        bool $applySelectionEligibility = true,
     ): array {
         $studyModules = $this->studyModules($completedCourses, $missingCourses);
-        $subjectCourses = $this->subjectCourses($user, $schoolyearId, $selection, $studyProgram);
+        $subjectCourses = $this->subjectCourses(
+            $user,
+            $schoolyearId,
+            $selection,
+            $studyProgram,
+            $applySelectionEligibility,
+        );
         $regularSubjectCourses = $studyProgram === StudentTimetableStudyProgram::Normalstudium
             ? $subjectCourses
             : $this->subjectCourses(
@@ -1868,6 +2015,7 @@ class StudentTimetablesStudentOverviewService
                 $schoolyearId,
                 $selection,
                 StudentTimetableStudyProgram::Normalstudium,
+                $applySelectionEligibility,
             );
         $historicalSubjectCourses = $studyProgram === StudentTimetableStudyProgram::Normalstudium
             ? $subjectCourses

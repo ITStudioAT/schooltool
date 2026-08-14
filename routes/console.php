@@ -2,6 +2,7 @@
 
 use App\Jobs\HealthJob;
 use App\Models\QueueTest;
+use App\Models\StudentTimetableV3Timetable;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -38,7 +39,7 @@ Schedule::command('private:prune-orphan-school-folders')
     ->withoutOverlapping();
 
 Schedule::command('model:prune', [
-    '--model' => [QueueTest::class],
+    '--model' => [QueueTest::class, StudentTimetableV3Timetable::class],
 ])
     ->dailyAt('03:10')
     ->onOneServer()

@@ -1,12 +1,14 @@
 # UPDATES
 
-## 3.46.0
+## 3.46.0 !!!
 
 ### Timetable V3
 
 - Startseite erzeugt
 - Seite Modulauswahl
 - Erstellung der Stundenpläne
+- Falsche Schulstufe oder falsche Stundentafel erkennen
+- Bereinigung der Stundenpläne nach User und Sitzung
 
 ## 3.45.0 - 3.45.1
 

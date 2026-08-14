@@ -2672,7 +2672,7 @@ it('returns graded recognition courses for the selected robot student', function
         ->assertJsonPath('total', 5);
 });
 
-it('uses each student recognition subject plan for v3 module recommendations', function () {
+it('uses only the student class for v3 study program and flags conflicting imported data', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -2682,22 +2682,25 @@ it('uses each student recognition subject plan for v3 module recommendations', f
     collect([
         [
             'student_code' => 'normal-plan-student',
-            'class' => '4S',
+            'class' => '4A',
             'last_name' => 'Normal',
-            'subject_plan' => 'AHS-Alle',
+            'school_level' => '11_1',
+            'subject_plan' => 'AHS-KS-Alle',
         ],
         [
             'student_code' => 'compact-plan-student',
-            'class' => '1A',
+            'class' => '1R',
             'last_name' => 'Kompakt',
-            'subject_plan' => 'AHS-KS-Alle',
+            'school_level' => '10_1',
+            'subject_plan' => 'AHS-Alle',
         ],
     ])->each(function (array $student) use ($user, $schoolyear): void {
         Import116::factory()->create([
             'school_id' => $user->school_id,
             'schoolyear_id' => $schoolyear->id,
             'class' => $student['class'],
-            'school_level' => '11_1',
+            'school_level' => $student['school_level'],
+            'attendance_year' => null,
             'student_code' => $student['student_code'],
             'last_name' => $student['last_name'],
             'first_name' => 'Student',
@@ -2744,10 +2747,10 @@ it('uses each student recognition subject plan for v3 module recommendations', f
     ]);
 
     collect([
-        ['student_code' => 'normal-plan-student', 'subject' => 'ZZ1', 'grade' => 'T', 'semester' => '1', 'subject_plan' => 'AHS-Alle'],
-        ['student_code' => 'normal-plan-student', 'subject' => 'N4', 'grade' => '2', 'semester' => '4', 'subject_plan' => 'AHS-Alle'],
-        ['student_code' => 'compact-plan-student', 'subject' => 'D', 'grade' => '2', 'semester' => '3', 'subject_plan' => 'AHS-KS-Alle'],
-        ['student_code' => 'compact-plan-student', 'subject' => 'M2', 'grade' => '2', 'semester' => '2', 'subject_plan' => 'AHS-KS-Alle'],
+        ['student_code' => 'normal-plan-student', 'subject' => 'ZZ1', 'grade' => 'T', 'semester' => '1', 'subject_plan' => 'AHS-KS-Alle'],
+        ['student_code' => 'normal-plan-student', 'subject' => 'N4', 'grade' => '2', 'semester' => '4', 'subject_plan' => 'AHS-KS-Alle'],
+        ['student_code' => 'compact-plan-student', 'subject' => 'D', 'grade' => '2', 'semester' => '3', 'subject_plan' => 'AHS-Alle'],
+        ['student_code' => 'compact-plan-student', 'subject' => 'M2', 'grade' => '2', 'semester' => '2', 'subject_plan' => 'AHS-Alle'],
     ])->each(fn (array $student, int $index): StudentTimetableRecognitionRow => StudentTimetableRecognitionRow::query()->create([
         'student_timetable_recognition_import_id' => $import->id,
         'school_id' => $user->school_id,
@@ -2766,12 +2769,28 @@ it('uses each student recognition subject plan for v3 module recommendations', f
     $normalResponse = $this->actingAs($user)
         ->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=normal-plan-student')
         ->assertSuccessful()
-        ->assertJsonPath('data.study_program', 'normalstudium');
+        ->assertJsonPath('data.study_program', 'normalstudium')
+        ->assertJsonPath('data.subject_plan', 'AHS-KS-Alle')
+        ->assertJsonPath('data.subject_plan_mismatch', true)
+        ->assertJsonPath('data.school_level', '11_1')
+        ->assertJsonPath('data.school_level_mismatch', false)
+        ->assertJsonPath('data.original_school_level', '')
+        ->assertJsonCount(8, 'data.school_level_options')
+        ->assertJsonPath('data.school_level_options.4.value', '11_1')
+        ->assertJsonPath('data.school_level_options.4.semester', 5);
 
     $compactResponse = $this
         ->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=compact-plan-student')
         ->assertSuccessful()
-        ->assertJsonPath('data.study_program', 'kompaktstudium');
+        ->assertJsonPath('data.study_program', 'kompaktstudium')
+        ->assertJsonPath('data.subject_plan', 'AHS-Alle')
+        ->assertJsonPath('data.subject_plan_mismatch', true)
+        ->assertJsonPath('data.school_level', '10_1')
+        ->assertJsonPath('data.school_level_mismatch', true)
+        ->assertJsonPath('data.original_school_level', '')
+        ->assertJsonCount(5, 'data.school_level_options')
+        ->assertJsonPath('data.school_level_options.2.value', '11_1')
+        ->assertJsonPath('data.school_level_options.2.semester', 3);
 
     $moduleCodes = function ($response, string $groupKey): array {
         $group = collect($response->json('data.module_selection_groups'))->firstWhere('key', $groupKey);
@@ -2788,6 +2807,44 @@ it('uses each student recognition subject plan for v3 module recommendations', f
         ->and($moduleCodes($normalResponse, 'additional'))->toBe(['N6'])
         ->and($moduleCodes($compactResponse, 'current'))->toBe(['D5', 'M3'])
         ->and($moduleCodes($compactResponse, 'additional'))->toBe(['M4']);
+
+    $this->putJson('/api/admin/students-timetables/timetable-v3/student-information/school-level', [
+        'student_code' => 'compact-plan-student',
+        'school_level' => '12_1',
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors('school_level');
+
+    $this->putJson('/api/admin/students-timetables/timetable-v3/student-information/school-level', [
+        'student_code' => 'compact-plan-student',
+        'school_level' => '11_1',
+    ])->assertSuccessful()
+        ->assertJsonPath('data.school_level', '11_1')
+        ->assertJsonPath('data.school_level_mismatch', false)
+        ->assertJsonPath('data.original_school_level', '10_1')
+        ->assertJsonPath('data.semester', 3);
+
+    $this->assertDatabaseHas('import116', [
+        'student_code' => 'compact-plan-student',
+        'school_level' => '11_1',
+        'attendance_year' => null,
+        'original_school_level' => '10_1',
+        'original_attendance_year' => null,
+    ]);
+
+    $this->putJson('/api/admin/students-timetables/timetable-v3/student-information/school-level', [
+        'student_code' => 'compact-plan-student',
+        'school_level' => '10_1',
+    ])->assertSuccessful()
+        ->assertJsonPath('data.school_level', '10_1')
+        ->assertJsonPath('data.school_level_mismatch', true)
+        ->assertJsonPath('data.original_school_level', '10_1')
+        ->assertJsonPath('data.semester', 3);
+
+    $this->assertDatabaseHas('import116', [
+        'student_code' => 'compact-plan-student',
+        'school_level' => '10_1',
+        'original_school_level' => '10_1',
+    ]);
 });
 
 it('limits v3 selectable modules to the next two levels per subject', function () {
@@ -2804,7 +2861,7 @@ it('limits v3 selectable modules to the next two levels per subject', function (
         Import116::factory()->create([
             'school_id' => $user->school_id,
             'schoolyear_id' => $schoolyear->id,
-            'class' => '4S',
+            'class' => '4A',
             'school_level' => '11_2',
             'student_code' => $student['student_code'],
             'last_name' => $student['last_name'],
@@ -2886,7 +2943,7 @@ it('returns the shared student overview summary for a selected robot student', f
     Import116::factory()->create([
         'school_id' => $user->school_id,
         'schoolyear_id' => $schoolyear->id,
-        'class' => '4S',
+        'class' => '4A',
         'school_level' => '09_1',
         'attendance_year' => null,
         'religion' => 'Rk',
@@ -3299,7 +3356,10 @@ it('returns the shared student overview summary for a selected robot student', f
         ->assertSuccessful()
         ->assertJsonPath('data.student_code', '100')
         ->assertJsonPath('data.religion', 'Rk')
-        ->assertJsonPath('data.instruction_type', 'Kompaktunterricht')
+        ->assertJsonPath('data.instruction_type', 'Normalunterricht')
+        ->assertJsonPath('data.subject_plan_mismatch', false)
+        ->assertJsonPath('data.school_level', '09_1')
+        ->assertJsonPath('data.school_level_mismatch', false)
         ->assertJsonPath('data.semester', 1)
         ->assertJsonPath('data.items.0.label', 'Ethik / Religion')
         ->assertJsonPath('data.items.0.value', 'ETH - Ethik')
@@ -3441,6 +3501,10 @@ it('returns the shared student overview summary for a selected robot student', f
     $compactStudentResponse = $this->getJson('/api/admin/students-timetables/timetable-v3/student-information?student_code=101')
         ->assertSuccessful()
         ->assertJsonPath('data.study_program', StudentTimetableStudyProgram::Kompaktstudium->value)
+        ->assertJsonPath('data.subject_plan', 'AHS-KS-WIKU')
+        ->assertJsonPath('data.subject_plan_mismatch', false)
+        ->assertJsonPath('data.school_level', '11_1')
+        ->assertJsonPath('data.school_level_mismatch', false)
         ->assertJsonPath('data.module_selection_groups.0.modules.0.code', 'D1')
         ->assertJsonPath('data.module_selection_groups.0.modules.0.courses.1.scheduled_hours', 1)
         ->assertJsonPath('data.module_selection_groups.0.modules.0.courses.1.usual_hours', 2)
@@ -3654,7 +3718,7 @@ it('can return a slim robot student overview course history payload', function (
         ->assertJsonMissingPath('data.selection_items');
 });
 
-it('uses the compact semester progression only for Kompaktunterricht students', function () {
+it('uses the compact semester progression only for class suffixes made exclusively of Q through V', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -3667,7 +3731,10 @@ it('uses the compact semester progression only for Kompaktunterricht students', 
         ['student_code' => '1101', 'class' => '5T', 'school_level' => '11-1', 'attendance_year' => null, 'semester' => 3],
         ['student_code' => '1102', 'class' => '6U', 'school_level' => '11 2', 'attendance_year' => null, 'semester' => 4],
         ['student_code' => '1202', 'class' => '7V', 'school_level' => '12_2', 'attendance_year' => null, 'semester' => 5],
+        ['student_code' => 'combined', 'class' => '5RU', 'school_level' => '11_1', 'attendance_year' => null, 'semester' => 3],
         ['student_code' => 'normal-1101', 'class' => '6A', 'school_level' => '11_1', 'attendance_year' => null, 'semester' => 5],
+        ['student_code' => 'hs', 'class' => '1HS', 'school_level' => '11_1', 'attendance_year' => null, 'semester' => 5],
+        ['student_code' => 'zs', 'class' => '1ZS', 'school_level' => '11_1', 'attendance_year' => null, 'semester' => 5],
     ];
 
     foreach ($semesterCases as $semesterCase) {

@@ -549,7 +549,7 @@ class StudentTimetableOverviewService
             : $segments;
 
         return $classSegments->contains(
-            fn (string $segment): bool => (bool) preg_match('/^\d+[A-ZÄÖÜ]*[QRSTUV][A-ZÄÖÜ]*$/iu', $segment),
+            fn (string $segment): bool => (bool) preg_match('/^\d+[QRSTUV]+$/iu', $segment),
         );
     }
 

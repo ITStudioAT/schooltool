@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Listeners\StudentTimetableV3SessionSubscriber;
 use App\Listeners\TwoFactorSecuritySubscriber;
 use App\Models\User;
 use App\Services\EmailAliasResolver;
@@ -144,6 +145,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         Event::subscribe(TwoFactorSecuritySubscriber::class);
+        Event::subscribe(StudentTimetableV3SessionSubscriber::class);
 
         Gate::define('viewPulse', fn (User $user): bool => $user->hasRole('super_admin'));
 

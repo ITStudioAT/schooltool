@@ -36,6 +36,31 @@ class StudentTimetableV3StudentInformationController extends Controller
         ]);
     }
 
+    public function updateSchoolLevel(
+        Request $request,
+        StudentTimetableV3StudentInformationService $service,
+    ): JsonResponse {
+        $authUser = $this->studentsTimetablesUser();
+        $validated = $request->validate([
+            'student_code' => ['required', 'string', 'max:255'],
+            'school_level' => ['required', 'string', 'max:255'],
+            'selection' => ['nullable', 'array:religion,language,branch,arts_subject'],
+            'selection.religion' => ['nullable', 'string', 'max:50'],
+            'selection.language' => ['nullable', 'string', 'max:50'],
+            'selection.branch' => ['nullable', 'string', 'max:50'],
+            'selection.arts_subject' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        return response()->json([
+            'data' => $service->updateSchoolLevelForStudent(
+                $authUser,
+                (string) $validated['student_code'],
+                (string) $validated['school_level'],
+                (array) ($validated['selection'] ?? []),
+            ),
+        ]);
+    }
+
     private function studentsTimetablesUser(): User
     {
         if (! $authUser = $this->userHasRole(self::MODERATOR_ROLES)) {

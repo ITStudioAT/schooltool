@@ -4,9 +4,107 @@ import TimetableV3 from '@/pages/admin/studentsTimetables/timetableV3/TimetableV
 
 const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111'
 
+const timetableCalculationStreamResponse = (events: unknown[], options: { ok?: boolean, status?: number } = {}) => ({
+    ok: options.ok ?? true,
+    status: options.status ?? 200,
+    body: null,
+    text: vi.fn().mockResolvedValue(events.map(event => (
+        typeof event === 'string' ? event : JSON.stringify(event)
+    )).join('\n')),
+})
+
+function timetablePageFixture(total: number, currentPage = 1) {
+    const perPage = 100
+    const offset = (currentPage - 1) * perPage
+    const count = Math.min(perPage, Math.max(0, total - offset))
+    const timetables = Array.from({ length: count }, (_, index) => {
+        const position = offset + index + 1
+
+        return {
+            key: `timetable-${position}`,
+            number: position,
+            slots: {},
+            type: 'full_green',
+        }
+    })
+
+    return {
+        timetables,
+        timetables_meta: {
+            current_page: currentPage,
+            per_page: perPage,
+            last_page: Math.max(1, Math.ceil(total / perPage)),
+            total,
+            offset,
+            from: count > 0 ? offset + 1 : null,
+            to: count > 0 ? offset + count : null,
+        },
+    }
+}
+
+function timetableResultFixture(total: number, currentPage = 1) {
+    return {
+        id: 42,
+        fingerprint: 'a'.repeat(64),
+        summary: {
+            possible_timetable_count: total + 956,
+            timetable_count: total,
+        },
+        ...timetablePageFixture(total, currentPage),
+    }
+}
+
+function timetablePagingContext(result = timetableResultFixture(500)) {
+    return {
+        currentStep: 'creation',
+        planningMode: 'with_student',
+        selectedStudentCode: '1001',
+        timetableCalculationError: '',
+        timetableCalculationResult: result,
+        timetableCalculationResultMatchesCurrentDraft: vi.fn().mockReturnValue(true),
+        timetableCalculationStatus: 'success',
+        timetablePageError: '',
+        timetablePageLoading: false,
+        timetablePageLoadingDirection: '',
+        timetablePageRequestId: 0,
+        timetableSelectedIndex: 0,
+        workspaceId: WORKSPACE_ID,
+    }
+}
+
+function timetableCalculationContext(methods: Record<string, (...args: any[]) => unknown>) {
+    const context: any = {
+        allowSaturdayLessons: false,
+        currentStep: 'creation',
+        planningMode: 'without_student',
+        planningSelectionValues: {},
+        saveState: vi.fn().mockResolvedValue(undefined),
+        selectedCourseKeys: ['d1-a'],
+        selectedModuleKeys: ['additional:D1'],
+        selectedStudentCode: '',
+        stateSaveFailed: false,
+        timetableCalculationCheckedCombinationCount: 0,
+        timetableCalculationCombinationCount: 0,
+        timetableCalculationError: '',
+        timetableCalculationProgressPercent: 0,
+        timetableCalculationProgressPhase: 'preparing',
+        timetableCalculationRequestId: 0,
+        timetableCalculationResult: null,
+        timetableCalculationStatus: 'idle',
+        workspaceId: WORKSPACE_ID,
+    }
+    context.timetableCalculationPayload = () => methods.timetableCalculationPayload.call(context)
+    context.timetableCalculationErrorMessage = (error: unknown) => (
+        methods.timetableCalculationErrorMessage.call(context, error)
+    )
+
+    return context
+}
+
 describe('TimetableV3', () => {
     afterEach(() => {
         vi.unstubAllGlobals()
+        document.cookie = 'XSRF-TOKEN=; Max-Age=0; path=/'
     })
 
     it('offers both intuitive planning modes without a V2 shortcut', () => {
@@ -20,6 +118,7 @@ describe('TimetableV3', () => {
         expect(source).toContain('loadRobotStudents.url()')
         expect(source).toContain('StudentTimetableV3StudentInformationController')
         expect(source).toContain('loadV3StudentInformation.url({')
+        expect(source).toContain('updateV3StudentSchoolLevel.url()')
         expect(source).not.toContain('/admin/students-timetables/timetable-v2/overview')
         expect(source).not.toContain('Version 2 öffnen')
         expect(source).toContain('Mit Studierendem')
@@ -91,6 +190,24 @@ describe('TimetableV3', () => {
         expect(source).toContain('@click="copySelectedStudentEmail"')
         expect(source).toContain('timetable-v3__email-row')
         expect(source).toContain('timetable-v3__email-copy-button')
+        expect(source.match(/class="timetable-v3__student-data-fields"/g)).toHaveLength(2)
+        expect(source.match(/class="timetable-v3__student-data-field"/g)).toHaveLength(4)
+        expect(source.match(/v-if="planningMode === 'with_student' && \(selectedStudentSubjectPlanMismatch \|\| selectedStudentSchoolLevelMismatch\)"/g)).toHaveLength(2)
+        expect(source.match(/v-if="selectedStudentSubjectPlanMismatch"/g)).toHaveLength(2)
+        expect(source.match(/v-if="selectedStudentSchoolLevelMismatch"/g)).toHaveLength(2)
+        expect(source).toContain('selectedStudentSubjectPlanMismatch')
+        expect(source).toContain('selectedStudentSchoolLevelMismatch')
+        expect(source).toContain('Stundentafel passt nicht zur Klasse')
+        expect(source).toContain('Schulstufe ist für diese Studienform nicht gültig')
+        expect(source.match(/@click="openSchoolLevelDialog"/g)).toHaveLength(3)
+        expect(source).toContain('v-model="schoolLevelDialogOpen" max-width="640" persistent')
+        expect(source).toContain('Ursprünglich gespeichert')
+        expect(source).toContain('Gültige Schulstufen')
+        expect(source).toContain('schoolLevelDialogOriginalValue')
+        expect(source).toContain('selectedStudentSchoolLevelOptions')
+        expect(source).toContain('@click="saveSchoolLevelDialog"')
+        expect(source).toMatch(/\.timetable-v3__student-data-field--invalid \{[\s\S]*?border-color: #d92d20;/)
+        expect(source).toMatch(/\.timetable-v3__school-level-option--original \{[\s\S]*?border-color: #f04438;/)
         expect(source).not.toContain('emailCopyStatusLabel')
         expect(source).not.toContain('timetable-v3__email-copy-status')
         expect(source).toContain('@click="openStudentInfoDialog"')
@@ -109,8 +226,13 @@ describe('TimetableV3', () => {
         expect(studentInfoDialogSource).toContain('Unterrichtsart')
         expect(studentInfoDialogSource).toContain('selectedStudentInstructionType')
         expect(studentInfoDialogSource).toContain('<span class="timetable-v3__info-value">{{ selectedStudentInstructionType }}</span>')
+        expect(studentInfoDialogSource).toContain('Stundentafel')
+        expect(studentInfoDialogSource).toContain('selectedStudentSubjectPlan')
         expect(studentInfoDialogSource).toContain('Semester')
         expect(studentInfoDialogSource).toContain('selectedStudentSemesterLabel')
+        expect(studentInfoDialogSource).toContain('selectedStudentImportedSchoolLevel')
+        expect(source.match(/class="timetable-v3__info-imported-school-level"/g)).toHaveLength(3)
+        expect(source).toMatch(/\.timetable-v3__info-imported-school-level \{[\s\S]*?font-weight: 400;/)
         expect(studentInfoDialogSource).toContain('selectedStudentCalculationItems')
         expect(studentInfoDialogSource).toContain('Berechnung wird geladen')
         expect(studyInfoDialogSource).toContain('Informationen zum Studium')
@@ -217,6 +339,18 @@ describe('TimetableV3', () => {
         expect(methods.studentClassIsKompaktunterricht).toBeUndefined()
     })
 
+    it('displays the subject plan supplied by the backend', () => {
+        const subjectPlan = (TimetableV3 as any).computed.selectedStudentSubjectPlan
+        const subjectPlanMismatch = (TimetableV3 as any).computed.selectedStudentSubjectPlanMismatch
+
+        expect(subjectPlan.call({ selectedStudent: { subjectPlan: 'AHS-KS-ALLE' } })).toBe('AHS-KS-ALLE')
+        expect(subjectPlan.call({ selectedStudent: { subject_plan: 'AHS-ALLE' } })).toBe('AHS-ALLE')
+        expect(subjectPlan.call({ selectedStudent: {} })).toBe('–')
+        expect(subjectPlanMismatch.call({ selectedStudent: { subjectPlanMismatch: true } })).toBe(true)
+        expect(subjectPlanMismatch.call({ selectedStudent: { subject_plan_mismatch: true } })).toBe(true)
+        expect(subjectPlanMismatch.call({ selectedStudent: {} })).toBe(false)
+    })
+
     it('shows only imported male and female sex values with the matching icon color', () => {
         const methods = (TimetableV3 as any).methods
         const presentation = (TimetableV3 as any).computed.selectedStudentSexPresentation
@@ -246,6 +380,7 @@ describe('TimetableV3', () => {
                 religion: 'Rk',
                 instruction_type: 'Kompaktunterricht',
                 semester: 5,
+                school_level: '10_2',
             }],
             loadStudents: vi.fn().mockResolvedValue(undefined),
             normalizedStudentSex: methods.normalizedStudentSex,
@@ -262,6 +397,7 @@ describe('TimetableV3', () => {
             religion: 'Rk',
             instructionType: 'Kompaktunterricht',
             semester: 5,
+            schoolLevel: '10_2',
         })
         expect(context.saveState).toHaveBeenCalledOnce()
     })
@@ -269,6 +405,8 @@ describe('TimetableV3', () => {
     it('shows the calculated semester in the student information dialog', () => {
         const methods = (TimetableV3 as any).methods
         const semesterLabel = (TimetableV3 as any).computed.selectedStudentSemesterLabel
+        const importedSchoolLevel = (TimetableV3 as any).computed.selectedStudentImportedSchoolLevel
+        const schoolLevelMismatch = (TimetableV3 as any).computed.selectedStudentSchoolLevelMismatch
 
         expect(methods.normalizedStudentSemester({ semester: '5' })).toBe(5)
         expect(methods.normalizedStudentSemester({ semester: null })).toBeNull()
@@ -277,6 +415,85 @@ describe('TimetableV3', () => {
             studentSelectionItems: [],
             normalizedStudentSemester: methods.normalizedStudentSemester,
         })).toBe('5. Semester')
+        expect(importedSchoolLevel.call({ selectedStudent: { schoolLevel: '10_2' } })).toBe('10_2')
+        expect(importedSchoolLevel.call({ selectedStudent: { school_level: '11_1' } })).toBe('11_1')
+        expect(importedSchoolLevel.call({ selectedStudent: {} })).toBe('–')
+        expect(schoolLevelMismatch.call({ selectedStudent: { schoolLevelMismatch: true } })).toBe(true)
+        expect(schoolLevelMismatch.call({ selectedStudent: { school_level_mismatch: true } })).toBe(true)
+        expect(schoolLevelMismatch.call({ selectedStudent: {} })).toBe(false)
+    })
+
+    it('opens the persistent school-level correction and keeps the original value selectable', () => {
+        const methods = (TimetableV3 as any).methods
+        const canSave = (TimetableV3 as any).computed.canSaveSchoolLevelDialog
+        const context = {
+            selectedStudent: { studentCode: '1001' },
+            selectedStudentSchoolLevelMismatch: true,
+            selectedStudentOriginalSchoolLevel: '',
+            selectedStudentImportedSchoolLevel: '10_1',
+            studentInfoDialogOpen: true,
+            studyInfoDialogOpen: false,
+            schoolLevelDialogOpen: false,
+            schoolLevelDialogSelection: '',
+            schoolLevelDialogOriginalValue: '',
+            schoolLevelDialogSaving: false,
+            schoolLevelDialogError: 'old error',
+        }
+
+        methods.openSchoolLevelDialog.call(context)
+
+        expect(context.studentInfoDialogOpen).toBe(false)
+        expect(context.schoolLevelDialogOpen).toBe(true)
+        expect(context.schoolLevelDialogOriginalValue).toBe('10_1')
+        expect(context.schoolLevelDialogSelection).toBe('10_1')
+        expect(context.schoolLevelDialogError).toBe('')
+        expect(canSave.call({
+            schoolLevelDialogSelection: '10_1',
+            schoolLevelDialogOriginalValue: '10_1',
+            schoolLevelDialogSaving: false,
+            selectedStudentImportedSchoolLevel: '11_1',
+            selectedStudentSchoolLevelOptions: [{ value: '11_1', semester: 3 }],
+        })).toBe(true)
+    })
+
+    it('saves a selected school level through Wayfinder and applies the response immediately', async () => {
+        const methods = (TimetableV3 as any).methods
+        const studentInformation = {
+            school_level: '11_1',
+            school_level_mismatch: false,
+            original_school_level: '10_1',
+        }
+        const put = vi.fn().mockResolvedValue({ data: { data: studentInformation } })
+        vi.stubGlobal('axios', { put })
+        const context = {
+            canSaveSchoolLevelDialog: true,
+            selectedStudentCode: '1001',
+            schoolLevelDialogSelection: '11_1',
+            schoolLevelDialogOriginalValue: '10_1',
+            schoolLevelDialogSaving: false,
+            schoolLevelDialogError: '',
+            schoolLevelDialogOpen: true,
+            planningSelectionForRequest: vi.fn().mockReturnValue({ religion: 'ETH' }),
+            applySelectedStudentInformation: vi.fn(),
+            resetTimetableCalculation: vi.fn(),
+            saveState: vi.fn().mockResolvedValue(undefined),
+        }
+
+        await methods.saveSchoolLevelDialog.call(context)
+
+        expect(put).toHaveBeenCalledWith(
+            '/api/admin/students-timetables/timetable-v3/student-information/school-level',
+            {
+                student_code: '1001',
+                school_level: '11_1',
+                selection: { religion: 'ETH' },
+            },
+        )
+        expect(context.applySelectedStudentInformation).toHaveBeenCalledWith(studentInformation, '1001')
+        expect(context.resetTimetableCalculation).toHaveBeenCalledOnce()
+        expect(context.saveState).toHaveBeenCalledOnce()
+        expect(context.schoolLevelDialogOpen).toBe(false)
+        expect(context.schoolLevelDialogSaving).toBe(false)
     })
 
     it('loads and presents the calculated student selections from the shared overview', async () => {
@@ -392,6 +609,12 @@ describe('TimetableV3', () => {
                 data: {
                     religion: 'Rk',
                     instruction_type: 'Kompaktunterricht',
+                    subject_plan: 'AHS-KS-ALLE',
+                    subject_plan_mismatch: true,
+                    school_level: '10_1',
+                    school_level_mismatch: true,
+                    original_school_level: '',
+                    school_level_options: [{ value: '11_1', semester: 3 }],
                     semester: 5,
                     items: selectionItems,
                     selection_fields: selectionFields,
@@ -422,6 +645,7 @@ describe('TimetableV3', () => {
             normalizedStudentSemester: methods.normalizedStudentSemester,
             resetSelectedStudentSelectionDetails: methods.resetSelectedStudentSelectionDetails,
             planningSelectionForRequest: methods.planningSelectionForRequest,
+            applySelectedStudentInformation: methods.applySelectedStudentInformation,
             setPlanningSelectionFields: methods.setPlanningSelectionFields,
             setModuleSelectionGroups: methods.setModuleSelectionGroups,
         }
@@ -449,6 +673,12 @@ describe('TimetableV3', () => {
             studentCode: '1001',
             religion: 'Rk',
             instructionType: 'Kompaktunterricht',
+            subjectPlan: 'AHS-KS-ALLE',
+            subjectPlanMismatch: true,
+            schoolLevel: '10_1',
+            schoolLevelMismatch: true,
+            originalSchoolLevel: '',
+            schoolLevelOptions: [{ value: '11_1', semester: 3 }],
             semester: 5,
         })
         expect(context.studentSelectionDetailsCode).toBe('1001')
@@ -700,6 +930,10 @@ describe('TimetableV3', () => {
         expect(availableModulesPosition).toBeLessThan(manualCardEndPosition)
         expect(automaticCardSource).toContain('v-if="scheduleCreationMode === \'automatic\'"')
         expect(automaticCardSource).toContain('class="timetable-v3__schedule-create-action"')
+        expect(automaticCardSource).toContain('class="timetable-v3__deselect-all-modules-button"')
+        expect(automaticCardSource).toMatch(/class="timetable-v3__deselect-all-modules-button"[\s\S]*?color="error"/)
+        expect(automaticCardSource).toContain('@click.prevent.stop="deselectAllSelectedModules"')
+        expect(automaticCardSource).toContain('Alle abwählen')
         expect(automaticCardSource).toContain('class="timetable-v3__schedule-create-button"')
         expect(automaticCardSource).toContain('v-if="selectedModuleCount > 0"')
         expect(automaticCardSource).toContain('Stundenplan erstellen')
@@ -742,7 +976,7 @@ describe('TimetableV3', () => {
         expect(source).toContain('min-height: 220px')
         expect(source).toContain('width: 58px')
         expect(source).toContain('background: var(--schedule-mode-accent)')
-        expect(source).toMatch(/\.timetable-v3__schedule-create-action\s*\{[\s\S]*?justify-content: flex-end;/)
+        expect(source).toMatch(/\.timetable-v3__schedule-create-action\s*\{[\s\S]*?justify-content: space-between;/)
         expect(source).toMatch(/\.timetable-v3__schedule-create-button\s*\{[\s\S]*?linear-gradient\(135deg, #4338ca, #6366f1\);/)
         expect(source).toMatch(/\.timetable-v3__schedule-create-button:hover,[\s\S]*?transform: translateY\(-2px\) scale\(1\.01\);/)
         expect(source.match(/v-if="scheduleCreationMode === 'automatic'"/g)).toHaveLength(4)
@@ -764,17 +998,18 @@ describe('TimetableV3', () => {
         expect(context.scheduleCreationMode).toBeNull()
     })
 
-    it('opens a static timetable creation page with a read-only module summary and creation options', async () => {
+    it('starts calculation from the module CTA and renders the creation status cards', async () => {
         const source = readFileSync(
             'resources/js/pages/admin/studentsTimetables/timetableV3/TimetableV3.vue',
             'utf8',
         )
         const methods = (TimetableV3 as any).methods
         const currentStepWatcher = (TimetableV3 as any).watch.currentStep
-        const push = vi.fn()
+        const push = vi.fn().mockResolvedValue(undefined)
         const context = {
             scheduleCreationMode: 'automatic',
             selectedModuleCount: 0,
+            allowSaturdayLessons: false,
             workspaceId: WORKSPACE_ID,
             planningMode: 'with_student',
             selectedStudentCode: '1001',
@@ -782,6 +1017,7 @@ describe('TimetableV3', () => {
             stateSaveFailed: false,
             timetableCalculationStatus: 'idle',
             saveState: vi.fn().mockResolvedValue(undefined),
+            calculatePossibleTimetables: vi.fn().mockResolvedValue(undefined),
             ensureValidCurrentStep: vi.fn(),
             resetTimetableCalculation: vi.fn(),
             $router: { push },
@@ -794,6 +1030,7 @@ describe('TimetableV3', () => {
         context.selectedModuleCount = 6
         await methods.openTimetableCreationPage.call(context)
         expect(context.saveState).toHaveBeenCalledOnce()
+        expect(context.allowSaturdayLessons).toBe(true)
         expect(push).toHaveBeenCalledWith({
             path: '/admin/students-timetables/timetable-v3/creation',
             query: {
@@ -802,6 +1039,16 @@ describe('TimetableV3', () => {
                 student_code: '1001',
             },
         })
+        expect(context.calculatePossibleTimetables).toHaveBeenCalledOnce()
+        expect(push.mock.invocationCallOrder[0]).toBeLessThan(
+            context.calculatePossibleTimetables.mock.invocationCallOrder[0],
+        )
+
+        context.stateSaveFailed = true
+        await methods.openTimetableCreationPage.call(context)
+        expect(push).toHaveBeenCalledOnce()
+        expect(context.calculatePossibleTimetables).toHaveBeenCalledOnce()
+        context.stateSaveFailed = false
 
         context.scheduleCreationMode = 'manual'
         await methods.openTimetableCreationPage.call(context)
@@ -816,25 +1063,30 @@ describe('TimetableV3', () => {
                 student_code: '1001',
             },
         })
+        expect(push).toHaveBeenCalledTimes(2)
+
+        context.timetableCalculationStatus = 'calculating'
+        methods.returnFromTimetableCreationStep.call(context)
+        expect(push).toHaveBeenCalledTimes(2)
 
         context.timetableCalculationStatus = 'success'
         methods.returnFromTimetableCreationStep.call(context)
-        expect(context.resetTimetableCalculation).toHaveBeenCalledOnce()
-        expect(push).toHaveBeenCalledTimes(2)
+        expect(push).toHaveBeenCalledTimes(3)
 
         context.scheduleCreationMode = 'automatic'
         currentStepWatcher.call(context, 'modules', 'creation')
         expect(context.scheduleCreationMode).toBe('automatic')
-        expect(context.resetTimetableCalculation).toHaveBeenCalledTimes(2)
+        expect(context.resetTimetableCalculation).toHaveBeenCalledOnce()
 
         const creationPageStart = source.indexOf(
-            '<template v-else>\n            <div v-if="timetableCalculationStatus === \'idle\'"',
+            '<template v-else>\n            <div class="timetable-v3__creation-summary-cards mt-4">',
         )
         const creationPageEnd = source.indexOf('\n        </div>\n\n        <v-dialog', creationPageStart)
         const creationPageSource = source.slice(creationPageStart, creationPageEnd)
-        const optionsCardStart = creationPageSource.indexOf('timetable-v3__creation-options-card')
-        const optionsCardEnd = creationPageSource.indexOf('</section>', optionsCardStart)
-        const optionsCardSource = creationPageSource.slice(optionsCardStart, optionsCardEnd)
+        const successCardStart = creationPageSource.indexOf('timetable-v3__creation-success-card')
+        const successCardEnd = creationPageSource.indexOf('</section>', successCardStart)
+        const successCardSource = creationPageSource.slice(successCardStart, successCardEnd)
+        const timetableOutputPosition = creationPageSource.indexOf('<TimetableV3PossibleTimetables')
 
         expect(creationPageStart).toBeGreaterThan(-1)
         expect(source.indexOf('Aktuelle Auswahl')).toBeLessThan(creationPageStart)
@@ -852,53 +1104,94 @@ describe('TimetableV3', () => {
         expect(creationPageSource).not.toContain('Welche Module sollen zur Stundenplanerstellung berücksichtigt werden?')
         expect(creationPageSource).not.toContain('timetable-v3__module-group-cards')
         expect(creationPageSource).not.toContain('timetable-v3__module-tile')
-        expect(optionsCardSource).toContain('Optionen')
-        expect(optionsCardSource).toContain('Samstags Unterricht?')
-        expect(optionsCardSource).toContain(':model-value="allowSaturdayLessons"')
-        expect(optionsCardSource).toContain('@update:model-value="updateAllowSaturdayLessons"')
-        expect(optionsCardSource).toContain("allowSaturdayLessons ? 'Ja' : 'Nein'")
-        expect(optionsCardSource).toContain('class="timetable-v3__creation-start-button"')
-        expect(optionsCardSource).toContain('@click="calculatePossibleTimetables"')
-        expect(optionsCardSource).toContain('Los!')
-        expect(optionsCardSource).not.toContain('Manueller Stundenplan')
-        expect(optionsCardSource).not.toContain('Verfügbare Module und Unterrichte')
+        expect(successCardStart).toBeGreaterThan(-1)
+        expect(successCardSource).toContain('Optionen')
+        expect(successCardSource).toContain('Automatisch')
+        expect(successCardSource).toContain("selectedModuleCount === 1 ? 'Modul' : 'Module'")
+        expect(successCardSource).toContain('selectedModuleHoursLabel')
+        expect(successCardSource).toContain("Samstag: {{ allowSaturdayLessons ? 'Ja' : 'Nein' }}")
+        expect(successCardSource).toContain('Verwendete Module')
+        expect(successCardSource).toContain('Berechnung der Stundenpläne')
+        expect(successCardSource).toContain("timetableCalculationStatus === 'calculating'")
+        expect(successCardSource).toContain("timetableCalculationStatus === 'success'")
+        expect(successCardSource).toContain('possibleTimetableCountLabel')
+        expect(successCardSource).toContain('checkedTimetableVariationCountLabel')
+        expect(successCardSource).toContain('conflictingTimetableVariationCountLabel')
+        expect(successCardSource).not.toContain('Samstags Unterricht?')
+        expect(successCardSource).not.toContain('<v-switch')
+        expect(successCardSource).not.toContain('Los!')
+        expect(successCardSource).not.toContain('Manueller Stundenplan')
+        expect(successCardSource).not.toContain('Verfügbare Module und Unterrichte')
+        expect(timetableOutputPosition).toBeGreaterThan(successCardEnd)
+        expect(creationPageSource.slice(timetableOutputPosition)).toContain(
+            `v-if="timetableCalculationStatus === 'success' && possibleTimetableCount > 0"`,
+        )
+        expect(creationPageSource.slice(timetableOutputPosition)).toContain(
+            'class="timetable-v3__calculation-output"',
+        )
         expect(creationPageSource).toContain('@click="returnFromTimetableCreationStep"')
         expect(creationPageSource).toContain('prepend-icon="mdi-arrow-left"')
         expect(creationPageSource).toContain('Zurück')
-        expect(data.allowSaturdayLessons).toBe(false)
-        const optionContext = {
-            allowSaturdayLessons: false,
-            saveState: vi.fn().mockResolvedValue(undefined),
-        }
-        await methods.updateAllowSaturdayLessons.call(optionContext, true)
-        expect(optionContext.allowSaturdayLessons).toBe(true)
-        expect(optionContext.saveState).toHaveBeenCalledOnce()
+        expect(data.allowSaturdayLessons).toBe(true)
+        expect(source).not.toContain('updateAllowSaturdayLessons')
+        expect(source).not.toContain('class="timetable-v3__creation-start-button"')
+        expect(source).not.toContain('Los!')
         expect(source).toContain('creationOptions: {')
         expect(source).toContain('allowSaturdayLessons: this.allowSaturdayLessons')
+        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
         expect(source).toMatch(/\.timetable-v3__creation-summary-card\s*\{[\s\S]*?animation: none;[\s\S]*?transition: none;/)
         expect(source).toMatch(/\.timetable-v3__creation-summary-card:hover,[\s\S]*?transform: none;/)
     })
 
-    it('saves the creation options before requesting possible timetable variants and ignores a double click', async () => {
+    it('saves the creation draft before requesting possible timetable variants and ignores a double click', async () => {
         const methods = (TimetableV3 as any).methods
+        document.cookie = 'XSRF-TOKEN=secure%3Dtoken; path=/'
         let resolveStateSave: (() => void) | undefined
         const saveState = vi.fn(() => new Promise<void>((resolve) => {
             resolveStateSave = resolve
         }))
-        const put = vi.fn().mockResolvedValue({
-            data: {
-                message: 'Die möglichen Stundenpläne wurden berechnet.',
+        const fetch = vi.fn().mockResolvedValue(timetableCalculationStreamResponse([
+            {
+                type: 'progress',
+                progress_percent: 0,
+                combination_count: 0,
+                checked_combination_count: 0,
+                phase: 'preparing',
+            },
+            {
+                type: 'progress',
+                progress_percent: 40,
+                combination_count: 10,
+                checked_combination_count: 5,
+                phase: 'checking',
+            },
+            {
+                type: 'progress',
+                progress_percent: 95,
+                combination_count: 10,
+                checked_combination_count: 10,
+                phase: 'persisting',
+            },
+            {
+                type: 'progress',
+                progress_percent: 100,
+                combination_count: 10,
+                checked_combination_count: 10,
+                phase: 'complete',
+            },
+            {
+                type: 'complete',
                 data: {
                     summary: {
                         timetable_count: 7,
                         timetable_variation_count: 10,
                         conflict_timetable_count: 3,
                     },
-                    timetables: [{ id: 'not-rendered-yet' }],
+                    ...timetablePageFixture(7),
                 },
             },
-        })
-        vi.stubGlobal('axios', { put })
+        ]))
+        vi.stubGlobal('fetch', fetch)
         const context: any = {
             currentStep: 'creation',
             workspaceId: WORKSPACE_ID,
@@ -918,6 +1211,10 @@ describe('TimetableV3', () => {
             timetableCalculationResult: null,
             timetableCalculationError: '',
             timetableCalculationRequestId: 0,
+            timetableCalculationCombinationCount: 0,
+            timetableCalculationCheckedCombinationCount: 0,
+            timetableCalculationProgressPercent: 0,
+            timetableCalculationProgressPhase: 'preparing',
             saveState,
         }
         context.timetableCalculationPayload = () => methods.timetableCalculationPayload.call(context)
@@ -930,33 +1227,313 @@ describe('TimetableV3', () => {
 
         expect(context.timetableCalculationStatus).toBe('calculating')
         expect(saveState).toHaveBeenCalledOnce()
-        expect(put).not.toHaveBeenCalled()
+        expect(fetch).not.toHaveBeenCalled()
 
         await duplicateCalculation
         resolveStateSave?.()
         await calculation
 
-        expect(put).toHaveBeenCalledOnce()
-        expect(put).toHaveBeenCalledWith('/api/admin/students-timetables/timetable-v3/timetable', {
-            modules: ['current:D5', 'additional:M5'],
-            parameters: {
-                workspace_id: WORKSPACE_ID,
-                planning_mode: 'with_student',
-                student_code: '1001',
-                selection: {
-                    religion: 'ETH',
-                    language: 'F',
-                    branch: null,
-                    arts_subject: null,
+        expect(fetch).toHaveBeenCalledOnce()
+        expect(fetch).toHaveBeenCalledWith('/api/admin/students-timetables/timetable-v3/timetable', {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json, application/x-ndjson',
+                'Content-Type': 'application/json',
+                'X-Timetable-Progress': 'stream',
+                'X-XSRF-TOKEN': 'secure=token',
+            },
+            body: JSON.stringify({
+                modules: ['current:D5', 'additional:M5'],
+                parameters: {
+                    workspace_id: WORKSPACE_ID,
+                    planning_mode: 'with_student',
+                    student_code: '1001',
+                    selection: {
+                        religion: 'ETH',
+                        language: 'F',
+                        branch: null,
+                        arts_subject: null,
+                    },
+                    selected_course_keys: ['d5-a', 'm5-b'],
                 },
-                selected_course_keys: ['d5-a', 'm5-b'],
-            },
-            options: {
-                allow_saturday_lessons: true,
-            },
+                options: {
+                    allow_saturday_lessons: true,
+                },
+            }),
         })
         expect(context.timetableCalculationStatus).toBe('success')
         expect(context.timetableCalculationResult.summary.timetable_count).toBe(7)
+        expect(context.timetableCalculationCombinationCount).toBe(10)
+        expect(context.timetableCalculationCheckedCombinationCount).toBe(10)
+        expect(context.timetableCalculationProgressPercent).toBe(100)
+        expect(context.timetableCalculationProgressPhase).toBe('complete')
+    })
+
+    it('refreshes an expired XSRF cookie once before retrying the streamed calculation', async () => {
+        const methods = (TimetableV3 as any).methods
+        const context = timetableCalculationContext(methods)
+        document.cookie = 'XSRF-TOKEN=expired%3Dtoken; path=/'
+        const fetch = vi.fn()
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 419,
+                text: vi.fn().mockResolvedValue(''),
+            })
+            .mockResolvedValueOnce(timetableCalculationStreamResponse([{
+                type: 'complete',
+                data: {
+                    summary: { timetable_count: 1 },
+                    ...timetablePageFixture(1),
+                },
+            }]))
+        const get = vi.fn().mockImplementation(async () => {
+            document.cookie = 'XSRF-TOKEN=fresh%3Dtoken; path=/'
+        })
+        vi.stubGlobal('fetch', fetch)
+        vi.stubGlobal('axios', { get })
+
+        await methods.calculatePossibleTimetables.call(context)
+
+        expect(get).toHaveBeenCalledWith('/sanctum/csrf-cookie', { __skipCsrfRetry: true })
+        expect(fetch).toHaveBeenCalledTimes(2)
+        expect(fetch.mock.calls[0][1].headers['X-XSRF-TOKEN']).toBe('expired=token')
+        expect(fetch.mock.calls[1][1].headers['X-XSRF-TOKEN']).toBe('fresh=token')
+        expect(context.timetableCalculationStatus).toBe('success')
+    })
+
+    it('applies streamed calculation phases before completion across split UTF-8 chunks', async () => {
+        const methods = (TimetableV3 as any).methods
+        const encoder = new TextEncoder()
+        let streamController: ReadableStreamDefaultController<Uint8Array> | undefined
+        const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+                streamController = controller
+            },
+        })
+        const fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            body: stream,
+            text: vi.fn(),
+        })
+        vi.stubGlobal('fetch', fetch)
+        const context: any = {
+            currentStep: 'creation',
+            workspaceId: WORKSPACE_ID,
+            selectedModuleKeys: ['current:D5'],
+            selectedCourseKeys: ['d5-a'],
+            planningMode: 'without_student',
+            selectedStudentCode: '',
+            planningSelectionValues: {},
+            allowSaturdayLessons: false,
+            stateSaveFailed: false,
+            timetableCalculationStatus: 'idle',
+            timetableCalculationResult: null,
+            timetableCalculationError: '',
+            timetableCalculationRequestId: 0,
+            timetableCalculationCombinationCount: 0,
+            timetableCalculationCheckedCombinationCount: 0,
+            timetableCalculationProgressPercent: 0,
+            timetableCalculationProgressPhase: 'preparing',
+            saveState: vi.fn().mockResolvedValue(undefined),
+        }
+        context.timetableCalculationPayload = () => methods.timetableCalculationPayload.call(context)
+        context.timetableCalculationErrorMessage = (error: unknown) => (
+            methods.timetableCalculationErrorMessage.call(context, error)
+        )
+
+        const calculation = methods.calculatePossibleTimetables.call(context)
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+
+        streamController?.enqueue(encoder.encode([
+            JSON.stringify({
+                type: 'progress',
+                progress_percent: 0,
+                combination_count: 0,
+                checked_combination_count: 0,
+                phase: 'preparing',
+            }),
+            JSON.stringify({
+                type: 'progress',
+                progress_percent: 0,
+                combination_count: 18432,
+                checked_combination_count: 0,
+                phase: 'checking',
+            }),
+            '',
+        ].join('\n')))
+        await vi.waitFor(() => expect(context.timetableCalculationProgressPhase).toBe('checking'))
+
+        const checkingBytes = encoder.encode(`${JSON.stringify({
+            type: 'progress',
+            progress_percent: 40,
+            combination_count: 18432,
+            checked_combination_count: 9216,
+            phase: 'checking',
+            detail: 'Prüfung',
+        })}\r\n`)
+        const umlautByteIndex = checkingBytes.findIndex(byte => byte === 0xc3)
+        streamController?.enqueue(checkingBytes.slice(0, umlautByteIndex + 1))
+        await Promise.resolve()
+        expect(context.timetableCalculationCheckedCombinationCount).toBe(0)
+
+        streamController?.enqueue(checkingBytes.slice(umlautByteIndex + 1))
+        await vi.waitFor(() => expect(context.timetableCalculationProgressPhase).toBe('checking'))
+        expect(context.timetableCalculationStatus).toBe('calculating')
+        expect(context.timetableCalculationCombinationCount).toBe(18432)
+        expect(context.timetableCalculationCheckedCombinationCount).toBe(9216)
+        expect(context.timetableCalculationProgressPercent).toBe(40)
+
+        streamController?.enqueue(encoder.encode(`${JSON.stringify({
+            type: 'progress',
+            progress_percent: 95,
+            combination_count: 18432,
+            checked_combination_count: 18432,
+            phase: 'persisting',
+        })}\n`))
+        await vi.waitFor(() => expect(context.timetableCalculationProgressPhase).toBe('persisting'))
+        expect(context.timetableCalculationStatus).toBe('calculating')
+
+        streamController?.enqueue(encoder.encode(JSON.stringify({
+            type: 'complete',
+            data: {
+                summary: {
+                    timetable_count: 500,
+                    timetable_variation_count: 18432,
+                },
+                ...timetablePageFixture(500),
+            },
+        })))
+        streamController?.close()
+        await calculation
+
+        expect(context.timetableCalculationStatus).toBe('success')
+        expect(context.timetableCalculationProgressPhase).toBe('complete')
+        expect(context.timetableCalculationProgressPercent).toBe(100)
+    })
+
+    it('keeps navigation inside the loaded page without another backend request', async () => {
+        const methods = (TimetableV3 as any).methods
+        const context: any = timetablePagingContext()
+        const get = vi.fn()
+        vi.stubGlobal('axios', { get })
+
+        await methods.selectTimetable.call(context, 37)
+
+        expect(get).not.toHaveBeenCalled()
+        expect(context.timetableSelectedIndex).toBe(37)
+        expect(context.timetableCalculationResult.timetables[0].key).toBe('timetable-1')
+    })
+
+    it('replaces the active 100 timetable page in both boundary directions', async () => {
+        const methods = (TimetableV3 as any).methods
+        const pageOne = timetableResultFixture(500, 1)
+        const pageTwo = timetableResultFixture(500, 2)
+        const context: any = timetablePagingContext(pageOne)
+        context.timetableSelectedIndex = 99
+        const get = vi.fn()
+            .mockResolvedValueOnce({ data: { data: pageTwo } })
+            .mockResolvedValueOnce({ data: { data: pageOne } })
+        vi.stubGlobal('axios', { get })
+
+        await methods.selectTimetable.call(context, 100)
+
+        expect(get).toHaveBeenNthCalledWith(
+            1,
+            `/api/admin/students-timetables/timetable-v3/timetable?workspace_id=${WORKSPACE_ID}&planning_mode=with_student&student_code=1001&page=2&fingerprint=${'a'.repeat(64)}`,
+        )
+        expect(context.timetableCalculationResult.timetables).toHaveLength(100)
+        expect(context.timetableCalculationResult.timetables[0].key).toBe('timetable-101')
+        expect(context.timetableCalculationResult.timetables.some(({ key }: { key: string }) => key === 'timetable-1')).toBe(false)
+        expect(context.timetableSelectedIndex).toBe(100)
+
+        await methods.selectTimetable.call(context, 99)
+
+        expect(get).toHaveBeenNthCalledWith(
+            2,
+            `/api/admin/students-timetables/timetable-v3/timetable?workspace_id=${WORKSPACE_ID}&planning_mode=with_student&student_code=1001&page=1&fingerprint=${'a'.repeat(64)}`,
+        )
+        expect(context.timetableCalculationResult.timetables).toHaveLength(100)
+        expect(context.timetableCalculationResult.timetables[0].key).toBe('timetable-1')
+        expect(context.timetableCalculationResult.timetables.some(({ key }: { key: string }) => key === 'timetable-101')).toBe(false)
+        expect(context.timetableSelectedIndex).toBe(99)
+    })
+
+    it('loads the twentieth page when 2000 timetables were materialized', async () => {
+        const methods = (TimetableV3 as any).methods
+        const pageNineteen = timetableResultFixture(2000, 19)
+        const pageTwenty = timetableResultFixture(2000, 20)
+        const context: any = timetablePagingContext(pageNineteen)
+        context.timetableSelectedIndex = 1899
+        const get = vi.fn().mockResolvedValue({ data: { data: pageTwenty } })
+        vi.stubGlobal('axios', { get })
+
+        await methods.selectTimetable.call(context, 1900)
+
+        expect(get).toHaveBeenCalledWith(
+            `/api/admin/students-timetables/timetable-v3/timetable?workspace_id=${WORKSPACE_ID}&planning_mode=with_student&student_code=1001&page=20&fingerprint=${'a'.repeat(64)}`,
+        )
+        expect(context.timetableCalculationResult.timetables).toHaveLength(100)
+        expect(context.timetableCalculationResult.timetables[0].key).toBe('timetable-1901')
+        expect(context.timetableCalculationResult.timetables[99].key).toBe('timetable-2000')
+        expect(context.timetableSelectedIndex).toBe(1900)
+    })
+
+    it('keeps the current page after a transient failure and retries the same boundary', async () => {
+        const methods = (TimetableV3 as any).methods
+        const pageOne = timetableResultFixture(500, 1)
+        const context: any = timetablePagingContext(pageOne)
+        context.timetableSelectedIndex = 99
+        const get = vi.fn()
+            .mockRejectedValueOnce(new Error('offline'))
+            .mockResolvedValueOnce({ data: { data: timetableResultFixture(500, 2) } })
+        vi.stubGlobal('axios', { get })
+
+        await methods.selectTimetable.call(context, 100)
+
+        expect(context.timetableCalculationResult).toBe(pageOne)
+        expect(context.timetableSelectedIndex).toBe(99)
+        expect(context.timetablePageError).toContain('nächsten Stundenpläne')
+        expect(context.timetablePageLoading).toBe(false)
+
+        await methods.selectTimetable.call(context, 100)
+
+        expect(get).toHaveBeenCalledTimes(2)
+        expect(context.timetableCalculationResult.timetables[0].key).toBe('timetable-101')
+        expect(context.timetableSelectedIndex).toBe(100)
+        expect(context.timetablePageError).toBe('')
+    })
+
+    it('ignores a stale page response after reset and clears results after an authorization failure', async () => {
+        const methods = (TimetableV3 as any).methods
+        let resolvePage: ((value: unknown) => void) | undefined
+        const pendingResponse = new Promise(resolve => {
+            resolvePage = resolve
+        })
+        const context: any = timetablePagingContext()
+        context.timetableSelectedIndex = 99
+        const get = vi.fn()
+            .mockReturnValueOnce(pendingResponse)
+            .mockRejectedValueOnce({ response: { status: 403 } })
+        vi.stubGlobal('axios', { get })
+
+        const staleRequest = methods.selectTimetable.call(context, 100)
+        await vi.waitFor(() => expect(get).toHaveBeenCalledOnce())
+        methods.resetTimetableCalculation.call(context)
+        resolvePage?.({ data: { data: timetableResultFixture(500, 2) } })
+        await staleRequest
+
+        expect(context.timetableCalculationStatus).toBe('idle')
+        expect(context.timetableCalculationResult).toBeNull()
+
+        Object.assign(context, timetablePagingContext())
+        context.timetableSelectedIndex = 99
+        await methods.selectTimetable.call(context, 100)
+
+        expect(context.timetableCalculationResult).toBeNull()
+        expect(context.timetableCalculationStatus).toBe('error')
+        expect(context.timetableCalculationError).toContain('Berechtigung')
     })
 
     it('shows only the possible variant count and explains the calculation compactly', () => {
@@ -977,8 +1554,19 @@ describe('TimetableV3', () => {
 
         expect(computed.possibleTimetableCount.call(countContext)).toBe(0)
         expect(source).toContain('Berechnung der Stundenpläne')
-        expect(source).toContain('Mögliche Stundenplanvarianten werden berechnet …')
+        expect(source).toContain('Kombinationen werden vorbereitet …')
+        expect(source).toContain('von ${this.timetableCalculationCombinationCountLabel} Kombinationen geprüft.')
+        expect(source).toContain('Mögliche Stundenpläne werden aufbereitet …')
+        expect(source).toContain('Lösungsvorschläge werden berechnet …')
+        expect(source).toContain('Stundenplandaten werden komprimiert …')
+        expect(source).toContain('Ergebnis wird gespeichert …')
+        expect(source).toContain('% Gesamtfortschritt')
         expect(source).toContain('aria-busy="true"')
+        expect(source).toContain('role="progressbar"')
+        expect(source).toContain('Fortschritt der Stundenplanberechnung')
+        expect(source).toContain("Array.from({ length: 20 }")
+        expect(source).toContain('(index + 1) * 5')
+        expect(source).toContain('timetable-v3__calculation-led-segment--active')
         expect(source).toMatch(/class="timetable-v3__calculation-result"\s+aria-live="polite"\s+role="status"/)
         expect(source).toContain("timetableCalculationSummary.timetable_count")
         expect(source).toContain('Keine möglichen Varianten gefunden')
@@ -989,6 +1577,40 @@ describe('TimetableV3', () => {
         expect(source).toContain('timetableCalculationSummary.conflict_timetable_count')
         expect(source).toContain('TimetableV3PossibleTimetables')
         expect(source).toContain(':timetables="timetableCalculationResult?.timetables || []"')
+
+        const progressSegments = computed.timetableCalculationProgressSegments.call({
+            timetableCalculationProgressPercent: 25,
+        })
+        const summaryContext: any = {
+            timetableCalculationSummary: {
+                timetable_count: 2000,
+                possible_timetable_count: 2500,
+                timetables_truncated: true,
+            },
+            possibleTimetableCount: 2000,
+            normalizedTimetableCalculationCount: methods.normalizedTimetableCalculationCount,
+        }
+        summaryContext.totalPossibleTimetableCount = computed.totalPossibleTimetableCount.call(summaryContext)
+
+        expect(progressSegments).toHaveLength(20)
+        expect(progressSegments.filter((segment: any) => segment.active)).toHaveLength(5)
+        expect(progressSegments[4]).toEqual({ percent: 25, active: true })
+        expect(progressSegments[5]).toEqual({ percent: 30, active: false })
+        expect(computed.timetableCalculationProgressLabel.call({
+            timetableCalculationProgressPhase: 'checking',
+            timetableCalculationCombinationCount: 18432,
+            timetableCalculationCheckedCombinationCountLabel: '9.216',
+            timetableCalculationCombinationCountLabel: '18.432',
+        })).toBe('9.216 von 18.432 Kombinationen geprüft.')
+        expect(computed.timetableCalculationProgressLabel.call({
+            timetableCalculationProgressPhase: 'persisting',
+            timetableCalculationCombinationCount: 18432,
+        })).toBe('Ergebnis wird gespeichert …')
+        expect(summaryContext.totalPossibleTimetableCount).toBe(2500)
+        expect(computed.timetablesTruncated.call(summaryContext)).toBe(true)
+        expect(source).toContain('Nur <strong>{{ possibleTimetableCountLabel }}</strong> von')
+        expect(source).toContain('{{ totalPossibleTimetableCountLabel }}</strong> möglichen Stundenplänen wurden')
+        expect(source).toContain('gespeichert und werden angezeigt.')
     })
 
     it('shows the exact modules used by the backend calculation', () => {
@@ -1086,8 +1708,11 @@ describe('TimetableV3', () => {
             normalizedTimetableCalculationCount,
         })
         const solutionPlanSource = source.slice(
-            source.indexOf('class="timetable-v3__solution-plan"'),
-            source.indexOf('</section>', source.indexOf('class="timetable-v3__solution-plan"')),
+            source.indexOf('class="timetable-v3__calculation-output timetable-v3__solution-plan"'),
+            source.indexOf(
+                '</section>',
+                source.indexOf('class="timetable-v3__calculation-output timetable-v3__solution-plan"'),
+            ),
         )
 
         expect(renderedScenarios).toEqual(scenarios)
@@ -1097,7 +1722,10 @@ describe('TimetableV3', () => {
         expect(methods.timetableSolutionPlanCountLabel.call({
             normalizedTimetableCalculationCount,
         }, 1200)).toBe((1200).toLocaleString('de-AT'))
-        expect(source).toContain("possibleTimetableCount === 0 && timetableSolutionPlanModuleRemovalScenarios.length")
+        expect(source).toContain("v-if=\"timetableCalculationStatus === 'success'")
+        expect(source).toContain('&& possibleTimetableCount === 0')
+        expect(source).toContain('&& timetableSolutionPlanModuleRemovalScenarios.length')
+        expect(solutionPlanSource).toContain('timetable-v3__calculation-output timetable-v3__solution-plan')
         expect(solutionPlanSource).toContain('Lösungsplan')
         expect(solutionPlanSource).toContain('scenario.removed_module_code')
         expect(solutionPlanSource).toContain('scenario.removed_module_name')
@@ -1119,16 +1747,18 @@ describe('TimetableV3', () => {
     it('applies a positive solution by exact module key, saves it, and recalculates once', async () => {
         const methods = (TimetableV3 as any).methods
         const events: string[] = []
-        const put = vi.fn(async () => {
-            events.push('put')
+        const fetch = vi.fn(async () => {
+            events.push('fetch')
 
-            return {
+            return timetableCalculationStreamResponse([{
+                type: 'complete',
                 data: {
-                    data: { summary: { timetable_count: 7 } },
+                    summary: { timetable_count: 7, timetable_variation_count: 7 },
+                    ...timetablePageFixture(7),
                 },
-            }
+            }])
         })
-        vi.stubGlobal('axios', { put })
+        vi.stubGlobal('fetch', fetch)
         const scenario = {
             removed_module_selection_key: 'current:CH1',
             removed_module_code: 'CH1',
@@ -1183,11 +1813,11 @@ describe('TimetableV3', () => {
         expect(context.selectedModuleKeys).toEqual(['current:D5'])
         expect(context.selectedCourseKeys).toEqual(['d5-a'])
         expect(context.moduleSelectionLimitMessage).toBe('')
-        expect(events).toEqual(['reset', 'calculate', 'save', 'put'])
+        expect(events).toEqual(['reset', 'calculate', 'save', 'fetch'])
         expect(context.saveState).toHaveBeenCalledOnce()
         expect(context.calculatePossibleTimetables).toHaveBeenCalledOnce()
-        expect(put).toHaveBeenCalledOnce()
-        expect(put.mock.invocationCallOrder[0]).toBeGreaterThan(context.saveState.mock.invocationCallOrder[0])
+        expect(fetch).toHaveBeenCalledOnce()
+        expect(fetch.mock.invocationCallOrder[0]).toBeGreaterThan(context.saveState.mock.invocationCallOrder[0])
         expect(context.timetableCalculationStatus).toBe('success')
         expect(context.timetableCalculationResult.summary.timetable_count).toBe(7)
 
@@ -1209,15 +1839,16 @@ describe('TimetableV3', () => {
 
     it('shows the fallback error when a successful calculation response has no object summary', async () => {
         const methods = (TimetableV3 as any).methods
-        const put = vi.fn().mockResolvedValue({
+        const fetch = vi.fn().mockResolvedValue(timetableCalculationStreamResponse([{
+            type: 'complete',
             data: {
                 data: {
                     summary: [],
                     timetables: [],
                 },
             },
-        })
-        vi.stubGlobal('axios', { put })
+        }]))
+        vi.stubGlobal('fetch', fetch)
         const context: any = {
             currentStep: 'creation',
             selectedModuleKeys: ['current:D5'],
@@ -1247,14 +1878,11 @@ describe('TimetableV3', () => {
 
     it('preserves the selected options and the server error when calculation fails', async () => {
         const methods = (TimetableV3 as any).methods
-        const put = vi.fn().mockRejectedValue({
-            response: {
-                data: {
-                    message: 'Für diese Auswahl fehlen Unterrichtsdaten.',
-                },
-            },
-        })
-        vi.stubGlobal('axios', { put })
+        const fetch = vi.fn().mockResolvedValue(timetableCalculationStreamResponse([{
+            type: 'error',
+            message: 'Für diese Auswahl fehlen Unterrichtsdaten.',
+        }]))
+        vi.stubGlobal('fetch', fetch)
         const context: any = {
             currentStep: 'creation',
             selectedModuleKeys: ['current:D5'],
@@ -1303,11 +1931,16 @@ describe('TimetableV3', () => {
 
     it('ignores a calculation response after its in-memory request was reset', async () => {
         const methods = (TimetableV3 as any).methods
-        let resolveCalculation: ((value: unknown) => void) | undefined
-        const put = vi.fn(() => new Promise((resolve) => {
-            resolveCalculation = resolve
-        }))
-        vi.stubGlobal('axios', { put })
+        let resolveCalculation: ((value: string) => void) | undefined
+        const fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            body: null,
+            text: vi.fn(() => new Promise<string>((resolve) => {
+                resolveCalculation = resolve
+            })),
+        })
+        vi.stubGlobal('fetch', fetch)
         const context: any = {
             currentStep: 'creation',
             selectedModuleKeys: ['current:D5'],
@@ -1329,16 +1962,17 @@ describe('TimetableV3', () => {
         )
 
         const calculation = methods.calculatePossibleTimetables.call(context)
-        await vi.waitFor(() => expect(put).toHaveBeenCalledOnce())
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
 
         methods.resetTimetableCalculation.call(context)
-        resolveCalculation?.({
+        resolveCalculation?.(JSON.stringify({
+            type: 'complete',
             data: {
                 data: {
                     summary: { timetable_count: 99 },
                 },
             },
-        })
+        }))
         await calculation
 
         expect(context.timetableCalculationStatus).toBe('idle')
@@ -1354,7 +1988,7 @@ describe('TimetableV3', () => {
                     mode: 'with_student',
                     student: { studentCode: '1001' },
                 },
-                creationOptions: { allowSaturdayLessons: true },
+                creationOptions: { allowSaturdayLessons: false },
             },
             planningMode: null,
             selectedStudent: null,
@@ -1416,7 +2050,7 @@ describe('TimetableV3', () => {
                 constraints: { availableWeekdays: [1, 2, 3, 4, 5, 6] },
             },
             summary: { timetable_count: 0, solution_plan: solutionPlan },
-            timetables: [],
+            ...timetablePageFixture(0),
         }
         const get = vi.fn().mockResolvedValue({ data: { data: persistedResult } })
         vi.stubGlobal('axios', { get })
@@ -1450,7 +2084,7 @@ describe('TimetableV3', () => {
         await methods.restorePersistedTimetableCalculation.call(context)
 
         expect(get).toHaveBeenCalledWith(
-            `/api/admin/students-timetables/timetable-v3/timetable?workspace_id=${WORKSPACE_ID}&planning_mode=with_student&student_code=1001`,
+            `/api/admin/students-timetables/timetable-v3/timetable?workspace_id=${WORKSPACE_ID}&planning_mode=with_student&student_code=1001&page=1`,
         )
         expect(context.timetableCalculationStatus).toBe('success')
         expect(context.timetableCalculationResult.summary.solution_plan).toEqual(solutionPlan)
@@ -1521,8 +2155,51 @@ describe('TimetableV3', () => {
 
         expect(get).toHaveBeenNthCalledWith(
             1,
-            '/api/admin/students-timetables/timetable-v3/timetable?planning_mode=without_student',
+            '/api/admin/students-timetables/timetable-v3/timetable?planning_mode=without_student&page=1',
         )
+        expect(context.timetableCalculationStatus).toBe('idle')
+        expect(context.timetableCalculationResult).toBeNull()
+    })
+
+    it('ignores stale restore responses and rejects a non-first persisted page', async () => {
+        const methods = (TimetableV3 as any).methods
+        let resolveRestore: ((value: unknown) => void) | undefined
+        const pendingRestore = new Promise(resolve => {
+            resolveRestore = resolve
+        })
+        const get = vi.fn()
+            .mockReturnValueOnce(pendingRestore)
+            .mockResolvedValueOnce({ data: { data: timetableResultFixture(101, 2) } })
+        vi.stubGlobal('axios', { get })
+        const context: any = {
+            currentStep: 'creation',
+            hasPlanningSelectionContext: true,
+            planningMode: 'without_student',
+            scheduleCreationMode: 'automatic',
+            selectedCourseKeys: ['d1-a'],
+            selectedModuleKeys: ['additional:D1'],
+            selectedStudentCode: '',
+            studentSelectionDetailsError: false,
+            timetableCalculationError: '',
+            timetableCalculationResult: null,
+            timetableCalculationResultMatchesCurrentDraft: vi.fn().mockReturnValue(true),
+            timetableCalculationStatus: 'idle',
+            timetablePageRequestId: 0,
+            workspaceId: WORKSPACE_ID,
+        }
+
+        const staleRestore = methods.restorePersistedTimetableCalculation.call(context)
+        await vi.waitFor(() => expect(get).toHaveBeenCalledOnce())
+        methods.resetTimetableCalculation.call(context)
+        resolveRestore?.({ data: { data: timetableResultFixture(1) } })
+        await staleRestore
+
+        expect(context.timetableCalculationStatus).toBe('idle')
+        expect(context.timetableCalculationResult).toBeNull()
+
+        await methods.restorePersistedTimetableCalculation.call(context)
+
+        expect(get).toHaveBeenCalledTimes(2)
         expect(context.timetableCalculationStatus).toBe('idle')
         expect(context.timetableCalculationResult).toBeNull()
     })
@@ -1944,8 +2621,8 @@ describe('TimetableV3', () => {
         expect(methods.allModulesSelectedForGroup.call(context, group)).toBe(false)
         expect(methods.hasSelectedModulesForGroup.call(context, group)).toBe(false)
         expect(saveState).toHaveBeenCalledTimes(2)
-        expect(source).toContain("usesMainModuleGroups ? 'Alle Module auswählen'")
-        expect(source).toContain("usesMainModuleGroups ? 'Alle Module abwählen'")
+        expect(source).toMatch(/@click="selectAllModulesInGroup\(activeModuleSelectionGroup\)">\s*Alle auswählen/)
+        expect(source).toMatch(/variant="text"\s*color="error"[\s\S]*?@click="deselectAllModulesInGroup\(activeModuleSelectionGroup\)">\s*Alle abwählen/)
         expect(source).toContain('@click="selectAllModulesInGroup(activeModuleSelectionGroup)"')
         expect(source).toContain('@click="deselectAllModulesInGroup(activeModuleSelectionGroup)"')
         expect(source).toContain('allModulesSelectedForGroup(activeModuleSelectionGroup)')
@@ -2092,6 +2769,28 @@ describe('TimetableV3', () => {
         expect(source).toMatch(/\.timetable-v3__selected-module-chip :deep\(\.v-chip__close\)[\s\S]*?color: #dc2626;/)
     })
 
+    it('deselects every module from the automatic mode card', async () => {
+        const methods = (TimetableV3 as any).methods
+        const saveState = vi.fn().mockResolvedValue(undefined)
+        const context = {
+            selectedModuleKeys: ['finished:D1', 'current:M5'],
+            selectedCourseKeys: ['d1-a', 'm5-a-1', 'm5-a-2', 'm5-b'],
+            moduleSelectionLimitMessage: 'Auswahlgrenze erreicht.',
+            saveState,
+        }
+
+        await methods.deselectAllSelectedModules.call(context)
+
+        expect(context.selectedModuleKeys).toEqual([])
+        expect(context.selectedCourseKeys).toEqual([])
+        expect(context.moduleSelectionLimitMessage).toBe('')
+        expect(saveState).toHaveBeenCalledOnce()
+
+        await methods.deselectAllSelectedModules.call(context)
+
+        expect(saveState).toHaveBeenCalledOnce()
+    })
+
     it('restores only persisted course selections from the matching planning context', () => {
         const methods = (TimetableV3 as any).methods
         const groups = [{
@@ -2194,9 +2893,12 @@ describe('TimetableV3', () => {
             emailCopyStatus: 'copied',
             studentInfoDialogOpen: true,
             studyInfoDialogOpen: true,
+            allowSaturdayLessons: true,
+            workspaceId: 'workspace-1',
             resetSelectedStudentSelectionDetails: vi.fn(),
+            resetTimetableCalculation: vi.fn(),
             saveState: vi.fn().mockResolvedValue(undefined),
-            replaceRoutePlanningContext: vi.fn(),
+            $router: { replace: vi.fn().mockResolvedValue(undefined) },
         }
 
         await methods.restartPlanning.call(context)
@@ -2208,11 +2910,10 @@ describe('TimetableV3', () => {
         expect(selectionStepSource).not.toContain('class="timetable-v3__back-button"')
         expect(selectionStepSource).not.toContain('prepend-icon="mdi-arrow-left"')
         expect(selectionStepSource).not.toContain('Zurück')
-        expect(source).toContain('class="timetable-v3__restart-button"')
-        expect(source).toContain('color="error"')
-        expect(source).toContain('prepend-icon="mdi-restart"')
-        expect(source).toContain('@click="restartPlanning"')
-        expect(source).toContain('Neustart')
+        expect(source.match(/class="timetable-v3__restart-button"/g)).toHaveLength(3)
+        expect(source.match(/prepend-icon="mdi-restart"/g)).toHaveLength(3)
+        expect(source.match(/@click="restartPlanning"/g)).toHaveLength(3)
+        expect(source.match(/Neustart/g)).toHaveLength(3)
         expect(context.planningMode).toBeNull()
         expect(context.selectedStudent).toBeNull()
         expect(context.studentDialogOpen).toBe(false)
@@ -2220,9 +2921,14 @@ describe('TimetableV3', () => {
         expect(context.emailCopyStatus).toBe('idle')
         expect(context.studentInfoDialogOpen).toBe(false)
         expect(context.studyInfoDialogOpen).toBe(false)
+        expect(context.allowSaturdayLessons).toBe(true)
         expect(context.resetSelectedStudentSelectionDetails).toHaveBeenCalledOnce()
+        expect(context.resetTimetableCalculation).toHaveBeenCalledOnce()
         expect(context.saveState).toHaveBeenCalledOnce()
-        expect(context.replaceRoutePlanningContext).toHaveBeenCalledWith(null)
+        expect(context.$router.replace).toHaveBeenCalledWith({
+            path: '/admin/students-timetables/timetable-v3/overview',
+            query: { workspace_id: 'workspace-1' },
+        })
     })
 
     it('formats student choices without semester information', () => {
@@ -2283,6 +2989,7 @@ describe('TimetableV3', () => {
             religion: 'Rk',
             instructionType: 'Normalunterricht',
             semester: 5,
+            schoolLevel: '12',
         })
         expect(context.closeStudentDialog).toHaveBeenCalledOnce()
         expect(context.resetSelectedStudentSelectionDetails).toHaveBeenCalledOnce()

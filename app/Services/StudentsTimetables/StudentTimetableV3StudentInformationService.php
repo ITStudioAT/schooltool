@@ -3,9 +3,11 @@
 namespace App\Services\StudentsTimetables;
 
 use App\Enums\StudentTimetableStudyProgram;
+use App\Models\Import116;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class StudentTimetableV3StudentInformationService
 {
@@ -29,13 +31,15 @@ class StudentTimetableV3StudentInformationService
         ?string $studentCode,
         array $selectionOverride = [],
         bool $seedCompactSubjectPlanIfMissing = true,
+        bool $includeAllSelectableModules = false,
     ): array {
         $schoolyearId = (int) $user->schoolyear_id;
-        $studyProgram = $this->completedCourseHistoryService->studyProgramForStudentCode(
+        $studyInformation = $this->completedCourseHistoryService->studyInformationForStudentCode(
             $user,
             $schoolyearId,
             $studentCode,
         );
+        $studyProgram = $studyInformation['study_program'];
 
         if ($studyProgram === StudentTimetableStudyProgram::Kompaktstudium && $seedCompactSubjectPlanIfMissing) {
             $this->compactSubjectPlanService->seedIfMissing((int) $user->school_id, $schoolyearId);
@@ -47,6 +51,7 @@ class StudentTimetableV3StudentInformationService
             $selectionOverride,
             strictSelectionOverride: $selectionOverride !== [],
             studyProgram: $studyProgram,
+            includeAllSelectableModules: $includeAllSelectableModules,
         );
         $moduleSelectionGroups = $this->moduleSelectionGroups(
             (array) ($selectionSummary['module_selection_groups'] ?? []),
@@ -55,8 +60,16 @@ class StudentTimetableV3StudentInformationService
         return [
             'student_code' => (string) data_get($selectionSummary, 'student.student_code', ''),
             'study_program' => $studyProgram->value,
+            'subject_plan' => $studyInformation['subject_plan'] ?? '',
+            'subject_plan_mismatch' => (bool) ($studyInformation['subject_plan_mismatch'] ?? false),
             'religion' => (string) data_get($selectionSummary, 'student.religion', ''),
             'instruction_type' => (string) data_get($selectionSummary, 'student.instruction_type', ''),
+            'school_level' => (string) data_get($selectionSummary, 'student.school_level', ''),
+            'school_level_mismatch' => (bool) data_get($selectionSummary, 'student.school_level_mismatch', false),
+            'original_school_level' => (string) data_get($selectionSummary, 'student.original_school_level', ''),
+            'school_level_options' => trim((string) $studentCode) === ''
+                ? []
+                : $this->studentOverviewService->schoolLevelOptionsForStudyProgram($studyProgram),
             'semester' => data_get($selectionSummary, 'selection.semester'),
             'items' => collect($selectionSummary['selection_items'] ?? [])
                 ->filter(fn (array $item): bool => in_array($item['key'] ?? null, self::INFORMATION_KEYS, true))
@@ -73,6 +86,58 @@ class StudentTimetableV3StudentInformationService
                 ? $this->mainModuleSelectionGroups($moduleSelectionGroups)
                 : $moduleSelectionGroups,
         ];
+    }
+
+    /** @return array<string, mixed> */
+    public function updateSchoolLevelForStudent(
+        User $user,
+        string $studentCode,
+        string $schoolLevel,
+        array $selectionOverride = [],
+    ): array {
+        $schoolyearId = (int) $user->schoolyear_id;
+        $student = Import116::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('student_code', $studentCode)
+            ->firstOrFail();
+        $studyProgram = $this->completedCourseHistoryService
+            ->studyProgramForStudentCode($user, $schoolyearId, $studentCode);
+        $validSchoolLevels = collect(
+            $this->studentOverviewService->schoolLevelOptionsForStudyProgram($studyProgram),
+        )->pluck('value');
+        $hasStoredOriginalSchoolLevel = $student->original_school_level !== null;
+        $originalSchoolLevel = $hasStoredOriginalSchoolLevel
+            ? $student->original_school_level
+            : $student->school_level;
+        $originalAttendanceYear = $hasStoredOriginalSchoolLevel
+            ? $student->original_attendance_year
+            : $student->attendance_year;
+        $originalSchoolLevelDisplay = $this->studentOverviewService->displaySchoolLevel(
+            $originalSchoolLevel,
+            $originalAttendanceYear,
+        );
+
+        if (
+            ! $validSchoolLevels->containsStrict($schoolLevel)
+            && $schoolLevel !== $originalSchoolLevelDisplay
+        ) {
+            throw ValidationException::withMessages([
+                'school_level' => 'Diese Schulstufe ist für die Studienform des Studierenden nicht gültig.',
+            ]);
+        }
+
+        $restoresOriginalSchoolLevel = $schoolLevel === $originalSchoolLevelDisplay;
+        $student->forceFill([
+            ...(! $hasStoredOriginalSchoolLevel ? [
+                'original_school_level' => $student->school_level,
+                'original_attendance_year' => $student->attendance_year,
+            ] : []),
+            'school_level' => $restoresOriginalSchoolLevel ? $originalSchoolLevel : $schoolLevel,
+            'attendance_year' => $restoresOriginalSchoolLevel ? $originalAttendanceYear : null,
+        ])->save();
+
+        return $this->informationForStudent($user, $studentCode, $selectionOverride);
     }
 
     /**

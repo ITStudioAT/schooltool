@@ -51,6 +51,19 @@ function slotFixture(code: string, weekday: number, hour: number, overrides = {}
     }
 }
 
+function rangeTimetables(from: number, to: number) {
+    return Array.from({ length: (to - from) + 1 }, (_, index) => {
+        const number = from + index
+
+        return timetableFixture({
+            key: `timetable-${number}`,
+            number,
+            slots: {},
+            type: 'full_green',
+        })
+    })
+}
+
 describe('TimetableV3PossibleTimetables', () => {
     it('keeps backend order and navigates globally even when per-type numbers repeat', async () => {
         const timetables = [
@@ -68,7 +81,12 @@ describe('TimetableV3PossibleTimetables', () => {
             }),
         ]
         const wrapper = shallowMount(TimetableV3PossibleTimetables, {
-            props: { allowSaturdayLessons: true, timetables },
+            props: {
+                allowSaturdayLessons: true,
+                selectedIndex: 0,
+                timetables,
+                totalCount: 2,
+            },
         })
 
         expect((wrapper.vm as any).selectedTimetable.key).toBe('full-green-1')
@@ -76,6 +94,9 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.text()).not.toContain('Einzeltermin-Überschneidung')
 
         ;(wrapper.vm as any).selectNextTimetable()
+        expect(wrapper.emitted('navigate')).toEqual([[1]])
+
+        await wrapper.setProps({ selectedIndex: 1 })
         await wrapper.vm.$nextTick()
 
         expect((wrapper.vm as any).selectedTimetable.key).toBe('green-1')
@@ -83,11 +104,10 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.text()).toContain('Einzeltermin-Überschneidung')
 
         ;(wrapper.vm as any).selectNextTimetable()
-        expect((wrapper.vm as any).selectedTimetableIndex).toBe(1)
+        expect(wrapper.emitted('navigate')).toEqual([[1]])
 
         ;(wrapper.vm as any).selectPreviousTimetable()
-        ;(wrapper.vm as any).selectPreviousTimetable()
-        expect((wrapper.vm as any).selectedTimetableIndex).toBe(0)
+        expect(wrapper.emitted('navigate')).toEqual([[1], [0]])
     })
 
     it('renders every primary, same-slot, and allowed overlap Unterricht', () => {
@@ -140,7 +160,7 @@ describe('TimetableV3PossibleTimetables', () => {
         expect(wrapper.findAll('.timetable-v3-results__lesson')).toHaveLength(3)
     })
 
-    it('shows Saturday, fills missing periods, and resets to the first plan when results change', async () => {
+    it('shows Saturday and fills missing periods', () => {
         const wrapper = shallowMount(TimetableV3PossibleTimetables, {
             props: {
                 allowSaturdayLessons: true,
@@ -167,21 +187,115 @@ describe('TimetableV3PossibleTimetables', () => {
         expect((wrapper.vm as any).visibleWeekdays.map((weekday: any) => weekday.shortTitle))
             .toEqual(['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'])
         expect((wrapper.vm as any).visibleHours).toEqual([1, 2, 3])
+    })
 
+    it('navigates across page boundaries with global positions in both directions', async () => {
+        const firstPage = rangeTimetables(1, 100)
+        const secondPage = rangeTimetables(101, 200)
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                pageOffset: 0,
+                selectedIndex: 99,
+                timetables: firstPage,
+                totalCount: 500,
+            },
+        })
+
+        expect((wrapper.vm as any).selectedTimetable.key).toBe('timetable-100')
+        expect(wrapper.text()).toContain('Stundenplan 100 von 500')
         ;(wrapper.vm as any).selectNextTimetable()
-        expect((wrapper.vm as any).selectedTimetableIndex).toBe(1)
+        expect(wrapper.emitted('navigate')).toEqual([[100]])
 
         await wrapper.setProps({
-            timetables: [timetableFixture({
-                key: 'replacement',
-                number: 1,
-                slots: { '3-4': slotFixture('F1', 3, 4) },
-                type: 'full_green',
-            })],
+            pageOffset: 100,
+            selectedIndex: 100,
+            timetables: secondPage,
+        })
+
+        expect((wrapper.vm as any).selectedTimetable.key).toBe('timetable-101')
+        expect(wrapper.text()).toContain('Stundenplan 101 von 500')
+        ;(wrapper.vm as any).selectPreviousTimetable()
+        expect(wrapper.emitted('navigate')).toEqual([[100], [99]])
+
+        await wrapper.setProps({
+            pageOffset: 0,
+            selectedIndex: 99,
+            timetables: firstPage,
+        })
+
+        expect((wrapper.vm as any).selectedTimetable.key).toBe('timetable-100')
+        expect(wrapper.text()).toContain('Stundenplan 100 von 500')
+    })
+
+    it('makes loading the next page range visible while navigation stays disabled', () => {
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                error: 'Die nächsten Stundenpläne konnten nicht geladen werden.',
+                loading: true,
+                loadingDirection: 'next',
+                selectedIndex: 99,
+                timetables: rangeTimetables(1, 100),
+                totalCount: 500,
+            },
+        })
+
+        ;(wrapper.vm as any).selectNextTimetable()
+        ;(wrapper.vm as any).selectPreviousTimetable()
+
+        expect(wrapper.emitted('navigate')).toBeUndefined()
+        expect(wrapper.text()).toContain('Die nächsten Stundenpläne konnten nicht geladen werden.')
+        expect(wrapper.text()).toContain('Stundenpläne 101–200 werden geladen …')
+        expect(wrapper.text()).toContain('Der angezeigte Stundenplan wird gleich ersetzt.')
+        expect(wrapper.attributes('aria-busy')).toBe('true')
+        expect(wrapper.find('.timetable-v3-results__page-loading').attributes()).toMatchObject({
+            'aria-atomic': 'true',
+            'aria-live': 'polite',
+            role: 'status',
+        })
+    })
+
+    it('names the previous and final partial page ranges while loading', async () => {
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                loading: true,
+                loadingDirection: 'previous',
+                pageOffset: 100,
+                selectedIndex: 100,
+                timetables: rangeTimetables(101, 200),
+                totalCount: 450,
+            },
+        })
+
+        expect(wrapper.text()).toContain('Stundenpläne 1–100 werden geladen …')
+
+        await wrapper.setProps({
+            loadingDirection: 'next',
+            pageOffset: 300,
+            selectedIndex: 399,
+            timetables: rangeTimetables(301, 400),
+        })
+
+        expect(wrapper.text()).toContain('Stundenpläne 401–450 werden geladen …')
+    })
+
+    it('selects a replacement page from the controlled global index', async () => {
+        const wrapper = shallowMount(TimetableV3PossibleTimetables, {
+            props: {
+                selectedIndex: 1,
+                timetables: rangeTimetables(1, 2),
+                totalCount: 2,
+            },
+        })
+
+        await wrapper.setProps({
+            pageOffset: 2,
+            selectedIndex: 2,
+            timetables: rangeTimetables(3, 3),
+            totalCount: 3,
         })
 
         expect((wrapper.vm as any).selectedTimetableIndex).toBe(0)
-        expect((wrapper.vm as any).selectedTimetable.key).toBe('replacement')
+        expect((wrapper.vm as any).selectedTimetable.key).toBe('timetable-3')
     })
 
     it('fails clearly when the result list contains no displayable timetable', () => {

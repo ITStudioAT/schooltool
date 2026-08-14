@@ -11,7 +11,10 @@ use Illuminate\Support\Collection;
 
 class StudentTimetableCompletedCourseHistoryService
 {
-    public function __construct(private StudentTimetableRecognitionIdentityService $identityService) {}
+    public function __construct(
+        private StudentTimetableRecognitionIdentityService $identityService,
+        private StudentTimetableOverviewService $overviewService,
+    ) {}
 
     /**
      * @return list<array<string, mixed>>
@@ -94,20 +97,33 @@ class StudentTimetableCompletedCourseHistoryService
         int $schoolyearId,
         ?string $studentCode,
     ): StudentTimetableStudyProgram {
+        return $this->studyInformationForStudentCode($user, $schoolyearId, $studentCode)['study_program'];
+    }
+
+    /** @return array{study_program: StudentTimetableStudyProgram, subject_plan: ?string, subject_plan_mismatch: bool} */
+    public function studyInformationForStudentCode(
+        User $user,
+        int $schoolyearId,
+        ?string $studentCode,
+    ): array {
         if (! $studentCode) {
-            return StudentTimetableStudyProgram::Normalstudium;
+            return [
+                'study_program' => StudentTimetableStudyProgram::Normalstudium,
+                'subject_plan' => null,
+                'subject_plan_mismatch' => false,
+            ];
         }
 
-        $studentStudyProgram = Import116::query()
+        $student = Import116::query()
             ->where('school_id', $user->school_id)
             ->where('schoolyear_id', $schoolyearId)
             ->where('student_code', $studentCode)
-            ->first(['study_program'])
-            ?->study_program;
-
-        if ($studentStudyProgram) {
-            return $studentStudyProgram;
-        }
+            ->first(['class']);
+        $studyProgram = $this->overviewService->isKompaktunterrichtClass((string) $student?->class)
+            ? StudentTimetableStudyProgram::Kompaktstudium
+            : StudentTimetableStudyProgram::Normalstudium;
+        $subjectPlan = null;
+        $subjectPlanMismatch = false;
 
         $rowsByImport = StudentTimetableRecognitionRow::query()
             ->where('school_id', $user->school_id)
@@ -119,24 +135,31 @@ class StudentTimetableCompletedCourseHistoryService
             ->groupBy('student_timetable_recognition_import_id');
 
         foreach ($rowsByImport as $recognitionRows) {
-            $studyPrograms = $recognitionRows
-                ->map(fn (StudentTimetableRecognitionRow $row): ?StudentTimetableStudyProgram => StudentTimetableStudyProgram::fromSubjectPlan(
-                    data_get($row->raw_data, 'stundentafel'),
-                ))
+            $subjectPlans = $recognitionRows
+                ->map(fn (StudentTimetableRecognitionRow $row): string => trim((string) data_get(
+                    $row->raw_data,
+                    'stundentafel',
+                    '',
+                )))
                 ->filter()
-                ->unique(fn (StudentTimetableStudyProgram $program): string => $program->value)
+                ->unique(fn (string $value): string => mb_strtoupper($value, 'UTF-8'))
                 ->values();
 
-            if ($studyPrograms->count() === 1) {
-                return $studyPrograms->first();
-            }
-
-            if ($studyPrograms->count() > 1) {
-                return StudentTimetableStudyProgram::Normalstudium;
+            if ($subjectPlan === null && $subjectPlans->isNotEmpty()) {
+                $subjectPlan = $subjectPlans->implode(' · ');
+                $subjectPlanMismatch = $subjectPlans->contains(
+                    fn (string $value): bool => ($subjectPlanStudyProgram = StudentTimetableStudyProgram::fromSubjectPlan($value)) !== null
+                        && $subjectPlanStudyProgram !== $studyProgram,
+                );
+                break;
             }
         }
 
-        return StudentTimetableStudyProgram::Normalstudium;
+        return [
+            'study_program' => $studyProgram,
+            'subject_plan' => $subjectPlan,
+            'subject_plan_mismatch' => $subjectPlanMismatch,
+        ];
     }
 
     /**

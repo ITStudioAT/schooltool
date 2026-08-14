@@ -15,6 +15,12 @@ class RobotTimetableBackendSetupService
 {
     private const MAX_BACKEND_TIMETABLE_VARIATIONS = 200000;
 
+    private const V3_CHECKING_PROGRESS_PERCENT = 80;
+
+    private const V3_MATERIALIZING_PROGRESS_PERCENT = 85;
+
+    private const V3_COMPACTING_PROGRESS_PERCENT = 90;
+
     private const TIMETABLE_VARIATION_CACHE_VERSION = 5;
 
     private const TIMETABLE_VARIATION_CACHE_TTL_MINUTES = 20;
@@ -507,13 +513,16 @@ class RobotTimetableBackendSetupService
     ): array {
         return collect($subjectRows)
             ->filter(fn (array $subject): bool => ($subject['is_active'] ?? true) !== false)
-            ->filter(fn (array $subject): bool => $this->subjectMatchesSelectedBranch($subject, $settings))
-            ->filter(fn (array $subject): bool => $this->subjectMatchesSelectedChoices($subject, $settings))
+            ->filter(fn (array $subject): bool => $this->selectedModulesAreAuthoritative($settings)
+                || $this->subjectMatchesSelectedBranch($subject, $settings))
+            ->filter(fn (array $subject): bool => $this->selectedModulesAreAuthoritative($settings)
+                || $this->subjectMatchesSelectedChoices($subject, $settings))
             ->flatMap(fn (array $subject): array => $this->courseVariantsFromSubject(
                 $subject,
                 $subjectMappings,
                 $courseGroups,
                 $settings,
+                'selected_course_keys',
             ))
             ->reduce(function (array $coursesByKey, array $course) use ($settings): array {
                 foreach ($this->availabilityCourseLookupKeys($course, $settings) as $courseKey) {
@@ -1283,6 +1292,7 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
      * @param  array<string, list<string>>  $requiredCourseGroupsByModule
+     * @param  (callable(int, int, string, int): void)|null  $progressCallback
      * @return array<string, mixed>
      */
     public function calculateAllPossibleTimetableVariations(
@@ -1295,6 +1305,8 @@ class RobotTimetableBackendSetupService
         array $selectedQualityCriterionKeys = [],
         array $requiredCourseGroupsByModule = [],
         bool $includeOneCourseRemovalCountsWhenNoPossible = false,
+        bool $calculateNoSaturdayTimetableCount = true,
+        ?callable $progressCallback = null,
     ): array {
         $this->resetRuntimeCache();
         $settings['require_complete_course_group_options'] = true;
@@ -1317,20 +1329,32 @@ class RobotTimetableBackendSetupService
             $selectedQualityCriterionKeys,
             requireAllSelectedCourses: true,
             requiredCourseGroupsByModule: $requiredCourseGroupsByModule,
+            calculateNoSaturdayTimetableCount: $calculateNoSaturdayTimetableCount,
+            progressCallback: $progressCallback,
         );
         $maximumTimetables = max(1, $maximumTimetables);
+        $combinationCount = (int) $base['counts']['timetable_variation_count'];
         $possibleTimetableCount = (int) $base['counts']['full_green_timetable_count']
             + (int) $base['counts']['green_timetable_count'];
-
-        if ($possibleTimetableCount > $maximumTimetables) {
-            throw ValidationException::withMessages([
-                'modules' => sprintf(
-                    'Diese Auswahl erzeugt %s mögliche Stundenpläne. Für eine vollständige Ausgabe sind höchstens %s Stundenpläne erlaubt.',
-                    number_format($possibleTimetableCount, 0, ',', '.'),
-                    number_format($maximumTimetables, 0, ',', '.'),
-                ),
-            ]);
+        $materializationPhase = $includeOneCourseRemovalCountsWhenNoPossible && $possibleTimetableCount === 0
+            ? 'analyzing_solutions'
+            : 'materializing';
+        if ($progressCallback !== null) {
+            $progressCallback(
+                self::V3_MATERIALIZING_PROGRESS_PERCENT,
+                $combinationCount,
+                $materializationPhase,
+                $combinationCount,
+            );
         }
+        $timetables = $this->allPossibleTimetables(
+            $base['course_options'],
+            $maximumTimetables,
+            (int) $base['counts']['full_green_timetable_count'],
+        );
+        $oneCourseRemovalCounts = $includeOneCourseRemovalCountsWhenNoPossible && $possibleTimetableCount === 0
+            ? $this->oneCourseRemovalCounts($base)
+            : [];
 
         $result = [
             ...$this->calculateTimetableVariationsFromBase(
@@ -1340,13 +1364,20 @@ class RobotTimetableBackendSetupService
                 selectedTimetable: null,
                 selectedTimetableResolved: true,
             ),
-            'timetables' => $this->allPossibleTimetables($base['course_options']),
+            'timetables' => $timetables,
         ];
 
         if ($includeOneCourseRemovalCountsWhenNoPossible) {
-            $result['one_course_removal_counts'] = $possibleTimetableCount === 0
-                ? $this->oneCourseRemovalCounts($base)
-                : [];
+            $result['one_course_removal_counts'] = $oneCourseRemovalCounts;
+        }
+
+        if ($progressCallback !== null) {
+            $progressCallback(
+                self::V3_COMPACTING_PROGRESS_PERCENT,
+                $combinationCount,
+                'compacting',
+                $combinationCount,
+            );
         }
 
         return $result;
@@ -1517,6 +1548,7 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  list<string>  $selectedQualityCriterionKeys
      * @param  array<string, list<string>>  $requiredCourseGroupsByModule
+     * @param  (callable(int, int, string, int): void)|null  $progressCallback
      * @return array{course_options: list<list<array<string, mixed>>>, additional_course_options: list<list<array<string, mixed>>>, selected_additional_course_count: int, counts: array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}, quality_summary: array<string, mixed>, quality_combination_counts: array<string, int>, selected_quality_criterion_keys: list<string>, selected_quality_subset: array{steps: array<string, array<string, mixed>>, counts: array<string, int>, total: int}, all_quality_criteria_count: int, selected_quality_criteria_count: int}
      */
     private function timetableVariationBase(
@@ -1529,6 +1561,8 @@ class RobotTimetableBackendSetupService
         ?int $maximumMaterializedTimetables = null,
         bool $requireAllSelectedCourses = false,
         array $requiredCourseGroupsByModule = [],
+        bool $calculateNoSaturdayTimetableCount = true,
+        ?callable $progressCallback = null,
     ): array {
         $input = $this->timetableVariationInput($subjectRows, $subjectMappings, $courseGroups, $settings);
 
@@ -1568,6 +1602,38 @@ class RobotTimetableBackendSetupService
             ]);
         }
 
+        $combinationCount = $input['selected_courses'] === [] || $input['has_missing_options']
+            ? 0
+            : $this->totalVariationCount($input['course_options']);
+        if ($progressCallback !== null) {
+            $progressCallback(0, $combinationCount, 'checking', 0);
+        }
+        $checkedCombinationCount = 0;
+        $nextProgressPercent = 5;
+        $combinationCheckedCallback = $progressCallback === null
+            ? null
+            : function () use (
+                $combinationCount,
+                $progressCallback,
+                &$checkedCombinationCount,
+                &$nextProgressPercent,
+            ): void {
+                $checkedCombinationCount++;
+
+                while (
+                    $nextProgressPercent <= self::V3_CHECKING_PROGRESS_PERCENT
+                    && ($checkedCombinationCount * self::V3_CHECKING_PROGRESS_PERCENT)
+                        >= ($combinationCount * $nextProgressPercent)
+                ) {
+                    $progressCallback(
+                        $nextProgressPercent,
+                        $combinationCount,
+                        'checking',
+                        $checkedCombinationCount,
+                    );
+                    $nextProgressPercent += 5;
+                }
+            };
         $counts = $this->timetableVariationCounts(
             $input['selected_courses'],
             $input['course_options'],
@@ -1575,6 +1641,8 @@ class RobotTimetableBackendSetupService
             $input['additional_course_options'],
             $this->selectedBackendTimetableType($settings['selected_timetable_type'] ?? 'full_green') ?? 'full_green',
             ($settings['selected_additional_courses_required'] ?? false) === true,
+            $combinationCheckedCallback,
+            $calculateNoSaturdayTimetableCount,
         );
         $qualityResult = $this->qualityResultForSelectedTimetableType(
             $input['course_options'],
@@ -1925,6 +1993,7 @@ class RobotTimetableBackendSetupService
      * @param  list<array<string, mixed>>  $selectedCourses
      * @param  list<list<array<string, mixed>>>  $courseOptions
      * @param  list<list<array<string, mixed>>>  $additionalCourseOptions
+     * @param  (callable(): void)|null  $combinationCheckedCallback
      * @return array{timetable_variation_count: int, full_green_timetable_count: int, green_timetable_count: int, red_timetable_count: int, selected_course_count: int, additional_course_timetable_count: int, no_saturday_timetable_count: int}
      */
     private function timetableVariationCounts(
@@ -1934,6 +2003,8 @@ class RobotTimetableBackendSetupService
         array $additionalCourseOptions,
         string $selectedTimetableType,
         bool $selectedAdditionalCoursesRequired,
+        ?callable $combinationCheckedCallback = null,
+        bool $calculateNoSaturdayTimetableCount = true,
     ): array {
         if ($selectedCourses === []) {
             return [
@@ -1960,7 +2031,10 @@ class RobotTimetableBackendSetupService
         }
 
         $timetableVariationCount = $this->totalVariationCount($courseOptions);
-        $typeCounts = $this->timetableTypeVariationCounts($courseOptions);
+        $typeCounts = $this->timetableTypeVariationCounts(
+            $courseOptions,
+            combinationCheckedCallback: $combinationCheckedCallback,
+        );
         $hasMissingAdditionalOptions = $additionalCourseOptions === []
             || collect($additionalCourseOptions)->contains(fn (array $options): bool => $options === []);
         $additionalTypeCounts = $hasMissingAdditionalOptions
@@ -1972,11 +2046,13 @@ class RobotTimetableBackendSetupService
             $typeCounts = $additionalTypeCounts;
             $timetableVariationCount = array_sum($additionalTypeCounts);
         }
-        $noSaturdayTimetableCount = $this->noSaturdayTimetableCount(
-            $courseOptions,
-            $additionalCourseOptions,
-            $selectedAdditionalCoursesRequired && ! $hasMissingAdditionalOptions,
-        );
+        $noSaturdayTimetableCount = $calculateNoSaturdayTimetableCount
+            ? $this->noSaturdayTimetableCount(
+                $courseOptions,
+                $additionalCourseOptions,
+                $selectedAdditionalCoursesRequired && ! $hasMissingAdditionalOptions,
+            )
+            : 0;
 
         return [
             'timetable_variation_count' => $timetableVariationCount,
@@ -2135,6 +2211,7 @@ class RobotTimetableBackendSetupService
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
+     * @param  (callable(): void)|null  $combinationCheckedCallback
      * @return array{full_green: int, green: int, conflict: int}
      */
     private function timetableTypeVariationCounts(
@@ -2145,8 +2222,13 @@ class RobotTimetableBackendSetupService
         ?array $usedRegularWeeklySlotSummary = null,
         bool $isFullGreenCandidate = true,
         bool $hasRegularConflict = false,
+        ?callable $combinationCheckedCallback = null,
     ): array {
         if ($courseIndex >= count($courseOptions)) {
+            if ($combinationCheckedCallback !== null) {
+                $combinationCheckedCallback();
+            }
+
             $type = $hasRegularConflict
                 ? 'conflict'
                 : ($isFullGreenCandidate ? 'full_green' : 'green');
@@ -2184,6 +2266,7 @@ class RobotTimetableBackendSetupService
                 $nextState['used_regular_weekly_slot_summary'],
                 $nextState['is_full_green_candidate'],
                 $nextState['has_regular_conflict'],
+                $combinationCheckedCallback,
             );
 
             $counts['full_green'] += $nextCounts['full_green'];
@@ -3775,8 +3858,11 @@ class RobotTimetableBackendSetupService
      * @param  list<list<array<string, mixed>>>  $courseOptions
      * @return list<array<string, mixed>>
      */
-    private function allPossibleTimetables(array $courseOptions): array
-    {
+    private function allPossibleTimetables(
+        array $courseOptions,
+        int $maximumTimetables,
+        int $fullGreenTimetableCount,
+    ): array {
         if ($courseOptions === [] || collect($courseOptions)->contains(fn (array $options): bool => $options === [])) {
             return [];
         }
@@ -3789,11 +3875,17 @@ class RobotTimetableBackendSetupService
             'full_green' => 0,
             'green' => 0,
         ];
+        $fullGreenLimit = min(max(1, $maximumTimetables), max(0, $fullGreenTimetableCount));
+        $limitsByType = [
+            'full_green' => $fullGreenLimit,
+            'green' => max(0, max(1, $maximumTimetables) - $fullGreenLimit),
+        ];
 
         $this->collectAllPossibleTimetables(
             $courseOptions,
             $timetablesByType,
             $numbersByType,
+            $limitsByType,
         );
 
         return [
@@ -3806,6 +3898,7 @@ class RobotTimetableBackendSetupService
      * @param  list<list<array<string, mixed>>>  $courseOptions
      * @param  array{full_green: list<array<string, mixed>>, green: list<array<string, mixed>>}  $timetablesByType
      * @param  array{full_green: int, green: int}  $numbersByType
+     * @param  array{full_green: int, green: int}  $limitsByType
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedAllSummary
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularDateSummary
      * @param  array{weekly: array<string, true>, dated: array<string, true>, dated_weekly: array<string, true>, has_overlap: bool}|null  $usedRegularWeeklySlotSummary
@@ -3815,6 +3908,7 @@ class RobotTimetableBackendSetupService
         array $courseOptions,
         array &$timetablesByType,
         array &$numbersByType,
+        array $limitsByType,
         int $courseIndex = 0,
         ?array $usedAllSummary = null,
         ?array $usedRegularDateSummary = null,
@@ -3823,12 +3917,24 @@ class RobotTimetableBackendSetupService
         bool $hasRegularConflict = false,
         array $selectedOptions = [],
     ): void {
+        if (
+            count($timetablesByType['full_green']) >= $limitsByType['full_green']
+            && count($timetablesByType['green']) >= $limitsByType['green']
+        ) {
+            return;
+        }
+
         if ($hasRegularConflict) {
             return;
         }
 
         if ($courseIndex >= count($courseOptions)) {
             $type = $isFullGreenCandidate ? 'full_green' : 'green';
+
+            if (count($timetablesByType[$type]) >= $limitsByType[$type]) {
+                return;
+            }
+
             $number = ++$numbersByType[$type];
             $timetablesByType[$type][] = $this->timetableFromOptions($selectedOptions, $type, $number);
 
@@ -3853,6 +3959,7 @@ class RobotTimetableBackendSetupService
                 $courseOptions,
                 $timetablesByType,
                 $numbersByType,
+                $limitsByType,
                 $courseIndex + 1,
                 $nextState['used_all_summary'],
                 $nextState['used_regular_date_summary'],
@@ -4693,13 +4800,16 @@ class RobotTimetableBackendSetupService
 
         return collect($subjectRows)
             ->filter(fn (array $subject): bool => ($subject['is_active'] ?? true) !== false)
-            ->filter(fn (array $subject): bool => $this->subjectMatchesSelectedBranch($subject, $settings))
-            ->filter(fn (array $subject): bool => $this->subjectMatchesSelectedChoices($subject, $settings))
+            ->filter(fn (array $subject): bool => $this->selectedModulesAreAuthoritative($settings)
+                || $this->subjectMatchesSelectedBranch($subject, $settings))
+            ->filter(fn (array $subject): bool => $this->selectedModulesAreAuthoritative($settings)
+                || $this->subjectMatchesSelectedChoices($subject, $settings))
             ->flatMap(fn (array $subject): array => $this->courseVariantsFromSubject(
                 $subject,
                 $subjectMappings,
                 $courseGroups,
                 $settings,
+                $selectedCourseSettingsKey,
             ))
             ->when(
                 $selectedCourseKeys->isNotEmpty(),
@@ -4845,6 +4955,95 @@ class RobotTimetableBackendSetupService
         }
 
         return $this->normalizedCourseCode($selectedCourseKey);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  array<string, mixed>  $settings
+     */
+    private function authoritativeSelectedCourseCode(
+        array $subject,
+        array $subjectMappings,
+        array $settings,
+        string $selectedCourseSettingsKey,
+    ): ?string {
+        $matchingCourseCodes = collect($this->stringList($settings[$selectedCourseSettingsKey] ?? []))
+            ->map(fn (string $selectedCourseCode): string => trim($selectedCourseCode))
+            ->filter()
+            ->filter(fn (string $selectedCourseCode): bool => $this->authoritativeCourseCodeMatchesSubject(
+                $selectedCourseCode,
+                $subject,
+                $subjectMappings,
+            ))
+            ->unique(fn (string $selectedCourseCode): string => $this->normalizedCourseCode($selectedCourseCode))
+            ->values();
+
+        return $matchingCourseCodes->count() === 1
+            ? $matchingCourseCodes->first()
+            : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  list<array<string, mixed>>  $subjectMappings
+     */
+    private function authoritativeCourseCodeMatchesSubject(
+        string $selectedCourseCode,
+        array $subject,
+        array $subjectMappings,
+    ): bool {
+        if (preg_match(
+            '/^([A-ZÄÖÜ]+)(\d+)$/u',
+            $this->normalizedCourseCode($selectedCourseCode),
+            $selectedCourseParts,
+        ) !== 1 || $selectedCourseParts[2] !== $this->subjectModuleNumber($subject)) {
+            return false;
+        }
+
+        $selectedCourseBase = $selectedCourseParts[1];
+
+        if ($this->isReligionSubject($subject)) {
+            return in_array($selectedCourseBase, ['R', 'RK', 'REV', 'RIS', 'ROR', 'ET', 'ETH'], true);
+        }
+
+        if ($this->isLanguageSubject($subject)) {
+            return in_array($selectedCourseBase, ['L', 'F', 'S', 'SPA'], true);
+        }
+
+        $subjectAliases = collect([
+            $this->subjectBaseKey($subject),
+            $this->courseCodeWithoutModule((string) ($subject['json_code'] ?? '')),
+        ])
+            ->flatMap(fn (string $value): array => $this->courseCodeAliasParts($value))
+            ->flatMap(fn (string $value): array => [$value, $this->defaultTimetableCodeAlias($value)])
+            ->map(fn (string $value): string => $this->normalizedCourseCode($value))
+            ->filter()
+            ->unique()
+            ->values();
+        $mappedAliases = collect($this->activeSubjectMappings($subjectMappings))
+            ->filter(fn (array $mapping): bool => $subjectAliases->contains(
+                $this->normalizedCourseCode($mapping['json_subject'] ?? ''),
+            ) || $subjectAliases->contains(
+                $this->normalizedCourseCode($mapping['tt_subject'] ?? ''),
+            ))
+            ->flatMap(fn (array $mapping): array => [
+                (string) ($mapping['json_subject'] ?? ''),
+                (string) ($mapping['tt_subject'] ?? ''),
+            ])
+            ->flatMap(fn (string $value): array => $this->courseCodeAliasParts($this->courseCodeWithoutModule($value)))
+            ->flatMap(fn (string $value): array => [$value, $this->defaultTimetableCodeAlias($value)])
+            ->map(fn (string $value): string => $this->normalizedCourseCode($value))
+            ->filter();
+
+        return $subjectAliases
+            ->merge($mappedAliases)
+            ->contains($selectedCourseBase);
+    }
+
+    /** @param  array<string, mixed>  $settings */
+    private function selectedModulesAreAuthoritative(array $settings): bool
+    {
+        return ($settings['selected_modules_are_authoritative'] ?? false) === true;
     }
 
     /**
@@ -4994,7 +5193,33 @@ class RobotTimetableBackendSetupService
         array $subjectMappings,
         array $courseGroups,
         array $settings,
+        string $selectedCourseSettingsKey,
     ): array {
+        if ($this->selectedModulesAreAuthoritative($settings)) {
+            return collect($this->subjectCourseVariants($subject))
+                ->map(function (array $variant) use ($subjectMappings, $courseGroups, $settings, $selectedCourseSettingsKey): ?array {
+                    $authoritativeCourseCode = $this->authoritativeSelectedCourseCode(
+                        $variant,
+                        $subjectMappings,
+                        $settings,
+                        $selectedCourseSettingsKey,
+                    );
+
+                    return $authoritativeCourseCode === null
+                        ? null
+                        : $this->courseFromSubject(
+                            $variant,
+                            $subjectMappings,
+                            $courseGroups,
+                            $settings,
+                            $authoritativeCourseCode,
+                        );
+                })
+                ->filter(fn (mixed $course): bool => is_array($course))
+                ->values()
+                ->all();
+        }
+
         return collect($this->subjectCourseVariants($subject))
             ->map(fn (array $variant): array => $this->courseFromSubject($variant, $subjectMappings, $courseGroups, $settings))
             ->all();
@@ -5038,8 +5263,9 @@ class RobotTimetableBackendSetupService
         array $subjectMappings,
         array $courseGroups,
         array $settings,
+        ?string $authoritativeCourseCode = null,
     ): array {
-        $courseCode = $this->selectedCourseCode($subject, $settings);
+        $courseCode = $this->selectedCourseCode($subject, $settings, $authoritativeCourseCode);
         $regularCourseHours = $settings['regular_course_hours'] ?? [];
         $regularHours = is_array($regularCourseHours)
             ? $regularCourseHours[$this->normalizedCourseCode($courseCode)] ?? null
@@ -5057,7 +5283,13 @@ class RobotTimetableBackendSetupService
             ]),
             'code' => $courseCode,
             'name' => $subject['name'] ?? $subject['json_subject'] ?? $subject['json_code'] ?? '',
-            'ttCodes' => $this->selectedCourseTimetableCodes($subject, $subjectMappings, $courseGroups, $settings),
+            'ttCodes' => $this->selectedCourseTimetableCodes(
+                $subject,
+                $subjectMappings,
+                $courseGroups,
+                $settings,
+                $authoritativeCourseCode,
+            ),
             'hours' => (float) ($subject['hours_per_week'] ?? 0),
             'regular_hours' => is_numeric($regularHours) && (float) $regularHours > 0
                 ? (float) $regularHours
@@ -5077,12 +5309,14 @@ class RobotTimetableBackendSetupService
         array $subjectMappings,
         array $courseGroups,
         array $settings,
+        ?string $authoritativeCourseCode = null,
     ): array {
         $moduleNumber = $this->subjectModuleNumber($subject);
+        $courseCode = $this->selectedCourseCode($subject, $settings, $authoritativeCourseCode);
         $mappingCodes = collect($this->activeSubjectMappings($subjectMappings))
             ->filter(fn (array $mapping): bool => in_array(
                 $this->normalizedCourseCode($mapping['json_subject'] ?? ''),
-                $this->subjectMappingJsonAliases($subject, $settings),
+                $this->subjectMappingJsonAliases($subject, $settings, $authoritativeCourseCode),
                 true,
             ))
             ->flatMap(fn (array $mapping): array => $this->timetableCodesForMappedSubject(
@@ -5093,8 +5327,8 @@ class RobotTimetableBackendSetupService
             ))
             ->all();
 
-        $fallbackCodes = $this->isLanguageSubject($subject)
-            ? [$this->selectedCourseCode($subject, $settings)]
+        $fallbackCodes = $authoritativeCourseCode !== null || $this->isLanguageSubject($subject)
+            ? [$courseCode]
             : $this->timetableCodesForMappedSubject(
                 (string) ($subject['tt_subject'] ?? ''),
                 $moduleNumber,
@@ -5103,7 +5337,7 @@ class RobotTimetableBackendSetupService
             );
 
         return collect([
-            $this->selectedCourseCode($subject, $settings),
+            $courseCode,
             ...$mappingCodes,
             ...$fallbackCodes,
         ])
@@ -5370,8 +5604,26 @@ class RobotTimetableBackendSetupService
      * @param  array<string, mixed>  $settings
      * @return list<string>
      */
-    private function subjectMappingJsonAliases(array $subject, array $settings): array
-    {
+    private function subjectMappingJsonAliases(
+        array $subject,
+        array $settings,
+        ?string $authoritativeCourseCode = null,
+    ): array {
+        if ($authoritativeCourseCode !== null) {
+            $selectedCourseBase = $this->courseCodeWithoutModule($authoritativeCourseCode);
+
+            return collect([
+                $selectedCourseBase,
+                $this->defaultTimetableCodeAlias($selectedCourseBase),
+            ])
+                ->flatMap(fn (string $value): array => $this->courseCodeAliasParts($value))
+                ->map(fn (string $value): string => $this->normalizedCourseCode($value))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+        }
+
         return collect([
             $this->subjectBaseKey($subject),
             $subject['json_subject'] ?? '',
@@ -5390,8 +5642,15 @@ class RobotTimetableBackendSetupService
      * @param  array<string, mixed>  $subject
      * @param  array<string, mixed>  $settings
      */
-    private function selectedCourseCode(array $subject, array $settings): string
-    {
+    private function selectedCourseCode(
+        array $subject,
+        array $settings,
+        ?string $authoritativeCourseCode = null,
+    ): string {
+        if ($authoritativeCourseCode !== null) {
+            return $authoritativeCourseCode;
+        }
+
         if ($this->isReligionSubject($subject)) {
             return (string) data_get($settings, 'selection.religion', 'ETH').$this->subjectModuleNumber($subject);
         }

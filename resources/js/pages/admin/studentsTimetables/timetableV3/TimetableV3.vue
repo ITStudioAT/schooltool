@@ -105,6 +105,30 @@
                             :aria-label="emailCopyStatus === 'copied' ? 'E-Mail kopiert' : 'E-Mail kopieren'"
                             @click="copySelectedStudentEmail" />
                     </div>
+                    <div
+                        v-if="planningMode === 'with_student' && (selectedStudentSubjectPlanMismatch || selectedStudentSchoolLevelMismatch)"
+                        class="timetable-v3__student-data-fields">
+                        <span
+                            v-if="selectedStudentSubjectPlanMismatch"
+                            class="timetable-v3__student-data-field"
+                            :class="{ 'timetable-v3__student-data-field--invalid': selectedStudentSubjectPlanMismatch }"
+                            :aria-invalid="selectedStudentSubjectPlanMismatch ? 'true' : undefined"
+                            :title="selectedStudentSubjectPlanMismatch ? 'Stundentafel passt nicht zur Klasse' : undefined">
+                            <span class="timetable-v3__student-data-label">Stundentafel</span>
+                            <span>{{ selectedStudentSubjectPlan }}</span>
+                        </span>
+                        <button
+                            v-if="selectedStudentSchoolLevelMismatch"
+                            type="button"
+                            class="timetable-v3__student-data-field"
+                            :class="{ 'timetable-v3__student-data-field--invalid': selectedStudentSchoolLevelMismatch }"
+                            :aria-invalid="selectedStudentSchoolLevelMismatch ? 'true' : undefined"
+                            :title="selectedStudentSchoolLevelMismatch ? 'Schulstufe ist für diese Studienform nicht gültig – zum Korrigieren anklicken' : undefined"
+                            @click="openSchoolLevelDialog">
+                            <span class="timetable-v3__student-data-label">Schulstufe</span>
+                            <span>{{ selectedStudentImportedSchoolLevel }}</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div v-if="planningMode === 'with_student'" class="timetable-v3__student-info-actions">
@@ -138,7 +162,14 @@
                                         :key="`hover-selection-${item.key}`"
                                         class="timetable-v3__info-hover-item">
                                         <span class="timetable-v3__info-label">{{ item.label }}</span>
-                                        <span class="timetable-v3__info-value">{{ item.value }}</span>
+                                        <span class="timetable-v3__info-value">
+                                            {{ item.value }}
+                                            <span
+                                                v-if="item.key === 'semester'"
+                                                class="timetable-v3__info-imported-school-level">
+                                                ({{ selectedStudentImportedSchoolLevel }})
+                                            </span>
+                                        </span>
                                     </div>
                                 </div>
                                 <div v-if="studentSelectionDetailsLoading" class="timetable-v3__info-hover-status">
@@ -362,6 +393,30 @@
                             :aria-label="emailCopyStatus === 'copied' ? 'E-Mail kopiert' : 'E-Mail kopieren'"
                             @click="copySelectedStudentEmail" />
                     </div>
+                    <div
+                        v-if="planningMode === 'with_student' && (selectedStudentSubjectPlanMismatch || selectedStudentSchoolLevelMismatch)"
+                        class="timetable-v3__student-data-fields">
+                        <span
+                            v-if="selectedStudentSubjectPlanMismatch"
+                            class="timetable-v3__student-data-field"
+                            :class="{ 'timetable-v3__student-data-field--invalid': selectedStudentSubjectPlanMismatch }"
+                            :aria-invalid="selectedStudentSubjectPlanMismatch ? 'true' : undefined"
+                            :title="selectedStudentSubjectPlanMismatch ? 'Stundentafel passt nicht zur Klasse' : undefined">
+                            <span class="timetable-v3__student-data-label">Stundentafel</span>
+                            <span>{{ selectedStudentSubjectPlan }}</span>
+                        </span>
+                        <button
+                            v-if="selectedStudentSchoolLevelMismatch"
+                            type="button"
+                            class="timetable-v3__student-data-field"
+                            :class="{ 'timetable-v3__student-data-field--invalid': selectedStudentSchoolLevelMismatch }"
+                            :aria-invalid="selectedStudentSchoolLevelMismatch ? 'true' : undefined"
+                            :title="selectedStudentSchoolLevelMismatch ? 'Schulstufe ist für diese Studienform nicht gültig – zum Korrigieren anklicken' : undefined"
+                            @click="openSchoolLevelDialog">
+                            <span class="timetable-v3__student-data-label">Schulstufe</span>
+                            <span>{{ selectedStudentImportedSchoolLevel }}</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div v-if="planningMode === 'with_student'" class="timetable-v3__student-info-actions">
@@ -395,7 +450,14 @@
                                         :key="`hover-modules-${item.key}`"
                                         class="timetable-v3__info-hover-item">
                                         <span class="timetable-v3__info-label">{{ item.label }}</span>
-                                        <span class="timetable-v3__info-value">{{ item.value }}</span>
+                                        <span class="timetable-v3__info-value">
+                                            {{ item.value }}
+                                            <span
+                                                v-if="item.key === 'semester'"
+                                                class="timetable-v3__info-imported-school-level">
+                                                ({{ selectedStudentImportedSchoolLevel }})
+                                            </span>
+                                        </span>
                                     </div>
                                 </div>
                                 <div v-if="studentSelectionDetailsLoading" class="timetable-v3__info-hover-status">
@@ -639,6 +701,17 @@
                                 v-if="selectedModuleCount > 0"
                                 class="timetable-v3__schedule-create-action">
                                 <v-btn
+                                    class="timetable-v3__deselect-all-modules-button"
+                                    color="error"
+                                    prepend-icon="mdi-checkbox-multiple-blank-outline"
+                                    size="small"
+                                    type="button"
+                                    variant="tonal"
+                                    :disabled="isSavingState"
+                                    @click.prevent.stop="deselectAllSelectedModules">
+                                    Alle abwählen
+                                </v-btn>
+                                <v-btn
                                     class="timetable-v3__schedule-create-button"
                                     color="primary"
                                     prepend-icon="mdi-calendar-check"
@@ -809,16 +882,16 @@
                                         prepend-icon="mdi-checkbox-multiple-marked-outline"
                                         :disabled="isSavingState || allModulesSelectedForGroup(activeModuleSelectionGroup)"
                                         @click="selectAllModulesInGroup(activeModuleSelectionGroup)">
-                                        {{ usesMainModuleGroups ? 'Alle Module auswählen' : `${activeModuleSelectionGroup.label} Module auswählen` }}
+                                        Alle auswählen
                                     </v-btn>
                                     <v-btn
                                         size="small"
                                         variant="text"
-                                        color="primary"
+                                        color="error"
                                         prepend-icon="mdi-checkbox-multiple-blank-outline"
                                         :disabled="isSavingState || !hasSelectedModulesForGroup(activeModuleSelectionGroup)"
                                         @click="deselectAllModulesInGroup(activeModuleSelectionGroup)">
-                                        {{ usesMainModuleGroups ? 'Alle Module abwählen' : `${activeModuleSelectionGroup.label} Module abwählen` }}
+                                        Alle abwählen
                                     </v-btn>
                                 </div>
                                 <span class="timetable-v3__module-group-panel-count">
@@ -876,6 +949,16 @@
 
                 <div class="timetable-v3__page-actions timetable-v3__page-actions--split">
                     <v-btn
+                        class="timetable-v3__restart-button"
+                        size="large"
+                        color="error"
+                        variant="outlined"
+                        prepend-icon="mdi-restart"
+                        :disabled="!hasPlanningSelectionContext || studentSelectionDetailsLoading || isLoadingState || isSavingState"
+                        @click="restartPlanning">
+                        Neustart
+                    </v-btn>
+                    <v-btn
                         class="timetable-v3__back-button"
                         size="large"
                         color="primary"
@@ -889,7 +972,7 @@
             </template>
 
             <template v-else>
-            <div v-if="timetableCalculationStatus === 'idle'" class="timetable-v3__creation-summary-cards mt-4">
+            <div class="timetable-v3__creation-summary-cards mt-4">
                 <section
                     class="
                         timetable-v3__schedule-mode-card
@@ -942,91 +1025,48 @@
 
                 <section
                     class="
-                        timetable-v3__schedule-mode-card
                         timetable-v3__creation-summary-card
-                        timetable-v3__creation-options-card
+                        timetable-v3__creation-success-card
+                        timetable-v3__calculation-card
                     "
-                    aria-labelledby="timetable-v3-creation-options-title">
-                    <div class="timetable-v3__creation-options-heading">
-                        <span class="timetable-v3__creation-options-icon">
-                            <v-icon icon="mdi-tune-variant" size="26" />
+                    aria-labelledby="timetable-v3-calculation-title">
+                    <div class="timetable-v3__calculation-options" aria-label="Gewählte Optionen">
+                        <span class="timetable-v3__calculation-options-label">Optionen</span>
+                        <span class="timetable-v3__calculation-option-chip">
+                            <v-icon icon="mdi-calendar-clock" size="17" />
+                            Automatisch
                         </span>
-                        <h3 id="timetable-v3-creation-options-title">Optionen</h3>
-                    </div>
+                        <span class="timetable-v3__calculation-option-chip">
+                            <v-icon icon="mdi-bookshelf" size="17" />
+                            {{ selectedModuleCount }} {{ selectedModuleCount === 1 ? 'Modul' : 'Module' }}
+                            · {{ selectedModuleHoursLabel }} Std.
+                        </span>
+                        <span class="timetable-v3__calculation-option-chip">
+                            <v-icon icon="mdi-calendar-weekend-outline" size="17" />
+                            Samstag: {{ allowSaturdayLessons ? 'Ja' : 'Nein' }}
+                        </span>
 
-                    <div class="timetable-v3__creation-option-row">
-                        <span class="timetable-v3__creation-option-label">Samstags Unterricht?</span>
-                        <div class="timetable-v3__creation-option-control">
-                            <span>{{ allowSaturdayLessons ? 'Ja' : 'Nein' }}</span>
-                            <v-switch
-                                :model-value="allowSaturdayLessons"
-                                aria-label="Samstags Unterricht erlauben"
-                                color="teal-darken-1"
-                                :disabled="isSavingState || timetableCalculationStatus === 'calculating'"
-                                hide-details
-                                inset
-                                @update:model-value="updateAllowSaturdayLessons" />
-                        </div>
-                    </div>
-
-                    <div class="timetable-v3__creation-options-action">
-                        <v-btn
-                            class="timetable-v3__creation-start-button"
-                            block
-                            color="teal-darken-1"
-                            elevation="6"
-                            height="52"
-                            prepend-icon="mdi-play-circle-outline"
-                            size="large"
-                            :disabled="isSavingState || timetableCalculationStatus === 'calculating'"
-                            @click="calculatePossibleTimetables">
-                            Los!
-                        </v-btn>
-                    </div>
-                </section>
-            </div>
-
-            <section
-                v-else
-                class="timetable-v3__calculation-card mt-4"
-                aria-labelledby="timetable-v3-calculation-title">
-                <div class="timetable-v3__calculation-options" aria-label="Gewählte Optionen">
-                    <span class="timetable-v3__calculation-options-label">Optionen</span>
-                    <span class="timetable-v3__calculation-option-chip">
-                        <v-icon icon="mdi-calendar-clock" size="17" />
-                        Automatisch
-                    </span>
-                    <span class="timetable-v3__calculation-option-chip">
-                        <v-icon icon="mdi-bookshelf" size="17" />
-                        {{ selectedModuleCount }} {{ selectedModuleCount === 1 ? 'Modul' : 'Module' }}
-                        · {{ selectedModuleHoursLabel }} Std.
-                    </span>
-                    <span class="timetable-v3__calculation-option-chip">
-                        <v-icon icon="mdi-calendar-weekend-outline" size="17" />
-                        Samstag: {{ allowSaturdayLessons ? 'Ja' : 'Nein' }}
-                    </span>
-
-                    <div
-                        v-if="timetableCalculationModules.length"
-                        class="timetable-v3__calculation-modules">
-                        <span class="timetable-v3__calculation-modules-label">Verwendete Module</span>
                         <div
-                            class="timetable-v3__calculation-module-list"
-                            aria-label="Für die Berechnung verwendete Module"
-                            role="list">
-                            <span
-                                v-for="module in timetableCalculationModules"
-                                :key="module.key"
-                                class="timetable-v3__calculation-module-chip"
-                                role="listitem">
-                                <strong>{{ module.code }}</strong>
-                                <span v-if="module.name && module.name !== module.code">· {{ module.name }}</span>
-                            </span>
+                            v-if="timetableCalculationModules.length"
+                            class="timetable-v3__calculation-modules">
+                            <span class="timetable-v3__calculation-modules-label">Verwendete Module</span>
+                            <div
+                                class="timetable-v3__calculation-module-list"
+                                aria-label="Für die Berechnung verwendete Module"
+                                role="list">
+                                <span
+                                    v-for="module in timetableCalculationModules"
+                                    :key="module.key"
+                                    class="timetable-v3__calculation-module-chip"
+                                    role="listitem">
+                                    <strong>{{ module.code }}</strong>
+                                    <span v-if="module.name && module.name !== module.code">· {{ module.name }}</span>
+                                </span>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div class="timetable-v3__calculation-content">
+                    <div class="timetable-v3__calculation-content">
                     <div class="timetable-v3__calculation-heading">
                         <span class="timetable-v3__calculation-icon">
                             <v-icon icon="mdi-calendar-search" size="27" />
@@ -1035,19 +1075,40 @@
                     </div>
 
                     <div
-                        v-if="timetableCalculationStatus === 'calculating'"
+                        v-if="timetableCalculationStatus === 'idle'"
+                        class="timetable-v3__calculation-state"
+                        aria-live="polite"
+                        role="status">
+                        <v-icon icon="mdi-calendar-clock-outline" color="teal-darken-1" size="34" />
+                        <div>
+                            <strong>Die Berechnung wurde noch nicht gestartet.</strong>
+                            <span>Starten Sie die Berechnung über „Stundenplan erstellen“ in der Modulauswahl.</span>
+                        </div>
+                    </div>
+
+                    <div
+                        v-else-if="timetableCalculationStatus === 'calculating'"
                         class="timetable-v3__calculation-state timetable-v3__calculation-state--loading"
                         aria-busy="true"
                         aria-live="polite"
                         role="status">
-                        <v-progress-circular
-                            color="teal-darken-1"
-                            indeterminate
-                            size="44"
-                            width="5" />
-                        <div>
-                            <strong>Mögliche Stundenplanvarianten werden berechnet …</strong>
-                            <span>Die ausgewählten Unterrichte werden kombiniert und geprüft.</span>
+                        <div class="timetable-v3__calculation-progress-copy">
+                            <strong>{{ timetableCalculationProgressLabel }}</strong>
+                            <span>{{ timetableCalculationProgressPercent }} % Gesamtfortschritt</span>
+                        </div>
+                        <div
+                            class="timetable-v3__calculation-led-progress"
+                            role="progressbar"
+                            aria-label="Fortschritt der Stundenplanberechnung"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            :aria-valuenow="timetableCalculationProgressPercent">
+                            <span
+                                v-for="segment in timetableCalculationProgressSegments"
+                                :key="segment.percent"
+                                class="timetable-v3__calculation-led-segment"
+                                :class="{ 'timetable-v3__calculation-led-segment--active': segment.active }"
+                                aria-hidden="true" />
                         </div>
                     </div>
 
@@ -1070,7 +1131,7 @@
                     </div>
 
                     <div
-                        v-else
+                        v-else-if="timetableCalculationStatus === 'success'"
                         class="timetable-v3__calculation-result"
                         aria-live="polite"
                         role="status">
@@ -1093,6 +1154,18 @@
                             wurden nur mögliche Stundenpläne.
                         </p>
 
+                        <div
+                            v-if="timetablesTruncated"
+                            class="timetable-v3__calculation-truncated-notice"
+                            role="note">
+                            <v-icon icon="mdi-information-outline" size="23" />
+                            <span>
+                                Nur <strong>{{ possibleTimetableCountLabel }}</strong> von
+                                <strong>{{ totalPossibleTimetableCountLabel }}</strong> möglichen Stundenplänen wurden
+                                gespeichert und werden angezeigt.
+                            </span>
+                        </div>
+
                         <div class="timetable-v3__calculation-counts" aria-label="Zusammenfassung der Berechnung">
                             <span>
                                 <strong>{{ checkedTimetableVariationCountLabel }}</strong>
@@ -1103,16 +1176,29 @@
                                 Konfliktvarianten ausgeschlossen
                             </span>
                         </div>
+                    </div>
+                </div>
+            </section>
 
-                        <TimetableV3PossibleTimetables
-                            v-if="possibleTimetableCount > 0"
-                            :allow-saturday-lessons="allowSaturdayLessons"
-                            :timetables="timetableCalculationResult?.timetables || []" />
+                <TimetableV3PossibleTimetables
+                    v-if="timetableCalculationStatus === 'success' && possibleTimetableCount > 0"
+                    class="timetable-v3__calculation-output"
+                    :allow-saturday-lessons="allowSaturdayLessons"
+                    :error="timetablePageError"
+                    :loading="timetablePageLoading"
+                    :loading-direction="timetablePageLoadingDirection"
+                    :page-offset="timetablePageMeta.offset"
+                    :selected-index="timetableSelectedIndex"
+                    :timetables="timetableCalculationResult?.timetables || []"
+                    :total-count="timetablePageMeta.total"
+                    @navigate="selectTimetable" />
 
-                        <section
-                            v-if="possibleTimetableCount === 0 && timetableSolutionPlanModuleRemovalScenarios.length"
-                            class="timetable-v3__solution-plan"
-                            aria-labelledby="timetable-v3-solution-plan-title">
+                <section
+                    v-if="timetableCalculationStatus === 'success'
+                        && possibleTimetableCount === 0
+                        && timetableSolutionPlanModuleRemovalScenarios.length"
+                    class="timetable-v3__calculation-output timetable-v3__solution-plan"
+                    aria-labelledby="timetable-v3-solution-plan-title">
                             <div class="timetable-v3__solution-plan-heading">
                                 <span class="timetable-v3__solution-plan-icon">
                                     <v-icon icon="mdi-lightbulb-on-outline" size="25" />
@@ -1226,13 +1312,21 @@
                                 Die Prüfung allein verändert Ihre Auswahl nicht. Erst durch Anklicken einer möglichen
                                 Lösung wird das angezeigte Modul entfernt.
                             </p>
-                        </section>
-                    </div>
-                </div>
-            </section>
+                </section>
+            </div>
             </template>
 
             <div v-if="currentStep === 'creation'" class="timetable-v3__page-actions timetable-v3__page-actions--split">
+                <v-btn
+                    class="timetable-v3__restart-button"
+                    size="large"
+                    color="error"
+                    variant="outlined"
+                    prepend-icon="mdi-restart"
+                    :disabled="!hasPlanningSelectionContext || isLoadingState || isSavingState || timetableCalculationStatus === 'calculating'"
+                    @click="restartPlanning">
+                    Neustart
+                </v-btn>
                 <v-btn
                     class="timetable-v3__back-button"
                     size="large"
@@ -1392,10 +1486,29 @@
                                 <span class="timetable-v3__info-value">{{ selectedStudentInstructionType }}</span>
                             </div>
                         </div>
+                        <div class="timetable-v3__info-secondary-row">
+                            <div class="timetable-v3__info-item">
+                                <span class="timetable-v3__info-label">Stundentafel</span>
+                                <span class="timetable-v3__info-value">{{ selectedStudentSubjectPlan }}</span>
+                            </div>
+                        </div>
                         <div class="timetable-v3__info-secondary-row timetable-v3__info-secondary-row--semester">
                             <div class="timetable-v3__info-item">
                                 <span class="timetable-v3__info-label">Semester</span>
-                                <span class="timetable-v3__info-value">{{ selectedStudentSemesterLabel }}</span>
+                                <span class="timetable-v3__info-value">
+                                    {{ selectedStudentSemesterLabel }}
+                                    <button
+                                        v-if="selectedStudentOriginalSchoolLevel"
+                                        type="button"
+                                        class="timetable-v3__info-imported-school-level timetable-v3__info-imported-school-level--editable"
+                                        title="Schulstufe ändern oder Originalwert wiederherstellen"
+                                        @click="openSchoolLevelDialog">
+                                        ({{ selectedStudentImportedSchoolLevel }})
+                                    </button>
+                                    <span v-else class="timetable-v3__info-imported-school-level">
+                                        ({{ selectedStudentImportedSchoolLevel }})
+                                    </span>
+                                </span>
                             </div>
                         </div>
                         <div v-if="studentSelectionDetailsLoading" class="timetable-v3__info-secondary-row timetable-v3__info-status">
@@ -1506,6 +1619,82 @@
             </v-card>
         </v-dialog>
 
+        <v-dialog v-model="schoolLevelDialogOpen" max-width="640" persistent>
+            <v-card rounded="lg" class="timetable-v3__school-level-dialog">
+                <v-card-title class="timetable-v3__school-level-dialog-title d-flex align-center ga-2 pa-5 pb-2">
+                    <v-icon icon="mdi-school-outline" color="error" />
+                    Schulstufe korrigieren
+                </v-card-title>
+
+                <v-card-text class="px-5 pt-3">
+                    <p class="timetable-v3__school-level-dialog-description">
+                        Wähle eine gültige Schulstufe. Der ursprünglich importierte Wert bleibt als Rückfalloption erhalten.
+                    </p>
+
+                    <div class="timetable-v3__school-level-section">
+                        <div class="timetable-v3__school-level-section-label">Ursprünglich gespeichert</div>
+                        <button
+                            type="button"
+                            class="timetable-v3__school-level-option timetable-v3__school-level-option--original"
+                            :class="{ 'timetable-v3__school-level-option--selected': schoolLevelDialogSelection === schoolLevelDialogOriginalValue }"
+                            role="radio"
+                            :aria-checked="schoolLevelDialogSelection === schoolLevelDialogOriginalValue"
+                            :disabled="schoolLevelDialogSaving"
+                            @click="selectSchoolLevelDialogValue(schoolLevelDialogOriginalValue)">
+                            <span class="timetable-v3__school-level-option-value">{{ schoolLevelDialogOriginalValue }}</span>
+                            <span class="timetable-v3__school-level-option-meta">Importwert</span>
+                        </button>
+                    </div>
+
+                    <div class="timetable-v3__school-level-section">
+                        <div class="timetable-v3__school-level-section-label">Gültige Schulstufen</div>
+                        <div class="timetable-v3__school-level-options" role="radiogroup" aria-label="Gültige Schulstufe auswählen">
+                            <button
+                                v-for="option in selectedStudentSchoolLevelOptions"
+                                :key="option.value"
+                                type="button"
+                                class="timetable-v3__school-level-option"
+                                :class="{ 'timetable-v3__school-level-option--selected': schoolLevelDialogSelection === option.value }"
+                                role="radio"
+                                :aria-checked="schoolLevelDialogSelection === option.value"
+                                :disabled="schoolLevelDialogSaving"
+                                @click="selectSchoolLevelDialogValue(option.value)">
+                                <span class="timetable-v3__school-level-option-value">{{ option.value }}</span>
+                                <span class="timetable-v3__school-level-option-meta">{{ option.semester }}. Semester</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div
+                        v-if="schoolLevelDialogError"
+                        class="timetable-v3__school-level-dialog-error"
+                        role="alert">
+                        {{ schoolLevelDialogError }}
+                    </div>
+                </v-card-text>
+
+                <v-card-actions class="px-5 pb-5 pt-3">
+                    <v-spacer />
+                    <v-btn
+                        variant="text"
+                        size="large"
+                        :disabled="schoolLevelDialogSaving"
+                        @click="closeSchoolLevelDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        size="large"
+                        :loading="schoolLevelDialogSaving"
+                        :disabled="!canSaveSchoolLevelDialog"
+                        @click="saveSchoolLevelDialog">
+                        Speichern
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="studentDialogOpen" max-width="620">
             <v-card rounded="lg" class="timetable-v3__student-dialog">
                 <v-card-title class="timetable-v3__student-dialog-title d-flex align-center ga-2 pa-5 pb-2">
@@ -1577,7 +1766,10 @@
 <script>
 import TimetableV3PossibleTimetables from './TimetableV3PossibleTimetables.vue'
 import { robotStudents as loadRobotStudents } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentsTimetablesController'
-import { show as loadV3StudentInformation } from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3StudentInformationController'
+import {
+    show as loadV3StudentInformation,
+    updateSchoolLevel as updateV3StudentSchoolLevel,
+} from '@/actions/App/Http/Controllers/Admin/StudentsTimetables/StudentTimetableV3StudentInformationController'
 import {
     show as showTimetableV3State,
     update as updateTimetableV3State,
@@ -1591,6 +1783,7 @@ const WITH_STUDENT = 'with_student'
 const WITHOUT_STUDENT = 'without_student'
 const AUTOMATIC_TIMETABLE = 'automatic'
 const MANUAL_TIMETABLE = 'manual'
+const AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY = true
 const MAX_SELECTED_MODULES = 10
 const MAX_SELECTED_MODULE_HOURS = 30
 const SELECTION_STEP = 'selection'
@@ -1599,6 +1792,17 @@ const TIMETABLE_CREATION_STEP = 'creation'
 const TIMETABLE_V3_SELECTION_PATH = '/admin/students-timetables/timetable-v3/overview'
 const TIMETABLE_V3_MODULE_SELECTION_PATH = '/admin/students-timetables/timetable-v3/modules'
 const TIMETABLE_V3_CREATION_PATH = '/admin/students-timetables/timetable-v3/creation'
+const TIMETABLE_CALCULATION_PROGRESS_PHASES = [
+    'preparing',
+    'checking',
+    'materializing',
+    'analyzing_solutions',
+    'compacting',
+    'persisting',
+    'complete',
+]
+const TIMETABLES_PER_PAGE = 100
+const MAX_MATERIALIZED_TIMETABLES = 2000
 const WORKSPACE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const normalizedWorkspaceId = workspaceId => {
@@ -1716,6 +1920,18 @@ function moduleHours(module) {
     return Number.isFinite(hours) ? hours : 0
 }
 
+function normalizedTimetableCalculationCount(value) {
+    const count = Number(value)
+
+    return Number.isFinite(count) && count > 0 ? Math.trunc(count) : 0
+}
+
+function normalizedTimetableCalculationProgressPhase(value) {
+    const phase = String(value || '').trim()
+
+    return TIMETABLE_CALCULATION_PROGRESS_PHASES.includes(phase) ? phase : 'checking'
+}
+
 function planningSelectionValuesMatch(storedValues, currentValues) {
     const normalizedStoredValues = storedValues && typeof storedValues === 'object' && !Array.isArray(storedValues)
         ? storedValues
@@ -1742,6 +1958,184 @@ function isTimetableCalculationResult(calculationResult) {
         && calculationSummary
         && typeof calculationSummary === 'object'
         && !Array.isArray(calculationSummary)
+}
+
+function normalizedTimetablePageMeta(calculationResult) {
+    const meta = calculationResult?.timetables_meta
+    const timetables = calculationResult?.timetables
+
+    if (
+        !meta
+        || typeof meta !== 'object'
+        || Array.isArray(meta)
+        || !Array.isArray(timetables)
+    ) return null
+
+    const currentPage = Number(meta.current_page)
+    const perPage = Number(meta.per_page)
+    const lastPage = Number(meta.last_page)
+    const total = Number(meta.total)
+    const offset = Number(meta.offset)
+    const expectedLastPage = Math.max(1, Math.ceil(total / TIMETABLES_PER_PAGE))
+    const expectedItemCount = Math.min(TIMETABLES_PER_PAGE, Math.max(0, total - offset))
+    const expectedFrom = expectedItemCount > 0 ? offset + 1 : null
+    const expectedTo = expectedItemCount > 0 ? offset + expectedItemCount : null
+
+    if (
+        !Number.isInteger(currentPage)
+        || !Number.isInteger(perPage)
+        || !Number.isInteger(lastPage)
+        || !Number.isInteger(total)
+        || !Number.isInteger(offset)
+        || currentPage < 1
+        || perPage !== TIMETABLES_PER_PAGE
+        || lastPage !== expectedLastPage
+        || currentPage > lastPage
+        || total < 0
+        || total > MAX_MATERIALIZED_TIMETABLES
+        || offset !== (currentPage - 1) * perPage
+        || timetables.length !== expectedItemCount
+        || (meta.from ?? null) !== expectedFrom
+        || (meta.to ?? null) !== expectedTo
+    ) return null
+
+    return {
+        currentPage,
+        lastPage,
+        offset,
+        perPage,
+        total,
+    }
+}
+
+function xsrfTokenFromCookie() {
+    if (typeof document === 'undefined') return ''
+
+    const cookiePrefix = 'XSRF-TOKEN='
+    const encodedToken = document.cookie
+        .split(';')
+        .map(cookie => cookie.trim())
+        .find(cookie => cookie.startsWith(cookiePrefix))
+        ?.slice(cookiePrefix.length)
+
+    if (!encodedToken) return ''
+
+    try {
+        return decodeURIComponent(encodedToken)
+    } catch {
+        return ''
+    }
+}
+
+async function fetchTimetableCalculation(payload) {
+    if (typeof window.ensureCsrfCookie === 'function') {
+        await window.ensureCsrfCookie()
+    }
+
+    const request = () => {
+        const xsrfToken = xsrfTokenFromCookie()
+
+        return fetch(updateTimetableV3Timetable.url(), {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json, application/x-ndjson',
+                'Content-Type': 'application/json',
+                'X-Timetable-Progress': 'stream',
+                ...(xsrfToken ? { 'X-XSRF-TOKEN': xsrfToken } : {}),
+            },
+            body: JSON.stringify(payload),
+        })
+    }
+
+    let response = await request()
+
+    if (response.status !== 419 || typeof window.axios?.get !== 'function') {
+        return response
+    }
+
+    await window.axios.get('/sanctum/csrf-cookie', { __skipCsrfRetry: true })
+    response = await request()
+
+    return response
+}
+
+function timetableCalculationStreamError(data = {}, status = 0) {
+    const error = new Error(String(data?.message || '').trim() || 'Bitte versuchen Sie die Berechnung erneut.')
+    error.response = {
+        data,
+        status,
+    }
+
+    return error
+}
+
+async function consumeTimetableCalculationStream(response, onProgress) {
+    if (!response?.ok) {
+        const responseText = await response?.text?.() || ''
+        let responseData = {}
+
+        try {
+            responseData = JSON.parse(responseText)
+        } catch {
+            responseData = { message: responseText }
+        }
+
+        throw timetableCalculationStreamError(responseData, Number(response?.status || 0))
+    }
+
+    let calculationResult = null
+    const processLine = (line) => {
+        const normalizedLine = String(line || '').trim()
+
+        if (!normalizedLine) return
+
+        const event = JSON.parse(normalizedLine)
+
+        if (event?.type === 'error') {
+            throw timetableCalculationStreamError({
+                message: event.message,
+                errors: event.errors,
+            })
+        }
+
+        if (event?.type === 'complete') {
+            calculationResult = event.data
+
+            return
+        }
+
+        if (event?.type === 'progress') {
+            onProgress(event)
+        }
+    }
+
+    if (!response.body?.getReader) {
+        const responseText = await response.text()
+        responseText.split(/\r?\n/).forEach(processLine)
+    } else {
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let bufferedText = ''
+
+        while (true) {
+            const { done, value } = await reader.read()
+            bufferedText += decoder.decode(value || new Uint8Array(), { stream: !done })
+            const lines = bufferedText.split(/\r?\n/)
+            bufferedText = lines.pop() || ''
+            lines.forEach(processLine)
+
+            if (done) break
+        }
+
+        processLine(bufferedText)
+    }
+
+    if (!calculationResult) {
+        throw new TypeError('The timetable calculation stream did not contain a result.')
+    }
+
+    return calculationResult
 }
 
 function moduleSelectionLimitViolation(moduleGroups, selectedModuleKeys) {
@@ -1812,6 +2206,11 @@ export default {
             studentDialogOpen: false,
             studentInfoDialogOpen: false,
             studyInfoDialogOpen: false,
+            schoolLevelDialogOpen: false,
+            schoolLevelDialogSelection: '',
+            schoolLevelDialogOriginalValue: '',
+            schoolLevelDialogSaving: false,
+            schoolLevelDialogError: '',
             studentSearch: '',
             students: [],
             studentOptionsLoading: false,
@@ -1829,11 +2228,20 @@ export default {
             maximumSelectedModuleHours: MAX_SELECTED_MODULE_HOURS,
             moduleSelectionLimitMessage: '',
             scheduleCreationMode: null,
-            allowSaturdayLessons: false,
+            allowSaturdayLessons: AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY,
             timetableCalculationStatus: 'idle',
             timetableCalculationResult: null,
             timetableCalculationError: '',
             timetableCalculationRequestId: 0,
+            timetableCalculationCombinationCount: 0,
+            timetableCalculationCheckedCombinationCount: 0,
+            timetableCalculationProgressPercent: 0,
+            timetableCalculationProgressPhase: 'preparing',
+            timetableSelectedIndex: 0,
+            timetablePageRequestId: 0,
+            timetablePageLoading: false,
+            timetablePageLoadingDirection: '',
+            timetablePageError: '',
             activeModuleGroupKey: '',
             moduleCoursesDialogOpen: false,
             moduleCourseDialogModule: null,
@@ -1925,10 +2333,57 @@ export default {
                 this.selectedStudent?.instructionType || this.selectedStudent?.instruction_type || '',
             ).trim() || '–'
         },
+        selectedStudentSubjectPlan() {
+            return String(
+                this.selectedStudent?.subjectPlan || this.selectedStudent?.subject_plan || '',
+            ).trim() || '–'
+        },
+        selectedStudentSubjectPlanMismatch() {
+            return this.selectedStudent?.subjectPlanMismatch === true
+                || this.selectedStudent?.subject_plan_mismatch === true
+        },
         selectedStudentSemesterLabel() {
             const semester = this.normalizedStudentSemester(this.selectedStudent)
 
             return semester ? `${semester}. Semester` : '–'
+        },
+        selectedStudentImportedSchoolLevel() {
+            return String(
+                this.selectedStudent?.schoolLevel || this.selectedStudent?.school_level || '',
+            ).trim() || '–'
+        },
+        selectedStudentSchoolLevelMismatch() {
+            return this.selectedStudent?.schoolLevelMismatch === true
+                || this.selectedStudent?.school_level_mismatch === true
+        },
+        selectedStudentOriginalSchoolLevel() {
+            return String(
+                this.selectedStudent?.originalSchoolLevel || this.selectedStudent?.original_school_level || '',
+            ).trim()
+        },
+        selectedStudentSchoolLevelOptions() {
+            const options = this.selectedStudent?.schoolLevelOptions
+                || this.selectedStudent?.school_level_options
+                || []
+
+            return (Array.isArray(options) ? options : [])
+                .map(option => ({
+                    value: String(option?.value || '').trim(),
+                    semester: Number(option?.semester),
+                }))
+                .filter(option => option.value && Number.isInteger(option.semester) && option.semester > 0)
+        },
+        canSaveSchoolLevelDialog() {
+            const selectedValue = String(this.schoolLevelDialogSelection || '').trim()
+            const selectableValues = [
+                this.schoolLevelDialogOriginalValue,
+                ...this.selectedStudentSchoolLevelOptions.map(option => option.value),
+            ]
+
+            return !this.schoolLevelDialogSaving
+                && selectedValue !== ''
+                && selectedValue !== this.selectedStudentImportedSchoolLevel
+                && selectableValues.includes(selectedValue)
         },
         selectedStudentCalculationItems() {
             const itemsByKey = new Map(
@@ -1996,6 +2451,17 @@ export default {
 
             return summary && typeof summary === 'object' ? summary : {}
         },
+        timetablePageMeta() {
+            return normalizedTimetablePageMeta(this.timetableCalculationResult) || {
+                currentPage: 1,
+                lastPage: 1,
+                offset: 0,
+                perPage: TIMETABLES_PER_PAGE,
+                total: Array.isArray(this.timetableCalculationResult?.timetables)
+                    ? this.timetableCalculationResult.timetables.length
+                    : 0,
+            }
+        },
         timetableCalculationModules() {
             const resultModules = this.timetableCalculationResult?.modules
             const modules = Array.isArray(resultModules) ? resultModules : this.selectedModules
@@ -2041,6 +2507,69 @@ export default {
         },
         possibleTimetableCountLabel() {
             return this.possibleTimetableCount.toLocaleString('de-AT')
+        },
+        totalPossibleTimetableCount() {
+            const explicitCount = this.normalizedTimetableCalculationCount(
+                this.timetableCalculationSummary.possible_timetable_count,
+            )
+
+            if (explicitCount > 0) return explicitCount
+
+            return this.normalizedTimetableCalculationCount(
+                this.timetableCalculationSummary.full_green_timetable_count,
+            ) + this.normalizedTimetableCalculationCount(
+                this.timetableCalculationSummary.green_timetable_count,
+            ) || this.possibleTimetableCount
+        },
+        totalPossibleTimetableCountLabel() {
+            return this.totalPossibleTimetableCount.toLocaleString('de-AT')
+        },
+        timetablesTruncated() {
+            return this.timetableCalculationSummary.timetables_truncated === true
+                || this.totalPossibleTimetableCount > this.possibleTimetableCount
+        },
+        timetableCalculationCombinationCountLabel() {
+            return this.normalizedTimetableCalculationCount(
+                this.timetableCalculationCombinationCount,
+            ).toLocaleString('de-AT')
+        },
+        timetableCalculationCheckedCombinationCountLabel() {
+            return this.normalizedTimetableCalculationCount(
+                this.timetableCalculationCheckedCombinationCount,
+            ).toLocaleString('de-AT')
+        },
+        timetableCalculationProgressLabel() {
+            if (this.timetableCalculationProgressPhase === 'checking') {
+                if (this.timetableCalculationCombinationCount === 0) {
+                    return 'Kombinationen werden vorbereitet …'
+                }
+
+                return `${this.timetableCalculationCheckedCombinationCountLabel} von ${this.timetableCalculationCombinationCountLabel} Kombinationen geprüft.`
+            }
+
+            return {
+                preparing: 'Auswahl und Unterrichte werden vorbereitet …',
+                materializing: 'Mögliche Stundenpläne werden aufbereitet …',
+                analyzing_solutions: 'Lösungsvorschläge werden berechnet …',
+                compacting: 'Stundenplandaten werden komprimiert …',
+                persisting: 'Ergebnis wird gespeichert …',
+                complete: 'Berechnung abgeschlossen.',
+            }[this.timetableCalculationProgressPhase] || 'Berechnung wird vorbereitet …'
+        },
+        timetableCalculationProgressSegments() {
+            const progressPercent = Math.min(
+                100,
+                Math.max(0, Number(this.timetableCalculationProgressPercent) || 0),
+            )
+
+            return Array.from({ length: 20 }, (_, index) => {
+                const percent = (index + 1) * 5
+
+                return {
+                    percent,
+                    active: progressPercent >= percent,
+                }
+            })
         },
         checkedTimetableVariationCountLabel() {
             return this.normalizedTimetableCalculationCount(
@@ -2128,11 +2657,7 @@ export default {
             void this.$router.replace(timetableV3RouteLocation(path, planningContext, this.workspaceId))
         },
         returnFromTimetableCreationStep() {
-            if (this.timetableCalculationStatus !== 'idle') {
-                this.resetTimetableCalculation()
-
-                return
-            }
+            if (this.timetableCalculationStatus === 'calculating') return
 
             const planningContext = normalizedPlanningContext(this.planningMode, this.selectedStudentCode)
 
@@ -2143,9 +2668,7 @@ export default {
             ))
         },
         normalizedTimetableCalculationCount(value) {
-            const count = Number(value)
-
-            return Number.isFinite(count) && count > 0 ? Math.trunc(count) : 0
+            return normalizedTimetableCalculationCount(value)
         },
         timetableSolutionPlanCountLabel(value) {
             return this.normalizedTimetableCalculationCount(value).toLocaleString('de-AT')
@@ -2190,9 +2713,19 @@ export default {
         },
         resetTimetableCalculation() {
             this.timetableCalculationRequestId = Number(this.timetableCalculationRequestId || 0) + 1
+            const requestId = Number(this.timetablePageRequestId || 0) + 1
+            this.timetablePageRequestId = requestId
             this.timetableCalculationStatus = 'idle'
             this.timetableCalculationResult = null
             this.timetableCalculationError = ''
+            this.timetableCalculationCombinationCount = 0
+            this.timetableCalculationCheckedCombinationCount = 0
+            this.timetableCalculationProgressPercent = 0
+            this.timetableCalculationProgressPhase = 'preparing'
+            this.timetableSelectedIndex = 0
+            this.timetablePageLoading = false
+            this.timetablePageLoadingDirection = ''
+            this.timetablePageError = ''
         },
         timetableCalculationPayload() {
             return {
@@ -2317,30 +2850,192 @@ export default {
                     workspace_id: this.workspaceId,
                     planning_mode: planningMode,
                     ...(studentCode ? { student_code: studentCode } : {}),
+                    page: 1,
                 },
             })
 
+            const requestId = Number(this.timetablePageRequestId || 0) + 1
+            this.timetablePageRequestId = requestId
             this.timetableCalculationStatus = 'idle'
             this.timetableCalculationResult = null
             this.timetableCalculationError = ''
+            this.timetableCalculationCombinationCount = 0
+            this.timetableCalculationCheckedCombinationCount = 0
+            this.timetableCalculationProgressPercent = 0
+            this.timetableCalculationProgressPhase = 'preparing'
+            this.timetableSelectedIndex = 0
+            this.timetablePageLoading = false
+            this.timetablePageLoadingDirection = ''
+            this.timetablePageError = ''
 
             try {
                 const response = await axios.get(url)
                 const calculationResult = response.data?.data
                 const currentStudentCode = this.planningMode === WITH_STUDENT ? this.selectedStudentCode : null
+                const timetablePageMeta = normalizedTimetablePageMeta(calculationResult)
+
+                if (
+                    requestId !== this.timetablePageRequestId
+                    || this.currentStep !== TIMETABLE_CREATION_STEP
+                    || this.planningMode !== planningMode
+                    || currentStudentCode !== studentCode
+                    || !calculationResult
+                    || !this.timetableCalculationResultMatchesCurrentDraft(calculationResult)
+                    || !timetablePageMeta
+                    || timetablePageMeta.currentPage !== 1
+                    || timetablePageMeta.offset !== 0
+                ) return
+
+                this.timetableCalculationResult = calculationResult
+                this.timetableSelectedIndex = 0
+                this.timetableCalculationStatus = 'success'
+            } catch {
+                // The draft remains usable when no persisted calculation can be restored.
+            }
+        },
+        async selectTimetable(targetIndexValue) {
+            const targetIndex = Number(targetIndexValue)
+            const currentResult = this.timetableCalculationResult
+            const currentMeta = normalizedTimetablePageMeta(currentResult)
+
+            if (
+                this.currentStep !== TIMETABLE_CREATION_STEP
+                || this.timetableCalculationStatus !== 'success'
+                || this.timetablePageLoading
+                || !Number.isInteger(targetIndex)
+                || !currentMeta
+                || targetIndex < 0
+                || targetIndex >= currentMeta.total
+            ) return
+
+            if (!this.timetableCalculationResultMatchesCurrentDraft(currentResult)) {
+                this.resetTimetableCalculation()
+
+                return
+            }
+
+            const currentTimetables = currentResult.timetables
+            const isCurrentPageTarget = targetIndex >= currentMeta.offset
+                && targetIndex < currentMeta.offset + currentTimetables.length
+
+            if (isCurrentPageTarget) {
+                this.timetableSelectedIndex = targetIndex
+                this.timetablePageError = ''
+
+                return
+            }
+
+            const targetPage = Math.floor(targetIndex / TIMETABLES_PER_PAGE) + 1
+            const resultId = Number(currentResult.id)
+            const fingerprint = String(currentResult.fingerprint || '').trim()
+
+            if (
+                targetPage < 1
+                || targetPage > currentMeta.lastPage
+                || !Number.isInteger(resultId)
+                || resultId < 1
+                || !/^[a-f0-9]{64}$/.test(fingerprint)
+            ) return
+
+            const planningMode = this.planningMode
+            const studentCode = planningMode === WITH_STUDENT ? this.selectedStudentCode : null
+            const requestId = Number(this.timetablePageRequestId || 0) + 1
+            this.timetablePageRequestId = requestId
+            this.timetablePageLoading = true
+            this.timetablePageLoadingDirection = targetIndex > this.timetableSelectedIndex ? 'next' : 'previous'
+            this.timetablePageError = ''
+
+            const url = showTimetableV3Timetable.url({
+                query: {
+                    workspace_id: this.workspaceId,
+                    planning_mode: planningMode,
+                    ...(studentCode ? { student_code: studentCode } : {}),
+                    page: targetPage,
+                    fingerprint,
+                },
+            })
+
+            try {
+                const response = await axios.get(url)
+
+                if (requestId !== this.timetablePageRequestId) return
+
+                const currentStudentCode = this.planningMode === WITH_STUDENT ? this.selectedStudentCode : null
+                const activeResult = this.timetableCalculationResult
 
                 if (
                     this.currentStep !== TIMETABLE_CREATION_STEP
                     || this.planningMode !== planningMode
                     || currentStudentCode !== studentCode
-                    || !calculationResult
-                    || !this.timetableCalculationResultMatchesCurrentDraft(calculationResult)
+                    || Number(activeResult?.id) !== resultId
+                    || String(activeResult?.fingerprint || '') !== fingerprint
                 ) return
 
+                if (!this.timetableCalculationResultMatchesCurrentDraft(activeResult)) {
+                    this.resetTimetableCalculation()
+
+                    return
+                }
+
+                const calculationResult = response.data?.data
+
+                if (
+                    !calculationResult
+                    || Number(calculationResult.id) !== resultId
+                    || String(calculationResult.fingerprint || '') !== fingerprint
+                ) {
+                    this.timetableCalculationResult = null
+                    this.timetableCalculationStatus = 'error'
+                    this.timetableCalculationError = 'Das gespeicherte Ergebnis ist nicht mehr verfügbar. Bitte berechnen Sie die Stundenpläne erneut.'
+                    this.timetableSelectedIndex = 0
+                    this.timetablePageError = ''
+
+                    return
+                }
+
+                const nextMeta = normalizedTimetablePageMeta(calculationResult)
+
+                if (
+                    !nextMeta
+                    || nextMeta.currentPage !== targetPage
+                    || nextMeta.total !== currentMeta.total
+                    || targetIndex < nextMeta.offset
+                    || targetIndex >= nextMeta.offset + calculationResult.timetables.length
+                    || Number(calculationResult.summary?.timetable_count) !== nextMeta.total
+                ) {
+                    throw new TypeError('The timetable page response is inconsistent.')
+                }
+
+                if (!this.timetableCalculationResultMatchesCurrentDraft(calculationResult)) {
+                    this.resetTimetableCalculation()
+
+                    return
+                }
+
                 this.timetableCalculationResult = calculationResult
-                this.timetableCalculationStatus = 'success'
-            } catch {
-                // The draft remains usable when no persisted calculation can be restored.
+                this.timetableSelectedIndex = targetIndex
+                this.timetablePageError = ''
+            } catch (error) {
+                if (requestId !== this.timetablePageRequestId) return
+
+                if ([401, 403, 419].includes(Number(error?.response?.status || 0))) {
+                    this.timetableCalculationResult = null
+                    this.timetableCalculationStatus = 'error'
+                    this.timetableCalculationError = 'Ihre Berechtigung für dieses Ergebnis ist abgelaufen. Bitte laden Sie die Seite neu.'
+                    this.timetableSelectedIndex = 0
+                    this.timetablePageError = ''
+
+                    return
+                }
+
+                this.timetablePageError = this.timetablePageLoadingDirection === 'previous'
+                    ? 'Die vorherigen Stundenpläne konnten nicht geladen werden. Bitte versuchen Sie es erneut.'
+                    : 'Die nächsten Stundenpläne konnten nicht geladen werden. Bitte versuchen Sie es erneut.'
+            } finally {
+                if (requestId === this.timetablePageRequestId) {
+                    this.timetablePageLoading = false
+                    this.timetablePageLoadingDirection = ''
+                }
             }
         },
         timetableCalculationErrorMessage(error) {
@@ -2364,9 +3059,18 @@ export default {
 
             const requestId = Number(this.timetableCalculationRequestId || 0) + 1
             this.timetableCalculationRequestId = requestId
+            this.timetablePageRequestId = Number(this.timetablePageRequestId || 0) + 1
             this.timetableCalculationStatus = 'calculating'
             this.timetableCalculationResult = null
             this.timetableCalculationError = ''
+            this.timetableCalculationCombinationCount = 0
+            this.timetableCalculationCheckedCombinationCount = 0
+            this.timetableCalculationProgressPercent = 0
+            this.timetableCalculationProgressPhase = 'preparing'
+            this.timetableSelectedIndex = 0
+            this.timetablePageLoading = false
+            this.timetablePageLoadingDirection = ''
+            this.timetablePageError = ''
 
             await this.saveState()
 
@@ -2379,20 +3083,53 @@ export default {
             }
 
             try {
-                const response = await axios.put(
-                    updateTimetableV3Timetable.url(),
-                    this.timetableCalculationPayload(),
-                )
+                const response = await fetchTimetableCalculation(this.timetableCalculationPayload())
+                const calculationResult = await consumeTimetableCalculationStream(response, (event) => {
+                    if (requestId !== this.timetableCalculationRequestId) return
+
+                    const combinationCount = normalizedTimetableCalculationCount(
+                        event.combination_count,
+                    )
+                    const progressPercent = Math.min(
+                        100,
+                        Math.max(0, normalizedTimetableCalculationCount(event.progress_percent)),
+                    )
+                    const checkedCombinationCount = Math.min(
+                        combinationCount,
+                        normalizedTimetableCalculationCount(event.checked_combination_count),
+                    )
+
+                    this.timetableCalculationCombinationCount = combinationCount
+                    this.timetableCalculationCheckedCombinationCount = checkedCombinationCount
+                    this.timetableCalculationProgressPercent = Math.max(
+                        normalizedTimetableCalculationCount(this.timetableCalculationProgressPercent),
+                        progressPercent,
+                    )
+                    this.timetableCalculationProgressPhase = normalizedTimetableCalculationProgressPhase(
+                        event.phase,
+                    )
+                })
 
                 if (requestId !== this.timetableCalculationRequestId) return
-
-                const calculationResult = response.data?.data
 
                 if (!isTimetableCalculationResult(calculationResult)) {
                     throw new TypeError('The timetable calculation response is missing its summary.')
                 }
 
+                const timetablePageMeta = normalizedTimetablePageMeta(calculationResult)
+
+                if (!timetablePageMeta || timetablePageMeta.currentPage !== 1 || timetablePageMeta.offset !== 0) {
+                    throw new TypeError('The timetable calculation response has invalid pagination data.')
+                }
+
                 this.timetableCalculationResult = calculationResult
+                this.timetableSelectedIndex = 0
+                this.timetableCalculationCombinationCount = normalizedTimetableCalculationCount(
+                    calculationResult.summary.timetable_variation_count,
+                )
+                this.timetableCalculationCheckedCombinationCount = this.timetableCalculationCombinationCount
+                this.timetableCalculationProgressPercent = 100
+                this.timetableCalculationProgressPhase = 'complete'
                 this.timetableCalculationStatus = 'success'
             } catch (error) {
                 if (requestId !== this.timetableCalculationRequestId) return
@@ -2408,6 +3145,7 @@ export default {
                 || this.isSavingState
             ) return
 
+            this.allowSaturdayLessons = AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY
             await this.saveState()
             if (this.stateSaveFailed) return
 
@@ -2418,6 +3156,7 @@ export default {
                 planningContext,
                 this.workspaceId,
             ))
+            await this.calculatePossibleTimetables()
         },
         async ensureValidCurrentStep() {
             if (
@@ -2487,7 +3226,7 @@ export default {
             }
         },
         restoreCreationOptions() {
-            this.allowSaturdayLessons = this.storedState?.creationOptions?.allowSaturdayLessons === true
+            this.allowSaturdayLessons = AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY
         },
         async restoreEntrySelection() {
             const entrySelection = this.storedState?.entrySelection
@@ -2547,8 +3286,14 @@ export default {
             this.studentInfoDialogOpen = false
             this.studyInfoDialogOpen = false
             this.resetSelectedStudentSelectionDetails()
+            this.allowSaturdayLessons = AUTOMATIC_TIMETABLE_ALLOWS_SATURDAY
+            this.resetTimetableCalculation()
             await this.saveState(planningContext)
-            this.replaceRoutePlanningContext(null)
+            await this.$router.replace(timetableV3RouteLocation(
+                TIMETABLE_V3_SELECTION_PATH,
+                null,
+                this.workspaceId,
+            ))
         },
         closeStudentDialog() {
             this.studentDialogOpen = false
@@ -2573,6 +3318,72 @@ export default {
         },
         closeStudyInfoDialog() {
             this.studyInfoDialogOpen = false
+        },
+        openSchoolLevelDialog() {
+            if (!this.selectedStudent || (!this.selectedStudentSchoolLevelMismatch && !this.selectedStudentOriginalSchoolLevel)) return
+
+            this.studentInfoDialogOpen = false
+            this.studyInfoDialogOpen = false
+            this.schoolLevelDialogOriginalValue = this.selectedStudentOriginalSchoolLevel
+                || this.selectedStudentImportedSchoolLevel
+            this.schoolLevelDialogSelection = this.selectedStudentImportedSchoolLevel
+            this.schoolLevelDialogError = ''
+            this.schoolLevelDialogOpen = true
+        },
+        closeSchoolLevelDialog() {
+            if (this.schoolLevelDialogSaving) return
+
+            this.schoolLevelDialogOpen = false
+            this.schoolLevelDialogSelection = ''
+            this.schoolLevelDialogOriginalValue = ''
+            this.schoolLevelDialogError = ''
+        },
+        selectSchoolLevelDialogValue(schoolLevel) {
+            if (this.schoolLevelDialogSaving) return
+
+            const normalizedSchoolLevel = String(schoolLevel || '').trim()
+            if (!normalizedSchoolLevel) return
+
+            this.schoolLevelDialogSelection = normalizedSchoolLevel
+            this.schoolLevelDialogError = ''
+        },
+        schoolLevelDialogErrorMessage(error) {
+            const validationErrors = error?.response?.data?.errors
+            const firstValidationMessage = validationErrors && typeof validationErrors === 'object'
+                ? Object.values(validationErrors).flat().find(Boolean)
+                : null
+
+            return String(firstValidationMessage || 'Die Schulstufe konnte nicht gespeichert werden.').trim()
+        },
+        async saveSchoolLevelDialog() {
+            if (!this.canSaveSchoolLevelDialog) return
+
+            const studentCode = this.selectedStudentCode
+            const schoolLevel = String(this.schoolLevelDialogSelection || '').trim()
+            const selection = this.planningSelectionForRequest(studentCode)
+            this.schoolLevelDialogSaving = true
+            this.schoolLevelDialogError = ''
+
+            try {
+                const response = await axios.put(updateV3StudentSchoolLevel.url(), {
+                    student_code: studentCode,
+                    school_level: schoolLevel,
+                    ...(Object.keys(selection).length ? { selection } : {}),
+                })
+
+                if (this.selectedStudentCode !== studentCode) return
+
+                this.applySelectedStudentInformation(response.data?.data || {}, studentCode)
+                this.resetTimetableCalculation()
+                this.schoolLevelDialogOpen = false
+                this.schoolLevelDialogSelection = ''
+                this.schoolLevelDialogOriginalValue = ''
+                await this.saveState()
+            } catch (error) {
+                this.schoolLevelDialogError = this.schoolLevelDialogErrorMessage(error)
+            } finally {
+                this.schoolLevelDialogSaving = false
+            }
         },
         focusStudentSearchField() {
             const searchField = this.$refs.studentSearchField
@@ -2628,6 +3439,35 @@ export default {
             return Object.fromEntries(Object.entries(selection)
                 .map(([key, value]) => [key, value ?? '']))
         },
+        applySelectedStudentInformation(studentInformation, selectionContextCode) {
+            const studentCode = this.selectedStudentCode
+
+            if (studentCode) {
+                this.selectedStudent = {
+                    ...this.selectedStudent,
+                    religion: String(studentInformation.religion || '').trim(),
+                    instructionType: String(studentInformation.instruction_type || '').trim(),
+                    subjectPlan: String(studentInformation.subject_plan || '').trim(),
+                    subjectPlanMismatch: studentInformation.subject_plan_mismatch === true,
+                    schoolLevel: String(studentInformation.school_level || '').trim(),
+                    schoolLevelMismatch: studentInformation.school_level_mismatch === true,
+                    originalSchoolLevel: String(studentInformation.original_school_level || '').trim(),
+                    schoolLevelOptions: Array.isArray(studentInformation.school_level_options)
+                        ? studentInformation.school_level_options
+                        : [],
+                    semester: this.normalizedStudentSemester({ semester: studentInformation.semester }),
+                }
+            }
+            this.studentSelectionItems = Array.isArray(studentInformation.items)
+                ? studentInformation.items
+                : []
+            this.studentStudyModuleGroups = Array.isArray(studentInformation.module_groups)
+                ? studentInformation.module_groups
+                : []
+            this.setPlanningSelectionFields(studentInformation.selection_fields, selectionContextCode)
+            this.setModuleSelectionGroups(studentInformation.module_selection_groups, selectionContextCode)
+            this.studentSelectionDetailsCode = selectionContextCode
+        },
         async loadSelectedStudentSelection() {
             const studentCode = this.selectedStudentCode
             const selectionContextCode = this.planningMode === WITH_STUDENT
@@ -2662,23 +3502,7 @@ export default {
 
                 const studentInformation = response.data?.data || {}
 
-                if (studentCode) {
-                    this.selectedStudent = {
-                        ...this.selectedStudent,
-                        religion: String(studentInformation.religion || '').trim(),
-                        instructionType: String(studentInformation.instruction_type || '').trim(),
-                        semester: this.normalizedStudentSemester({ semester: studentInformation.semester }),
-                    }
-                }
-                this.studentSelectionItems = Array.isArray(studentInformation.items)
-                    ? studentInformation.items
-                    : []
-                this.studentStudyModuleGroups = Array.isArray(studentInformation.module_groups)
-                    ? studentInformation.module_groups
-                    : []
-                this.setPlanningSelectionFields(studentInformation.selection_fields, selectionContextCode)
-                this.setModuleSelectionGroups(studentInformation.module_selection_groups, selectionContextCode)
-                this.studentSelectionDetailsCode = selectionContextCode
+                this.applySelectedStudentInformation(studentInformation, selectionContextCode)
             } catch {
                 const currentSelectionContextCode = this.planningMode === WITH_STUDENT
                     ? this.selectedStudentCode
@@ -3023,6 +3847,14 @@ export default {
             this.moduleSelectionLimitMessage = ''
             await this.saveState()
         },
+        async deselectAllSelectedModules() {
+            if (!this.selectedModuleKeys.length && !this.selectedCourseKeys.length) return
+
+            this.selectedModuleKeys = []
+            this.selectedCourseKeys = []
+            this.moduleSelectionLimitMessage = ''
+            await this.saveState()
+        },
         async updatePlanningSelection(key, value) {
             const field = this.planningSelectionFields.find(selectionField => selectionField.key === key)
             const allowedValues = (Array.isArray(field?.options) ? field.options : [])
@@ -3041,10 +3873,6 @@ export default {
             await this.loadSelectedStudentSelection()
             await this.saveState()
         },
-        async updateAllowSaturdayLessons(allowSaturdayLessons) {
-            this.allowSaturdayLessons = allowSaturdayLessons === true
-            await this.saveState()
-        },
         async hydrateSelectedStudentDetails() {
             if (!this.selectedStudent) return
 
@@ -3053,8 +3881,10 @@ export default {
             const hasSemester = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'semester')
             const hasInstructionType = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'instructionType')
                 || Object.prototype.hasOwnProperty.call(this.selectedStudent, 'instruction_type')
+            const hasSchoolLevel = Object.prototype.hasOwnProperty.call(this.selectedStudent, 'schoolLevel')
+                || Object.prototype.hasOwnProperty.call(this.selectedStudent, 'school_level')
 
-            if (hasSex && hasReligion && hasSemester && hasInstructionType) return
+            if (hasSex && hasReligion && hasSemester && hasInstructionType && hasSchoolLevel) return
 
             await this.loadStudents()
 
@@ -3074,6 +3904,9 @@ export default {
                 ...(!hasSemester ? { semester: this.normalizedStudentSemester(student) } : {}),
                 ...(!hasInstructionType
                     ? { instructionType: String(student.instruction_type || '').trim() }
+                    : {}),
+                ...(!hasSchoolLevel
+                    ? { schoolLevel: String(student.school_level || '').trim() }
                     : {}),
             }
             await this.saveState()
@@ -3132,6 +3965,7 @@ export default {
                 religion: String(student.religion || '').trim(),
                 instructionType: String(student.instruction_type || '').trim(),
                 semester: this.normalizedStudentSemester(student),
+                schoolLevel: String(student.school_level || '').trim(),
             }
             this.closeStudentDialog()
             await this.saveState()
@@ -3359,6 +4193,58 @@ export default {
 .timetable-v3__selection-summary-copy {
     flex: 1 1 auto;
     min-width: 0;
+}
+
+.timetable-v3__student-data-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 9px;
+}
+
+.timetable-v3__student-data-field {
+    display: inline-flex;
+    gap: 6px;
+    align-items: baseline;
+    max-width: 100%;
+    padding: 5px 8px;
+    overflow-wrap: anywhere;
+    color: #344054;
+    background: rgba(255, 255, 255, 0.76);
+    border: 1px solid rgba(79, 70, 229, 0.18);
+    border-radius: 8px;
+}
+
+.timetable-v3__student-data-label {
+    color: #667085;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.timetable-v3__student-data-field--invalid {
+    color: #b42318;
+    background: #fff4f2;
+    border-color: #d92d20;
+    box-shadow: 0 0 0 1px rgba(217, 45, 32, 0.2);
+}
+
+.timetable-v3__student-data-field--invalid .timetable-v3__student-data-label {
+    color: #b42318;
+}
+
+button.timetable-v3__student-data-field {
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+button.timetable-v3__student-data-field:hover,
+button.timetable-v3__student-data-field:focus-visible {
+    background: #fee4e2;
+    outline: 2px solid rgba(217, 45, 32, 0.35);
+    outline-offset: 2px;
 }
 
 .timetable-v3__planning-selection {
@@ -3684,7 +4570,7 @@ export default {
 
 .timetable-v3__creation-summary-cards {
     display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
 }
 
@@ -3717,87 +4603,12 @@ export default {
         0 15px 34px rgba(var(--schedule-mode-accent-rgb), 0.22);
 }
 
-.timetable-v3__creation-options-card {
-    --schedule-mode-accent: #0f766e;
-    --schedule-mode-accent-rgb: 15, 118, 110;
-    --schedule-mode-soft: #f0fdfa;
-    display: flex;
-    flex-direction: column;
-    gap: 22px;
+.timetable-v3__creation-success-card {
+    min-width: 0;
 }
 
-.timetable-v3__creation-options-card:hover,
-.timetable-v3__creation-options-card:focus-within {
-    background: linear-gradient(145deg, var(--schedule-mode-soft), #fff 68%);
-    border-color: rgba(var(--schedule-mode-accent-rgb), 0.3);
-    box-shadow: none;
-}
-
-.timetable-v3__creation-options-heading {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    color: #115e59;
-}
-
-.timetable-v3__creation-options-heading h3 {
-    font-size: 1.15rem;
-    font-weight: 850;
-}
-
-.timetable-v3__creation-options-icon {
-    display: inline-grid;
-    place-items: center;
-    width: 46px;
-    height: 46px;
-    color: #0f766e;
-    background: #ccfbf1;
-    border: 1px solid rgba(15, 118, 110, 0.24);
-    border-radius: 13px;
-}
-
-.timetable-v3__creation-option-row {
-    display: flex;
-    gap: 16px;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.78);
-    border: 1px solid rgba(15, 118, 110, 0.2);
-    border-radius: 13px;
-}
-
-.timetable-v3__creation-option-label {
-    color: #134e4a;
-    font-size: 0.94rem;
-    font-weight: 750;
-}
-
-.timetable-v3__creation-option-control {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    color: #475569;
-    font-size: 0.84rem;
-    font-weight: 750;
-}
-
-.timetable-v3__creation-option-control :deep(.v-switch) {
-    flex: 0 0 auto;
-}
-
-.timetable-v3__creation-options-action {
-    display: flex;
-    align-items: flex-end;
-    margin-top: auto;
-    padding-top: 4px;
-}
-
-.timetable-v3__creation-start-button {
-    font-size: 1rem;
-    font-weight: 850;
-    letter-spacing: 0.02em;
-    text-transform: none;
+.timetable-v3__calculation-output {
+    grid-column: 1 / -1;
 }
 
 .timetable-v3__calculation-card {
@@ -3923,7 +4734,8 @@ export default {
     border-radius: 15px;
 }
 
-.timetable-v3__calculation-state > div {
+.timetable-v3__calculation-progress-copy,
+.timetable-v3__calculation-state--error > div {
     display: grid;
     flex: 1 1 280px;
     gap: 5px;
@@ -3937,6 +4749,46 @@ export default {
 .timetable-v3__calculation-state span {
     color: #64748b;
     font-size: 0.9rem;
+}
+
+.timetable-v3__calculation-state--loading {
+    align-items: stretch;
+}
+
+.timetable-v3__calculation-progress-copy {
+    align-content: center;
+}
+
+.timetable-v3__calculation-led-progress {
+    display: grid;
+    flex: 1 1 100%;
+    grid-template-columns: repeat(20, minmax(4px, 1fr));
+    gap: clamp(3px, 0.7vw, 7px) !important;
+    width: 100%;
+    padding: 13px;
+    background: #082f2d;
+    border: 1px solid rgba(13, 148, 136, 0.42);
+    border-radius: 11px;
+    box-shadow: inset 0 3px 12px rgba(0, 0, 0, 0.34);
+}
+
+.timetable-v3__calculation-led-segment {
+    min-width: 0;
+    height: 28px;
+    background: linear-gradient(180deg, #284b49, #173b39);
+    border: 1px solid rgba(153, 246, 228, 0.14);
+    border-radius: 4px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+    transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.timetable-v3__calculation-led-segment--active {
+    background: linear-gradient(180deg, #86efac, #16a34a 72%, #15803d);
+    border-color: #bbf7d0;
+    box-shadow:
+        0 0 7px rgba(34, 197, 94, 0.9),
+        0 0 15px rgba(34, 197, 94, 0.62),
+        inset 0 1px 3px rgba(255, 255, 255, 0.7);
 }
 
 .timetable-v3__calculation-state--error {
@@ -3985,6 +4837,24 @@ export default {
     color: #475569;
     font-size: 0.94rem;
     line-height: 1.6;
+}
+
+.timetable-v3__calculation-truncated-notice {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    max-width: 860px;
+    padding: 13px 15px;
+    color: #92400e;
+    font-size: 0.92rem;
+    line-height: 1.5;
+    background: #fffbeb;
+    border: 1px solid rgba(217, 119, 6, 0.35);
+    border-radius: 11px;
+}
+
+.timetable-v3__calculation-truncated-notice strong {
+    color: #78350f;
 }
 
 .timetable-v3__calculation-counts {
@@ -4335,7 +5205,10 @@ export default {
 
 .timetable-v3__schedule-create-action {
     display: flex;
-    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
     padding-top: 8px;
     border-top: 1px solid rgba(var(--schedule-mode-accent-rgb), 0.14);
 }
@@ -4829,6 +5702,7 @@ export default {
     .timetable-v3__schedule-create-button,
     .timetable-v3__module-tile,
     .timetable-v3__module-course,
+    .timetable-v3__school-level-option,
     .timetable-v3-module-panel-enter-active,
     .timetable-v3-module-panel-leave-active {
         transition: none;
@@ -5271,6 +6145,127 @@ export default {
     text-overflow: clip;
 }
 
+.timetable-v3__info-imported-school-level {
+    margin-inline-start: 0.25rem;
+    font-weight: 400;
+}
+
+.timetable-v3__info-imported-school-level--editable {
+    padding: 1px 4px;
+    font: inherit;
+    color: #4338ca;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    border-radius: 5px;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.timetable-v3__info-imported-school-level--editable:focus-visible {
+    outline: 2px solid rgba(79, 70, 229, 0.4);
+    outline-offset: 2px;
+}
+
+.timetable-v3__school-level-dialog-title {
+    color: #7a271a;
+    font-size: 1.3rem;
+    font-weight: 800;
+}
+
+.timetable-v3__school-level-dialog-description {
+    margin: 0 0 18px;
+    color: #475467;
+    line-height: 1.55;
+}
+
+.timetable-v3__school-level-section + .timetable-v3__school-level-section {
+    margin-top: 20px;
+}
+
+.timetable-v3__school-level-section-label {
+    margin-bottom: 8px;
+    color: #344054;
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.timetable-v3__school-level-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+    gap: 10px;
+}
+
+.timetable-v3__school-level-option {
+    display: grid;
+    gap: 3px;
+    min-width: 116px;
+    padding: 11px 13px;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    background: #f8f9ff;
+    border: 1px solid rgba(79, 70, 229, 0.22);
+    border-radius: 10px;
+    transition:
+        background-color 160ms ease,
+        border-color 160ms ease,
+        box-shadow 160ms ease;
+}
+
+.timetable-v3__school-level-option:hover:not(:disabled),
+.timetable-v3__school-level-option:focus-visible {
+    background: #eef2ff;
+    border-color: #6366f1;
+    outline: none;
+}
+
+.timetable-v3__school-level-option:disabled {
+    cursor: wait;
+    opacity: 0.65;
+}
+
+.timetable-v3__school-level-option--selected {
+    background: #eef2ff;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+}
+
+.timetable-v3__school-level-option--original {
+    color: #b42318;
+    background: #fff4f2;
+    border-color: #f04438;
+}
+
+.timetable-v3__school-level-option--original.timetable-v3__school-level-option--selected {
+    background: #fee4e2;
+    border-color: #d92d20;
+    box-shadow: 0 0 0 2px rgba(217, 45, 32, 0.2);
+}
+
+.timetable-v3__school-level-option-value {
+    font-size: 1rem;
+    font-weight: 850;
+}
+
+.timetable-v3__school-level-option-meta {
+    color: #667085;
+    font-size: 0.78rem;
+    font-weight: 650;
+}
+
+.timetable-v3__school-level-dialog-error {
+    margin-top: 16px;
+    padding: 10px 12px;
+    color: #b42318;
+    background: #fff4f2;
+    border: 1px solid #fecdca;
+    border-radius: 9px;
+    font-weight: 650;
+}
+
 .timetable-v3__info-status {
     color: #475467;
     font-size: 0.95rem;
@@ -5550,6 +6545,15 @@ export default {
         padding-left: 48px;
     }
 
+    .timetable-v3__calculation-led-progress {
+        gap: 3px;
+        padding: 10px;
+    }
+
+    .timetable-v3__calculation-led-segment {
+        height: 23px;
+    }
+
     .timetable-v3__choice {
         min-height: 108px;
         padding: 17px;
@@ -5586,6 +6590,12 @@ export default {
 
     .timetable-v3__study-module-groups {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .timetable-v3__calculation-led-segment {
+        transition: none;
     }
 }
 

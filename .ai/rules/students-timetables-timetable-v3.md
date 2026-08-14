@@ -112,3 +112,15 @@ On the V3 creation route, Zurück from calculation success/error first resets th
 
 ## Render all possible V3 timetable entries
 Show backend-returned possible timetables one at a time in preserved array order with client-side index navigation. A slot must render its primary entry, every sameSlotEntries item, and every permitted conflicts item; never hide an Unterricht. Use timetable.key for identity, include Saturday only when allowed/used, and present exact backend times, recurrence/date ranges, and Unterricht markers in a responsive semantic weekly table.
+
+## Use generic bulk-module action labels
+In the open V3 module-type panel, label the group-wide actions “Alle auswählen” and “Alle abwählen” for every group. Render “Alle abwählen” with the Vuetify error color; selection behavior remains scoped to the open module type.
+
+## Clear the automatic module selection in one action
+When the V3 automatic timetable card has selected modules, show a red “Alle abwählen” action beside the creation action. It clears every selected module and course key together, clears the selection-limit warning, persists once, and must not toggle the enclosing mode card.
+
+## Keep only the active V3 timetable page in browser memory
+Own the selected timetable as a global zero-based index in TimetableV3.vue. Within a loaded 100-item page, navigate locally; at a page boundary fetch the scoped page with the active fingerprint and atomically replace the timetables array. Never append or cache prior pages, and ignore stale responses after resets or context changes.
+
+## Start automatic timetable calculation from the module CTA
+With automatic mode and selected modules, “Stundenplan erstellen” must persist the draft, navigate to creation, and start calculation immediately. The creation step always shows the automatic summary beside a status/result card; Saturday is fixed to Ja with no switch or Los action. Progress and the calculation result stay in the status card, while timetable or solution-plan output spans below both cards. Back returns directly to modules; restoring the creation URL remains read-only and must not silently recalculate.

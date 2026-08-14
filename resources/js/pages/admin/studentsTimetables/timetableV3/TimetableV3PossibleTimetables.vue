@@ -1,12 +1,13 @@
 <template>
     <section
         class="timetable-v3-results"
+        :aria-busy="loading ? 'true' : 'false'"
         aria-labelledby="timetable-v3-results-title">
         <header class="timetable-v3-results__header">
             <h4 id="timetable-v3-results-title">
                 Stundenplan
                 <span v-if="selectedTimetable" aria-live="polite">
-                    {{ selectedTimetablePosition }} von {{ normalizedTimetables.length }}
+                    {{ selectedTimetablePosition }} von {{ normalizedTotalCount }}
                 </span>
             </h4>
 
@@ -26,7 +27,8 @@
                     icon="mdi-chevron-left"
                     size="small"
                     variant="tonal"
-                    :disabled="!previousTimetableAvailable"
+                    :disabled="loading || !previousTimetableAvailable"
+                    :loading="loading && loadingDirection === 'previous'"
                     aria-label="Vorheriger Stundenplan"
                     @click="selectPreviousTimetable" />
                 <v-btn
@@ -34,19 +36,42 @@
                     icon="mdi-chevron-right"
                     size="small"
                     variant="tonal"
-                    :disabled="!nextTimetableAvailable"
+                    :disabled="loading || !nextTimetableAvailable"
+                    :loading="loading && loadingDirection === 'next'"
                     aria-label="Nächster Stundenplan"
                     @click="selectNextTimetable" />
             </nav>
         </header>
 
+        <p v-if="error" class="timetable-v3-results__page-error" role="alert">
+            <v-icon icon="mdi-alert-circle-outline" size="18" />
+            {{ error }}
+        </p>
+
         <div v-if="selectedTimetable" class="timetable-v3-results__selected">
+            <div
+                v-if="loading"
+                class="timetable-v3-results__page-loading"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true">
+                <v-progress-circular
+                    color="primary"
+                    indeterminate
+                    :size="48"
+                    :width="5" />
+                <div>
+                    <strong>{{ loadingPageRangeLabel }}</strong>
+                    <span>Der angezeigte Stundenplan wird gleich ersetzt.</span>
+                </div>
+            </div>
+
             <div class="timetable-v3-results__table-scroll" tabindex="0" aria-label="Stundenplantabelle">
                 <table
                     :key="selectedTimetableKey"
                     class="timetable-v3-results__table">
                     <caption class="timetable-v3-results__visually-hidden">
-                        {{ `Stundenplan ${selectedTimetablePosition} von ${normalizedTimetables.length}` }}
+                        {{ `Stundenplan ${selectedTimetablePosition} von ${normalizedTotalCount}` }}
                     </caption>
                     <thead>
                         <tr>
@@ -136,25 +161,47 @@ const WEEKDAYS = [
     { value: 5, title: 'Freitag', shortTitle: 'Fr' },
     { value: 6, title: 'Samstag', shortTitle: 'Sa' },
 ]
+const TIMETABLE_PAGE_SIZE = 100
 
 export default {
     name: 'TimetableV3PossibleTimetables',
+
+    emits: ['navigate'],
 
     props: {
         allowSaturdayLessons: {
             type: Boolean,
             default: false,
         },
+        error: {
+            type: String,
+            default: '',
+        },
+        loading: {
+            type: Boolean,
+            default: false,
+        },
+        loadingDirection: {
+            type: String,
+            default: '',
+            validator: value => ['', 'previous', 'next'].includes(value),
+        },
+        pageOffset: {
+            type: Number,
+            default: 0,
+        },
+        selectedIndex: {
+            type: Number,
+            default: 0,
+        },
         timetables: {
             type: Array,
             default: () => [],
         },
-    },
-
-    data() {
-        return {
-            selectedTimetableIndex: 0,
-        }
+        totalCount: {
+            type: Number,
+            default: 0,
+        },
     },
 
     computed: {
@@ -168,6 +215,26 @@ export default {
                 && !Array.isArray(timetable.slots)
             ))
         },
+        normalizedPageOffset() {
+            const pageOffset = Number(this.pageOffset)
+
+            return Number.isInteger(pageOffset) && pageOffset >= 0 ? pageOffset : 0
+        },
+        normalizedSelectedIndex() {
+            const selectedIndex = Number(this.selectedIndex)
+
+            return Number.isInteger(selectedIndex) && selectedIndex >= 0 ? selectedIndex : 0
+        },
+        normalizedTotalCount() {
+            const totalCount = Number(this.totalCount)
+
+            if (Number.isInteger(totalCount) && totalCount > 0) return totalCount
+
+            return this.normalizedTimetables.length
+        },
+        selectedTimetableIndex() {
+            return this.normalizedSelectedIndex - this.normalizedPageOffset
+        },
         selectedTimetable() {
             return this.normalizedTimetables[this.selectedTimetableIndex] || null
         },
@@ -175,13 +242,29 @@ export default {
             return String(this.selectedTimetable?.key || `timetable-${this.selectedTimetableIndex}`)
         },
         selectedTimetablePosition() {
-            return this.selectedTimetable ? this.selectedTimetableIndex + 1 : 0
+            return this.selectedTimetable ? this.normalizedSelectedIndex + 1 : 0
         },
         previousTimetableAvailable() {
-            return this.selectedTimetableIndex > 0
+            return this.normalizedSelectedIndex > 0
         },
         nextTimetableAvailable() {
-            return this.selectedTimetableIndex < this.normalizedTimetables.length - 1
+            return this.normalizedSelectedIndex < this.normalizedTotalCount - 1
+        },
+        loadingPageRangeLabel() {
+            if (!this.loading || !this.normalizedTotalCount) return 'Stundenpläne werden geladen …'
+
+            let targetPageOffset = this.normalizedPageOffset
+
+            if (this.loadingDirection === 'previous') {
+                targetPageOffset = Math.max(0, targetPageOffset - TIMETABLE_PAGE_SIZE)
+            } else if (this.loadingDirection === 'next') {
+                targetPageOffset += TIMETABLE_PAGE_SIZE
+            }
+
+            const firstPosition = Math.min(targetPageOffset + 1, this.normalizedTotalCount)
+            const lastPosition = Math.min(targetPageOffset + TIMETABLE_PAGE_SIZE, this.normalizedTotalCount)
+
+            return `Stundenpläne ${firstPosition}–${lastPosition} werden geladen …`
         },
         selectedTimetableQualityKey() {
             return this.selectedTimetable?.type === 'green' ? 'occasional' : 'clear'
@@ -219,22 +302,16 @@ export default {
         },
     },
 
-    watch: {
-        timetables() {
-            this.selectedTimetableIndex = 0
-        },
-    },
-
     methods: {
         selectPreviousTimetable() {
-            if (!this.previousTimetableAvailable) return
+            if (this.loading || !this.previousTimetableAvailable) return
 
-            this.selectedTimetableIndex--
+            this.$emit('navigate', this.normalizedSelectedIndex - 1)
         },
         selectNextTimetable() {
-            if (!this.nextTimetableAvailable) return
+            if (this.loading || !this.nextTimetableAvailable) return
 
-            this.selectedTimetableIndex++
+            this.$emit('navigate', this.normalizedSelectedIndex + 1)
         },
         timetableEntriesForCell(weekday, hour) {
             const timetableSlot = this.selectedTimetable?.slots?.[`${weekday}-${hour}`]
@@ -397,9 +474,55 @@ export default {
     color: #92400e;
 }
 
+.timetable-v3-results__page-error {
+    display: flex;
+    gap: 7px;
+    align-items: center;
+    margin: 0;
+    font-size: 0.82rem;
+    font-weight: 650;
+    color: #b42318;
+}
+
 .timetable-v3-results__selected {
+    position: relative;
     display: grid;
     gap: 8px;
+}
+
+.timetable-v3-results__page-loading {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    justify-content: center;
+    min-height: 180px;
+    padding: 24px;
+    color: #134e4a;
+    text-align: left;
+    background: rgba(248, 250, 252, 0.9);
+    border: 2px solid rgba(13, 148, 136, 0.38);
+    border-radius: 12px;
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.16);
+    backdrop-filter: blur(3px);
+}
+
+.timetable-v3-results__page-loading strong,
+.timetable-v3-results__page-loading span {
+    display: block;
+}
+
+.timetable-v3-results__page-loading strong {
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.timetable-v3-results__page-loading span {
+    margin-top: 3px;
+    font-size: 0.82rem;
+    color: #475569;
 }
 
 .timetable-v3-results__table-scroll {
@@ -611,6 +734,11 @@ export default {
 
     .timetable-v3-results__table {
         min-width: 650px;
+    }
+
+    .timetable-v3-results__page-loading {
+        flex-direction: column;
+        text-align: center;
     }
 }
 

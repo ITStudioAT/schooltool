@@ -19,11 +19,15 @@ class StudentTimetableV3TimetableService
 
     private const MAX_MODULE_HOURS = 30;
 
-    private const MAX_MATERIALIZED_TIMETABLES = 500;
+    private const MAX_MATERIALIZED_TIMETABLES = 2000;
 
     private const MAX_PERSISTED_TIMETABLE_BYTES = 8388608;
 
-    private const ALGORITHM_VERSION = 4;
+    private const ALGORITHM_VERSION = 7;
+
+    public const TIMETABLES_PER_PAGE = 100;
+
+    public const MAX_TIMETABLE_PAGE = 20;
 
     public function __construct(
         private StudentTimetableV3StudentInformationService $studentInformationService,
@@ -31,25 +35,42 @@ class StudentTimetableV3TimetableService
         private StudentTimetableRememberedTtEntryService $rememberedTtEntryService,
         private StudentTimetableCalculationSettingsService $calculationSettingsService,
         private RobotTimetableBackendSetupService $backendSetupService,
+        private StudentTimetableV3TimetableStorage $timetableStorage,
+        private StudentTimetableV3SessionScope $sessionScope,
     ) {}
 
     /**
      * @param  array<string, mixed>  $parameters
      * @return array<string, mixed>|null
      */
-    public function resultForUser(User $authUser, array $parameters): ?array
-    {
+    public function resultForUser(
+        User $authUser,
+        array $parameters,
+        int $page = 1,
+        ?string $expectedFingerprint = null,
+    ): ?array {
+        $this->validateResultPage($page);
+        $this->validateExpectedFingerprint($expectedFingerprint, $page);
         $schoolyearId = $this->schoolyearIdForUser($authUser);
         $workspaceId = $this->workspaceId($parameters);
         $studentCode = $this->studentCode($parameters);
         $planningMode = $this->planningMode($parameters, $studentCode);
+        $sessionIdHash = $this->sessionScope->currentHash();
         $timetable = $this->timetableForContext(
             $authUser,
             $schoolyearId,
             $this->contextKey($planningMode, $studentCode, $workspaceId),
+            $sessionIdHash,
         );
 
         if (! $timetable) {
+            return null;
+        }
+
+        if (
+            $expectedFingerprint !== null
+            && ! hash_equals((string) $timetable->fingerprint, $expectedFingerprint)
+        ) {
             return null;
         }
 
@@ -90,17 +111,49 @@ class StudentTimetableV3TimetableService
             return null;
         }
 
-        return $this->result($timetable, 'reused', true);
+        $storedTimetables = $timetable->timetables;
+
+        if (! is_array($storedTimetables)) {
+            return null;
+        }
+
+        $timetablePage = $this->timetableStorage->expandPage(
+            $storedTimetables,
+            $page,
+            self::TIMETABLES_PER_PAGE,
+        );
+        $summaryTimetableCount = $summary['timetable_count'] ?? null;
+
+        if (
+            $timetablePage === null
+            || $timetablePage['total'] > self::MAX_MATERIALIZED_TIMETABLES
+            || ! is_int($summaryTimetableCount)
+            || $summaryTimetableCount !== $timetablePage['total']
+            || $page > max(1, (int) ceil($timetablePage['total'] / self::TIMETABLES_PER_PAGE))
+        ) {
+            return null;
+        }
+
+        return $this->result($timetable, 'reused', true, $timetablePage, $page);
     }
 
     /**
      * @param  list<string|array<string, mixed>>  $modules
      * @param  array<string, mixed>  $parameters
+     * @param  (callable(int, int, string, int): void)|null  $progressCallback
      * @return array<string, mixed>
      */
-    public function createOrUpdateForUser(User $authUser, array $modules, array $parameters = []): array
-    {
+    public function createOrUpdateForUser(
+        User $authUser,
+        array $modules,
+        array $parameters = [],
+        ?callable $progressCallback = null,
+    ): array {
+        if ($progressCallback !== null) {
+            $progressCallback(0, 0, 'preparing', 0);
+        }
         $schoolyearId = $this->schoolyearIdForUser($authUser);
+        $sessionIdHash = $this->sessionScope->currentHash();
         $generationContext = $this->resolvedGenerationContext(
             $authUser,
             $modules,
@@ -109,21 +162,79 @@ class StudentTimetableV3TimetableService
         );
 
         return Cache::lock(
-            $this->generationLockKey($authUser, $schoolyearId, $generationContext['context_key']),
+            $this->generationLockKey(
+                $authUser,
+                $schoolyearId,
+                $sessionIdHash,
+                $generationContext['context_key'],
+            ),
             120,
         )->block(10, function () use (
             $authUser,
             $schoolyearId,
+            $sessionIdHash,
             $generationContext,
+            $progressCallback,
         ): array {
             $existingTimetable = $this->timetableForContext(
                 $authUser,
                 $schoolyearId,
                 $generationContext['context_key'],
+                $sessionIdHash,
             );
 
             if ($existingTimetable?->fingerprint === $generationContext['fingerprint']) {
-                return $this->result($existingTimetable, 'reused', true);
+                $storedTimetables = $existingTimetable->timetables;
+                $existingSummary = is_array($existingTimetable->summary)
+                    ? $existingTimetable->summary
+                    : [];
+                $existingSummaryTimetableCount = $existingSummary['timetable_count'] ?? null;
+                $combinationCount = (int) ($existingSummary['timetable_variation_count'] ?? 0);
+                $timetablePage = is_array($storedTimetables)
+                    ? $this->timetableStorage->expandPage(
+                        $storedTimetables,
+                        1,
+                        self::TIMETABLES_PER_PAGE,
+                    )
+                    : null;
+
+                if (
+                    $timetablePage !== null
+                    && $timetablePage['total'] <= self::MAX_MATERIALIZED_TIMETABLES
+                    && is_int($existingSummaryTimetableCount)
+                    && $existingSummaryTimetableCount === $timetablePage['total']
+                ) {
+                    if ($progressCallback !== null) {
+                        $progressCallback(85, $combinationCount, 'materializing', $combinationCount);
+                        $progressCallback(90, $combinationCount, 'compacting', $combinationCount);
+                    }
+
+                    $updates = ['expires_at' => $this->sessionScope->expiresAt()];
+
+                    if (! $this->timetableStorage->isCompact($storedTimetables)) {
+                        $expandedTimetables = $this->timetableStorage->expand($storedTimetables);
+
+                        if ($expandedTimetables !== null) {
+                            $compactTimetables = $this->timetableStorage->compact($expandedTimetables);
+                            $this->ensurePersistableTimetableSize($compactTimetables);
+                            $updates['timetables'] = $compactTimetables;
+                        }
+                    }
+
+                    if ($progressCallback !== null) {
+                        $progressCallback(95, $combinationCount, 'persisting', $combinationCount);
+                    }
+
+                    $existingTimetable->update($updates);
+
+                    $result = $this->result($existingTimetable, 'reused', true, $timetablePage, 1);
+
+                    if ($progressCallback !== null) {
+                        $progressCallback(100, $combinationCount, 'complete', $combinationCount);
+                    }
+
+                    return $result;
+                }
             }
 
             $calculation = $this->backendSetupService->calculateAllPossibleTimetableVariations(
@@ -134,14 +245,21 @@ class StudentTimetableV3TimetableService
                 maximumTimetables: self::MAX_MATERIALIZED_TIMETABLES,
                 requiredCourseGroupsByModule: $generationContext['required_course_groups_by_module'],
                 includeOneCourseRemovalCountsWhenNoPossible: true,
+                calculateNoSaturdayTimetableCount: false,
+                progressCallback: $progressCallback,
             );
             $timetables = is_array($calculation['timetables'] ?? null)
-                ? array_values($calculation['timetables'])
+                ? array_slice(array_values($calculation['timetables']), 0, self::MAX_MATERIALIZED_TIMETABLES)
                 : [];
-            $this->ensurePersistableTimetableSize($timetables);
+            $compactTimetables = $this->timetableStorage->compact($timetables);
+            $this->ensurePersistableTimetableSize($compactTimetables);
+            $possibleTimetableCount = (int) ($calculation['full_green_timetable_count'] ?? 0)
+                + (int) ($calculation['green_timetable_count'] ?? 0);
             $summary = [
                 'algorithm_version' => self::ALGORITHM_VERSION,
                 'timetable_count' => count($timetables),
+                'possible_timetable_count' => $possibleTimetableCount,
+                'timetables_truncated' => $possibleTimetableCount > count($timetables),
                 'timetable_variation_count' => (int) ($calculation['timetable_variation_count'] ?? 0),
                 'full_green_timetable_count' => (int) ($calculation['full_green_timetable_count'] ?? 0),
                 'green_timetable_count' => (int) ($calculation['green_timetable_count'] ?? 0),
@@ -162,11 +280,20 @@ class StudentTimetableV3TimetableService
                 );
             }
 
+            if ($progressCallback !== null) {
+                $progressCallback(
+                    95,
+                    $summary['timetable_variation_count'],
+                    'persisting',
+                    $summary['timetable_variation_count'],
+                );
+            }
             $timetable = StudentTimetableV3Timetable::query()->updateOrCreate(
                 [
                     'school_id' => $authUser->school_id,
                     'schoolyear_id' => $schoolyearId,
                     'user_id' => $authUser->id,
+                    'session_id_hash' => $sessionIdHash,
                     'context_key' => $generationContext['context_key'],
                 ],
                 [
@@ -176,16 +303,29 @@ class StudentTimetableV3TimetableService
                     'modules' => $generationContext['module_payload'],
                     'parameters' => $generationContext['canonical_parameters'],
                     'summary' => $summary,
-                    'timetables' => $timetables,
+                    'timetables' => $compactTimetables,
                     'generated_at' => now(),
+                    'expires_at' => $this->sessionScope->expiresAt(),
                 ],
             );
 
-            return $this->result(
+            $result = $this->result(
                 $timetable,
                 $timetable->wasRecentlyCreated ? 'created' : 'updated',
                 false,
+                $this->pageFromExpandedTimetables($timetables, 1),
+                1,
             );
+            if ($progressCallback !== null) {
+                $progressCallback(
+                    100,
+                    $summary['timetable_variation_count'],
+                    'complete',
+                    $summary['timetable_variation_count'],
+                );
+            }
+
+            return $result;
         });
     }
 
@@ -211,6 +351,7 @@ class StudentTimetableV3TimetableService
             $studentCode,
             $selectionOverride,
             $seedCompactSubjectPlanIfMissing,
+            includeAllSelectableModules: true,
         );
 
         if ($studentCode !== null && trim((string) ($information['student_code'] ?? '')) !== $studentCode) {
@@ -660,6 +801,7 @@ class StudentTimetableV3TimetableService
             'constraints' => $constraints,
             'student' => ['studentCode' => $studentCode],
             'selected_course_keys' => $moduleCodes,
+            'selected_modules_are_authoritative' => true,
             'deselected_course_keys' => [],
             'selected_course_group_keys' => [],
             'deselected_course_group_keys' => [],
@@ -881,12 +1023,17 @@ class StudentTimetableV3TimetableService
             : 'student:'.hash('sha256', (string) $studentCode);
     }
 
-    private function generationLockKey(User $authUser, int $schoolyearId, string $contextKey): string
-    {
+    private function generationLockKey(
+        User $authUser,
+        int $schoolyearId,
+        string $sessionIdHash,
+        string $contextKey,
+    ): string {
         return 'students-timetables:timetable-v3:generation:'.hash('sha256', implode('|', [
             (string) $authUser->school_id,
             (string) $schoolyearId,
             (string) $authUser->id,
+            $sessionIdHash,
             $contextKey,
         ]));
     }
@@ -895,18 +1042,29 @@ class StudentTimetableV3TimetableService
         User $authUser,
         int $schoolyearId,
         string $contextKey,
+        string $sessionIdHash,
     ): ?StudentTimetableV3Timetable {
         return StudentTimetableV3Timetable::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $schoolyearId)
             ->where('user_id', $authUser->id)
+            ->where('session_id_hash', $sessionIdHash)
             ->where('context_key', $contextKey)
+            ->where('expires_at', '>', now())
             ->first();
     }
 
-    /** @return array<string, mixed> */
-    private function result(StudentTimetableV3Timetable $timetable, string $status, bool $reused): array
-    {
+    /**
+     * @param  array{items: list<array<string, mixed>>, total: int}  $timetablePage
+     * @return array<string, mixed>
+     */
+    private function result(
+        StudentTimetableV3Timetable $timetable,
+        string $status,
+        bool $reused,
+        array $timetablePage,
+        int $page,
+    ): array {
         $parameters = $timetable->parameters ?? [];
 
         return [
@@ -922,9 +1080,78 @@ class StudentTimetableV3TimetableService
             'modules' => $timetable->modules ?? [],
             'parameters' => $parameters,
             'summary' => $timetable->summary ?? [],
-            'timetables' => $timetable->timetables ?? [],
+            'timetables' => $timetablePage['items'],
+            'timetables_meta' => $this->timetablePageMeta($timetablePage['total'], $page),
             'generated_at' => $timetable->generated_at?->toISOString(),
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $timetables
+     * @return array{items: list<array<string, mixed>>, total: int}
+     */
+    private function pageFromExpandedTimetables(array $timetables, int $page): array
+    {
+        $offset = ($page - 1) * self::TIMETABLES_PER_PAGE;
+
+        return [
+            'items' => array_values(array_slice($timetables, $offset, self::TIMETABLES_PER_PAGE)),
+            'total' => count($timetables),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     current_page: int,
+     *     per_page: int,
+     *     last_page: int,
+     *     total: int,
+     *     offset: int,
+     *     from: int|null,
+     *     to: int|null,
+     *     next_page: int|null,
+     *     prev_page: int|null
+     * }
+     */
+    private function timetablePageMeta(int $total, int $page): array
+    {
+        $offset = ($page - 1) * self::TIMETABLES_PER_PAGE;
+        $lastPage = max(1, (int) ceil($total / self::TIMETABLES_PER_PAGE));
+        $hasItems = $total > 0 && $offset < $total;
+
+        return [
+            'current_page' => $page,
+            'per_page' => self::TIMETABLES_PER_PAGE,
+            'last_page' => $lastPage,
+            'total' => $total,
+            'offset' => $offset,
+            'from' => $hasItems ? $offset + 1 : null,
+            'to' => $hasItems ? min($offset + self::TIMETABLES_PER_PAGE, $total) : null,
+            'next_page' => $page < $lastPage ? $page + 1 : null,
+            'prev_page' => $page > 1 ? $page - 1 : null,
+        ];
+    }
+
+    private function validateResultPage(int $page): void
+    {
+        if ($page < 1 || $page > self::MAX_TIMETABLE_PAGE) {
+            $this->invalid('page', 'Die angeforderte Stundenplanseite ist ungültig.');
+        }
+    }
+
+    private function validateExpectedFingerprint(?string $expectedFingerprint, int $page): void
+    {
+        if ($expectedFingerprint === null) {
+            if ($page > 1) {
+                $this->invalid('fingerprint', 'Der Stundenplanstand ist für Folgeseiten erforderlich.');
+            }
+
+            return;
+        }
+
+        if (preg_match('/\A[a-f0-9]{64}\z/', $expectedFingerprint) !== 1) {
+            $this->invalid('fingerprint', 'Der Stundenplanstand ist ungültig.');
+        }
     }
 
     /** @param array<string, mixed> $value */
@@ -948,15 +1175,15 @@ class StudentTimetableV3TimetableService
         return array_map(fn (mixed $item): mixed => $this->canonicalValue($item), $value);
     }
 
-    /** @param list<array<string, mixed>> $timetables */
-    private function ensurePersistableTimetableSize(array $timetables): void
+    /** @param array<string, mixed> $compactTimetables */
+    private function ensurePersistableTimetableSize(array $compactTimetables): void
     {
-        $encodedTimetables = json_encode($timetables, JSON_THROW_ON_ERROR);
+        $encodedTimetables = json_encode($compactTimetables, JSON_THROW_ON_ERROR);
 
         if (strlen($encodedTimetables) > self::MAX_PERSISTED_TIMETABLE_BYTES) {
             $this->invalid(
                 'modules',
-                'Die vollständigen Stundenpläne sind zu groß zum Speichern. Bitte schränken Sie die Auswahl weiter ein.',
+                'Die kompakten Stundenplandaten sind zu groß zum Speichern. Bitte schränken Sie die Auswahl weiter ein.',
             );
         }
     }
